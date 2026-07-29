@@ -120,6 +120,15 @@
         </li>
       </ol>
 
+      <.docs_callout kind={:note} title="The rest of the connection form">
+        <p>
+          This guide covers only what Google Workspace needs. The other settings on the connection —
+          who gets provisioned and at what role, what runner access they start with, whether this
+          provider satisfies your 2FA requirement — are the same for every provider and are
+          explained in <.link navigate={~p"/docs/sso"} class="text-brand-400 hover:text-brand-300">Single sign-on</.link>.
+        </p>
+      </.docs_callout>
+
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Google Workspace cannot drive directory sync into emisar. Google provisions to SaaS apps in
@@ -133,17 +142,15 @@
         — that is what ends live sessions and revokes their keys. emisar's connection page hides the sync panel for this
         provider rather than offer a feature that could never connect.
       </p>
-      <.docs_callout kind={:warn} title="Using Google Workspace?">
+      <.docs_callout kind={:tip} title="Want automatic deprovisioning?">
         <p>
-          Google Workspace is a first-class OIDC <em>login</em>
-          provider here, but it has no outbound SCIM — it won't push the user lifecycle to
-          emisar. On its own you get just-in-time provisioning on first login and <strong class="text-zinc-200">no automatic deprovisioning</strong>. To close that gap,
-          route Google through your IdP (Okta, Entra, or JumpCloud) and connect <em>that</em>
-          to emisar's SCIM — an offboard in Google then reaches emisar as the standard
+          Route Google through an IdP that does have outbound SCIM — Okta, Entra or JumpCloud —
+          and connect <em>that</em>
+          to emisar. An offboard in Google then reaches us as the standard
           <code class="rounded bg-zinc-950 px-1 py-0.5 text-xs">active: false</code>
-          signal and access is revoked automatically, exactly as above. Most orgs already
-          federate Google through an IdP, so there's usually nothing new to stand up. (Native
-          Google directory sync without an IdP is on our roadmap — talk to us if you need it.)
+          signal and access is revoked without anyone touching emisar. Most orgs already federate
+          Google through an IdP, so there is usually nothing new to stand up. (Native Google
+          directory sync is on our roadmap — talk to us if you need it.)
         </p>
       </.docs_callout>
     </.docs_layout>

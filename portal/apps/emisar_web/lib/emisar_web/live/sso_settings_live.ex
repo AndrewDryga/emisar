@@ -2261,7 +2261,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               field={@form[:identifier_claim]}
               type="select"
               label="Identifier claim"
-              options={identifier_claim_options(@kind)}
+              options={identifier_claim_options(@kind, @form[:identifier_claim].value)}
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               How emisar recognises a returning member. Never their email — people change those. {identifier_claim_hint(
@@ -2504,18 +2504,33 @@ defmodule EmisarWeb.SSOSettingsLive do
   # `oid` exists for exactly one provider. Offering it under Keycloak or Google
   # invites an admin to pick a claim their IdP never issues, which fails at the
   # first sign-in with a missing-identifier error rather than at save time.
-  defp identifier_claim_options("entra"),
-    do: [{"oid — Microsoft Entra", "oid"}, {"sub — pairwise, not recommended", "sub"}]
+  # One option per provider, because there is one right answer per provider. We
+  # offered Entra a `sub` labelled "not recommended" — a wrong choice, presented
+  # as a choice. Entra's `sub` is pairwise, so sign-in and directory sync land on
+  # different identities and the person becomes two members.
+  #
+  # A connection ALREADY on the wrong claim still shows it, so the form tells the
+  # truth about what is stored rather than rendering a value it does not hold.
+  # It cannot be re-selected once dropped, and the identity-namespace freeze
+  # stops it changing under anyone who has signed in through it.
+  defp identifier_claim_options(kind, current) do
+    options = identifier_claim_options(kind)
+
+    if current in [nil, ""] or
+         Enum.any?(options, fn {_label, value} -> value == to_string(current) end),
+       do: options,
+       else: options ++ [{"#{current} — stored on this connection", to_string(current)}]
+  end
+
+  defp identifier_claim_options("entra"), do: [{"oid — Microsoft Entra", "oid"}]
 
   defp identifier_claim_options(_), do: [{"sub — OIDC standard", "sub"}]
 
-  # Telling an Entra admin to "leave it as sub" would be advice against the one
-  # setting that provider needs changed.
-  # Why `oid` rather than `sub` is a page of reasoning about how sign-in and the
-  # directory converge on one person — that belongs in the Entra guide, which
-  # covers it. Here the operator needs the instruction and the consequence.
+  # Entra's `sub` differs per application, so `oid` is the only claim that joins
+  # sign-in to the directory — which is why it is the only one offered. The
+  # reasoning belongs in the Entra guide; here the operator needs the fact.
   defp identifier_claim_hint("entra") do
-    "Entra gives every app a different `sub`, so pick `oid` — the same id directory sync uses."
+    "Entra gives every app a different `sub`, so emisar uses `oid` — the id directory sync sends."
   end
 
   # One option, nothing to decide: justifying why the list is short is our

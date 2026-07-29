@@ -188,6 +188,15 @@
         </li>
       </ol>
 
+      <.docs_callout kind={:note} title="The rest of the connection form">
+        <p>
+          This guide covers only what Keycloak needs. The other settings on the connection —
+          who gets provisioned and at what role, what runner access they start with, whether this
+          provider satisfies your 2FA requirement — are the same for every provider and are
+          explained in <.link navigate={~p"/docs/sso"} class="text-brand-400 hover:text-brand-300">Single sign-on</.link>.
+        </p>
+      </.docs_callout>
+
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Keycloak cannot drive directory sync. Its built-in SCIM support runs the other way — the

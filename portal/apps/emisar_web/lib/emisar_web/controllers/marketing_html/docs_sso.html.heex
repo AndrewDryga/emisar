@@ -32,156 +32,149 @@
 
       <.docs_h2 id="sso-login">Setting up SSO login</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        You need an emisar owner or admin. Open <a
+        Two things have to exist: an OAuth application at your identity provider, and a connection
+        in emisar pointing at it. You need an emisar owner or admin, plus enough access at the
+        provider to create an app. Open
+        <a
           href={~p"/app/sso/new"}
           class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
-        >Team → Single sign-on → Add provider</a>; the form opens on its own page and walks you
-        through the provider-side app as you pick a provider type. <.plan_note tier={:team} />
+        >Team → Single sign-on → Add provider</a>
+        and choose your provider type; the form then names the exact admin-console path for it, and
+        the <a href="#providers" class="text-brand-300 hover:text-brand-200">provider guides</a>
+        below walk every screen with screenshots. <.plan_note tier={:team} />
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        At the provider, create a
+        <strong class="text-zinc-200">confidential web application</strong>
+        — one with a client secret. A public or single-page client will not work, because emisar
+        authenticates with that secret. Give the app emisar's redirect URI, which the form shows
+        with a copy button:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
+        on your emisar host. emisar always sends that exact URI and never takes it from the
+        request, so paste it verbatim. If the provider offers <strong class="text-zinc-200">DPoP</strong>, leave it off — emisar reads the ID token and
+        never calls an API with the access token, so sender-constrained tokens buy nothing here and
+        break the token request.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Then come back to emisar and fill in the connection. It has four sections, and the rest of
+        this section explains them.
       </p>
 
-      <ol class="mt-8 space-y-6">
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            1
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Create an OAuth / OIDC app at your provider.
-            </p>
-            <p class="mt-1.5">
-              A confidential web application with a client secret. emisar uses standard,
-              discovery-based OpenID Connect, so the named providers (Google Workspace, Okta,
-              Microsoft Entra, JumpCloud, Keycloak) are presets over one flow — there's no separate integration to wait for, and
-              <strong class="text-zinc-200">Generic OpenID Connect</strong>
-              fits anything compliant. When you pick a provider type in the form, the in-app guide
-              names the exact admin-console path for it. Leave
-              <strong class="text-zinc-200">DPoP</strong>
-              (sender-constrained tokens) off — emisar reads the ID token only and never calls an API
-              with the access token, so DPoP adds nothing here and would break the token request.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">
-              Register emisar's redirect URI on that app.
-            </p>
-            <p class="mt-1.5">
-              The form shows the exact value, with a copy button — it's
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
-              on your emisar host. This is the fixed URI emisar uses; it's never taken from the
-              request, so paste it verbatim into your app's allowed redirect / callback URLs.
-            </p>
-          </div>
-        </li>
-        <li class="flex gap-4">
-          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
-          </span>
-          <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <p class="font-semibold text-zinc-100">Fill in the connection and save.</p>
-            <p class="mt-1.5">Back on the emisar form, set:</p>
-            <ul class="mt-2 space-y-2">
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">Provider type</strong>
-                  and a <strong class="text-zinc-200">Display name</strong>
-                  (what your members see — e.g. "Acme Okta").
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">Issuer URL</strong>
-                  — your provider's OIDC issuer (must be HTTPS). emisar fetches the discovery
-                  document from there, so you never paste individual endpoints. The in-app guide
-                  shows the shape for the selected provider (your Okta org URL, your Keycloak
-                  realm URL, and so on).
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">Client ID</strong>
-                  and <strong class="text-zinc-200">Client secret</strong>
-                  from the app you just created. The secret is write-only — stored server-side,
-                  redacted in the UI, and never rendered back (a sign-in secret has to be replayed to
-                  your IdP, so it can't be hashed); at-rest protection is infrastructure-level. When you
-                  edit the connection later, leave it blank to keep the current one.
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">New-user provisioning</strong>
-                  — <span class="text-zinc-300">Auto-provision</span>
-                  creates a user on first sign-in; <span class="text-zinc-300">Manual</span>
-                  holds each first-time sign-in as a pending request an admin approves. Either way
-                  they land at the default role below. Directory sync overrides this: once it is
-                  on, the directory decides who exists, and a sign-in it never provisioned is held
-                  for approval whichever setting you picked.
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">Identifier claim</strong>
-                  — leave as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>;
-                  Microsoft Entra can use
-                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-                  instead. emisar accepts only those two, not an arbitrary claim. This is what an
-                  identity is bound to (see below), and what SCIM's
-                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-                  must match for login and directory sync to converge.
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">Default role for new users</strong>
-                  — the role a newly provisioned member lands at (viewer / operator / billing manager / admin). Sync
-                  never grants <span class="text-zinc-300">owner</span>; that stays a deliberate
-                  human grant. See <.link
-                    navigate={~p"/docs/teams-and-access"}
-                    class="text-brand-300 hover:text-brand-200"
-                  >roles</.link>.
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  <strong class="text-zinc-200">Allowed email domain</strong>
-                  (optional) — refuses a sign-in whose provider-verified address is on another
-                  domain. Leave it blank to accept any domain; an address your provider doesn't mark
-                  verified is never trusted either way.
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  Click <strong class="text-zinc-200">Test connection</strong>
-                  before you save. emisar runs a live OIDC discovery round-trip against the issuer
-                  and shows the authorization, token, and JWKS endpoints it found — so a wrong issuer
-                  or an unreachable provider surfaces here, not at your team's first sign-in.
-                </span>
-              </li>
-              <li class="flex items-start gap-2.5">
-                <span class="flex-none text-zinc-500">—</span>
-                <span>
-                  Decide whether <strong class="text-zinc-200">this provider satisfies your 2FA
-                  requirement</strong>
-                  (see below), tick <strong class="text-zinc-200">Enabled</strong>, and save. The
-                  connection appears in the list, ready to sign in through.
-                </span>
-              </li>
-            </ul>
-          </div>
-        </li>
-      </ol>
+      <.docs_h3 id="connection-fields">Provider and OIDC connection</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The <strong class="text-zinc-200">provider type</strong>
+        selects the preset — it decides which claim emisar can bind identities to and which
+        provider-specific quirks it applies, so pick the real one rather than Generic OIDC. The
+        <strong class="text-zinc-200">display name</strong>
+        is what your members see on the sign-in page, so name it the way they would say it out
+        loud: "Acme Okta".
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The <strong class="text-zinc-200">issuer URL</strong>
+        is the one endpoint you have to get right. emisar fetches the OIDC discovery document from
+        it and derives every other endpoint, which is why you never paste authorization, token, or
+        JWKS URLs by hand. It must be HTTPS and reachable from emisar. Each provider has its own
+        shape — your Okta org URL, your Keycloak realm URL, your Entra tenant — and the form shows
+        the right one once you pick a type.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The <strong class="text-zinc-200">client ID</strong>
+        and <strong class="text-zinc-200">client secret</strong>
+        come from the app you just created. The secret is write-only: it is stored server-side,
+        redacted in the interface, and never rendered back to you. It cannot be hashed the way a
+        password is, because emisar has to replay it to your provider on every sign-in; protecting
+        it at rest is an infrastructure concern. When you edit the connection later, leaving the
+        field blank keeps the secret you already have.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The <strong class="text-zinc-200">identifier claim</strong>
+        is what an identity is permanently bound to. emisar offers only the claim your provider
+        actually issues — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+        everywhere, and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+        for Microsoft Entra — so there is nothing to decide here beyond leaving it alone. It
+        matters more than it looks: it is what
+        <a href="#subject-not-email" class="text-brand-300 hover:text-brand-200">
+          identities are matched on
+        </a>
+        instead of email, and it is the value your directory's
+        <.link
+          navigate={~p"/docs/scim"}
+          class="text-brand-300 hover:text-brand-200"
+        ><code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code></.link>
+        must carry for sign-in and directory sync to converge on one person.
+      </p>
+
+      <.docs_h3 id="provisioning-fields">Who gets in, and what they get</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">New-user provisioning</strong>
+        decides what happens the first time someone signs in through this connection who has no
+        emisar member yet. <span class="text-zinc-300">Auto-provision</span>
+        creates them on the spot; <span class="text-zinc-300">Manual</span>
+        holds the sign-in as a pending request for an admin to approve. Auto-provision suits a
+        connection whose provider-side app is already assigned to exactly the right people, which
+        is the usual arrangement; manual suits a provider you do not control that tightly.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Turning on
+        <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200">
+          directory sync
+        </.link>
+        overrides this. The directory then decides who exists, so a sign-in it never provisioned is
+        held for approval whichever setting you picked — an account the directory does not know
+        about cannot walk in through the login page.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Default role for new users</strong>
+        is where a newly provisioned member lands: viewer, operator, billing manager, or admin.
+        Provisioning never grants <span class="text-zinc-300">owner</span>
+        — that stays a deliberate human grant, so no provider misconfiguration can mint one. If you
+        map directory groups to roles, the mapping wins and this is only the fallback for someone
+        in no mapped group.
+        <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="text-brand-300 hover:text-brand-200"
+        >Roles</.link>
+        explains what each one can do.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Default runner access</strong>
+        is the other half of that landing: which hosts the new member can even see and dispatch to.
+        <span class="text-zinc-300">No runners</span>
+        is the safe default and the one we would pick — they arrive able to read the console and
+        nothing else, and you widen it deliberately.
+        <span class="text-zinc-300">All runners</span>
+        includes every runner you enroll in the future, not just today's fleet.
+        <span class="text-zinc-300">Selected runners</span>
+        pins them to named runner groups or hosts. Role and runner access are independent: an
+        operator with no runners can dispatch nothing, which is exactly what you want for someone
+        who has not been given a fleet yet.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Allowed email domain</strong>
+        is optional and does two jobs. It refuses a sign-in whose provider-verified address is on
+        another domain, and it routes that domain's sign-ins to this connection. Leave it blank to
+        accept any address the provider returns. Either way an address your provider does not mark
+        as verified is never trusted.
+      </p>
+
+      <.docs_h3 id="activation-fields">Security and activation</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        One checkbox says <em>sign-in through this provider satisfies the account's 2FA
+        requirement</em>. Turn it on only if the provider enforces MFA itself — then emisar accepts
+        the provider's challenge instead of asking for a second factor of its own. Turn it on for a
+        provider that does not, and every member signing in through it walks past your 2FA
+        requirement. The
+        <a href="#sso-mfa" class="text-brand-300 hover:text-brand-200">section below</a>
+        covers how that interacts with the rest of the account.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Before saving, press <strong class="text-zinc-200">Test connection</strong>. emisar runs a
+        real OIDC discovery round-trip against the issuer and shows the authorization, token, and
+        JWKS endpoints it found, so a typo or an unreachable provider surfaces here rather than at
+        your team's first sign-in. Then tick <strong class="text-zinc-200">Enabled</strong>
+        and save — until you do, the connection exists but nobody can sign in through it, which is
+        also how you park one without deleting it.
+      </p>
 
       <.docs_h3 id="signing-in">How members sign in</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -346,21 +339,15 @@
       </p>
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
-      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            Every SSO sign-in lands in the
-            <.link
-              navigate={~p"/docs/audit-and-siem"}
-              class="text-brand-300 hover:text-brand-200"
-            >
-              audit log
-            </.link>
-            with its authentication method, so you can answer "who did this, signed in how".
-          </span>
-        </li>
-      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Every SSO sign-in lands in the
+        <.link
+          navigate={~p"/docs/audit-and-siem"}
+          class="text-brand-300 hover:text-brand-200"
+        >audit log</.link>
+        with the authentication method it used, so "who did this, and how did they get in" is one
+        query rather than a correlation exercise across two systems.
+      </p>
     </.docs_layout>
   </section>
 

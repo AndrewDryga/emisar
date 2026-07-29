@@ -165,6 +165,10 @@ var docsShots = []shot{
 	{Name: "keycloak-emisar-add-provider", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("keycloak")}, Anchor: Anchor{Heading: "Provider type", Climb: "div"}, Highlight: []string{"Provider type"}, Width: docsWidth, Output: "docs/sso/keycloak-emisar-add-provider.webp"},
 	{Name: "google-emisar-add-provider", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("google_workspace")}, Anchor: Anchor{Heading: "Provider type", Climb: "div"}, Highlight: []string{"Provider type"}, Width: docsWidth, Output: "docs/sso/google-emisar-add-provider.webp"},
 
+	// "Paste the values back into emisar" — the fields the step names, outlined.
+	// The guide told the reader which values to carry and then showed them nothing.
+	{Name: "okta-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("okta"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/okta-emisar-credentials.webp"},
+
 	// The step names ONE control — Identifier claim — so the shot is that field and
 	// its explanation, outlined. It used to be the entire 3,290px form, which shows
 	// the reader everything and points at nothing.
@@ -576,6 +580,26 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 		}
 		if err := highlightControls(session, s.Highlight); err != nil {
 			return "", fmt.Errorf("%s: %w", s.Name, err)
+		}
+		// Breathing room under the outline. The crop is the anchor's CONTENT box, so
+		// padding does not grow it — a highlighted control reaching the anchor's edge
+		// has its outline on that boundary and the last row rounds away at 2x, which
+		// is how the first highlighted shots came back with a shaved bottom edge. A
+		// spacer child grows the content box, which the crop does follow.
+		if len(s.Highlight) > 0 {
+			spacer := `(function(){
+  const el = document.querySelector('[data-shot="1"]');
+  if (!el) return false;
+  if (el.querySelector('[data-shot-spacer]')) return true;
+  const pad = document.createElement('div');
+  pad.setAttribute('data-shot-spacer', '1');
+  pad.style.height = '12px';
+  el.appendChild(pad);
+  return true;
+})()`
+			if err := chromedp.Run(session.Context, chromedp.Evaluate(spacer, nil)); err != nil {
+				return "", fmt.Errorf("%s: %w", s.Name, err)
+			}
 		}
 		switch err := session.Ready(10*time.Second, selector); {
 		case err == nil:

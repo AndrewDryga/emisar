@@ -708,8 +708,31 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                "select[name='provider[identifier_claim]'] option[value=oid][selected]"
              )
 
+      # And `sub` is not on the list at all — a value the operator can pick that
+      # cannot work is a trap, not a choice.
+      refute entra =~ "sub — OIDC standard"
+
       # And the guide must point at Entra's own PAGE, not the generic section.
       assert entra =~ "/docs/integrations/entra"
+    end
+
+    test "a claim already stored on a connection stays on the list", %{
+      conn: conn,
+      account: account
+    } do
+      # Narrowing the list must not silently retype an existing connection: a
+      # Keycloak provider saved with `oid` would come back as `sub` on the next
+      # edit, breaking every returning member's identity match.
+      provider =
+        Fixtures.SSO.create_identity_provider(
+          account_id: account.id,
+          kind: :keycloak,
+          identifier_claim: :oid
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
+
+      assert html =~ "oid — stored on this connection"
     end
 
     test "only a named provider promises screenshots", %{conn: conn, account: account} do
