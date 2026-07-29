@@ -29,10 +29,19 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   @registry Emisar.SSO.OIDC.Registry
   @supervisor Emisar.SSO.OIDC.ProviderSupervisor
   @default_scopes ["openid", "email", "profile"]
-  # We hold a client secret, not a signing key — restrict client authentication
-  # to the secret-based methods (basic, then post) so oidcc never tries the JWT
-  # methods an IdP may advertise but we can't satisfy.
-  @secret_auth_methods [:client_secret_basic, :client_secret_post]
+  # We hold a client secret, not a signing key — restrict client authentication to
+  # the secret-based methods so oidcc never tries the JWT methods an IdP may
+  # advertise but we can't satisfy.
+  #
+  # POST first, and that order is load-bearing. A pushed authorization request
+  # carries `client_id` in its body; `client_secret_basic` adds a Basic header on
+  # top and leaves that body alone, so Okta sees two credential sources and
+  # answers `401 Cannot supply multiple client credentials` — the login fails
+  # before the browser ever reaches the IdP. `client_secret_post` puts both
+  # values in the body, where oidcc's `ukeysort` collapses the duplicate
+  # `client_id`, leaving exactly one. Every IdP that supports basic supports
+  # post, so preferring it costs nothing elsewhere.
+  @secret_auth_methods [:client_secret_post, :client_secret_basic]
 
   @impl Emisar.SSO.OIDC
   def begin_authorization(%IdentityProvider{} = provider, opts) do
