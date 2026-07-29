@@ -61,6 +61,65 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
     ]
   }
 
+  # Groups have complete routes, but an IdP that decides what to push by reading
+  # discovery was told only about Users — so it never pushed a group at all, and
+  # every group→role mapping stayed unfed.
+  @group_resource_type %{
+    "schemas" => ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
+    "id" => "Group",
+    "name" => "Group",
+    "endpoint" => "/Groups",
+    "description" => "SCIM Group — directory groups emisar maps to roles and runner access.",
+    "schema" => "urn:ietf:params:scim:schemas:core:2.0:Group",
+    "meta" => %{
+      "resourceType" => "ResourceType",
+      "location" => "/scim/v2/ResourceTypes/Group"
+    }
+  }
+
+  @group_schema %{
+    "id" => "urn:ietf:params:scim:schemas:core:2.0:Group",
+    "name" => "Group",
+    "description" => "SCIM core Group schema (subset).",
+    "meta" => %{"resourceType" => "Schema"},
+    "attributes" => [
+      %{
+        "name" => "displayName",
+        "type" => "string",
+        "multiValued" => false,
+        "required" => true,
+        "caseExact" => false,
+        "mutability" => "readWrite",
+        "uniqueness" => "none"
+      },
+      %{
+        "name" => "externalId",
+        "type" => "string",
+        "multiValued" => false,
+        "required" => false,
+        "caseExact" => true,
+        "mutability" => "readWrite"
+      },
+      %{
+        "name" => "members",
+        "type" => "complex",
+        "multiValued" => true,
+        "required" => false,
+        "mutability" => "readWrite",
+        "subAttributes" => [
+          %{
+            "name" => "value",
+            "type" => "string",
+            "multiValued" => false,
+            "required" => true,
+            "caseExact" => true,
+            "mutability" => "immutable"
+          }
+        ]
+      }
+    ]
+  }
+
   # GET /scim/v2/ServiceProviderConfig
   def service_provider_config(conn, _params) do
     json(conn, %{
@@ -89,12 +148,36 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
 
   # GET /scim/v2/ResourceTypes
   def resource_types(conn, _params) do
-    json(conn, Resource.list_response([@user_resource_type]))
+    json(conn, Resource.list_response([@user_resource_type, @group_resource_type]))
+  end
+
+  # GET /scim/v2/ResourceTypes/:id — RFC 7643 §6 gives each type its own URL, and
+  # the `meta.location` above points at it.
+  def resource_type(conn, %{"id" => "User"}), do: json(conn, @user_resource_type)
+  def resource_type(conn, %{"id" => "Group"}), do: json(conn, @group_resource_type)
+
+  def resource_type(conn, %{"id" => id}) do
+    conn
+    |> put_status(:not_found)
+    |> json(Resource.error(404, "No SCIM ResourceType `#{id}`."))
   end
 
   # GET /scim/v2/Schemas
   def schemas(conn, _params) do
-    json(conn, Resource.list_response([@user_schema]))
+    json(conn, Resource.list_response([@user_schema, @group_schema]))
+  end
+
+  # GET /scim/v2/Schemas/:id
+  def schema(conn, %{"id" => "urn:ietf:params:scim:schemas:core:2.0:User"}),
+    do: json(conn, @user_schema)
+
+  def schema(conn, %{"id" => "urn:ietf:params:scim:schemas:core:2.0:Group"}),
+    do: json(conn, @group_schema)
+
+  def schema(conn, %{"id" => id}) do
+    conn
+    |> put_status(:not_found)
+    |> json(Resource.error(404, "No SCIM Schema `#{id}`."))
   end
 
   defp base_url(_conn), do: Emisar.PublicUrl.base()

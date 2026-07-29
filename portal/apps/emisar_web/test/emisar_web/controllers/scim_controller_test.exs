@@ -1448,33 +1448,67 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body_a == body_b
     end
 
-    test "GET /ResourceTypes lists exactly the User descriptor (Group is push-only)", %{
+    test "GET /ResourceTypes lists both resources emisar actually serves", %{
       conn: conn,
       token: token
     } do
       body = conn |> auth(token) |> get(~p"/scim/v2/ResourceTypes") |> json_response(200)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]
-      # Exactly one resource-type — the User descriptor. No Group descriptor:
-      # group sync is push-only, so we never advertise a Group resource.
-      assert [user_type] = body["Resources"]
-      assert user_type["id"] == "User"
-      assert user_type["name"] == "User"
-      assert user_type["endpoint"] == "/Users"
-      assert user_type["schema"] == "urn:ietf:params:scim:schemas:core:2.0:User"
-      assert user_type["meta"]["location"] == "/scim/v2/ResourceTypes/User"
-      refute Enum.any?(body["Resources"], &(&1["id"] == "Group"))
-      # ListResponse counts equal the number of resources (1).
-      assert body["totalResults"] == 1
-      assert body["itemsPerPage"] == 1
+
+      # Group used to be withheld here on the grounds that group sync is
+      # push-only. But /Groups has a full route set, and a client that decides
+      # what to push by reading discovery was told groups did not exist — so it
+      # never sent one and every group→role mapping stayed unfed.
+      types = Map.new(body["Resources"], &{&1["id"], &1})
+      assert Map.keys(types) |> Enum.sort() == ["Group", "User"]
+
+      assert types["User"]["endpoint"] == "/Users"
+      assert types["User"]["schema"] == "urn:ietf:params:scim:schemas:core:2.0:User"
+      assert types["User"]["meta"]["location"] == "/scim/v2/ResourceTypes/User"
+
+      assert types["Group"]["endpoint"] == "/Groups"
+      assert types["Group"]["schema"] == "urn:ietf:params:scim:schemas:core:2.0:Group"
+      assert types["Group"]["meta"]["location"] == "/scim/v2/ResourceTypes/Group"
+
+      assert body["totalResults"] == 2
+      assert body["itemsPerPage"] == 2
+    end
+
+    test "each ResourceType and Schema is fetchable at the location it advertises", %{
+      conn: conn,
+      token: token
+    } do
+      # `meta.location` is a promise; RFC 7643 §6 gives each type its own URL.
+      for id <- ["User", "Group"] do
+        body = conn |> auth(token) |> get(~p"/scim/v2/ResourceTypes/#{id}") |> json_response(200)
+        assert body["id"] == id
+      end
+
+      for urn <- [
+            "urn:ietf:params:scim:schemas:core:2.0:User",
+            "urn:ietf:params:scim:schemas:core:2.0:Group"
+          ] do
+        body = conn |> auth(token) |> get(~p"/scim/v2/Schemas/#{urn}") |> json_response(200)
+        assert body["id"] == urn
+      end
+
+      assert conn |> auth(token) |> get(~p"/scim/v2/ResourceTypes/Nope") |> json_response(404)
+      assert conn |> auth(token) |> get(~p"/scim/v2/Schemas/nope") |> json_response(404)
     end
 
     test "GET /Schemas declares the User schema's three attributes", %{conn: conn, token: token} do
       body = conn |> auth(token) |> get(~p"/scim/v2/Schemas") |> json_response(200)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]
-      assert [user_schema] = body["Resources"]
+      schemas = Map.new(body["Resources"], &{&1["id"], &1})
+      user_schema = schemas["urn:ietf:params:scim:schemas:core:2.0:User"]
       assert user_schema["id"] == "urn:ietf:params:scim:schemas:core:2.0:User"
+
+      group_schema = schemas["urn:ietf:params:scim:schemas:core:2.0:Group"]
+      group_attrs = Map.new(group_schema["attributes"], &{&1["name"], &1})
+      assert group_attrs["displayName"]["required"] == true
+      assert group_attrs["members"]["multiValued"] == true
 
       attrs = Map.new(user_schema["attributes"], &{&1["name"], &1})
 

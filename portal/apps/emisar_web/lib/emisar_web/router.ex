@@ -475,7 +475,9 @@ defmodule EmisarWeb.Router do
 
     get "/ServiceProviderConfig", DiscoveryController, :service_provider_config
     get "/ResourceTypes", DiscoveryController, :resource_types
+    get "/ResourceTypes/:id", DiscoveryController, :resource_type
     get "/Schemas", DiscoveryController, :schemas
+    get "/Schemas/:id", DiscoveryController, :schema
 
     get "/Users", UserController, :index
     post "/Users", UserController, :create
