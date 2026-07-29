@@ -1339,21 +1339,26 @@ defmodule Emisar.SSO do
     member_external_ids = attrs[:member_external_ids] || attrs["member_external_ids"] || []
 
     with :ok <- validate_scim_group_values(external_group_id, display, member_external_ids) do
-      desired_ids = resolve_member_identity_ids(provider, member_external_ids)
-
-      with {:ok, {current_provider, affected}} <-
+      with {:ok, {current_provider, affected, member_count}} <-
              Repo.transaction(fn ->
-               _ = refresh_group_display(provider, external_group_id, display)
-               affected = replace_group_members(provider, external_group_id, display, desired_ids)
-               current_provider = prepare_scim_group_authorization_change!(provider, affected)
-               {current_provider, affected}
+               locked_provider = lock_provider!(provider)
+               desired_ids = resolve_member_identity_ids(locked_provider, member_external_ids)
+               _ = refresh_group_display(locked_provider, external_group_id, display)
+
+               affected =
+                 replace_group_members(locked_provider, external_group_id, display, desired_ids)
+
+               current_provider =
+                 prepare_scim_group_authorization_change!(locked_provider, affected)
+
+               {current_provider, affected, length(desired_ids)}
              end),
            :ok <- recompute_role_for_affected(current_provider, affected) do
         {:ok,
          %{
            external_group_id: external_group_id,
            display: display,
-           member_count: length(desired_ids)
+           member_count: member_count
          }}
       end
     end
@@ -1386,15 +1391,18 @@ defmodule Emisar.SSO do
       ) do
     with :ok <- validate_required_scim_string(external_group_id),
          :ok <- validate_scim_patch_member_ids(add_external_ids, remove_external_ids) do
-      add_ids = resolve_member_identity_ids(provider, add_external_ids)
-      remove_ids = resolve_member_identity_ids(provider, remove_external_ids)
-
       with {:ok, {current_provider, added, removed}} <-
              Repo.transaction(fn ->
-               added = add_group_members(provider, external_group_id, add_ids)
-               removed = remove_group_members(provider, external_group_id, remove_ids)
+               locked_provider = lock_provider!(provider)
+               add_ids = resolve_member_identity_ids(locked_provider, add_external_ids)
+               remove_ids = resolve_member_identity_ids(locked_provider, remove_external_ids)
+               added = add_group_members(locked_provider, external_group_id, add_ids)
+               removed = remove_group_members(locked_provider, external_group_id, remove_ids)
                affected = Enum.uniq(added ++ removed)
-               current_provider = prepare_scim_group_authorization_change!(provider, affected)
+
+               current_provider =
+                 prepare_scim_group_authorization_change!(locked_provider, affected)
+
                {current_provider, added, removed}
              end),
            :ok <- recompute_role_for_affected(current_provider, Enum.uniq(added ++ removed)) do
@@ -1404,17 +1412,26 @@ defmodule Emisar.SSO do
     end
   end
 
+  # Serialize every group write on the provider row, BEFORE any membership is
+  # read. Locking only once a diff came out non-empty read the group twice over:
+  # two concurrent PUTs both saw the same "current" set, so a PUT emptying the
+  # group found nothing to remove — a no-op that took no lock and reported
+  # success — while a concurrent PUT adding someone committed, leaving them
+  # privileged after the directory had said they were out.
+  defp lock_provider!(%IdentityProvider{} = provider) do
+    IdentityProvider.Query.not_deleted()
+    |> IdentityProvider.Query.by_account_id(provider.account_id)
+    |> IdentityProvider.Query.by_id(provider.id)
+    |> IdentityProvider.Query.lock_for_update()
+    |> Repo.fetch!(IdentityProvider.Query)
+  end
+
+  # Takes the provider already locked by `lock_provider!/1` — same transaction,
+  # so its `authorization_version` is the current one.
   defp prepare_scim_group_authorization_change!(provider, []), do: provider
 
   defp prepare_scim_group_authorization_change!(provider, identities) do
-    current_provider =
-      IdentityProvider.Query.not_deleted()
-      |> IdentityProvider.Query.by_account_id(provider.account_id)
-      |> IdentityProvider.Query.by_id(provider.id)
-      |> IdentityProvider.Query.lock_for_update()
-      |> Repo.fetch!(IdentityProvider.Query)
-
-    case bump_provider_authorization_version(current_provider) do
+    case bump_provider_authorization_version(provider) do
       {:ok, updated_provider} ->
         {:ok, _version} =
           Accounts.mark_directory_authorization_pending(
