@@ -529,10 +529,19 @@ func highlightControls(session *Session, labels []string) error {
     return box.left >= edge.left - 1 && box.right <= edge.right + 1;
   };
   const paint = el => {
-    // Outward by default, so the outline rings the control instead of cropping
-    // its own last letter — a box drawn 3px inside a label sized to its text cuts
-    // through the text. A full-width control has no room to either side, so that
-    // one insets; the top and bottom are handled by the crop's spacers instead.
+    // A form control gets its ring INSIDE it. Anything drawn outside a control
+    // can be painted over by whatever sits next to it — that is what took the
+    // bottom edge off Keycloak's redirect field — and an inset shadow lives in
+    // the control's own box, above its background and below its text, where
+    // nothing can reach it. Controls have padding, so it never crowds the value.
+    if (el.matches && el.matches('input,select,textarea')) {
+      el.style.boxShadow = 'inset 0 0 0 3px #10b981';
+      el.style.borderRadius = '8px';
+      return true;
+    }
+    // Everything else rings outward, so the line does not cut through the text
+    // of a label sized exactly to it. A full-width target has no room to either
+    // side, so that one insets; top and bottom are handled by the crop's spacers.
     const box = el.getBoundingClientRect();
     const tight = !edge || box.left - edge.left < 6 || edge.right - box.right < 6;
     el.style.outline = '3px solid #10b981';
