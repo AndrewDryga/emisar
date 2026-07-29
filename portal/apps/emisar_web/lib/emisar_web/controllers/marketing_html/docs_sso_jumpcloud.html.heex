@@ -184,13 +184,25 @@
               JumpCloud org.
             </p>
             <p class="mt-4">
-              There is no identifier to reconcile afterwards, which is the part that catches people
-              out on other providers. JumpCloud echoes back the
+              Check that sign-in and the directory agree on who someone is. emisar binds a synced
+              member on the
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-              that directory sync sent it, so the
+              the directory sends, falling back to
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">userName</code>
+              when it sends none — and it binds a sign-in on the
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-              claim arriving at sign-in is already the same value the directory provisioned. One
-              person, one identity, nothing to map.
+              claim. When those two values differ, one person arrives as two members: one
+              provisioned by the directory, one created at their first sign-in.
+            </p>
+            <p class="mt-4">
+              After the first user syncs, open the connection in emisar and compare the identifier
+              on the <strong class="text-zinc-200">Synced users</strong>
+              row with the one that appears after that person signs in. If they match, there is
+              nothing to configure. If they do not, map JumpCloud's provisioning
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+              to whatever its OIDC connector issues as
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+              before you invite anyone else.
             </p>
 
             <.docs_screenshot

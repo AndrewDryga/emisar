@@ -146,11 +146,28 @@ cases:
     action: tf.plan_summary
     env:
       TF_DIR: /packs/terraform-readonly/test/fixtures/plan
-      TF_BIN: /packs/terraform-readonly/test/fixtures/remote/cli-stub.sh
+      TF_BIN: /packs/terraform-readonly/test/fixtures/streams/remote-execution.sh
     expect:
       status: failure
       stderr_contains: [streamed no structured plan output]
       stdout_not_contains: ['"total":0']
+
+  # The stream spells an unchanged output "noop" while a saved plan spells it
+  # "no-op". Matching one spelling made the two paths report different outputs
+  # for the same plan, so both filters run through one predicate now.
+  - name: tf.plan_summary-filters-unchanged-outputs
+    action: tf.plan_summary
+    env:
+      TF_DIR: /packs/terraform-readonly/test/fixtures/plan
+      TF_BIN: /packs/terraform-readonly/test/fixtures/streams/local-noop-outputs.sh
+    expect:
+      stdout_not_contains: [output_0, noop]
+      json:
+        /summary/total: 14
+        /summary/update: 5
+        /summary/replace: 6
+        /summary/read: 3
+        /outputs/0/name: changed_output
 
   - name: tf.plan_file_summary-rejects-traversal
     action: tf.plan_file_summary

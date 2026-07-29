@@ -95,9 +95,11 @@
         its own catalog, and a custom OAuth client — which is what
         the setup above creates — is not one of them, so there is no SCIM connector to point here. Members are
         created on first sign-in at the connection's default role, and nothing removes them
-        automatically: suspending the Google account stops them signing in, which is the control
-        that matters, then remove the member in <strong class="text-zinc-200">Team</strong>
-        to close out their API keys. emisar's connection page hides the sync panel for this
+        automatically. Offboarding is therefore two steps, and the second is the one that ends
+        access: suspending the Google account stops them starting a NEW sign-in, but it does not
+        touch the session they already hold or any API key they minted. Suspend or remove them in
+        <strong class="text-zinc-200">Team</strong>
+        — that is what ends live sessions and revokes their keys. emisar's connection page hides the sync panel for this
         provider rather than offer a feature that could never connect.
       </p>
       <.docs_callout kind={:warn} title="Using Google Workspace?">

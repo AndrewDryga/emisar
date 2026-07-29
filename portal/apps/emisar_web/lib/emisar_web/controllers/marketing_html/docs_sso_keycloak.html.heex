@@ -170,10 +170,11 @@
         roadmap, not in a release. So Keycloak gives you
         single sign-on (above)
         with members created on first sign-in, and nothing else: no role mapping, and nobody
-        removed from emisar when they leave Keycloak. Disabling the Keycloak user stops them signing
-        in, which is the control that matters; remove the member in
-        <strong class="text-zinc-200">Team</strong>
-        to close out the rest.
+        removed from emisar when they leave Keycloak. Offboarding is therefore two steps, and the
+        second is the one that ends access: disabling the Keycloak user stops them starting a NEW
+        sign-in, but it does not touch the session they already hold or any API key they minted.
+        Suspend or remove them in <strong class="text-zinc-200">Team</strong>
+        — that is what ends live sessions and revokes their keys.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The connection still offers directory sync, because emisar's endpoint is ordinary SCIM 2.0

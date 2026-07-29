@@ -28,6 +28,13 @@ def summarize($changes):
     import: ($changes | map(select(.action == "import")) | length)
   };
 
+# Terraform spells an unchanged item two ways depending on the source: the
+# message stream says "noop" while a saved plan says "no-op". Both are review
+# noise, and matching only one spelling made the two paths disagree about the
+# same plan (a real workspace returned 13 unchanged outputs through one and none
+# through the other).
+def is_noop($action): $action == "no-op" or $action == "noop";
+
 def resource_of($source):
   {
     address: ($source.addr // ""),
@@ -50,7 +57,7 @@ def project_stream:
   | [ $messages[]
       | select(.type == "planned_change")
       | .change
-      | select(.action != "no-op")
+      | select(is_noop(.action) | not)
       | resource_of(.resource) + {action: (.action // ""), reason: (.reason // "")}
     ] as $changes
   | {
@@ -64,6 +71,7 @@ def project_stream:
         $messages[]
         | select(.type == "resource_drift")
         | .change
+        | select(is_noop(.action) | not)
         | resource_of(.resource) + {action: (.action // "")}
       ],
       outputs: [
@@ -72,6 +80,7 @@ def project_stream:
         | .outputs
         | to_entries[]
         | {name: .key, action: (.value.action // ""), sensitive: (.value.sensitive == true)}
+        | select(is_noop(.action) | not)
       ],
       diagnostics: [
         $messages[]
@@ -91,7 +100,7 @@ def project_file:
           action: norm_action(.change.actions),
           reason: (.action_reason // "")
         }
-      | select(.action != "no-op")
+      | select(is_noop(.action) | not)
     ] as $changes
   | {
       source: "plan_file",
@@ -106,7 +115,7 @@ def project_file:
             module: (.module_address // ""),
             action: norm_action(.change.actions)
           }
-        | select(.action != "no-op")
+        | select(is_noop(.action) | not)
       ],
       outputs: [
         ($plan.output_changes // {})
@@ -116,7 +125,7 @@ def project_file:
             action: norm_action(.value.actions),
             sensitive: ((.value.after_sensitive == true) or (.value.before_sensitive == true))
           }
-        | select(.action != "no-op")
+        | select(is_noop(.action) | not)
       ],
       diagnostics: []
     };
@@ -144,14 +153,15 @@ live_summary() {
     fail "plan failed with exit status $status"
   fi
 
-  # A workspace whose plans run remotely (HCP Terraform / Terraform Enterprise)
-  # streams the remote run's HUMAN output here and emits only the local CLI's
-  # version message as JSON, so the parseable lines are a truthful-looking but
-  # EMPTY plan. Keep the non-JSON lines out, then refuse to report a summary
-  # unless the run actually delivered its change_summary.
+  # A workspace that does not plan on this host — HCP Terraform / Terraform
+  # Enterprise in remote or agent execution mode — streams the run's HUMAN output
+  # here and emits only the local CLI's version message as JSON, so the parseable
+  # lines are a truthful-looking but EMPTY plan. Keep the non-JSON lines out, then
+  # refuse to report a summary unless the run delivered its change_summary. That
+  # test also passes a genuinely empty plan, which does emit one.
   messages=$(printf '%s\n' "$stream" | jq -Rnc '[inputs | fromjson? // empty]')
   if ! printf '%s' "$messages" | jq -e 'any(.[]; .type == "change_summary")' >/dev/null; then
-    fail "this working directory streamed no structured plan output, so no summary can be trusted — a remote-execution HCP Terraform or Terraform Enterprise workspace behaves this way; review those runs with the hcp-terraform pack instead"
+    fail "this working directory streamed no structured plan output, so no summary can be trusted — an HCP Terraform or Terraform Enterprise workspace in remote or agent execution mode behaves this way; review those runs with the hcp-terraform pack instead"
   fi
   printf '%s' "$messages" | jq -ce "$projection"' project_stream'
 }
