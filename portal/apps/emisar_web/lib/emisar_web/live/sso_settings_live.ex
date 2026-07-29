@@ -129,10 +129,15 @@ defmodule EmisarWeb.SSOSettingsLive do
   # The SSO overview folded into the Team page — /settings/sso is gone; its
   # connections, pending requests, and sign-in link all live on Team now. The
   # per-connection detail (/settings/sso/:id) and Add (/new) stay.
+  # Where single sign-on actually lives: the anchored card on the Team page. The
+  # `:index` route redirects here, so crumbs must link THIS, not the route that
+  # bounces to it.
+  defp sso_card_path(account), do: ~p"/app/#{account}/settings/team" <> "#single-sign-on"
+
   def handle_params(_params, _uri, %{assigns: %{live_action: :index}} = socket) do
     # The fragment lands the operator on Team's Single sign-on card (its DOM id)
     # instead of the top of a long page — docs and old bookmarks deep-link here.
-    destination = ~p"/app/#{socket.assigns.current_account}/settings/team" <> "#single-sign-on"
+    destination = sso_card_path(socket.assigns.current_account)
     {:noreply, push_navigate(socket, to: destination)}
   end
 
@@ -1358,21 +1363,34 @@ defmodule EmisarWeb.SSOSettingsLive do
              other detail page (detail_header family); /new titles itself with
              its JOB (§7.1); the list carries the section name with a back link
              to Team, its owning page (SSO has no nav item of its own). --%>
+        <%!-- SSO has no nav item of its own — it lives on the Team page — so every
+             view here reads Team / Single sign-on / <this page>. The middle crumb
+             points at Team's anchored SSO card, NOT /settings/sso: that route is a
+             pure redirect to exactly this anchor, so linking it made the crumb
+             bounce through a dead stop. --%>
         <%= case {@live_action, @providers} do %>
           <% {:show, [provider | _]} -> %>
-            <%!-- Full crumb chain — SSO lives under Team, so the detail reads
-                 Team / Single sign-on / <provider>, not just Single sign-on / …. --%>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             <.detail_header
               back="Single sign-on"
-              navigate={~p"/app/#{@current_account}/settings/sso"}
+              navigate={sso_card_path(@current_account)}
               title={provider.name}
             />
           <% {:new, _} -> %>
-            <.back_link navigate={~p"/app/#{@current_account}/settings/sso"}>
-              Single sign-on
-            </.back_link>
-            Add an identity provider
+            <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
+            <.detail_header
+              back="Single sign-on"
+              navigate={sso_card_path(@current_account)}
+              title="Add an identity provider"
+            />
+          <% {:edit, [provider | _]} -> %>
+            <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
+            <.back_link navigate={sso_card_path(@current_account)}>Single sign-on</.back_link>
+            <.detail_header
+              back={provider.name}
+              navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+              title="Edit connection"
+            />
           <% _ -> %>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             Single sign-on
@@ -1477,19 +1495,12 @@ defmodule EmisarWeb.SSOSettingsLive do
              collapsed block and never one giant card. --%>
         <div :if={@live_action == :edit} class="max-w-3xl space-y-5">
           <div :for={provider <- @providers} class="space-y-5">
-            <div>
-              <.link
-                navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                class="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200"
-              >
-                <.icon name="hero-arrow-left" class="h-4 w-4" /> {provider.name}
-              </.link>
-              <h2 class="mt-3 text-lg font-semibold text-zinc-100">Edit connection</h2>
-              <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-400">
-                Update this connection's OIDC settings. Leave the client secret blank to keep the
-                stored one.
-              </p>
-            </div>
+            <%!-- No second crumb or heading here: the shell header already reads
+                 Team / Single sign-on / <provider> / Edit connection. --%>
+            <p class="max-w-prose text-sm leading-relaxed text-zinc-400">
+              Update this connection's OIDC settings. Leave the client secret blank to keep the
+              stored one.
+            </p>
 
             <.simple_form
               :if={@edit_form}

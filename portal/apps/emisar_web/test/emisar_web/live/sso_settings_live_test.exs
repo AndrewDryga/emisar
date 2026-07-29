@@ -466,6 +466,32 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
+    test "every SSO view reads one crumb chain rooted at Team", %{conn: conn, account: account} do
+      provider = insert_provider(account, %{name: "Acme Okta"})
+
+      {:ok, _lv, add} = live(conn, ~p"/app/#{account}/settings/sso/new")
+      {:ok, _lv, detail} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      {:ok, _lv, edit} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
+
+      # SSO has no nav item of its own, so every view starts at Team — /new used
+      # to start at "Single sign-on" and read as a different feature.
+      for html <- [add, detail, edit] do
+        assert html =~ "Team"
+        assert html =~ "Single sign-on"
+      end
+
+      assert add =~ "Add an identity provider"
+      assert detail =~ "Acme Okta"
+      assert edit =~ "Edit connection"
+
+      # The middle crumb points at Team's anchored card. /settings/sso is a pure
+      # redirect to that anchor, so linking it made the crumb bounce.
+      team_card = ~p"/app/#{account}/settings/team" <> "#single-sign-on"
+      assert add =~ team_card
+      refute add =~ ~s(href="#{~p"/app/#{account}/settings/sso"}")
+      refute detail =~ ~s(href="#{~p"/app/#{account}/settings/sso"}")
+    end
+
     test "the help rail labels sections when sync is on, and explains the gap when it's off", %{
       conn: conn,
       user: user,
