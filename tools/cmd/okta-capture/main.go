@@ -87,11 +87,14 @@ func submitPasscode(code string) string {
 }
 
 func main() {
-	var secretsPath, outDir, only string
+	var secretsPath, outDir, only, flow string
 	var headless bool
 	flag.StringVar(&secretsPath, "secrets", "portal/.agent/secrets/okta-integrator.env", "creds env file")
 	flag.StringVar(&outDir, "out", "", "directory for captured PNGs")
 	flag.StringVar(&only, "only", "", "comma-separated screen names (default: all)")
+	// The flow otherwise comes from OKTA_FLOW in the secrets FILE, so exporting it
+	// in the shell silently did nothing and the run took the other branch.
+	flag.StringVar(&flow, "flow", "", `which walkthrough to capture ("oidc"; default: provisioning)`)
 	flag.BoolVar(&headless, "headless", true, "run Chrome headless")
 	flag.Parse()
 
@@ -102,6 +105,9 @@ func main() {
 	env, err := readEnv(secretsPath)
 	if err != nil {
 		fail(err)
+	}
+	if flow != "" {
+		env["OKTA_FLOW"] = flow
 	}
 	if err := run(env, outDir, only, headless); err != nil {
 		fail(err)
@@ -974,6 +980,79 @@ func tickEnableAPIIntegration(ctx context.Context) error {
 // oidcFlow captures the sign-in half: a confidential OIDC web app whose only
 // redirect URI is emisar's callback. Separate from the SCIM app by necessity —
 // Okta won't put provisioning on an OIDC integration.
+// oidcCredentialsShot photographs the two values the operator carries back to
+// emisar, on the OIDC app that is already there. Kept separate from the creation
+// walkthrough above precisely so the walkthrough can cancel: nothing in this
+// capture needs a freshly minted app, and minting one per run littered the org.
+func oidcCredentialsShot(
+	ctx context.Context,
+	env map[string]string,
+	shoot func(string) error,
+	settle func(int) error,
+) error {
+	if err := chromedp.Run(ctx, chromedp.Navigate(env["OKTA_ADMIN_URL"]+"/admin/apps/active")); err != nil {
+		return err
+	}
+	if err := settle(8); err != nil {
+		return err
+	}
+	if err := clearMFA(ctx, env); err != nil {
+		return err
+	}
+	// Wait for the list to paint before clicking into it — the click otherwise
+	// lands on nothing and the failure only surfaces two steps later.
+	listed, err := waitForText(ctx, "emisar", 10)
+	if err != nil {
+		return err
+	}
+	if !listed {
+		_ = reportPage(ctx)
+		return fmt.Errorf("the applications list never rendered")
+	}
+	// The OIDC app is named "emisar"; the SCIM one is "SCIM 2.0 Test App (Header
+	// Auth)", so an exact-text match cannot pick the wrong one.
+	opened, err := clickText(ctx, "emisar")
+	if err != nil {
+		return err
+	}
+	if !opened {
+		_ = reportPage(ctx)
+		return fmt.Errorf("no OIDC app named %q in the applications list", "emisar")
+	}
+	if err := settle(8); err != nil {
+		return err
+	}
+	if err := clearMFA(ctx, env); err != nil {
+		return err
+	}
+	// Wait for the card, do not guess at a settle: the first run highlighted
+	// nothing because both lookups ran while the app page was still painting,
+	// then the screenshot caught it fully loaded and looked simply un-highlighted.
+	shown, err := waitForText(ctx, "Client Credentials", 10)
+	if err != nil {
+		return err
+	}
+	if !shown {
+		return fmt.Errorf("the app's Client Credentials card never rendered")
+	}
+	// Box what the step says to copy — the id with its help text, and the secrets
+	// table — rather than the whole Client Credentials card, which would swallow
+	// the settings the reader must NOT touch.
+	if err := highlightGroup(ctx, "Client ID", "required for all"); err != nil {
+		return err
+	}
+	// Anchor INSIDE the secrets block, not on its heading: climbing from the
+	// heading reached a container that also held Client authentication and PKCE —
+	// the two settings this step tells the reader to leave alone.
+	if err := highlightGroup(ctx, "Generate new secret", "Creation date"); err != nil {
+		return err
+	}
+	if err := shoot("oidc-04-client-credentials"); err != nil {
+		return err
+	}
+	return reportPage(ctx)
+}
+
 func oidcFlow(
 	ctx context.Context,
 	env map[string]string,
@@ -1004,7 +1083,15 @@ func oidcFlow(
 		return err
 	}
 	// Shot AFTER both radios are set — a blank dialog doesn't show the reader
-	// which options to pick, which is the whole point of this screen.
+	// which options to pick, which is the whole point of this screen. Box each
+	// chosen option TOGETHER WITH its help text: the radio label alone is a
+	// hairline in a dialog of eight near-identical rows.
+	if err := highlightGroup(ctx, "OIDC - OpenID Connect", "Okta Sign-In Widget"); err != nil {
+		return err
+	}
+	if err := highlightGroup(ctx, "Web Application", "Node.js, PHP"); err != nil {
+		return err
+	}
 	if err := shoot("oidc-01-create-dialog"); err != nil {
 		return err
 	}
@@ -1040,23 +1127,36 @@ func oidcFlow(
 	if err := settle(2); err != nil {
 		return err
 	}
-	// Frame the shot on the redirect URIs — the thing this step is about.
+	// Frame the shot on the redirect URIs — the thing this step is about — and
+	// box BOTH things the step's prose asks for: the grant type it leaves alone
+	// and the callback it fills in. Each box takes the whole labelled row, so it
+	// frames the area to look at instead of sitting on top of the words.
 	if err := scrollToText(ctx, "Sign-in redirect URIs"); err != nil {
+		return err
+	}
+	if err := highlightGroup(ctx, "Authorization Code", "Grant type"); err != nil {
+		return err
+	}
+	// Match on "Add URI", not the URL: the callback lives in an <input value=…>,
+	// which is NOT part of textContent, so climbing for it never matched and the
+	// outline ended up around a page-level container. "Add URI" is real text in
+	// the same row's right-hand column.
+	if err := highlightGroup(ctx, "Sign-in redirect URIs", "Add URI"); err != nil {
 		return err
 	}
 	if err := shoot("oidc-03-new-web-app"); err != nil {
 		return err
 	}
-	if err := step("Save"); err != nil {
+	// CANCEL, not Save. This form is only reachable while creating an app, so
+	// saving it would mint a duplicate "emisar" integration on every capture run
+	// — the credentials shot below comes from the app that already exists.
+	if err := step("Cancel"); err != nil {
 		return err
 	}
-	if err := settle(8); err != nil {
+	if err := settle(5); err != nil {
 		return err
 	}
-	if err := shoot("oidc-04-client-credentials"); err != nil {
-		return err
-	}
-	return reportPage(ctx)
+	return oidcCredentialsShot(ctx, env, shoot, settle)
 }
 
 // typeRealKeysSelector types into the first match for a CSS selector, for fields
