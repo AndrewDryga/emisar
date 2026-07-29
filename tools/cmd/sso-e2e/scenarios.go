@@ -197,19 +197,57 @@ func (d *driver) testGroupLifecycle() {
 	}
 	logf("groups: the last operation on a member wins ✓")
 
+	// A pathless replace carrying BOTH attributes must apply both. Treating any
+	// such map containing displayName as a rename dropped `members` silently —
+	// the endpoint answered 200 while the people the directory had just removed
+	// kept the group's mapped role.
+	multi := map[string]any{
+		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []map[string]any{{
+			"op": "replace",
+			"value": map[string]any{
+				"displayName": "E2E Both",
+				"members":     []map[string]any{{"value": d.aliceKCID}},
+			},
+		}},
+	}
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/e2e-empty", multi); status != 200 {
+		fail("pathless multi-attribute replace: %d %v", status, resp)
+	}
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/e2e-empty", nil)
+	if status != 200 || resp["displayName"] != "E2E Both" {
+		fail("the rename half was dropped: %d %v", status, resp)
+	}
+	if len(resp["members"].([]any)) != 1 {
+		fail("the members half was dropped: %v", resp["members"])
+	}
+	logf("groups: a pathless replace naming both attributes applies both ✓")
+
+	// DELETE removes the resource; a group we never saw is not found.
+	if status, _ := d.scim(http.MethodDelete, "/scim/v2/Groups/e2e-early", nil); status != 204 {
+		fail("DELETE should answer 204, got %d", status)
+	}
+	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/e2e-early", nil); status != 404 {
+		fail("a deleted group must be gone, GET answered %d", status)
+	}
+	if status, _ := d.scim(http.MethodDelete, "/scim/v2/Groups/e2e-never", nil); status != 404 {
+		fail("deleting a group we never saw must be 404, got %d", status)
+	}
+	logf("groups: DELETE removes the resource and refuses an unknown one ✓")
+
 	// PUT is a whole-set replace bound to the PATH id, never the body's.
 	crossed := map[string]any{
 		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
-		"externalId":  "e2e-early",
+		"externalId":  "e2e-crossed",
 		"displayName": "Should Not Move",
 		"members":     []map[string]any{{"value": d.aliceKCID}},
 	}
 	if status, resp := d.scim(http.MethodPut, "/scim/v2/Groups/e2e-empty", crossed); status != 200 {
 		fail("PUT: %d %v", status, resp)
 	}
-	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/e2e-early", nil)
-	if status != 200 || len(resp["members"].([]any)) != 0 {
-		fail("PUT must not touch the group named only in the BODY: %v", resp)
+	// The body named e2e-crossed; it must not have been created or touched.
+	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/e2e-crossed", nil); status != 404 {
+		fail("PUT must not touch the group named only in the BODY, GET answered %d", status)
 	}
 	logf("groups: PUT writes the path's group, not the body's ✓")
 }

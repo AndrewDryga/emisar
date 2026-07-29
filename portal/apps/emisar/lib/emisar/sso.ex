@@ -1498,6 +1498,35 @@ defmodule Emisar.SSO do
   end
 
   @doc """
+  Internal — SCIM `DELETE /Groups/{id}`: retire the group and take its members'
+  grants with it. `{:ok, group_summary}`; `{:error, :not_found}` for a group this
+  directory never pushed, because answering 204 for one invents it.
+  """
+  def scim_delete_group(%IdentityProvider{} = provider, external_group_id) do
+    with :ok <- validate_required_scim_string(external_group_id),
+         {:ok, _group} <- scim_fetch_group(provider, external_group_id),
+         {:ok, summary} <-
+           scim_upsert_group(provider, %{
+             external_id: external_group_id,
+             member_external_ids: []
+           }) do
+      # Emptying it revoked what it granted; retiring the ROW is what makes the
+      # resource gone. Deleting used to call the upsert alone, so a GET right
+      # after a 204 still answered 200 — and deleting a group we had never seen
+      # CREATED it.
+      queryable =
+        DirectoryGroup.Query.not_deleted()
+        |> DirectoryGroup.Query.by_account_id(provider.account_id)
+        |> DirectoryGroup.Query.by_provider_id(provider.id)
+        |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+
+      now = DateTime.utc_now()
+      Repo.update_all(queryable, set: [deleted_at: now, updated_at: now])
+      {:ok, summary}
+    end
+  end
+
+  @doc """
   Internal — SCIM group rename: move a synced group's human name without touching
   its id. The id is what the IdP addresses the group by and stays put; the new
   display lands on the group's membership rows and on any role mapping of it.
@@ -1754,12 +1783,20 @@ defmodule Emisar.SSO do
   defp groups_ever_synced?(%IdentityProvider{} = provider),
     do: not provider_maps_any_group?(provider)
 
+  # Runner access is mapped from groups too, so a connection that maps ONLY
+  # runner access still has a snapshot to wait for. Checking role mappings alone
+  # let it treat the empty pre-push state as authoritative and replace mapped
+  # access with the connection default.
   defp provider_maps_any_group?(%IdentityProvider{} = provider) do
-    queryable =
+    roles =
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_provider_id(provider.id)
 
-    Repo.exists?(queryable)
+    access =
+      GroupRunnerAccessMapping.Query.not_deleted()
+      |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
+
+    Repo.exists?(roles) or Repo.exists?(access)
   end
 
   # Apply the recomputed authorization in one membership transaction. Accounts
@@ -2109,10 +2146,30 @@ defmodule Emisar.SSO do
   def list_synced_groups(%IdentityProvider{} = provider, %Subject{} = subject) do
     with :ok <- ensure_can_manage_sso(subject),
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
-      groups =
+      # Existence comes from the GROUP rows, the same source the SCIM reads use.
+      # Deriving it from member rows here meant an empty group — which the
+      # directory has genuinely pushed — could not be picked for a mapping,
+      # because the console could not see it at all.
+      counts =
         DirectoryGroupMember.Query.not_deleted()
         |> DirectoryGroupMember.Query.group_counts_for_provider(provider.id)
         |> Repo.all()
+        |> Map.new(&{&1.external_group_id, &1})
+
+      groups =
+        DirectoryGroup.Query.not_deleted()
+        |> DirectoryGroup.Query.by_account_id(provider.account_id)
+        |> DirectoryGroup.Query.by_provider_id(provider.id)
+        |> DirectoryGroup.Query.ordered_by_external_group_id()
+        |> Repo.all()
+        |> Enum.map(fn group ->
+          counted = Map.get(counts, group.external_group_id, %{})
+
+          %{
+            external_group_id: group.external_group_id,
+            member_count: Map.get(counted, :member_count, 0)
+          }
+        end)
 
       {:ok, groups}
     end

@@ -870,10 +870,29 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
-    test "DELETE of an unknown/never-pushed group → 204 no-op", %{conn: conn, token: token} do
-      # Upsert-to-empty on a group that was never pushed is a harmless no-op; the
-      # upsert always succeeds, so DELETE answers 204 (idempotent).
-      assert conn |> auth(token) |> delete(~p"/scim/v2/Groups/grp-never") |> response(204)
+    test "DELETE of a group this directory never pushed → 404", %{conn: conn, token: token} do
+      # It used to answer 204 by upserting the group to empty — which CREATED
+      # it. RFC 7644 §3.6 wants 404 for a resource that is not there, and an IdP
+      # deleting something we have never seen is drift worth reporting, not
+      # something to absorb silently.
+      assert conn |> auth(token) |> delete(~p"/scim/v2/Groups/grp-never") |> response(404)
+      assert conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-never") |> response(404)
+    end
+
+    test "DELETE removes the group, not just its members", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      provision(provider, "okta|deleted-group-member")
+
+      conn
+      |> auth(token)
+      |> post(~p"/scim/v2/Groups", group_payload("grp-bye", ["okta|deleted-group-member"]))
+      |> json_response(201)
+
+      assert conn |> auth(token) |> delete(~p"/scim/v2/Groups/grp-bye") |> response(204)
+      assert conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-bye") |> response(404)
     end
 
     test "DELETE; a member also in another mapped group recomputes to the remaining highest",

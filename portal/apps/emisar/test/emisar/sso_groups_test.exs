@@ -320,6 +320,44 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
+  describe "scim_delete_group/2" do
+    setup do
+      scim_provider()
+    end
+
+    test "retires the group and revokes what it granted", %{provider: provider, subject: subject} do
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-gone", role: :admin},
+          subject
+        )
+
+      %{identity: identity} = provision(provider, "okta|member")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-gone",
+          member_external_ids: ["okta|member"]
+        })
+
+      assert role_of(provider.account_id, identity.user_id) == :admin
+
+      assert {:ok, _} = SSO.scim_delete_group(provider, "grp-gone")
+
+      # Gone means gone — deleting used to empty the members and leave the row,
+      # so the very next GET still answered 200.
+      assert {:error, :not_found} = SSO.scim_fetch_group(provider, "grp-gone")
+      assert role_of(provider.account_id, identity.user_id) == :viewer
+    end
+
+    test "a group this directory never pushed is not found", %{provider: provider} do
+      # Answering 204 for an unknown id used to CREATE it.
+      assert {:error, :not_found} = SSO.scim_delete_group(provider, "grp-never")
+      assert {:error, :not_found} = SSO.scim_fetch_group(provider, "grp-never")
+    end
+  end
+
   describe "end_account_sessions_for_user/2" do
     test "ends the sessions this account minted, and only those" do
       %{provider: provider, account: account} = scim_provider()

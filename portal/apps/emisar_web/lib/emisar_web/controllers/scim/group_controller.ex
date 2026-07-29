@@ -81,7 +81,8 @@ defmodule EmisarWeb.SCIM.GroupController do
     # rename only as the SOLE operation sent an otherwise valid
     # `replace displayName` + `add members` batch into the member fold, where the
     # rename classified as unsupported and the whole request 400'd.
-    {renames, member_operations} = Enum.split_with(operations, &rename_op?/1)
+    {renames, member_operations} =
+      operations |> Enum.flat_map(&split_pathless_attributes/1) |> Enum.split_with(&rename_op?/1)
 
     # Members first, then the rename. The display is a single scalar, so its
     # position in the batch cannot change the final state — but the name is
@@ -113,6 +114,25 @@ defmodule EmisarWeb.SCIM.GroupController do
 
   # Two shapes carry a rename: a pathless `replace` whose value map holds
   # displayName, and a `replace` with `path: "displayName"` and a bare string.
+  # A pathless `replace` carries a MAP of attributes, and it may name more than
+  # one. Treating any such map containing `displayName` as a rename dropped
+  # `members` on the floor — the endpoint answered 200 while the people the
+  # directory had just removed kept the group's mapped role and runner access.
+  # Split it into one operation per attribute so each reaches its own handler.
+  defp split_pathless_attributes(%{"value" => %{} = value} = op) do
+    path = Map.get(op, "path")
+
+    if replace?(op) and (is_nil(path) or path == "") and map_size(value) > 1 do
+      Enum.map(value, fn {attribute, attribute_value} ->
+        op |> Map.put("path", attribute) |> Map.put("value", attribute_value)
+      end)
+    else
+      [op]
+    end
+  end
+
+  defp split_pathless_attributes(op), do: [op]
+
   defp rename_op?(op), do: rename_display(op) != nil
 
   defp renamed(summary, []), do: summary
@@ -185,11 +205,9 @@ defmodule EmisarWeb.SCIM.GroupController do
   # the affected members' roles (a group delete is "nobody is in it anymore").
   # 204 No Content; the upsert always succeeds (see the moduledoc).
   def delete(conn, %{"id" => external_id}) do
-    provider = conn.assigns.scim_provider
-    attrs = %{external_id: external_id, display: nil, member_external_ids: []}
-
-    case SSO.scim_upsert_group(provider, attrs) do
+    case SSO.scim_delete_group(conn.assigns.scim_provider, external_id) do
       {:ok, _summary} -> send_resp(conn, :no_content, "")
+      {:error, :not_found} -> not_found(conn, external_id)
       {:error, reason} -> render_error(conn, reason)
     end
   end
