@@ -336,11 +336,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert provider
       assert_redirect(lv, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      # The schema's documented defaults: stable identifier is `sub`, the
-      # provider satisfies the account MFA gate, and it's created DISABLED so it
+      # The schema's documented defaults: stable identifier is `sub`, the provider
+      # does NOT satisfy the account MFA gate — trusting someone else's second
+      # factor is a deliberate claim, and defaulting it on let a password-only
+      # OIDC server bypass the requirement — and it's created DISABLED so it
       # can't be signed in through until the admin explicitly turns it on.
       assert provider.identifier_claim == :sub
-      assert provider.satisfies_mfa == true
+      assert provider.satisfies_mfa == false
       assert provider.enabled == false
       assert provider.provisioner == :jit
       assert provider.default_runner_access_mode == :none

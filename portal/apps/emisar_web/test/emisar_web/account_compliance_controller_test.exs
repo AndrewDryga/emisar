@@ -20,8 +20,10 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
   @redirect "https://claude.ai/api/mcp/auth_callback"
   @resource EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
 
+  # `satisfies_mfa` is opt-in — trusting someone else's second factor is a claim
+  # the operator makes deliberately — so these MFA-exemption cases say so.
   defp enabled_provider(account),
-    do: Fixtures.SSO.create_identity_provider(account_id: account.id)
+    do: Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: true)
 
   defp require_sso!(account),
     do: Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
