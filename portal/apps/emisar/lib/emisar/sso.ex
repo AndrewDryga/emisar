@@ -1880,6 +1880,23 @@ defmodule Emisar.SSO do
       |> Repo.all()
 
     Accounts.clear_directory_managed_for_users(provider.account_id, user_ids)
+    drop_group_snapshot(provider)
+  end
+
+  # The group memberships are a snapshot of what the directory last pushed, and
+  # they are only true while it is pushing. Kept across a disable/re-enable, the
+  # first user to sync recomputed their role from a stale snapshot — restoring an
+  # admin role or a runner grant the directory may have revoked while sync was
+  # off, before any fresh group push could correct it. Turning sync off discards
+  # it; turning sync back on starts from what the directory actually says.
+  defp drop_group_snapshot(%IdentityProvider{} = provider) do
+    now = DateTime.utc_now()
+
+    DirectoryGroupMember.Query.not_deleted()
+    |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
+    |> DirectoryGroupMember.Query.by_provider_id(provider.id)
+    |> Repo.update_all(set: [deleted_at: now, updated_at: now])
+
     :ok
   end
 

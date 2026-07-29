@@ -16,6 +16,9 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
     )
   end
 
+  def by_provider_id(queryable \\ all(), provider_id),
+    do: where(queryable, [group_members: g], g.provider_id == ^provider_id)
+
   def by_user_identity_id(queryable, user_identity_id),
     do: where(queryable, [group_members: g], g.user_identity_id == ^user_identity_id)
 

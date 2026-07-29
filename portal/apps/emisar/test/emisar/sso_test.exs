@@ -2614,6 +2614,41 @@ defmodule Emisar.SSOTest do
       assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw)
     end
 
+    test "discards the group snapshot, so re-enabling can't restore a revoked role", %{
+      subject: subject,
+      provider: provider,
+      account: account
+    } do
+      # The group memberships are only true while the directory is pushing them.
+      # Kept across a disable/re-enable, the first user to sync recomputed their
+      # role from a stale snapshot — handing back an admin role the directory may
+      # have revoked while sync was off, before any fresh push could correct it.
+      {:ok, provider, _raw} = SSO.enable_scim(provider, subject)
+
+      {:ok, _} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+
+      %{identity: identity} = provision(provider, "okta|snapshot")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          member_external_ids: ["okta|snapshot"]
+        })
+
+      assert role_of(account.id, identity.user_id) == :admin
+
+      assert {:ok, disabled} = SSO.disable_scim(provider, subject)
+      {:ok, reenabled, _raw} = SSO.enable_scim(disabled, subject)
+
+      assert {:ok, []} = SSO.list_synced_groups(reenabled, subject)
+
+      # A user-first re-sync now lands them at the connection default, not the
+      # admin role the old snapshot remembered.
+      %{identity: resynced} = provision(reenabled, "okta|snapshot")
+      assert role_of(account.id, resynced.user_id) == :viewer
+    end
+
     test "a downgraded plan can still retire the bearer", %{
       subject: subject,
       provider: provider,

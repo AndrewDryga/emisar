@@ -1596,7 +1596,8 @@ defmodule Emisar.Accounts do
         # A MANUAL suspension is a break-glass hold: the IdP re-activating the
         # user must not reinstate them (no-op; the operator lifts it locally).
         with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
-             :ok <- ensure_directory_suspended(loaded_membership) do
+             :ok <- ensure_directory_suspended(loaded_membership),
+             :ok <- ensure_directory_owner(loaded_membership, provider) do
           Membership.Changeset.reinstate(loaded_membership)
         else
           {:error, reason} -> reason
@@ -1610,6 +1611,21 @@ defmodule Emisar.Accounts do
 
   defp ensure_directory_suspended(%Membership{directory_suspended: true}), do: :ok
   defp ensure_directory_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}
+
+  # An account can run more than one connection. A suspension belongs to the one
+  # that placed it, so a second connection re-activating the same person cannot
+  # lift it — its `active: true` is news about ITS directory, not this one's. A
+  # membership no connection has claimed stays open to whichever acts first,
+  # matching `Membership.Query.by_directory_provider_or_unmanaged/2`.
+  defp ensure_directory_owner(%Membership{directory_provider_id: nil}, _provider), do: :ok
+
+  defp ensure_directory_owner(%Membership{directory_provider_id: id}, %SSO.IdentityProvider{
+         id: id
+       }),
+       do: :ok
+
+  defp ensure_directory_owner(%Membership{} = membership, _provider),
+    do: {:error, {:noop, membership}}
 
   @doc """
   Internal - SCIM's one locked authorization write. Role and runner access are
@@ -1799,6 +1815,12 @@ defmodule Emisar.Accounts do
         runner_access_directory_managed: false,
         directory_provider_id: nil,
         directory_authorization_pending_version: nil,
+        # The suspension STAYS — the directory's last word was that this person is
+        # out — but it stops being the directory's to lift, because there is no
+        # longer a directory to lift it. Left set, `reinstate_membership` refused
+        # with :deactivated_in_idp against an IdP that no longer exists here, and
+        # the member could never be recovered by anyone.
+        directory_suspended: false,
         updated_at: DateTime.utc_now()
       ]
     )

@@ -2283,6 +2283,44 @@ defmodule Emisar.AccountsTest do
       assert Membership.disabled?(Repo.reload!(member))
     end
 
+    test "a second connection can't lift the suspension the first one placed", %{
+      account: account,
+      provider: provider
+    } do
+      # An account can run more than one connection. The other directory saying
+      # "active" is news about ITS directory, not this one's, and letting it
+      # through reinstated someone the owning directory had deprovisioned.
+      # A different kind — an account runs at most one enabled connection per kind.
+      other_provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :entra)
+
+      user = Fixtures.Users.create_user()
+
+      {:ok, member} =
+        Accounts.provision_sso_membership(
+          account.id,
+          user.id,
+          :operator,
+          Accounts.RunnerAccess.none(),
+          directory_managed?: true,
+          directory_provider: provider
+        )
+
+      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
+
+      assert {:ok, %Membership{} = returned} =
+               Accounts.sync_reinstate_membership(suspended, other_provider)
+
+      assert Membership.disabled?(returned)
+      assert Membership.disabled?(Repo.reload!(member))
+
+      # The connection that placed it still can.
+      assert {:ok, %Membership{} = reinstated} =
+               Accounts.sync_reinstate_membership(suspended, provider)
+
+      refute Membership.disabled?(reinstated)
+    end
+
     test "is idempotent — reactivating a not-suspended member is a no-op", %{
       account: account,
       provider: provider
@@ -2370,6 +2408,39 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "clear_directory_managed_for_users/2" do
+    test "an operator can reinstate a member the removed directory had deactivated" do
+      # Suspended by a directory that no longer exists: `reinstate_membership`
+      # refuses a `directory_suspended` row on the reasoning that only the IdP may
+      # lift what the IdP placed, so with the IdP gone the member was suspended
+      # permanently, by nobody.
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
+
+      assert {:error, :deactivated_in_idp} = Accounts.reinstate_membership(suspended, subject)
+
+      Accounts.clear_directory_managed_for_users(account.id, [member.user_id])
+
+      # The suspension stands — the directory's last word was that they are out —
+      # but it is now an operator's to lift.
+      freed = Repo.reload!(member)
+      assert Membership.disabled?(freed)
+      refute freed.directory_suspended
+
+      assert {:ok, %Membership{} = reinstated} = Accounts.reinstate_membership(freed, subject)
+      refute Membership.disabled?(reinstated)
+    end
+
     test "clears the flag only for the named members, leaving other synced members" do
       account = Fixtures.Accounts.create_account()
       freed = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
