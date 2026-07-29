@@ -182,11 +182,11 @@ var docsShots = []shot{
 // unsaved create-client form never leaves an extra client behind, while the
 // seeded emisar-portal client supplies the masked secret and assigned scopes.
 var keycloakShots = []shot{
-	{Name: "keycloak-client-general", Keycloak: true, Anchor: Anchor{Selector: "#kc-main-content-page-container form"}, Width: docsWidth, Output: "docs/sso/keycloak-client-general.webp"},
-	{Name: "keycloak-client-capabilities", Keycloak: true, Anchor: Anchor{Selector: `[data-testid="capability-config-form"]`}, Width: docsWidth, Output: "docs/sso/keycloak-client-capabilities.webp"},
-	{Name: "keycloak-client-redirect", Keycloak: true, Anchor: Anchor{Selector: "#kc-main-content-page-container form"}, Width: docsWidth, Output: "docs/sso/keycloak-client-redirect.webp"},
-	{Name: "keycloak-client-secret", Keycloak: true, Anchor: Anchor{Selector: `#kc-main-content-page-container section[role="tabpanel"]`}, Width: docsWidth, TopCSS: 355, Output: "docs/sso/keycloak-client-secret.webp"},
-	{Name: "keycloak-client-scopes", Keycloak: true, Anchor: Anchor{Selector: `table[aria-label="Client scopes"]`}, Width: docsWidth, Output: "docs/sso/keycloak-client-scopes.webp"},
+	{Name: "keycloak-client-general", Keycloak: true, Anchor: Anchor{Selector: "#kc-main-content-page-container form"}, Highlight: []string{"Client type", "Client ID"}, Width: docsWidth, Output: "docs/sso/keycloak-client-general.webp"},
+	{Name: "keycloak-client-capabilities", Keycloak: true, Anchor: Anchor{Selector: `[data-testid="capability-config-form"]`}, Highlight: []string{"Client authentication", "Standard flow", "Require PKCE", "PKCE Method"}, Width: docsWidth, Output: "docs/sso/keycloak-client-capabilities.webp"},
+	{Name: "keycloak-client-redirect", Keycloak: true, Anchor: Anchor{Selector: "#kc-main-content-page-container form"}, Highlight: []string{`css:[data-testid="redirectUris0"]`}, Width: docsWidth, Output: "docs/sso/keycloak-client-redirect.webp"},
+	{Name: "keycloak-client-secret", Keycloak: true, Anchor: Anchor{Selector: `#kc-main-content-page-container section[role="tabpanel"]`}, Highlight: []string{"Client Secret"}, Width: docsWidth, TopCSS: 355, Output: "docs/sso/keycloak-client-secret.webp"},
+	{Name: "keycloak-client-scopes", Keycloak: true, Anchor: Anchor{Selector: `table[aria-label="Client scopes"]`}, Highlight: []string{"row:email", "row:profile"}, Width: docsWidth, Output: "docs/sso/keycloak-client-scopes.webp"},
 }
 
 // loopFrames are the /security approval-loop cast frames. They are NOT
@@ -509,44 +509,88 @@ func rgbHex(value string) string {
 // console a step is in. A label that matches nothing FAILS the capture — a shot
 // that silently loses its outline is a broken instruction, which is exactly how
 // the Okta lifecycle screenshot shipped bare.
+// highlightControls outlines the control each label names. Two prefixes change
+// what gets outlined: "row:" takes the whole table row the text sits in — a list
+// where the reader is being pointed at two entries among a dozen, not at a field
+// — and "css:" names the control outright, for a widget whose label belongs to
+// no single input (a repeating multi-value field).
 func highlightControls(session *Session, labels []string) error {
 	for _, label := range labels {
+		wanted, row := strings.CutPrefix(label, "row:")
+		wanted, direct := strings.CutPrefix(wanted, "css:")
 		script := fmt.Sprintf(`(function(){
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const hits = [...document.querySelectorAll('label,legend,h2,h3,p,span,div')]
+  const crop = document.querySelector('[data-shot="1"]');
+  const edge = crop ? crop.getBoundingClientRect() : null;
+  const inside = el => {
+    if (!edge) return true;
+    const box = el.getBoundingClientRect();
+    return box.left >= edge.left - 1 && box.right <= edge.right + 1;
+  };
+  const paint = el => {
+    // Outward by default, so the outline rings the control instead of cropping
+    // its own last letter — a box drawn 3px inside a label sized to its text cuts
+    // through the text. A full-width control has no room to either side, so that
+    // one insets; the top and bottom are handled by the crop's spacers instead.
+    const box = el.getBoundingClientRect();
+    const tight = !edge || box.left - edge.left < 6 || edge.right - box.right < 6;
+    el.style.outline = '3px solid #10b981';
+    el.style.outlineOffset = tight ? '-3px' : '3px';
+    el.style.borderRadius = '8px';
+    return true;
+  };
+  if (%t) {
+    const direct = document.querySelector(%q);
+    return direct && visible(direct) ? paint(direct) : false;
+  }
+  const hits = [...document.querySelectorAll('label,legend,h2,h3,p,span,div,td,th,a')]
     .filter(el => visible(el) && (el.textContent || '').trim() === %q)
     .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
   let node = hits[0];
   if (!node) return false;
+  if (%t) {
+    const tr = node.closest('tr');
+    return tr ? paint(tr) : false;
+  }
   // A <label for=...> names its control outright; take that rather than guessing
   // by climbing. The climb below can drift onto a NEIGHBOUR's input and outline
-  // the wrong thing while still reporting success — which it did once.
-  const named = node.getAttribute && node.getAttribute('for')
-    ? document.getElementById(node.getAttribute('for'))
-    : null;
-  if (named && visible(named)) {
-    named.style.outline = '3px solid #10b981';
-    named.style.outlineOffset = '-3px';
-    named.style.borderRadius = '8px';
-    return true;
+  // the wrong thing while still reporting success — which it did once. The text
+  // is often a span INSIDE that label, so look up as well as at the node itself.
+  const field = 'input,select,textarea,[role=radio],[role=checkbox]';
+  const labelled = node.closest('label[for]') || (node.getAttribute('for') ? node : null);
+  let control = labelled ? document.getElementById(labelled.getAttribute('for')) : null;
+  if (!control) {
+    // Climb to the field group, then outline the CONTROL inside it. Outlining the
+    // group itself puts the line on the crop boundary, where the element
+    // screenshot clips it away — which is how a "highlighted" shot came back with
+    // one green edge showing.
+    // Inputs before buttons, in two passes. A form group's help popover is a
+    // <button> that usually sits closer to the label than the control does, so
+    // one combined search outlined the "?" icon and called it a hit.
+    for (let up = 0; up < 4 && node.parentElement; up++) {
+      if (node.querySelector(field)) break;
+      node = node.parentElement;
+    }
+    control = node.querySelector(field) || node.querySelector('button') || node;
   }
-  // Climb to the field group, then outline the CONTROL inside it. Outlining the
-  // group itself puts the line on the crop boundary, where the element
-  // screenshot clips it away — which is how a "highlighted" shot came back with
-  // one green edge showing.
-  for (let up = 0; up < 4 && node.parentElement; up++) {
-    if (node.querySelector('input,select,textarea,button,[role=radio],[role=checkbox]')) break;
-    node = node.parentElement;
+  // A tick box on its own reads as a stray green square; the reader is being
+  // pointed at the option, which is the box together with its wording.
+  if (control.matches && control.matches('input[type=checkbox],input[type=radio]') && control.parentElement) {
+    control = control.parentElement;
   }
-  node = node.querySelector('input,select,textarea,button,[role=radio],[role=checkbox]') || node;
-  // INSET. A control that fills its group's width has no room outside it, so an
-  // outward outline is clipped at the crop boundary and only the top and bottom
-  // survive. Drawn inside, all four edges are in the picture.
-  node.style.outline = '3px solid #10b981';
-  node.style.outlineOffset = '-3px';
-  node.style.borderRadius = '8px';
-  return true;
-})()`, label)
+  // A switch paints a sibling and hides its real input, so an outline on the
+  // input draws nothing at all. Walk out to the first ancestor with a box.
+  while (control && !visible(control) && control.parentElement) control = control.parentElement;
+  if (!control) return false;
+  // A multi-value field (Keycloak's redirect URIs) has no label/for and its
+  // group runs wider than the crop, so the outline's right edge fell outside the
+  // picture. Narrow to the control inside it that the reader can actually see.
+  if (!inside(control)) {
+    const inner = [...control.querySelectorAll(field)].find(el => visible(el) && inside(el));
+    if (inner) control = inner;
+  }
+  return paint(control);
+})()`, direct, wanted, wanted, row)
 		var marked bool
 		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &marked)); err != nil {
 			return err
@@ -591,10 +635,18 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
   const el = document.querySelector('[data-shot="1"]');
   if (!el) return false;
   if (el.querySelector('[data-shot-spacer]')) return true;
-  const pad = document.createElement('div');
-  pad.setAttribute('data-shot-spacer', '1');
-  pad.style.height = '12px';
-  el.appendChild(pad);
+  const pad = () => {
+    const el = document.createElement('div');
+    el.setAttribute('data-shot-spacer', '1');
+    el.style.height = '12px';
+    return el;
+  };
+  // Both ends. A control on the crop's TOP edge has the same problem as one on
+  // its bottom, and there is no offset that rings a control on one edge without
+  // cutting through its label on the other — outline-offset is one value for all
+  // four sides.
+  el.insertBefore(pad(), el.firstChild);
+  el.appendChild(pad());
   return true;
 })()`
 			if err := chromedp.Run(session.Context, chromedp.Evaluate(spacer, nil)); err != nil {
