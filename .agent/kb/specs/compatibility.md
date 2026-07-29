@@ -156,6 +156,16 @@ inputs are strict: unknown or renamed fields are rejected. The bridge
 identifies itself as `emisar-mcp/<version>` and the current bridge
 threshold is `mcp_minimum >= 0.3.0`, also warn-only in production today.
 
+OAuth client registration accepts both mechanisms. A Client ID Metadata
+Document client presents an HTTPS document URL as its `client_id`; the
+authorization server fetches and validates that document on every
+authorization and the client is addressed only by that URL thereafter.
+Deprecated Dynamic Client Registration (`POST /oauth/register`) still works
+and its clients are addressed only by the issued id. Support is advertised as
+`client_id_metadata_document_supported` alongside
+`authorization_response_iss_parameter_supported` (RFC 9207) in the
+authorization-server metadata.
+
 **What happens on skew.** An older client calling a renamed or removed tool
 gets JSON-RPC `method-not-found`. A stray or renamed input field is rejected;
 it is not silently ignored. A new optional input field or a new tool is

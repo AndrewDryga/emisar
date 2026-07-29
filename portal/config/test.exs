@@ -120,3 +120,7 @@ config :sentry, dsn: nil
 # shared fixed-window counters; `EmisarWeb.RateLimiter.check/3` is unit-tested
 # directly instead (see rate_limiter_test.exs).
 config :emisar_web, rate_limit_enabled: false
+
+# Dev/test metadata documents are served from loopback, which the CIMD SSRF
+# boundary refuses by default. Never set in production.
+config :emisar, Emisar.OAuth.ClientMetadataDocument, allow_private_hosts: true

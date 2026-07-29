@@ -26,6 +26,20 @@ defmodule Emisar.OAuthTest do
     client
   end
 
+  # A client the authorization step materialized from its published metadata
+  # document. Built through the document changeset so the row matches what a
+  # real fetch would upsert, without standing up an HTTPS document server.
+  defp metadata_document_client!(url) do
+    document = %{
+      "client_id" => url,
+      "client_name" => "Metadata Client",
+      "redirect_uris" => [@redirect]
+    }
+
+    {:ok, client} = document |> Client.Changeset.from_metadata_document(url) |> Repo.insert()
+    client
+  end
+
   defp backdate_registration(%Client{id: id}, days) do
     ts = DateTime.add(DateTime.utc_now(), days * 86_400, :second)
     {1, _} = Client.Query.by_id(id) |> Repo.update_all(set: [inserted_at: ts])
@@ -143,6 +157,15 @@ defmodule Emisar.OAuthTest do
 
     test "a non-binary client_id is a clean :not_found (the guard's fallback clause)" do
       assert {:error, :not_found} = OAuth.fetch_client(nil)
+    end
+
+    test "a metadata-document URL whose document cannot be retrieved is :not_found" do
+      Emisar.Config.put_override(:emisar, Emisar.OAuth.ClientMetadataDocument,
+        allow_private_hosts: false
+      )
+
+      assert {:error, :not_found} = OAuth.fetch_client("https://127.0.0.1/client-metadata.json")
+      refute Repo.one(Client)
     end
   end
 
@@ -306,6 +329,63 @@ defmodule Emisar.OAuthTest do
 
       assert acct.id == account.id
       assert key.kind == :mcp
+    end
+
+    test "a metadata-document client exchanges by presenting its URL, not the row id",
+         %{subject: subject} do
+      url = "https://app.example.com/oauth/client-metadata.json"
+      client = metadata_document_client!(url)
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      # The row id must NOT authenticate the exchange: the client's identity is
+      # the document URL it presented at authorization.
+      assert {:error, :invalid_grant} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => client.id,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier
+               })
+
+      assert {:ok, tokens} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => url,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier
+               })
+
+      assert "emo-" <> _ = tokens.access_token
+    end
+
+    test "another client's metadata URL cannot exchange this client's code", %{subject: subject} do
+      client = metadata_document_client!("https://app.example.com/oauth/client-metadata.json")
+      metadata_document_client!("https://evil.example.com/oauth/client-metadata.json")
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      assert {:error, :invalid_grant} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => "https://evil.example.com/oauth/client-metadata.json",
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier
+               })
+    end
+
+    test "an unknown metadata URL never resolves to a client", %{subject: subject} do
+      client = metadata_document_client!("https://app.example.com/oauth/client-metadata.json")
+      {verifier, challenge} = pkce()
+      code = issue!(subject, client, challenge)
+
+      assert {:error, :invalid_grant} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => "https://never-seen.example.com/client.json",
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier
+               })
     end
 
     test "the backing key is minted NON-expiring so a long-lived OAuth connection never breaks on key expiry",

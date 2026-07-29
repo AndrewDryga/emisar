@@ -26,7 +26,7 @@ defmodule Emisar.OAuth do
   alias Emisar.{Accounts, ApiKeys, Audit, Crypto, Repo}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
-  alias Emisar.OAuth.{AuthorizationCode, Client, Jobs, Token}
+  alias Emisar.OAuth.{AuthorizationCode, Client, ClientMetadataDocument, Jobs, Token}
 
   @code_ttl_s 60
   @access_ttl_s 3_600
@@ -86,9 +86,28 @@ defmodule Emisar.OAuth do
 
   defp registration_metadata(_params), do: %{}
 
-  @doc "Internal — OAuth authorize/token controllers: load a client by its client_id (the client_id is the credential, resolved pre-Subject)."
+  @doc """
+  Internal — the OAuth authorize controller: resolve a client by the
+  `client_id` it presented (the client_id is the credential, resolved
+  pre-Subject).
+
+  An HTTPS URL is a Client ID Metadata Document: its document is fetched and
+  validated on every authorization, and the resulting row is upserted so the
+  live document — not a months-old registration — decides the client's name and
+  redirect URIs. Any other value is a Dynamic Client Registration id.
+  """
   @spec fetch_client(String.t()) :: {:ok, Client.t()} | {:error, :not_found}
   def fetch_client(client_id) when is_binary(client_id) do
+    if ClientMetadataDocument.metadata_url?(client_id) do
+      fetch_metadata_document_client(client_id)
+    else
+      fetch_registered_client(client_id)
+    end
+  end
+
+  def fetch_client(_), do: {:error, :not_found}
+
+  defp fetch_registered_client(client_id) do
     # A connector can send any string here; guard the binary_id cast so a
     # malformed client_id is a clean "not found", not a 500.
     if Repo.valid_uuid?(client_id) do
@@ -98,7 +117,54 @@ defmodule Emisar.OAuth do
     end
   end
 
-  def fetch_client(_), do: {:error, :not_found}
+  defp fetch_metadata_document_client(url) do
+    with {:ok, document} <- ClientMetadataDocument.fetch(url),
+         changeset = Client.Changeset.from_metadata_document(document, url),
+         {:ok, client} <- upsert_metadata_document_client(changeset) do
+      {:ok, client}
+    else
+      _reason -> {:error, :not_found}
+    end
+  end
+
+  # Keyed by the document URL, so a re-authorization refreshes the same row
+  # rather than accumulating one per consent. `last_authorized_at` is left out
+  # of the replace list: it is our own consent history, not the client's to
+  # reset by republishing its document.
+  defp upsert_metadata_document_client(changeset) do
+    Repo.insert(changeset,
+      on_conflict:
+        {:replace,
+         [
+           :client_name,
+           :redirect_uris,
+           :grant_types,
+           :response_types,
+           :scope,
+           :metadata,
+           :updated_at
+         ]},
+      conflict_target:
+        {:unsafe_fragment, "(client_id_metadata_url) WHERE client_id_metadata_url IS NOT NULL"},
+      returning: true
+    )
+  end
+
+  # A grant records the client's row id; the token endpoint receives whatever
+  # identifier the client presents. Compare against that client's ONE canonical
+  # identity: a metadata-document client is addressed only by its document URL,
+  # a registered client only by its issued id. Never dereference the presented
+  # URL here — a code exists only because authorization already fetched and
+  # validated the document.
+  defp presented_client_matches?(repo, granted_client_id, presented) do
+    queryable = Client.Query.all() |> Client.Query.by_id(granted_client_id)
+
+    case repo.one(queryable) do
+      %Client{client_id_metadata_url: url} when is_binary(url) -> url == presented
+      %Client{id: id} -> id == presented
+      nil -> false
+    end
+  end
 
   # -- Authorization (consent → code) ---------------------------------
 
@@ -205,7 +271,8 @@ defmodule Emisar.OAuth do
 
       with %AuthorizationCode{} <- code,
            :ok <- check_code_live(code),
-           :ok <- check(code.client_id == client_id, :invalid_grant),
+           :ok <-
+             check(presented_client_matches?(repo, code.client_id, client_id), :invalid_grant),
            :ok <- check(constant_eq(code.redirect_uri, redirect_uri), :invalid_grant),
            :ok <- check(resource_param_ok?(code.resource, params["resource"]), :invalid_target),
            :ok <- check(valid_code_verifier?(verifier), :invalid_grant),
@@ -261,7 +328,8 @@ defmodule Emisar.OAuth do
         |> repo.one()
 
       with %Token{} <- token,
-           :ok <- check(token.client_id == client_id, :invalid_grant),
+           :ok <-
+             check(presented_client_matches?(repo, token.client_id, client_id), :invalid_grant),
            :ok <- check(resource_param_ok?(token.resource, params["resource"]), :invalid_target),
            :ok <- check(live?(token.refresh_expires_at), :invalid_grant),
            # Fail closed when the backing api_key has been revoked / deleted /

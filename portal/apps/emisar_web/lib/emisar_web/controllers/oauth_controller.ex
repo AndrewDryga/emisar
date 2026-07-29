@@ -4,8 +4,12 @@ defmodule EmisarWeb.OAuthController do
   ChatGPT). Implements exactly the subset the MCP authorization spec
   requires:
 
-    * `POST /oauth/register` — Dynamic Client Registration (RFC 7591).
-      Public; the client self-registers and gets back a `client_id`.
+    * Client ID Metadata Documents — the preferred mechanism: the client
+      identifies itself by an HTTPS URL that `Emisar.OAuth` resolves and
+      validates at /authorize. There is no endpoint to call.
+    * `POST /oauth/register` — Dynamic Client Registration (RFC 7591),
+      deprecated but still supported. Public; the client self-registers
+      and gets back a `client_id`.
     * `GET  /oauth/authorize` — renders a consent screen to the
       logged-in operator (behind `:require_authenticated_user`).
     * `POST /oauth/authorize` — records the consent decision; on approve
@@ -35,6 +39,13 @@ defmodule EmisarWeb.OAuthController do
 
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "oauth_token", limit: 60, window_ms: 60_000] when action == :token
+
+  # Authorizing a Client ID Metadata Document client makes the server fetch the
+  # client's own URL, so cap how often one caller can trigger that outbound
+  # request even though the endpoint already requires a signed-in operator.
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "oauth_authorize", limit: 60, window_ms: 60_000]
+       when action in [:authorize, :authorize_submit]
 
   defp put_noindex(conn, _opts), do: assign(conn, :noindex, true)
 

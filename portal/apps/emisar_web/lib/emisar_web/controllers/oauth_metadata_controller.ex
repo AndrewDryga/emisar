@@ -42,7 +42,10 @@ defmodule EmisarWeb.OAuthMetadataController do
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: OAuth.supported_scopes(),
       # RFC 9207 — authorization responses carry `iss` for mix-up detection.
-      authorization_response_iss_parameter_supported: true
+      authorization_response_iss_parameter_supported: true,
+      # A client may identify itself by an HTTPS metadata-document URL instead
+      # of registering; MCP clients prefer this over deprecated DCR.
+      client_id_metadata_document_supported: true
     })
   end
 end

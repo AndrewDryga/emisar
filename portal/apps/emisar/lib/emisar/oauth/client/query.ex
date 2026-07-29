@@ -6,6 +6,9 @@ defmodule Emisar.OAuth.Client.Query do
 
   def by_id(queryable \\ all(), id), do: where(queryable, [clients: c], c.id == ^id)
 
+  def by_metadata_url(queryable \\ all(), url),
+    do: where(queryable, [clients: c], c.client_id_metadata_url == ^url)
+
   # Never-authorized registrations (no operator ever consented) registered
   # before `cutoff` — the daily sweep's prune set. A once-authorized client is
   # never matched here (its `last_authorized_at` is set), so a live connection
