@@ -15,6 +15,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
   use EmisarWeb, :live_view
   alias Emisar.Accounts
   alias Emisar.Users
+  alias EmisarWeb.LiveForm
 
   def mount(%{"token" => token}, _session, socket) do
     case Accounts.fetch_invitation_by_token(token, preload: [:account, :user]) do
@@ -178,11 +179,11 @@ defmodule EmisarWeb.AcceptInvitationLive do
     """
   end
 
-  def handle_event("validate", %{"user" => params}, socket) do
+  def handle_event("validate", %{"user" => params} = event, socket) do
     changeset =
       socket.assigns.membership.user
       |> Users.change_user(%{"full_name" => params["full_name"] || ""})
-      |> Map.put(:action, :validate)
+      |> LiveForm.on_change(event)
 
     {:noreply, assign_form(socket, changeset)}
   end

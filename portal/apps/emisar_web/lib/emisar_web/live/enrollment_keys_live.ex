@@ -1,7 +1,7 @@
 defmodule EmisarWeb.EnrollmentKeysLive do
   use EmisarWeb, :live_view
   alias Emisar.Runners
-  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
@@ -57,8 +57,8 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     end
   end
 
-  def handle_event("validate", %{"enrollment_key" => params}, socket) do
-    changeset = Runners.change_enrollment_key(params) |> Map.put(:action, :validate)
+  def handle_event("validate", %{"enrollment_key" => params} = event, socket) do
+    changeset = Runners.change_enrollment_key(params) |> LiveForm.on_change(event)
     {:noreply, assign_form(socket, changeset)}
   end
 

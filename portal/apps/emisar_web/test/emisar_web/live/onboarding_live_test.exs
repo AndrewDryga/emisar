@@ -181,10 +181,14 @@ defmodule EmisarWeb.OnboardingLiveTest do
     test "phx-change surfaces a blank-name error inline without submitting", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/onboarding")
 
+      # `_target` is the field the operator is editing. A browser always sends it;
+      # the test helper only does when asked, so pass it — clearing the name is
+      # exactly the case that SHOULD report blank straight away, and without the
+      # target this reads as an untouched field and stays quiet.
       html =
         lv
         |> form("#onboarding_form", %{"account" => %{"name" => ""}})
-        |> render_change()
+        |> render_change(%{"_target" => ["account", "name"]})
 
       assert html =~ "can&#39;t be blank"
     end

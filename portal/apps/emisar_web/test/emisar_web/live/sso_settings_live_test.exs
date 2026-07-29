@@ -149,6 +149,54 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert invalid =~ "Choose at least one runner group or runner for selected access."
     end
 
+    test "picking a provider type doesn't accuse the operator of blank fields", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      # A `phx-change` carries every field in the form, so marking the changeset
+      # validated on change used to put "can't be blank" under Issuer URL the
+      # moment a provider was picked — before the cursor had ever been in it.
+      # `_target` is what a browser sends to say which field was edited; the test
+      # helper omits it unless asked, so pass it or this proves nothing.
+      changed =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "entra"}})
+        |> render_change(%{"_target" => ["provider", "kind"]})
+
+      refute changed =~ "can&#39;t be blank"
+
+      # Clearing a field the operator IS editing still reports blank at once —
+      # the quiet is for fields they have not reached, not for the one in hand.
+      cleared =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "entra", "name" => ""}})
+        |> render_change(%{"_target" => ["provider", "name"]})
+
+      assert cleared =~ "can&#39;t be blank"
+
+      # A value they DID type still reports straight away: that is feedback about
+      # their own input, not an accusation about input they have not given yet.
+      typed =
+        lv
+        |> form("#provider_form", %{
+          "provider" => %{"kind" => "entra", "issuer" => "http://login.example.com"}
+        })
+        |> render_change()
+
+      assert typed =~ "must be an https URL"
+
+      # And suppressing the error on change must not skip the validation: a blank
+      # required field still fails on submit.
+      submitted =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "entra", "issuer" => ""}})
+        |> render_submit()
+
+      assert submitted =~ "can&#39;t be blank"
+    end
+
     test "the edit page renders the form without leaking the stored secret", %{
       conn: conn,
       account: account

@@ -10,6 +10,7 @@ defmodule EmisarWeb.OnboardingLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.Accounts
+  alias EmisarWeb.LiveForm
 
   def mount(_params, _session, socket) do
     {:ok,
@@ -60,11 +61,11 @@ defmodule EmisarWeb.OnboardingLive do
     """
   end
 
-  def handle_event("validate", %{"account" => params}, socket) do
+  def handle_event("validate", %{"account" => params} = event, socket) do
     changeset =
       %Accounts.Account{}
       |> Accounts.change_account(params)
-      |> Map.put(:action, :validate)
+      |> LiveForm.on_change(event)
 
     {:noreply, assign_form(socket, changeset)}
   end

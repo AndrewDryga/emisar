@@ -26,7 +26,7 @@ defmodule EmisarWeb.AgentsLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{ApiKeys, Compat}
-  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
   @active_threshold_secs 5 * 60
@@ -134,8 +134,8 @@ defmodule EmisarWeb.AgentsLive do
     )
   end
 
-  def handle_event("validate", %{"api_key" => params}, socket) do
-    changeset = ApiKeys.change_key(params) |> Map.put(:action, :validate)
+  def handle_event("validate", %{"api_key" => params} = event, socket) do
+    changeset = ApiKeys.change_key(params) |> LiveForm.on_change(event)
     {:noreply, assign_form(socket, changeset)}
   end
 

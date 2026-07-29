@@ -1,7 +1,7 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Auth, Users}
-  alias EmisarWeb.RegistrationHandoff
+  alias EmisarWeb.{LiveForm, RegistrationHandoff}
 
   # The landing page's CTA collects a work email and GETs here with it; carry it
   # into the form so the operator doesn't retype what they just typed.
@@ -105,7 +105,7 @@ defmodule EmisarWeb.UserSignUpLive do
     changeset =
       %Emisar.Users.User{}
       |> Users.change_user(params)
-      |> Map.put(:action, :validate)
+      |> LiveForm.on_change(all)
 
     {:noreply,
      socket

@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, Users}
-  alias EmisarWeb.{LiveTable, UserAgent}
+  alias EmisarWeb.{LiveForm, LiveTable, UserAgent}
   alias Phoenix.LiveView.JS
 
   def mount(_params, session, socket) do
@@ -94,11 +94,11 @@ defmodule EmisarWeb.ProfileLive do
   defp current_session_digest(nil), do: nil
   defp current_session_digest(token) when is_binary(token), do: Emisar.Crypto.hash(token)
 
-  def handle_event("validate_profile", %{"profile" => params}, socket) do
+  def handle_event("validate_profile", %{"profile" => params} = event, socket) do
     changeset =
       socket.assigns.current_user
       |> Users.change_user(params)
-      |> Map.put(:action, :validate)
+      |> LiveForm.on_change(event)
 
     {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
   end
@@ -125,11 +125,11 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
-  def handle_event("validate_email", %{"email" => params}, socket) do
+  def handle_event("validate_email", %{"email" => params} = event, socket) do
     changeset =
       socket.assigns.current_user
       |> Users.change_user(%{"email" => params["email"] || ""})
-      |> Map.put(:action, :validate)
+      |> LiveForm.on_change(event)
 
     {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
   end

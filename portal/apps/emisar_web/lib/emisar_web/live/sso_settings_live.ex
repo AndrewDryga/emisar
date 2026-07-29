@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, MailTo, Permissions, RunnerScope}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, MailTo, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
@@ -360,15 +360,14 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  def handle_event("validate", %{"provider" => params}, socket) do
+  def handle_event("validate", %{"provider" => params} = event, socket) do
     params =
       params
       |> prefill_fixed_issuer()
       |> prefill_identifier_claim()
       |> normalize_provider_access(socket.assigns.runners)
 
-    changeset =
-      SSO.change_provider(%SSO.IdentityProvider{}, params) |> Map.put(:action, :validate)
+    changeset = SSO.change_provider(%SSO.IdentityProvider{}, params) |> LiveForm.on_change(event)
 
     {:noreply, socket |> assign_form(changeset) |> assign(:test_result, nil)}
   end
@@ -438,13 +437,17 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # -- Role mapping -------------------------------------------
 
-  def handle_event("validate_mapping", %{"provider_id" => id, "mapping" => params}, socket) do
+  def handle_event(
+        "validate_mapping",
+        %{"provider_id" => id, "mapping" => params} = event,
+        socket
+      ) do
     case find_provider(socket, id) do
       nil ->
         {:noreply, socket}
 
       provider ->
-        changeset = mapping_changeset(provider, params) |> Map.put(:action, :validate)
+        changeset = mapping_changeset(provider, params) |> LiveForm.on_change(event)
         {:noreply, put_mapping_form(socket, id, mapping_to_form(provider, changeset))}
     end
   end
@@ -1129,7 +1132,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     changeset =
       mapping
       |> SSO.change_group_mapping(params)
-      |> Map.put(:action, :validate)
+      |> LiveForm.on_change()
 
     to_form(changeset, as: "mapping", id: "edit-mapping-#{mapping.id}")
   end

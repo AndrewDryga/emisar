@@ -9,7 +9,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runbooks, Runners}
-  alias EmisarWeb.Permissions
+  alias EmisarWeb.{LiveForm, Permissions}
   alias Phoenix.LiveView.JS
 
   def mount(params, _session, socket) do
@@ -151,7 +151,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
     changeset =
       Runbooks.change_runbook(%{"title" => title, "slug" => slug, "description" => description})
-      |> Map.put(:action, :validate)
+      |> LiveForm.on_change(params)
 
     {:noreply,
      socket
