@@ -82,7 +82,10 @@ defmodule EmisarWeb.SCIM.GroupController do
     # `replace displayName` + `add members` batch into the member fold, where the
     # rename classified as unsupported and the whole request 400'd.
     {renames, member_operations} =
-      operations |> Enum.flat_map(&split_pathless_attributes/1) |> Enum.split_with(&rename_op?/1)
+      operations
+      |> Enum.flat_map(&split_pathless_attributes/1)
+      |> Enum.reject(&settles_external_id?(&1, external_id))
+      |> Enum.split_with(&rename_op?/1)
 
     # Members first, then the rename. The display is a single scalar, so its
     # position in the batch cannot change the final state — but the name is
@@ -133,6 +136,20 @@ defmodule EmisarWeb.SCIM.GroupController do
 
   defp split_pathless_attributes(op), do: [op]
 
+  # Entra reads a group back after creating it and PATCHes `externalId` to the
+  # value it expects. That value is our resource id, so the operation asks for
+  # what is already true — but answering 400 stopped the group's sync dead and
+  # left its role mapping permanently unapplied. A PATCH setting `externalId` to
+  # THIS group's id is accepted as the no-op it is; one naming a different id is
+  # left in place to be refused, because moving a resource is not something we do.
+  defp settles_external_id?(op, external_id) do
+    replace?(op) and external_id_path?(Map.get(op, "path")) and
+      Map.get(op, "value") == external_id
+  end
+
+  defp external_id_path?(path) when is_binary(path), do: downcase(path) == "externalid"
+  defp external_id_path?(_path), do: false
+
   defp rename_op?(op), do: rename_display(op) != nil
 
   defp renamed(summary, []), do: summary
@@ -154,6 +171,15 @@ defmodule EmisarWeb.SCIM.GroupController do
   defp rename_display(_op), do: nil
 
   defp replace?(op), do: downcase(Map.get(op, "op")) == "replace"
+
+  # Nothing left to apply — the batch was only a rename, or only the externalId
+  # no-op Entra sends. Answer with the group as it stands.
+  defp patch_members(conn, provider, external_id, [], []) do
+    case SSO.scim_fetch_group(provider, external_id) do
+      {:ok, group} -> render_group(conn, :ok, group, group.member_external_ids)
+      {:error, reason} -> render_error(conn, reason)
+    end
+  end
 
   # A batch of nothing but renames has no membership to reconcile.
   defp patch_members(conn, provider, external_id, [], renames) do

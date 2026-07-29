@@ -137,6 +137,24 @@ func (d *driver) testGroupLifecycle() {
 	}
 	logf("groups: an empty group exists and round-trips ✓")
 
+	// Entra reads a group back after creating it and PATCHes `externalId` to what
+	// it expects. Answering 400 stopped that group's sync dead and left its role
+	// mapping permanently unapplied — so the field is served, and the PATCH that
+	// asks for what is already true is accepted.
+	if resp["externalId"] != "e2e-empty" {
+		fail("a group must serve its externalId, got %v", resp["externalId"])
+	}
+	settle := map[string]any{
+		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []map[string]any{
+			{"op": "replace", "path": "externalId", "value": "e2e-empty"},
+		},
+	}
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/e2e-empty", settle); status != 200 {
+		fail("the externalId PATCH Entra sends must be accepted: %d %v", status, resp)
+	}
+	logf("groups: externalId is served, and Entra's settling PATCH accepted ✓")
+
 	// The displayName probe Entra sends before every push.
 	status, resp = d.scim(http.MethodGet, filterPath("Groups", `displayName eq "E2E Empty"`), nil)
 	if status != 200 || resp["totalResults"].(float64) != 1 {
@@ -359,6 +377,26 @@ func (d *driver) testUserOrdering() {
 		fail("reactivation did not take: %d %v", status, resp)
 	}
 	logf("users: reactivation restores the member ✓")
+
+	// A rename the directory pushed must READ BACK. Serving no name at all made
+	// every provider believe the rename had not applied.
+	rename := map[string]any{
+		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []map[string]any{
+			{"op": "replace", "value": map[string]any{"displayName": "Renamed Dave"}},
+		},
+	}
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/e2e-dave", rename); status != 200 {
+		fail("rename: %d %v", status, resp)
+	}
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Users/e2e-dave", nil)
+	if status != 200 || resp["displayName"] != "Renamed Dave" {
+		fail("a pushed name must read back: %d %v", status, resp)
+	}
+	if name, ok := resp["name"].(map[string]any); !ok || name["formatted"] != "Renamed Dave" {
+		fail("`name.formatted` must be served too: %v", resp["name"])
+	}
+	logf("users: a pushed name reads back on displayName and name ✓")
 
 	// The handle a create returns is the one a filter finds. When it was not,
 	// an IdP re-created the same person on every cycle.

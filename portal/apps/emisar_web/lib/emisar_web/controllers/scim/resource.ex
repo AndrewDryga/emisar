@@ -47,6 +47,10 @@ defmodule EmisarWeb.SCIM.Resource do
   defp to_user(%SSO.UserIdentity{} = identity, user) do
     external_id = identity.scim_external_id || identity.provider_identifier
 
+    # `displayName` and `name` are what the IdP wrote and expects to read back.
+    # Omitting them made a rename look like it had not applied: the directory
+    # pushed a new name, we stored it, and every subsequent read answered with no
+    # name at all.
     %{
       "schemas" => [@user_schema],
       "id" => external_id,
@@ -55,7 +59,16 @@ defmodule EmisarWeb.SCIM.Resource do
       "active" => identity.scim_active,
       "meta" => %{"resourceType" => "User"}
     }
+    |> put_name(user)
   end
+
+  defp put_name(resource, %{full_name: name}) when is_binary(name) and name != "" do
+    resource
+    |> Map.put("displayName", name)
+    |> Map.put("name", %{"formatted" => name})
+  end
+
+  defp put_name(resource, _user), do: resource
 
   # userName prefers the user's email (the human-readable handle IdPs expect),
   # then a `preferred_username`/`nickname` claim if the IdP asserted one, and
@@ -203,9 +216,14 @@ defmodule EmisarWeb.SCIM.Resource do
     external_id = summary[:external_group_id] || summary["external_group_id"]
     display = summary[:display] || summary["display"] || external_id
 
+    # `externalId` matters as much on a group as on a user. Without it Entra reads
+    # back the group it just created, sees the field missing, and PATCHes to set
+    # it — a PATCH we answer 400 to, which stops that group's sync dead and
+    # leaves its role mapping permanently unapplied.
     %{
       "schemas" => [@group_schema],
       "id" => external_id,
+      "externalId" => external_id,
       "displayName" => display,
       "members" => Enum.map(member_external_ids, &%{"value" => &1}),
       "meta" => %{"resourceType" => "Group"}

@@ -109,12 +109,12 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   end
 
   @impl Emisar.SSO.OIDC
-  def discover(%IdentityProvider{issuer: issuer}) do
+  def discover(%IdentityProvider{issuer: issuer} = provider) do
     # One-shot discovery (no worker lifecycle) over the SAME TLS verification as
     # the login flow, so a passing test truly predicts a reachable IdP. Fetches
     # `<issuer>/.well-known/openid-configuration`; the issuer is SSRF-validated
     # upstream in the context.
-    case Oidcc.ProviderConfiguration.load_configuration(issuer, %{request_opts: request_opts()}) do
+    case Oidcc.ProviderConfiguration.load_configuration(issuer, configuration_opts(provider)) do
       {:ok, {config, _expiry}} ->
         with :ok <- ensure_endpoints_reachable(config) do
           {:ok,
@@ -244,7 +244,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     :ok
   end
 
-  defp ensure_worker(%IdentityProvider{id: id, issuer: issuer} = provider) do
+  defp ensure_worker(%IdentityProvider{} = provider) do
     # Validate the document BEFORE any worker exists. Starting the worker is what
     # performs the SSRF: its `load_configuration` continuation chains straight
     # into `load_jwks`, so by the time a `get_provider_configuration` call could
@@ -255,7 +255,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     # issuer — a host already SSRF-validated in the context — so doing it
     # ourselves first costs one request and gives us the endpoints to judge.
     with :ok <- ensure_issuer_document_reachable(provider),
-         {:ok, pid} <- start_worker(id, issuer) do
+         {:ok, pid} <- start_worker(provider) do
       # The pre-flight judged the document WE fetched. The worker fetches its
       # own, and refetches on the expiry timer for as long as it lives — none of
       # which the pre-flight ever sees. So the document the worker is actually
@@ -272,14 +272,14 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     end
   end
 
-  defp ensure_issuer_document_reachable(%IdentityProvider{issuer: issuer}) do
-    case Oidcc.ProviderConfiguration.load_configuration(issuer, %{request_opts: request_opts()}) do
+  defp ensure_issuer_document_reachable(%IdentityProvider{issuer: issuer} = provider) do
+    case Oidcc.ProviderConfiguration.load_configuration(issuer, configuration_opts(provider)) do
       {:ok, {config, _expiry}} -> ensure_endpoints_reachable(config)
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp start_worker(id, issuer) do
+  defp start_worker(%IdentityProvider{id: id, issuer: issuer} = provider) do
     # Keyed by {id, issuer}: an issuer edit routes to a fresh worker (the old
     # one idles out) instead of serving stale discovery/JWKS — cluster-safe,
     # no cross-node invalidation needed.
@@ -288,7 +288,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     worker_opts = %{
       issuer: issuer,
       name: name,
-      provider_configuration_opts: %{request_opts: request_opts()}
+      provider_configuration_opts: configuration_opts(provider)
     }
 
     spec = %{
@@ -328,6 +328,22 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   end
 
   # httpc TLS: verify the IdP's cert chain + hostname against the OS CA store.
+  # Entra supports PKCE (S256) for the authorization-code flow and simply does not
+  # say so in its discovery document — a long-standing Microsoft gap. oidcc reads
+  # that silence literally and refuses to start the flow
+  # (`:no_supported_code_challenge`), so SSO through Entra could not begin at all.
+  # The override states what the provider actually does; it is scoped to the kind
+  # because assuming it everywhere would let us send a challenge an IdP ignores
+  # and quietly lose the protection we think we have.
+  defp configuration_opts(%IdentityProvider{kind: :entra}) do
+    %{
+      request_opts: request_opts(),
+      quirks: %{document_overrides: %{code_challenge_methods_supported: [<<"S256">>]}}
+    }
+  end
+
+  defp configuration_opts(%IdentityProvider{}), do: %{request_opts: request_opts()}
+
   defp request_opts do
     %{
       ssl: [
