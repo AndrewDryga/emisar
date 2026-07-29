@@ -77,6 +77,7 @@ cases:
         /summary/update: 1
         /summary/delete: 1
         /summary/replace: 1
+        /summary/drifted: 1
         /drift/0/address: aws_security_group.web
         /outputs/0/name: db_password
         /outputs/0/sensitive: true

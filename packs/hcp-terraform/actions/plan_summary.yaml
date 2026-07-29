@@ -45,7 +45,7 @@ output:
       summary:
         type: object
         additionalProperties: false
-        required: [total, create, update, delete, replace, read, import]
+        required: [total, create, update, delete, replace, read, import, drifted]
         properties:
           total: {type: integer, minimum: 0}
           create: {type: integer, minimum: 0}
@@ -54,6 +54,7 @@ output:
           replace: {type: integer, minimum: 0}
           read: {type: integer, minimum: 0}
           import: {type: integer, minimum: 0}
+          drifted: {type: integer, minimum: 0}
       changes:
         type: array
         items:

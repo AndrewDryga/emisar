@@ -17,7 +17,7 @@ cli() {
 # schema, and neither ever reads an attribute or output VALUE — a saved plan
 # stores those in cleartext, sensitive ones included.
 readonly projection='
-def summarize($changes):
+def summarize($changes; $drift):
   {
     total: ($changes | length),
     create: ($changes | map(select(.action == "create")) | length),
@@ -25,7 +25,8 @@ def summarize($changes):
     delete: ($changes | map(select(.action == "delete")) | length),
     replace: ($changes | map(select(.action == "replace")) | length),
     read: ($changes | map(select(.action == "read")) | length),
-    import: ($changes | map(select(.action == "import")) | length)
+    import: ($changes | map(select(.action == "import")) | length),
+    drifted: ($drift | length)
   };
 
 # Terraform spells an unchanged item two ways depending on the source: the
@@ -60,20 +61,20 @@ def project_stream:
       | select(is_noop(.action) | not)
       | resource_of(.resource) + {action: (.action // ""), reason: (.reason // "")}
     ] as $changes
+  | [ $messages[]
+      | select(.type == "resource_drift")
+      | .change
+      | select(is_noop(.action) | not)
+      | resource_of(.resource) + {action: (.action // "")}
+    ] as $drift
   | {
       source: "plan",
       cli_version: (
         [$messages[] | select(.type == "version") | (.terraform // .tofu)] | first // ""
       ),
-      summary: summarize($changes),
+      summary: summarize($changes; $drift),
       changes: $changes,
-      drift: [
-        $messages[]
-        | select(.type == "resource_drift")
-        | .change
-        | select(is_noop(.action) | not)
-        | resource_of(.resource) + {action: (.action // "")}
-      ],
+      drift: $drift,
       outputs: [
         $messages[]
         | select(.type == "outputs")
@@ -102,21 +103,21 @@ def project_file:
         }
       | select(is_noop(.action) | not)
     ] as $changes
+  | [ $plan.resource_drift[]?
+      | {
+          address: (.address // ""),
+          resource_type: (.type // ""),
+          module: (.module_address // ""),
+          action: norm_action(.change.actions)
+        }
+      | select(is_noop(.action) | not)
+    ] as $drift
   | {
       source: "plan_file",
       cli_version: ($plan.terraform_version // ""),
-      summary: summarize($changes),
+      summary: summarize($changes; $drift),
       changes: $changes,
-      drift: [
-        $plan.resource_drift[]?
-        | {
-            address: (.address // ""),
-            resource_type: (.type // ""),
-            module: (.module_address // ""),
-            action: norm_action(.change.actions)
-          }
-        | select(is_noop(.action) | not)
-      ],
+      drift: $drift,
       outputs: [
         ($plan.output_changes // {})
         | to_entries[]

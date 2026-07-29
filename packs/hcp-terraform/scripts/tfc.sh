@@ -93,7 +93,7 @@ def run_of($run):
 # Terraform. Each pack is installed and hashed on its own, so the projection is
 # necessarily packaged with both rather than shared.
 readonly plan_projection='
-def summarize($changes):
+def summarize($changes; $drift):
   {
     total: ($changes | length),
     create: ($changes | map(select(.action == "create")) | length),
@@ -101,8 +101,14 @@ def summarize($changes):
     delete: ($changes | map(select(.action == "delete")) | length),
     replace: ($changes | map(select(.action == "replace")) | length),
     read: ($changes | map(select(.action == "read")) | length),
-    import: ($changes | map(select(.action == "import")) | length)
+    import: ($changes | map(select(.action == "import")) | length),
+    drifted: ($drift | length)
   };
+
+# Terraform spells an unchanged item "no-op" in this format and "noop" in the
+# CLI message stream. terraform-readonly meets both; match both here too so the
+# two packs cannot report the same plan differently.
+def is_noop($action): $action == "no-op" or $action == "noop";
 
 def norm_action($actions):
   ($actions // []) as $a
@@ -121,23 +127,23 @@ def project_plan:
           action: norm_action(.change.actions),
           reason: (.action_reason // "")
         }
-      | select(.action != "no-op")
+      | select(is_noop(.action) | not)
     ] as $changes
+  | [ $plan.resource_drift[]?
+      | {
+          address: (.address // ""),
+          resource_type: (.type // ""),
+          module: (.module_address // ""),
+          action: norm_action(.change.actions)
+        }
+      | select(is_noop(.action) | not)
+    ] as $drift
   | {
       source: "hcp_plan",
       cli_version: ($plan.terraform_version // ""),
-      summary: summarize($changes),
+      summary: summarize($changes; $drift),
       changes: $changes,
-      drift: [
-        $plan.resource_drift[]?
-        | {
-            address: (.address // ""),
-            resource_type: (.type // ""),
-            module: (.module_address // ""),
-            action: norm_action(.change.actions)
-          }
-        | select(.action != "no-op")
-      ],
+      drift: $drift,
       outputs: [
         ($plan.output_changes // {})
         | to_entries[]
@@ -146,7 +152,7 @@ def project_plan:
             action: norm_action(.value.actions),
             sensitive: ((.value.after_sensitive == true) or (.value.before_sensitive == true))
           }
-        | select(.action != "no-op")
+        | select(is_noop(.action) | not)
       ]
     };
 '

@@ -102,6 +102,7 @@ cases:
         /summary/update: 0
         /summary/delete: 0
         /summary/replace: 0
+        /summary/drifted: 0
 
   - name: tf.plan_file_summary
     action: tf.plan_file_summary
@@ -137,6 +138,7 @@ cases:
         /summary/total: 3
         /summary/create: 3
         /summary/delete: 0
+        /summary/drifted: 0
 
   # A remote-execution workspace streams the run's human output and emits only
   # the local CLI's version line as JSON. Skipping the unparseable lines would
@@ -167,6 +169,7 @@ cases:
         /summary/update: 5
         /summary/replace: 6
         /summary/read: 3
+        /summary/drifted: 1
         /outputs/0/name: changed_output
 
   - name: tf.plan_file_summary-rejects-traversal
