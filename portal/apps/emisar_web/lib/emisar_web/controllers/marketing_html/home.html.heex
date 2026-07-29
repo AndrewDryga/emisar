@@ -438,7 +438,7 @@
                 {"Signed dispatch (client-attested)", "yes", "yes", "no"},
                 {"Per-user runner scopes", "yes", "no", "maybe"},
                 {"No inbound port on hosts", "yes", "no", "maybe"},
-                {"Audit + SIEM export", "yes", "no", "maybe"},
+                {"Audit trail; SIEM export on Team+", "yes", "no", "maybe"},
                 {"Setup time", "5 min", "instant + nightmares", "1-2 weeks"}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
@@ -584,9 +584,9 @@
             Zero Trust for AI Agents
           </a>
           guide says an agent with access to real systems needs four things: least agency,
-          deny-by-default tools, human approval for high-risk actions, and an audit trail no one
-          can edit. emisar enforces exactly that. And the controls the framework reserves for its
-          top tiers ship on emisar's Free plan.
+          deny-by-default tools, human approval for high-risk actions, and durable audit evidence.
+          emisar maps those controls to a portal audit and a separate hash-chained runner journal.
+          Core action controls ship on Free; SIEM export is available on Team and Enterprise.
         </p>
       </div>
 

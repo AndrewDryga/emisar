@@ -71,14 +71,14 @@ not advertise the exact schema cannot match a schema-bearing trusted manifest.
 Schema-bearing packs must therefore roll out only after portal acceptance and
 runner enforcement are deployed.
 
-There are two known limits in the current implementation. The runner has no
-`shutdown`-reason handler, so the portal's useful version-rejection message is
-not surfaced on the host; the host generally sees session-ended/reconnect
-churn. Also, CI does not currently force a `protocol_version` bump when a
-known field is renamed or retyped. A same-number, non-additive change can
-therefore cause silent zero-value data loss or a retry loop. These are gaps to
-close before relying on the 1.0 promise, not behavior this policy guarantees
-away.
+The runner handles every `shutdown` envelope and logs the portal's reason and
+message. `cloud_shutdown`, `runner_disabled`, and `account_disabled` reconnect.
+`runner_revoked` persists a terminal shutdown and requires re-enrollment;
+`runner_version_unsupported` persists one and requires a supported binary.
+The runner's wire golden captures every known frame. CI rejects a changed frame
+until the golden is deliberately regenerated, and refuses non-additive
+regeneration at the same `protocol_version`; a rename, removal, or retype must
+bump the protocol version.
 
 ### Pack, action, catalog, and trusted-manifest schemas
 
@@ -107,9 +107,9 @@ outside the window may need an operator trust decision. A version strictly
 below `retired_below` is not dispatchable: the portal refuses it as retired,
 untrusted, or hash-mismatched and does not create the run. Its immutable
 tarball remains installable, and an administrator can use the audited override
-when there is a reason to do so. The current bundled catalog has no
-`retired_below` entries, so the retirement refusal is implemented but has not
-yet been exercised against a live pack.
+when there is a reason to do so. The current bundled catalog carries monotonic
+`retired_below` watermarks across published packs, so retirement is represented
+in product metadata rather than only synthetic fixtures.
 
 The content hash is part of this contract. Reusing a pack version with changed
 bytes is not a compatible edit; publish a new version. See
@@ -386,8 +386,8 @@ configuration make the published contract real. Treat them as frozen, add a
 version when the shape is breaking, and use the deprecation path instead of
 silently editing the original.
 
-This policy records the boundary. It does not claim that every 1.0 safeguard is
-already implemented. The missing runner shutdown-reason handler, the lack of a
-mechanical wire-version bump guard, the unexercised retirement path, and the
-current absence of general CLI/MCP deprecation signaling remain explicit
-pre-1.0 work items.
+This policy records the boundary. Runner shutdown handling, the mechanical wire
+golden, and catalog retirement watermarks are implemented today. General
+CLI/MCP deprecation signaling is not; until that additive warning path exists,
+a 1.x release must preserve the old CLI or MCP form instead of starting a
+deprecation clock it cannot surface.

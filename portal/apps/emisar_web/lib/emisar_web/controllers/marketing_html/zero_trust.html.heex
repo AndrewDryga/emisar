@@ -27,11 +27,9 @@
         </a>
         — a security framework for giving autonomous agents access to real systems. Its core
         controls are <em class="text-zinc-200">least agency</em>, deny-by-default tools, a
-        human in the loop for high-risk actions, and an immutable audit trail. That is the exact
-        boundary emisar enforces between an LLM and your infrastructure — and controls the
-        framework reserves for its <em class="text-zinc-200">Enterprise</em>
-        and <em class="text-zinc-200">Advanced</em>
-        tiers ship on emisar's Free plan.
+        human in the loop for high-risk actions, and durable audit evidence. emisar maps those
+        controls to the boundary between an LLM and your infrastructure. Core action controls ship
+        on Free; SIEM export is available on Team and Enterprise.
       </p>
       <p class="mt-8 max-w-2xl text-xs leading-relaxed text-zinc-400">
         emisar is not affiliated with, endorsed by, or sponsored by Anthropic. “Zero Trust for AI
@@ -107,7 +105,7 @@
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
                  "Packs are versioned, content-addressed YAML. A changed hash blocks dispatch until an admin trusts it; the runner recomputes the hash and refuses a mismatch."},
                 {"Tamper-evident, hash-chained host journal", "Enterprise",
-                 "Every action is recorded to the searchable portal audit — the cloud system of record — and to an append-only, hash-chained JSONL journal on the host, where each line carries the prior line's SHA-256 so emisar audit verify catches any edited entry or break in the chain. Tamper-evidence is the host journal's; the portal audit is the searchable, append-only mirror."},
+                 "Every action is recorded to the searchable off-host portal audit and to a hash-chained JSONL journal retained on the runner. emisar audit verify reports breaks in that retained chain; the two evidence layers remain separate."},
                 {"Human-in-the-loop approval for high-risk actions", "Advanced",
                  "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired — one click to allow or deny, recorded forever."},
                 {"Just-in-time / just-enough access", "Advanced",

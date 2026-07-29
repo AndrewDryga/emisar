@@ -19,18 +19,19 @@ import (
 	"time"
 )
 
-// relay is the loopback HTTP proxy the agent's MCP client talks to. It is the
-// only holder of the Emisar API key: the bearer is injected upstream, so the
-// agent process never sees it. Every tools/call is checked against the
-// scenario's fail-closed allowlist BEFORE it reaches the portal.
+// relay is the loopback HTTP proxy the candidate emisar-mcp bridge talks to. It
+// is the only holder of the real Emisar API key: the bridge gets a random,
+// relay-local credential and the real bearer is injected upstream. Every
+// tools/call is checked against the scenario's fail-closed allowlist BEFORE it
+// reaches the portal.
 type relay struct {
-	server   *http.Server
-	listener net.Listener
-	upstream *url.URL
-	apiKey   string
-	token    string
-	client   *http.Client
-	recorder *recorder
+	server           *http.Server
+	listener         net.Listener
+	upstream         *url.URL
+	apiKey           string
+	clientCredential string
+	client           *http.Client
+	recorder         *recorder
 }
 
 func newRelay(portalURL, apiKey string, item scenario) (*relay, error) {
@@ -50,10 +51,10 @@ func newRelay(portalURL, apiKey string, item scenario) (*relay, error) {
 		return nil, err
 	}
 	r := &relay{
-		listener: listener,
-		upstream: upstream,
-		apiKey:   apiKey,
-		token:    base64.RawURLEncoding.EncodeToString(tokenBytes),
+		listener:         listener,
+		upstream:         upstream,
+		apiKey:           apiKey,
+		clientCredential: "eval-" + base64.RawURLEncoding.EncodeToString(tokenBytes),
 		client: &http.Client{
 			Timeout:       70 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
@@ -89,13 +90,18 @@ func (r *relay) close() error {
 	return r.server.Close()
 }
 
-func (r *relay) endpoint() string {
+func (r *relay) origin() string {
 	port := r.listener.Addr().(*net.TCPAddr).Port
-	return fmt.Sprintf("http://127.0.0.1:%d/%s", port, r.token)
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
+}
+
+func (r *relay) credential() string {
+	return r.clientCredential
 }
 
 func (r *relay) handle(w http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != "/"+r.token {
+	if request.URL.Path != "/api/mcp/rpc" ||
+		request.Header.Get("Authorization") != "Bearer "+r.clientCredential {
 		http.NotFound(w, request)
 		return
 	}
@@ -157,7 +163,22 @@ func readBounded(reader io.Reader, limit int64) ([]byte, error) {
 }
 
 func copyMCPHeaders(dst, src http.Header) {
-	for _, key := range []string{"Accept", "Content-Type", "Mcp-Protocol-Version", "Mcp-Session-Id"} {
+	for _, key := range []string{
+		"Accept",
+		"Content-Type",
+		"Mcp-Protocol-Version",
+		"Mcp-Session-Id",
+		"Mcp-Method",
+		"Mcp-Name",
+		"X-Emisar-MCP-Request-Token",
+		"X-Emisar-MCP-Cancel-Token",
+		"Emisar-Operation-Id",
+		"Emisar-Attestation",
+		"Emisar-Client-Metadata",
+		"X-Emisar-Rotation-Prefix",
+		"X-Emisar-Rotation-Hash",
+		"X-Emisar-Rotation-Ack",
+	} {
 		for _, value := range src.Values(key) {
 			dst.Add(key, value)
 		}
@@ -191,6 +212,9 @@ func (r *recorder) policyBlock(record callRecord, args map[string]any, encodedAr
 	if !stringSet(r.policy.AllowedTools)[record.Tool] {
 		return "tool_not_allowed"
 	}
+	if record.Tool != "run_action" && mutationTools[record.Tool] {
+		return "mutation_not_supported"
+	}
 	// Read-only discovery (find_actions, get_action) may inspect any real
 	// action — that cannot mutate anything, and find_actions already surfaces
 	// actions outside the dispatch set. The allowed-action gate is a MUTATION
@@ -201,12 +225,23 @@ func (r *recorder) policyBlock(record callRecord, args map[string]any, encodedAr
 	if !stringSet(r.policy.AllowedActions)[record.ActionID] || record.PackRef == "" {
 		return "action_not_allowed"
 	}
+	if len(r.policy.AllowedPackRefs) > 0 && !stringSet(r.policy.AllowedPackRefs)[record.PackRef] {
+		return "pack_not_allowed"
+	}
 	if !record.priorContractMatched {
 		return "inspection_required"
 	}
 	refs, ok := args["runner_refs"].([]any)
 	if !ok || len(refs) == 0 || len(refs) > maxRunnerRefs || !uniqueStrings(refs) {
 		return "runner_refs_out_of_bounds"
+	}
+	if len(r.policy.AllowedRunnerRefs) > 0 {
+		allowed := stringSet(r.policy.AllowedRunnerRefs)
+		for _, ref := range stringSlice(args["runner_refs"]) {
+			if !allowed[ref] {
+				return "runner_not_allowed"
+			}
+		}
 	}
 	actionArgs, ok := args["args"].(map[string]any)
 	if !ok {
@@ -325,6 +360,9 @@ func (r *recorder) response(metadata requestMetadata, body []byte, statusCode in
 	call.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	call.ResponseError = statusCode >= 400 || boolValue(result["isError"]) || payload["error"] != nil
 	call.ResponseCode = nestedString(structured, "error", "code")
+	if call.Tool == "find_actions" && !call.ResponseError {
+		call.SearchCandidates = collectSearchCandidates(structured)
+	}
 	call.RunStates = collectRunStates(call.Tool, structured)
 	if call.Tool == "run_action" && !call.ResponseError {
 		operationID := stringValue(structured["operation_id"])
@@ -336,6 +374,25 @@ func (r *recorder) response(metadata requestMetadata, body []byte, statusCode in
 	if call.Tool == "get_action" && !call.ResponseError && call.ActionID != "" && call.PackRef != "" {
 		r.inspected[call.ActionID+"\x00"+call.PackRef] = true
 	}
+}
+
+func collectSearchCandidates(structured map[string]any) []searchCandidate {
+	values := sliceValue(structured["candidates"])
+	candidates := make([]searchCandidate, 0, min(len(values), 5))
+	for _, value := range values {
+		object, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		candidates = append(candidates, searchCandidate{
+			ActionID: stringValue(object["action_id"]),
+			PackRef:  stringValue(object["pack_ref"]),
+		})
+		if len(candidates) == 5 {
+			break
+		}
+	}
+	return candidates
 }
 
 func (r *recorder) transportError(metadata requestMetadata) {

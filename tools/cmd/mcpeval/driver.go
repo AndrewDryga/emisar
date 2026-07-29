@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,19 +23,27 @@ type invocation struct {
 	dir    string
 }
 
-func buildInvocation(cfg runConfig, item scenario, endpoint, workspace string) (invocation, error) {
+func buildInvocation(
+	cfg runConfig,
+	item scenario,
+	relayOrigin, relayCredential, workspace string,
+) (invocation, error) {
 	switch cfg.Provider {
 	case "claude":
-		return claudeInvocation(cfg, item, endpoint, workspace)
+		return claudeInvocation(cfg, item, relayOrigin, relayCredential, workspace)
 	case "codex":
-		return codexInvocation(cfg, item, endpoint, workspace)
+		return codexInvocation(cfg, item, relayOrigin, relayCredential, workspace)
+	case "gemini":
+		return geminiInvocation(cfg, item, relayOrigin, relayCredential, workspace)
+	case "grok":
+		return grokInvocation(cfg, item, relayOrigin, relayCredential, workspace)
 	default:
-		return invocation{}, fmt.Errorf("unknown provider %q (want claude or codex)", cfg.Provider)
+		return invocation{}, fmt.Errorf("unknown provider %q (want claude, codex, gemini, or grok)", cfg.Provider)
 	}
 }
 
 // claudeInvocation runs Claude Code headless. Flags verified against the
-// installed `claude --help` (2.1.212).
+// installed `claude --help` (2.1.217).
 //
 // The auth mode picks the isolation flag, and the two are mutually exclusive:
 //   - CI (ANTHROPIC_API_KEY set) uses `--bare` — it forces clean API-key auth
@@ -47,8 +56,8 @@ func buildInvocation(cfg runConfig, item scenario, endpoint, workspace string) (
 //     subscription keychain login while still isolating from the user's global
 //     config (the throwaway workspace has no project/local settings).
 //
-// `--strict-mcp-config` limits MCP to our generated relay config and
-// `--tools ""` disables every built-in tool, so the only tools are the relay's.
+// `--strict-mcp-config` limits MCP to our generated bridge config and
+// `--tools ""` disables every built-in tool, so the only tools are Emisar's.
 // `--dangerously-skip-permissions` is required, not optional: under API-key
 // headless auth, `--allowedTools` did not pre-approve the MCP tools — Claude
 // fetched the relay's tools/list (the handshake reaches the relay) but excluded
@@ -58,8 +67,12 @@ func buildInvocation(cfg runConfig, item scenario, endpoint, workspace string) (
 // denied). Skipping permissions is the same bypass the Codex lane needs for
 // headless dispatch; the relay's fail-closed allowlist, not the agent's
 // permission prompt, is the real security boundary here.
-func claudeInvocation(cfg runConfig, item scenario, endpoint, workspace string) (invocation, error) {
-	configPath, err := writeClaudeMCPConfig(workspace, endpoint)
+func claudeInvocation(
+	cfg runConfig,
+	item scenario,
+	relayOrigin, relayCredential, workspace string,
+) (invocation, error) {
+	configPath, err := writeClaudeMCPConfig(cfg, workspace, relayOrigin, relayCredential)
 	if err != nil {
 		return invocation{}, err
 	}
@@ -80,10 +93,18 @@ func claudeInvocation(cfg runConfig, item scenario, endpoint, workspace string) 
 	return invocation{binary: cfg.Binary, args: args, env: childEnv("ANTHROPIC_API_KEY"), dir: workspace}, nil
 }
 
-func writeClaudeMCPConfig(workspace, endpoint string) (string, error) {
+func writeClaudeMCPConfig(
+	cfg runConfig,
+	workspace, relayOrigin, relayCredential string,
+) (string, error) {
 	config, err := json.Marshal(map[string]any{
 		"mcpServers": map[string]any{
-			"emisar_eval": map[string]any{"type": "http", "url": endpoint},
+			"emisar_eval": map[string]any{
+				"type":    "stdio",
+				"command": cfg.BridgeBinary,
+				"args":    []string{},
+				"env":     bridgeEnv(relayOrigin, relayCredential, cfg.Provider),
+			},
 		},
 	})
 	if err != nil {
@@ -96,12 +117,12 @@ func writeClaudeMCPConfig(workspace, endpoint string) (string, error) {
 	return path, nil
 }
 
-// codexInvocation runs Codex headless — a best-effort second provider. Flags
+// codexInvocation runs Codex headless as one required certification lane. Flags
 // verified against the installed `codex exec --help` (codex-cli 0.145.0):
 // --ignore-user-config skips ~/.codex/config.toml (auth still resolves),
 // --ephemeral persists no session files, --sandbox read-only confines
-// model-generated shell commands, and the -c override registers the relay the
-// same way `codex mcp add <name> --url <url>` writes it.
+// model-generated shell commands, and the -c overrides register the exact
+// candidate stdio bridge without reading a user's MCP configuration.
 // run_action truthfully advertises non-readonly MCP annotations, and headless
 // Codex synthesizes "user cancelled MCP tool call" for annotation-gated tools
 // — the burn-in run scored clean discovery (get_action inspection threaded
@@ -110,7 +131,11 @@ func writeClaudeMCPConfig(workspace, endpoint string) (string, error) {
 // `approval_policy="never"` governs shell commands), so dispatch requires the
 // documented bypass flag, gated behind an explicit opt-in for externally
 // sandboxed environments.
-func codexInvocation(cfg runConfig, item scenario, endpoint, workspace string) (invocation, error) {
+func codexInvocation(
+	cfg runConfig,
+	item scenario,
+	relayOrigin, relayCredential, workspace string,
+) (invocation, error) {
 	args := []string{
 		"exec",
 		"--json",
@@ -118,7 +143,9 @@ func codexInvocation(cfg runConfig, item scenario, endpoint, workspace string) (
 		"--ignore-user-config",
 		"--sandbox", "read-only",
 		"--color", "never",
-		"-c", fmt.Sprintf("mcp_servers.emisar_eval.url=%q", endpoint),
+		"-c", "mcp_servers.emisar_eval.command=" + strconv.Quote(cfg.BridgeBinary),
+		"-c", "mcp_servers.emisar_eval.env=" +
+			tomlInlineTable(bridgeEnv(relayOrigin, relayCredential, cfg.Provider)),
 	}
 	if cfg.CodexBypassSandbox {
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
@@ -128,6 +155,122 @@ func codexInvocation(cfg runConfig, item scenario, endpoint, workspace string) (
 	}
 	args = append(args, item.Prompt)
 	return invocation{binary: cfg.Binary, args: args, env: childEnv("OPENAI_API_KEY"), dir: workspace}, nil
+}
+
+// geminiInvocation runs Gemini CLI headless with a project-local settings file.
+// Flags and the stdio MCP shape are verified against Gemini CLI 0.50.0. An
+// explicit empty core-tool list leaves only MCP meta-tools available.
+func geminiInvocation(
+	cfg runConfig,
+	item scenario,
+	relayOrigin, relayCredential, workspace string,
+) (invocation, error) {
+	if err := writeGeminiConfig(cfg, workspace, relayOrigin, relayCredential); err != nil {
+		return invocation{}, err
+	}
+	args := []string{
+		"-p", item.Prompt,
+		"--output-format", "json",
+		"--skip-trust",
+		"--approval-mode", "yolo",
+		"--allowed-mcp-server-names", "emisar_eval",
+	}
+	if cfg.Model != "" {
+		args = append(args, "--model", cfg.Model)
+	}
+	return invocation{
+		binary: cfg.Binary,
+		args:   args,
+		env:    isolatedChildEnv("GEMINI_API_KEY", workspace),
+		dir:    workspace,
+	}, nil
+}
+
+func writeGeminiConfig(
+	cfg runConfig,
+	workspace, relayOrigin, relayCredential string,
+) error {
+	config, err := json.Marshal(map[string]any{
+		"tools": map[string]any{"core": []string{}},
+		"mcpServers": map[string]any{
+			"emisar_eval": map[string]any{
+				"command": cfg.BridgeBinary,
+				"args":    []string{},
+				"env":     bridgeEnv(relayOrigin, relayCredential, cfg.Provider),
+				"trust":   true,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(workspace, ".gemini")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "settings.json"), append(config, '\n'), 0o600)
+}
+
+// grokInvocation runs Grok Build headless. Flags and the project MCP TOML are
+// verified against Grok 0.2.101. `--tools ""` removes built-ins while Grok's
+// documented always-on MCP meta-tools remain available.
+func grokInvocation(
+	cfg runConfig,
+	item scenario,
+	relayOrigin, relayCredential, workspace string,
+) (invocation, error) {
+	if err := writeGrokConfig(cfg, workspace, relayOrigin, relayCredential); err != nil {
+		return invocation{}, err
+	}
+	args := []string{
+		"-p", item.Prompt,
+		"--output-format", "json",
+		"--yolo",
+		"--tools", "",
+		"--no-subagents",
+		"--no-memory",
+		"--disable-web-search",
+		"--no-auto-update",
+	}
+	if cfg.Model != "" {
+		args = append(args, "--model", cfg.Model)
+	}
+	env := isolatedChildEnv("XAI_API_KEY", workspace)
+	env = replaceEnv(env, "GROK_HOME", filepath.Join(workspace, ".grok-home"))
+	return invocation{binary: cfg.Binary, args: args, env: env, dir: workspace}, nil
+}
+
+func writeGrokConfig(
+	cfg runConfig,
+	workspace, relayOrigin, relayCredential string,
+) error {
+	dir := filepath.Join(workspace, ".grok")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	content := "[mcp_servers.emisar_eval]\n" +
+		"command = " + strconv.Quote(cfg.BridgeBinary) + "\n" +
+		"args = []\n" +
+		"env = " + tomlInlineTable(bridgeEnv(relayOrigin, relayCredential, cfg.Provider)) + "\n" +
+		"enabled = true\n"
+	return os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o600)
+}
+
+func bridgeEnv(relayOrigin, relayCredential, provider string) map[string]string {
+	return map[string]string{
+		"EMISAR_URL":     relayOrigin,
+		"EMISAR_API_KEY": relayCredential,
+		"EMISAR_CLIENT":  provider,
+	}
+}
+
+func tomlInlineTable(values map[string]string) string {
+	keys := []string{"EMISAR_URL", "EMISAR_API_KEY", "EMISAR_CLIENT"}
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+strconv.Quote(values[key]))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 // childEnv strips every Emisar and provider credential from the inherited
@@ -142,7 +285,17 @@ func childEnv(keep string) []string {
 			keepValue = value
 			continue
 		}
-		if key == "CLAUDECODE" || hasAnyPrefix(key, "EMISAR_", "ANTHROPIC_", "OPENAI_", "CLAUDE_") {
+		if key == "CLAUDECODE" || hasAnyPrefix(
+			key,
+			"EMISAR_",
+			"ANTHROPIC_",
+			"OPENAI_",
+			"CLAUDE_",
+			"GEMINI_",
+			"GOOGLE_",
+			"XAI_",
+			"GROK_",
+		) {
 			continue
 		}
 		env = append(env, item)
@@ -151,6 +304,21 @@ func childEnv(keep string) []string {
 		env = append(env, keep+"="+keepValue)
 	}
 	return env
+}
+
+func isolatedChildEnv(keep, workspace string) []string {
+	return replaceEnv(childEnv(keep), "HOME", filepath.Join(workspace, "home"))
+}
+
+func replaceEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	for _, item := range env {
+		if !strings.HasPrefix(item, prefix) {
+			out = append(out, item)
+		}
+	}
+	return append(out, prefix+value)
 }
 
 func hasAnyPrefix(value string, prefixes ...string) bool {
@@ -192,6 +360,21 @@ func runAgent(ctx context.Context, inv invocation) (agentResult, error) {
 		result.ExitCode = exitError.ExitCode()
 	}
 	return result, nil
+}
+
+func executableVersion(binary string) (string, error) {
+	output, err := exec.Command(binary, "--version").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s --version: %w: %s", binary, err, boundedText(output, 4096))
+	}
+	return strings.TrimSpace(boundedText(output, 4096)), nil
+}
+
+func boundedText(value []byte, limit int) string {
+	if len(value) > limit {
+		value = value[:limit]
+	}
+	return string(value)
 }
 
 // boundedBuffer keeps the first limit bytes and drops the rest, so a runaway

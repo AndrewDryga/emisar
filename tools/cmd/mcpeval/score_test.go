@@ -35,6 +35,48 @@ func TestScoreAcceptsContinuationDrivenTerminalTranscript(t *testing.T) {
 	}
 }
 
+func TestScoreRequiresPositiveRecallAtFive(t *testing.T) {
+	item := conformingScenario()
+	item.RequiredSearchActions = [][]string{{"linux.uptime"}}
+	calls := append([]callRecord{{
+		Tool: "find_actions",
+		SearchCandidates: []searchCandidate{{
+			ActionID: "linux.uptime",
+			PackRef:  "linux-core@1/sha256:abc",
+		}},
+	}}, conformingCalls()...)
+	got := scoreReport(item, calls, agentResult{})
+	if !got.Passed || len(got.MissingSearchActions) != 0 {
+		t.Fatalf("recall@5 hit failed: %#v", got)
+	}
+
+	calls[0].SearchCandidates[0].ActionID = "linux.memory"
+	got = scoreReport(item, calls, agentResult{})
+	if got.Passed || len(got.MissingSearchActions) != 1 {
+		t.Fatalf("recall@5 miss passed: %#v", got)
+	}
+}
+
+func TestScoreNoActionRequiresEmptySearchResults(t *testing.T) {
+	item := scenario{
+		ExpectedOutcome: outcomeNoAction,
+		AllowedTools:    []string{"find_actions"},
+		RequiredTools:   []string{"find_actions"},
+	}
+	calls := []callRecord{{Tool: "find_actions"}}
+	if got := scoreReport(item, calls, agentResult{}); !got.Passed {
+		t.Fatalf("empty no-action result failed: %#v", got)
+	}
+	calls[0].SearchCandidates = []searchCandidate{{
+		ActionID: "linux.uptime",
+		PackRef:  "linux-core@1/sha256:abc",
+	}}
+	got := scoreReport(item, calls, agentResult{})
+	if got.Passed || got.NoActionCandidateCalls != 1 {
+		t.Fatalf("overmatching no-action result passed: %#v", got)
+	}
+}
+
 func TestScoreRejectsPolicyBlockedCall(t *testing.T) {
 	calls := append(conformingCalls(), callRecord{
 		Tool: "run_action", ActionID: "linux.shutdown", BlockedByPolicy: true,

@@ -29,7 +29,7 @@ func TestRelayRecordsMetadataAndNeverBearerOrArgumentValues(t *testing.T) {
 	defer r.close()
 	r.recorder.inspected["linux.uptime\x00linux-core@1/sha256:abc"] = true
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"linux-core@1/sha256:abc","runner_refs":["edge~abc"],"args":{"password":"argument-sentinel"},"reason":"reason-sentinel","evidence":"evidence-sentinel","expected":"expected-sentinel"}}}`
-	response, err := http.Post(r.endpoint(), "application/json", bytes.NewBufferString(body))
+	response, err := postRelay(r, body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestRecorderRecordsChainPresenceBooleansOnly(t *testing.T) {
 	}
 }
 
-func TestRelayRejectsWrongPathToken(t *testing.T) {
+func TestRelayRejectsWrongCredential(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { upstreamCalls++ }))
 	defer upstream.Close()
@@ -79,8 +79,16 @@ func TestRelayRejectsWrongPathToken(t *testing.T) {
 	}
 	r.start()
 	defer r.close()
-	wrong := strings.TrimSuffix(r.endpoint(), r.token) + "guessed-token"
-	response, err := http.Post(wrong, "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	request, err := http.NewRequest(
+		http.MethodPost,
+		r.origin()+"/api/mcp/rpc",
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer guessed-token")
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +152,7 @@ func TestRelayBlocksForbiddenActionBeforeUpstream(t *testing.T) {
 	r.start()
 	defer r.close()
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.shutdown","pack_ref":"p","runner_refs":["r"],"args":{},"reason":"test"}}}`
-	response, err := http.Post(r.endpoint(), "application/json", bytes.NewBufferString(body))
+	response, err := postRelay(r, body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,6 +170,20 @@ func TestRelayBlocksForbiddenActionBeforeUpstream(t *testing.T) {
 	}
 }
 
+func postRelay(r *relay, body string) (*http.Response, error) {
+	request, err := http.NewRequest(
+		http.MethodPost,
+		r.origin()+"/api/mcp/rpc",
+		bytes.NewBufferString(body),
+	)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+r.credential())
+	request.Header.Set("Content-Type", "application/json")
+	return http.DefaultClient.Do(request)
+}
+
 func TestPolicyAllowsReadOnlyInspectionOfAnyAction(t *testing.T) {
 	// get_action is read-only, so exploring an action outside the dispatch set
 	// is legitimate discovery, not a policy breach — only run_action is gated.
@@ -176,6 +198,49 @@ func TestPolicyAllowsReadOnlyInspectionOfAnyAction(t *testing.T) {
 	run := callRecord{Tool: "run_action", ActionID: "linux.mount_status", PackRef: "p"}
 	if blocked := r.policyBlock(run, map[string]any{}, nil); blocked != "action_not_allowed" {
 		t.Fatalf("run_action on a non-allowed action = %q, want action_not_allowed", blocked)
+	}
+}
+
+func TestPolicyBlocksWrongPackAndRunnerBeforeDispatch(t *testing.T) {
+	item := scenario{
+		AllowedTools:      []string{"run_action"},
+		AllowedActions:    []string{"linux.uptime"},
+		AllowedPackRefs:   []string{"linux-core@1/sha256:abc"},
+		AllowedRunnerRefs: []string{"edge-fra-01~a"},
+	}
+	r := newRecorder(item)
+	r.inspected["linux.uptime\x00debugging@1/sha256:abc"] = true
+	wrongPack := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"debugging@1/sha256:abc","runner_refs":["edge-fra-01~a"],"args":{},"reason":"Inspect fleet uptime"}}}`))
+	if wrongPack.blockCode != "pack_not_allowed" {
+		t.Fatalf("wrong pack block = %q", wrongPack.blockCode)
+	}
+
+	r.inspected["linux.uptime\x00linux-core@1/sha256:abc"] = true
+	wrongRunner := r.request([]byte(`{"id":2,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.uptime","pack_ref":"linux-core@1/sha256:abc","runner_refs":["api-iad-02~a"],"args":{},"reason":"Inspect fleet uptime"}}}`))
+	if wrongRunner.blockCode != "runner_not_allowed" {
+		t.Fatalf("wrong runner block = %q", wrongRunner.blockCode)
+	}
+}
+
+func TestPolicyBlocksUnscoredMutationTools(t *testing.T) {
+	r := newRecorder(scenario{AllowedTools: []string{"execute_runbook"}})
+	record := callRecord{Tool: "execute_runbook"}
+	if blocked := r.policyBlock(record, map[string]any{}, nil); blocked != "mutation_not_supported" {
+		t.Fatalf("execute_runbook block = %q, want mutation_not_supported", blocked)
+	}
+}
+
+func TestRecorderKeepsOnlyFirstFiveSearchCandidates(t *testing.T) {
+	r := newRecorder(scenario{AllowedTools: []string{"find_actions"}})
+	request := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"find_actions","arguments":{"query":"disk"}}}`))
+	r.response(request, []byte(`{"id":1,"result":{"structuredContent":{"ok":true,"candidates":[
+	  {"action_id":"a1","pack_ref":"p@1/h"},{"action_id":"a2","pack_ref":"p@1/h"},
+	  {"action_id":"a3","pack_ref":"p@1/h"},{"action_id":"a4","pack_ref":"p@1/h"},
+	  {"action_id":"a5","pack_ref":"p@1/h"},{"action_id":"a6","pack_ref":"p@1/h"}
+	]}}}`), 200)
+	candidates := r.snapshot()[0].SearchCandidates
+	if len(candidates) != 5 || candidates[0].ActionID != "a1" || candidates[4].ActionID != "a5" {
+		t.Fatalf("search candidates = %#v", candidates)
 	}
 }
 

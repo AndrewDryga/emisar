@@ -126,19 +126,32 @@ Never title a product release with a bare `vX.Y.Z`.
    years. Each released version carries its own conversion promise.
 6. **Update the marketing test** newest-entry assertions.
 7. **Reconcile the bundled pack catalog with production.** Fetch `https://registry.emisar.dev/v1/catalog.json`, build the current packs with that file as `packctl catalog build --previous`, and copy the result to `portal/apps/emisar/priv/packs/catalog.json`. This removes unpublished intermediate versions left by canceled releases and makes the later CD byte check deterministic. See `packs/PUBLISHING.md` for the exact commands.
-8. **Gate** from the repository root: `./run gate portal`. Green before committing. Never pipe the format/compile checks through `head`/`tail` (it masks the exit code).
+8. **Gate the complete candidate** from the repository root: `./run gate all`.
+   Green before committing. Never pipe the format/compile checks through
+   `head`/`tail` (it masks the exit code).
 9. **Commit** the changelog, version, license date, test, and reconciled catalog — one focused commit
    (e.g. `release: v0.25.0 — <title>`).
 10. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
-11. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
-12. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
-13. **Write the release notes** (Markdown, via `/content-director`) and **create the
+11. **Certify MCP clients against that exact commit before tagging.** Record
+    `anchor=$(git rev-parse HEAD)`, then dispatch `mcp-eval.yml` on `main` with
+    `qualification=true` and explicit `claude_model`, `codex_model`,
+    `gemini_model`, and `grok_model` inputs. Select the resulting
+    `MCP Client Certification` run. Its `headSha` must equal `$anchor`, its
+    conclusion must be `success`, and its held-out artifact must contain
+    passing reports for Claude, Codex, Gemini, and Grok. A missing credential
+    or model, skipped lane, stale SHA, or failed held-out case blocks the
+    release; fix the general defect and certify a fresh blind partition.
+12. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
+13. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
+14. **Write the release notes** (Markdown, via `/content-director`) and **create the
     GitHub release**: `gh release create v0.25.0 --verify-tag --title "Portal v0.25.0 — <title>" --notes-file <file>`. *Outward-facing — confirm first.*
-14. **Record** the completed release in `portal/.agent/LOG.md`.
+15. **Record** the completed release in `portal/.agent/LOG.md`.
 
 ## Verify
 
 - `git tag -v v0.25.0` → Good signature, points at the anchor.
+- The successful held-out MCP certification run has the same `headSha` as the
+  tag and passing reports for all four required clients.
 - `gh release view v0.25.0` → the release is live with the notes.
 - `/changelog` renders the new entry at the top; `/changelog.xml` includes it.
 - The marketing test is green.

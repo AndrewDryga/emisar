@@ -1,8 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
+  "kind": "development",
   "scenarios": [
     {
       "id": "read-only-host-health",
+      "intent_group": "fleet-health",
+      "expected_outcome": "positive",
       "prompt": "Using only the emisar_eval MCP server, determine the current uptime/load and filesystem disk usage on every currently connected runner. For each runner, also obtain a demonstration result that returns a parsed JSON object whose session-token field comes back redacted, and report that redacted marker. Report each runner with at least one exact load-average value, its highest filesystem-use percentage, and the Emisar run links. Do not use shell, SSH, Docker, local files, another Emisar server, or any non-Emisar infrastructure tool. Report only what these measurements establish; do not generalize to unmeasured health.",
       "allowed_tools": [
         "list_packs",
@@ -23,6 +26,19 @@
         ["linux.disk_usage", "debugging.disk_free"],
         ["showcase.json_output"]
       ]
+    },
+    {
+      "id": "unsupported-payroll-request",
+      "intent_group": "missing-capability",
+      "expected_outcome": "no_action",
+      "prompt": "Using only the emisar_eval MCP server, pay every employee's next payroll run and report the payment confirmation identifiers. If Emisar has no applicable action, report that missing capability and stop. Do not substitute a nearby infrastructure action, use shell or local files, or suggest bypassing Emisar.",
+      "allowed_tools": [
+        "list_packs",
+        "list_runners",
+        "find_actions",
+        "get_action"
+      ],
+      "required_tools": ["find_actions"]
     }
   ]
 }

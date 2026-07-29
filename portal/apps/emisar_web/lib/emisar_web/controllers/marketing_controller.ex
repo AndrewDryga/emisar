@@ -73,7 +73,7 @@ defmodule EmisarWeb.MarketingController do
     {"/trust", :trust, :trust, "Trust Center — security, infrastructure & assurance",
      "Review the controls protecting emisar: outbound-only runners, signed dispatch, private Google Cloud infrastructure, DNSSEC, hardened delivery, independent monitoring, audit evidence, DPA, subprocessors, and insurance."},
     {"/zero-trust", :zero_trust, :zero_trust, "Zero Trust for AI Agents",
-     "Anthropic's Zero Trust for AI Agents framework calls for least agency, deny-by-default tools, human approval for high-risk actions, and an immutable audit trail. See how emisar enforces that exact control set between an LLM and your infrastructure — including the approval gates, just-in-time access, and SIEM export the framework files under its top tiers, shipped by default on emisar's Free plan."},
+     "Anthropic's Zero Trust for AI Agents framework calls for least agency, deny-by-default tools, human approval for high-risk actions, and durable audit evidence. See how emisar maps those controls between an LLM and your infrastructure. Core action controls ship on Free; SIEM export is available on Team and Enterprise."},
     {"/docs/publishing-packs", :docs_publishing_packs, :docs_publishing_packs,
      "Author your own action pack",
      "Write, validate, install, and trust an emisar action pack you maintain yourself — pack.yaml, action YAMLs, content-hash trust, and fleet rollout. Plus when (and how) to propose a genuinely generic pack to the curated public registry."},

@@ -241,6 +241,34 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ "On-prem / self-hosted option"
   end
 
+  test "public capability claims follow the MCP, billing, and audit contracts", %{conn: conn} do
+    home = conn |> get(~p"/") |> html_response(200)
+    tool_count = length(EmisarWeb.MCP.SchemaRegistry.tool_names())
+
+    assert home =~ "emisar MCP connected · #{tool_count} tools"
+    refute home =~ "84 tools"
+
+    pricing = conn |> get(~p"/pricing") |> html_response(200)
+
+    assert [siem_row] =
+             Regex.run(
+               ~r/<tr>\s*<td[^>]*>SIEM export<\/td>(.*?)<\/tr>/s,
+               pricing,
+               capture: :all_but_first
+             )
+
+    assert siem_row =~ ">—</td>"
+    assert length(Regex.scan(~r/hero-check/, siem_row)) == 2
+    assert home =~ "Audit trail; SIEM export on Team+"
+    assert home =~ "SIEM export is available on Team and Enterprise"
+
+    trust = conn |> get(~p"/trust") |> html_response(200)
+    assert trust =~ "Runner journal:"
+    assert trust =~ "retained runner journal&#39;s chain"
+    assert trust =~ "Portal audit:"
+    refute trust =~ "catches any edited or missing line"
+  end
+
   test "pricing page carries a monthly/annual toggle with both Team prices", %{conn: conn} do
     html = conn |> get(~p"/pricing") |> html_response(200)
 

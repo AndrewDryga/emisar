@@ -41,6 +41,7 @@ defmodule EmisarWeb.MarketingHTML do
   # `spin`/`spin-wait` are JS-only animated spinners — rendered `hidden`
   # so no-JS visitors and crawlers skip them; their text is the gerund the
   # spinner shows.
+  @mcp_tool_count length(EmisarWeb.MCP.SchemaRegistry.tool_names())
   @demo_lines [
     # --- Host: a storage node on the fleet, one curl to connect ------
     {1, "server", "srv-comment",
@@ -54,7 +55,8 @@ defmodule EmisarWeb.MarketingHTML do
      "runner online · nomad-hvn03 · advertising 84 actions, every one policy-gated"},
 
     # --- Claude Code: the alarm, then investigate through emisar -----
-    {7, "llm", "cc-meta", "emisar MCP connected · 84 tools · scoped to nomad-hvn03"},
+    {7, "llm", "cc-meta",
+     "emisar MCP connected · #{@mcp_tool_count} tools · scoped to nomad-hvn03"},
     {8, "llm", "cc-user",
      "grafana shows the last 7 days of metrics flat — only the last 12 minutes are alive. the process is healthy and ingesting. where did 33 hours of data go?"},
     {9, "llm", "cc-spin", "Investigating"},

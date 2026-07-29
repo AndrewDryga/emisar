@@ -55,11 +55,10 @@
           {"hero-document-check", "Audit & monitoring", "Audit & SIEM", ~p"/docs/audit-and-siem",
            [
              "Every action: actor, arguments, target host, exit code, redactions",
-             "SHA-256 hash-chained JSONL journal on each host — tamper-evident",
-             "The emisar audit verify command catches any edited or missing line",
-             "Searchable cloud audit — the durable system of record",
-             "Stream NDJSON to your SIEM with a read-only audit key",
-             "Policy decisions (allow / approve / deny) recorded too"
+             "Runner journal: SHA-256 hash-chained JSONL retained on each host",
+             "emisar audit verify reports breaks in the retained runner journal's chain",
+             "Portal audit: searchable off-host record of actions and policy decisions",
+             "Stream NDJSON to your SIEM with a read-only audit key"
            ]},
           {"hero-lock-closed", "Data handling", "Privacy policy", ~p"/privacy",
            [

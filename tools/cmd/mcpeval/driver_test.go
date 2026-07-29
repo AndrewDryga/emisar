@@ -12,7 +12,10 @@ import (
 
 func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 	item := scenario{Prompt: "inspect the fleet", AllowedTools: []string{"list_runners", "run_action"}}
-	cfg := runConfig{Provider: "claude", Binary: "claude", Model: "claude-sonnet-4-5", BudgetUSD: "10"}
+	cfg := runConfig{
+		Provider: "claude", Binary: "claude", BridgeBinary: "/tmp/emisar-mcp",
+		Model: "claude-sonnet-4-5", BudgetUSD: "10",
+	}
 	// The isolation flag is chosen by ANTHROPIC_API_KEY presence: --bare for the
 	// CI API-key path, --setting-sources project,local for the local keychain
 	// path. Everything else is identical, and --dangerously-skip-permissions is
@@ -28,7 +31,7 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 				t.Setenv("ANTHROPIC_API_KEY", "")
 			}
 			workspace := t.TempDir()
-			got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999/token", workspace)
+			got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999", "eval-token", workspace)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -50,26 +53,27 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(config) != `{"mcpServers":{"emisar_eval":{"type":"http","url":"http://127.0.0.1:9999/token"}}}`+"\n" {
+			if string(config) != `{"mcpServers":{"emisar_eval":{"args":[],"command":"/tmp/emisar-mcp","env":{"EMISAR_API_KEY":"eval-token","EMISAR_CLIENT":"claude","EMISAR_URL":"http://127.0.0.1:9999"},"type":"stdio"}}}`+"\n" {
 				t.Fatalf("mcp config = %s", config)
 			}
 		})
 	}
 }
 
-func TestCodexInvocationRegistersHTTPRelayAndPinsModel(t *testing.T) {
+func TestCodexInvocationRegistersCandidateBridgeAndPinsModel(t *testing.T) {
 	item := scenario{Prompt: "inspect the fleet"}
 	base := []string{
 		"exec", "--json", "--ephemeral", "--ignore-user-config",
 		"--sandbox", "read-only", "--color", "never",
-		"-c", `mcp_servers.emisar_eval.url="http://127.0.0.1:9999/token"`,
+		"-c", `mcp_servers.emisar_eval.command="/tmp/emisar-mcp"`,
+		"-c", `mcp_servers.emisar_eval.env={EMISAR_URL="http://127.0.0.1:9999",EMISAR_API_KEY="eval-token",EMISAR_CLIENT="codex"}`,
 	}
 	for model, want := range map[string][]string{
 		"":        append(append([]string{}, base...), "inspect the fleet"),
 		"gpt-5.1": append(append([]string{}, base...), "--model", "gpt-5.1", "inspect the fleet"),
 	} {
-		cfg := runConfig{Provider: "codex", Binary: "codex", Model: model}
-		got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999/token", t.TempDir())
+		cfg := runConfig{Provider: "codex", Binary: "codex", BridgeBinary: "/tmp/emisar-mcp", Model: model}
+		got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999", "eval-token", t.TempDir())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,8 +85,8 @@ func TestCodexInvocationRegistersHTTPRelayAndPinsModel(t *testing.T) {
 
 func TestCodexInvocationBypassIsExplicitOptIn(t *testing.T) {
 	item := scenario{Prompt: "inspect the fleet"}
-	cfg := runConfig{Provider: "codex", Binary: "codex", CodexBypassSandbox: true}
-	got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999/token", t.TempDir())
+	cfg := runConfig{Provider: "codex", Binary: "codex", BridgeBinary: "/tmp/emisar-mcp", CodexBypassSandbox: true}
+	got, err := buildInvocation(cfg, item, "http://127.0.0.1:9999", "eval-token", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,8 +97,73 @@ func TestCodexInvocationBypassIsExplicitOptIn(t *testing.T) {
 }
 
 func TestBuildInvocationRejectsUnknownProvider(t *testing.T) {
-	if _, err := buildInvocation(runConfig{Provider: "gemini"}, scenario{}, "http://127.0.0.1:1/t", t.TempDir()); err == nil {
+	if _, err := buildInvocation(runConfig{Provider: "other"}, scenario{}, "http://127.0.0.1:1", "token", t.TempDir()); err == nil {
 		t.Fatal("unknown provider was accepted")
+	}
+}
+
+func TestGeminiInvocationUsesIsolatedProjectBridgeAndNoCoreTools(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "gemini-secret")
+	workspace := t.TempDir()
+	cfg := runConfig{Provider: "gemini", Binary: "gemini", BridgeBinary: "/tmp/emisar-mcp", Model: "gemini-test"}
+	got, err := buildInvocation(
+		cfg,
+		scenario{Prompt: "inspect the fleet"},
+		"http://127.0.0.1:9999",
+		"eval-token",
+		workspace,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantArgs := []string{
+		"-p", "inspect the fleet", "--output-format", "json", "--skip-trust",
+		"--approval-mode", "yolo", "--allowed-mcp-server-names", "emisar_eval",
+		"--model", "gemini-test",
+	}
+	if !reflect.DeepEqual(got.args, wantArgs) {
+		t.Fatalf("gemini argv = %#v", got.args)
+	}
+	config, err := os.ReadFile(filepath.Join(workspace, ".gemini", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(config), `"core":[]`) ||
+		!strings.Contains(string(config), `"/tmp/emisar-mcp"`) {
+		t.Fatalf("gemini config = %s", config)
+	}
+	if strings.Contains(strings.Join(got.env, "\n"), "OPENAI_API_KEY=") {
+		t.Fatalf("gemini environment retained another provider key: %q", got.env)
+	}
+}
+
+func TestGrokInvocationUsesIsolatedProjectBridgeAndNoBuiltins(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "xai-secret")
+	workspace := t.TempDir()
+	cfg := runConfig{Provider: "grok", Binary: "grok", BridgeBinary: "/tmp/emisar-mcp"}
+	got, err := buildInvocation(
+		cfg,
+		scenario{Prompt: "inspect the fleet"},
+		"http://127.0.0.1:9999",
+		"eval-token",
+		workspace,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(got.args, "\n")
+	for _, flag := range []string{"--tools\n", "--no-subagents", "--no-memory", "--disable-web-search", "--no-auto-update"} {
+		if !strings.Contains(joined, flag) {
+			t.Fatalf("grok argv missing %q: %#v", flag, got.args)
+		}
+	}
+	config, err := os.ReadFile(filepath.Join(workspace, ".grok", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(config), `command = "/tmp/emisar-mcp"`) ||
+		!strings.Contains(string(config), `EMISAR_API_KEY="eval-token"`) {
+		t.Fatalf("grok config = %s", config)
 	}
 }
 
@@ -102,10 +171,15 @@ func TestChildEnvStripsEmisarAndProviderSecrets(t *testing.T) {
 	t.Setenv("EMISAR_API_KEY", "portal-secret")
 	t.Setenv("ANTHROPIC_API_KEY", "anthropic-secret")
 	t.Setenv("OPENAI_API_KEY", "openai-secret")
+	t.Setenv("GEMINI_API_KEY", "gemini-secret")
+	t.Setenv("XAI_API_KEY", "xai-secret")
 	t.Setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
 	t.Setenv("CLAUDECODE", "1")
 	joined := strings.Join(childEnv("ANTHROPIC_API_KEY"), "\n")
-	for _, gone := range []string{"EMISAR_API_KEY=", "OPENAI_API_KEY=", "CLAUDE_CODE_ENTRYPOINT=", "CLAUDECODE="} {
+	for _, gone := range []string{
+		"EMISAR_API_KEY=", "OPENAI_API_KEY=", "GEMINI_API_KEY=", "XAI_API_KEY=",
+		"CLAUDE_CODE_ENTRYPOINT=", "CLAUDECODE=",
+	} {
 		if strings.Contains(joined, gone) {
 			t.Fatalf("environment kept %s: %s", gone, joined)
 		}

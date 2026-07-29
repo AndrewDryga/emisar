@@ -10,15 +10,15 @@ defmodule Emisar.Compat do
   tenant setting — read at call time:
 
       config :emisar, Emisar.Compat,
-        runner_minimum: ">= 0.4.0",
-        runner_recommended: ">= 0.5.0",
+        runner_minimum: ">= 0.10.0",
+        runner_recommended: ">= 0.10.0",
         runner_enforce: false,
-        mcp_minimum: ">= 0.4.0",
-        mcp_recommended: ">= 0.5.0",
+        mcp_minimum: ">= 0.3.0",
+        mcp_recommended: ">= 0.3.0",
         mcp_enforce: false
 
   `*_minimum` / `*_recommended` are Elixir `Version` requirement strings
-  (`>= 0.4.0`, `~> 0.5`); a malformed one raises rather than silently
+  (`>= 0.10.0`, `~> 0.15`); a malformed one raises rather than silently
   accepting every version. An omitted threshold is treated as satisfied.
   Enforcement defaults off (warn-only), and even when on it never blocks a
   `:unknown` (missing / unparseable) version — only `:unsupported`.

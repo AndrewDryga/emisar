@@ -1708,57 +1708,70 @@ large catalog.
 
 ### Retrieval corpora
 
-The committed development corpus covers every shipped action with:
-
-- exact action and pack lookup;
-- at least three natural-language paraphrases;
-- operational synonyms and realistic misspellings;
-- high-cost near-neighbor actions;
-- hostname, runner name, group, label, and exact-ref targeting;
-- multiple pack refs, offline targets, trust failures, retirement, descriptor
-  mismatch, pagination churn, and schema refresh;
-- prompt-injection strings in descriptions, labels, and output.
+The committed development benchmark exercises the real bundled catalog with
+exact-ID and exact-pack lookups, operator-language queries, hard symptom
+queries, and reviewed expected actions. Its deterministic portal test scores
+the first result page and keeps ordinary search regressions cheap to diagnose.
+The committed real-client corpus separately exercises discovery, inspection,
+dispatch, continuation following, redaction, and a request with no applicable
+action against the three-runner fixture stack.
 
 A separately owned held-out corpus is split by intent and pack, not by
 paraphrase row. Its task language is never used to tune weights, search terms,
 descriptions, or the development set. It includes valid no-action requests and
-near-neighbor negatives so a broad overmatching ranker cannot pass on recall
-alone. Adding a held-out failure to development does not remove or rewrite the
-original held-out case; new certification uses a fresh blind partition.
+near-neighbor negatives so a broad overmatching client cannot pass on recall
+alone. Each partition has four through eight cases: at least two positive and
+two no-action cases, with both outcomes spread across at least two intent
+groups. Positive cases bind the allowed action, exact pack ref, and exact
+fixture runner ref. Adding a held-out failure to development does not remove or
+rewrite the original held-out case; after a general fix, certification uses a
+fresh blind partition.
 
 Release thresholds:
 
-- 100% exact-ID, exact-pack, and scope correctness.
-- 100% expected-action recall at 5 on both development and held-out corpora.
+- 100% expected-action recall at 5 on held-out positive tasks.
 - 100% no-action precision on held-out negative tasks.
 - Zero wrong-action, wrong-pack, or wrong-target dispatches.
-- Stable ranking against an unchanged catalog.
-- Runner count and keyword stuffing do not change ranking lanes.
+- 100% required tool and outcome completion.
+- Every started run reaches a terminal result through returned continuations.
 
-Development failures may improve reviewed pack `search_terms`, weights, or the
-development corpus. Held-out failures block release and trigger a fresh blind
-certification set after the general fix. They never justify an opaque ranker or
-test-specific metadata.
+The deterministic development benchmark remains the gate for exact IDs, packs,
+scope, unchanged-catalog ranking, runner-count invariance, and resistance to
+keyword stuffing. Development failures may improve reviewed pack
+`search_terms`, weights, or the development corpus. Held-out failures block
+release and trigger a fresh blind certification set after the general fix.
+They never justify an opaque ranker or test-specific metadata.
 
 ### Client certification
 
-Run the same blind held-out end-to-end corpus in clean sessions using the latest
-installed Emisar bridge with at least:
+Run every case in the same blind held-out corpus in a fresh session using the
+exact candidate Emisar bridge with:
 
 - Claude CLI;
 - Codex CLI;
 - Gemini CLI; and
 - Grok CLI.
 
-Check existing MCP configuration before editing it. Replace stale binary paths
-or builds in place and record the exact client and bridge versions. Compare each
-client separately against the flat-catalog baseline; aggregate success cannot
-hide one client regression.
+The certification job builds the bridge from the candidate commit, pins each
+client version, gives every client only a short-lived loopback credential, and
+keeps the real fixture credential in a fail-closed relay. That relay rejects
+tools, actions, packs, and runners outside the case allowlists before the portal.
+It also requires successful action inspection before dispatch.
 
-Measure correct task completion, search-to-description follow-through, argument
-repair, pagination, stale refresh, approval waiting, cancellation, calls,
-tokens, latency, and failures. Use non-destructive fixture actions on a dedicated
-runner, never production actions.
+Record the candidate commit, corpus digest and partition, exact model, client
+and bridge versions, required-tool completion, recall at 5, terminal
+continuation, calls, normalized tokens, latency, and failures for each client
+separately. Aggregate success cannot hide one client regression. Release
+reports omit held-out prompts and client output. Missing client credentials or
+model IDs, a missing or invalid held-out corpus, or any failed lane blocks
+release.
+
+Argument validation, pagination, stale-contract refresh, approval waiting,
+cancellation, and ambiguous-operation recovery remain deterministic API
+contracts exercised by their portal and bridge test suites. They are not
+claimed as part of real-client release certification until the held-out job
+scores them. Use non-destructive fixture actions on dedicated runners, never
+production actions.
 
 ## Security invariants
 

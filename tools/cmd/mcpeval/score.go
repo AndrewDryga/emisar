@@ -38,6 +38,7 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	result := score{Passed: true}
 	succeededTools := map[string]bool{}
 	succeededActions := map[string]bool{}
+	searchActions := map[string]bool{}
 	failedCalls := map[string]int{}
 	failedTools := map[string]string{}
 	runStatus := map[string]string{}
@@ -56,6 +57,18 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 			failedTools[key] = call.Tool
 		} else {
 			succeededTools[call.Tool] = true
+		}
+		if call.Tool == "find_actions" && !call.ResponseError {
+			if item.ExpectedOutcome == outcomeNoAction && len(call.SearchCandidates) > 0 {
+				result.NoActionCandidateCalls++
+				result.fail("a no_action search returned candidates instead of reporting the missing capability")
+			}
+			allowedPackRefs := stringSet(item.AllowedPackRefs)
+			for _, candidate := range call.SearchCandidates {
+				if len(allowedPackRefs) == 0 || allowedPackRefs[candidate.PackRef] {
+					searchActions[candidate.ActionID] = true
+				}
+			}
 		}
 		if call.ResponseCode == "invalid_args" {
 			result.InvalidArgsCalls++
@@ -141,6 +154,21 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	}
 	if len(result.MissingRequiredActions) > 0 {
 		result.fail("required actions never succeeded: " + strings.Join(result.MissingRequiredActions, ", "))
+	}
+	for _, group := range item.RequiredSearchActions {
+		satisfied := false
+		for _, action := range group {
+			if searchActions[action] {
+				satisfied = true
+				break
+			}
+		}
+		if !satisfied {
+			result.MissingSearchActions = append(result.MissingSearchActions, strings.Join(group, "|"))
+		}
+	}
+	if len(result.MissingSearchActions) > 0 {
+		result.fail("required actions missed recall@5: " + strings.Join(result.MissingSearchActions, ", "))
 	}
 
 	if agent.TimedOut {
