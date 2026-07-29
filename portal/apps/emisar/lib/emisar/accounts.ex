@@ -657,18 +657,30 @@ defmodule Emisar.Accounts do
   """
   def sync_member_display_name(account_id, user_id, display_name)
       when is_binary(account_id) and is_binary(user_id) do
-    queryable =
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_account_and_user(account_id, user_id)
+    # One transaction for the membership write AND the tenancy question. Read
+    # separately, the answer could go stale between them: another account adding
+    # a membership in that window let this directory's name through to a
+    # workspace it has no authority over.
+    Repo.transaction(fn ->
+      queryable =
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_account_and_user(account_id, user_id)
+        |> Membership.Query.lock_for_update()
 
-    case Repo.peek(queryable) do
-      nil ->
-        {:error, :not_found}
+      case Repo.peek(queryable) do
+        nil ->
+          Repo.rollback(:not_found)
 
-      %Membership{} = membership ->
-        with {:ok, updated} <- write_display_name(membership, display_name) do
-          {:ok, updated, sole_tenancy?(user_id, account_id)}
-        end
+        %Membership{} = membership ->
+          case write_display_name(membership, display_name) do
+            {:ok, updated} -> {updated, sole_tenancy?(user_id, account_id)}
+            {:error, reason} -> Repo.rollback(reason)
+          end
+      end
+    end)
+    |> case do
+      {:ok, {membership, sole_tenancy?}} -> {:ok, membership, sole_tenancy?}
+      {:error, reason} -> {:error, reason}
     end
   end
 
