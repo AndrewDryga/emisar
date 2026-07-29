@@ -48,7 +48,12 @@ type shot struct {
 	// NoBorder skips the 40px matte: for frames a component frames itself (the
 	// console cast), and so overlay coordinates map 1:1 onto the image.
 	NoBorder bool
-	Output   string
+	// Highlight outlines the controls the guide's step tells the operator to
+	// touch, the way the vendor captures do. A console shot that shows a whole
+	// form and marks nothing makes the reader hunt for the two fields the step
+	// named; the crop says where to look, and this says what to look at.
+	Highlight []string
+	Output    string
 }
 
 // The docs measure is ~672px, so a shot displays at ~40% of a 1680px desktop
@@ -91,7 +96,20 @@ const collapseAuditFilters = `(()=>{const b=document.querySelector('button[phx-c
 // fills in and LOCKS — the detail /docs/sso#google-workspace exists to show.
 const selectGoogleProvider = `(()=>{const el=document.querySelector('select[name="provider[kind]"]');if(!el)return false;el.value='google_workspace';el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`
 
-const selectEntraProvider = `(()=>{const set=(sel,val)=>{const el=document.querySelector(sel);if(!el)return false;el.value=val;el.dispatchEvent(new Event('change',{bubbles:true}));return true};const k=set('select[name="provider[kind]"]','openid_connect');const c=set('select[name="provider[identifier_claim]"]','oid');return k&&c})()`
+const selectEntraProvider = `(()=>{const set=(sel,val)=>{const el=document.querySelector(sel);if(!el)return false;el.value=val;el.dispatchEvent(new Event('change',{bubbles:true}));return true};return set('select[name="provider[kind]"]','entra')})()`
+
+// selectProviderKind picks a provider in the Add-provider form. Each guide's
+// first step tells the reader to choose THEIR provider, so each guide's shot
+// shows that provider chosen rather than a shared picture of someone else's.
+func selectProviderKind(kind string) string {
+	return fmt.Sprintf(`(()=>{const el=document.querySelector('select[name="provider[kind]"]');if(!el)return false;el.value=%q;el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`, kind)
+}
+
+// chooseOidClaim runs as its OWN click, after the kind change has settled.
+// Setting both in one snippet lost the claim: the kind's phx-change re-renders
+// the form, and LiveView writes the server's value back over anything the
+// browser had set — so the shot for "change Identifier claim to oid" showed sub.
+const chooseOidClaim = `(()=>{const el=document.querySelector('select[name="provider[identifier_claim]"]');if(!el)return false;el.value='oid';el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`
 
 // showProductionHost rewrites the dev server's origin to the real product host in
 // the RENDERED text only. A docs screenshot that reads localhost:43659 tells a
@@ -135,8 +153,22 @@ var docsShots = []shot{
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps
 	// two of three IdP groups, deliberately leaving one unmapped).
-	{Name: "google-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectGoogleProvider, showProductionHost}, Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/google-emisar-connection.webp"},
-	{Name: "entra-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, showProductionHost}, Anchor: Anchor{Selector: "#provider_form"}, Width: docsWidth, Output: "docs/sso/entra-emisar-connection.webp"},
+	// The step names the issuer and the two credential fields, so the shot is that
+	// block — not the whole 3,788px form it used to be.
+	{Name: "google-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectGoogleProvider, showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/google-emisar-connection.webp"},
+	// Every guide's step 1 is "open Add provider and choose <provider>". One shot
+	// each, showing that provider picked — the form is provider-aware, so a shared
+	// picture of someone else's choice would be the wrong screen.
+	{Name: "okta-emisar-add-provider", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("okta")}, Anchor: Anchor{Heading: "Provider type", Climb: "div"}, Highlight: []string{"Provider type"}, Width: docsWidth, Output: "docs/sso/okta-emisar-add-provider.webp"},
+	{Name: "entra-emisar-add-provider", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("entra")}, Anchor: Anchor{Heading: "Provider type", Climb: "div"}, Highlight: []string{"Provider type"}, Width: docsWidth, Output: "docs/sso/entra-emisar-add-provider.webp"},
+	{Name: "jumpcloud-emisar-add-provider", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("jumpcloud")}, Anchor: Anchor{Heading: "Provider type", Climb: "div"}, Highlight: []string{"Provider type"}, Width: docsWidth, Output: "docs/sso/jumpcloud-emisar-add-provider.webp"},
+	{Name: "keycloak-emisar-add-provider", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("keycloak")}, Anchor: Anchor{Heading: "Provider type", Climb: "div"}, Highlight: []string{"Provider type"}, Width: docsWidth, Output: "docs/sso/keycloak-emisar-add-provider.webp"},
+	{Name: "google-emisar-add-provider", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("google_workspace")}, Anchor: Anchor{Heading: "Provider type", Climb: "div"}, Highlight: []string{"Provider type"}, Width: docsWidth, Output: "docs/sso/google-emisar-add-provider.webp"},
+
+	// The step names ONE control — Identifier claim — so the shot is that field and
+	// its explanation, outlined. It used to be the entire 3,290px form, which shows
+	// the reader everything and points at nothing.
+	{Name: "entra-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, chooseOidClaim, showProductionHost}, Anchor: Anchor{Heading: "Identifier claim", Climb: "div.sm\\:col-span-2"}, Highlight: []string{"Identifier claim"}, Width: docsWidth, Output: "docs/sso/entra-emisar-connection.webp"},
 	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
 	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Synced users", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
 }
@@ -468,6 +500,60 @@ func rgbHex(value string) string {
 	return result
 }
 
+// highlightControls outlines each label's field group in emerald, the same
+// treatment the vendor-console captures use, so one guide reads one way whichever
+// console a step is in. A label that matches nothing FAILS the capture — a shot
+// that silently loses its outline is a broken instruction, which is exactly how
+// the Okta lifecycle screenshot shipped bare.
+func highlightControls(session *Session, labels []string) error {
+	for _, label := range labels {
+		script := fmt.Sprintf(`(function(){
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const hits = [...document.querySelectorAll('label,legend,h2,h3,p,span,div')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  let node = hits[0];
+  if (!node) return false;
+  // A <label for=...> names its control outright; take that rather than guessing
+  // by climbing. The climb below can drift onto a NEIGHBOUR's input and outline
+  // the wrong thing while still reporting success — which it did once.
+  const named = node.getAttribute && node.getAttribute('for')
+    ? document.getElementById(node.getAttribute('for'))
+    : null;
+  if (named && visible(named)) {
+    named.style.outline = '3px solid #10b981';
+    named.style.outlineOffset = '-3px';
+    named.style.borderRadius = '8px';
+    return true;
+  }
+  // Climb to the field group, then outline the CONTROL inside it. Outlining the
+  // group itself puts the line on the crop boundary, where the element
+  // screenshot clips it away — which is how a "highlighted" shot came back with
+  // one green edge showing.
+  for (let up = 0; up < 4 && node.parentElement; up++) {
+    if (node.querySelector('input,select,textarea,button,[role=radio],[role=checkbox]')) break;
+    node = node.parentElement;
+  }
+  node = node.querySelector('input,select,textarea,button,[role=radio],[role=checkbox]') || node;
+  // INSET. A control that fills its group's width has no room outside it, so an
+  // outward outline is clipped at the crop boundary and only the top and bottom
+  // survive. Drawn inside, all four edges are in the picture.
+  node.style.outline = '3px solid #10b981';
+  node.style.outlineOffset = '-3px';
+  node.style.borderRadius = '8px';
+  return true;
+})()`, label)
+		var marked bool
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(script, &marked)); err != nil {
+			return err
+		}
+		if !marked {
+			return fmt.Errorf("nothing labelled %q to highlight", label)
+		}
+	}
+	return nil
+}
+
 func captureDocElement(session *Session, config DocsConfig, s shot) (string, error) {
 	const selector = `[data-shot="1"]`
 	// Mark + settle, twice if needed: when a reveal click's LiveView navigation
@@ -487,6 +573,9 @@ func captureDocElement(session *Session, config DocsConfig, s shot) (string, err
 			if err := chromedp.Run(session.Context, chromedp.Evaluate(hide, nil)); err != nil {
 				return "", err
 			}
+		}
+		if err := highlightControls(session, s.Highlight); err != nil {
+			return "", fmt.Errorf("%s: %w", s.Name, err)
 		}
 		switch err := session.Ready(10*time.Second, selector); {
 		case err == nil:

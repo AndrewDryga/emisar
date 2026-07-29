@@ -40,7 +40,7 @@ func (s *Session) MarkAnchor(anchor Anchor, attribute string) error {
  const visible=n=>{if(!n)return false;if(n.checkVisibility)return n.checkVisibility();const b=n.getBoundingClientRect();return b.width>0&&b.height>0};
  let el=t.Selector?document.querySelector(t.Selector):null;
  if(!el&&t.ClassContains&&t.ClassContains.length)el=[...document.querySelectorAll('div,section')].find(d=>visible(d)&&t.ClassContains.every(c=>(d.className||'').includes(c)))||null;
- if(!el&&t.Heading)el=[...document.querySelectorAll('h1,h2,h3,h4,div,span,p')].filter(n=>visible(n)&&n.textContent.trim()===t.Heading).sort((a,b)=>a.querySelectorAll('*').length-b.querySelectorAll('*').length)[0]||null;
+ if(!el&&t.Heading)el=[...document.querySelectorAll('h1,h2,h3,h4,div,span,p,label,legend')].filter(n=>visible(n)&&n.textContent.trim()===t.Heading).sort((a,b)=>a.querySelectorAll('*').length-b.querySelectorAll('*').length)[0]||null;
  if(!el)return false;if(t.Climb)el=el.closest(t.Climb)||el;if(!visible(el))return false;el.setAttribute(attribute,'1');return true;
 })(` + string(encoded) + `,` + string(attributeJSON) + `)`
 	var marked bool
