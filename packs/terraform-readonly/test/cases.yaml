@@ -138,6 +138,20 @@ cases:
         /summary/create: 3
         /summary/delete: 0
 
+  # A remote-execution workspace streams the run's human output and emits only
+  # the local CLI's version line as JSON. Skipping the unparseable lines would
+  # yield a confident, entirely EMPTY summary for a plan that changes five
+  # resources, so the action refuses rather than answers.
+  - name: tf.plan_summary-refuses-remote-execution
+    action: tf.plan_summary
+    env:
+      TF_DIR: /packs/terraform-readonly/test/fixtures/plan
+      TF_BIN: /packs/terraform-readonly/test/fixtures/remote/cli-stub.sh
+    expect:
+      status: failure
+      stderr_contains: [streamed no structured plan output]
+      stdout_not_contains: ['"total":0']
+
   - name: tf.plan_file_summary-rejects-traversal
     action: tf.plan_file_summary
     args: {plan_file: ../workspace/terraform.tfstate}

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform / OpenTofu read-only ops
-version: 0.3.0
+version: 0.4.0
 description: >
   Read-only Terraform or OpenTofu CLI actions for inspecting a workspace.
   NO apply, NO destroy, NO state mutation — those should happen in CI, not
@@ -51,6 +51,7 @@ setup:
     - "state_list, state_show, show_json, output, state_metadata, and state_compare_metadata read the backend state, so the backend credentials must be reachable; validate, version, state_file_metadata, and plan_file_summary do not."
     - "plan_no_save and plan_summary (both risk medium) call every provider's read APIs (quota usage) and briefly hold the state lock, but never write state or save an applyable plan."
     - "For review, prefer plan_summary over plan_no_save and show_json: it returns addresses, actions, counts, drift, and diagnostics as JSON while emitting no attribute or output values. plan_file_summary returns the same shape for a plan CI already saved, without contacting a provider."
+    - "plan_summary needs a workspace that plans LOCALLY. A `cloud`/`remote` backend running in HCP Terraform or Terraform Enterprise streams the remote run's human output instead of machine-readable messages, so the action fails closed rather than reporting an empty plan; use the hcp-terraform pack for those workspaces. plan_no_save still works there, and the state-reading actions are unaffected."
     - "`state pull` may upgrade state to the local CLI's readable format; terraform_version in projected metadata can therefore reflect the runner's CLI rather than the writer of the remote snapshot."
     - "TF_BIN only reaches the action when the runner's inherit_env allowlists it, exactly like TF_DIR — an unset TF_BIN runs `terraform`."
   verify: tf.version

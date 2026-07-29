@@ -14,7 +14,10 @@ description: >
   output changes, and diagnostics. Attribute and output VALUES are never
   emitted — only addresses, types, actions, and names — so a plan can be
   reviewed without dumping the secrets a full plan carries in cleartext. Saves
-  no plan file, so nothing this returns can be applied.
+  no plan file, so nothing this returns can be applied. Needs a workspace that
+  plans locally: one whose plans run remotely in HCP Terraform or Terraform
+  Enterprise streams no structured output, and this fails rather than reporting
+  an empty plan — review those runs with the hcp-terraform pack.
 side_effects:
   - Calls every provider's read API to refresh state — quota usage applies.
   - Briefly holds the backend's state lock while planning.

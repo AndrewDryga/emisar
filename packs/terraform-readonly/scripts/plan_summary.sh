@@ -135,7 +135,7 @@ workspace_dir() {
 }
 
 live_summary() {
-  local stream status=0
+  local stream messages status=0
   workspace_dir
   stream=$(cd "$TF_DIR" && "$(cli)" plan -input=false -json) || status=$?
   ((${#stream} <= max_plan_bytes)) || fail "plan JSON stream exceeded 32 MiB"
@@ -143,7 +143,17 @@ live_summary() {
     printf '%s\n' "$stream" | report_diagnostics >&2
     fail "plan failed with exit status $status"
   fi
-  printf '%s\n' "$stream" | jq -sce "$projection"' project_stream'
+
+  # A workspace whose plans run remotely (HCP Terraform / Terraform Enterprise)
+  # streams the remote run's HUMAN output here and emits only the local CLI's
+  # version message as JSON, so the parseable lines are a truthful-looking but
+  # EMPTY plan. Keep the non-JSON lines out, then refuse to report a summary
+  # unless the run actually delivered its change_summary.
+  messages=$(printf '%s\n' "$stream" | jq -Rnc '[inputs | fromjson? // empty]')
+  if ! printf '%s' "$messages" | jq -e 'any(.[]; .type == "change_summary")' >/dev/null; then
+    fail "this working directory streamed no structured plan output, so no summary can be trusted — a remote-execution HCP Terraform or Terraform Enterprise workspace behaves this way; review those runs with the hcp-terraform pack instead"
+  fi
+  printf '%s' "$messages" | jq -ce "$projection"' project_stream'
 }
 
 plan_path() {
@@ -173,6 +183,10 @@ file_summary() {
   document=$(cd "$TF_DIR" && "$(cli)" show -json "$plan") || status=$?
   ((status == 0)) || fail "reading the saved plan failed with exit status $status"
   ((${#document} <= max_plan_bytes)) || fail "plan JSON exceeded 32 MiB"
+  # Same fail-closed reasoning as the live path: a document that is valid JSON
+  # but carries no plan would otherwise project as an empty, believable summary.
+  printf '%s' "$document" | jq -e 'has("format_version")' >/dev/null ||
+    fail "that file did not read back as a Terraform plan document"
   printf '%s' "$document" | jq -ce "$projection"' project_file'
 }
 
