@@ -77,20 +77,17 @@ defmodule EmisarWeb.SCIM.GroupController do
       when is_list(operations) do
     provider = conn.assigns.scim_provider
 
-    case rename_op(operations) do
-      {:ok, display} ->
-        # A rename, not a membership change. SCIM's `id` is immutable and
-        # `displayName` is not, so the group keeps the id we issued and the IdP
-        # keeps addressing it by that — only the display moves. JumpCloud's
-        # activation does exactly this and treats a 400 here as a hard failure.
-        case SSO.scim_rename_group(provider, external_id, display) do
-          {:ok, summary} -> render_group(conn, :ok, summary, [])
-          {:error, reason} -> render_error(conn, reason)
-        end
+    # A batch may carry both a rename and membership changes. Recognizing a
+    # rename only as the SOLE operation sent an otherwise valid
+    # `replace displayName` + `add members` batch into the member fold, where the
+    # rename classified as unsupported and the whole request 400'd.
+    {renames, member_operations} = Enum.split_with(operations, &rename_op?/1)
 
-      :not_a_rename ->
-        patch_members(conn, provider, external_id, operations)
-    end
+    # Members first, then the rename. The display is a single scalar, so its
+    # position in the batch cannot change the final state — but the name is
+    # stamped onto the group's membership rows, and renaming before they exist
+    # leaves a group the batch just populated with no name at all.
+    patch_members(conn, provider, external_id, member_operations, renames)
   end
 
   def update(conn, %{"Operations" => _}),
@@ -99,19 +96,58 @@ defmodule EmisarWeb.SCIM.GroupController do
   def update(conn, _params),
     do: bad_request(conn, "invalidSyntax", "PATCH requires a SCIM PatchOp with `Operations`.")
 
-  # A pathless `replace` whose value map carries only displayName is a rename.
-  defp rename_op([%{"value" => %{"displayName" => display}} = op]) when is_binary(display) do
-    path = Map.get(op, "path")
-    operation = String.downcase(to_string(Map.get(op, "op", "")))
+  # SCIM's `id` is immutable and `displayName` is not, so the group keeps the id
+  # we issued and the IdP keeps addressing it by that — only the display moves.
+  # JumpCloud's activation sends exactly this and treats a 400 as a hard failure.
+  # Wire order decides, so the last rename in the batch is the one that sticks.
+  defp apply_renames(_provider, _external_id, []), do: :ok
 
-    if operation == "replace" and (is_nil(path) or path == ""),
-      do: {:ok, display},
-      else: :not_a_rename
+  defp apply_renames(provider, external_id, renames) do
+    display = renames |> List.last() |> rename_display()
+
+    case SSO.scim_rename_group(provider, external_id, display) do
+      {:ok, _summary} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
-  defp rename_op(_operations), do: :not_a_rename
+  # Two shapes carry a rename: a pathless `replace` whose value map holds
+  # displayName, and a `replace` with `path: "displayName"` and a bare string.
+  defp rename_op?(op), do: rename_display(op) != nil
 
-  defp patch_members(conn, provider, external_id, operations) do
+  defp renamed(summary, []), do: summary
+
+  defp renamed(summary, renames),
+    do: Map.put(summary, :display, renames |> List.last() |> rename_display())
+
+  defp rename_display(%{"value" => %{"displayName" => display}} = op) when is_binary(display) do
+    path = Map.get(op, "path")
+
+    if replace?(op) and (is_nil(path) or path == ""), do: display, else: nil
+  end
+
+  defp rename_display(%{"path" => path, "value" => display} = op)
+       when is_binary(path) and is_binary(display) do
+    if replace?(op) and String.downcase(path) == "displayname", do: display, else: nil
+  end
+
+  defp rename_display(_op), do: nil
+
+  defp replace?(op), do: downcase(Map.get(op, "op")) == "replace"
+
+  # A batch of nothing but renames has no membership to reconcile.
+  defp patch_members(conn, provider, external_id, [], renames) do
+    case apply_renames(provider, external_id, renames) do
+      :ok ->
+        display = renames |> List.last() |> rename_display()
+        render_group(conn, :ok, %{external_group_id: external_id, display: display}, [])
+
+      {:error, reason} ->
+        render_error(conn, reason)
+    end
+  end
+
+  defp patch_members(conn, provider, external_id, operations, renames) do
     case member_ops(operations) do
       {:replace, member_external_ids} ->
         attrs = %{
@@ -120,14 +156,20 @@ defmodule EmisarWeb.SCIM.GroupController do
           member_external_ids: member_external_ids
         }
 
-        case SSO.scim_upsert_group(provider, attrs) do
-          {:ok, summary} -> render_group(conn, :ok, summary, member_external_ids)
+        with {:ok, summary} <- SSO.scim_upsert_group(provider, attrs),
+             :ok <- apply_renames(provider, external_id, renames) do
+          render_group(conn, :ok, renamed(summary, renames), member_external_ids)
+        else
           {:error, reason} -> render_error(conn, reason)
         end
 
       {:delta, add_ids, remove_ids} ->
-        case SSO.scim_patch_group_members(provider, external_id, add_ids, remove_ids) do
-          {:ok, _summary} -> render_group(conn, :ok, %{external_group_id: external_id}, add_ids)
+        with {:ok, _summary} <-
+               SSO.scim_patch_group_members(provider, external_id, add_ids, remove_ids),
+             :ok <- apply_renames(provider, external_id, renames) do
+          summary = renamed(%{external_group_id: external_id}, renames)
+          render_group(conn, :ok, summary, add_ids)
+        else
           {:error, reason} -> render_error(conn, reason)
         end
 

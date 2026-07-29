@@ -322,12 +322,52 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       body =
         conn
         |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp", %{
-          "Operations" => [%{"op" => "replace", "path" => "displayName", "value" => "Renamed"}]
+          "Operations" => [%{"op" => "replace", "path" => "externalId", "value" => "grp-other"}]
         })
         |> json_response(400)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
       assert body["scimType"] == "invalidPath"
+    end
+
+    test "a rename sent as `path: displayName` is honored", %{conn: conn, token: token} do
+      # The plain RFC 7644 shape, and what Entra sends. It used to 400.
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp", %{
+          "Operations" => [%{"op" => "replace", "path" => "displayName", "value" => "Renamed"}]
+        })
+        |> json_response(200)
+
+      assert body["displayName"] == "Renamed"
+    end
+
+    test "a rename batched with member changes applies both", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      # Recognizing a rename only as the SOLE operation sent this whole batch
+      # into the member fold, where the rename classified as unsupported and the
+      # request 400'd — losing the membership change with it.
+      joiner = provision(provider, "okta|batched")
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-batch", %{
+          "Operations" => [
+            %{"op" => "replace", "path" => "displayName", "value" => "Platform"},
+            %{"op" => "add", "path" => "members", "value" => [%{"value" => "okta|batched"}]}
+          ]
+        })
+        |> json_response(200)
+
+      assert body["id"] == "grp-batch"
+
+      groups = SSO.scim_list_groups(provider)
+      group = Enum.find(groups, &(&1.external_group_id == "grp-batch"))
+      assert group.display == "Platform"
+      assert group.member_external_ids == [joiner.scim_external_id]
     end
 
     test "a PATCH with too many operations → 400 invalidValue", %{conn: conn, token: token} do
