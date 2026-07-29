@@ -172,18 +172,29 @@
             <.docs_step_venue>emisar</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Connect and test the first sign-in.</p>
             <p class="mt-1.5">
-              Back in emisar, select the <strong class="text-zinc-200">Keycloak</strong>
-              preset and enter the issuer URL <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM
-              </code>,
-              client ID, and client secret. Choose
-              <strong class="text-zinc-200">Auto-provision</strong>
-              or <strong class="text-zinc-200">Manual</strong>
-              new-user provisioning and a default role, test the connection, enable it, and save.
-              In a private browser window, sign in as a Keycloak user who is not yet in emisar.
-              Auto-provision should create the user at the default role; Manual should create a
-              pending request for an admin instead.
+              Back on the connection you opened in step 1, paste the client ID and secret, and
+              build the issuer from your Keycloak host and realm:
             </p>
+            <.docs_code
+              phx-no-format
+              label="Issuer URL"
+              copy_text="https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM"
+            >https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM</.docs_code>
+            <p class="mt-4">
+              Press <strong class="text-zinc-200">Test connection</strong>
+              — it fetches the realm's discovery document, so a wrong host or realm fails here
+              rather than at someone's first sign-in. Then tick
+              <strong class="text-zinc-200">Enabled</strong>
+              and save. In a private window, sign in as a Keycloak user who is not in emisar yet:
+              with auto-provisioning they land at the default role, and with manual provisioning
+              an admin gets a pending request instead.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/keycloak-emisar-credentials.webp"
+              title="emisar · Add provider"
+              caption="Three values from Keycloak. The issuer is the realm URL, not the host on its own."
+              alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, and the Issuer URL placeholder showing https://YOUR-HOST/realms/YOUR-REALM."
+            />
           </div>
         </li>
       </ol>

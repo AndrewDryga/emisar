@@ -105,12 +105,6 @@ func selectProviderKind(kind string) string {
 	return fmt.Sprintf(`(()=>{const el=document.querySelector('select[name="provider[kind]"]');if(!el)return false;el.value=%q;el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`, kind)
 }
 
-// chooseOidClaim runs as its OWN click, after the kind change has settled.
-// Setting both in one snippet lost the claim: the kind's phx-change re-renders
-// the form, and LiveView writes the server's value back over anything the
-// browser had set — so the shot for "change Identifier claim to oid" showed sub.
-const chooseOidClaim = `(()=>{const el=document.querySelector('select[name="provider[identifier_claim]"]');if(!el)return false;el.value='oid';el.dispatchEvent(new Event('change',{bubbles:true}));return true})()`
-
 // showProductionHost rewrites the dev server's origin to the real product host in
 // the RENDERED text only. A docs screenshot that reads localhost:43659 tells a
 // customer nothing — emisar is not a self-hosted product — and the founder has
@@ -167,13 +161,14 @@ var docsShots = []shot{
 
 	// "Paste the values back into emisar" — the fields the step names, outlined.
 	// The guide told the reader which values to carry and then showed them nothing.
+	{Name: "keycloak-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("keycloak"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/keycloak-emisar-credentials.webp"},
+	{Name: "entra-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/entra-emisar-credentials.webp"},
 	{Name: "jumpcloud-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("jumpcloud"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/jumpcloud-emisar-credentials.webp"},
 	{Name: "okta-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("okta"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/okta-emisar-credentials.webp"},
 
 	// The step names ONE control — Identifier claim — so the shot is that field and
 	// its explanation, outlined. It used to be the entire 3,290px form, which shows
 	// the reader everything and points at nothing.
-	{Name: "entra-emisar-connection", Path: "/app/demo/settings/sso/new", Clicks: []string{selectEntraProvider, chooseOidClaim, showProductionHost}, Anchor: Anchor{Heading: "Identifier claim", Climb: "div.sm\\:col-span-2"}, Highlight: []string{"Identifier claim"}, Width: docsWidth, Output: "docs/sso/entra-emisar-connection.webp"},
 	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
 	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Synced users", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
 }

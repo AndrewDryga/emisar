@@ -107,28 +107,19 @@
             4
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Connect it in emisar.</p>
+            <.docs_step_venue>Entra</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">Copy the client and tenant IDs.</p>
             <p class="mt-1.5">
-              Pick <strong class="text-zinc-200">Microsoft Entra</strong>
-              as the provider type. Take <strong class="text-zinc-200">Client ID</strong>
-              from the registration's <strong class="text-zinc-200">Application (client) ID</strong>, the secret from the
-              step above, and build the issuer from your <strong class="text-zinc-200">Directory (tenant) ID</strong>:
+              The registration's <strong class="text-zinc-200">Overview</strong>
+              blade carries both values emisar needs to identify your tenant:
+              <strong class="text-zinc-200">Application (client) ID</strong>
+              is the client ID, and <strong class="text-zinc-200">Directory (tenant) ID</strong>
+              is what goes into the issuer URL.
             </p>
-            <.docs_code
-              phx-no-format
-              label="Issuer URL"
-              copy_text="https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
-            >https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0</.docs_code>
-            <p class="mt-4">
-              The trailing <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/v2.0</code>
-              is what selects Entra's v2.0 endpoint; without it you get v1.0 tokens.
-            </p>
-
             <.docs_screenshot
               src="/images/docs/sso/entra-app-overview.webp"
               title="Microsoft Entra · App registration overview"
-              caption="Application (client) ID is emisar's Client ID. Directory (tenant) ID below it is the value that goes into the issuer URL."
+              caption="Application (client) ID is emisar's Client ID. Directory (tenant) ID below it goes into the issuer."
               alt="The emisar app registration's Overview blade with Application (client) ID outlined in green, alongside Object ID, Directory (tenant) ID, client credentials showing one secret, and one web redirect URI."
             />
           </div>
@@ -139,57 +130,34 @@
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Set the identifier claim to oid.</p>
+            <p class="font-semibold text-zinc-100">Paste them into the connection.</p>
             <p class="mt-1.5">
-              This is the one setting Entra needs that no other provider does. Change
-              <strong class="text-zinc-200">Identifier claim</strong>
-              from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>.
+              Back on the connection you opened in step 1, the client ID is the
+              <strong class="text-zinc-200">Application (client) ID</strong>
+              and the secret is the one from step 3. Build the issuer from your tenant ID:
             </p>
+            <.docs_code
+              phx-no-format
+              label="Issuer URL"
+              copy_text="https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
+            >https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0</.docs_code>
             <p class="mt-4">
-              Entra's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-              is <em>pairwise</em>
-              — Microsoft issues a different value to every application, so it identifies the person
-              only within this one registration.
+              The trailing <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/v2.0</code>
+              is what selects Entra's v2.0 endpoint; without it you get v1.0 tokens. The
+              identifier claim already reads
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              is the immutable object id, the same value Microsoft Graph returns as the user's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">id</code>. Directory sync keys on
-              that same object id, so choosing
+              — Entra hands every application a different <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>, so
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              is what lets a person's sign-in and their provisioned record be one identity instead
-              of two.
+              is the only id that also matches what directory sync sends. Tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
             </p>
-
             <.docs_screenshot
-              src="/images/docs/sso/entra-emisar-connection.webp"
-              title="emisar console · Add provider"
-              caption="Picking Microsoft Entra preselects the oid identifier claim — the one setting this provider needs that no other does."
-              alt="emisar's Add provider form with Provider type set to Microsoft Entra, the redirect URI to register shown with a copy button, an empty Issuer URL, and Identifier claim set to 'oid — Microsoft Entra'."
+              src="/images/docs/sso/entra-emisar-credentials.webp"
+              title="emisar · Add provider"
+              caption="The issuer carries your tenant ID and ends in /v2.0. The identifier claim is already oid."
+              alt="emisar's OIDC connection fields with Issuer URL, Client ID and Client secret each outlined in green, the Issuer URL placeholder showing https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0, and the Identifier claim reading oid — Microsoft Entra."
             />
           </div>
         </li>
-      </ol>
-
-      <.docs_callout kind={:note} title="The rest of the connection form">
-        <p>
-          This guide covers only what Entra needs. The other settings on the connection —
-          who gets provisioned and at what role, what runner access they start with, whether this
-          provider satisfies your 2FA requirement — are the same for every provider and are
-          explained in <.link navigate={~p"/docs/sso"} class="text-brand-400 hover:text-brand-300">Single sign-on</.link>.
-        </p>
-      </.docs_callout>
-
-      <.docs_h2 id="scim">Directory sync</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        You need the connection's <strong class="text-zinc-200">SCIM base URL</strong>
-        and <strong class="text-zinc-200">bearer token</strong>
-        —
-        <.link
-          navigate={~p"/docs/scim#enable"}
-          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >enabling directory sync</.link>
-        shows where both come from. <.plan_note tier={:enterprise} />
-      </p>
-      <ol class="mt-8 space-y-10">
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             1
