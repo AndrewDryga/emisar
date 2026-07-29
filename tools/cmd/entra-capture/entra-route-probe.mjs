@@ -35,9 +35,22 @@ const outline = async (page, text) => {
     if (!hits.length) return false
     hits.sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)
     const t = hits[0].closest('div,section,li,tr') || hits[0]
-    t.style.outline = '3px solid #10b981'
-    t.style.outlineOffset = '3px'
-    t.style.borderRadius = '6px'
+    if (t.tagName === 'TR') {
+      // Ring the CELLS, not the row. A row's outline paints under its cells'
+      // backgrounds, so an opaque table keeps only the part of the ring outside
+      // the row — the attribute-mapping shot shipped with just its top edge.
+      const cells = [...t.children]
+      cells.forEach((cell, i) => {
+        const ring = ['inset 0 3px 0 #10b981', 'inset 0 -3px 0 #10b981']
+        if (i === 0) ring.push('inset 3px 0 0 #10b981')
+        if (i === cells.length - 1) ring.push('inset -3px 0 0 #10b981')
+        cell.style.boxShadow = ring.join(', ')
+      })
+    } else {
+      t.style.outline = '3px solid #10b981'
+      t.style.outlineOffset = '3px'
+      t.style.borderRadius = '6px'
+    }
     t.scrollIntoView({ block: 'center' })
     return true
   }, text).catch(() => false)

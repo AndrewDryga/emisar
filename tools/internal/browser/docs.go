@@ -551,7 +551,20 @@ func highlightControls(session *Session, labels []string) error {
   if (!node) return false;
   if (%t) {
     const tr = node.closest('tr');
-    return tr ? paint(tr) : false;
+    if (!tr) return false;
+    // Ring the CELLS, not the row. A row's outline paints under its cells'
+    // backgrounds, so an opaque table keeps only the part outside the row — an
+    // Entra shot shipped with just its top edge. An outward shadow on the row
+    // instead falls outside a crop the row already spans. An inset shadow per
+    // cell draws above each background and stays inside the picture.
+    const cells = [...tr.children];
+    cells.forEach((cell, i) => {
+      const ring = ['inset 0 3px 0 #10b981', 'inset 0 -3px 0 #10b981'];
+      if (i === 0) ring.push('inset 3px 0 0 #10b981');
+      if (i === cells.length - 1) ring.push('inset -3px 0 0 #10b981');
+      cell.style.boxShadow = ring.join(', ');
+    });
+    return cells.length > 0;
   }
   // A <label for=...> names its control outright; take that rather than guessing
   // by climbing. The climb below can drift onto a NEIGHBOUR's input and outline
