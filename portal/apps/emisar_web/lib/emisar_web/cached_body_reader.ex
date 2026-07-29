@@ -14,8 +14,16 @@ defmodule EmisarWeb.CachedBodyReader do
     "/webhooks/paddle" => 1024 * 1024
   }
 
+  # Bodies we bound WITHOUT caching. SCIM is unauthenticated until the controller
+  # pipeline runs, so Plug's ~8 MB default was parsed before the bearer was even
+  # looked at — the rate limiter's per-request allowance multiplied by that is a
+  # lot of bytes an anonymous caller can make us hold. The largest legitimate
+  # SCIM body is a group replace, which the domain already caps at 5,000 member
+  # ids; 2 MB clears that with room to spare.
+  @bounded_body_prefixes %{"/scim/v2/" => 2 * 1024 * 1024}
+
   def read_body(conn, opts) do
-    opts = bound_length(opts, Map.get(@cached_body_limits, conn.request_path))
+    opts = bound_length(opts, body_limit(conn.request_path))
 
     case Plug.Conn.read_body(conn, opts) do
       {:ok, body, conn} ->
@@ -38,6 +46,19 @@ defmodule EmisarWeb.CachedBodyReader do
     else
       {:ok, body, conn}
     end
+  end
+
+  defp body_limit(path) do
+    case Map.get(@cached_body_limits, path) do
+      nil -> prefix_limit(path)
+      limit -> limit
+    end
+  end
+
+  defp prefix_limit(path) do
+    Enum.find_value(@bounded_body_prefixes, fn {prefix, limit} ->
+      if String.starts_with?(path, prefix), do: limit
+    end)
   end
 
   defp bound_length(opts, nil), do: opts

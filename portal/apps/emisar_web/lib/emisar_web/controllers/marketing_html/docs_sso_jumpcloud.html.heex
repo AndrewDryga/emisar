@@ -196,14 +196,19 @@
               an admin instead of guessing.
             </p>
             <p class="mt-4">
-              After the first user syncs, open the connection in emisar and compare the identifier
-              on the <strong class="text-zinc-200">Synced users</strong>
-              row with the one that appears after that person signs in. If they match, there is
-              nothing to configure. If they do not, map JumpCloud's provisioning
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-              to whatever its OIDC connector issues as
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-              before you invite anyone else.
+              You do not have to make them match. When a sign-in arrives that the directory has
+              not claimed, it lands in
+              <strong class="text-zinc-200">Pending access requests</strong>
+              on the Team page with the identifier it presented. Approving it once binds that
+              sign-in to the member the directory already synced — one person, one member, both
+              identifiers on the same record — and every later sign-in and directory push finds
+              them. Approve one request per person, the first time they sign in.
+            </p>
+            <p class="mt-4">
+              Watch the first one to be sure it is the same person: the request shows the email
+              JumpCloud asserted, and the <strong class="text-zinc-200">Synced users</strong>
+              list shows who the directory sent. If those disagree, do not approve — that is a
+              misconfigured connector, not a mismatched identifier.
             </p>
 
             <.docs_screenshot
