@@ -492,7 +492,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute detail =~ ~s(href="#{~p"/app/#{account}/settings/sso"}")
     end
 
-    test "the help rail labels sections when sync is on, and explains the gap when it's off", %{
+    test "each section's note sits in that section's row, with no repeated title", %{
       conn: conn,
       user: user,
       account: account
@@ -503,25 +503,32 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       off = insert_provider(account, %{name: "Sign-in only"})
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{off.id}")
 
-      # With sync off there are no mapping/synced sections for a label to mirror,
-      # so a lone bold term under the eyebrow would just read as a second heading.
-      # Prose instead — and it names the consequence that matters here.
-      refute html =~ "New members"
-      refute html =~ "Role mapping</dt>"
-      assert html =~ "their emisar membership stays"
-      assert html =~ "Turning on directory sync closes that gap"
+      # Sign-in only: no mapping or synced-group sections, so their notes are
+      # absent too — a note exists to explain the section beside it.
+      refute html =~ "Adds runners on top of the connection default"
+      refute html =~ "What your IdP has actually pushed"
+      assert html =~ "their membership stays"
 
       owner = Fixtures.Subjects.subject_for(user, account)
       on = insert_provider(account, %{name: "Synced", kind: :entra})
       {:ok, on, _raw} = SSO.enable_scim(on, owner)
       {:ok, _lv, synced} = live(conn, ~p"/app/#{account}/settings/sso/#{on.id}")
 
-      # With sync on each label mirrors a section further down the page, which is
-      # what earns the labelled shape.
-      assert synced =~ "Directory sync</dt>"
-      assert synced =~ "Role mapping</dt>"
-      assert synced =~ "Synced groups &amp; users</dt>"
-      refute synced =~ "Turning on directory sync closes that gap"
+      for note <- [
+            "Your IdP pushes users and groups over SCIM",
+            "Sets the role a group&#39;s members land at",
+            "Adds runners on top of the connection default",
+            "What your IdP has actually pushed",
+            "Everyone provisioned through this connection"
+          ] do
+        assert synced =~ note
+      end
+
+      # The note carries no heading of its own: the section title is directly to
+      # its left, and repeating it is what made the old single rail read as a
+      # stack of headings.
+      refute synced =~ "Synced groups &amp; users</"
+      refute synced =~ "How this connection works"
     end
 
     test "renders just the one connection, with its config controls", %{

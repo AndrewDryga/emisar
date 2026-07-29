@@ -1674,9 +1674,17 @@ defmodule EmisarWeb.SSOSettingsLive do
              rather than above it: this is a status page, so the record leads. --%>
         <div
           :if={@live_action == :show}
-          class="mt-4 grid grid-cols-1 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
+          class="mt-4"
         >
-          <div :for={provider <- @providers} class="space-y-12">
+          <%!-- Each section and its note are SIBLING cells of one grid, so the
+               note sits in that section's row — "Synced groups" explained beside
+               Synced groups, not stacked with everything else at the top. Rows are
+               implicit: emit section, note, section, note. A section with nothing
+               to say emits a spacer, hidden below xl so it costs no row there. --%>
+          <div
+            :for={provider <- @providers}
+            class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
+          >
             <%!-- The connection record, NAKED on the canvas (the detail-page
                  meta grammar) — status chips + Edit lead, the facts flow as a
                  naked meta row. Editing is its own page (/edit). The shell
@@ -1733,6 +1741,21 @@ defmodule EmisarWeb.SSOSettingsLive do
               </div>
             </section>
 
+            <aside class="text-sm leading-relaxed xl:pt-1">
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Docs</p>
+              <ul class="mt-3 space-y-2">
+                <li>
+                  <.doc_link href={docs_path_for_kind(to_string(provider.kind))}>
+                    Setting up {setup_kind_label(to_string(provider.kind))}
+                  </.doc_link>
+                </li>
+                <li :if={SSO.IdentityProvider.supports_scim?(provider.kind)}>
+                  <.doc_link href="/docs/scim">Directory sync</.doc_link>
+                </li>
+                <li><.doc_link href="/docs/teams-and-access">Roles &amp; access</.doc_link></li>
+              </ul>
+            </aside>
+
             <.scim_section
               :if={
                 @can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
@@ -1741,6 +1764,11 @@ defmodule EmisarWeb.SSOSettingsLive do
               scim_base_url={@scim_base_url}
               scim_token={@scim_token}
             />
+            <.section_note :if={
+              @can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
+            }>
+              Your IdP pushes users and groups over SCIM. Removing someone there removes them here.
+            </.section_note>
 
             <%!-- This kind can't push SCIM (e.g. Google Workspace) — say so once
                  instead of dangling an enable panel or an Enterprise upsell for a
@@ -1753,6 +1781,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               isn't available for {kind_label(provider.kind)} — it has no inbound SCIM for a custom
               app. Members are provisioned on their first sign-in through this connection.
             </p>
+            <.section_spacer :if={not SSO.IdentityProvider.supports_scim?(provider.kind)} />
 
             <.group_mapping_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
@@ -1765,6 +1794,10 @@ defmodule EmisarWeb.SSOSettingsLive do
               mapping_edit_form={@mapping_edit_form}
               adding_mapping={@adding_mapping}
             />
+            <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
+              Sets the role a group's members land at. In several mapped groups the highest wins —
+              and sync never grants owner.
+            </.section_note>
 
             <.group_runner_access_mapping_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
@@ -1777,11 +1810,19 @@ defmodule EmisarWeb.SSOSettingsLive do
               adding_mapping={@adding_runner_access_mapping}
               runners={@runners}
             />
+            <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
+              Adds runners on top of the connection default. Groups are matched by id, never by
+              name.
+            </.section_note>
 
             <.synced_groups_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
             />
+            <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
+              What your IdP has actually pushed. A group with no role mapping leaves its members at
+              the connection's default role.
+            </.section_note>
 
             <.synced_users_section
               members={@synced_members}
@@ -1790,6 +1831,15 @@ defmodule EmisarWeb.SSOSettingsLive do
               current_user_id={@current_user.id}
               scim_enabled={provider.scim_enabled}
             />
+            <.section_note :if={provider.scim_enabled}>
+              Everyone provisioned through this connection. Suspending someone here holds until you
+              lift it, and directory sync offboards them when your IdP does.
+            </.section_note>
+            <.section_note :if={not provider.scim_enabled}>
+              Everyone provisioned through this connection, at its default role. Removing them in
+              your IdP stops the sign-in, but their membership stays — take it away on the Team
+              page.
+            </.section_note>
 
             <%!-- A plan-posture fact, naked — not a boxed interruption. Only for
                  kinds that CAN do SCIM; the note above covers the ones that can't. --%>
@@ -1813,6 +1863,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                 class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
               >talk to us</a>.
             </p>
+            <.section_spacer :if={
+              !@can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
+            } />
 
             <%!-- Danger zone at the bottom — the destructive action lives apart
                  from the routine config above (its own canvas section) and still
@@ -1833,6 +1886,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </.confirm_zone>
               </div>
             </section>
+            <.section_spacer />
 
             <.confirm_dialog
               id={"delete-provider-#{provider.id}"}
@@ -1852,15 +1906,6 @@ defmodule EmisarWeb.SSOSettingsLive do
               </:body>
             </.confirm_dialog>
           </div>
-
-          <%!-- Its own `:for` rather than a nested block: @providers holds exactly
-               the one loaded connection, and this has to be a SIBLING of the
-               content column to land in the grid's second track. --%>
-          <.connection_help_rail
-            :for={provider <- @providers}
-            provider={provider}
-            directory_sync?={@can_configure_directory_sync? and provider.scim_enabled}
-          />
 
           <div :if={not @loaded?} class="text-sm text-zinc-400">Loading…</div>
         </div>
@@ -2496,92 +2541,27 @@ defmodule EmisarWeb.SSOSettingsLive do
     Enum.find_value(kind_options, value, fn {label, v} -> v == value && label end)
   end
 
-  attr :provider, :map, required: true
-  attr :directory_sync?, :boolean, required: true
+  slot :inner_block, required: true
 
-  # The connection's help, in one place beside the sections instead of a
-  # paragraph under each title. Five separate blurbs each explained their own
-  # section and none explained how the pieces relate — which is the thing an
-  # operator actually needs — while pushing the data down the page (the synced
-  # users list opened four lines below its own heading). Each line here names the
-  # section it describes, so the rail reads as a map of the page.
-  defp connection_help_rail(assigns) do
+  # A section's explanation, living in the grid's second column so it lands in
+  # that section's ROW. It carries no title of its own: the section heading is
+  # directly to its left, and repeating it was what made the old single rail read
+  # as a list of headings ("Synced groups & users" above a docs list).
+  defp section_note(assigns) do
     ~H"""
-    <%!-- max-w-prose is for the STACKED case: below xl this sits under the
-         content at full page width, where an uncapped measure runs past 120
-         characters. In the xl rail the 18rem track is already narrower, so it
-         does nothing there. --%>
-    <aside class="max-w-prose space-y-6 text-sm leading-6 xl:sticky xl:top-6">
-      <div>
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-          How this connection works
-        </p>
-        <%!-- The labels earn their place by MIRRORING the section titles below, so
-             each line lands beside what it explains. With sync off there are no
-             such sections, one entry survives, and the label becomes a second
-             heading stacked under the eyebrow with nothing between them — so
-             that case is prose instead. --%>
-        <dl :if={@directory_sync?} class="mt-3 space-y-3 text-zinc-400">
-          <div>
-            <dt class="text-zinc-200">Directory sync</dt>
-            <dd>
-              Your IdP pushes users and groups over SCIM. Removing someone there removes them here.
-            </dd>
-          </div>
-          <div>
-            <dt class="text-zinc-200">Role mapping</dt>
-            <dd>
-              Sets the role a group's members land at. In several mapped groups, the highest wins —
-              and sync never grants owner.
-            </dd>
-          </div>
-          <div>
-            <dt class="text-zinc-200">Runner access mapping</dt>
-            <dd>
-              Adds runners on top of the connection default. Groups are matched by id, never by
-              name.
-            </dd>
-          </div>
-          <div>
-            <dt class="text-zinc-200">Synced groups &amp; users</dt>
-            <dd>
-              What has actually arrived. A group with no role mapping leaves its members at the
-              default role.
-            </dd>
-          </div>
-        </dl>
-
-        <div :if={not @directory_sync?} class="mt-3 space-y-3 text-zinc-400">
-          <p>
-            People are provisioned the first time they sign in here, at the connection's default role.
-          </p>
-          <p>
-            Removing someone in your IdP stops them signing in, but their emisar membership stays
-            — take it away on the Team page.
-          </p>
-          <p :if={SSO.IdentityProvider.supports_scim?(@provider.kind)}>
-            Turning on directory sync closes that gap: your IdP offboards them here too.
-          </p>
-        </div>
-      </div>
-
-      <div>
-        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Docs</p>
-        <ul class="mt-3 space-y-2">
-          <li>
-            <.doc_link href={docs_path_for_kind(to_string(@provider.kind))}>
-              Setting up {setup_kind_label(to_string(@provider.kind))}
-            </.doc_link>
-          </li>
-          <li :if={SSO.IdentityProvider.supports_scim?(@provider.kind)}>
-            <.doc_link href="/docs/scim">Directory sync</.doc_link>
-          </li>
-          <li>
-            <.doc_link href="/docs/teams-and-access">Roles &amp; access</.doc_link>
-          </li>
-        </ul>
-      </div>
+    <aside class="max-w-prose text-sm leading-relaxed text-zinc-400 xl:pt-1">
+      {render_slot(@inner_block)}
     </aside>
+    """
+  end
+
+  # Holds the second column open for a section with nothing to explain, so the
+  # next section starts a fresh row instead of sliding into this one. Hidden
+  # below xl, where the grid is a single column and an empty cell would only add
+  # a gap.
+  defp section_spacer(assigns) do
+    ~H"""
+    <div class="hidden xl:block" aria-hidden="true"></div>
     """
   end
 
