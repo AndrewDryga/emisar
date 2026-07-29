@@ -281,6 +281,27 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
+  Which console a walkthrough step happens in.
+
+  A provider guide hops between two consoles — theirs and ours — and the step
+  titles alone do not say which ("Create a client secret" is at the provider,
+  "Set the identifier claim" is here). Reading the eyebrows down the column tells
+  you which tab to be in before you read the step.
+
+      <.docs_step_venue>Okta</.docs_step_venue>
+      <.docs_step_venue>emisar</.docs_step_venue>
+  """
+  slot :inner_block, required: true
+
+  def docs_step_venue(assigns) do
+    ~H"""
+    <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+      In {render_slot(@inner_block)}
+    </p>
+    """
+  end
+
+  @doc """
   A captioned docs screenshot that opens fullscreen on click. The window-bar
   `title` and the visible `caption` mark it as a figure OF the console, so a
   screenshot can't be mistaken for the docs page's own UI. Pure CSS lightbox
