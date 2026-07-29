@@ -170,10 +170,8 @@
             7
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
-            <.docs_step_venue>JumpCloud, then emisar</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">
-              Set the redirect URI, then swap credentials with emisar.
-            </p>
+            <.docs_step_venue>JumpCloud</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">Set the redirect URI, then activate.</p>
             <p class="mt-1.5">
               On the application's <strong class="text-zinc-200">SSO</strong>
               tab, put emisar's callback in <strong class="text-zinc-200">Redirect URIs</strong>:
@@ -190,47 +188,33 @@
               works — emisar accepts both. Set <strong class="text-zinc-200">Login URL</strong>
               to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>, then press <strong class="text-zinc-200">Activate</strong>.
             </p>
-            <p class="mt-4">
-              Activating reveals the <strong class="text-zinc-200">Client ID</strong>
-              and <strong class="text-zinc-200">Client Secret</strong>. Those are the only two
-              values you carry back: pick <strong class="text-zinc-200">JumpCloud</strong>
-              in emisar's <strong class="text-zinc-200">Add provider</strong>
-              form and the issuer is already filled in and locked, because it is the same for every
-              JumpCloud org.
-            </p>
-            <p class="mt-4">
-              Check that sign-in and the directory agree on who someone is. emisar binds a synced
-              member on the
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-              the directory sends, falling back to
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">userName</code>
-              when it sends none — and it binds a sign-in on the
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-              claim. When those two values differ, emisar cannot tell that the person signing in
-              is the one the directory synced, so it holds their sign-in as a pending request for
-              an admin instead of guessing.
-            </p>
-            <p class="mt-4">
-              You do not have to make them match. When a sign-in arrives that the directory has
-              not claimed, it lands in
-              <strong class="text-zinc-200">Pending access requests</strong>
-              on the Team page with the identifier it presented. Approving it once binds that
-              sign-in to the member the directory already synced — one person, one member, both
-              identifiers on the same record — and every later sign-in and directory push finds
-              them. Approve one request per person, the first time they sign in.
-            </p>
-            <p class="mt-4">
-              Watch the first one to be sure it is the same person: the request shows the email
-              JumpCloud asserted, and the <strong class="text-zinc-200">Synced users</strong>
-              list shows who the directory sent. If those disagree, do not approve — that is a
-              misconfigured connector, not a mismatched identifier.
-            </p>
-
             <.docs_screenshot
               src="/images/docs/sso/jumpcloud-sso-oidc-config.webp"
               title="JumpCloud · OIDC Single Sign-On Configuration"
-              caption="Redirect URIs takes emisar's callback verbatim. The Provisioning tab beside SSO is where directory sync is wired, on this same application."
+              caption="Redirect URIs takes emisar's callback verbatim. Activate sits at the bottom right."
               alt="The SSO tab of a JumpCloud OpenID Connect application, with badges reading Single Sign-On Active, Client Secret Valid and Provisioning Inactive, and tabs for General Info, SSO, Provisioning, User Groups and Users. Under Configuration Settings the Authorization Code grant type is checked, the Redirect URIs label is outlined in green above a field containing https://emisar.dev/sign_in/sso/callback, Client Authentication Type is set to Client Secret POST, and an Activate button sits at the bottom right."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            8
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <.docs_step_venue>emisar</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">Paste the two values it reveals.</p>
+            <p class="mt-1.5">
+              Activating shows the <strong class="text-zinc-200">Client ID</strong>
+              and <strong class="text-zinc-200">Client Secret</strong>. They are the only two
+              values you carry back. On the connection you opened in step 1, the issuer is already
+              filled in and locked — it is the same for every JumpCloud org — so those two fields
+              are all there is to fill. Tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/jumpcloud-emisar-credentials.webp"
+              title="emisar · Add provider"
+              caption="Nothing to look up: JumpCloud's issuer is fixed, so emisar fills and locks it."
+              alt="emisar's OIDC connection fields with the Issuer URL locked at https://oauth.id.jumpcloud.com/ behind a padlock, and Client ID and Client secret each outlined in green below it."
             />
           </div>
         </li>
@@ -306,6 +290,32 @@
           </div>
         </li>
       </ol>
+
+      <.docs_h3 id="one-person-one-member">When sign-in and the directory disagree</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        emisar binds a synced member on the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+        the directory sends, falling back to
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">userName</code>
+        when it sends none — and it binds a sign-in on the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+        claim. When those two values differ, emisar cannot tell that the person signing in is the
+        one the directory synced, so it holds their sign-in for an admin instead of guessing.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You do not have to make them match. A sign-in the directory has not claimed lands in
+        <strong class="text-zinc-200">Pending access requests</strong>
+        on the Team page, with the identifier it presented. Approving it once binds that sign-in to
+        the member the directory already synced — one person, one member, both identifiers on the
+        same record — and every later sign-in and directory push finds them. That is one approval
+        per person, the first time they sign in.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Watch the first one to be sure it is the same person: the request shows the email JumpCloud
+        asserted, and <strong class="text-zinc-200">Synced users</strong>
+        on the connection shows who the directory sent. If those disagree, do not approve — that is
+        a misconfigured connector, not a mismatched identifier.
+      </p>
 
       <p class="mt-8 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Next:</strong>

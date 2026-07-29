@@ -167,6 +167,7 @@ var docsShots = []shot{
 
 	// "Paste the values back into emisar" — the fields the step names, outlined.
 	// The guide told the reader which values to carry and then showed them nothing.
+	{Name: "jumpcloud-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("jumpcloud"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/jumpcloud-emisar-credentials.webp"},
 	{Name: "okta-emisar-credentials", Path: "/app/demo/settings/sso/new", Clicks: []string{selectProviderKind("okta"), showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Highlight: []string{"Issuer URL", "Client ID", "Client secret"}, Width: docsWidth, Output: "docs/sso/okta-emisar-credentials.webp"},
 
 	// The step names ONE control — Identifier claim — so the shot is that field and
