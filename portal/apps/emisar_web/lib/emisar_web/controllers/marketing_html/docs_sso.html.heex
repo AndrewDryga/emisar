@@ -121,7 +121,9 @@
                   — <span class="text-zinc-300">Auto-provision</span>
                   creates a user on first sign-in; <span class="text-zinc-300">Manual</span>
                   holds each first-time sign-in as a pending request an admin approves. Either way
-                  they land at the default role below.
+                  they land at the default role below. Directory sync overrides this: once it is
+                  on, the directory decides who exists, and a sign-in it never provisioned is held
+                  for approval whichever setting you picked.
                 </span>
               </li>
               <li class="flex items-start gap-2.5">

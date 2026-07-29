@@ -611,6 +611,16 @@ defmodule Emisar.SSO do
     end
   end
 
+  # Directory sync on: the directory decides who exists. An identifier it never
+  # provisioned belongs to someone not yet synced, or someone who should not be
+  # here — and JIT-creating them minted a SECOND member for a person the
+  # directory already knew under its own externalId. The two members share no
+  # row, so deactivating the directory's left this one signed in. Park it for an
+  # admin, exactly as a `:manual` connection does. (Ordering: this clause must
+  # precede the `:jit` one, which would otherwise match first.)
+  defp provision_for(%IdentityProvider{scim_enabled: true} = provider, identifier, claims),
+    do: park_link_request(provider, identifier, claims)
+
   defp provision_for(%IdentityProvider{provisioner: :jit} = provider, identifier, claims) do
     multi = build_provision_multi(provider, identifier, claims)
 
@@ -639,10 +649,15 @@ defmodule Emisar.SSO do
     end
   end
 
-  # A `:manual`-provisioner connection never auto-creates. The unknown identity
-  # is captured as a pending link request (the real `sub` + claims, so an admin
-  # recognizes the person) and parked — re-attempts upsert, never pile up.
-  defp provision_for(%IdentityProvider{provisioner: :manual} = provider, identifier, claims) do
+  # A `:manual`-provisioner connection never auto-creates.
+  defp provision_for(%IdentityProvider{provisioner: :manual} = provider, identifier, claims),
+    do: park_link_request(provider, identifier, claims)
+
+  # The unknown identity is captured as a pending link request (the real `sub` +
+  # claims, so an admin recognizes the person) and parked — re-attempts upsert,
+  # never pile up. When the email matches an existing member the request records
+  # them, so approving REBINDS that member's identity rather than adding a person.
+  defp park_link_request(%IdentityProvider{} = provider, identifier, claims) do
     case capture_link_request(provider, identifier, claims["email"], claims["name"], claims) do
       {:ok, request} -> {:pending, request}
       # An upsert failure (rare) has no request to park them on — fall back to the

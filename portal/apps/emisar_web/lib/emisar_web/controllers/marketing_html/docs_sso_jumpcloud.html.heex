@@ -191,8 +191,9 @@
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">userName</code>
               when it sends none — and it binds a sign-in on the
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-              claim. When those two values differ, one person arrives as two members: one
-              provisioned by the directory, one created at their first sign-in.
+              claim. When those two values differ, emisar cannot tell that the person signing in
+              is the one the directory synced, so it holds their sign-in as a pending request for
+              an admin instead of guessing.
             </p>
             <p class="mt-4">
               After the first user syncs, open the connection in emisar and compare the identifier

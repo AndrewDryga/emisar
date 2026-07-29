@@ -1286,6 +1286,34 @@ defmodule Emisar.SSOTest do
       assert UserIdentity.Query.not_deleted() |> Repo.all() == []
     end
 
+    test "with directory sync on, an unknown sub is parked — never a second member" do
+      # The split this prevents: SCIM provisions externalId `directory-123` with
+      # no email, OIDC later presents `oid-456` with no email either. Nothing
+      # links them, so JIT minted a whole second user + membership for the same
+      # person — and deactivating `directory-123` left `oid-456` signed in.
+      %{provider: provider, account: account} = scim_provider(%{provisioner: :jit})
+
+      {:ok, %{user: directory_user}} =
+        SSO.scim_provision_user(provider, %{external_id: "directory-123"})
+
+      claims = %{"sub" => "oid-456"}
+
+      assert {:pending, %LinkRequest{} = request} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert request.provider_identifier == "oid-456"
+
+      # The directory's member is the only one, and still the only identity.
+      identities =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_provider_id(provider.id)
+        |> Repo.all()
+
+      assert Enum.map(identities, & &1.provider_identifier) == ["directory-123"]
+
+      assert Fixtures.Memberships.fetch_membership(account.id, directory_user.id)
+    end
+
     test "a :jit login matching an existing member is parked for approval (not auto-merged)" do
       {_owner, account, _subject} = enterprise_owner()
       provider = provider_fixture(account, provisioner: :jit)
