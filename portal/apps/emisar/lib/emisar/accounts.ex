@@ -15,7 +15,6 @@ defmodule Emisar.Accounts do
   alias Emisar.Accounts.{MembershipRunnerScope, RunnerAccess}
   alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
-  require Logger
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -1463,7 +1462,7 @@ defmodule Emisar.Accounts do
           # Session + key kill are side effects — only fire after the
           # suspension actually commits. Otherwise a rolled-back update
           # would still kick the user out of every tab / kill their keys.
-          &disconnect_user_sessions/1,
+          &end_account_sessions/1,
           &revoke_membership_api_keys/1
         ]
       )
@@ -1478,23 +1477,6 @@ defmodule Emisar.Accounts do
   defp revoke_membership_api_keys(%Membership{} = membership) do
     {:ok, _count} = ApiKeys.revoke_keys_for_membership(membership.id)
     :ok
-  end
-
-  defp disconnect_user_sessions(%Membership{} = membership) do
-    case Users.fetch_user_by_id(membership.user_id) do
-      {:ok, user} ->
-        Emisar.Auth.disconnect_and_revoke_all_sessions(user)
-        :ok
-
-      {:error, reason} ->
-        Logger.warning("membership_user_missing",
-          user_id: membership.user_id,
-          membership_id: membership.id,
-          reason: inspect(reason)
-        )
-
-        :ok
-    end
   end
 
   @doc """
@@ -1568,11 +1550,21 @@ defmodule Emisar.Accounts do
       audit: &Audit.Events.membership_deprovisioned_via_scim(&1, provider),
       after_commit: [
         &broadcast_membership_suspended/1,
-        &disconnect_user_sessions/1,
+        &end_account_sessions/1,
         &revoke_membership_api_keys/1
       ]
     )
     |> noop_as_ok()
+  end
+
+  # Only the sessions THIS account authenticated. Revoking every session token the
+  # person holds signed them out of every other workspace they belong to — one
+  # tenant reaching into another's browser. Their membership here is already
+  # suspended or gone, and a session re-resolves its membership on the next
+  # request, so nothing outlives this.
+  defp end_account_sessions(%Membership{} = membership) do
+    SSO.end_account_sessions_for_user(membership.user_id, membership.account_id)
+    :ok
   end
 
   # `{:noop, row}` rides fetch_and_update's abort channel (any non-changeset
@@ -2093,7 +2085,7 @@ defmodule Emisar.Accounts do
           # A removed member's mounted session still carries its old Subject
           # until it remounts. Disconnect + revoke it after the delete commits,
           # alongside the API keys that would otherwise keep dispatching.
-          &disconnect_user_sessions/1,
+          &end_account_sessions/1,
           &revoke_membership_api_keys/1
         ]
       )

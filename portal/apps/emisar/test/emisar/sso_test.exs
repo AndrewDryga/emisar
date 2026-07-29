@@ -13,7 +13,7 @@ defmodule Emisar.SSOTest do
   resolution/JIT/gate logic with canned claims and no live IdP.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Repo, SSO}
+  alias Emisar.{Accounts, Audit, Auth, Repo, SSO}
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.Fixtures
   alias Emisar.SSO.{GroupRoleMapping, GroupRunnerAccessMapping}
@@ -1484,7 +1484,7 @@ defmodule Emisar.SSOTest do
     test "disabling revokes a linked member's sessions", %{provider: provider, subject: subject} do
       %{identity: identity} = provision(provider, "okta|live")
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
-      _token = Emisar.Auth.create_session_token!(user, :sso, false)
+      _token = Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
 
       assert {:ok, _} = SSO.update_provider(provider, %{enabled: false}, subject)
 
@@ -1498,7 +1498,7 @@ defmodule Emisar.SSOTest do
     test "deleting revokes them too", %{provider: provider, subject: subject} do
       %{identity: identity} = provision(provider, "okta|gone")
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
-      _token = Emisar.Auth.create_session_token!(user, :sso, false)
+      _token = Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
 
       assert {:ok, _} = SSO.delete_provider(provider, subject)
 
@@ -1771,6 +1771,37 @@ defmodule Emisar.SSOTest do
   # -- scim_deactivate_user/2 (provider-scoped) ------------------------
 
   describe "scim_deactivate_user/2" do
+    test "ends only this account's sessions — the person stays signed in elsewhere" do
+      # A session token is per-user, not per-account, so revoking them all let one
+      # tenant's directory sign someone out of a workspace it has no authority
+      # over. Only the credential this account minted is destroyed.
+      %{provider: provider} = scim_provider()
+      attrs = scim_attrs(%{external_id: "okta|multi", email: "multi@acme.test"})
+      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+
+      other_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: user.id,
+        role: "operator"
+      )
+
+      sso_session =
+        Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+
+      magic_link_session = Auth.create_session_token!(user, :magic_link, false)
+
+      assert {:ok, _} = SSO.scim_deactivate_user(provider, "okta|multi")
+
+      # The connection's own session is gone…
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(sso_session)
+
+      # …and the one that reaches the other workspace is untouched.
+      assert {:ok, _user, _token} =
+               Auth.fetch_user_and_token_by_session_token(magic_link_session)
+    end
+
     test "suspends the membership (disabled_at) + flips scim_active, never deleting the user" do
       %{provider: provider} = scim_provider(%{default_role: :admin})
       attrs = scim_attrs(%{external_id: "okta|deprov", email: "deprov@acme.test"})

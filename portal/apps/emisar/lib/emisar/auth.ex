@@ -134,6 +134,31 @@ defmodule Emisar.Auth do
   end
 
   @doc """
+  Internal — an account ending its own hold on a user: revoke the sessions
+  authenticated through `identity_ids` (that account's SSO connections) and
+  disconnect every live socket the user holds.
+
+  A session token is per-user, not per-account, so revoking them ALL signed the
+  person out of every other account they belong to — one tenant's directory
+  reaching into another's browser. Only the credentials bound to this account's
+  connections are destroyed. The broad disconnect is not a logout: each socket
+  re-mounts and re-resolves its membership, which is what actually ends access to
+  the suspended account, and leaves the others signed in.
+  """
+  def revoke_identity_sessions(%Users.User{} = user, identity_ids) when is_list(identity_ids) do
+    topics = live_socket_topics_for_user(user)
+
+    queryable =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.by_user_identity_ids(identity_ids)
+
+    Repo.delete_all(queryable)
+    disconnect_live_sessions(topics)
+    :ok
+  end
+
+  @doc """
   Live-session terminator for "user must lose access RIGHT NOW" paths
   (admin suspend, force-password-reset, account-wide password change).
   Captures every active LiveView topic, deletes the underlying token rows,

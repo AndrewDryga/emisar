@@ -222,6 +222,37 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "revoke_identity_sessions/2" do
+    test "kills only the sessions bound to those identities, disconnecting the rest" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      sso = Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+      magic_link = Auth.create_session_token!(user, :magic_link, false)
+
+      assert :ok = Auth.revoke_identity_sessions(user, [identity.id])
+
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(sso)
+      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(magic_link)
+    end
+
+    test "an empty identity list revokes nothing" do
+      user = Fixtures.Users.create_user()
+      token = Auth.create_session_token!(user, :magic_link, false)
+
+      assert :ok = Auth.revoke_identity_sessions(user, [])
+      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
+    end
+  end
+
   describe "disconnect_and_revoke_all_sessions/1" do
     test "revokes every session for the user (and best-effort disconnects sockets)" do
       user = Fixtures.Users.create_user()

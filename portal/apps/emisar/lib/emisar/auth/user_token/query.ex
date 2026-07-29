@@ -19,6 +19,10 @@ defmodule Emisar.Auth.UserToken.Query do
   def by_context(queryable \\ all(), context) when is_binary(context),
     do: where(queryable, [tokens: t], t.context == ^context)
 
+  @doc "Sessions authenticated through one of `identity_ids` — an account's own SSO connections."
+  def by_user_identity_ids(queryable \\ all(), identity_ids) when is_list(identity_ids),
+    do: where(queryable, [tokens: t], t.user_identity_id in ^identity_ids)
+
   def by_id(queryable \\ all(), id),
     do: where(queryable, [tokens: t], t.id == ^id)
 

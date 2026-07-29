@@ -458,12 +458,42 @@ defmodule Emisar.SSO do
   defp end_sessions_signed_in_through(%IdentityProvider{} = provider) do
     provider
     |> provider_identities()
-    |> Enum.each(fn identity ->
-      case Users.fetch_user_by_id(identity.user_id) do
-        {:ok, user} -> Auth.disconnect_and_revoke_all_sessions(user)
-        {:error, :not_found} -> :ok
-      end
+    |> Enum.group_by(& &1.user_id, & &1.id)
+    |> Enum.each(fn {user_id, identity_ids} ->
+      end_identity_sessions(user_id, identity_ids)
     end)
+  end
+
+  @doc """
+  Internal — SCIM deprovision: end the sessions this ACCOUNT authenticated for
+  `user_id`, leaving any other account's untouched. Called from the membership
+  suspend's after_commit, which holds the provider but cannot read SSO's tables.
+  """
+  def end_account_sessions_for_user(user_id, account_id)
+      when is_binary(user_id) and is_binary(account_id) do
+    identity_ids =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_account_id(account_id)
+      |> UserIdentity.Query.by_user_id(user_id)
+      |> Repo.all()
+      |> Enum.map(& &1.id)
+
+    end_identity_sessions(user_id, identity_ids)
+  end
+
+  defp end_identity_sessions(user_id, identity_ids) do
+    case Users.fetch_user_by_id(user_id) do
+      {:ok, user} ->
+        Auth.revoke_identity_sessions(user, identity_ids)
+
+      {:error, reason} ->
+        Logger.warning("sso_session_user_missing",
+          user_id: user_id,
+          reason: inspect(reason)
+        )
+
+        :ok
+    end
   end
 
   defp provider_identities(%IdentityProvider{} = provider) do

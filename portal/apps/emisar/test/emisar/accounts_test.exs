@@ -2788,7 +2788,7 @@ defmodule Emisar.AccountsTest do
       refute is_nil(Emisar.Repo.reload!(key).revoked_at)
     end
 
-    test "removing a member revokes their active sessions" do
+    test "removing a member ends their access here without signing them out elsewhere" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
@@ -2815,8 +2815,14 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.delete_membership(membership, subject)
 
-      assert {:error, :not_found} =
+      # A session token is a user-level login, not an account credential — the
+      # person may belong to other workspaces, and this account has no authority
+      # over those. It survives…
+      assert {:ok, %User{}, _token} =
                Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
+
+      # …but it no longer resolves this account, which is what ending access means.
+      assert {:error, :not_found} = Accounts.fetch_membership_for_session(member, account.id)
     end
 
     test "a removed member can be re-invited (tombstone doesn't hold the seat)" do

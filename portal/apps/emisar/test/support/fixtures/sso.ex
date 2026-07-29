@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.SSO do
   """
 
   alias Emisar.Repo
-  alias Emisar.SSO.IdentityProvider
+  alias Emisar.SSO.{IdentityProvider, UserIdentity}
 
   @doc """
   Creates an identity provider (enabled by default). Returns the provider.
@@ -32,6 +32,32 @@ defmodule Emisar.Fixtures.SSO do
 
     {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account_id, provider_attrs))
     provider
+  end
+
+  @doc """
+  Binds a user to a provider. Defaults to an OIDC-created identity (a
+  `provider_identifier`, no `scim_external_id`); pass `:scim_external_id` for a
+  directory-provisioned one. Returns the identity.
+  """
+  def create_user_identity(attrs) do
+    attrs = Map.new(attrs)
+
+    identity_attrs =
+      Map.merge(
+        %{
+          provider_identifier: "sub-#{Emisar.Fixtures.Random.unique_int()}",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        },
+        Map.drop(attrs, [:account_id, :provider_id, :user_id])
+      )
+
+    {:ok, identity} =
+      attrs.account_id
+      |> UserIdentity.Changeset.create(attrs.provider_id, attrs.user_id, identity_attrs)
+      |> Repo.insert()
+
+    identity
   end
 
   @doc """

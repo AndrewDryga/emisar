@@ -6,7 +6,7 @@ defmodule Emisar.SSOGroupsTest do
   snapshot and never grant owner.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Repo, SSO}
+  alias Emisar.{Accounts, Auth, Repo, SSO}
   alias Emisar.Fixtures
   alias Emisar.SSO.IdentityProvider
 
@@ -317,6 +317,43 @@ defmodule Emisar.SSOGroupsTest do
       # The healthy member's role was still recomputed — the failed one didn't
       # abort the batch.
       assert role_of(account.id, kept_identity.user_id) == :admin
+    end
+  end
+
+  describe "end_account_sessions_for_user/2" do
+    test "ends the sessions this account minted, and only those" do
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|sessions")
+      {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+
+      mine = Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+
+      other_account = Fixtures.Accounts.create_account()
+      other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
+
+      other_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: other_account.id,
+          provider_id: other_provider.id,
+          user_id: user.id
+        )
+
+      theirs =
+        Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: other_identity.id)
+
+      assert :ok = SSO.end_account_sessions_for_user(user.id, account.id)
+
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(mine)
+      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(theirs)
+    end
+
+    test "a user with no identity in the account is a no-op" do
+      %{account: account} = scim_provider()
+      user = Fixtures.Users.create_user()
+      token = Auth.create_session_token!(user, :magic_link, false)
+
+      assert :ok = SSO.end_account_sessions_for_user(user.id, account.id)
+      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
     end
   end
 
