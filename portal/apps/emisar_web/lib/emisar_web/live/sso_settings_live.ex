@@ -1646,7 +1646,14 @@ defmodule EmisarWeb.SSOSettingsLive do
              group→role). @providers holds exactly the one handle_params loaded. --%>
         <%!-- Back crumb + entity name live in the shell header (detail_header),
              like every other detail page. --%>
-        <div :if={@live_action == :show} class="mt-4 space-y-6">
+        <%!-- The help moved out of the sections into a rail beside them, so the
+             data starts at its own heading. The rail waits for xl — below that a
+             20rem column would crowd the lists — and stacks BELOW the connection
+             rather than above it: this is a status page, so the record leads. --%>
+        <div
+          :if={@live_action == :show}
+          class="mt-4 grid grid-cols-1 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
+        >
           <div :for={provider <- @providers} class="space-y-12">
             <%!-- The connection record, NAKED on the canvas (the detail-page
                  meta grammar) — status chips + Edit lead, the facts flow as a
@@ -1823,6 +1830,15 @@ defmodule EmisarWeb.SSOSettingsLive do
               </:body>
             </.confirm_dialog>
           </div>
+
+          <%!-- Its own `:for` rather than a nested block: @providers holds exactly
+               the one loaded connection, and this has to be a SIBLING of the
+               content column to land in the grid's second track. --%>
+          <.connection_help_rail
+            :for={provider <- @providers}
+            provider={provider}
+            directory_sync?={@can_configure_directory_sync? and provider.scim_enabled}
+          />
 
           <div :if={not @loaded?} class="text-sm text-zinc-400">Loading…</div>
         </div>
@@ -2433,6 +2449,84 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   attr :provider, :map, required: true
+  attr :directory_sync?, :boolean, required: true
+
+  # The connection's help, in one place beside the sections instead of a
+  # paragraph under each title. Five separate blurbs each explained their own
+  # section and none explained how the pieces relate — which is the thing an
+  # operator actually needs — while pushing the data down the page (the synced
+  # users list opened four lines below its own heading). Each line here names the
+  # section it describes, so the rail reads as a map of the page.
+  defp connection_help_rail(assigns) do
+    ~H"""
+    <%!-- max-w-prose is for the STACKED case: below xl this sits under the
+         content at full page width, where an uncapped measure runs past 120
+         characters. In the xl rail the 18rem track is already narrower, so it
+         does nothing there. --%>
+    <aside class="max-w-prose space-y-6 text-sm leading-6 xl:sticky xl:top-6">
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          How this connection works
+        </p>
+        <dl class="mt-3 space-y-3 text-zinc-400">
+          <div :if={@directory_sync?}>
+            <dt class="text-zinc-200">Directory sync</dt>
+            <dd>
+              Your IdP pushes users and groups over SCIM. Removing someone there removes them here.
+            </dd>
+          </div>
+          <div :if={not @directory_sync?}>
+            <dt class="text-zinc-200">New members</dt>
+            <dd>
+              People are provisioned the first time they sign in through this connection, at this
+              connection's default role.
+            </dd>
+          </div>
+          <div :if={@directory_sync?}>
+            <dt class="text-zinc-200">Role mapping</dt>
+            <dd>
+              Sets the role a group's members land at. In several mapped groups, the highest wins —
+              and sync never grants owner.
+            </dd>
+          </div>
+          <div :if={@directory_sync?}>
+            <dt class="text-zinc-200">Runner access mapping</dt>
+            <dd>
+              Adds runners on top of the connection default. Groups are matched by id, never by
+              name.
+            </dd>
+          </div>
+          <div :if={@directory_sync?}>
+            <dt class="text-zinc-200">Synced groups &amp; users</dt>
+            <dd>
+              What has actually arrived. A group with no role mapping leaves its members at the
+              default role.
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      <div>
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Docs</p>
+        <ul class="mt-3 space-y-2">
+          <li>
+            <.doc_link href={docs_path_for_kind(to_string(@provider.kind))}>
+              Setting up {setup_kind_label(to_string(@provider.kind))}
+            </.doc_link>
+          </li>
+          <li :if={SSO.IdentityProvider.supports_scim?(@provider.kind)}>
+            <.doc_link href="/docs/scim">Directory sync</.doc_link>
+          </li>
+          <li>
+            <.doc_link href="/docs/teams-and-access">Roles &amp; access</.doc_link>
+          </li>
+        </ul>
+      </div>
+    </aside>
+    """
+  end
+
+  attr :provider, :map, required: true
   attr :scim_base_url, :string, required: true
   attr :scim_token, :map, default: nil
 
@@ -2496,11 +2590,6 @@ defmodule EmisarWeb.SSOSettingsLive do
           </div>
         </:actions>
       </.section_header>
-
-      <p class="max-w-prose text-sm leading-6 text-zinc-400">
-        Your IdP provisions members and offboards removed ones automatically.
-        <.doc_link href="/docs/scim">Directory sync docs</.doc_link>
-      </p>
 
       <div :if={@provider.scim_enabled} class="mt-4 space-y-4">
         <%!-- A healthy sync is a quiet freshness line — no boxed "all good"
@@ -2620,12 +2709,6 @@ defmodule EmisarWeb.SSOSettingsLive do
           </.button>
         </:actions>
       </.section_header>
-      <p class="max-w-prose text-sm leading-6 text-zinc-400">
-        Map an IdP group to the role its members land at — a member in several mapped groups
-        gets the highest. Owner is never assignable through sync.
-        <.doc_link href="/docs/teams-and-access">Roles docs</.doc_link>
-      </p>
-
       <ul :if={@mappings != []} class="mt-4 divide-y divide-zinc-800/70">
         <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -2802,12 +2885,6 @@ defmodule EmisarWeb.SSOSettingsLive do
           </.button>
         </:actions>
       </.section_header>
-      <p class="max-w-prose text-sm leading-6 text-zinc-400">
-        Grant an IdP group all runners or selected runner groups and runners. These grants add
-        to the connection default and to the member's other mapped groups; names are never
-        matched automatically.
-      </p>
-
       <ul :if={@mappings != []} class="mt-4 divide-y divide-zinc-800/70">
         <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
           <div class="flex flex-wrap items-start justify-between gap-3">
@@ -2993,11 +3070,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     ~H"""
     <section>
       <.section_header title="Synced groups" count={length(@synced_groups)} count_tone={:neutral} />
-      <p class="max-w-prose text-sm leading-6 text-zinc-400">
-        The groups your IdP pushes over SCIM, with how many synced users are in each. A group with
-        no role mapping leaves its members at the connection's default role.
-      </p>
-
       <ul :if={@synced_groups != []} class="mt-4 divide-y divide-zinc-800/70">
         <li
           :for={group <- @synced_groups}
@@ -3053,15 +3125,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     ~H"""
     <section>
       <.section_header title="Synced users" count={length(@members)} count_tone={:neutral} />
-      <p class="max-w-prose text-sm leading-6 text-zinc-400">
-        People provisioned through this connection — by directory sync, an SSO first sign-in, or an
-        approved link request.
-        <span :if={@scim_enabled}>
-          Suspend a member here and it holds until you lift it. Roles come from your role mappings, and directory sync offboards a member automatically when your IdP does.
-        </span>
-        <span :if={not @scim_enabled}>Re-role or suspend a member here.</span>
-      </p>
-
       <ul :if={@members != []} class="mt-4 divide-y divide-zinc-800/70">
         <li
           :for={member <- @members}
