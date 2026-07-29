@@ -3370,6 +3370,87 @@ defmodule Emisar.SSOTest do
                )
     end
 
+    test "rebinds the member's existing identity instead of giving them a second", %{
+      account: account,
+      subject: subject,
+      provider: provider
+    } do
+      # Role and runner access are recomputed per identity onto the one
+      # membership, so a second identity made the member's privileges depend on
+      # iteration order — and the reconcile job's single-row read raised outright.
+      member = Fixtures.Users.create_user(email: "member@acme.test")
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator"
+      )
+
+      {:ok, directory_identity} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, member.id, %{
+          provider_identifier: "directory-123",
+          scim_external_id: "directory-123",
+          created_by: :provider,
+          provisioned_via: :scim
+        })
+        |> Repo.insert()
+
+      request =
+        capture_request(provider, %{
+          "sub" => "oid-456",
+          "email" => "member@acme.test",
+          "email_verified" => true
+        })
+
+      assert {:ok, %{identity: identity}} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 subject
+               )
+
+      assert identity.id == directory_identity.id
+      assert identity.provider_identifier == "oid-456"
+
+      # The directory still addresses them by the id it knows — overwriting this
+      # would strand every later GET/PATCH/DELETE /Users/{id}.
+      assert identity.scim_external_id == "directory-123"
+
+      live =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_user_id(member.id)
+        |> Repo.all()
+
+      assert Enum.map(live, & &1.id) == [directory_identity.id]
+    end
+
+    test "the database refuses a second live identity for one person", %{
+      account: account,
+      provider: provider
+    } do
+      member = Fixtures.Users.create_user()
+
+      {:ok, _first} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, member.id, %{
+          provider_identifier: "first",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+        |> Repo.insert()
+
+      second =
+        SSO.UserIdentity.Changeset.create(account.id, provider.id, member.id, %{
+          provider_identifier: "second",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+
+      assert {:error, changeset} = Repo.insert(second)
+      assert "already has an identity for this connection" in errors_on(changeset).user_id
+    end
+
     test "provisions the captured identity + consumes the request", %{
       account: account,
       subject: subject,

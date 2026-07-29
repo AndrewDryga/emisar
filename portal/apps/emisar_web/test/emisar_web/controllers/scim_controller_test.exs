@@ -44,19 +44,21 @@ defmodule EmisarWeb.SCIMControllerTest do
     provider
   end
 
-  # Insert `count` newer directory identities (all bound to one user — a user
-  # may hold many) so an earlier-provisioned target is pushed past the
-  # `GET /Users` page limit, exercising the query-level filter.
-  defp page_off_target(provider, user_id, count) do
+  # Insert `count` newer directory identities — one per person, which is the
+  # only shape the directory can produce — so an earlier-provisioned target is
+  # pushed past the `GET /Users` page limit, exercising the query-level filter.
+  defp page_off_target(provider, count) do
     newer = DateTime.utc_now() |> DateTime.add(60, :second)
 
     rows =
       for n <- 1..count do
+        user = Fixtures.Users.create_user()
+
         %{
           id: Repo.generate_id(),
           account_id: provider.account_id,
           provider_id: provider.id,
-          user_id: user_id,
+          user_id: user.id,
           provider_identifier: "filler|#{n}",
           scim_external_id: "filler|#{n}",
           claims: %{},
@@ -1276,10 +1278,9 @@ defmodule EmisarWeb.SCIMControllerTest do
       # past the page limit with 100 newer ones. A page-then-filter-in-memory
       # implementation would miss it; the query-level filter finds it wherever
       # it sits — without this, an IdP's existence probe re-creates a duplicate.
-      {:ok, %{identity: target}} =
-        SSO.scim_provision_user(provider, %{external_id: "target@acme.test"})
+      {:ok, _target} = SSO.scim_provision_user(provider, %{external_id: "target@acme.test"})
 
-      page_off_target(provider, target.user_id, 100)
+      page_off_target(provider, 100)
 
       for filter <- ["externalId eq \"target@acme.test\"", "userName eq \"target@acme.test\""] do
         body =
@@ -1341,10 +1342,9 @@ defmodule EmisarWeb.SCIMControllerTest do
       # page cap. An unfiltered list is capped at the page limit (push IdPs
       # filter, they don't enumerate), so the response is a partial list — never
       # the whole directory, and never a crash.
-      {:ok, %{identity: anchor}} =
-        SSO.scim_provision_user(provider, %{external_id: "anchor@acme.test"})
+      {:ok, _anchor} = SSO.scim_provision_user(provider, %{external_id: "anchor@acme.test"})
 
-      page_off_target(provider, anchor.user_id, 120)
+      page_off_target(provider, 120)
 
       body = conn |> auth(token) |> get(~p"/scim/v2/Users") |> json_response(200)
 

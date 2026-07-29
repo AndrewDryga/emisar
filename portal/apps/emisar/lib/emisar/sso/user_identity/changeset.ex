@@ -25,6 +25,10 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     |> unique_constraint([:account_id, :provider_id, :scim_external_id],
       name: :sso_user_identities_scim_external_id_index
     )
+    |> unique_constraint(:user_id,
+      name: :sso_user_identities_live_user_index,
+      message: "already has an identity for this connection"
+    )
   end
 
   def touch_last_seen(%UserIdentity{} = identity),
@@ -43,6 +47,25 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     |> change(scim_external_id: external_id)
     |> unique_constraint([:account_id, :provider_id, :scim_external_id],
       name: :sso_user_identities_scim_external_id_index
+    )
+  end
+
+  @doc """
+  Point a live identity at a new provider identifier.
+
+  An approved link request means an admin confirmed that the identifier a login
+  presented is this member. When they already hold an identity for the connection
+  — the directory provisioned them under its own `externalId`, or the IdP rotated
+  their `sub` — that one identity is rebound instead of a second being created.
+  `scim_external_id` is deliberately untouched: the directory still addresses them
+  by the id it knows, and overwriting it would strand every lifecycle call.
+  """
+  def rebind_provider_identifier(%UserIdentity{} = identity, identifier, claims) do
+    identity
+    |> change(provider_identifier: identifier, claims: claims, last_seen_at: DateTime.utc_now())
+    |> validate_required([:provider_identifier])
+    |> unique_constraint([:account_id, :provider_id, :provider_identifier],
+      name: :sso_user_identities_provider_identifier_index
     )
   end
 

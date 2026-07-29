@@ -503,13 +503,7 @@ defmodule Emisar.SSO do
   end
 
   defp reconcile_pending_from_provider(provider, membership) do
-    identity =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_provider_id(provider.id)
-      |> UserIdentity.Query.by_user_id(membership.user_id)
-      |> Repo.peek()
-
-    case identity do
+    case peek_identity(provider, membership.user_id) do
       %UserIdentity{} = identity ->
         case recompute_role_for_identity(provider, identity) do
           {:ok, _membership} ->
@@ -1016,7 +1010,7 @@ defmodule Emisar.SSO do
         # #9: lost a concurrent first-provision race — the winner created the
         # identity. Converge on it (the fetch-or-create race-safe shape) rather
         # than surfacing the unique-violation changeset. The re-call peek-hits.
-        if Repo.Changeset.unique_constraint_error?(changeset),
+        if identifier_race?(changeset),
           do: scim_provision_user(provider, attrs),
           else: {:error, changeset}
 
@@ -1032,6 +1026,20 @@ defmodule Emisar.SSO do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Only an identifier collision is the race the re-call converges on, so only it
+  # earns a retry. The one-live-identity-per-person index is a different answer —
+  # the re-call would peek by identifier, miss, provision, collide again, forever.
+  @identifier_constraints ~w[
+    sso_user_identities_provider_identifier_index
+    sso_user_identities_scim_external_id_index
+  ]
+
+  defp identifier_race?(%Ecto.Changeset{errors: errors}) do
+    Enum.any?(errors, fn {_field, {_message, opts}} ->
+      opts[:constraint_name] in @identifier_constraints
+    end)
   end
 
   defp build_scim_provision_multi(%IdentityProvider{} = provider, external_id, attrs) do
@@ -2362,18 +2370,41 @@ defmodule Emisar.SSO do
     end
   end
 
+  # A person holds ONE identity per connection, so a member who already has one
+  # is REBOUND to the approved identifier rather than given a second. A second
+  # made authorization nondeterministic — role and runner access are computed per
+  # identity onto the one membership, so the last iteration won — and made the
+  # reconcile job's single-row read raise.
   defp link_identity(%IdentityProvider{} = provider, user, %LinkRequest{} = request) do
-    attrs = %{
-      provider_identifier: request.provider_identifier,
-      scim_external_id: request.provider_identifier,
-      claims: request.claims,
-      created_by: :admin,
-      provisioned_via: :manual
-    }
+    case peek_identity(provider, user.id) do
+      %UserIdentity{} = identity ->
+        identity
+        |> UserIdentity.Changeset.rebind_provider_identifier(
+          request.provider_identifier,
+          request.claims
+        )
+        |> Repo.update()
 
-    provider.account_id
-    |> UserIdentity.Changeset.create(provider.id, user.id, attrs)
-    |> Repo.insert()
+      nil ->
+        attrs = %{
+          provider_identifier: request.provider_identifier,
+          scim_external_id: request.provider_identifier,
+          claims: request.claims,
+          created_by: :admin,
+          provisioned_via: :manual
+        }
+
+        provider.account_id
+        |> UserIdentity.Changeset.create(provider.id, user.id, attrs)
+        |> Repo.insert()
+    end
+  end
+
+  defp peek_identity(%IdentityProvider{} = provider, user_id) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.by_provider_id(provider.id)
+    |> UserIdentity.Query.by_user_id(user_id)
+    |> Repo.peek()
   end
 
   # Account-scoped fetches for the already-permission-gated approve/dismiss paths.
