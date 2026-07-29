@@ -808,11 +808,11 @@ defmodule Emisar.SSOGroupsTest do
              ]
     end
 
-    test "denies a non-Enterprise plan (:directory_sync_not_available)" do
+    test "a downgraded plan still reads its synced groups" do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account, %{})
 
-      assert {:error, :directory_sync_not_available} = SSO.list_synced_groups(provider, subject)
+      assert {:ok, []} = SSO.list_synced_groups(provider, subject)
     end
 
     test "is account-scoped — another account's enterprise owner can't read it", %{

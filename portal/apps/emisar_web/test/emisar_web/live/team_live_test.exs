@@ -140,11 +140,29 @@ defmodule EmisarWeb.TeamLiveTest do
       refute has_element?(lv, "#sso-provider-#{provider.id} > [aria-hidden=true]")
     end
 
-    test "pending requests stay hidden without the SSO plan/permission", %{conn: conn} do
+    test "a downgraded plan still shows pending requests — dismissing one needs no plan", %{
+      conn: conn
+    } do
+      # The owner can no longer APPROVE these (that grants access, and the plan
+      # gates it), but they must still see the queue to turn people away. Hiding
+      # it left requests piling up where nobody could act on them.
       {conn, _user, account} = register_and_log_in(conn)
-      # Free plan: the pending-request read is plan-gated, so the queue never loads.
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert html =~ "Pending access requests"
+      assert html =~ "Dana Ops"
+    end
+
+    test "pending requests stay hidden without manage_sso", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      _ = Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       refute html =~ "Pending access requests"

@@ -140,10 +140,13 @@ defmodule Emisar.SSOTest do
       assert {:error, :unauthorized} = SSO.list_providers_for_account(viewer_in(account))
     end
 
-    test "a free plan is denied (:sso_not_available)" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject(%{})
+    test "a downgraded plan still lists what it has — you can't retire what you can't see" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject(%{})
+      provider = provider_fixture(account)
+      provider_id = provider.id
 
-      assert {:error, :sso_not_available} = SSO.list_providers_for_account(subject)
+      assert {:ok, [%IdentityProvider{id: ^provider_id}], _meta} =
+               SSO.list_providers_for_account(subject)
     end
 
     test "is account-scoped — B never sees A's providers" do
@@ -951,12 +954,15 @@ defmodule Emisar.SSOTest do
       assert {:error, :not_found} = SSO.fetch_provider_by_id(provider.id, subject)
     end
 
-    test "a free plan is denied on delete (:sso_not_available)" do
+    test "a downgraded plan can still delete — the connection outlived the plan, not the risk" do
+      # Downgrading does not stop an existing connection accepting sign-ins, so
+      # refusing the delete left an owner holding a live credential they had no
+      # way to retire.
       {_user, account, subject} = Fixtures.Subjects.owner_subject(%{})
       provider = provider_fixture(account)
 
-      assert {:error, :sso_not_available} = SSO.delete_provider(provider, subject)
-      refute Repo.reload!(provider).deleted_at
+      assert {:ok, %IdentityProvider{}} = SSO.delete_provider(provider, subject)
+      assert Repo.reload!(provider).deleted_at
     end
 
     test "a viewer (no manage_sso) is denied" do
@@ -2577,6 +2583,23 @@ defmodule Emisar.SSOTest do
       assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw)
     end
 
+    test "a downgraded plan can still retire the bearer", %{
+      subject: subject,
+      provider: provider,
+      account: account
+    } do
+      # The token keeps authenticating after a downgrade, so an owner who cannot
+      # disable it has a live directory credential and no way to revoke it. Only
+      # buying the feature back was gated on the plan; giving it up never is.
+      {:ok, _enabled, raw} = SSO.enable_scim(provider, subject)
+      assert {:ok, _} = SSO.authenticate_scim_token(raw)
+
+      Fixtures.Accounts.create_subscription(account, "free")
+
+      assert {:ok, %IdentityProvider{scim_enabled: false}} = SSO.disable_scim(provider, subject)
+      assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw)
+    end
+
     test "hands role and runner access control back while retaining the last synced values", %{
       subject: subject,
       provider: provider
@@ -2653,11 +2676,11 @@ defmodule Emisar.SSOTest do
              ]
     end
 
-    test "denies a non-Enterprise plan (:directory_sync_not_available)" do
+    test "a downgraded plan still reads its synced groups" do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account)
 
-      assert {:error, :directory_sync_not_available} = SSO.list_synced_groups(provider, subject)
+      assert {:ok, []} = SSO.list_synced_groups(provider, subject)
     end
 
     test "is account-scoped — another account's enterprise owner can't read it", %{
@@ -2691,11 +2714,11 @@ defmodule Emisar.SSOTest do
       assert {:error, :unauthorized} = SSO.list_group_mappings(provider, viewer_in(account))
     end
 
-    test "denies a Team plan (:directory_sync_not_available)", %{provider: provider} do
-      {_u, _team_account, team_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+    test "a downgraded plan still reads its mappings — removing one needs no plan" do
+      {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      provider = provider_fixture(account)
 
-      assert {:error, :directory_sync_not_available} =
-               SSO.list_group_mappings(provider, team_subject)
+      assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject)
     end
 
     test "is account-scoped — B sees none of A's mappings", %{

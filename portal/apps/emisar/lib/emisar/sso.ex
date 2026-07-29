@@ -34,7 +34,7 @@ defmodule Emisar.SSO do
   # -- Config reads ----------------------------------------------------
 
   def list_providers_for_account(%Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.ordered_by_name()
       |> Authorizer.for_subject(subject)
@@ -49,7 +49,7 @@ defmodule Emisar.SSO do
   Returns `{:ok, [%UserIdentity{}]}`.
   """
   def list_identities_for_users(user_ids, %Subject{} = subject) when is_list(user_ids) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       identities =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.by_user_ids(user_ids)
@@ -86,7 +86,7 @@ defmodule Emisar.SSO do
   scoped to the account. Returns `{:ok, [%UserIdentity{}]}`.
   """
   def list_synced_users(%IdentityProvider{} = provider, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject),
+    with :ok <- ensure_can_manage_sso(subject),
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
       identities =
         UserIdentity.Query.not_deleted()
@@ -109,7 +109,7 @@ defmodule Emisar.SSO do
   account-scoped. Returns `{:ok, stats}`.
   """
   def provider_sync_stats(%Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       users =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.count_by_provider()
@@ -136,7 +136,7 @@ defmodule Emisar.SSO do
   end
 
   def fetch_provider_by_id(id, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject),
+    with :ok <- ensure_can_manage_sso(subject),
          true <- Repo.valid_uuid?(id) do
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.by_id(id)
@@ -237,7 +237,7 @@ defmodule Emisar.SSO do
 
   @doc "Soft-delete a connection. `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
   def delete_provider(%IdentityProvider{id: id}, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -1825,7 +1825,7 @@ defmodule Emisar.SSO do
 
   @doc "Disable directory sync: clear the SCIM token + `scim_enabled: false`. `manage_sso` + enterprise."
   def disable_scim(%IdentityProvider{id: id}, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_directory_sync(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -1864,7 +1864,7 @@ defmodule Emisar.SSO do
   ordered by external group id.
   """
   def list_synced_groups(%IdentityProvider{} = provider, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_directory_sync(subject),
+    with :ok <- ensure_can_manage_sso(subject),
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
       groups =
         DirectoryGroupMember.Query.not_deleted()
@@ -1877,7 +1877,7 @@ defmodule Emisar.SSO do
 
   @doc "List a provider's group→role mappings. `manage_sso` + enterprise; account-scoped."
   def list_group_mappings(%IdentityProvider{id: provider_id}, %Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_configure_directory_sync(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       # No pre-ordering: the query module's cursor (external_group_id, id) drives
       # the ORDER BY so it matches the keyset WHERE. `external_group_display` is
       # nullable, so it can't be a keyset field (this paginator can't compare
@@ -1953,7 +1953,7 @@ defmodule Emisar.SSO do
 
   @doc "Soft-delete a group→role mapping. `manage_sso` + enterprise; account-scoped. Reconciles current group members after commit."
   def delete_group_mapping(%GroupRoleMapping{id: id}, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_directory_sync(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -1980,7 +1980,7 @@ defmodule Emisar.SSO do
         %Subject{} = subject,
         opts \\ []
       ) do
-    with :ok <- ensure_can_configure_directory_sync(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       GroupRunnerAccessMapping.Query.not_deleted()
       |> GroupRunnerAccessMapping.Query.by_provider_id(provider_id)
       |> Authorizer.for_subject(subject)
@@ -2068,7 +2068,7 @@ defmodule Emisar.SSO do
         %GroupRunnerAccessMapping{id: id},
         %Subject{} = subject
       ) do
-    with :ok <- ensure_can_configure_directory_sync(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       GroupRunnerAccessMapping.Query.not_deleted()
       |> GroupRunnerAccessMapping.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -2182,7 +2182,7 @@ defmodule Emisar.SSO do
 
   @doc "List a provider's pending manual-link requests. `manage_sso` + Team or Enterprise; account-scoped."
   def list_link_requests(%IdentityProvider{id: provider_id}, %Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       LinkRequest.Query.all()
       |> LinkRequest.Query.by_provider_id(provider_id)
       |> LinkRequest.Query.ordered_by_recent()
@@ -2193,7 +2193,7 @@ defmodule Emisar.SSO do
 
   @doc "List pending manual-link requests across ALL the account's connections — for the SSO overview's needs-attention block. `manage_sso` + Team or Enterprise; account-scoped."
   def list_pending_link_requests_for_account(%Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_configure_sso(subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
       LinkRequest.Query.all()
       |> LinkRequest.Query.ordered_by_recent()
       |> Authorizer.for_subject(subject)
@@ -2304,7 +2304,7 @@ defmodule Emisar.SSO do
 
   @doc "Dismiss a pending manual-link request without provisioning. `manage_sso` + Team or Enterprise; account-scoped. `{:ok, request}`."
   def dismiss_link_request(%LinkRequest{id: id}, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject),
+    with :ok <- ensure_can_manage_sso(subject),
          {:ok, request} <- fetch_link_request(id, subject) do
       multi =
         Multi.new()
@@ -2527,6 +2527,15 @@ defmodule Emisar.SSO do
     Auth.Authorizer.has_permission?(subject, Authorizer.manage_sso_permission()) and
       Billing.directory_sync_available?(account)
   end
+
+  # A plan gate bounds what an account may ADD or keep running — never what it may
+  # SEE or TAKE AWAY. A downgrade does not stop existing OIDC and SCIM credentials
+  # working, so gating the reads and the destructive verbs on the plan left an
+  # owner with live credentials they were structurally unable to retire: the
+  # console could not list the connection, and delete/disable refused. Reads and
+  # cleanup check the permission alone.
+  defp ensure_can_manage_sso(%Subject{} = subject),
+    do: Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_sso_permission())
 
   defp ensure_can_configure_sso(%Subject{account: account} = subject) do
     with :ok <-

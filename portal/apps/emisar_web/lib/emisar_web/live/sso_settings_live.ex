@@ -145,7 +145,17 @@ defmodule EmisarWeb.SSOSettingsLive do
     {:noreply, load_for_action(socket, params)}
   end
 
-  defp load_for_action(%{assigns: %{can_configure?: false}} = socket, _params), do: socket
+  defp load_for_action(%{assigns: %{has_sso_permission?: false}} = socket, _params), do: socket
+
+  # A downgrade does not stop an existing connection working, so a permission
+  # holder can still open it and remove it. Adding and editing are what the plan
+  # actually gates, and those views load nothing.
+  defp load_for_action(
+         %{assigns: %{can_configure?: false, live_action: action}} = socket,
+         _params
+       )
+       when action != :show,
+       do: socket
 
   defp load_for_action(socket, params) do
     if connected?(socket) do
@@ -407,7 +417,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_delete(&1, id))
+    Permissions.gated(socket, socket.assigns.has_sso_permission?, &do_delete(&1, id))
   end
 
   # -- Directory sync (SCIM) ------------------------------------------
@@ -431,7 +441,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("disable_scim", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      socket.assigns.has_sso_permission?,
       &do_disable_scim(&1, id)
     )
   end
@@ -518,7 +528,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("delete_mapping", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      socket.assigns.has_sso_permission?,
       &do_delete_mapping(&1, id)
     )
   end
@@ -628,7 +638,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("delete_runner_access_mapping", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      socket.assigns.has_sso_permission?,
       &do_delete_runner_access_mapping(&1, id)
     )
   end
@@ -640,7 +650,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("dismiss_request", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_dismiss_request(&1, id))
+    Permissions.gated(socket, socket.assigns.has_sso_permission?, &do_dismiss_request(&1, id))
   end
 
   # Typed-confirm state for the "Delete connection" dialog (UX friction only —
@@ -1435,6 +1445,12 @@ defmodule EmisarWeb.SSOSettingsLive do
           owners and admins.
         </.empty_state>
         <.locked :if={@has_sso_permission?} current_account={@current_account} />
+        <.plan_locked_connection
+          :for={provider <- @providers}
+          :if={@has_sso_permission? and @live_action == :show}
+          provider={provider}
+          typed={@typed}
+        />
       </div>
 
       <div :if={@can_configure?} class="space-y-6">
@@ -1931,6 +1947,54 @@ defmodule EmisarWeb.SSOSettingsLive do
         </div>
       </div>
     </.dashboard_shell>
+    """
+  end
+
+  # A connection that outlived the plan that bought it. It is still accepting
+  # sign-ins, so hiding it behind the upsell left an owner unable to retire a
+  # credential they no longer wanted — the one action offered here is removing it.
+  attr :provider, :map, required: true
+  attr :typed, :string, required: true
+
+  defp plan_locked_connection(assigns) do
+    ~H"""
+    <section class="mt-8">
+      <.section_header title={@provider.name} />
+      <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+        This connection is still accepting sign-ins. Upgrade to configure it again, or remove it
+        now — removing it needs no plan.
+      </p>
+      <div class="mt-4 divide-y divide-zinc-800/70">
+        <.confirm_zone
+          title="Delete this connection"
+          phx-click={show_confirm_dialog("delete-provider-#{@provider.id}")}
+        >
+          <:body>
+            Removes the connection and stops new sign-ins through it. Members who sign in only
+            through it lose access; existing sessions aren't ended. This can't be undone.
+          </:body>
+          Delete connection
+        </.confirm_zone>
+      </div>
+
+      <.confirm_dialog
+        id={"delete-provider-#{@provider.id}"}
+        title="Delete connection"
+        confirm_label="Delete connection"
+        confirm_token={@provider.name}
+        typed={@typed}
+        on_confirm={
+          JS.push("delete", value: %{id: @provider.id})
+          |> hide_confirm_dialog("delete-provider-#{@provider.id}")
+        }
+      >
+        <:body>
+          Permanently removes the <span class="font-medium text-rose-100">{@provider.name}</span>
+          connection. Members who sign in only through it lose access. Existing sessions aren't
+          ended. This can't be undone.
+        </:body>
+      </.confirm_dialog>
+    </section>
     """
   end
 
