@@ -978,7 +978,12 @@ defmodule Emisar.SSO do
   in one `Multi`. Trusts the IdP's email within the connection (collision →
   `:email_taken`, never a merge). `{:ok, %{user, identity, membership}}`.
   """
-  def scim_provision_user(%IdentityProvider{} = provider, attrs) do
+  def scim_provision_user(%IdentityProvider{} = provider, attrs),
+    do: provision_or_load(provider, attrs, :may_retry)
+
+  # `retry` is bookkeeping for the race convergence below, not something a caller
+  # chooses — it stays off the public surface.
+  defp provision_or_load(%IdentityProvider{} = provider, attrs, retry) do
     external_id = attrs[:external_id] || attrs["external_id"]
 
     queryable =
@@ -987,7 +992,7 @@ defmodule Emisar.SSO do
 
     case Repo.peek(queryable) do
       %UserIdentity{} = identity -> load_provisioned(provider, identity, external_id, attrs)
-      nil -> provision_scim_user(provider, external_id, attrs)
+      nil -> provision_scim_user(provider, external_id, attrs, retry)
     end
   end
 
@@ -1100,7 +1105,7 @@ defmodule Emisar.SSO do
   defp ensure_scim_active(%UserIdentity{} = identity),
     do: identity |> UserIdentity.Changeset.set_scim_active(true) |> Repo.update()
 
-  defp provision_scim_user(%IdentityProvider{} = provider, external_id, attrs) do
+  defp provision_scim_user(%IdentityProvider{} = provider, external_id, attrs, retry) do
     multi = build_scim_provision_multi(provider, external_id, attrs)
 
     case Repo.commit_multi(multi) do
@@ -1111,9 +1116,23 @@ defmodule Emisar.SSO do
         # #9: lost a concurrent first-provision race — the winner created the
         # identity. Converge on it (the fetch-or-create race-safe shape) rather
         # than surfacing the unique-violation changeset. The re-call peek-hits.
-        if identifier_race?(changeset),
-          do: scim_provision_user(provider, attrs),
-          else: {:error, changeset}
+        #
+        # ONCE. A race resolves on one retry because the winner's row is now
+        # visible. A permanent collision does not: this identifier belongs to a
+        # row the lookup deliberately cannot see — someone else's claimed
+        # identity — and retrying it re-collides forever.
+        cond do
+          identifier_race?(changeset) and retry == :may_retry ->
+            # Re-enter through the LOOKUP, not the insert: converging means
+            # finding the row the winner just created.
+            provision_or_load(provider, attrs, :final)
+
+          identifier_race?(changeset) ->
+            {:error, :identifier_taken}
+
+          true ->
+            {:error, changeset}
+        end
 
       {:error, :email_taken} ->
         # The SCIM email matches an existing user. If they're a member, park a

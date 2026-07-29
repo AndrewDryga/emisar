@@ -344,6 +344,14 @@ defmodule EmisarWeb.SCIM.UserController do
   # write genuinely cannot proceed and the directory has to be told — but it says
   # only that the address is unavailable, and says the same whether the person is
   # a member here or a stranger elsewhere.
+  # The connection already has an identity under this identifier, bound to
+  # someone else. There is no row this create can honestly occupy.
+  defp render_error(conn, :identifier_taken) do
+    conn
+    |> put_status(:conflict)
+    |> json(Resource.error(409, "uniqueness", "That externalId is already in use."))
+  end
+
   defp render_error(conn, :email_taken) do
     conn
     |> put_status(:conflict)

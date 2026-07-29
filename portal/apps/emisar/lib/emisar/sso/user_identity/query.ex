@@ -34,13 +34,21 @@ defmodule Emisar.SSO.UserIdentity.Query do
   flipped the binding back, leaving the person alternating between a broken
   directory push and a broken sign-in. The directory's own key is preferred when
   both match different rows.
+
+  The `provider_identifier` fallback only reaches a row NO directory has claimed
+  yet. The two key spaces are independent — an OIDC subject and an externalId are
+  minted by different parts of an IdP and can collide — so matching a claimed row
+  by its subject let one person's `POST /Users` adopt another person's identity,
+  stamp their own externalId on it, and reconcile that member's access to what
+  their own payload asserted.
   """
   def by_provider_and_scim_identity(queryable, provider_id, external_id) do
     queryable
     |> where(
       [identities: i],
       i.provider_id == ^provider_id and
-        (i.scim_external_id == ^external_id or i.provider_identifier == ^external_id)
+        (i.scim_external_id == ^external_id or
+           (is_nil(i.scim_external_id) and i.provider_identifier == ^external_id))
     )
     |> order_by([identities: i], desc: i.scim_external_id == ^external_id)
     |> limit(1)

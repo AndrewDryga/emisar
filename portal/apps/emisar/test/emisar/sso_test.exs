@@ -1884,6 +1884,63 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "scim_provision_user/2 key spaces" do
+    test "one person's externalId can't adopt another's OIDC identity" do
+      # An OIDC subject and a directory externalId are minted by different parts
+      # of an IdP and can collide. Matching a CLAIMED row by its subject let
+      # Bob's create take over Alice's identity and reconcile her access to what
+      # his payload asserted.
+      %{provider: provider, account: account} = scim_provider()
+      alice = Fixtures.Users.create_user()
+
+      {:ok, alices} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, alice.id, %{
+          provider_identifier: "collides",
+          scim_external_id: "alice-directory-id",
+          created_by: :provider,
+          provisioned_via: :scim
+        })
+        |> Repo.insert()
+
+      # Refused, not absorbed. The identifier column is unique per connection and
+      # Alice holds this value, so there is no row Bob can honestly occupy — the
+      # directory is told, rather than handed someone else's identity.
+      assert {:error, :identifier_taken} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "collides",
+                 email: "bob@acme.test"
+               })
+
+      untouched = Repo.reload!(alices)
+      assert untouched.scim_external_id == "alice-directory-id"
+      assert untouched.user_id == alice.id
+    end
+
+    test "an unclaimed OIDC-first row is still adopted by a matching externalId" do
+      # The fallback that makes OIDC-first convergence work must survive the fix.
+      %{provider: provider, account: account} = scim_provider()
+      user = Fixtures.Users.create_user()
+
+      {:ok, oidc_first} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
+          provider_identifier: "unclaimed",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+        |> Repo.insert()
+
+      assert is_nil(oidc_first.scim_external_id)
+
+      {:ok, %{identity: adopted}} =
+        SSO.scim_provision_user(provider, %{external_id: "unclaimed"})
+
+      assert adopted.id == oidc_first.id
+      assert adopted.scim_external_id == "unclaimed"
+    end
+  end
+
   describe "scim_can_deactivate_user/2" do
     test "answers before a PATCH writes anything else" do
       # A PATCH may carry a rename alongside the deactivation. Committing the
