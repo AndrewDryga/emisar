@@ -965,6 +965,29 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(provider).deleted_at
     end
 
+    test "dismisses the requests waiting on it, and tells the browsers holding them" do
+      # Approval needs the provider, so a request that outlives it can never be
+      # approved — it just sat in the admin's queue while someone's browser waited
+      # on a page that would never resolve.
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|waiting",
+          "email" => "waiting@acme.test",
+          "email_verified" => true
+        })
+
+      SSO.subscribe_link_request(request.id)
+
+      assert {:ok, _} = SSO.delete_provider(provider, subject)
+
+      request_id = request.id
+      assert_receive {:sso_link_request, :dismissed, %{id: ^request_id}}
+      assert link_requests(provider.id) == []
+    end
+
     test "a viewer (no manage_sso) is denied" do
       {_owner, account, _owner_subject} = enterprise_owner()
       provider = provider_fixture(account)

@@ -253,6 +253,7 @@ defmodule Emisar.SSO do
         audit: &Audit.Events.identity_provider_deleted(subject, &1),
         after_commit: fn provider ->
           _ = return_role_control_to_operators(provider)
+          _ = dismiss_pending_link_requests(provider)
           end_sessions_signed_in_through(provider)
         end
       )
@@ -455,6 +456,21 @@ defmodule Emisar.SSO do
   # is the same set; for anyone else it costs a re-login, which is the right side
   # to err on when the alternative is leaving a pulled connection's sessions
   # alive. Tagging sessions with their provider would let this be exact.
+  # A pending request is a person waiting on an admin. Once the connection they
+  # arrived through is gone, approval is impossible — `approve_link_request` can
+  # no longer fetch the provider — so leaving them queued showed admins a
+  # decision they could not make and left the waiting browsers on a page that
+  # would never resolve. Each one is dismissed and told.
+  defp dismiss_pending_link_requests(%IdentityProvider{} = provider) do
+    queryable =
+      LinkRequest.Query.all()
+      |> LinkRequest.Query.by_provider_id(provider.id)
+
+    requests = Repo.all(queryable)
+    Repo.delete_all(queryable)
+    Enum.each(requests, &broadcast_link_request_dismissed/1)
+  end
+
   defp end_sessions_signed_in_through(%IdentityProvider{} = provider) do
     provider
     |> provider_identities()
