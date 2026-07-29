@@ -1442,6 +1442,38 @@ defmodule Emisar.SSOTest do
 
   # -- scim_provision_user/2 (provider-scoped) -------------------------
 
+  describe "pulling a connection ends the sessions it vouched for" do
+    setup do
+      scim_provider()
+    end
+
+    test "disabling revokes a linked member's sessions", %{provider: provider, subject: subject} do
+      %{identity: identity} = provision(provider, "okta|live")
+      {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+      _token = Emisar.Auth.create_session_token!(user, :sso, false)
+
+      assert {:ok, _} = SSO.update_provider(provider, %{enabled: false}, subject)
+
+      # Disabling used to stop only NEW sign-ins, leaving every session already
+      # minted through the connection valid for its full lifetime.
+      assert Repo.all(
+               Emisar.Auth.UserToken.Query.by_user_id(Emisar.Auth.UserToken.Query.all(), user.id)
+             ) == []
+    end
+
+    test "deleting revokes them too", %{provider: provider, subject: subject} do
+      %{identity: identity} = provision(provider, "okta|gone")
+      {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+      _token = Emisar.Auth.create_session_token!(user, :sso, false)
+
+      assert {:ok, _} = SSO.delete_provider(provider, subject)
+
+      assert Repo.all(
+               Emisar.Auth.UserToken.Query.by_user_id(Emisar.Auth.UserToken.Query.all(), user.id)
+             ) == []
+    end
+  end
+
   describe "update_provider/3 — the identity namespace is settled by the first identity" do
     setup do
       scim_provider()

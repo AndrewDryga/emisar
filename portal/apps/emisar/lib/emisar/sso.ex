@@ -251,7 +251,10 @@ defmodule Emisar.SSO do
               |> then(&prepare_provider_authorization_change(loaded_provider, &1, true))
         end,
         audit: &Audit.Events.identity_provider_deleted(subject, &1),
-        after_commit: &return_role_control_to_operators/1
+        after_commit: fn provider ->
+          _ = return_role_control_to_operators(provider)
+          end_sessions_signed_in_through(provider)
+        end
       )
     end
   end
@@ -411,7 +414,22 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp on_provider_updated(%IdentityProvider{scim_enabled: true} = provider, changeset) do
+  # Both concerns run on every update: clause-matching on `scim_enabled` used to
+  # mean a SCIM-enabled connection never reached the disable branch below.
+  defp on_provider_updated(%IdentityProvider{} = provider, changeset) do
+    _ = recompute_authorization_if_changed(provider, changeset)
+
+    if Ecto.Changeset.get_change(changeset, :enabled) == false,
+      do: end_sessions_signed_in_through(provider),
+      else: :ok
+
+    :ok
+  end
+
+  defp recompute_authorization_if_changed(
+         %IdentityProvider{scim_enabled: true} = provider,
+         changeset
+       ) do
     changed_fields = Map.keys(changeset.changes)
 
     if Enum.any?(@authorization_fields, &(&1 in changed_fields)) do
@@ -423,7 +441,30 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp on_provider_updated(%IdentityProvider{}, _changeset), do: :ok
+  defp recompute_authorization_if_changed(%IdentityProvider{}, _changeset), do: :ok
+
+  # Disabling or deleting a connection stopped NEW sign-ins and left every
+  # session already minted through it valid — for up to their full lifetime — and
+  # the API keys behind them working. An operator pulling a compromised
+  # connection reasonably reads "disabled" as "nobody is coming in through this
+  # any more", so the credentials it vouched for have to go with it.
+  #
+  # Coarse on purpose: sessions carry no provider provenance, so this ends ALL of
+  # a linked member's sessions, not only the ones that came through this
+  # connection. For someone whose access exists BECAUSE of this connection that
+  # is the same set; for anyone else it costs a re-login, which is the right side
+  # to err on when the alternative is leaving a pulled connection's sessions
+  # alive. Tagging sessions with their provider would let this be exact.
+  defp end_sessions_signed_in_through(%IdentityProvider{} = provider) do
+    provider
+    |> provider_identities()
+    |> Enum.each(fn identity ->
+      case Users.fetch_user_by_id(identity.user_id) do
+        {:ok, user} -> Auth.disconnect_and_revoke_all_sessions(user)
+        {:error, :not_found} -> :ok
+      end
+    end)
+  end
 
   defp provider_identities(%IdentityProvider{} = provider) do
     UserIdentity.Query.not_deleted()
