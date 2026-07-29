@@ -721,11 +721,11 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, socket}
 
       provider ->
-        case SSO.update_provider(
-               provider,
-               strip_blank_secret(params),
-               socket.assigns.current_subject
-             ) do
+        # Pass the blank secret THROUGH. Whether a blank means "keep the stored
+        # one" is a security decision — it does not, when the issuer or client id
+        # is being repointed — and the domain owns it. Stripping here left the
+        # domain unable to tell "not supplied" from "supplied unchanged".
+        case SSO.update_provider(provider, params, socket.assigns.current_subject) do
           {:ok, _provider} ->
             {:noreply,
              socket
@@ -1305,6 +1305,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     "This is the only active SSO connection and the account requires single sign-on. Turn off the SSO requirement (Team → Single sign-on) before disabling or deleting it."
   end
 
+  defp error_message(:client_secret_required) do
+    "Changing the issuer or client ID needs the client secret again — emisar sends it to the endpoints that issuer publishes, so it can't carry the old one over to a new provider."
+  end
+
   defp error_message(:identity_namespace_locked) do
     "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed — changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
   end
@@ -1373,7 +1377,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   # real secret; a typed value still shows (it lands in the changeset's
   # `changes`, which `Phoenix.HTML.Form` prefers over the data). The actual
   # `update_provider` runs against the real struct, so leaving the field blank
-  # keeps the stored secret (see `strip_blank_secret/1`).
+  # keeps the stored secret — unless the edit repoints the issuer or client id,
+  # which the domain refuses without one.
   defp edit_form(provider, params \\ %{}, action \\ nil) do
     changeset =
       %{provider | client_secret: nil}

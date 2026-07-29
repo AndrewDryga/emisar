@@ -210,7 +210,8 @@ defmodule Emisar.SSO do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(IdentityProvider.Query,
         with: fn loaded_provider ->
-          changeset = IdentityProvider.Changeset.update(loaded_provider, attrs)
+          supplied_secret? = client_secret_supplied?(attrs)
+          changeset = IdentityProvider.Changeset.update(loaded_provider, drop_blank_secret(attrs))
 
           with {:ok, access} <- provider_access_from_changeset(changeset),
                :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
@@ -225,6 +226,9 @@ defmodule Emisar.SSO do
 
               rebinding_identity_namespace?(loaded_provider, changeset) ->
                 :identity_namespace_locked
+
+              repointing_without_secret?(changeset, supplied_secret?) ->
+                :client_secret_required
 
               true ->
                 prepare_provider_authorization_change(loaded_provider, changeset)
@@ -332,6 +336,46 @@ defmodule Emisar.SSO do
     do: Auth.Permissions.covers_role?(subject, role)
 
   @identity_namespace_fields [:issuer, :client_id, :identifier_claim]
+
+  # The secret field is write-only: a blank one on save means "keep the stored
+  # value", so re-saving a connection does not force the operator to re-type a
+  # credential they cannot read back.
+  #
+  # Keeping it while repointing the ISSUER or CLIENT ID is different. Discovery
+  # from the new issuer names the token endpoint, and the token exchange posts
+  # the client secret to it — so an admin, or anyone who took over that account,
+  # could aim the connection at infrastructure they control and have us hand over
+  # the customer's existing secret. That turns a field nobody can read into one
+  # anybody with `manage_sso` can exfiltrate.
+  #
+  # Rebinding therefore requires supplying the secret. Supplying the SAME value
+  # is fine — the point is that you must hold it, not that it must differ.
+  defp repointing_without_secret?(changeset, supplied_secret?) do
+    not supplied_secret? and
+      Enum.any?([:issuer, :client_id], &Ecto.Changeset.changed?(changeset, &1))
+  end
+
+  defp client_secret_supplied?(attrs) do
+    case fetch_client_secret(attrs) do
+      {:ok, secret} when is_binary(secret) -> String.trim(secret) != ""
+      _ -> false
+    end
+  end
+
+  defp drop_blank_secret(attrs) do
+    if client_secret_supplied?(attrs),
+      do: attrs,
+      else: attrs |> Map.delete("client_secret") |> Map.delete(:client_secret)
+  end
+
+  defp fetch_client_secret(%{} = attrs) do
+    case Map.fetch(attrs, "client_secret") do
+      {:ok, secret} -> {:ok, secret}
+      :error -> Map.fetch(attrs, :client_secret)
+    end
+  end
+
+  defp fetch_client_secret(_attrs), do: :error
 
   defp rebinding_identity_namespace?(provider, changeset) do
     Enum.any?(@identity_namespace_fields, &Ecto.Changeset.changed?(changeset, &1)) and

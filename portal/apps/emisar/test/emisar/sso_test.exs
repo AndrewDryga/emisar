@@ -757,6 +757,79 @@ defmodule Emisar.SSOTest do
 
   # -- update_provider/3 -----------------------------------------------
 
+  describe "update_provider/3 endpoint rebinding" do
+    setup do
+      {_user, account, subject} = enterprise_owner()
+      %{account: account, subject: subject}
+    end
+
+    test "repointing the issuer without the secret is refused", %{
+      account: account,
+      subject: subject
+    } do
+      # The secret is write-only. Carrying it over to a new issuer would post it
+      # to whatever token endpoint that issuer's discovery names — so anyone with
+      # manage_sso could aim the connection at infrastructure they control and
+      # have us hand over a credential they were never able to read.
+      provider = provider_fixture(account, client_secret: "the-customer-s-secret")
+
+      assert {:error, :client_secret_required} =
+               SSO.update_provider(provider, %{"issuer" => "https://attacker.test"}, subject)
+
+      unchanged = Repo.reload!(provider)
+      assert unchanged.issuer == provider.issuer
+      assert unchanged.client_secret == "the-customer-s-secret"
+    end
+
+    test "repointing the client id without the secret is refused too", %{
+      account: account,
+      subject: subject
+    } do
+      provider = provider_fixture(account, client_secret: "the-customer-s-secret")
+
+      assert {:error, :client_secret_required} =
+               SSO.update_provider(provider, %{"client_id" => "attacker-client"}, subject)
+    end
+
+    test "repointing WITH the secret is allowed — holding it is the point", %{
+      account: account,
+      subject: subject
+    } do
+      # Supplying the SAME value is fine. The rule is that you must hold the
+      # secret, not that it must change.
+      provider = provider_fixture(account, client_secret: "the-customer-s-secret")
+
+      assert {:ok, updated} =
+               SSO.update_provider(
+                 provider,
+                 %{
+                   "issuer" => "https://new-idp.test",
+                   "client_secret" => "the-customer-s-secret"
+                 },
+                 subject
+               )
+
+      assert updated.issuer == "https://new-idp.test"
+    end
+
+    test "an ordinary edit still keeps the stored secret without re-typing it", %{
+      account: account,
+      subject: subject
+    } do
+      provider = provider_fixture(account, client_secret: "the-customer-s-secret")
+
+      assert {:ok, updated} =
+               SSO.update_provider(
+                 provider,
+                 %{"name" => "Renamed", "client_secret" => ""},
+                 subject
+               )
+
+      assert updated.name == "Renamed"
+      assert updated.client_secret == "the-customer-s-secret"
+    end
+  end
+
   describe "configure_provider/2 role coverage" do
     test "an admin can't stand up a connection defaulting to a role they can't grant" do
       # The changeset excludes only :owner, so creation was the one path that
@@ -1630,9 +1703,13 @@ defmodule Emisar.SSOTest do
       provider: provider,
       subject: subject
     } do
-      assert {:ok, updated} =
-               SSO.update_provider(provider, %{issuer: "https://new-idp.example.com"}, subject)
+      # The NAMESPACE is what the first identity settles. Repointing the issuer
+      # separately requires the client secret — carrying a write-only one over to
+      # a new issuer would post it to that issuer's token endpoint — so this
+      # supplies it.
+      attrs = %{issuer: "https://new-idp.example.com", client_secret: "secret"}
 
+      assert {:ok, updated} = SSO.update_provider(provider, attrs, subject)
       assert updated.issuer == "https://new-idp.example.com"
     end
   end
