@@ -837,13 +837,39 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
     node = node.parentElement;
   }
   if (!node) return false;
+  // An outline on an INLINE element is drawn per line box, so a wrapped span
+  // comes out as a stack of horizontal bars with no sides. Climb to a block-level
+  // box tall enough to be the row itself.
+  for (let up = 0; up < 4 && node.parentElement; up++) {
+    const display = getComputedStyle(node).display;
+    const block = display === 'block' || display === 'flex' || display === 'grid' ||
+                  display === 'list-item' || display === 'table-row';
+    if (block && node.getBoundingClientRect().height >= 24) break;
+    node = node.parentElement;
+  }
+  node.scrollIntoView({block: 'center'});
+  // A table row is the other way to get bars with no sides: an outline on a <tr>
+  // renders only its horizontal segments, and this shot shipped looking like a
+  // set of underlines because of it. Ring the CELLS instead.
+  if (getComputedStyle(node).display === 'table-row') {
+    const cells = [...node.children];
+    if (!cells.length) return false;
+    cells.forEach((cell, i) => {
+      const ring = ['inset 0 3px 0 #10b981', 'inset 0 -3px 0 #10b981'];
+      if (i === 0) ring.push('inset 3px 0 0 #10b981');
+      if (i === cells.length - 1) ring.push('inset -3px 0 0 #10b981');
+      cell.style.boxShadow = ring.join(', ');
+    });
+    return true;
+  }
   node.style.outline = '3px solid #10b981';
   node.style.outlineOffset = '3px';
   node.style.borderRadius = '6px';
-  node.scrollIntoView({block: 'center'});
-  return true;
+  const box = node.getBoundingClientRect();
+  return node.tagName + ' display=' + getComputedStyle(node).display +
+    ' ' + Math.round(box.width) + 'x' + Math.round(box.height);
 })()`, anchor, mustInclude)
-	var marked bool
+	var marked string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
 		return err
 	}
@@ -851,10 +877,10 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
 	// that matched nothing shipped a screenshot with no outline on it — which is
 	// exactly how the "Provisioning to App" shot reached the docs bare. A missing
 	// outline is a broken instruction, not a cosmetic miss.
-	if !marked {
+	if marked == "" {
 		return fmt.Errorf("nothing spanning %q..%q to highlight", anchor, mustInclude)
 	}
-	fmt.Printf("  highlighted group %q..%q\n", anchor, mustInclude)
+	fmt.Printf("  highlighted group %q..%q on %s\n", anchor, mustInclude, marked)
 	return chromedp.Run(ctx, chromedp.Sleep(600*time.Millisecond))
 }
 
