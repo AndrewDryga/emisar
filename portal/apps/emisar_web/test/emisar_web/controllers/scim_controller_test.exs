@@ -569,6 +569,25 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
+    test "a PATCH with more operations than the cap → 400 tooMany", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      {:ok, _} =
+        SSO.scim_provision_user(provider, %{external_id: "okta|many", email: "many@acme.test"})
+
+      operations =
+        for _ <- 1..101, do: %{"op" => "replace", "path" => "active", "value" => false}
+
+      body =
+        conn
+        |> scim_patch(token, ~p"/scim/v2/Users/okta|many", %{"Operations" => operations})
+        |> json_response(400)
+
+      assert body["scimType"] == "tooMany"
+    end
+
     test "a non-list `Operations` → 400 invalidValue", %{
       conn: conn,
       token: token,
@@ -1173,12 +1192,44 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body = conn |> auth(token) |> get(~p"/scim/v2/Users/okta|read") |> json_response(200)
       assert body["externalId"] == "okta|read"
-      # On a read the domain returns a bare identity (no joined user), which
-      # stores no email — so userName renders as the externalId, the stable
-      # handle we always have. (POST, which carries the user, renders the email.)
-      assert body["userName"] == "okta|read"
+
+      # The same handle POST returned. A read used to hand back a bare identity,
+      # which stores no email, so `userName` fell through to the opaque
+      # externalId — one person with two handles depending on the verb.
+      assert body["userName"] == "read@acme.test"
 
       assert conn |> auth(token) |> get(~p"/scim/v2/Users/okta|missing") |> json_response(404)
+    end
+
+    test "the userName a create returns is the one a filter finds", %{
+      conn: conn,
+      token: token
+    } do
+      # An IdP's normal loop: create, then probe by the handle it got back. The
+      # create echoed the email while the filter matched only `claims.email` —
+      # which a SCIM-created identity never has — so the probe found nothing and
+      # the directory re-created the same person every cycle.
+      created =
+        conn
+        |> auth(token)
+        |> post(
+          ~p"/scim/v2/Users",
+          user_payload("okta|round", user_name: "round@acme.test", email: "round@acme.test")
+        )
+        |> json_response(201)
+
+      assert created["userName"] == "round@acme.test"
+
+      filter = ~s|userName eq "#{created["userName"]}"|
+
+      body =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Users?filter=#{filter}")
+        |> json_response(200)
+
+      assert body["totalResults"] == 1
+      assert [%{"externalId" => "okta|round"}] = body["Resources"]
     end
 
     test "GET /Users/:id matches scim_external_id only — not the provider_identifier fallback", %{

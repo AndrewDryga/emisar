@@ -1225,6 +1225,10 @@ defmodule Emisar.SSO do
     |> UserIdentity.Query.by_account_id(provider.account_id)
     |> UserIdentity.Query.by_provider_id(provider.id)
     |> apply_scim_filter(scim_filter)
+    # The user carries the email `userName` renders from. Without it a listed
+    # identity fell back to its opaque externalId, so the handle an IdP got back
+    # from `POST /Users` was not the one `GET /Users` showed for the same person.
+    |> UserIdentity.Query.with_preloaded_user()
     |> UserIdentity.Query.ordered_by_recent()
     |> Repo.list(UserIdentity.Query, opts)
   end
@@ -1329,6 +1333,7 @@ defmodule Emisar.SSO do
   defp fetch_scim_identity(%IdentityProvider{} = provider, external_id) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
+    |> UserIdentity.Query.with_preloaded_user()
     |> peek_or_not_found()
   end
 

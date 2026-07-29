@@ -80,6 +80,15 @@ defmodule EmisarWeb.SCIM.UserController do
   # PATCH /scim/v2/Users/:id — RFC 7644 §3.5.2 Operations. Honors the `active`
   # replace (lifecycle) and the `displayName` replace (the IdP owns a synced
   # user's name); any other op is an honest SCIM error, never a silent no-op.
+  # The same cap the Group PATCH carries: an operation list is attacker-supplied
+  # and every entry is scanned, so it is bounded before anything reads it. No IdP
+  # sends a batch anywhere near this.
+  @max_patch_operations 100
+
+  def update(conn, %{"id" => _external_id, "Operations" => operations})
+      when is_list(operations) and length(operations) > @max_patch_operations,
+      do: bad_request(conn, "tooMany", "PATCH carries too many operations.")
+
   def update(conn, %{"id" => external_id, "Operations" => operations})
       when is_list(operations) do
     case {name_from_operations(operations), active_from_operations(operations)} do
@@ -310,12 +319,16 @@ defmodule EmisarWeb.SCIM.UserController do
     )
   end
 
+  # The email uniqueness this reports is GLOBAL, not per-account, so saying "in
+  # the account" told an account's bearer something false about an address that
+  # may belong to a workspace it cannot see. The 409 itself is unavoidable — the
+  # write genuinely cannot proceed and the directory has to be told — but it says
+  # only that the address is unavailable, and says the same whether the person is
+  # a member here or a stranger elsewhere.
   defp render_error(conn, :email_taken) do
     conn
     |> put_status(:conflict)
-    |> json(
-      Resource.error(409, "uniqueness", "A user with this email already exists in the account.")
-    )
+    |> json(Resource.error(409, "uniqueness", "That email address is not available."))
   end
 
   defp render_error(conn, %Ecto.Changeset{}),

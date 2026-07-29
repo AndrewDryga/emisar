@@ -32,6 +32,10 @@ defmodule EmisarWeb.SCIM.Resource do
   def to_user(%{identity: %SSO.UserIdentity{} = identity} = result),
     do: to_user(identity, result[:user])
 
+  # A preloaded user is the same source the create response renders from, so the
+  # handle stays the same value across POST, GET and list.
+  def to_user(%SSO.UserIdentity{user: %{} = user} = identity), do: to_user(identity, user)
+
   def to_user(%SSO.UserIdentity{} = identity), do: to_user(identity, nil)
 
   # The SCIM resource `id` is the IdP's externalId, not our internal UUID.

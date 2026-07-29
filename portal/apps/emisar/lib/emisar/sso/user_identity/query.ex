@@ -125,15 +125,18 @@ defmodule Emisar.SSO.UserIdentity.Query do
 
   # The SCIM `GET /Users?filter=userName eq "x"` existence probe, matched in
   # the QUERY so it finds a user anywhere in the directory — not just the page
-  # the IdP happened to fetch. `userName` is the rendered handle
-  # (`claims.email` → `scim_external_id` → `provider_identifier`, per
-  # `SCIM.Resource`), compared case-insensitively.
+  # the IdP happened to fetch. The coalesce chain mirrors the rendered handle in
+  # `SCIM.Resource.user_name/2` exactly, the USER's email first: a SCIM-created
+  # identity carries no claims, so matching on `claims.email` alone could never
+  # find the address the create response had just echoed back.
   def by_user_name(queryable, user_name) do
-    where(
-      queryable,
-      [identities: i],
+    queryable
+    |> with_joined_user()
+    |> where(
+      [identities: i, user: u],
       fragment(
-        "lower(coalesce(?->>'email', ?, ?)) = lower(?)",
+        "lower(coalesce(nullif(?, ''), ?->>'email', ?, ?)) = lower(?)",
+        u.email,
         i.claims,
         i.scim_external_id,
         i.provider_identifier,
