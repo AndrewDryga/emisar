@@ -67,3 +67,30 @@ cases:
     expect:
       status: failure
       reason_contains: [must match pattern]
+
+  # TF_BIN reaches both execution shapes: the /bin/sh -c argv programs and the
+  # packaged script. Proving only one would leave the other free to drift back
+  # to a hardcoded terraform.
+  - name: tf.version-opentofu
+    action: tf.version
+    env: {TF_BIN: tofu}
+    expect:
+      stdout_contains: [OpenTofu]
+
+  # terraform_version is what proves OpenTofu did the read: `state pull` rewrites
+  # it to the CLI that ran, so it tracks the tofu pin in this pack's Dockerfile
+  # rather than the fixture's recorded 1.15.8. Bumping that pin fails this case.
+  - name: tf.state_metadata-opentofu
+    action: tf.state_metadata
+    env: {TF_BIN: tofu}
+    expect:
+      stdout_not_contains:
+        - packtest-canary-terraform-state-secret-8d6a
+        - packtest-canary-terraform-resource-secret-e9c4
+      json:
+        /source: live
+        /state_format_version: 4
+        /serial: 42
+        /lineage: 11111111-2222-3333-4444-555555555555
+        /terraform_version: 1.12.5
+        /resource_instance_count: 3

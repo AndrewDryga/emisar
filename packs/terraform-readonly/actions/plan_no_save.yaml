@@ -14,7 +14,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$TF_DIR\" && terraform plan -input=false -no-color"
+      - "cd \"$TF_DIR\" && \"${TF_BIN:-terraform}\" plan -input=false -no-color"
   timeout: 30m
 output:
   parser: text

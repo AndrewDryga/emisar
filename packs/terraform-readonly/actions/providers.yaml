@@ -5,7 +5,7 @@ kind: exec
 risk: low
 description: List all providers declared in the workspace + their constraints.
 side_effects:
-  - Forks terraform.
+  - Forks the configured CLI.
   - Read-only.
 args: []
 execution:
@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$TF_DIR\" && terraform providers"
+      - "cd \"$TF_DIR\" && \"${TF_BIN:-terraform}\" providers"
   timeout: 30s
 output:
   parser: text

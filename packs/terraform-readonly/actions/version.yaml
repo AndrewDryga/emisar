@@ -3,9 +3,9 @@ id: tf.version
 title: terraform version
 kind: exec
 risk: low
-description: Show the Terraform binary version + provider versions.
+description: Show the CLI version + provider versions.
 side_effects:
-  - Forks terraform.
+  - Forks the configured CLI.
   - Read-only.
 args: []
 execution:
@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$TF_DIR\" && terraform version"
+      - "cd \"$TF_DIR\" && \"${TF_BIN:-terraform}\" version"
   timeout: 30s
 output:
   parser: text

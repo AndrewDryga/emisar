@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$TF_DIR\" && terraform state list"
+      - "cd \"$TF_DIR\" && \"${TF_BIN:-terraform}\" state list"
   timeout: 60s
 output:
   parser: text

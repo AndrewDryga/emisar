@@ -5,7 +5,7 @@ kind: exec
 risk: low
 description: Validates the workspace's HCL files. No state read or write.
 side_effects:
-  - Forks terraform.
+  - Forks the configured CLI.
   - Read-only.
 args: []
 execution:
@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$TF_DIR\" && terraform validate"
+      - "cd \"$TF_DIR\" && \"${TF_BIN:-terraform}\" validate"
   timeout: 60s
 output:
   parser: text

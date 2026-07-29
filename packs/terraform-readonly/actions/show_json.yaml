@@ -19,7 +19,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "cd \"$TF_DIR\" && terraform show -json"
+      - "cd \"$TF_DIR\" && \"${TF_BIN:-terraform}\" show -json"
   timeout: 60s
 output:
   parser: json

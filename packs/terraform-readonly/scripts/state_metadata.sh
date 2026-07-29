@@ -51,7 +51,7 @@ live_metadata() {
   [[ -n "${TF_DIR:-}" ]] || fail "TF_DIR is required"
   (
     cd "$TF_DIR"
-    terraform state pull
+    "${TF_BIN:-terraform}" state pull
   ) | bounded_stdin | project_metadata live
 }
 

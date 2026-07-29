@@ -1,12 +1,12 @@
 schema_version: 1
 
 id: terraform-readonly
-name: Terraform read-only ops
-version: 0.1.7
+name: Terraform / OpenTofu read-only ops
+version: 0.2.0
 description: >
-  Read-only Terraform CLI actions for inspecting a workspace. NO apply,
-  NO destroy, NO state mutation — those should happen in CI, not via a
-  runner. Operates in the directory given by TF_DIR env var.
+  Read-only Terraform or OpenTofu CLI actions for inspecting a workspace.
+  NO apply, NO destroy, NO state mutation — those should happen in CI, not
+  via a runner. Operates in the directory given by TF_DIR env var.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -20,9 +20,9 @@ requires:
 setup:
   summary: >
     Every action runs `cd "$TF_DIR" && terraform …`, so TF_DIR must point
-    at an initialized Terraform working directory on the runner host.
-    Provider and backend credentials come from that config, not from this
-    pack.
+    at an initialized working directory on the runner host. Set TF_BIN=tofu
+    to drive OpenTofu instead. Provider and backend credentials come from
+    that config, not from this pack.
   env:
     - name: TF_DIR
       required: true
@@ -30,6 +30,12 @@ setup:
         Path to an initialized working directory (already `terraform
         init`-ed, with .terraform and a backend configured).
       example: /srv/infra/prod
+    - name: TF_BIN
+      description: >
+        CLI that runs every action. Set it to `tofu` on an OpenTofu host;
+        the two are command-compatible for everything this pack calls.
+      default: terraform
+      example: tofu
     - name: TF_STATE_CANDIDATE_DIR
       description: >
         Optional restricted directory containing candidate .tfstate files for
@@ -39,7 +45,8 @@ setup:
     - "Provider and backend auth depend entirely on what the config uses: an AWS provider/backend reads AWS_* (or an EC2/role profile), GCP reads GOOGLE_APPLICATION_CREDENTIALS, and so on — allowlist whatever your config needs."
     - "state_list, state_show, show_json, output, state_metadata, and state_compare_metadata read the backend state, so the backend credentials must be reachable; validate, version, and state_file_metadata do not."
     - "plan_no_save (risk medium) calls every provider's read APIs (quota usage) but never writes state or saves an applyable plan."
-    - "`terraform state pull` may upgrade state to the local CLI's readable format; terraform_version in projected metadata can therefore reflect the runner's Terraform CLI rather than the writer of the remote snapshot."
+    - "`state pull` may upgrade state to the local CLI's readable format; terraform_version in projected metadata can therefore reflect the runner's CLI rather than the writer of the remote snapshot."
+    - "TF_BIN only reaches the action when the runner's inherit_env allowlists it, exactly like TF_DIR — an unset TF_BIN runs `terraform`."
   verify: tf.version
 
 actions:
