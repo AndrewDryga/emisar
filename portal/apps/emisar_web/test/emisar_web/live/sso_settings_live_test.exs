@@ -643,27 +643,65 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       # And the guide must point at Entra's own PAGE, not the generic section.
       assert entra =~ "/docs/integrations/entra"
-      assert entra =~ "Microsoft Entra setup guide"
     end
 
     test "only a named provider promises screenshots", %{conn: conn, account: account} do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
-      # No kind picked yet: the guide falls back to generic, and there is no single
-      # console to photograph for "any other OIDC provider".
-      assert html =~ "What your provider has to supply"
-      assert html =~ "OIDC setup guide"
-      refute html =~ "Screenshots for every step"
+      # No kind picked yet: there is no single console to photograph for "any
+      # other OIDC provider", so the link must not promise screens.
+      assert html =~ "See what your provider must supply"
+      refute html =~ "See every screen"
 
       picked =
         lv
         |> form("#provider_form", %{"provider" => %{"kind" => "okta"}})
         |> render_change()
 
-      # Okta's section does carry console screenshots, so the promise is honest.
-      assert picked =~ "Screenshots for every step"
-      assert picked =~ "Okta setup guide"
+      # Okta's guide does carry console screenshots, so the promise is honest.
+      assert picked =~ "See every screen"
       assert picked =~ "/docs/integrations/okta"
+
+      # Google's guide is mostly prose — one screenshot, of our own form — so it
+      # gets the honest label rather than the same promise.
+      google =
+        lv
+        |> form("#provider_form", %{"provider" => %{"kind" => "google_workspace"}})
+        |> render_change()
+
+      assert google =~ "See the full guide"
+      refute google =~ "See every screen"
+    end
+
+    test "the guide names what each provider does about the directory", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      # The steps above this line are the same shape everywhere — create an app,
+      # register the redirect URI, paste the credentials. What actually differs,
+      # and what the operator hits straight after, is the directory. The line has
+      # to earn its place by saying that rather than announcing a guide exists.
+      notes = %{
+        "okta" => "Directory sync is a second Okta app",
+        "entra" => "directory sync is a separate enterprise application",
+        "jumpcloud" => "One JumpCloud application covers both",
+        "keycloak" => "Keycloak pushes no directory of its own",
+        "google_workspace" => "Google Workspace can&#39;t push a directory"
+      }
+
+      for {kind, note} <- notes do
+        html =
+          lv
+          |> form("#provider_form", %{"provider" => %{"kind" => kind}})
+          |> render_change()
+
+        assert html =~ note, "#{kind}: expected the directory note"
+        # The rail is already titled "Setting up <provider>" — the line must not
+        # spend itself repeating the name or saying a guide exists.
+        refute html =~ "setup guide"
+      end
     end
   end
 

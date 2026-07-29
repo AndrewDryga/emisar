@@ -2232,7 +2232,8 @@ defmodule EmisarWeb.SSOSettingsLive do
       <%!-- Link out rather than inline more: /docs/sso has the screenshots, and a
            rail teaches beside the task instead of duplicating it. --%>
       <p class="mt-3 text-xs leading-relaxed text-zinc-400">
-        {docs_link_lead(@kind)} <.link
+        {provider_directory_note(@kind)}
+        <.link
           navigate={docs_path_for_kind(@kind)}
           target="_blank"
           class="text-brand-400 underline underline-offset-2 hover:text-brand-300"
@@ -2247,25 +2248,46 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
-  # Deep-link to the provider's own section so the reader lands on its
-  # screenshots, not the top of the page. Entra has no preset kind of its own —
-  # it is configured as generic OIDC — so the generic kind points at the section
-  # most of those readers actually want.
-  # `setup_kind_label/1` reads "a generic OIDC provider", which makes a clumsy link
-  # ("a generic OIDC provider setup guide"), so the generic case gets its own noun.
-  defp docs_link_label(kind) when kind in ~w[google_workspace okta entra jumpcloud keycloak],
-    do: "#{setup_kind_label(kind)} setup guide"
+  # The steps above cover creating the sign-in app, which is the same shape
+  # everywhere. What actually differs between providers — and what the operator
+  # hits immediately after this — is how each one handles the DIRECTORY: Okta
+  # wants a second app, Entra a separate enterprise application, JumpCloud does
+  # both from one, and Keycloak and Google push nothing at all. Saying that here
+  # sets the expectation while they are still deciding what to build over there.
+  # The rail is already titled "Setting up <provider>", so this must not repeat
+  # the provider's name or announce that a guide exists.
+  defp provider_directory_note("okta"),
+    do: "Directory sync is a second Okta app — this one only signs people in."
 
-  defp docs_link_label(_), do: "OIDC setup guide"
+  defp provider_directory_note("entra"),
+    do: "This is the app registration; directory sync is a separate enterprise application."
 
-  # Only the named providers have console screenshots — there is no single console
-  # to photograph for "any other OIDC provider", so promising them there would be a
-  # claim the reader disproves one click later.
-  defp docs_link_lead(kind) when kind in ~w[okta entra jumpcloud keycloak],
-    do: "Screenshots for every step:"
+  defp provider_directory_note("jumpcloud"),
+    do: "One JumpCloud application covers both this and directory sync."
 
-  defp docs_link_lead("google_workspace"), do: "Step-by-step guide:"
-  defp docs_link_lead(_), do: "What your provider has to supply:"
+  defp provider_directory_note("keycloak"),
+    do: "Keycloak pushes no directory of its own, so members arrive on their first sign-in."
+
+  defp provider_directory_note("google_workspace") do
+    "Google Workspace can't push a directory to emisar, so members arrive on first sign-in."
+  end
+
+  # Steps 1 and 3 already say "confidential client" and "discovery document", so
+  # the generic line has to stay on the directory axis like the named ones do.
+  defp provider_directory_note(_) do
+    "Directory sync needs a provider that pushes SCIM; otherwise members arrive on first sign-in."
+  end
+
+  # Deep-link to the provider's own guide so the reader lands on its screenshots
+  # rather than the top of the docs. Only the named providers have a console to
+  # photograph — promising screens for "any other OIDC provider" is a claim the
+  # reader disproves one click later — and Google's guide is mostly prose, so it
+  # gets the honest label too.
+  defp docs_link_label(kind) when kind in ~w[okta entra jumpcloud keycloak],
+    do: "See every screen"
+
+  defp docs_link_label("google_workspace"), do: "See the full guide"
+  defp docs_link_label(_), do: "See what your provider must supply"
 
   # `oid` exists for exactly one provider. Offering it under Keycloak or Google
   # invites an admin to pick a claim their IdP never issues, which fails at the
