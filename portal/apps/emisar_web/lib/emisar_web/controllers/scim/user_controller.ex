@@ -128,8 +128,11 @@ defmodule EmisarWeb.SCIM.UserController do
   defp name_op(full_name), do: {:ok, full_name}
 
   # The stored name is one string, so split it to fill whichever half the batch
-  # left alone. Two words is the shape this reconstructs; anything else keeps the
-  # whole current value as the family part rather than inventing a split.
+  # left alone: everything before the first space is the given half, the rest is
+  # the family half, and a single word is a given name with no family half. That
+  # is a guess about human names, and a wrong one for plenty of them — it only
+  # decides what to KEEP when a batch names one component, never what to store
+  # when it names both.
   defp merged_name(identity, components) do
     {current_given, current_family} = split_current_name(identity)
 
@@ -300,8 +303,10 @@ defmodule EmisarWeb.SCIM.UserController do
   # handling as `active_from_operations/1`. A non-string or empty value is
   # not a rename (the IdP sent nothing usable), never an error.
   # Last write wins, for the same ordering reason as `active` above.
-  # A whole name beats components, and later operations beat earlier ones — the
-  # same wire-order rule the rest of PATCH follows.
+  # A whole name wins outright: once one is seen, no later component overrides it,
+  # because a component names half of something the batch has already stated in
+  # full. Among components themselves the last mention of each half wins, which is
+  # the wire-order rule the rest of PATCH follows.
   defp name_from_operations(operations) do
     Enum.reduce(operations, :no_name_op, fn op, acc ->
       case operation_name(op) do
