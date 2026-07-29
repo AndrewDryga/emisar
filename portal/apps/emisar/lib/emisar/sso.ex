@@ -484,7 +484,7 @@ defmodule Emisar.SSO do
 
   defp end_sessions_signed_in_through(%IdentityProvider{} = provider) do
     provider
-    |> provider_identities()
+    |> all_provider_identities()
     |> Enum.group_by(& &1.user_id, & &1.id)
     |> Enum.each(fn {user_id, identity_ids} ->
       end_identity_sessions(user_id, identity_ids)
@@ -499,7 +499,7 @@ defmodule Emisar.SSO do
   def end_account_sessions_for_user(user_id, account_id)
       when is_binary(user_id) and is_binary(account_id) do
     identity_ids =
-      UserIdentity.Query.not_deleted()
+      UserIdentity.Query.all()
       |> UserIdentity.Query.by_account_id(account_id)
       |> UserIdentity.Query.by_user_id(user_id)
       |> Repo.all()
@@ -529,6 +529,16 @@ defmodule Emisar.SSO do
     |> Repo.all()
   end
 
+  # Revocation reads EVERY identity the connection ever minted, retired ones
+  # included. Soft-deleting an identity does not invalidate the cookie a session
+  # already holds, so enumerating only live rows let a retired identity's session
+  # survive the disable or delete that was supposed to end it.
+  defp all_provider_identities(%IdentityProvider{} = provider) do
+    UserIdentity.Query.all()
+    |> UserIdentity.Query.by_provider_id(provider.id)
+    |> Repo.all()
+  end
+
   @authorization_reconcile_batch_size 100
 
   @doc "Internal - retry a bounded batch of fail-closed directory authorization work."
@@ -554,7 +564,12 @@ defmodule Emisar.SSO do
         reconcile_pending_from_provider(provider, membership)
 
       _provider ->
-        Accounts.clear_directory_managed_for_users(membership.account_id, [membership.user_id])
+        Accounts.clear_directory_managed_for_users(
+          membership.account_id,
+          membership.directory_provider_id,
+          [membership.user_id]
+        )
+
         :ok
     end
   end
@@ -574,7 +589,12 @@ defmodule Emisar.SSO do
         end
 
       nil ->
-        Accounts.clear_directory_managed_for_users(membership.account_id, [membership.user_id])
+        Accounts.clear_directory_managed_for_users(
+          membership.account_id,
+          membership.directory_provider_id,
+          [membership.user_id]
+        )
+
         :ok
     end
   end
@@ -1911,7 +1931,7 @@ defmodule Emisar.SSO do
       |> UserIdentity.Query.select_user_ids()
       |> Repo.all()
 
-    Accounts.clear_directory_managed_for_users(provider.account_id, user_ids)
+    Accounts.clear_directory_managed_for_users(provider.account_id, provider.id, user_ids)
     drop_group_snapshot(provider)
   end
 

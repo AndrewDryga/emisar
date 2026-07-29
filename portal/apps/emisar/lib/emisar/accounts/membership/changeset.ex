@@ -82,9 +82,17 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   # Directory sync deactivated the member (SCIM active:false/DELETE) — mark the
   # suspension IdP-owned so a manual reinstate refuses; only the IdP reactivating
-  # (or a re-provision) lifts it.
-  def sync_suspend(%Membership{} = membership),
-    do: change(membership, disabled_at: DateTime.utc_now(), directory_suspended: true)
+  # (or a re-provision) lifts it. The connection that placed it is stamped too:
+  # without that, a suspension owned by a live directory was indistinguishable
+  # from one whose directory had been deleted, and both reinstatement and the
+  # cleanup that frees stranded members had to guess.
+  def sync_suspend(%Membership{} = membership, provider_id) when is_binary(provider_id) do
+    change(membership,
+      disabled_at: DateTime.utc_now(),
+      directory_suspended: true,
+      directory_provider_id: provider_id
+    )
+  end
 
   # Reinstating always clears the IdP-owned mark — a member back in is not
   # IdP-deactivated (a manual reinstate is only reachable when it's already false).

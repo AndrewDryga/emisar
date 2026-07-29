@@ -2407,7 +2407,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "clear_directory_managed_for_users/2" do
+  describe "clear_directory_managed_for_users/3" do
     test "an operator can reinstate a member the removed directory had deactivated" do
       # Suspended by a directory that no longer exists: `reinstate_membership`
       # refuses a `directory_suspended` row on the reasoning that only the IdP may
@@ -2429,7 +2429,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:error, :deactivated_in_idp} = Accounts.reinstate_membership(suspended, subject)
 
-      Accounts.clear_directory_managed_for_users(account.id, [member.user_id])
+      Accounts.clear_directory_managed_for_users(account.id, provider.id, [member.user_id])
 
       # The suspension stands — the directory's last word was that they are out —
       # but it is now an operator's to lift.
@@ -2443,15 +2443,43 @@ defmodule Emisar.AccountsTest do
 
     test "clears the flag only for the named members, leaving other synced members" do
       account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       freed = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       Fixtures.Memberships.mark_directory_managed(freed)
       kept = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       Fixtures.Memberships.mark_directory_managed(kept)
 
-      Accounts.clear_directory_managed_for_users(account.id, [freed.user_id])
+      Accounts.clear_directory_managed_for_users(account.id, provider.id, [freed.user_id])
 
       refute Repo.reload!(freed).directory_managed
       assert Repo.reload!(kept).directory_managed
+    end
+
+    test "leaves alone a suspension another connection owns" do
+      # Tearing down connection B must not erase the hold connection A placed —
+      # otherwise a local admin can reinstate access A still says is revoked.
+      account = Fixtures.Accounts.create_account()
+      provider_a = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :okta)
+      provider_b = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :entra)
+      user = Fixtures.Users.create_user()
+
+      {:ok, membership} =
+        Accounts.provision_sso_membership(
+          account.id,
+          user.id,
+          :operator,
+          Accounts.RunnerAccess.none(),
+          directory_managed?: true,
+          directory_provider: provider_a
+        )
+
+      {:ok, _suspended} = Accounts.sync_suspend_membership(membership, provider_a)
+
+      Accounts.clear_directory_managed_for_users(account.id, provider_b.id, [user.id])
+
+      still_held = Repo.reload!(membership)
+      assert still_held.directory_suspended
+      assert still_held.directory_provider_id == provider_a.id
     end
   end
 

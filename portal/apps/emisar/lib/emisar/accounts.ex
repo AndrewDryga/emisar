@@ -1542,7 +1542,7 @@ defmodule Emisar.Accounts do
         with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
              :ok <- ensure_not_suspended(loaded_membership),
              :ok <- ensure_not_last_active_owner(loaded_membership) do
-          Membership.Changeset.sync_suspend(loaded_membership)
+          Membership.Changeset.sync_suspend(loaded_membership, provider.id)
         else
           {:error, reason} -> reason
         end
@@ -1804,11 +1804,16 @@ defmodule Emisar.Accounts do
   members) in `account_id`. No `%Subject{}` — the SSO caller is already authorized
   by the provider's account scope. Returns `{count, nil}`.
   """
-  def clear_directory_managed_for_users(account_id, user_ids)
-      when is_binary(account_id) and is_list(user_ids) do
+  def clear_directory_managed_for_users(account_id, provider_id, user_ids)
+      when is_binary(account_id) and is_binary(provider_id) and is_list(user_ids) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_user_ids(user_ids)
+    # Only rows THIS connection owns. An account can run several, and clearing
+    # every row for a user let tearing down connection B erase the suspension
+    # connection A had placed — after which a local admin could reinstate access
+    # A still says is revoked.
+    |> Membership.Query.by_directory_provider_or_unmanaged(provider_id)
     |> Repo.update_all(
       set: [
         directory_managed: false,
