@@ -394,6 +394,33 @@ defmodule EmisarWeb.DocsComponents do
     """
   end
 
+  @doc """
+  The prerequisites a page opens with — a checklist note whose items are
+  tick-marked.
+
+  Two pages hand-rolled the same callout + `<ul>` + per-item `hero-check` before
+  this existed, and the provider guides were about to make it seven. What a
+  reader must already have is a recurring shape, so it gets one.
+  """
+  slot :item, required: true
+
+  def docs_prerequisites(assigns) do
+    ~H"""
+    <.docs_callout
+      kind={:note}
+      icon="hero-clipboard-document-check"
+      title="Before you start, you need:"
+    >
+      <ul class="mt-3 space-y-2">
+        <li :for={item <- @item} class="flex items-start gap-2.5">
+          <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+          <span>{render_slot(item)}</span>
+        </li>
+      </ul>
+    </.docs_callout>
+    """
+  end
+
   defp docs_callout_box(:note), do: "border-zinc-800 bg-zinc-950/60"
   defp docs_callout_box(:tip), do: "border-brand-900/40 bg-brand-950/20"
   defp docs_callout_box(:warn), do: "border-amber-900/40 bg-amber-950/15"

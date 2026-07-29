@@ -35,39 +35,24 @@
         skill walks your agent through this whole page: install, verify, evidence report.
       </.agent_skill_cta>
 
-      <.docs_callout
-        kind={:note}
-        icon="hero-clipboard-document-check"
-        title="Before you start, you need:"
-      >
-        <ul class="mt-3 space-y-2">
-          <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
-            <span>
-              A Linux host with <strong class="text-zinc-300">systemd</strong>
-              — a VM, a cloud instance, or bare metal. (macOS + launchd works for dev/eval;
-              containers work too — see <.link
-                navigate={~p"/docs/containers"}
-                class="text-brand-400 hover:text-brand-300"
-              >Containers &amp; Kubernetes</.link>.)
-            </span>
-          </li>
-          <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
-            <span><code class="text-zinc-300">sudo</code> on that host.</span>
-          </li>
-          <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
-            <span>
-              Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
-              for the runner (it dials out; nothing listens on the host, so there's no inbound port
-              to open), plus <code class="text-zinc-300">api.github.com</code>
-              and <code class="text-zinc-300">github.com</code>
-              for the installer — it downloads the runner release and checksums from GitHub.
-            </span>
-          </li>
-        </ul>
-      </.docs_callout>
+      <.docs_prerequisites>
+        <:item>
+          A Linux host with <strong class="text-zinc-300">systemd</strong>
+          — a VM, a cloud instance, or bare metal. (macOS + launchd works for dev/eval;
+          containers work too — see <.link
+            navigate={~p"/docs/containers"}
+            class="text-brand-400 hover:text-brand-300"
+          >Containers &amp; Kubernetes</.link>.)
+        </:item>
+        <:item><code class="text-zinc-300">sudo</code> on that host.</:item>
+        <:item>
+          Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
+          for the runner (it dials out; nothing listens on the host, so there's no inbound port
+          to open), plus <code class="text-zinc-300">api.github.com</code>
+          and <code class="text-zinc-300">github.com</code>
+          for the installer — it downloads the runner release and checksums from GitHub.
+        </:item>
+      </.docs_prerequisites>
 
       <.docs_h2 id="install">The install command</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
