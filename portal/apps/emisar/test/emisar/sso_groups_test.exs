@@ -320,6 +320,31 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
+  describe "group writes after directory sync is turned off" do
+    test "a request that authenticated before the disable cannot still mutate" do
+      # The bearer resolves the provider once, at the start of the request. Sync
+      # can be turned off while that request is in flight, and the write then
+      # re-stamped the epoch, recreated rows the disable had discarded, and
+      # reapplied roles from a directory the account had stopped trusting.
+      %{provider: provider, subject: subject} = scim_provider()
+      in_flight = provider
+
+      assert {:ok, _} = SSO.disable_scim(provider, subject)
+
+      assert {:error, :directory_sync_disabled} =
+               SSO.scim_upsert_group(in_flight, %{
+                 external_id: "grp-late",
+                 member_external_ids: []
+               })
+
+      assert {:error, :directory_sync_disabled} =
+               SSO.scim_rename_group(in_flight, "grp-late", "Too Late")
+
+      assert {:error, :directory_sync_disabled} =
+               SSO.scim_patch_group_members(in_flight, "grp-late", [], [])
+    end
+  end
+
   describe "scim_delete_group/2" do
     setup do
       scim_provider()

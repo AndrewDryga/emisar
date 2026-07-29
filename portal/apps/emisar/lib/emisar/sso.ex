@@ -1552,9 +1552,18 @@ defmodule Emisar.SSO do
   `{:ok, group_summary}`.
   """
   def scim_rename_group(%IdentityProvider{} = provider, external_group_id, display) do
-    with :ok <- validate_scim_group_values(external_group_id, display, []) do
-      :ok = upsert_directory_group(provider, external_group_id, display)
-      _ = refresh_group_display(provider, external_group_id, display)
+    with :ok <- validate_scim_group_values(external_group_id, display, []),
+         # Under the same lock every other group write takes. Renaming outside it
+         # raced a concurrent member push: both saw no row, the member path
+         # inserted first, and the rename's conflict-free insert dropped its
+         # display while still answering success. It could also recreate a group
+         # a concurrent disable had just discarded.
+         {:ok, _} <-
+           Repo.transaction(fn ->
+             {locked_provider, _first_push?} = lock_provider!(provider)
+             :ok = upsert_directory_group(locked_provider, external_group_id, display)
+             refresh_group_display(locked_provider, external_group_id, display)
+           end) do
       {:ok, %{external_group_id: external_group_id, display: display}}
     end
   end
@@ -1654,6 +1663,15 @@ defmodule Emisar.SSO do
 
   defp lock_provider!(%IdentityProvider{} = provider) do
     locked = lock_provider_row!(provider)
+
+    # The bearer resolved this provider once, at the start of the request. Sync
+    # can be turned off while the request is still in flight — and the write then
+    # re-stamped the epoch, recreated the rows a disable had just discarded, and
+    # reapplied roles and runner access from a directory the account had stopped
+    # trusting. The locked row decides.
+    unless locked.scim_enabled do
+      Repo.rollback(:directory_sync_disabled)
+    end
 
     # Reaching a group write IS the directory pushing groups. Stamped under the
     # same lock the write holds, so the recompute below can tell an empty
