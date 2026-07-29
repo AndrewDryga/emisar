@@ -1987,7 +1987,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       <section>
         <.section_header title="OIDC connection">
           <:subtitle>
-            The issuer we fetch discovery from, and the OAuth client we authenticate as.
+            Your provider's issuer URL, and the OAuth app emisar signs in with.
           </:subtitle>
         </.section_header>
         <%!-- Setup steps for the SELECTED provider — what to create at the IdP and
@@ -2049,8 +2049,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               options={identifier_claim_options(@kind)}
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-              The stable, provider-issued claim that identifies a user — restricted to immutable
-              subject identifiers (a mutable claim like email would allow account takeover). {identifier_claim_hint(
+              How emisar recognises a returning member. Never their email — people change those. {identifier_claim_hint(
                 @kind
               )}
             </p>
@@ -2143,7 +2142,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               Restricts sign-in to verified emails on this domain and routes that domain's
-              sign-ins here. Leave blank to accept any address the provider asserts.
+              sign-ins here. Leave blank to accept any address the provider returns.
             </p>
           </div>
         </div>
@@ -2299,12 +2298,16 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # Telling an Entra admin to "leave it as sub" would be advice against the one
   # setting that provider needs changed.
+  # Why `oid` rather than `sub` is a page of reasoning about how sign-in and the
+  # directory converge on one person — that belongs in the Entra guide, which
+  # covers it. Here the operator needs the instruction and the consequence.
   defp identifier_claim_hint("entra") do
-    "Entra issues a different `sub` to every application, so `oid` — its immutable object id, and the value directory sync provisions on — is what keeps sign-in and the directory pointing at one person."
+    "Entra gives every app a different `sub`, so pick `oid` — the same id directory sync uses."
   end
 
-  defp identifier_claim_hint(_),
-    do: "`sub` is the OIDC standard and the only claim these providers issue for this."
+  # One option, nothing to decide: justifying why the list is short is our
+  # bookkeeping, not the operator's.
+  defp identifier_claim_hint(_), do: ""
 
   defp docs_path_for_kind("google_workspace"), do: ~p"/docs/integrations/google-workspace"
   defp docs_path_for_kind("okta"), do: ~p"/docs/integrations/okta"
@@ -2411,11 +2414,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Where to FIND the issuer — it's an org/realm-level value, not on the app
   # page, which is the usual point of confusion.
   defp issuer_where_hint("okta") do
-    "It's your Okta org URL — the domain you use for the admin console, not a per-app field. Use the ORG authorization server (Security → API → Authorization Servers, the org row's Issuer URI), not a custom one: that keeps the OIDC `sub` equal to the Okta user id, which is exactly what SCIM provisions on, so sign-in and directory sync converge on one identity."
+    "It's your Okta org URL — the domain you use for the admin console, not a per-app field. Use the org authorization server (Security → API → Authorization Servers, the org row's Issuer URI), not a custom one."
   end
 
   defp issuer_where_hint("jumpcloud") do
-    "Always this exact value for JumpCloud — including the trailing slash. JumpCloud echoes back the `externalId` SCIM sent, so the OIDC `sub` and the SCIM identity converge automatically; nothing to look up."
+    "Always this exact value for JumpCloud — including the trailing slash. Nothing to look up."
   end
 
   defp issuer_where_hint("google_workspace"),
@@ -2429,8 +2432,11 @@ defmodule EmisarWeb.SSOSettingsLive do
     "Your realm's base URL; Realm settings → Endpoints → OpenID Endpoint Configuration confirms the exact value."
   end
 
-  defp issuer_where_hint(_) do
-    "Whatever URL serves its OIDC discovery document at /.well-known/openid-configuration — emisar fetches it from there."
+  defp issuer_where_hint(assigns) do
+    ~H"""
+    Whatever URL serves its OIDC discovery document at <code>/.well-known/openid-configuration</code>
+    — emisar fetches it from there.
+    """
   end
 
   defp scim_location_hint(:okta) do
