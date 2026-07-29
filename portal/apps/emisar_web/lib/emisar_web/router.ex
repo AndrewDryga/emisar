@@ -55,6 +55,18 @@ defmodule EmisarWeb.Router do
   # content-type resolves to the `json` extension via MIME's `+json` suffix,
   # so `:accepts ["json"]` accepts it and Plug.Parsers' :json entry parses it.
   pipeline :scim do
+    # Two limits, because one cannot do both jobs. The per-credential limit is
+    # the real budget, but it can only bucket what the caller PRESENTS, and a
+    # fabricated token parses as happily as a real one — so rotating credentials
+    # bought a fresh allowance every time. This IP cap sits in front, before any
+    # parsing or authentication, and bounds that rotation. It is deliberately
+    # far above what one directory pushes so a busy IdP never meets it.
+    plug EmisarWeb.Plugs.RateLimit,
+      bucket: "scim_ip",
+      limit: 1_200,
+      window_ms: 60_000,
+      by: :ip
+
     plug EmisarWeb.Plugs.RateLimit,
       bucket: "scim",
       limit: 300,

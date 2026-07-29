@@ -35,6 +35,17 @@ defmodule EmisarWeb.SCIM.Auth do
   # the one-element clause). Throughout, the constant-time hash compare in
   # `SSO.authenticate_scim_token/1` stays the sole authenticator — this only
   # normalizes the envelope.
+  @doc """
+  Internal — the normalized SCIM credential in an `authorization` header list,
+  or `:error`.
+
+  Public so the rate limiter buckets on exactly what authentication accepts. It
+  used to match a literal `"Bearer "` while this parser took lowercase schemes,
+  extra whitespace and schemeless `ems-` tokens — so every tolerated variant
+  slipped the limit into an IP fallback or its own bucket.
+  """
+  def credential(headers), do: bearer_token(headers)
+
   defp bearer_token([value]) when is_binary(value) do
     trimmed = String.trim(value)
 

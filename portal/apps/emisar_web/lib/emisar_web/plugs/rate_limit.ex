@@ -79,10 +79,17 @@ defmodule EmisarWeb.Plugs.RateLimit do
     )
   end
 
+  # Bucket on the credential AUTHENTICATION would accept, via its own parser —
+  # matching a literal "Bearer " here let `bearer x`, `Bearer  x` and a
+  # schemeless `ems-` token each land in a different bucket or fall back to IP,
+  # so the limit was opt-out for anyone who knew.
+  #
+  # An unparseable credential is not a distinct caller: it buckets by IP, so
+  # rotating junk tokens cannot buy fresh allowances.
   defp key_for(conn, :bearer) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token | _] -> "key:" <> Emisar.Crypto.hash_hex(token)
-      _ -> RequestContext.client_ip(conn)
+    case EmisarWeb.SCIM.Auth.credential(get_req_header(conn, "authorization")) do
+      {:ok, token} -> "key:" <> Emisar.Crypto.hash_hex(token)
+      :error -> RequestContext.client_ip(conn)
     end
   end
 
