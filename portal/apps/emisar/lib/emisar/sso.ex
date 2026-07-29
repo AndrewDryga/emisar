@@ -210,6 +210,9 @@ defmodule Emisar.SSO do
                :ok <-
                  Accounts.validate_runner_access_for_account(loaded_provider.account_id, access) do
             cond do
+              not grantable_role?(Ecto.Changeset.get_change(changeset, :default_role), subject) ->
+                :role_exceeds_your_permissions
+
               disabling_last_required_provider?(loaded_provider, changeset) ->
                 :require_sso_last_provider
 
@@ -292,6 +295,30 @@ defmodule Emisar.SSO do
   # renaming, retargeting roles and runner access all stay editable — only the
   # three fields that decide WHO a stored identifier refers to are frozen. A
   # genuine move to another IdP is a new connection.
+  # A connection's default role and its group mappings are BOTH ways to hand a
+  # role to whoever the directory sends, so they need the same no-escalation rule
+  # a team role change gets: you may only grant what you already hold. Rejecting
+  # only `:owner` let an admin — who has no `manage_billing` — set
+  # `default_role: :billing_manager` or map a group they control to it, and give
+  # an accomplice the finance seat.
+  defp ensure_grantable_role(role, %Subject{} = subject) do
+    if grantable_role?(role, subject), do: :ok, else: {:error, :role_exceeds_your_permissions}
+  end
+
+  # No role named (a rename, a display-only edit) escalates nothing.
+  defp grantable_role?(nil, _subject), do: true
+  defp grantable_role?("", _subject), do: true
+
+  defp grantable_role?(role, %Subject{} = subject) when is_binary(role) do
+    case Auth.Role.cast(role) do
+      {:ok, role} -> grantable_role?(role, subject)
+      :error -> true
+    end
+  end
+
+  defp grantable_role?(role, %Subject{} = subject) when is_atom(role),
+    do: Auth.Permissions.covers_role?(subject, role)
+
   @identity_namespace_fields [:issuer, :client_id, :identifier_claim]
 
   defp rebinding_identity_namespace?(provider, changeset) do
@@ -1779,6 +1806,7 @@ defmodule Emisar.SSO do
   """
   def create_group_mapping(%IdentityProvider{} = provider, attrs, %Subject{} = subject) do
     with :ok <- ensure_can_configure_directory_sync(subject),
+         :ok <- ensure_grantable_role(attrs["role"] || attrs[:role], subject),
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
       multi = create_group_mapping_multi(provider, attrs, subject)
 
@@ -1810,7 +1838,8 @@ defmodule Emisar.SSO do
 
   @doc "Update a group→role mapping (its role / display). `manage_sso` + enterprise; account-scoped. Reconciles current group members after commit and rejects `:owner`."
   def update_group_mapping(%GroupRoleMapping{id: id}, attrs, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_directory_sync(subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject),
+         :ok <- ensure_grantable_role(attrs["role"] || attrs[:role], subject) do
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_id(id)
       |> Authorizer.for_subject(subject)

@@ -3193,6 +3193,60 @@ defmodule Emisar.SSOTest do
 
   # -- approve_link_request/3 ------------------------------------------
 
+  describe "granting a role through SSO can't exceed the granter's own" do
+    setup do
+      {_owner, account, _owner_subject} = enterprise_owner()
+      provider = provider_fixture(account, default_role: :operator)
+
+      admin_user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin_user.id,
+          role: "admin"
+        )
+
+      %{
+        account: account,
+        provider: provider,
+        admin: Fixtures.Subjects.membership_subject(membership)
+      }
+    end
+
+    test "an admin can't make billing_manager the connection default", %{
+      provider: provider,
+      admin: admin
+    } do
+      # An admin holds no manage_billing, so handing the finance seat to whoever
+      # the directory sends is an escalation by proxy. Rejecting only :owner
+      # missed it.
+      assert {:error, :role_exceeds_your_permissions} =
+               SSO.update_provider(provider, %{default_role: :billing_manager}, admin)
+    end
+
+    test "an admin can't map a group to billing_manager", %{provider: provider, admin: admin} do
+      assert {:error, :role_exceeds_your_permissions} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{"external_group_id" => "grp-finance", "role" => "billing_manager"},
+                 admin
+               )
+    end
+
+    test "an admin can still grant the roles they hold", %{provider: provider, admin: admin} do
+      assert {:ok, _mapping} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{"external_group_id" => "grp-ops", "role" => "operator"},
+                 admin
+               )
+
+      assert {:ok, updated} = SSO.update_provider(provider, %{default_role: :viewer}, admin)
+      assert updated.default_role == :viewer
+    end
+  end
+
   describe "approve_link_request/3" do
     setup do
       {_owner, account, subject} = enterprise_owner()
