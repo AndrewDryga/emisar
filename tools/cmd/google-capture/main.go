@@ -26,6 +26,7 @@ import (
 const (
 	consoleURL           = "https://console.cloud.google.com/auth/overview"
 	docsRedirectURI      = "https://emisar.dev/sign_in/sso/callback"
+	captureClientName    = "emisar docs capture"
 	redactedUser         = "admin@example.com"
 	redactedClientID     = "000000000000-example.apps.googleusercontent.com"
 	redactedClientSecret = "GOCSPX-example-redacted-client-secret"
@@ -38,6 +39,7 @@ func main() {
 	// until the context expires rather than failing, so a headless run reports a
 	// deadline with no output at all. Default it off.
 	headless := flag.Bool("headless", false, "run Chrome headless (Google sign-in refuses it)")
+	cleanupOnly := flag.Bool("cleanup", false, "only delete the OAuth clients past runs created")
 	flag.Parse()
 
 	if *outDir == "" {
@@ -55,7 +57,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o755); err != nil {
 		fail(err)
 	}
-	if err := run(env, *outDir, *headless); err != nil {
+	if err := run(env, *outDir, *headless, *cleanupOnly); err != nil {
 		fail(err)
 	}
 }
@@ -88,7 +90,7 @@ func readEnv(path string) (map[string]string, error) {
 	return env, scanner.Err()
 }
 
-func run(env map[string]string, outDir string, headless bool) error {
+func run(env map[string]string, outDir string, headless, cleanupOnly bool) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("lang", "en-US"),
@@ -111,6 +113,18 @@ func run(env map[string]string, outDir string, headless bool) error {
 		_ = screenshot(ctx, outDir, "google-failed")
 		_ = describePage(ctx, env)
 		return err
+	}
+	if cleanupOnly {
+		// Wait for the console to paint before reaching for its nav — the full flow
+		// gets this from authPlatformFlow, and skipping it here left the Clients
+		// click hitting nothing.
+		if err := waitForText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
+			return err
+		}
+		if err := acceptTerms(ctx); err != nil {
+			return err
+		}
+		return removeCaptureClients(ctx, env, outDir)
 	}
 	if err := authPlatformFlow(ctx, env, outDir); err != nil {
 		_ = screenshot(ctx, outDir, "google-failed")
@@ -324,16 +338,20 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 	if err := chooseOption(ctx, "Application type", "Web application"); err != nil {
 		return err
 	}
-	if err := fillField(ctx, "Name", "emisar docs capture"); err != nil {
+	if err := fillField(ctx, "Name", captureClientName); err != nil {
 		return err
 	}
-	if err := clickFirstText(ctx, "Add URI"); err != nil {
+	// Scoped to its own section. The form has TWO "Add URI" buttons — Authorized
+	// JavaScript origins comes first — so an unscoped click added the row there and
+	// emisar's callback went into the wrong list, which is also why Create never
+	// produced a client.
+	if err := addURIUnder(ctx, "Authorized redirect URIs", docsRedirectURI); err != nil {
 		return err
 	}
-	if err := fillField(ctx, "URI", docsRedirectURI); err != nil {
-		return err
-	}
-	if err := capture(ctx, env, outDir, "google-07-web-application", fieldHighlight("Application type", "Authorized redirect URIs")); err != nil {
+	// Label-based again: nothing on this console's forms carries an accessible
+	// name, so a field lookup binds to nothing. Point at the chosen value and the
+	// section the step is about.
+	if err := capture(ctx, env, outDir, "google-07-web-application", textHighlight("Web application", "Authorized redirect URIs")); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Create"); err != nil {
@@ -346,8 +364,227 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 	if err := capture(ctx, env, outDir, "google-08-client-created", textHighlight("Client ID", "Client secret")); err != nil {
 		return err
 	}
-	fmt.Println("  capture complete; temporary OAuth client remains for caller cleanup")
+	if err := clickFirstText(ctx, "OK"); err != nil {
+		return err
+	}
+	return removeCaptureClients(ctx, env, outDir)
+}
+
+// countCaptureClients is how many of this tool's own clients the list still
+// shows. Every deletion is judged by this dropping, never by the click landing.
+func countCaptureClients(ctx context.Context) (int, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  return [...document.querySelectorAll('tr')]
+    .filter(tr => visible(tr) && (tr.textContent || '').includes(%q)).length;
+})()`, captureClientName)
+	var count int
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &count))
+	return count, err
+}
+
+// removeCaptureClients deletes every OAuth client this tool has ever created in
+// the project. A capture run mints a real client with a real secret, so leaving
+// it behind adds live credentials to the operator's project on every run — three
+// had accumulated before this existed.
+func removeCaptureClients(ctx context.Context, env map[string]string, outDir string) error {
+	if err := clickExactText(ctx, "Clients"); err != nil {
+		return err
+	}
+	if err := waitForText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
+		return err
+	}
+	for attempt := 0; attempt < 10; attempt++ {
+		before, err := countCaptureClients(ctx)
+		if err != nil {
+			return err
+		}
+		if before == 0 {
+			if attempt == 0 {
+				fmt.Println("  no capture clients to remove")
+			}
+			return nil
+		}
+		// The row's own trash icon, not a "more" menu — this table puts Delete
+		// straight in an Actions column, which is why looking for a menu found
+		// nothing and left the clients behind.
+		open := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const row = [...document.querySelectorAll('tr')]
+    .find(tr => visible(tr) && (tr.textContent || '').includes(%q));
+  if (!row) return false;
+  const buttons = [...row.querySelectorAll('button,[role=button],a')].filter(visible);
+  const trash = buttons.find(el => {
+    const name = (el.getAttribute('aria-label') || el.textContent || '').toLowerCase();
+    return name.includes('delete') || name.includes('remove');
+  }) || buttons[buttons.length - 1];
+  if (!trash) return false;
+  trash.click();
+  return true;
+})()`, captureClientName)
+		var opened bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(open, &opened)); err != nil {
+			return err
+		}
+		if !opened {
+			if attempt == 0 {
+				fmt.Println("  no capture clients to remove")
+			}
+			return nil
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+			return err
+		}
+		// Type-to-confirm. The dialog asks for the word DELETE in a Confirmation
+		// word field and keeps its Delete button disabled until it is there, so
+		// clicking Delete on its own did nothing — ten times over.
+		const confirm = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  // By position, not by name. Nothing on this console's forms carries an
+  // accessible name, so the field is found as the empty text input that follows
+  // the dialog's own instruction.
+  const prompt = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').includes('type in this text'))
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  if (!prompt) return false;
+  const after = el => (prompt.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  const field = [...document.querySelectorAll('input[type=text],input:not([type])')]
+    .find(el => visible(el) && !el.value && after(el));
+  if (!field) return false;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(field, 'DELETE');
+  field.dispatchEvent(new Event('input', {bubbles: true}));
+  field.dispatchEvent(new Event('change', {bubbles: true}));
+  return true;
+})()`
+		var typed bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(confirm, &typed)); err != nil {
+			return err
+		}
+		// Two shapes of this dialog: a credential Google thinks is in use asks for
+		// the word DELETE typed in, and a fresh one just asks yes or no. Type when
+		// there is a field, and press Delete either way.
+		if typed {
+			if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+				return err
+			}
+		}
+		// Scoped to the DIALOG. The page's own toolbar carries a disabled "Delete"
+		// beside Create client, and an unscoped click kept hitting that one — which
+		// is why ten deletions changed nothing.
+		const press = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const dialog = [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].find(visible) ||
+    [...document.querySelectorAll('*')]
+      .filter(el => visible(el) && (el.textContent || '').includes('delete this credential'))
+      .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  if (!dialog) return false;
+  const button = [...dialog.querySelectorAll('button,[role=button],a')]
+    .find(el => visible(el) && !el.disabled && /^delete$/i.test((el.textContent || '').trim()));
+  if (!button) return false;
+  button.click();
+  return true;
+})()`
+		var pressed bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(press, &pressed)); err != nil {
+			return err
+		}
+		if !pressed {
+			_ = screenshot(ctx, outDir, "google-cleanup-no-delete-button")
+			return errors.New("the delete dialog has no enabled Delete button")
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
+			return err
+		}
+		// Reload before counting. The list does not refresh itself after a delete —
+		// the row even keeps a spinner in its Actions cell — so counting the stale
+		// table said nothing had happened when it had.
+		if err := chromedp.Run(ctx, chromedp.Reload()); err != nil {
+			return err
+		}
+		if err := waitForText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
+			return err
+		}
+		// PROVE it. Printing "removed" straight after the click reported ten
+		// deletions of a client that was still there — the same lie every other
+		// unverified step in this session told.
+		after, err := countCaptureClients(ctx)
+		if err != nil {
+			return err
+		}
+		if after >= before {
+			_ = screenshot(ctx, outDir, "google-cleanup-stuck")
+			_ = describePage(ctx, env)
+			return fmt.Errorf("clicked delete but %d capture client(s) remain", after)
+		}
+		fmt.Printf("  removed a capture client (%d left)\n", after)
+	}
 	return nil
+}
+
+// addURIUnder adds a URI to the named repeating section. Both of this form's URI
+// lists render an identical "Add URI" button and an identical unnamed input, so
+// the section heading is the only thing that tells them apart: climb from it to
+// the block that owns the button, and work inside that.
+func addURIUnder(ctx context.Context, section, value string) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const heading = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  if (!heading) return 'no-section';
+  let block = heading;
+  for (let up = 0; up < 6 && block.parentElement; up++) {
+    const button = [...block.querySelectorAll('button,[role=button]')]
+      .find(el => visible(el) && (el.textContent || '').trim() === 'Add URI');
+    if (button) {
+      button.click();
+      return 'added';
+    }
+    block = block.parentElement;
+  }
+  return 'no-button';
+})()`, section)
+	var outcome string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &outcome)); err != nil {
+		return err
+	}
+	if outcome != "added" {
+		return fmt.Errorf("adding a URI under %q: %s", section, outcome)
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+		return err
+	}
+	fill := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const heading = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  if (!heading) return false;
+  // Document ORDER, not an ancestor climb. The added row renders in a container
+  // the climb from the heading never reached, but the form runs top to bottom:
+  // this section's field is the first empty one AFTER its heading, and the other
+  // URI list's field is before it.
+  const after = el => (heading.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  const field = [...document.querySelectorAll('input[type=text],input:not([type])')]
+    .find(el => visible(el) && !el.value && after(el));
+  if (!field) return false;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(field, %q);
+  field.dispatchEvent(new Event('input', {bubbles: true}));
+  field.dispatchEvent(new Event('change', {bubbles: true}));
+  field.blur();
+  return true;
+})()`, section, value)
+	var filled bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(fill, &filled)); err != nil {
+		return err
+	}
+	if !filled {
+		return fmt.Errorf("no empty URI field appeared under %q", section)
+	}
+	fmt.Printf("  added a URI under %q\n", section)
+	return chromedp.Run(ctx, chromedp.Sleep(1500*time.Millisecond))
 }
 
 // dismissOverlays clears the console's own promotional tooltips. One of them
@@ -588,18 +825,29 @@ func deidentify(ctx context.Context, env map[string]string) error {
 	}
 	script := `(() => {
   const replacements = REPLACEMENTS;
+  // By PATTERN as well as by value. A capture run creates its OWN OAuth client,
+  // whose id and secret are nowhere in the env file, so a value-only swap shipped
+  // a live credential in the "client created" shot. Anything SHAPED like a Google
+  // client id or secret is redacted whether we have seen it before or not.
+  const patterns = [
+    [/\b\d{6,}-[a-z0-9]{10,}\.apps\.googleusercontent\.com\b/gi, CLIENT_ID],
+    [/\bGOCSPX-[A-Za-z0-9_-]{6,}\b/g, CLIENT_SECRET]
+  ];
+  const scrub = value => {
+    let out = value;
+    for (const [from, to] of replacements) if (from) out = out.split(from).join(to);
+    for (const [pattern, to] of patterns) out = out.replace(pattern, to);
+    return out;
+  };
   const inputSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
   const textareaSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
   for (const el of document.querySelectorAll('input,textarea')) {
-    let value = el.value || '';
-    for (const [from, to] of replacements) if (from) value = value.split(from).join(to);
+    const value = scrub(el.value || '');
     if (value !== el.value) (el.tagName === 'TEXTAREA' ? textareaSetter : inputSetter).call(el, value);
   }
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    let value = node.nodeValue || '';
-    for (const [from, to] of replacements) if (from) value = value.split(from).join(to);
-    node.nodeValue = value;
+    node.nodeValue = scrub(node.nodeValue || '');
   }
   return true;
 })()`
@@ -608,6 +856,8 @@ func deidentify(ctx context.Context, env map[string]string) error {
 		pairs = append(pairs, fmt.Sprintf("[%q,%q]", from, to))
 	}
 	script = strings.Replace(script, "REPLACEMENTS", "["+strings.Join(pairs, ",")+"]", 1)
+	script = strings.Replace(script, "CLIENT_ID", fmt.Sprintf("%q", redactedClientID), 1)
+	script = strings.Replace(script, "CLIENT_SECRET", fmt.Sprintf("%q", redactedClientSecret), 1)
 	var ok bool
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ok)); err != nil {
 		return err
@@ -666,6 +916,26 @@ func fillField(ctx context.Context, label, value string) error {
 	selector, err := fieldSelector(ctx, label)
 	if err != nil {
 		return err
+	}
+	// SET the value, do not type into it. The console pre-fills Name with "Web
+	// client 3", and both typing on top and chromedp.Clear left that prefix in
+	// place — "Web client 3emisar docs capture" shipped in a shot.
+	set := fmt.Sprintf(`(() => {
+  const result = document.evaluate(%q, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+  const field = result.singleNodeValue;
+  if (!field) return false;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(field, %q);
+  field.dispatchEvent(new Event('input', {bubbles: true}));
+  field.dispatchEvent(new Event('change', {bubbles: true}));
+  return field.value === %q;
+})()`, selector, value, value)
+	var ok bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(set, &ok)); err != nil {
+		return err
+	}
+	if ok {
+		return chromedp.Run(ctx, chromedp.Sleep(time.Second))
 	}
 	return typeRealKeys(ctx, selector, value)
 }
@@ -756,11 +1026,68 @@ func selectCheckbox(ctx context.Context) error {
 	return nil
 }
 
+// chooseOption drives a Material select: open the field whose label STARTS WITH
+// the given text, then pick the option out of the popup. Exact-matching the label
+// never worked here — the console renders a required field as "Application type *"
+// and swaps in the chosen value once one is picked — and the trigger is a
+// combobox, not one of the anchors and buttons clickFirstText searches.
 func chooseOption(ctx context.Context, label, option string) error {
-	if err := clickFirstText(ctx, label); err != nil {
+	open := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const label = %q;
+  // A real <select> needs no popup at all.
+  for (const select of document.querySelectorAll('select')) {
+    if (!visible(select)) continue;
+    const owner = select.closest('div,label');
+    if (owner && (owner.textContent || '').includes(label)) {
+      const match = [...select.options].find(o => o.textContent.trim() === %q);
+      if (match) {
+        select.value = match.value;
+        select.dispatchEvent(new Event('change', {bubbles: true}));
+        return 'set';
+      }
+    }
+  }
+  const triggers = [...document.querySelectorAll('[role=combobox],[aria-haspopup],[role=button],button,div')]
+    .filter(el => visible(el) && (el.textContent || '').trim().startsWith(label))
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  if (!triggers.length) return '';
+  triggers[0].scrollIntoView({block: 'center'});
+  triggers[0].click();
+  return 'opened';
+})()`, label, option)
+	var outcome string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(open, &outcome)); err != nil {
 		return err
 	}
-	return clickFirstText(ctx, option)
+	switch outcome {
+	case "":
+		return fmt.Errorf("no field labelled %q to open", label)
+	case "set":
+		fmt.Printf("  chose %q for %q\n", option, label)
+		return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(1500*time.Millisecond)); err != nil {
+		return err
+	}
+	pick := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const options = [...document.querySelectorAll('[role=option],li,[role=menuitem]')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  if (!options.length) return false;
+  options[0].click();
+  return true;
+})()`, option)
+	var picked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(pick, &picked)); err != nil {
+		return err
+	}
+	if !picked {
+		return fmt.Errorf("%q is open but has no option %q", label, option)
+	}
+	fmt.Printf("  chose %q for %q\n", option, label)
+	return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
 }
 
 func visible(ctx context.Context, selector string) bool {
