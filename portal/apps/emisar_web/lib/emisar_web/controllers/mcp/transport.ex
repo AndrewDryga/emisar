@@ -1,16 +1,20 @@
 defmodule EmisarWeb.MCP.Transport do
   @moduledoc """
-  Pure Streamable-HTTP transport-conformance predicates for the current MCP
-  revision and the supported 2025-06-18 revision at the
-  stateless `/api/mcp/rpc` endpoint. The controller wires each into a plug;
-  keeping the decision pure makes every rule unit-testable in isolation.
+  Pure Streamable-HTTP transport-conformance predicates for every MCP revision
+  the stateless `/api/mcp/rpc` endpoint serves — the modern 2026-07-28
+  per-request-`_meta` revision and the legacy `initialize`-negotiated
+  2025-11-25 / 2025-06-18 revisions. The controller wires each into a plug or
+  request check; keeping the decision pure makes every rule unit-testable in
+  isolation.
 
   emisar is a JSON-only, **stateless** MCP server: it opens no SSE stream and
   issues no MCP session id, so a GET/DELETE to the endpoint is answered `405`.
   On POST it accepts only a JSON body, requires the client to accept
   `application/json` back, validates the `MCP-Protocol-Version` header when
   present on a post-initialize request, and rejects a cross-origin browser
-  `Origin` (the spec's DNS-rebinding Security Warning).
+  `Origin` (the spec's DNS-rebinding Security Warning). A request declaring
+  the modern revision in `_meta` additionally has its `Mcp-Method`/`Mcp-Name`
+  routing headers validated against the body.
   """
 
   @doc """
@@ -47,6 +51,40 @@ defmodule EmisarWeb.MCP.Transport do
   """
   def acceptable_protocol_version?([], _supported), do: true
   def acceptable_protocol_version?([version | _], supported), do: version in supported
+
+  @doc """
+  The protocol version a 2026-07-28 request declares per-request in its
+  `params._meta` (`io.modelcontextprotocol/protocolVersion`), or nil for a
+  legacy request that negotiated at `initialize` instead.
+  """
+  def meta_protocol_version(%{"_meta" => %{"io.modelcontextprotocol/protocolVersion" => version}})
+      when is_binary(version),
+      do: version
+
+  def meta_protocol_version(_params), do: nil
+
+  @doc """
+  True when the `Mcp-Name` header names the called tool — required on a
+  2026-07-28 `tools/call`. A name outside the header-safe ASCII set arrives
+  wrapped in the spec's `=?base64?…?=` sentinel and is decoded before the
+  comparison; an absent or undecodable header never matches.
+  """
+  def mcp_name_matches?([value | _], name) when is_binary(name),
+    do: decode_header_value(value) == name
+
+  def mcp_name_matches?(_values, _name), do: false
+
+  defp decode_header_value("=?base64?" <> rest) do
+    with true <- String.ends_with?(rest, "?="),
+         encoded = binary_part(rest, 0, byte_size(rest) - 2),
+         {:ok, decoded} <- Base.decode64(encoded) do
+      decoded
+    else
+      _ -> nil
+    end
+  end
+
+  defp decode_header_value(value), do: value
 
   defp accepts_json_value?(accept) do
     accept

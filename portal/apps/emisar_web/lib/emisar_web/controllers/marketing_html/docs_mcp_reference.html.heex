@@ -44,14 +44,29 @@
 
         <h2 id="protocol-methods">Protocol methods</h2>
         <p>
-          emisar speaks JSON-RPC 2.0 over MCP Streamable HTTP. The current negotiated protocol is <code>2025-11-25</code>;
-          <code>2025-06-18</code>
-          remains supported. The endpoint is stateless: it does not issue an
+          emisar speaks JSON-RPC 2.0 over MCP Streamable HTTP and serves three protocol
+          revisions on one endpoint. A <code>2026-07-28</code>
+          client declares its version per request in <code>_meta</code>
+          and sends the <code>MCP-Protocol-Version</code>
+          and <code>Mcp-Method</code>
+          headers (plus <code>Mcp-Name</code>
+          on <code>tools/call</code>); its results carry <code>resultType</code>
+          and cache hints. A <code>2025-11-25</code>
+          or <code>2025-06-18</code>
+          client negotiates at <code>initialize</code>
+          instead. The endpoint is stateless in every revision: it does not issue an
           <code>Mcp-Session-Id</code>
           or require sticky routing.
         </p>
         <ul>
-          <li><code>initialize</code> returns capabilities and operating instructions.</li>
+          <li>
+            <code>server/discover</code> returns supported versions, capabilities, and operating
+            instructions (2026-07-28).
+          </li>
+          <li>
+            <code>initialize</code>
+            returns capabilities and operating instructions (2025-11-25 / 2025-06-18).
+          </li>
           <li><code>ping</code> remains responsive while another request waits.</li>
           <li><code>tools/list</code> always returns the same twelve tool descriptors.</li>
           <li><code>tools/call</code> invokes one fixed tool.</li>

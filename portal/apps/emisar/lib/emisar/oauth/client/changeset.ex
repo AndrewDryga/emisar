@@ -26,6 +26,7 @@ defmodule Emisar.OAuth.Client.Changeset do
     |> validate_subset(:response_types, @supported_response_types,
       message: "unsupported response_type"
     )
+    |> validate_application_type()
     |> validate_redirect_uris()
   end
 
@@ -33,15 +34,36 @@ defmodule Emisar.OAuth.Client.Changeset do
   def mark_authorized(%Client{} = client, %DateTime{} = at),
     do: change(client, last_authorized_at: at)
 
+  # OIDC `application_type` (MCP SEP-837): a client that declares one gets its
+  # redirect-URI shape enforced — "web" is https-only, "native" may also use a
+  # loopback http redirect (RFC 8252). An absent declaration keeps the
+  # permissive pre-SEP-837 set so existing clients register unchanged.
+  defp validate_application_type(changeset) do
+    case registered_application_type(changeset) do
+      nil ->
+        changeset
+
+      application_type when application_type in ["web", "native"] ->
+        changeset
+
+      _ ->
+        add_error(changeset, :application_type, ~s(must be "web" or "native"))
+    end
+  end
+
   defp validate_redirect_uris(changeset) do
     uris = get_field(changeset, :redirect_uris) || []
+    application_type = registered_application_type(changeset)
 
     cond do
       uris == [] ->
         add_error(changeset, :redirect_uris, "at least one redirect_uri is required")
 
-      Enum.all?(uris, &valid_redirect_uri?/1) ->
+      Enum.all?(uris, &valid_redirect_uri?(&1, application_type)) ->
         changeset
+
+      application_type == "web" ->
+        add_error(changeset, :redirect_uris, ~s(must be https:// for application_type "web"))
 
       true ->
         add_error(changeset, :redirect_uris, "must be https:// or http://localhost")
@@ -57,9 +79,26 @@ defmodule Emisar.OAuth.Client.Changeset do
     end
   end
 
-  # Public clients in browsers can only safely receive a code at an
-  # https origin (or localhost for native/dev loopback redirects).
-  defp valid_redirect_uri?(uri) when is_binary(uri) do
+  defp registered_application_type(changeset),
+    do: (get_field(changeset, :metadata) || %{})["application_type"]
+
+  # A declared web client receives codes only at an https origin; loopback
+  # redirects are a native-app shape it has no business registering.
+  defp valid_redirect_uri?(uri, "web") when is_binary(uri) do
+    case URI.parse(uri) do
+      %URI{scheme: "https", host: host, fragment: nil}
+      when is_binary(host) and host != "" ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  # Native (and undeclared) clients: an https origin, or localhost for
+  # native/dev loopback redirects — the only shapes a public client can
+  # safely receive a code at.
+  defp valid_redirect_uri?(uri, _application_type) when is_binary(uri) do
     case URI.parse(uri) do
       %URI{scheme: "https", host: host, fragment: nil}
       when is_binary(host) and host != "" ->
@@ -74,5 +113,5 @@ defmodule Emisar.OAuth.Client.Changeset do
     end
   end
 
-  defp valid_redirect_uri?(_), do: false
+  defp valid_redirect_uri?(_, _application_type), do: false
 end

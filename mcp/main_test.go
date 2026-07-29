@@ -944,6 +944,43 @@ func TestForward_NegotiatesAndSendsProtocolHeaders(t *testing.T) {
 	}
 }
 
+// A 2026-07-28 client never sends initialize: it declares its version inside
+// each frame's params._meta. The bridge must relay such frames untouched —
+// no bridge-negotiated MCP-Protocol-Version header (nothing was negotiated)
+// and no interpretation of the modern envelope; the portal owns the era.
+func TestForward_ModernClientWithoutInitializePassesThrough(t *testing.T) {
+	var protocols []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		protocols = append(protocols, r.Header.Get("MCP-Protocol-Version"))
+		var request struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		result := `{"resultType":"complete","supportedVersions":["2026-07-28"]}`
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":` + result + `}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	discover := `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+	response, err := b.forward([]byte(discover))
+	if err != nil {
+		t.Fatalf("server/discover: %v", err)
+	}
+	if !strings.Contains(string(response), `"supportedVersions":["2026-07-28"]`) {
+		t.Errorf("discover response not passed through verbatim: %s", response)
+	}
+	list := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+	if _, err := b.forward([]byte(list)); err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	for i, protocol := range protocols {
+		if protocol != "" {
+			t.Errorf("request %d: an uninitialized modern flow must carry no bridge protocol header, got %q", i, protocol)
+		}
+	}
+}
+
 func TestForward_RejectsInitializeResultWithoutValidProtocolVersion(t *testing.T) {
 	for _, result := range []string{`{}`, `{"protocolVersion":"not-a-version"}`, `{"protocolVersion":"2025-6-18"}`, `{"PROTOCOLVERSION":"2025-06-18"}`} {
 		t.Run(result, func(t *testing.T) {

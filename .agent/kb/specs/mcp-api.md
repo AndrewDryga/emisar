@@ -117,11 +117,27 @@ published result schemas.
 
 ### Transport lifecycle
 
-The canonical endpoint is stateless JSON-only Streamable HTTP. It negotiates
-`2025-11-25` or `2025-06-18`; the pre-Streamable-HTTP `2024-11-05` transport is
+The canonical endpoint is stateless JSON-only Streamable HTTP serving three
+protocol revisions dual-era; the pre-Streamable-HTTP `2024-11-05` transport is
 not supported. The portal does not issue or echo `Mcp-Session-Id`, offers no SSE
-stream, and returns `405` for GET and DELETE. After initialization, clients send
-the negotiated `MCP-Protocol-Version` on each POST.
+stream, and returns `405` for GET and DELETE in every revision.
+
+A `2026-07-28` request declares its version per request in
+`_meta` (`io.modelcontextprotocol/protocolVersion`) with a matching
+`MCP-Protocol-Version` header, and carries the `Mcp-Method` header (plus
+`Mcp-Name`, plain or base64-sentinel-wrapped, on `tools/call`); a missing or
+mismatched header is HTTP 400 with JSON-RPC `-32020`, an unsupported declared
+version is HTTP 400 with `-32022` naming the supported set, and a method the
+modern revision does not define (`initialize`, `ping`, unknown methods) is
+HTTP 404 with `-32601`. `server/discover` returns the supported versions,
+capabilities, and instructions. Modern results add `resultType: "complete"`
+and `_meta` serverInfo; `tools/list` and `server/discover` results also carry
+`ttlMs`/`cacheScope` cache hints.
+
+A `2025-11-25` or `2025-06-18` client instead negotiates at `initialize`
+(`initialize` always selects legacy semantics, and negotiates only those two
+revisions) and sends the negotiated `MCP-Protocol-Version` on each later POST;
+legacy requests and results are unchanged by the modern revision.
 
 The stdio bridge keeps one random process nonce solely as local namespace
 material for operation IDs and request-generation digests. The nonce itself

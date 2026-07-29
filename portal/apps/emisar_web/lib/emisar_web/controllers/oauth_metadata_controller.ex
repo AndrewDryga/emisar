@@ -40,7 +40,9 @@ defmodule EmisarWeb.OAuthMetadataController do
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
-      scopes_supported: OAuth.supported_scopes()
+      scopes_supported: OAuth.supported_scopes(),
+      # RFC 9207 — authorization responses carry `iss` for mix-up detection.
+      authorization_response_iss_parameter_supported: true
     })
   end
 end

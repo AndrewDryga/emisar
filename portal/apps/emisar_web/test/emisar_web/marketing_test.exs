@@ -1135,6 +1135,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "eight requests"
       assert html =~ "90-second"
       assert html =~ "notifications/cancelled"
+      assert html =~ "2026-07-28"
+      assert html =~ "server/discover"
       assert html =~ "2025-11-25"
       assert html =~ "2025-06-18"
       refute html =~ "2024-11-05"

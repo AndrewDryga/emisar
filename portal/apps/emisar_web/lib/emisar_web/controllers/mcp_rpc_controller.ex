@@ -5,8 +5,10 @@ defmodule EmisarWeb.MCPRpcController do
 
   ## Methods implemented
 
-    * `initialize`        — capabilities + protocolVersion + serverInfo
-    * `ping`              — `{}`
+    * `initialize`        — legacy handshake: capabilities + protocolVersion +
+                            serverInfo (2025-11-25 / 2025-06-18 clients)
+    * `server/discover`   — supported versions + capabilities (2026-07-28)
+    * `ping`              — `{}` (legacy revisions)
     * `tools/list`        — the fixed tool catalog compiled from the normative
                             MCP schema registry
     * `tools/call`        — dispatch a run; result is `{content, isError}`
@@ -18,13 +20,19 @@ defmodule EmisarWeb.MCPRpcController do
 
   ## Streamable HTTP transport
 
-  This is a stateless, JSON-only Streamable-HTTP (2025-11-25) server: POST
+  This is a stateless, JSON-only Streamable-HTTP **dual-era** server: POST
   handles JSON-RPC; a GET (SSE stream) and a DELETE (session termination) are
-  answered `405 Method Not Allowed` — we offer neither. Transport conformance is
-  enforced before dispatch (pure predicates live in `MCP.Transport`): a
-  cross-origin browser `Origin` is `403`, a non-JSON `Content-Type` is `415`, an
-  `Accept` that can't take `application/json` is `406`, and an unsupported
-  `MCP-Protocol-Version` header on a post-initialize request is `400`.
+  answered `405 Method Not Allowed` — we offer neither. A request that declares
+  the 2026-07-28 revision in `params._meta` is served with modern semantics
+  (`resultType`, result `_meta` serverInfo, `ttlMs`/`cacheScope` on the
+  catalog, strict `Mcp-Method`/`Mcp-Name` header validation → `-32020`,
+  unsupported version → `-32022`, unknown method → HTTP 404); an `initialize`
+  handshake selects the negotiated legacy revision, byte-identical to before.
+  Transport conformance is enforced before dispatch (pure predicates live in
+  `MCP.Transport`): a cross-origin browser `Origin` is `403`, a non-JSON
+  `Content-Type` is `415`, an `Accept` that can't take `application/json` is
+  `406`, and an unsupported `MCP-Protocol-Version` header on a post-initialize
+  request is `400`.
 
   ## Stdio bridge
 
@@ -45,8 +53,15 @@ defmodule EmisarWeb.MCPRpcController do
   alias EmisarWeb.MCP.Transport
   alias EmisarWeb.MCP.ValidationError
 
-  @latest_protocol_version "2025-11-25"
-  @supported_protocol_versions [@latest_protocol_version, "2025-06-18"]
+  # 2026-07-28 clients declare their version per-request in `_meta` (no
+  # handshake); `initialize` negotiates only the legacy revisions.
+  @modern_protocol_version "2026-07-28"
+  @latest_legacy_protocol_version "2025-11-25"
+  @legacy_protocol_versions [@latest_legacy_protocol_version, "2025-06-18"]
+  @supported_protocol_versions [@modern_protocol_version | @legacy_protocol_versions]
+  # The modern revision removed `initialize` and `ping`; a 2026-07-28 request
+  # for anything outside this set is `-32601` with HTTP 404 per its transport.
+  @modern_methods ~w(server/discover tools/list tools/call)
   @server_name "emisar"
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
 
@@ -103,14 +118,112 @@ defmodule EmisarWeb.MCPRpcController do
   defp handle_message(conn, :request, method, raw_params, id) do
     case params_map(raw_params) do
       {:ok, params} ->
-        conn = maybe_acknowledge_rotation(conn)
-        result = Cancellation.track(conn, method, &dispatch(&1, method, params))
-        respond(conn, :request, id, result)
+        case request_era(conn, method, params) do
+          {:serve, conn} ->
+            conn = maybe_acknowledge_rotation(conn)
+            result = Cancellation.track(conn, method, &dispatch(&1, method, params))
+            respond(conn, :request, id, decorate_result(conn, result))
+
+          {:reject, status, code, message, data} ->
+            reject_request(conn, status, id, code, message, data)
+        end
 
       :error ->
         respond_invalid_params(conn, method, id)
     end
   end
+
+  # -- 2026-07-28 request era -----------------------------------------
+  #
+  # A dual-era server selects semantics from how the request opens: modern
+  # per-request `_meta` → stateless 2026-07-28 handling; an `initialize`
+  # handshake → the negotiated legacy revision. Everything below rejects with
+  # the modern error codes (`-32020` HeaderMismatch, `-32022`
+  # UnsupportedProtocolVersion) so a probing dual-era client recognizes a
+  # modern server instead of falling back to `initialize`.
+
+  defp request_era(conn, "initialize", _params), do: {:serve, conn}
+
+  # `server/discover` is the version probe, so it answers regardless of header
+  # conformance — a stdio client relayed through the header-less bridge must be
+  # able to learn our versions before deciding what to speak. Enforcement
+  # applies from the first real method on.
+  defp request_era(conn, "server/discover", params) do
+    case Transport.meta_protocol_version(params) do
+      @modern_protocol_version -> {:serve, assign(conn, :mcp_modern_request, true)}
+      _version -> {:serve, conn}
+    end
+  end
+
+  defp request_era(conn, method, params) do
+    header_version = List.first(get_req_header(conn, "mcp-protocol-version"))
+
+    case Transport.meta_protocol_version(params) do
+      @modern_protocol_version ->
+        validate_modern_request(conn, method, params, header_version)
+
+      nil when header_version == @modern_protocol_version ->
+        {:reject, :bad_request, -32_020,
+         "Header mismatch: an MCP-Protocol-Version #{@modern_protocol_version} header requires the matching _meta protocol version.",
+         nil}
+
+      nil ->
+        {:serve, conn}
+
+      version when version in @legacy_protocol_versions ->
+        {:serve, conn}
+
+      version ->
+        {:reject, :bad_request, -32_022, "Unsupported protocol version",
+         %{supported: @supported_protocol_versions, requested: version}}
+    end
+  end
+
+  defp validate_modern_request(conn, method, params, header_version) do
+    cond do
+      header_version != @modern_protocol_version ->
+        {:reject, :bad_request, -32_020,
+         "Header mismatch: the MCP-Protocol-Version header must be present and match the _meta protocol version.",
+         nil}
+
+      List.first(get_req_header(conn, "mcp-method")) != method ->
+        {:reject, :bad_request, -32_020,
+         "Header mismatch: the Mcp-Method header must be present and match the request method.",
+         nil}
+
+      method == "tools/call" and
+          not Transport.mcp_name_matches?(get_req_header(conn, "mcp-name"), params["name"]) ->
+        {:reject, :bad_request, -32_020,
+         "Header mismatch: the Mcp-Name header must be present and match params.name on tools/call.",
+         nil}
+
+      method not in @modern_methods ->
+        {:reject, :not_found, -32_601, "method not found", method}
+
+      true ->
+        {:serve, assign(conn, :mcp_modern_request, true)}
+    end
+  end
+
+  defp reject_request(conn, status, id, code, message, data) do
+    error = %{code: code, message: message}
+    error = if data, do: Map.put(error, :data, data), else: error
+
+    conn
+    |> put_status(status)
+    |> json(%{jsonrpc: "2.0", id: id, error: error})
+  end
+
+  # Modern results carry the fields the 2026-07-28 revision requires on every
+  # result; legacy results stay byte-identical.
+  defp decorate_result(%{assigns: %{mcp_modern_request: true}}, {:ok, result}) do
+    {:ok,
+     result
+     |> Map.put(:resultType, "complete")
+     |> Map.put(:_meta, %{"io.modelcontextprotocol/serverInfo" => server_info()})}
+  end
+
+  defp decorate_result(_conn, result), do: result
 
   defp respond(conn, :notification, _id, _result), do: send_resp(conn, 202, "")
   defp respond(conn, :request, _id, :cancelled), do: send_resp(conn, 204, "")
@@ -195,18 +308,31 @@ defmodule EmisarWeb.MCPRpcController do
       {:ok,
        %{
          protocolVersion: negotiated_protocol_version(params),
-         serverInfo: %{name: @server_name, version: AppVersion.version()},
-         capabilities: %{tools: %{listChanged: false}},
+         serverInfo: server_info(),
+         capabilities: capabilities(),
          instructions: Instructions.text()
        }}
     end
+  end
+
+  # 2026-07-28 discovery — the modern replacement for `initialize`: same
+  # identity/capability payload, plus the version list a client picks from.
+  # Like `initialize` it is not gated on key kind; it reveals nothing a key
+  # holder couldn't learn from the handshake.
+  defp dispatch(conn, "server/discover", _params) do
+    {:ok,
+     put_catalog_cache_fields(conn, %{
+       supportedVersions: @supported_protocol_versions,
+       capabilities: capabilities(),
+       instructions: Instructions.text()
+     })}
   end
 
   defp dispatch(_conn, "ping", _params), do: {:ok, %{}}
 
   defp dispatch(conn, "tools/list", _params) do
     with :ok <- require_mcp_key(conn) do
-      {:ok, %{tools: SchemaRegistry.tools()}}
+      {:ok, put_catalog_cache_fields(conn, %{tools: SchemaRegistry.tools()})}
     end
   end
 
@@ -523,7 +649,9 @@ defmodule EmisarWeb.MCPRpcController do
 
   # The `initialize` request negotiates the protocol version in its body, so its
   # header isn't validated; every later request carrying an unsupported header is
-  # 400 per the spec.
+  # 400 per the spec. The rejection is the modern `-32022`
+  # UnsupportedProtocolVersionError naming the supported set, so a client on a
+  # future revision retries with one of ours instead of treating us as legacy.
   defp validate_protocol_version(conn, _opts) do
     cond do
       conn.body_params["method"] == "initialize" ->
@@ -536,7 +664,15 @@ defmodule EmisarWeb.MCPRpcController do
         conn
 
       true ->
-        reject(conn, :bad_request, "Unsupported MCP-Protocol-Version header.")
+        requested = List.first(get_req_header(conn, "mcp-protocol-version"))
+
+        BoundaryResponse.send_error(
+          conn,
+          :bad_request,
+          -32_022,
+          "Unsupported MCP-Protocol-Version header.",
+          data: %{supported: @supported_protocol_versions, requested: requested}
+        )
     end
   end
 
@@ -589,11 +725,28 @@ defmodule EmisarWeb.MCPRpcController do
     end
   end
 
+  # `initialize` selects legacy semantics by definition (the modern revision
+  # has no handshake), so it only ever negotiates a legacy revision — a client
+  # requesting anything else is offered the latest legacy version, per the
+  # legacy lifecycle's "respond with another supported version" rule.
   defp negotiated_protocol_version(%{"protocolVersion" => requested})
-       when requested in @supported_protocol_versions,
+       when requested in @legacy_protocol_versions,
        do: requested
 
-  defp negotiated_protocol_version(_params), do: @latest_protocol_version
+  defp negotiated_protocol_version(_params), do: @latest_legacy_protocol_version
+
+  defp server_info, do: %{name: @server_name, version: AppVersion.version()}
+
+  defp capabilities, do: %{tools: %{listChanged: false}}
+
+  # `tools/list` and `server/discover` are CacheableResults on 2026-07-28. The
+  # catalog is fixed per deploy, so an hour's client-side cache is safe;
+  # "private" because the results ride authenticated, account-scoped requests
+  # no shared intermediary may cache.
+  defp put_catalog_cache_fields(%{assigns: %{mcp_modern_request: true}}, result),
+    do: Map.merge(result, %{ttlMs: 3_600_000, cacheScope: "private"})
+
+  defp put_catalog_cache_fields(_conn, result), do: result
 
   # The bridge persists a client-generated successor before proposing it on an
   # authenticated request. The portal installs those exact non-secret values

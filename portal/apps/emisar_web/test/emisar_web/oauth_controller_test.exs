@@ -119,6 +119,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert "refresh_token" in body["grant_types_supported"]
       assert body["code_challenge_methods_supported"] == ["S256"]
       assert body["token_endpoint_auth_methods_supported"] == ["none"]
+      assert body["authorization_response_iss_parameter_supported"] == true
     end
 
     # scopes_supported is EXACTLY OAuth.supported_scopes/0
@@ -232,6 +233,36 @@ defmodule EmisarWeb.OAuthControllerTest do
         |> json_response(400)
 
       assert body["error"] == "invalid_client_metadata"
+    end
+
+    test ~s(a declared "native" client registers a loopback redirect and gets it echoed), %{
+      conn: conn
+    } do
+      body =
+        conn
+        |> post_json(~p"/oauth/register", %{
+          "client_name" => "Desktop MCP client",
+          "redirect_uris" => ["http://localhost:8123/callback"],
+          "application_type" => "native"
+        })
+        |> json_response(201)
+
+      assert body["application_type"] == "native"
+      assert body["redirect_uris"] == ["http://localhost:8123/callback"]
+    end
+
+    test ~s(a declared "web" client cannot register a loopback redirect), %{conn: conn} do
+      body =
+        conn
+        |> post_json(~p"/oauth/register", %{
+          "client_name" => "Web client",
+          "redirect_uris" => ["http://localhost:8123/callback"],
+          "application_type" => "web"
+        })
+        |> json_response(400)
+
+      assert body["error"] == "invalid_client_metadata"
+      assert body["error_description"] =~ ~s(https:// for application_type "web")
     end
 
     test "rejects a confidential-client auth method", %{conn: conn} do
@@ -1130,6 +1161,50 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert location =~ "claude.ai"
       assert location =~ "code="
       assert location =~ "state=xyz"
+    end
+
+    # RFC 9207: success and error authorization responses both name the
+    # issuer, matching the discovery metadata, so the client can detect an
+    # AS mix-up before redeeming the code.
+    test "approve and deny redirects both carry the RFC 9207 iss", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      params = %{
+        "client_id" => client.id,
+        "redirect_uri" => @redirect,
+        "response_type" => "code",
+        "scope" => "mcp",
+        "state" => "xyz",
+        "code_challenge" => challenge,
+        "code_challenge_method" => "S256",
+        "resource" => @resource
+      }
+
+      approve_query =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", Map.put(params, "decision", "approve"))
+        |> redirected_to(302)
+        |> URI.parse()
+        |> Map.fetch!(:query)
+        |> URI.decode_query()
+
+      assert approve_query["iss"] == EmisarWeb.Endpoint.url()
+
+      deny_query =
+        build_conn()
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", Map.put(params, "decision", "deny"))
+        |> redirected_to(302)
+        |> URI.parse()
+        |> Map.fetch!(:query)
+        |> URI.decode_query()
+
+      assert deny_query["error"] == "access_denied"
+      assert deny_query["iss"] == EmisarWeb.Endpoint.url()
     end
 
     test "approve mints the key in the CHOSEN account, not the session default", %{

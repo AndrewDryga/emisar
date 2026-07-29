@@ -80,4 +80,41 @@ defmodule EmisarWeb.MCP.TransportTest do
       refute Transport.acceptable_protocol_version?(["2024-11-05"], @supported)
     end
   end
+
+  describe "meta_protocol_version/1" do
+    test "reads the per-request declaration a 2026-07-28 request carries" do
+      params = %{"_meta" => %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}}
+      assert Transport.meta_protocol_version(params) == "2026-07-28"
+    end
+
+    test "a legacy request (no _meta declaration) is nil" do
+      assert Transport.meta_protocol_version(%{}) == nil
+      assert Transport.meta_protocol_version(%{"_meta" => %{}}) == nil
+      assert Transport.meta_protocol_version(%{"_meta" => "junk"}) == nil
+
+      non_binary = %{"_meta" => %{"io.modelcontextprotocol/protocolVersion" => 20_260_728}}
+      assert Transport.meta_protocol_version(non_binary) == nil
+    end
+  end
+
+  describe "mcp_name_matches?/2" do
+    test "a plain header value matches the tool name exactly" do
+      assert Transport.mcp_name_matches?(["run_action"], "run_action")
+      refute Transport.mcp_name_matches?(["run_action"], "list_packs")
+    end
+
+    test "a base64-sentinel value is decoded before comparing" do
+      encoded = "=?base64?" <> Base.encode64("run_action") <> "?="
+      assert Transport.mcp_name_matches?([encoded], "run_action")
+      refute Transport.mcp_name_matches?([encoded], "other_tool")
+    end
+
+    test "an absent, undecodable, or non-string name never matches" do
+      refute Transport.mcp_name_matches?([], "run_action")
+      refute Transport.mcp_name_matches?(["=?base64?%%%?="], "run_action")
+      refute Transport.mcp_name_matches?(["=?base64?missing-suffix"], "run_action")
+      refute Transport.mcp_name_matches?(["run_action"], nil)
+      refute Transport.mcp_name_matches?(["run_action"], %{})
+    end
+  end
 end

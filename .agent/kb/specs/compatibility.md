@@ -142,12 +142,18 @@ the unchanged tail-snapshot result; the streamed shape is a distinct member of
 the tool's output `oneOf`, so neither the input nor the output contract of an
 existing caller changes.
 
-**How it is versioned today.** MCP transport negotiation accepts
-`2025-11-25` and `2025-06-18` during `initialize`. The negotiated
-`MCP-Protocol-Version` must be sent on later requests; an unsupported header is
-rejected with HTTP 400. Tool names and descriptor field sets are compiled and
-fixture-checked. Tool inputs are strict: unknown or renamed fields are rejected.
-The bridge identifies itself as `emisar-mcp/<version>` and the current bridge
+**How it is versioned today.** The endpoint is dual-era. A `2026-07-28`
+client declares its version per request in `_meta` with a matching
+`MCP-Protocol-Version` header plus the `Mcp-Method`/`Mcp-Name` routing
+headers; header mismatches are HTTP 400 with `-32020` and an unsupported
+declared version is HTTP 400 with `-32022` naming the supported set. Legacy
+negotiation accepts `2025-11-25` and `2025-06-18` during `initialize`
+(`initialize` selects legacy semantics and never negotiates the modern
+revision); the negotiated `MCP-Protocol-Version` must be sent on later
+requests, and an unsupported header is rejected with HTTP 400 (`-32022`).
+Tool names and descriptor field sets are compiled and fixture-checked. Tool
+inputs are strict: unknown or renamed fields are rejected. The bridge
+identifies itself as `emisar-mcp/<version>` and the current bridge
 threshold is `mcp_minimum >= 0.3.0`, also warn-only in production today.
 
 **What happens on skew.** An older client calling a renamed or removed tool

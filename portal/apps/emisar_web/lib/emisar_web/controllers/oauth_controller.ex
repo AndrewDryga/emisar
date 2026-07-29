@@ -230,9 +230,13 @@ defmodule EmisarWeb.OAuthController do
   end
 
   # Append OAuth result params to the client's redirect_uri and 302 to
-  # it (external — it's the client's origin, e.g. claude.ai).
+  # it (external — it's the client's origin, e.g. claude.ai). Every
+  # authorization response — success and error — carries the RFC 9207 `iss`
+  # so the client can detect authorization-server mix-up before redeeming
+  # the code; the value must equal the discovery metadata's `issuer`.
   defp redirect_back(conn, redirect_uri, extra) do
-    redirect(conn, external: append_query(redirect_uri, extra))
+    params = Map.put(extra, :iss, EmisarWeb.Endpoint.url())
+    redirect(conn, external: append_query(redirect_uri, params))
   end
 
   defp redirect_error(conn, redirect_uri, error_code, state) do
@@ -345,7 +349,15 @@ defmodule EmisarWeb.OAuthController do
       token_endpoint_auth_method: "none",
       scope: client.scope
     }
+    |> put_application_type(client.metadata)
   end
+
+  # RFC 7591: the response echoes registered metadata — `application_type`
+  # only when the client declared one (absent means the permissive default).
+  defp put_application_type(response, %{"application_type" => application_type}),
+    do: Map.put(response, :application_type, application_type)
+
+  defp put_application_type(response, _metadata), do: response
 
   # -- Small helpers --------------------------------------------------
 

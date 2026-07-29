@@ -70,11 +70,21 @@ defmodule Emisar.OAuth do
       response_types: list_param(params, "response_types", ["code"]),
       token_endpoint_auth_method: params["token_endpoint_auth_method"] || "none",
       scope: params["scope"] || "mcp offline_access",
-      metadata: %{}
+      metadata: registration_metadata(params)
     }
     |> Client.Changeset.register()
     |> Repo.insert()
   end
+
+  # The stored metadata is server-shaped — only the registration fields we
+  # honor enter the jsonb, never the client's arbitrary payload. The OIDC
+  # `application_type` (MCP SEP-837) decides which redirect-URI shapes the
+  # changeset accepts.
+  defp registration_metadata(%{"application_type" => application_type})
+       when is_binary(application_type),
+       do: %{"application_type" => application_type}
+
+  defp registration_metadata(_params), do: %{}
 
   @doc "Internal — OAuth authorize/token controllers: load a client by its client_id (the client_id is the credential, resolved pre-Subject)."
   @spec fetch_client(String.t()) :: {:ok, Client.t()} | {:error, :not_found}

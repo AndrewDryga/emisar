@@ -810,7 +810,17 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         |> rpc("ping")
         |> json_response(400)
 
+      # The modern UnsupportedProtocolVersionError shape: a client on a future
+      # revision reads `supported` and retries instead of falling back.
+      assert unsupported["error"]["code"] == -32_022
       assert unsupported["error"]["message"] =~ "MCP-Protocol-Version"
+      assert unsupported["error"]["data"]["requested"] == "1999-01-01"
+
+      assert unsupported["error"]["data"]["supported"] == [
+               "2026-07-28",
+               "2025-11-25",
+               "2025-06-18"
+             ]
 
       supported =
         build_conn()
@@ -832,7 +842,243 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
   end
 
+  describe "2026-07-28 stateless revision" do
+    test "server/discover returns versions, capabilities, and modern result fields", %{raw: raw} do
+      body =
+        build_conn()
+        |> authorize(raw)
+        |> modern_rpc("server/discover")
+        |> json_response(200)
+
+      result = body["result"]
+      assert result["supportedVersions"] == ["2026-07-28", "2025-11-25", "2025-06-18"]
+      assert get_in(result, ["capabilities", "tools", "listChanged"]) == false
+      assert result["instructions"] =~ "recover through its operation ID"
+      assert result["resultType"] == "complete"
+      assert get_in(result, ["_meta", "io.modelcontextprotocol/serverInfo", "name"]) == "emisar"
+      assert result["ttlMs"] == 3_600_000
+      assert result["cacheScope"] == "private"
+    end
+
+    test "server/discover answers a header-less probe (the bridged-stdio case)", %{raw: raw} do
+      # A stdio client relayed through the bridge carries no HTTP headers of
+      # its own; the probe must still work so the client can pick a version.
+      meta = %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}
+
+      body =
+        build_conn()
+        |> authorize(raw)
+        |> rpc("server/discover", %{"_meta" => meta})
+        |> json_response(200)
+
+      assert body["result"]["supportedVersions"] == ["2026-07-28", "2025-11-25", "2025-06-18"]
+      assert body["result"]["resultType"] == "complete"
+    end
+
+    test "server/discover also answers a legacy caller, without modern result fields", %{raw: raw} do
+      body =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("mcp-protocol-version", "2025-11-25")
+        |> rpc("server/discover")
+        |> json_response(200)
+
+      assert body["result"]["supportedVersions"] == ["2026-07-28", "2025-11-25", "2025-06-18"]
+      refute Map.has_key?(body["result"], "resultType")
+      refute Map.has_key?(body["result"], "ttlMs")
+    end
+
+    test "modern tools/list carries resultType, serverInfo, and cache fields — legacy does not",
+         %{raw: raw} do
+      modern =
+        build_conn()
+        |> authorize(raw)
+        |> modern_rpc("tools/list")
+        |> json_response(200)
+
+      assert modern["result"]["tools"] == Jason.decode!(Jason.encode!(SchemaRegistry.tools()))
+      assert modern["result"]["resultType"] == "complete"
+
+      assert get_in(modern, ["result", "_meta", "io.modelcontextprotocol/serverInfo", "name"]) ==
+               "emisar"
+
+      assert modern["result"]["ttlMs"] == 3_600_000
+      assert modern["result"]["cacheScope"] == "private"
+
+      legacy =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("mcp-protocol-version", "2025-11-25")
+        |> rpc("tools/list")
+        |> json_response(200)
+
+      refute Map.has_key?(legacy["result"], "resultType")
+      refute Map.has_key?(legacy["result"], "ttlMs")
+      refute Map.has_key?(legacy["result"], "_meta")
+    end
+
+    test "modern tools/call requires a matching Mcp-Name, plain or base64-wrapped", %{raw: raw} do
+      plain =
+        build_conn()
+        |> authorize(raw)
+        |> modern_rpc("tools/call", %{"name" => "bogus_tool"}, [{"mcp-name", "bogus_tool"}])
+        |> json_response(200)
+
+      assert plain["result"]["isError"] == true
+      assert plain["result"]["resultType"] == "complete"
+
+      encoded = "=?base64?" <> Base.encode64("bogus_tool") <> "?="
+
+      wrapped =
+        build_conn()
+        |> authorize(raw)
+        |> modern_rpc("tools/call", %{"name" => "bogus_tool"}, [{"mcp-name", encoded}])
+        |> json_response(200)
+
+      assert wrapped["result"]["isError"] == true
+
+      missing =
+        build_conn()
+        |> authorize(raw)
+        |> modern_rpc("tools/call", %{"name" => "bogus_tool"})
+        |> json_response(400)
+
+      assert missing["error"]["code"] == -32_020
+      assert missing["error"]["message"] =~ "Mcp-Name"
+
+      mismatched =
+        build_conn()
+        |> authorize(raw)
+        |> modern_rpc("tools/call", %{"name" => "bogus_tool"}, [{"mcp-name", "other_tool"}])
+        |> json_response(400)
+
+      assert mismatched["error"]["code"] == -32_020
+    end
+
+    test "modern requests reject a missing or mismatched Mcp-Method header", %{raw: raw} do
+      meta = %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}
+      body = %{jsonrpc: "2.0", id: 1, method: "tools/list", params: %{"_meta" => meta}}
+
+      missing =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("mcp-protocol-version", "2026-07-28")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(body))
+        |> json_response(400)
+
+      assert missing["error"]["code"] == -32_020
+      assert missing["error"]["message"] =~ "Mcp-Method"
+
+      mismatched =
+        build_conn()
+        |> authorize(raw)
+        |> modern_rpc("tools/list", %{}, [{"mcp-method", "tools/call"}])
+        |> json_response(400)
+
+      assert mismatched["error"]["code"] == -32_020
+    end
+
+    test "the protocol version header and _meta declaration must agree", %{raw: raw} do
+      meta = %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}
+      body = %{jsonrpc: "2.0", id: 1, method: "tools/list", params: %{"_meta" => meta}}
+
+      # _meta declares modern but the header carries a legacy version.
+      header_behind =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("mcp-protocol-version", "2025-11-25")
+        |> put_req_header("mcp-method", "tools/list")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(body))
+        |> json_response(400)
+
+      assert header_behind["error"]["code"] == -32_020
+
+      # The modern header without the matching _meta declaration.
+      meta_missing =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("mcp-protocol-version", "2026-07-28")
+        |> put_req_header("mcp-method", "tools/list")
+        |> rpc("tools/list")
+        |> json_response(400)
+
+      assert meta_missing["error"]["code"] == -32_020
+    end
+
+    test "an unsupported _meta protocol version names the supported set", %{raw: raw} do
+      meta = %{"io.modelcontextprotocol/protocolVersion" => "2030-01-01"}
+      body = %{jsonrpc: "2.0", id: 7, method: "tools/list", params: %{"_meta" => meta}}
+
+      response =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(body))
+        |> json_response(400)
+
+      assert response["id"] == 7
+      assert response["error"]["code"] == -32_022
+      assert response["error"]["data"]["requested"] == "2030-01-01"
+
+      assert response["error"]["data"]["supported"] == [
+               "2026-07-28",
+               "2025-11-25",
+               "2025-06-18"
+             ]
+    end
+
+    test "methods the modern revision removed are 404 method-not-found", %{raw: raw} do
+      response =
+        build_conn()
+        |> authorize(raw)
+        |> modern_rpc("ping")
+
+      body = json_response(response, 404)
+      assert body["error"]["code"] == -32_601
+
+      # The same ping stays available to legacy clients.
+      legacy =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("mcp-protocol-version", "2025-06-18")
+        |> rpc("ping")
+        |> json_response(200)
+
+      assert legacy["result"] == %{}
+    end
+
+    test "initialize always selects legacy semantics, even with modern _meta", %{raw: raw} do
+      meta = %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}
+
+      body =
+        build_conn()
+        |> authorize(raw)
+        |> rpc("initialize", %{"protocolVersion" => "2026-07-28", "_meta" => meta})
+        |> json_response(200)
+
+      assert body["result"]["protocolVersion"] == "2025-11-25"
+      refute Map.has_key?(body["result"], "resultType")
+    end
+  end
+
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
+
+  defp modern_rpc(conn, method, params \\ %{}, extra_headers \\ []) do
+    meta = %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}
+    body = %{jsonrpc: "2.0", id: 1, method: method, params: Map.put(params, "_meta", meta)}
+
+    conn =
+      conn
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("mcp-protocol-version", "2026-07-28")
+      |> put_req_header("mcp-method", method)
+
+    extra_headers
+    |> Enum.reduce(conn, fn {name, value}, acc -> put_req_header(acc, name, value) end)
+    |> post(~p"/api/mcp/rpc", Jason.encode!(body))
+  end
 
   defp rpc(conn, method, params \\ %{}, id \\ 1) do
     body = %{jsonrpc: "2.0", id: id, method: method, params: params}

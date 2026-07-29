@@ -12,7 +12,7 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
   import Phoenix.Controller, only: [json: 2]
   alias EmisarWeb.MCP.ValidationError
 
-  @type option :: {:inspect_body, boolean()}
+  @type option :: {:inspect_body, boolean()} | {:data, map()}
 
   @spec send_error(Plug.Conn.t(), Plug.Conn.status(), integer(), String.t(), [option()]) ::
           Plug.Conn.t()
@@ -30,7 +30,7 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
       |> json(%{
         jsonrpc: "2.0",
         id: request_id(conn.body_params, inspect_body?),
-        error: %{code: code, message: message}
+        error: error_object(code, message, Keyword.get(opts, :data))
       })
       |> halt()
     end
@@ -49,6 +49,9 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
       "Too many requests. Retry in #{retry_after}s."
     )
   end
+
+  defp error_object(code, message, nil), do: %{code: code, message: message}
+  defp error_object(code, message, data), do: %{code: code, message: message, data: data}
 
   defp notification?(%{"jsonrpc" => "2.0", "method" => method} = request)
        when is_binary(method),
