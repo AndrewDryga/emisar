@@ -712,6 +712,13 @@ func lifecycleFlow(
 			return err
 		}
 	}
+	// Centre BETWEEN the four settings. The last highlight left the viewport on
+	// Sync Password, cutting the section heading off the top; scrolling to the
+	// heading instead cut Sync Password off the bottom. The second row centres all
+	// four rings in one frame.
+	if err := scrollToText(ctx, "Update User Attributes"); err != nil {
+		return err
+	}
 	if err := shoot("12-to-app-settings"); err != nil {
 		return err
 	}
@@ -862,9 +869,12 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
     });
     return true;
   }
-  node.style.outline = '3px solid #10b981';
-  node.style.outlineOffset = '3px';
-  node.style.borderRadius = '6px';
+  // INSIDE the box, not around it. An outward ring on these rows came back as a
+  // pair of horizontal bars: the row is a plain grid div, but something paints
+  // over the 3px band to either side of it. An inset shadow lives in the row's
+  // own box, above its background and below its content, out of reach.
+  node.style.boxShadow = 'inset 0 0 0 3px #10b981';
+  node.style.borderRadius = '8px';
   const box = node.getBoundingClientRect();
   return node.tagName + ' display=' + getComputedStyle(node).display +
     ' ' + Math.round(box.width) + 'x' + Math.round(box.height);
