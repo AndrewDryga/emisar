@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.2.6
+version: 0.2.7
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
   horizontally + vertically, dispatch, revert, promote, stop + start again,
@@ -30,6 +30,9 @@ requires:
   binaries:
     - nomad
     - jq
+    # event_snapshot bounds the forward-only event stream with it. Undeclared,
+    # its absence surfaced only as a bare 127 from the script.
+    - timeout
 
 # `emisar pack suggest` detection — default process names / ports.
 detect:

@@ -11,7 +11,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "for q in incoming active deferred hold; do n=$(find /var/spool/postfix/$q -type f 2>/dev/null | wc -l); echo \"$q: $n\"; done"
+      # Without the spool check, a host with no postfix at all reported every
+      # queue as 0 — indistinguishable from "the queues are empty", which is the
+      # healthy answer. The per-queue 2>/dev/null stays: it covers the normal
+      # race of a message being delivered mid-walk.
+      - |
+        [ -d /var/spool/postfix ] || { echo "no postfix spool at /var/spool/postfix" >&2; exit 1; }
+        for q in incoming active deferred hold; do n=$(find /var/spool/postfix/$q -type f 2>/dev/null | wc -l); echo "$q: $n"; done
   timeout: 30s
 output:
   parser: text

@@ -27,7 +27,15 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "openssl rsa -in \"$1\" -modulus -noout 2>/dev/null | sha256sum"
+      # openssl's stderr was discarded and sha256sum hashes empty input happily,
+      # so an unreadable or non-RSA file returned e3b0c442… — the SHA-256 of the
+      # empty string — presented as this key's fingerprint, exit 0. Two hosts
+      # both failing would appear to hold the SAME key. Capture, then hash only
+      # a modulus we actually got.
+      - |
+        modulus=$(openssl rsa -in "$1" -modulus -noout) || exit 1
+        [ -n "$modulus" ] || { echo "no modulus read from $1" >&2; exit 1; }
+        printf '%s' "$modulus" | sha256sum
       - "emisar"
       - "{{ args.path }}"
   timeout: 30s

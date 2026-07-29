@@ -44,6 +44,7 @@ var pipelineFileReaders = map[string]bool{
 	"find": true,
 	"grep": true,
 	"head": true,
+	"jq":   true,
 	"tail": true,
 	"zcat": true,
 }

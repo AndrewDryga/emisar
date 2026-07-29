@@ -13,7 +13,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "nginx -T 2>/dev/null | awk '/upstream /{p=1; print; next} p && /\\}/{p=0; print; next} p'"
+      # A config that doesn't parse made `nginx -T` fail, its reason vanish into
+      # /dev/null, and awk emit nothing — reported as "no upstreams defined".
+      - |
+        dump=$(nginx -T 2>&1) || { printf '%s\n' "$dump" >&2; exit 1; }
+        printf '%s\n' "$dump" | awk '/upstream /{p=1; print; next} p && /\}/{p=0; print; next} p'
   timeout: 15s
 output:
   parser: text

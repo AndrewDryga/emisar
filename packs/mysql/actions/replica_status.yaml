@@ -14,7 +14,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "mysql -e 'SHOW REPLICA STATUS\\G' 2>/dev/null || mysql -e 'SHOW SLAVE STATUS\\G' 2>/dev/null"
+      # The first suppression is a deliberate syntax probe — SHOW REPLICA STATUS
+      # is 8.0.22+, older servers need SHOW SLAVE STATUS — so its error is noise.
+      # The second is not: when both fail, that stderr is the only account of
+      # why (auth refused, server down), and discarding it left a bare non-zero.
+      - "mysql -e 'SHOW REPLICA STATUS\\G' 2>/dev/null || mysql -e 'SHOW SLAVE STATUS\\G'"
   timeout: 15s
 output:
   parser: text

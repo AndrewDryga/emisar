@@ -36,8 +36,15 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
+      # A missing or malformed acme.json made jq fail into a pipeline whose exit
+      # is the while-loop's, so "cannot read the cert store" and "no certificates
+      # issued" were the same empty success. The inner 2>/dev/null pair is
+      # different and stays: it is a per-certificate fallback that already
+      # reports itself as <unreadable>.
       - |
-        jq -r 'to_entries[].value.Certificates[]? | "\(.domain.main) \(.certificate)"' "$1" | while read -r dom cert; do exp=$(printf '%s' "$cert" | base64 -d 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2); printf '%s\texpires %s\n' "$dom" "${exp:-<unreadable>}"; done
+        [ -r "$1" ] || { echo "acme storage not readable: $1" >&2; exit 1; }
+        entries=$(jq -r 'to_entries[].value.Certificates[]? | "\(.domain.main) \(.certificate)"' "$1") || exit 1
+        printf '%s\n' "$entries" | while read -r dom cert; do exp=$(printf '%s' "$cert" | base64 -d 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2); printf '%s\texpires %s\n' "$dom" "${exp:-<unreadable>}"; done
       - "emisar"
       - "{{ args.acme_path }}"
   timeout: 20s
