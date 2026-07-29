@@ -2505,35 +2505,33 @@ defmodule EmisarWeb.SSOSettingsLive do
         <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           How this connection works
         </p>
-        <dl class="mt-3 space-y-3 text-zinc-400">
-          <div :if={@directory_sync?}>
+        <%!-- The labels earn their place by MIRRORING the section titles below, so
+             each line lands beside what it explains. With sync off there are no
+             such sections, one entry survives, and the label becomes a second
+             heading stacked under the eyebrow with nothing between them — so
+             that case is prose instead. --%>
+        <dl :if={@directory_sync?} class="mt-3 space-y-3 text-zinc-400">
+          <div>
             <dt class="text-zinc-200">Directory sync</dt>
             <dd>
               Your IdP pushes users and groups over SCIM. Removing someone there removes them here.
             </dd>
           </div>
-          <div :if={not @directory_sync?}>
-            <dt class="text-zinc-200">New members</dt>
-            <dd>
-              People are provisioned the first time they sign in through this connection, at this
-              connection's default role.
-            </dd>
-          </div>
-          <div :if={@directory_sync?}>
+          <div>
             <dt class="text-zinc-200">Role mapping</dt>
             <dd>
               Sets the role a group's members land at. In several mapped groups, the highest wins —
               and sync never grants owner.
             </dd>
           </div>
-          <div :if={@directory_sync?}>
+          <div>
             <dt class="text-zinc-200">Runner access mapping</dt>
             <dd>
               Adds runners on top of the connection default. Groups are matched by id, never by
               name.
             </dd>
           </div>
-          <div :if={@directory_sync?}>
+          <div>
             <dt class="text-zinc-200">Synced groups &amp; users</dt>
             <dd>
               What has actually arrived. A group with no role mapping leaves its members at the
@@ -2541,6 +2539,19 @@ defmodule EmisarWeb.SSOSettingsLive do
             </dd>
           </div>
         </dl>
+
+        <div :if={not @directory_sync?} class="mt-3 space-y-3 text-zinc-400">
+          <p>
+            People are provisioned the first time they sign in here, at the connection's default role.
+          </p>
+          <p>
+            Removing someone in your IdP stops them signing in, but their emisar membership stays
+            — take it away on the Team page.
+          </p>
+          <p :if={SSO.IdentityProvider.supports_scim?(@provider.kind)}>
+            Turning on directory sync closes that gap: your IdP offboards them here too.
+          </p>
+        </div>
       </div>
 
       <div>

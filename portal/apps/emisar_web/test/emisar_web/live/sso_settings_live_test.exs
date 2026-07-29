@@ -466,6 +466,38 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
+    test "the help rail labels sections when sync is on, and explains the gap when it's off", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      # `scim_enabled` is not castable on create — SSO.enable_scim/2 mints the
+      # token and flips it, so a provider built straight from the changeset is
+      # sign-in only whatever attrs say.
+      off = insert_provider(account, %{name: "Sign-in only"})
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{off.id}")
+
+      # With sync off there are no mapping/synced sections for a label to mirror,
+      # so a lone bold term under the eyebrow would just read as a second heading.
+      # Prose instead — and it names the consequence that matters here.
+      refute html =~ "New members"
+      refute html =~ "Role mapping</dt>"
+      assert html =~ "their emisar membership stays"
+      assert html =~ "Turning on directory sync closes that gap"
+
+      owner = Fixtures.Subjects.subject_for(user, account)
+      on = insert_provider(account, %{name: "Synced", kind: :entra})
+      {:ok, on, _raw} = SSO.enable_scim(on, owner)
+      {:ok, _lv, synced} = live(conn, ~p"/app/#{account}/settings/sso/#{on.id}")
+
+      # With sync on each label mirrors a section further down the page, which is
+      # what earns the labelled shape.
+      assert synced =~ "Directory sync</dt>"
+      assert synced =~ "Role mapping</dt>"
+      assert synced =~ "Synced groups &amp; users</dt>"
+      refute synced =~ "Turning on directory sync closes that gap"
+    end
+
     test "renders just the one connection, with its config controls", %{
       conn: conn,
       account: account
