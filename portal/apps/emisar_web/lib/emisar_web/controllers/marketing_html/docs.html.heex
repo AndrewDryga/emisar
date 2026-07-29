@@ -70,7 +70,24 @@
             href={page.path}
             class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
           >
-            <.icon name={page.icon} class="mt-0.5 h-5 w-5 flex-none text-brand-400/80" />
+            <%!-- Integration rows carry the provider's own mark instead of an
+                 emisar icon. It sits on a white chip because several of these
+                 marks are dark (JumpCloud is #002B49, Okta's is black) and are
+                 illegible straight on the near-black page — the tile keeps every
+                 vendor's true colours rather than recolouring their trademark to
+                 suit our theme. alt="" because the row's title says the name
+                 already. --%>
+            <span
+              :if={page[:logo]}
+              class="mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-white"
+            >
+              <img src={~p"/images/logos/#{page.logo}"} alt="" class="h-4 w-4" />
+            </span>
+            <.icon
+              :if={!page[:logo]}
+              name={page.icon}
+              class="mt-0.5 h-5 w-5 flex-none text-brand-400/80"
+            />
             <div>
               <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
                 {page.title}

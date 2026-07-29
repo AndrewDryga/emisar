@@ -147,6 +147,33 @@ defmodule EmisarWeb.MarketingStructuralTest do
     end
   end
 
+  describe "every referenced image resolves to a real file" do
+    # A wrong image path still returns 200 — the page renders, the picture is
+    # just missing — so nothing else in this suite catches it. A find/replace
+    # over doc paths once rewrote four screenshot srcs into a directory that
+    # does not exist, and every page stayed green.
+    @static_root Application.app_dir(:emisar_web, "priv/static")
+
+    for route <- @indexable_routes do
+      test "GET #{route} references only images that exist", %{conn: conn} do
+        html = conn |> get(unquote(route)) |> html_response(200)
+
+        missing =
+          ~r/<img\b[^>]*\ssrc="([^"]+)"/
+          |> Regex.scan(html)
+          |> Enum.map(fn [_, src] -> src end)
+          |> Enum.filter(&String.starts_with?(&1, "/"))
+          # `~p` appends a cache-busting query in some envs; the file is the path.
+          |> Enum.map(&(&1 |> String.split("?") |> hd()))
+          |> Enum.uniq()
+          |> Enum.reject(&File.regular?(Path.join(@static_root, &1)))
+
+        assert missing == [],
+               "#{unquote(route)}: <img src> with no file in priv/static: #{inspect(missing)}"
+      end
+    end
+  end
+
   describe "lean JS bundle on every controller-rendered marketing page" do
     # The static marketing site has no LiveView socket, so it must load
     # only the lean `marketing.js` and never the full `app.js` (LiveSocket

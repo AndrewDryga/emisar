@@ -175,14 +175,14 @@ defmodule EmisarWeb.DocsNav do
          slug: "integrations-okta",
          title: "Okta",
          path: "/docs/integrations/okta",
-         icon: "hero-identification",
+         logo: "okta.svg",
          desc: "Okta end to end: the OIDC web app, the separate SCIM app, and group-driven roles."
        },
        %{
          slug: "integrations-entra",
          title: "Microsoft Entra",
          path: "/docs/integrations/entra",
-         icon: "hero-identification",
+         logo: "microsoft-entra.svg",
          desc:
            "Entra end to end: the app registration with oid, and the provisioning enterprise app."
        },
@@ -190,21 +190,21 @@ defmodule EmisarWeb.DocsNav do
          slug: "integrations-jumpcloud",
          title: "JumpCloud",
          path: "/docs/integrations/jumpcloud",
-         icon: "hero-identification",
+         logo: "jumpcloud.svg",
          desc: "JumpCloud end to end: one custom application for OIDC sign-in and directory push."
        },
        %{
          slug: "integrations-keycloak",
          title: "Keycloak",
          path: "/docs/integrations/keycloak",
-         icon: "hero-identification",
+         logo: "keycloak.svg",
          desc: "Keycloak sign-in with PKCE, and what its missing outbound SCIM leaves you to do."
        },
        %{
          slug: "integrations-google-workspace",
          title: "Google Workspace",
          path: "/docs/integrations/google-workspace",
-         icon: "hero-identification",
+         logo: "google-workspace.svg",
          desc: "Google Workspace sign-in with the locked issuer, and its directory-sync gap."
        }
      ]},
