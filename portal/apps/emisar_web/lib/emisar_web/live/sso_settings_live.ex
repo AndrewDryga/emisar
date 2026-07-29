@@ -1274,6 +1274,14 @@ defmodule EmisarWeb.SSOSettingsLive do
     "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed — changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
   end
 
+  defp error_message(:link_target_outranks_approver) do
+    "That email belongs to a member whose role you can't manage, so linking an identity to them isn't something this role can approve. An owner can approve it."
+  end
+
+  defp error_message(:link_target_in_other_accounts) do
+    "That email belongs to someone who is also a member of another workspace. Linking here would give this connection's sign-in their access there too, so it can't be approved from this workspace."
+  end
+
   defp error_message(:email_taken) do
     "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
   end

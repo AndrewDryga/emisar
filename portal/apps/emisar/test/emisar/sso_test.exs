@@ -3200,6 +3200,86 @@ defmodule Emisar.SSOTest do
       %{account: account, subject: subject, provider: provider}
     end
 
+    test "an admin can't link an identity onto an owner", %{
+      account: account,
+      provider: provider
+    } do
+      # The approver also configured the IdP, so without this they could assert
+      # the owner's email under a subject they control, approve their own
+      # request, and thereafter sign in as the owner.
+      owner_user = Fixtures.Users.create_user(email: "owner@acme.test")
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner_user.id,
+        role: "owner"
+      )
+
+      admin_user = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin_user.id,
+          role: "admin"
+        )
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|impersonator",
+          "email" => "owner@acme.test",
+          "email_verified" => true
+        })
+
+      assert {:error, :link_target_outranks_approver} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 admin
+               )
+    end
+
+    test "refuses to link someone who also belongs to another workspace", %{
+      account: account,
+      subject: subject,
+      provider: provider
+    } do
+      # A session can switch accounts, so binding a credential to a multi-account
+      # person hands this workspace's admin reach into workspaces they have no
+      # authority over.
+      shared = Fixtures.Users.create_user(email: "shared@acme.test")
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: shared.id,
+        role: "operator"
+      )
+
+      other = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other.id,
+        user_id: shared.id,
+        role: "viewer"
+      )
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|shared",
+          "email" => "shared@acme.test",
+          "email_verified" => true
+        })
+
+      assert {:error, :link_target_in_other_accounts} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 subject
+               )
+    end
+
     test "provisions the captured identity + consumes the request", %{
       account: account,
       subject: subject,

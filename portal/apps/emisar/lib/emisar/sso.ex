@@ -2112,6 +2112,7 @@ defmodule Emisar.SSO do
     with :ok <- ensure_can_configure_sso(subject),
          {:ok, request} <- fetch_link_request(id, subject),
          {:ok, provider} <- fetch_provider_for_request(request, subject),
+         :ok <- ensure_link_target_within_authority(request, provider, subject),
          :ok <- ensure_approval_runner_access_allowed(request, access, subject) do
       multi = approve_link_request_multi(provider, request, access, subject)
 
@@ -2122,6 +2123,52 @@ defmodule Emisar.SSO do
 
         {:error, reason} ->
           {:error, reason}
+      end
+    end
+  end
+
+  # Approving a MATCH binds a new IdP credential to an EXISTING person, so
+  # whoever holds that credential can afterwards sign in as them. The approver is
+  # also whoever configured the IdP, so without a limit they can assert any
+  # email, approve their own request, and authenticate as that member — an admin
+  # reaching owner, and (because a session can switch accounts) reaching every
+  # other account that person belongs to.
+  #
+  # Two limits, both judged on the matched member rather than on the request:
+  #
+  #   * the approver's permissions must COVER the target's role — the same
+  #     no-escalation primitive role changes and invites use — so an admin can
+  #     never bind themselves onto an owner;
+  #   * the target must not hold an active membership in another account, because
+  #     this account's admin has no authority there and the resulting session
+  #     would reach it.
+  #
+  # A request with no match provisions a fresh user and escalates nothing.
+  defp ensure_link_target_within_authority(
+         %LinkRequest{matched_user_id: nil},
+         _provider,
+         _subject
+       ),
+       do: :ok
+
+  defp ensure_link_target_within_authority(
+         %LinkRequest{} = request,
+         %IdentityProvider{} = provider,
+         %Subject{} = subject
+       ) do
+    with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id) do
+      memberships = Accounts.list_active_memberships_for_user(user)
+      {here, elsewhere} = Enum.split_with(memberships, &(&1.account_id == provider.account_id))
+
+      cond do
+        elsewhere != [] ->
+          {:error, :link_target_in_other_accounts}
+
+        Enum.any?(here, &(not Auth.Permissions.covers_role?(subject, &1.role))) ->
+          {:error, :link_target_outranks_approver}
+
+        true ->
+          :ok
       end
     end
   end
