@@ -46,8 +46,13 @@ content required by the selected option.
 
 ## Enforced
 
-LiveView tests cover both halves of the timing contract: a mode-change render has no
-dependency error, while an invalid submit does. Shared component tests pin the
+LiveView tests cover the timing contract: a change targeting ANOTHER field raises
+no error, a change targeting the field itself does, and an invalid submit does.
+
+A test asserting "error appears on change" must pass `_target` —
+`render_change(%{"_target" => ["invite", "email"]})`. `render_change/1` omits it
+while a browser always sends it, so a test without it is asserting a payload that
+cannot occur, and will fail against correct code. Shared component tests pin the
 attached selected-card shape and the compact, 40px runner rows. Screenshot review
 covers desktop and mobile because the attachment, compound focus outline, and
 hierarchy are visual contracts.

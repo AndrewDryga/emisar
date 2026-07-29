@@ -1,7 +1,7 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Mailers, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, RunnerScope}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
   # String forms of the canonical role enum — the invite/role forms work
@@ -414,8 +414,8 @@ defmodule EmisarWeb.TeamLive do
     |> tap_clear_edit()
   end
 
-  def handle_event("validate", %{"invite" => params}, socket) do
-    changeset = invite_changeset(params, socket.assigns.runners) |> Map.put(:action, :validate)
+  def handle_event("validate", %{"invite" => params} = event, socket) do
+    changeset = invite_changeset(params, socket.assigns.runners) |> LiveForm.on_change(event)
     {:noreply, assign_form(socket, changeset)}
   end
 

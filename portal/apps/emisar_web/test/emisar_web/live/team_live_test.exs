@@ -1077,11 +1077,13 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "a blank email surfaces an inline error via phx-change, not a flash", %{lv: lv} do
       # The live-validation path (phx-change="validate") shows the field error as
-      # the operator types/clears — before they ever submit.
+      # the operator types/clears — before they ever submit. `_target` is how a
+      # browser says which field that was; without it this reads as an untouched
+      # field, which stays quiet by design.
       html =
         lv
         |> form("#invite_form", %{"invite" => %{"email" => "", "role" => "operator"}})
-        |> render_change()
+        |> render_change(%{"_target" => ["invite", "email"]})
 
       assert html =~ "can&#39;t be blank"
       refute html =~ "Could not send invitation"

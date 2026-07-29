@@ -522,7 +522,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def handle_event(
         "validate_runner_access_mapping",
-        %{"provider_id" => id, "runner_access_mapping" => params},
+        %{"provider_id" => id, "runner_access_mapping" => params} = event,
         socket
       ) do
     case find_provider(socket, id) do
@@ -531,7 +531,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
       provider ->
         changeset = runner_access_mapping_changeset(provider, params, socket.assigns.runners)
-        form = runner_access_mapping_to_form(provider, Map.put(changeset, :action, :validate))
+        form = runner_access_mapping_to_form(provider, LiveForm.on_change(changeset, event))
         {:noreply, put_runner_access_mapping_form(socket, id, form)}
     end
   end
@@ -593,7 +593,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def handle_event(
         "validate_edit_runner_access_mapping",
-        %{"runner_access_mapping_id" => id, "runner_access_mapping" => params},
+        %{"runner_access_mapping_id" => id, "runner_access_mapping" => params} = event,
         socket
       ) do
     case find_runner_access_mapping(socket, id) do
@@ -601,7 +601,9 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, socket}
 
       mapping ->
-        form = runner_access_mapping_edit_form(mapping, params, socket.assigns.runners)
+        form =
+          runner_access_mapping_edit_form(mapping, params, socket.assigns.runners, event)
+
         {:noreply, assign(socket, :runner_access_mapping_edit_form, form)}
     end
   end
@@ -1158,25 +1160,31 @@ defmodule EmisarWeb.SSOSettingsLive do
     )
   end
 
-  defp runner_access_mapping_edit_form(mapping, params_or_changeset \\ %{}, runners \\ [])
+  defp runner_access_mapping_edit_form(
+         mapping,
+         params_or_changeset \\ %{},
+         runners \\ [],
+         event \\ %{}
+       )
 
-  defp runner_access_mapping_edit_form(mapping, %Ecto.Changeset{} = changeset, _runners) do
+  defp runner_access_mapping_edit_form(mapping, %Ecto.Changeset{} = changeset, _runners, _event) do
     to_form(changeset,
       as: "runner_access_mapping",
       id: "edit-runner-access-mapping-#{mapping.id}"
     )
   end
 
-  defp runner_access_mapping_edit_form(mapping, params, _runners) when map_size(params) == 0 do
+  defp runner_access_mapping_edit_form(mapping, params, _runners, _event)
+       when map_size(params) == 0 do
     changeset = SSO.change_group_runner_access_mapping(mapping)
     runner_access_mapping_edit_form(mapping, changeset, [])
   end
 
-  defp runner_access_mapping_edit_form(mapping, params, runners) do
+  defp runner_access_mapping_edit_form(mapping, params, runners, event) do
     changeset =
       mapping
       |> SSO.change_group_runner_access_mapping(normalize_runner_access_mapping(params, runners))
-      |> Map.put(:action, :validate)
+      |> LiveForm.on_change(event)
 
     runner_access_mapping_edit_form(mapping, changeset, runners)
   end
