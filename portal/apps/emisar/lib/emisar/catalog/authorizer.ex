@@ -30,7 +30,8 @@ defmodule Emisar.Catalog.Authorizer do
     case query_source(queryable) do
       :catalog_runner_actions -> RunnerAction.Query.by_account_id(queryable, account_id)
       :catalog_pack_versions -> PackVersion.Query.by_account_id(queryable, account_id)
-      _ -> queryable
+      # A source with no clause here gets nothing — `none/1` is binding-free.
+      _ -> RunnerAction.Query.none(queryable)
     end
   end
 

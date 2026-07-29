@@ -783,13 +783,16 @@ defmodule EmisarWeb.TeamLive do
   # guard, read ungated so every member sees the same stance), and whether
   # requiring SSO is even possible (≥1 enabled provider).
   defp assign_sso_state(socket) do
-    count = length(SSO.list_enabled_providers_for_account(socket.assigns.current_account.id))
-
     providers =
       case SSO.list_providers_for_account(socket.assigns.current_subject) do
         {:ok, providers, _meta} -> providers
         _ -> []
       end
+
+    # Counted from the Subject-gated read, not a second unscoped one. Both facts
+    # come from the same rows the operator is actually allowed to see, and the
+    # pre-Subject helper stays where it belongs — the anonymous sign-in page.
+    count = Enum.count(providers, & &1.enabled)
 
     # Manual-provisioning requests waiting on an admin, across every connection —
     # the SSO hub now lives on Team, so its needs-attention queue does too. Gated

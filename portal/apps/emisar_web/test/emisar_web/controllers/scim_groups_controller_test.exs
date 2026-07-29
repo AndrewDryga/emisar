@@ -739,6 +739,50 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
+    test "PUT ignores a body externalId that names a different group", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      # `PUT /Groups/viewers` carrying `externalId: "admins"` used to rewrite the
+      # ADMIN group's membership — a request mutating a resource it never named.
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-admins", role: :admin},
+          subject
+        )
+
+      admin = provision(provider, "okta|admin")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-admins",
+          member_external_ids: ["okta|admin"]
+        })
+
+      assert role_of(account.id, admin.user_id) == :admin
+
+      intruder = provision(provider, "okta|intruder")
+
+      payload =
+        "grp-viewers"
+        |> group_payload(["okta|intruder"])
+        |> Map.put("externalId", "grp-admins")
+
+      body =
+        conn
+        |> scim_send(token, :put, ~p"/scim/v2/Groups/grp-viewers", payload)
+        |> json_response(200)
+
+      # The path group was written; the admin group is untouched.
+      assert body["id"] == "grp-viewers"
+      assert role_of(account.id, admin.user_id) == :admin
+      assert role_of(account.id, intruder.user_id) == :viewer
+    end
+
     test "PUT rejects group member lists over the cap before replacing", %{
       conn: conn,
       token: token

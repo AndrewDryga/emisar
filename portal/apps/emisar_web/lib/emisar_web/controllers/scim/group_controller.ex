@@ -50,10 +50,13 @@ defmodule EmisarWeb.SCIM.GroupController do
   end
 
   # PUT /scim/v2/Groups/:id — full replace of the group's membership. The path
-  # id is the externalId the domain keys on (parse falls back to it).
+  # id is the externalId the domain keys on, and it WINS: `put_new` let a body
+  # `externalId` through, so `PUT /Groups/viewers` carrying `externalId:
+  # "admins"` rewrote the admin group's membership instead of the one addressed.
+  # A request now only ever mutates the resource it names in the path.
   def replace(conn, %{"id" => external_id} = params) do
     provider = conn.assigns.scim_provider
-    params = Map.put_new(params, "externalId", external_id)
+    params = Map.put(params, "externalId", external_id)
 
     if invalid_members?(Map.get(params, "members")) do
       render_error(conn, :invalid_scim_group)

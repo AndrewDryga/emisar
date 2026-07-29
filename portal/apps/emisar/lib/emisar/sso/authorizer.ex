@@ -37,8 +37,12 @@ defmodule Emisar.SSO.Authorizer do
       :sso_link_requests ->
         LinkRequest.Query.by_account_id(queryable, account_id)
 
+      # A source this authorizer does not know how to scope gets NOTHING. It is
+      # unreachable today, which is exactly why it has to fail closed: the next
+      # query module added here would otherwise return every account's rows until
+      # someone noticed the missing clause.
       _ ->
-        queryable
+        IdentityProvider.Query.none(queryable)
     end
   end
 

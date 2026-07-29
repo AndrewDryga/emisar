@@ -15,8 +15,19 @@ defmodule Emisar.Checks.AuthorizerFallbackFailClosed do
           # ✅
           def for_subject(queryable, _), do: Runbook.Query.none(queryable)
 
+      The same applies to a `case` on the query source INSIDE a clause: an
+      unrecognized source must get `Query.none/1`, not the queryable it came in
+      with.
+
+          # ❌
+          case query_source(queryable) do
+            :runbooks -> Runbook.Query.by_account_id(queryable, id)
+            _ -> queryable
+          end
+
       This is defense-in-depth for a future caller that reaches row scoping
-      without first passing the permission gate.
+      without first passing the permission gate — and for the next query module
+      added to such a `case` without its own clause.
       """
     ]
 
@@ -40,23 +51,45 @@ defmodule Emisar.Checks.AuthorizerFallbackFailClosed do
   defp walk(
          {:def, meta,
           [
-            {:for_subject, _, [{queryable, _, _}, {subject, _, _}]},
+            {:for_subject, _, [{queryable, _, _}, subject]},
             [do: body]
           ]} = ast,
          ctx
        )
-       when is_atom(queryable) and is_atom(subject) do
-    if wildcard?(subject) and not fail_closed?(body, queryable) do
-      {ast, put_issue(ctx, issue_for(ctx, meta))}
-    else
-      {ast, ctx}
+       when is_atom(queryable) do
+    cond do
+      wildcard_subject?(subject) and not fail_closed?(body, queryable) ->
+        {ast, put_issue(ctx, issue_for(ctx, meta))}
+
+      open_case_fallback?(body, queryable) ->
+        {ast, put_issue(ctx, issue_for(ctx, meta))}
+
+      true ->
+        {ast, ctx}
     end
   end
 
   defp walk(ast, ctx), do: {ast, ctx}
 
-  defp wildcard?(subject),
+  defp wildcard_subject?({subject, _, _}) when is_atom(subject),
     do: subject |> Atom.to_string() |> String.starts_with?("_")
+
+  defp wildcard_subject?(_subject), do: false
+
+  # A `case` branching on the query source whose catch-all hands back the
+  # queryable unchanged — every row of every account.
+  defp open_case_fallback?(body, queryable) do
+    {_ast, open?} =
+      Macro.prewalk(body, false, fn
+        {:->, _, [[pattern], {^queryable, _, _}]} = node, _acc ->
+          {node, wildcard_subject?(pattern)}
+
+        node, acc ->
+          {node, acc}
+      end)
+
+    open?
+  end
 
   defp fail_closed?(body, queryable) do
     case body do

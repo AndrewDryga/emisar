@@ -47,7 +47,8 @@ defmodule Emisar.Runners.Authorizer do
     case query_source(queryable) do
       :runners -> Runner.Query.by_id(queryable, runner_id)
       :runner_tokens -> Token.Query.by_runner_id(queryable, runner_id)
-      _ -> queryable
+      # A source with no clause here gets nothing — `none/1` is binding-free.
+      _ -> Runner.Query.none(queryable)
     end
   end
 
@@ -56,7 +57,7 @@ defmodule Emisar.Runners.Authorizer do
       :runners -> Runner.Query.by_account_id(queryable, account_id)
       :runner_enrollment_keys -> EnrollmentKey.Query.by_account_id(queryable, account_id)
       :runner_tokens -> Token.Query.by_runner_account_id(queryable, account_id)
-      _ -> queryable
+      _ -> Runner.Query.none(queryable)
     end
   end
 

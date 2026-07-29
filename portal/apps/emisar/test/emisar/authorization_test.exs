@@ -228,6 +228,33 @@ defmodule Emisar.AuthorizationTest do
     # without the permission gate. Runners + Runs have the same coverage
     # beside their runner-actor scoping tests.
 
+    test "SSO.Authorizer closes an unrecognized query source, not just an unmatched subject" do
+      # This authorizer branches on the query source inside its account clause, so
+      # it has a SECOND fallback the others don't. A source it has no clause for
+      # used to come back unscoped — every account's rows — for a subject that
+      # passed the account match.
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+      Fixtures.Runbooks.create_runbook(account_id: account.id)
+
+      # A queryable SSO.Authorizer has no clause for.
+      rows =
+        Emisar.Runbooks.Runbook.Query.all()
+        |> Emisar.SSO.Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      assert rows == []
+    end
+
     test "ApiKeys.Authorizer scopes an unmatched subject to zero rows" do
       account = Fixtures.Accounts.create_account()
       Fixtures.ApiKeys.create_api_key(account_id: account.id)

@@ -61,8 +61,10 @@ defmodule Emisar.Accounts.Authorizer do
     case query_source(queryable) do
       :accounts -> Account.Query.by_id(queryable, account_id)
       :account_memberships -> Membership.Query.by_account_id(queryable, account_id)
+      # Users is identity, not tenancy — deliberately cross-account, so it is
+      # NOT scoped here. Every other unknown source gets nothing.
       :users -> queryable
-      _ -> queryable
+      _ -> Account.Query.none(queryable)
     end
   end
 

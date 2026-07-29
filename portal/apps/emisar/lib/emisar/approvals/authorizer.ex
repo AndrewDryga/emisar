@@ -31,7 +31,8 @@ defmodule Emisar.Approvals.Authorizer do
       :approval_requests -> Request.Query.by_account_id(queryable, account_id)
       :approval_grants -> Grant.Query.by_account_id(queryable, account_id)
       :approval_decisions -> Decision.Query.by_account_id(queryable, account_id)
-      _ -> queryable
+      # A source with no clause here gets nothing — `none/1` is binding-free.
+      _ -> Request.Query.none(queryable)
     end
   end
 

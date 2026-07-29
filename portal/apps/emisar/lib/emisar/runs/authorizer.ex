@@ -46,7 +46,8 @@ defmodule Emisar.Runs.Authorizer do
   def for_subject(queryable, %Subject{actor: %Runners.Runner{id: runner_id}}) do
     case query_source(queryable) do
       :action_runs -> ActionRun.Query.by_runner_id(queryable, runner_id)
-      _ -> queryable
+      # A source with no clause here gets nothing — `none/1` is binding-free.
+      _ -> ActionRun.Query.none(queryable)
     end
   end
 
