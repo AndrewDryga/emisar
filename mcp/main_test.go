@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -945,13 +946,19 @@ func TestForward_NegotiatesAndSendsProtocolHeaders(t *testing.T) {
 }
 
 // A 2026-07-28 client never sends initialize: it declares its version inside
-// each frame's params._meta. The bridge must relay such frames untouched —
-// no bridge-negotiated MCP-Protocol-Version header (nothing was negotiated)
-// and no interpretation of the modern envelope; the portal owns the era.
-func TestForward_ModernClientWithoutInitializePassesThrough(t *testing.T) {
-	var protocols []string
+// each frame's params._meta, and the transport mirrors that declaration plus
+// the routing values into headers the portal validates against the body. A
+// bridged modern client that omitted them would be rejected as a header
+// mismatch, so the bridge must mirror them without an initialize handshake.
+func TestForward_ModernClientMirrorsRoutingHeaders(t *testing.T) {
+	type observed struct{ protocol, method, name string }
+	var requests []observed
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		protocols = append(protocols, r.Header.Get("MCP-Protocol-Version"))
+		requests = append(requests, observed{
+			protocol: r.Header.Get("MCP-Protocol-Version"),
+			method:   r.Header.Get("Mcp-Method"),
+			name:     r.Header.Get("Mcp-Name"),
+		})
 		var request struct {
 			ID json.RawMessage `json:"id"`
 		}
@@ -961,8 +968,9 @@ func TestForward_ModernClientWithoutInitializePassesThrough(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	const meta = `"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}`
 	b := newTestBridge(srv)
-	discover := `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+	discover := `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{` + meta + `}}`
 	response, err := b.forward([]byte(discover))
 	if err != nil {
 		t.Fatalf("server/discover: %v", err)
@@ -970,13 +978,169 @@ func TestForward_ModernClientWithoutInitializePassesThrough(t *testing.T) {
 	if !strings.Contains(string(response), `"supportedVersions":["2026-07-28"]`) {
 		t.Errorf("discover response not passed through verbatim: %s", response)
 	}
-	list := `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
-	if _, err := b.forward([]byte(list)); err != nil {
-		t.Fatalf("tools/list: %v", err)
+	call := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_packs","arguments":{},` + meta + `}}`
+	if _, err := b.forward([]byte(call)); err != nil {
+		t.Fatalf("tools/call: %v", err)
 	}
-	for i, protocol := range protocols {
-		if protocol != "" {
-			t.Errorf("request %d: an uninitialized modern flow must carry no bridge protocol header, got %q", i, protocol)
+
+	want := []observed{
+		{protocol: "2026-07-28", method: "server/discover"},
+		{protocol: "2026-07-28", method: "tools/call", name: "list_packs"},
+	}
+	if len(requests) != len(want) {
+		t.Fatalf("requests = %d, want %d", len(requests), len(want))
+	}
+	for i, request := range requests {
+		if request != want[i] {
+			t.Errorf("request %d headers = %+v, want %+v", i, request, want[i])
+		}
+	}
+}
+
+// The routing headers are a copy of the frame's own bytes. A name that cannot
+// ride verbatim in an HTTP field value is carried in the spec's base64
+// sentinel so the portal decodes exactly what the body holds, and a hostile
+// frame can never smuggle a second header through either value.
+func TestSetModernRoutingHeaders(t *testing.T) {
+	sentinel := func(value string) string {
+		return "=?base64?" + base64.StdEncoding.EncodeToString([]byte(value)) + "?="
+	}
+	tests := []struct {
+		name                     string
+		frame                    string
+		wantSet                  bool
+		wantProtocol, wantMethod string
+		wantName                 string
+	}{
+		{
+			name:    "legacy frame declares nothing",
+			frame:   `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
+			wantSet: false,
+		},
+		{
+			name:         "modern tools/call mirrors name",
+			frame:        `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_action","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet:      true,
+			wantProtocol: "2026-07-28",
+			wantMethod:   "tools/call",
+			wantName:     "run_action",
+		},
+		{
+			name:         "modern tools/list carries no name",
+			frame:        `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet:      true,
+			wantProtocol: "2026-07-28",
+			wantMethod:   "tools/list",
+		},
+		{
+			name:         "resources/read mirrors the uri",
+			frame:        `{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"file:///a.json","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet:      true,
+			wantProtocol: "2026-07-28",
+			wantMethod:   "resources/read",
+			wantName:     "file:///a.json",
+		},
+		{
+			name:         "a non-ASCII name is sentinel-encoded",
+			frame:        `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"café","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet:      true,
+			wantProtocol: "2026-07-28",
+			wantMethod:   "tools/call",
+			wantName:     sentinel("café"),
+		},
+		{
+			name:         "a CRLF name cannot forge a header",
+			frame:        `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"a\r\nX-Evil: 1","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet:      true,
+			wantProtocol: "2026-07-28",
+			wantMethod:   "tools/call",
+			wantName:     sentinel("a\r\nX-Evil: 1"),
+		},
+		{
+			name:         "a literal sentinel value is re-encoded",
+			frame:        `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"=?base64?bm8=?=","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,
+			wantSet:      true,
+			wantProtocol: "2026-07-28",
+			wantMethod:   "tools/call",
+			wantName:     sentinel("=?base64?bm8=?="),
+		},
+		{
+			name:    "a malformed version declaration is left to the portal",
+			frame:   `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-7-28"}}}`,
+			wantSet: false,
+		},
+		{
+			name:    "a CRLF method never reaches a header",
+			frame:   "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\\r\\nX-Evil: 1\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}",
+			wantSet: false,
+		},
+		{
+			name:    "array params yield no routing metadata",
+			frame:   `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":[1,2]}`,
+			wantSet: false,
+		},
+		{
+			name:         "a future revision mirrors through unchanged",
+			frame:        `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2030-01-01"}}}`,
+			wantSet:      true,
+			wantProtocol: "2030-01-01",
+			wantMethod:   "tools/list",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			header := http.Header{}
+			got := setModernRoutingHeaders(header, parseRequestMeta([]byte(test.frame)))
+			if got != test.wantSet {
+				t.Fatalf("setModernRoutingHeaders = %v, want %v", got, test.wantSet)
+			}
+			if header.Get("MCP-Protocol-Version") != test.wantProtocol {
+				t.Errorf("MCP-Protocol-Version = %q, want %q", header.Get("MCP-Protocol-Version"), test.wantProtocol)
+			}
+			if header.Get("Mcp-Method") != test.wantMethod {
+				t.Errorf("Mcp-Method = %q, want %q", header.Get("Mcp-Method"), test.wantMethod)
+			}
+			if header.Get("Mcp-Name") != test.wantName {
+				t.Errorf("Mcp-Name = %q, want %q", header.Get("Mcp-Name"), test.wantName)
+			}
+			if len(header.Values("X-Evil")) != 0 {
+				t.Error("a frame value forged a second header")
+			}
+		})
+	}
+}
+
+// A legacy client is unaffected: it negotiates once at initialize and the
+// bridge keeps sending that version, with no modern routing headers.
+func TestForward_LegacyFlowSendsNoModernRoutingHeaders(t *testing.T) {
+	var methods, names []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Header.Get("Mcp-Method"))
+		names = append(names, r.Header.Get("Mcp-Name"))
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		result := `{}`
+		if request.Method == "initialize" {
+			result = `{"protocolVersion":"2025-11-25"}`
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":` + result + `}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	call := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_packs"}}`
+	if _, err := b.forward([]byte(call)); err != nil {
+		t.Fatalf("tools/call: %v", err)
+	}
+	for i := range methods {
+		if methods[i] != "" || names[i] != "" {
+			t.Errorf("request %d leaked modern routing headers: method=%q name=%q", i, methods[i], names[i])
 		}
 	}
 }

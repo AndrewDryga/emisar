@@ -36,6 +36,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -71,6 +72,20 @@ const (
 	requestTokenHeader         = "X-Emisar-MCP-Request-Token"
 	cancelTokenHeader          = "X-Emisar-MCP-Cancel-Token"
 	operationIDHeader          = "Emisar-Operation-Id"
+)
+
+// Streamable HTTP routing headers a client declaring protocol revision
+// 2026-07-28 or later must mirror from the request body so gateways can route
+// and meter without parsing JSON. The portal re-validates every one of them
+// against the body and rejects a mismatch, so these are a copy of the frame's
+// own bytes — never an independent claim the bridge invents.
+const (
+	protocolVersionHeader    = "MCP-Protocol-Version"
+	methodHeader             = "Mcp-Method"
+	nameHeader               = "Mcp-Name"
+	protocolVersionMetaKey   = "io.modelcontextprotocol/protocolVersion"
+	headerBase64SentinelHead = "=?base64?"
+	headerBase64SentinelTail = "?="
 )
 
 // maxResponseBytes caps one portal response at the MCP API's complete semantic
@@ -702,6 +717,15 @@ type requestMeta struct {
 	hasID  bool
 	valid  bool
 	method string
+	// protocolVersion is the revision a modern client declares per request in
+	// params._meta. Empty for a legacy frame, which negotiates once at
+	// initialize instead.
+	protocolVersion string
+	// routingName is the params.name / params.uri value the modern transport
+	// mirrors into Mcp-Name. Transport routing metadata, not tool
+	// interpretation: the bridge copies these bytes and the portal validates
+	// them back against the same body.
+	routingName string
 }
 
 // parseRequestMeta reads only the transport metadata the bridge must own. The
@@ -732,7 +756,37 @@ func parseRequestMeta(frame []byte) requestMeta {
 	}
 
 	meta.valid = validID
+	meta.protocolVersion, meta.routingName = parseRoutingMetadata(envelope["params"], meta.method)
 	return meta
+}
+
+// parseRoutingMetadata reads the per-request protocol declaration and the
+// Mcp-Name source value that revision 2026-07-28 mirrors into HTTP headers.
+// Only the three methods the spec names carry Mcp-Name; params that are absent,
+// non-object, or malformed simply yield no routing metadata, leaving the frame
+// to the portal's own validation.
+func parseRoutingMetadata(params json.RawMessage, method string) (protocolVersion, routingName string) {
+	if len(bytes.TrimSpace(params)) == 0 {
+		return "", ""
+	}
+	var fields struct {
+		Meta map[string]json.RawMessage `json:"_meta"`
+		Name string                     `json:"name"`
+		URI  string                     `json:"uri"`
+	}
+	if json.Unmarshal(params, &fields) != nil {
+		return "", ""
+	}
+	if raw, ok := fields.Meta[protocolVersionMetaKey]; ok {
+		_ = json.Unmarshal(raw, &protocolVersion)
+	}
+	switch method {
+	case "tools/call", "prompts/get":
+		routingName = fields.Name
+	case "resources/read":
+		routingName = fields.URI
+	}
+	return protocolVersion, routingName
 }
 
 func jsonRPCIDKind(id []byte) byte {
@@ -943,8 +997,12 @@ func (b *bridge) forwardRequestContext(
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", b.userAgent)
-	if meta.method != "initialize" && protocolVersion != "" {
-		req.Header.Set("MCP-Protocol-Version", protocolVersion)
+	// A modern client declares its revision inside every frame and never sends
+	// initialize, so there is no negotiated version to fall back on: mirror what
+	// the frame itself declares. A legacy client keeps the version it negotiated.
+	if !setModernRoutingHeaders(req.Header, meta) &&
+		meta.method != "initialize" && protocolVersion != "" {
+		req.Header.Set(protocolVersionHeader, protocolVersion)
 	}
 	if headers.requestToken != "" {
 		req.Header.Set(requestTokenHeader, headers.requestToken)
@@ -1153,6 +1211,63 @@ func validRPCError(raw json.RawMessage) bool {
 	return err == nil
 }
 
+// setModernRoutingHeaders mirrors a modern frame's own declaration into the
+// Streamable HTTP routing headers, reporting whether it did. It stays silent
+// for a legacy frame, and for a malformed declaration or a method that could
+// not survive a header field value — the frame still carries those bytes in its
+// body, so the portal answers with its own protocol error instead of the bridge
+// inventing a header the body does not support.
+func setModernRoutingHeaders(header http.Header, meta requestMeta) bool {
+	if !validProtocolVersion(meta.protocolVersion) || !headerSafeValue(meta.method) {
+		return false
+	}
+	header.Set(protocolVersionHeader, meta.protocolVersion)
+	header.Set(methodHeader, meta.method)
+	if meta.routingName != "" {
+		header.Set(nameHeader, encodeHeaderValue(meta.routingName))
+	}
+	return true
+}
+
+// encodeHeaderValue renders a value for Mcp-Name. A value that is already safe
+// as an HTTP field value rides through unchanged; anything else — non-ASCII,
+// control characters, surrounding whitespace, or a literal that would itself
+// read as the sentinel — is wrapped so the portal decodes exactly the bytes the
+// body carries.
+func encodeHeaderValue(value string) string {
+	if headerSafeValue(value) && !strings.HasPrefix(value, headerBase64SentinelHead) {
+		return value
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(value))
+	return headerBase64SentinelHead + encoded + headerBase64SentinelTail
+}
+
+// headerSafeValue reports whether a value can be sent verbatim: non-empty and
+// entirely visible ASCII, which excludes the CR/LF a hostile frame would need
+// to forge a second header.
+func headerSafeValue(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		if value[i] < 0x21 || value[i] > 0x7E {
+			return false
+		}
+	}
+	return true
+}
+
+// validProtocolVersion accepts only the spec's exact `YYYY-MM-DD` revision
+// shape. The bridge stays version-agnostic — any well-formed date mirrors
+// through and the portal decides which revisions it serves.
+func validProtocolVersion(version string) bool {
+	if version == "" {
+		return false
+	}
+	parsed, err := time.Parse("2006-01-02", version)
+	return err == nil && parsed.Format("2006-01-02") == version
+}
+
 func responseProtocolVersion(body []byte) (version string, hasResult, valid bool) {
 	var response map[string]json.RawMessage
 	if json.Unmarshal(body, &response) != nil || response == nil {
@@ -1166,10 +1281,10 @@ func responseProtocolVersion(body []byte) (version string, hasResult, valid bool
 	if json.Unmarshal(resultRaw, &result) != nil || result == nil {
 		return "", true, false
 	}
-	if err := json.Unmarshal(result["protocolVersion"], &version); err != nil || version == "" {
+	if err := json.Unmarshal(result["protocolVersion"], &version); err != nil {
 		return "", true, false
 	}
-	if parsed, err := time.Parse("2006-01-02", version); err != nil || parsed.Format("2006-01-02") != version {
+	if !validProtocolVersion(version) {
 		return "", true, false
 	}
 	return version, true, true

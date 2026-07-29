@@ -104,7 +104,9 @@ The bridge is intentionally thin. It owns only the client-to-portal transport:
 - line-delimited JSON-RPC on stdin and stdout;
 - bounded request and response frames;
 - request-ID correlation and concurrent-duplicate rejection;
-- MCP protocol and Streamable HTTP headers;
+- MCP protocol and Streamable HTTP headers, including the `MCP-Protocol-Version`,
+  `Mcp-Method`, and `Mcp-Name` routing headers a client declaring protocol
+  revision `2026-07-28` or later mirrors from its own frame;
 - response status, media type, UTF-8, envelope, and ID validation;
 - cancellation of observation without claiming to undo committed work;
 - endpoint-bound API-key rotation state;
