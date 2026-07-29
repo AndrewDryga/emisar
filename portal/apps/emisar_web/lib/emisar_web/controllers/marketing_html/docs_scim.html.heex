@@ -15,7 +15,7 @@
         <:dek>
           Directory sync (SCIM 2.0) lets your identity provider push the user lifecycle to emisar:
           provision people from the directory, and when someone is offboarded there, their emisar
-          access is revoked automatically — sessions ended, API keys revoked, no manual cleanup.
+          access is revoked automatically — sessions ended, API keys revoked.
         </:dek>
       </.docs_header>
 
@@ -176,7 +176,9 @@
             so an offboard in your directory revokes emisar access automatically. It does
             <strong class="text-zinc-200">not</strong>
             delete the user — the audit trail is preserved. Reactivation in the directory restores
-            access.
+            access. One member is exempt: emisar refuses to deprovision your last active owner and
+            returns an error to your directory, because it would leave the account with nobody who
+            can administer it. Promote another owner first.
           </span>
         </li>
       </ul>

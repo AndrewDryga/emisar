@@ -1856,9 +1856,9 @@ defmodule EmisarWeb.TeamLive do
                     on_confirm={JS.push("toggle_require_sso")}
                   >
                     <:body>
-                      Members without a linked SSO identity are signed out and must sign in through
-                      your provider — if it's misconfigured, they're locked out. Confirm SSO works
-                      first.
+                      Members who signed in another way are stopped the next time they navigate and
+                      have to sign in again through your provider — if it's misconfigured, they're
+                      locked out. Confirm SSO works first.
                     </:body>
                     Require SSO
                   </.confirm_button>
