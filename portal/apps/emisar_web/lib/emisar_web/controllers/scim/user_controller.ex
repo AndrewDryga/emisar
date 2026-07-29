@@ -185,12 +185,16 @@ defmodule EmisarWeb.SCIM.UserController do
   # value carrying `{"active": ...}` (Entra omits path, Okta sends it).
   # Returns {:ok, bool} | :no_active_op (no active op present) | :error
   # (an active op whose value can't be parsed).
+  # RFC 7644 §3.5.2 applies a PatchOp's operations IN ORDER, so the LAST one that
+  # touches an attribute decides its final value. Halting on the first match read
+  # a batch backwards: `[active: true, active: false]` — an IdP reinstating and
+  # then offboarding in one request — left the member active.
   defp active_from_operations(operations) do
     Enum.reduce_while(operations, :no_active_op, fn op, acc ->
       case operation_active(op) do
         :skip -> {:cont, acc}
         :error -> {:halt, :error}
-        {:ok, active} -> {:halt, {:ok, active}}
+        {:ok, active} -> {:cont, {:ok, active}}
       end
     end)
   end
@@ -229,11 +233,12 @@ defmodule EmisarWeb.SCIM.UserController do
   # Find the operation that replaces `displayName` — same op/path/pathless
   # handling as `active_from_operations/1`. A non-string or empty value is
   # not a rename (the IdP sent nothing usable), never an error.
+  # Last write wins, for the same ordering reason as `active` above.
   defp name_from_operations(operations) do
     Enum.reduce_while(operations, :no_name_op, fn op, acc ->
       case operation_name(op) do
         :skip -> {:cont, acc}
-        {:ok, full_name} -> {:halt, {:ok, full_name}}
+        {:ok, full_name} -> {:cont, {:ok, full_name}}
       end
     end)
   end

@@ -366,7 +366,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["scimType"] == "invalidValue"
     end
 
-    test "a whole-set `replace` of members short-circuits to a full upsert", %{
+    test "a whole-set `replace` of members routes to a full upsert", %{
       conn: conn,
       token: token,
       provider: provider,
@@ -407,6 +407,71 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
       assert role_of(account.id, incoming.user_id) == :operator
       assert role_of(account.id, keep.user_id) == :viewer
+    end
+
+    test "a `remove` after a whole-set `replace` still takes the member out", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", role: :operator},
+          subject
+        )
+
+      victim = provision(provider, "okta|victim")
+
+      # RFC 7644 applies operations in order, so this batch ends with the victim
+      # OUT of a group that grants :operator. Reading only the replace left them
+      # in it — an offboarding that silently kept the privilege it revoked.
+      operations = [
+        %{"op" => "replace", "path" => "members", "value" => [%{"value" => "okta|victim"}]},
+        %{"op" => "remove", "path" => "members", "value" => [%{"value" => "okta|victim"}]}
+      ]
+
+      assert conn
+             |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-ops", %{
+               "Operations" => operations
+             })
+             |> json_response(200)
+
+      assert role_of(account.id, victim.user_id) == :viewer
+    end
+
+    test "an `add` after a whole-set `replace` applies to the replaced set", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      {:ok, _} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-ops", role: :operator},
+          subject
+        )
+
+      replaced = provision(provider, "okta|replaced")
+      appended = provision(provider, "okta|appended")
+
+      operations = [
+        %{"op" => "replace", "path" => "members", "value" => [%{"value" => "okta|replaced"}]},
+        %{"op" => "add", "path" => "members", "value" => [%{"value" => "okta|appended"}]}
+      ]
+
+      assert conn
+             |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-ops", %{
+               "Operations" => operations
+             })
+             |> json_response(200)
+
+      assert role_of(account.id, replaced.user_id) == :operator
+      assert role_of(account.id, appended.user_id) == :operator
     end
 
     test "a PATCH replace with an overlong member id → 400 invalidValue", %{

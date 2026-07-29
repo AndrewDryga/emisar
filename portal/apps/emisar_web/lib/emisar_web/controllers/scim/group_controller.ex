@@ -193,39 +193,57 @@ defmodule EmisarWeb.SCIM.GroupController do
   #   {:replace, ids}        — a whole-set `members` replace (route to upsert),
   #   {:delta, adds, removes}— add/remove member deltas (route to patch),
   #   :unsupported           — any op we don't model (→ honest SCIM error).
-  # A `replace` of the whole members set can't be combined with deltas in one
-  # PatchOp (IdPs never do), so a replace wins and short-circuits.
+  #
+  # RFC 7644 §3.5.2 applies operations IN ORDER, so the fold carries one running
+  # state and the last op to mention a member decides whether it ends up in the
+  # group. A whole-set `replace` supersedes everything BEFORE it and hands us the
+  # absolute set, so an `add`/`remove` after one applies to that set directly —
+  # no read needed. Short-circuiting on the first replace instead dropped every
+  # later op: `replace members=[victim]` followed by `remove victim` — an IdP
+  # rewriting a group and then offboarding in one request — left the victim in a
+  # group that may map to an admin role or runner access.
   defp member_ops(operations) when length(operations) > @max_patch_operations,
     do: {:error, :invalid_scim_group}
 
   defp member_ops(operations) do
     Enum.reduce_while(operations, {:delta, [], [], 0}, fn op, acc ->
       case classify_op(op) do
-        {:replace, ids} -> {:halt, {:replace, ids}}
-        {:add, ids} -> merge_delta(acc, ids, [])
-        {:remove, ids} -> merge_delta(acc, [], ids)
+        {:replace, ids} -> replaced(ids)
+        {:add, ids} -> add_members(acc, ids)
+        {:remove, ids} -> remove_members(acc, ids)
         {:error, reason} -> {:halt, {:error, reason}}
         :unsupported -> {:halt, :unsupported}
       end
     end)
     |> case do
       {:delta, [], [], _count} -> :unsupported
-      {:delta, adds, removes, _count} -> {:delta, Enum.reverse(adds), Enum.reverse(removes)}
+      {:delta, adds, removes, _count} -> {:delta, adds, removes}
       result -> result
     end
   end
 
-  defp merge_delta({:delta, adds, removes, count}, new_adds, new_removes) do
-    count = count + length(new_adds) + length(new_removes)
+  defp add_members({:replace, ids}, added), do: replaced(append(ids, added))
 
-    if count > @max_group_member_ids do
-      {:halt, {:error, :invalid_scim_group}}
-    else
-      {:cont, {:delta, prepend_all(new_adds, adds), prepend_all(new_removes, removes), count}}
-    end
-  end
+  defp add_members({:delta, adds, removes, count}, added),
+    do: delta(append(adds, added), removes -- added, count + length(added))
 
-  defp prepend_all(values, acc), do: Enum.reduce(values, acc, &[&1 | &2])
+  defp remove_members({:replace, ids}, removed), do: replaced(ids -- removed)
+
+  defp remove_members({:delta, adds, removes, count}, removed),
+    do: delta(adds -- removed, append(removes, removed), count + length(removed))
+
+  # The id moves to the end of the list it belongs in, and leaves the other one.
+  defp append(ids, changed), do: (ids -- changed) ++ changed
+
+  defp replaced(ids) when length(ids) > @max_group_member_ids,
+    do: {:halt, {:error, :invalid_scim_group}}
+
+  defp replaced(ids), do: {:cont, {:replace, ids}}
+
+  defp delta(_adds, _removes, count) when count > @max_group_member_ids,
+    do: {:halt, {:error, :invalid_scim_group}}
+
+  defp delta(adds, removes, count), do: {:cont, {:delta, adds, removes, count}}
 
   # `op` is case-insensitive ("add"/"Add"/"replace"/"remove"). We only model the
   # `members` attribute; an op on any other path (displayName, a sub-attribute)

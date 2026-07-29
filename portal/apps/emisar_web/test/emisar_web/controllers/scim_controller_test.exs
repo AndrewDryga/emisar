@@ -441,6 +441,34 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
+    test "the LAST `active` operation decides, not the first", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{user: user}} =
+        SSO.scim_provision_user(provider, %{external_id: "okta|last", email: "last@acme.test"})
+
+      # RFC 7644 applies operations in order — an IdP that reinstates and then
+      # offboards in one request means the offboard. Taking the first match let
+      # a trailing `active: false` be dropped, leaving the member signed in.
+      patch_body = %{
+        "Operations" => [
+          %{"op" => "replace", "path" => "active", "value" => true},
+          %{"op" => "replace", "path" => "active", "value" => false}
+        ]
+      }
+
+      body =
+        conn
+        |> scim_patch(token, ~p"/scim/v2/Users/okta|last", patch_body)
+        |> json_response(200)
+
+      assert body["active"] == false
+      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+    end
+
     test "a PATCH whose ops never touch `active` → 400 invalidPath", %{
       conn: conn,
       token: token,
