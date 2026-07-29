@@ -944,11 +944,73 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
         "schemas" => ["urn:ietf:params:scim:schemas:core:2.0:Group"]
       }
 
-      conn |> auth(token) |> post(~p"/scim/v2/Groups", probe) |> json_response(201)
-      conn |> auth(token) |> post(~p"/scim/v2/Groups", probe) |> json_response(201)
+      first = conn |> auth(token) |> post(~p"/scim/v2/Groups", probe) |> json_response(201)
+      second = conn |> auth(token) |> post(~p"/scim/v2/Groups", probe) |> json_response(201)
 
+      assert first["id"] == second["id"]
+
+      # One group, and it EXISTS — a memberless group used to be absent from the
+      # list and 404 on its own id, so an IdP that had just been told 201 could
+      # not find what it created and pushed it again every cycle.
       listed = conn |> auth(token) |> get(~p"/scim/v2/Groups") |> json_response(200)
-      assert listed["totalResults"] == 0
+      assert listed["totalResults"] == 1
+      assert [%{"members" => []}] = listed["Resources"]
+
+      assert conn |> auth(token) |> get(~p"/scim/v2/Groups/#{first["id"]}") |> json_response(200)
+    end
+
+    test "an empty group created with 201 is there on the next GET", %{
+      conn: conn,
+      token: token
+    } do
+      # The lifecycle violation finding 22 names: existence was derived from
+      # membership rows, so `members: []` created nothing and the IdP's very next
+      # read of the id it had just been handed returned 404.
+      body =
+        conn
+        |> auth(token)
+        |> post(~p"/scim/v2/Groups", group_payload("grp-empty", []))
+        |> json_response(201)
+
+      assert body["id"] == "grp-empty"
+
+      fetched =
+        conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-empty") |> json_response(200)
+
+      assert fetched["id"] == "grp-empty"
+      assert fetched["members"] == []
+    end
+
+    test "a group pushed before its members survives until they arrive", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      # SCIM does not order Groups after Users. A group naming people who have
+      # not been provisioned yet resolved to no members, so it disappeared.
+      conn
+      |> auth(token)
+      |> post(~p"/scim/v2/Groups", group_payload("grp-early", ["okta|late"]))
+      |> json_response(201)
+
+      assert conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-early") |> json_response(200)
+
+      joiner = provision(provider, "okta|late")
+
+      conn
+      |> auth(token)
+      |> scim_send(
+        token,
+        :put,
+        ~p"/scim/v2/Groups/grp-early",
+        group_payload("grp-early", ["okta|late"])
+      )
+      |> json_response(200)
+
+      fetched =
+        conn |> auth(token) |> get(~p"/scim/v2/Groups/grp-early") |> json_response(200)
+
+      assert fetched["members"] == [%{"value" => joiner.scim_external_id}]
     end
 
     test "GET /Groups echoes a pushed group with its members", %{

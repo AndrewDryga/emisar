@@ -17,7 +17,8 @@ defmodule Emisar.SSO do
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Users}
   alias Emisar.Auth.Subject
-  alias Emisar.SSO.{Authorizer, DirectoryGroupMember, GroupRoleMapping}
+  alias Emisar.SSO.{Authorizer, DirectoryGroup, DirectoryGroupMember}
+  alias Emisar.SSO.GroupRoleMapping
   alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, UserIdentity}
   require Logger
@@ -1318,10 +1319,15 @@ defmodule Emisar.SSO do
 
     # No `%Subject{}` here — the bearer's provider-scope IS the authz — so scope
     # by the explicit account too, as the sibling user read does.
-    counts_queryable =
-      DirectoryGroupMember.Query.not_deleted()
-      |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
-      |> DirectoryGroupMember.Query.group_counts_for_provider(provider.id)
+    #
+    # The GROUP rows decide what exists. Enumerating distinct membership rows
+    # instead meant a group with no members was absent from this list and 404'd
+    # on its own id, however recently the directory had pushed it.
+    groups_queryable =
+      DirectoryGroup.Query.not_deleted()
+      |> DirectoryGroup.Query.by_account_id(provider.account_id)
+      |> DirectoryGroup.Query.by_provider_id(provider.id)
+      |> DirectoryGroup.Query.ordered_by_external_group_id()
 
     members_queryable =
       DirectoryGroupMember.Query.not_deleted()
@@ -1342,12 +1348,12 @@ defmodule Emisar.SSO do
     mapped_displays = Map.new(Repo.all(mapped_displays_queryable))
 
     groups =
-      Enum.map(Repo.all(counts_queryable), fn %{external_group_id: id} ->
+      Enum.map(Repo.all(groups_queryable), fn %DirectoryGroup{external_group_id: id} = group ->
         %{
           external_group_id: id,
-          # What the directory last pushed wins; the mapping's copy is the
-          # fallback for groups synced before the name was stored on the rows.
-          display: Map.get(synced_displays, id) || Map.get(mapped_displays, id),
+          # The group's own name wins; the membership rows and then the mapping's
+          # copy are fallbacks for groups synced before the row existed.
+          display: group.display || Map.get(synced_displays, id) || Map.get(mapped_displays, id),
           member_external_ids: Map.get(members, id, [])
         }
       end)
@@ -1362,9 +1368,10 @@ defmodule Emisar.SSO do
   """
   def scim_fetch_group(%IdentityProvider{} = provider, external_group_id) do
     queryable =
-      DirectoryGroupMember.Query.not_deleted()
-      |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
-      |> DirectoryGroupMember.Query.by_provider_and_group(provider.id, external_group_id)
+      DirectoryGroup.Query.not_deleted()
+      |> DirectoryGroup.Query.by_account_id(provider.account_id)
+      |> DirectoryGroup.Query.by_provider_id(provider.id)
+      |> DirectoryGroup.Query.by_external_group_id(external_group_id)
 
     if Repo.exists?(queryable) do
       provider
@@ -1445,6 +1452,7 @@ defmodule Emisar.SSO do
              Repo.transaction(fn ->
                {locked_provider, first_push?} = lock_provider!(provider)
                desired_ids = resolve_member_identity_ids(locked_provider, member_external_ids)
+               :ok = upsert_directory_group(locked_provider, external_group_id, display)
                _ = refresh_group_display(locked_provider, external_group_id, display)
 
                affected =
@@ -1476,6 +1484,7 @@ defmodule Emisar.SSO do
   """
   def scim_rename_group(%IdentityProvider{} = provider, external_group_id, display) do
     with :ok <- validate_scim_group_values(external_group_id, display, []) do
+      :ok = upsert_directory_group(provider, external_group_id, display)
       _ = refresh_group_display(provider, external_group_id, display)
       {:ok, %{external_group_id: external_group_id, display: display}}
     end
@@ -1498,6 +1507,7 @@ defmodule Emisar.SSO do
       with {:ok, {current_provider, added, removed, affected}} <-
              Repo.transaction(fn ->
                {locked_provider, first_push?} = lock_provider!(provider)
+               :ok = upsert_directory_group(locked_provider, external_group_id, nil)
                add_ids = resolve_member_identity_ids(locked_provider, add_external_ids)
                remove_ids = resolve_member_identity_ids(locked_provider, remove_external_ids)
                added = add_group_members(locked_provider, external_group_id, add_ids)
@@ -1523,6 +1533,37 @@ defmodule Emisar.SSO do
   # group found nothing to remove — a no-op that took no lock and reported
   # success — while a concurrent PUT adding someone committed, leaving them
   # privileged after the directory had said they were out.
+  # A group push proves the group exists, whether or not it named any members.
+  # Deriving existence from membership rows meant an empty push created nothing,
+  # so the `GET` right after a 201 answered 404.
+  defp upsert_directory_group(%IdentityProvider{} = provider, external_group_id, display) do
+    queryable =
+      DirectoryGroup.Query.not_deleted()
+      |> DirectoryGroup.Query.by_account_id(provider.account_id)
+      |> DirectoryGroup.Query.by_provider_id(provider.id)
+      |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+
+    case Repo.peek(queryable) do
+      %DirectoryGroup{} = group ->
+        {:ok, _group} = group |> DirectoryGroup.Changeset.rename(display) |> Repo.update()
+        :ok
+
+      nil ->
+        changeset =
+          DirectoryGroup.Changeset.create(
+            provider.account_id,
+            provider.id,
+            external_group_id,
+            display
+          )
+
+        # Lost the race to a concurrent push of the same group: it exists, which
+        # is all this needed to establish.
+        _ = Repo.insert(changeset, on_conflict: :nothing)
+        :ok
+    end
+  end
+
   defp lock_provider!(%IdentityProvider{} = provider) do
     locked =
       IdentityProvider.Query.not_deleted()
@@ -2010,6 +2051,11 @@ defmodule Emisar.SSO do
     DirectoryGroupMember.Query.not_deleted()
     |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
     |> DirectoryGroupMember.Query.by_provider_id(provider.id)
+    |> Repo.update_all(set: [deleted_at: now, updated_at: now])
+
+    DirectoryGroup.Query.not_deleted()
+    |> DirectoryGroup.Query.by_account_id(provider.account_id)
+    |> DirectoryGroup.Query.by_provider_id(provider.id)
     |> Repo.update_all(set: [deleted_at: now, updated_at: now])
 
     :ok
