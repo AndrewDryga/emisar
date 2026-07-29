@@ -1438,6 +1438,64 @@ defmodule Emisar.SSOTest do
 
   # -- scim_provision_user/2 (provider-scoped) -------------------------
 
+  describe "update_provider/3 — the identity namespace is settled by the first identity" do
+    setup do
+      scim_provider()
+    end
+
+    test "refuses to repoint issuer, client id or identifier claim once someone is bound", %{
+      provider: provider,
+      subject: subject
+    } do
+      _ = provision(provider, "okta|victim")
+
+      # The takeover this closes: repoint the connection at an IdP the admin
+      # controls, mint a token whose claim equals an existing member's stored
+      # identifier, and sign in as them — the identity row matches on
+      # (provider_id, provider_identifier) and never notices the issuer moved.
+      for attrs <- [
+            %{issuer: "https://attacker.example.com"},
+            %{client_id: "attacker-client"},
+            %{identifier_claim: "oid"}
+          ] do
+        assert {:error, :identity_namespace_locked} =
+                 SSO.update_provider(provider, attrs, subject),
+               "#{inspect(attrs)} must not be editable once identities exist"
+      end
+
+      reloaded = Repo.reload!(provider)
+      assert reloaded.issuer == provider.issuer
+      assert reloaded.client_id == provider.client_id
+    end
+
+    test "still allows a secret rotation, a rename and role retargeting", %{
+      provider: provider,
+      subject: subject
+    } do
+      _ = provision(provider, "okta|bound")
+
+      assert {:ok, updated} =
+               SSO.update_provider(
+                 provider,
+                 %{name: "Renamed", client_secret: "rotated-secret", default_role: :viewer},
+                 subject
+               )
+
+      assert updated.name == "Renamed"
+      assert updated.default_role == :viewer
+    end
+
+    test "a connection nobody has signed in through is still fully editable", %{
+      provider: provider,
+      subject: subject
+    } do
+      assert {:ok, updated} =
+               SSO.update_provider(provider, %{issuer: "https://new-idp.example.com"}, subject)
+
+      assert updated.issuer == "https://new-idp.example.com"
+    end
+  end
+
   describe "scim_provision_user/2" do
     setup do
       scim_provider()

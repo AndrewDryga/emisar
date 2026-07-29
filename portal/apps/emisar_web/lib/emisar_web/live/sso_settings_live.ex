@@ -1270,6 +1270,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     "This is the only active SSO connection and the account requires single sign-on. Turn off the SSO requirement (Team → Single sign-on) before disabling or deleting it."
   end
 
+  defp error_message(:identity_namespace_locked) do
+    "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed — changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
+  end
+
   defp error_message(:email_taken) do
     "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
   end

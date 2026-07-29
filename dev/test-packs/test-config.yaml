@@ -89,6 +89,7 @@ execution:
     - TYPESENSE_URL
     - TF_BIN
     - TF_DIR
+    - TF_PLAN_DIR
     - TF_STATE_CANDIDATE_DIR
     - VAULT_ADDR
     - VAULT_TOKEN

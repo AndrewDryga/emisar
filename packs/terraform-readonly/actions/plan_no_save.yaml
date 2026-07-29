@@ -7,7 +7,7 @@ description: >
   Computes a plan but does NOT save it (no -out). Cannot be applied from this run. May call out to providers (read API quotas).
 side_effects:
   - Calls every provider's read API — quota usage applies.
-  - Does not modify state or save a plan file.
+  - Read-only — does not modify state or save a plan file.
 args: []
 execution:
   command:

@@ -1,0 +1,98 @@
+schema_version: 1
+id: tf.plan_summary
+title: Project a fresh plan into a reviewable summary
+kind: script
+risk: medium
+search_terms:
+  - review plan
+  - what will change
+  - blast radius
+  - destroy count
+description: >
+  List every resource a fresh plan would create, update, delete, or replace,
+  with per-action counts, resources that drifted outside Terraform, planned
+  output changes, and diagnostics. Attribute and output VALUES are never
+  emitted — only addresses, types, actions, and names — so a plan can be
+  reviewed without dumping the secrets a full plan carries in cleartext. Saves
+  no plan file, so nothing this returns can be applied.
+side_effects:
+  - Calls every provider's read API to refresh state — quota usage applies.
+  - Briefly holds the backend's state lock while planning.
+  - Read-only — writes no state and saves no applyable plan.
+args: []
+execution:
+  script:
+    path: scripts/plan_summary.sh
+    interpreter: /bin/bash
+  argv: [live]
+  timeout: 30m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [source, cli_version, summary, changes, drift, outputs, diagnostics]
+    properties:
+      source: {const: plan}
+      cli_version: {type: string}
+      summary:
+        type: object
+        additionalProperties: false
+        required: [total, create, update, delete, replace, read, import]
+        properties:
+          total: {type: integer, minimum: 0}
+          create: {type: integer, minimum: 0}
+          update: {type: integer, minimum: 0}
+          delete: {type: integer, minimum: 0}
+          replace: {type: integer, minimum: 0}
+          read: {type: integer, minimum: 0}
+          import: {type: integer, minimum: 0}
+      changes:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [address, resource_type, module, action, reason]
+          properties:
+            address: {type: string}
+            resource_type: {type: string}
+            module: {type: string}
+            action: {type: string}
+            reason: {type: string}
+      drift:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [address, resource_type, module, action]
+          properties:
+            address: {type: string}
+            resource_type: {type: string}
+            module: {type: string}
+            action: {type: string}
+      outputs:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, action, sensitive]
+          properties:
+            name: {type: string}
+            action: {type: string}
+            sensitive: {type: boolean}
+      diagnostics:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [severity, summary]
+          properties:
+            severity: {type: string}
+            summary: {type: string}
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Review what a plan would change
+    args: {}

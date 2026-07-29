@@ -68,6 +68,86 @@ cases:
       status: failure
       reason_contains: [must match pattern]
 
+  # The plan fixtures need a writable, initialized workspace, and /packs is
+  # mounted read-only, so each plan case stages and initializes its own copy.
+  # `terraform init` reaches no network here: the fixture uses only the builtin
+  # terraform_data resource.
+  - name: tf.plan_summary
+    action: tf.plan_summary
+    env:
+      TF_DIR: /tmp/tfreview/workspace
+    arrange:
+      - name: stage workspace
+        argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/tfreview/workspace && cp /packs/terraform-readonly/test/fixtures/plan/main.tf /tmp/tfreview/workspace/"
+      - name: initialize workspace
+        argv: [/bin/sh, -c, "cd /tmp/tfreview/workspace && terraform init -input=false"]
+    expect:
+      # Terraform emits planned_change messages in no fixed order, so identity is
+      # asserted by substring and quantity by the order-independent summary.
+      stdout_contains:
+        - terraform_data.database
+        - "terraform_data.workers[0]"
+        - "terraform_data.workers[1]"
+      stdout_not_contains:
+        - packtest-canary-terraform-plan-attribute-3f18
+        - packtest-canary-terraform-plan-output-9c3d
+        - packtest-canary-terraform-plan-secret-4b71
+      json:
+        /source: plan
+        /summary/total: 3
+        /summary/create: 3
+        /summary/update: 0
+        /summary/delete: 0
+        /summary/replace: 0
+
+  - name: tf.plan_file_summary
+    action: tf.plan_file_summary
+    args: {plan_file: review.tfplan}
+    env:
+      TF_DIR: /tmp/tfreview/workspace
+      TF_PLAN_DIR: /tmp/tfreview/plans
+    arrange:
+      - name: stage workspace
+        argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/tfreview/workspace /tmp/tfreview/plans && cp /packs/terraform-readonly/test/fixtures/plan/main.tf /tmp/tfreview/workspace/"
+      - name: initialize workspace
+        argv: [/bin/sh, -c, "cd /tmp/tfreview/workspace && terraform init -input=false"]
+      - name: save a plan the way CI would
+        argv:
+          - /bin/sh
+          - -c
+          - "cd /tmp/tfreview/workspace && terraform plan -input=false -out=/tmp/tfreview/plans/review.tfplan"
+    expect:
+      # A saved plan stores every value in cleartext, sensitive included — this
+      # asserts the projection reads none of them.
+      stdout_contains:
+        - terraform_data.database
+        - admin_token
+      stdout_not_contains:
+        - packtest-canary-terraform-plan-attribute-3f18
+        - packtest-canary-terraform-plan-output-9c3d
+        - packtest-canary-terraform-plan-secret-4b71
+      json:
+        /source: plan_file
+        /summary/total: 3
+        /summary/create: 3
+        /summary/delete: 0
+
+  - name: tf.plan_file_summary-rejects-traversal
+    action: tf.plan_file_summary
+    args: {plan_file: ../workspace/terraform.tfstate}
+    env:
+      TF_DIR: /tmp/tfreview/workspace
+      TF_PLAN_DIR: /tmp/tfreview/plans
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
+
   # TF_BIN reaches both execution shapes: the /bin/sh -c argv programs and the
   # packaged script. Proving only one would leave the other free to drift back
   # to a hardcoded terraform.

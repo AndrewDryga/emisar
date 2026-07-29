@@ -1,0 +1,104 @@
+schema_version: 1
+id: tf.plan_file_summary
+title: Project a saved plan into a reviewable summary
+kind: script
+risk: low
+search_terms:
+  - review saved plan
+  - review CI plan
+  - what will this apply change
+description: >
+  List every resource a plan file already on disk would create, update, delete,
+  or replace, in the same shape as tf.plan_summary but without contacting any
+  provider — this reads a plan CI has already computed. The filename must
+  resolve beneath TF_PLAN_DIR; symlink and traversal escapes fail closed. A
+  saved plan stores every attribute and output value in cleartext, sensitive
+  ones included; this projection reads none of them.
+side_effects:
+  - Reads one saved plan file capped at 32 MiB, plus the workspace's provider schemas.
+  - Contacts no provider and never modifies the plan or state.
+args:
+  - name: plan_file
+    type: string
+    required: true
+    description: Saved plan basename under TF_PLAN_DIR.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,126}$"
+      max_length: 127
+execution:
+  script:
+    path: scripts/plan_summary.sh
+    interpreter: /bin/bash
+  argv: [file, "{{ args.plan_file }}"]
+  timeout: 5m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [source, cli_version, summary, changes, drift, outputs, diagnostics]
+    properties:
+      source: {const: plan_file}
+      cli_version: {type: string}
+      summary:
+        type: object
+        additionalProperties: false
+        required: [total, create, update, delete, replace, read, import]
+        properties:
+          total: {type: integer, minimum: 0}
+          create: {type: integer, minimum: 0}
+          update: {type: integer, minimum: 0}
+          delete: {type: integer, minimum: 0}
+          replace: {type: integer, minimum: 0}
+          read: {type: integer, minimum: 0}
+          import: {type: integer, minimum: 0}
+      changes:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [address, resource_type, module, action, reason]
+          properties:
+            address: {type: string}
+            resource_type: {type: string}
+            module: {type: string}
+            action: {type: string}
+            reason: {type: string}
+      drift:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [address, resource_type, module, action]
+          properties:
+            address: {type: string}
+            resource_type: {type: string}
+            module: {type: string}
+            action: {type: string}
+      outputs:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, action, sensitive]
+          properties:
+            name: {type: string}
+            action: {type: string}
+            sensitive: {type: boolean}
+      diagnostics:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [severity, summary]
+          properties:
+            severity: {type: string}
+            summary: {type: string}
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Review the plan CI just built
+    args:
+      plan_file: review.tfplan

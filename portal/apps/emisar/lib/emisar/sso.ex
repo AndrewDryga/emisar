@@ -209,9 +209,16 @@ defmodule Emisar.SSO do
                :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
                :ok <-
                  Accounts.validate_runner_access_for_account(loaded_provider.account_id, access) do
-            if disabling_last_required_provider?(loaded_provider, changeset),
-              do: :require_sso_last_provider,
-              else: prepare_provider_authorization_change(loaded_provider, changeset)
+            cond do
+              disabling_last_required_provider?(loaded_provider, changeset) ->
+                :require_sso_last_provider
+
+              rebinding_identity_namespace?(loaded_provider, changeset) ->
+                :identity_namespace_locked
+
+              true ->
+                prepare_provider_authorization_change(loaded_provider, changeset)
+            end
           else
             {:error, %Ecto.Changeset{} = invalid} -> invalid
             {:error, reason} -> reason
@@ -271,6 +278,31 @@ defmodule Emisar.SSO do
   defp disabling_last_required_provider?(provider, changeset) do
     Ecto.Changeset.get_change(changeset, :enabled) == false and
       last_required_provider?(provider)
+  end
+
+  # An identity is keyed on `(provider_id, provider_identifier)`, and that
+  # identifier is whatever the configured claim carries in a token from this
+  # issuer + client. Change any of those three while identities exist and the
+  # SAME stored row starts matching a DIFFERENT person: an admin can repoint a
+  # connection at an IdP they control and mint a token whose claim equals an
+  # existing owner's identifier, then sign in as that owner. Even an innocent
+  # `sub` → `oid` switch can collide with an identifier captured earlier.
+  #
+  # So the namespace is settled by the first identity. Rotating the secret,
+  # renaming, retargeting roles and runner access all stay editable — only the
+  # three fields that decide WHO a stored identifier refers to are frozen. A
+  # genuine move to another IdP is a new connection.
+  @identity_namespace_fields [:issuer, :client_id, :identifier_claim]
+
+  defp rebinding_identity_namespace?(provider, changeset) do
+    Enum.any?(@identity_namespace_fields, &Ecto.Changeset.changed?(changeset, &1)) and
+      provider_has_identities?(provider)
+  end
+
+  defp provider_has_identities?(provider) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.by_provider_id(provider.id)
+    |> Repo.exists?()
   end
 
   defp removing_last_required_provider?(provider),

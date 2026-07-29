@@ -2,7 +2,7 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform / OpenTofu read-only ops
-version: 0.2.0
+version: 0.3.0
 description: >
   Read-only Terraform or OpenTofu CLI actions for inspecting a workspace.
   NO apply, NO destroy, NO state mutation — those should happen in CI, not
@@ -41,10 +41,16 @@ setup:
         Optional restricted directory containing candidate .tfstate files for
         metadata inspection and comparison.
       example: /srv/infra/recovery
+    - name: TF_PLAN_DIR
+      description: >
+        Optional restricted directory where CI drops saved plan files for
+        plan_file_summary to review.
+      example: /srv/infra/plans
   notes:
     - "Provider and backend auth depend entirely on what the config uses: an AWS provider/backend reads AWS_* (or an EC2/role profile), GCP reads GOOGLE_APPLICATION_CREDENTIALS, and so on — allowlist whatever your config needs."
-    - "state_list, state_show, show_json, output, state_metadata, and state_compare_metadata read the backend state, so the backend credentials must be reachable; validate, version, and state_file_metadata do not."
-    - "plan_no_save (risk medium) calls every provider's read APIs (quota usage) but never writes state or saves an applyable plan."
+    - "state_list, state_show, show_json, output, state_metadata, and state_compare_metadata read the backend state, so the backend credentials must be reachable; validate, version, state_file_metadata, and plan_file_summary do not."
+    - "plan_no_save and plan_summary (both risk medium) call every provider's read APIs (quota usage) and briefly hold the state lock, but never write state or save an applyable plan."
+    - "For review, prefer plan_summary over plan_no_save and show_json: it returns addresses, actions, counts, drift, and diagnostics as JSON while emitting no attribute or output values. plan_file_summary returns the same shape for a plan CI already saved, without contacting a provider."
     - "`state pull` may upgrade state to the local CLI's readable format; terraform_version in projected metadata can therefore reflect the runner's CLI rather than the writer of the remote snapshot."
     - "TF_BIN only reaches the action when the runner's inherit_env allowlists it, exactly like TF_DIR — an unset TF_BIN runs `terraform`."
   verify: tf.version
@@ -58,6 +64,8 @@ actions:
   - actions/output.yaml
   - actions/validate.yaml
   - actions/plan_no_save.yaml
+  - actions/plan_summary.yaml
+  - actions/plan_file_summary.yaml
   - actions/state_metadata.yaml
   - actions/state_file_metadata.yaml
   - actions/state_compare_metadata.yaml
