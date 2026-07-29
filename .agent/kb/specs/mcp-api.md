@@ -58,6 +58,43 @@ time.
 - Client-signed cloud-expanded runbook execution. That needs a separate frozen
   plan attestation and is not smuggled into the action attestation.
 
+## Protocol extensions
+
+Revision `2026-07-28` moves optional capabilities into named extensions,
+negotiated through the `extensions` map in capabilities. The portal advertises
+none of them today. Each decision below is deliberate, with the condition that
+would reverse it.
+
+**`io.modelcontextprotocol/tasks` — not adopted yet.** The extension returns a
+durable task handle instead of a result and has the client poll `tasks/get`.
+emisar already solves that shape with a durable, recoverable surface:
+`run_action` returns an operation ID and run ID immediately, `wait_for_run`
+polls and streams the output tail forward from a cursor, and `get_operation`
+recovers an ambiguous mutation. Adopting the extension would re-skin working
+tools against a specification that still lives in an experimental repository,
+and it would have to be maintained beside them, because a client that does not
+declare the extension must keep receiving today's results.
+
+Its headline feature does not fit either. A task moves to `input_required`
+when the *client* must supply something, which is the wrong actor for an
+emisar approval: approvals are decided by an operator in the console, never by
+the model's session. Routing an approval through the client would move a
+security decision to the least trusted participant.
+
+Adopt it when a real client declares `io.modelcontextprotocol/tasks` in a
+request's `_meta` client capabilities — that is observable in the request logs.
+The adapter is then thin: return `resultType: "task"` with the existing
+operation ID as `taskId`, map run status onto the task lifecycle, and answer
+`tasks/get` with what `wait_for_run` already computes.
+
+**`io.modelcontextprotocol/ui` (MCP Apps) — a product decision, not a protocol
+one.** Rendering emisar UI inside a host client is a new customer-facing
+surface: it needs the `resources` capability the portal deliberately does not
+implement, HTML templates shipped to a third-party renderer, and a security
+review of what an embedded view may show and accept. That is product design
+work, not adoption of a wire contract, and it is owned by a founder decision
+rather than this specification.
+
 ## Fixed tool catalog
 
 `tools/list` returns exactly these twelve tools:
