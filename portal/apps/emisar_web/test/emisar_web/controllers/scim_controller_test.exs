@@ -597,6 +597,54 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert resp["displayName"] == "New Name"
     end
 
+    test "Entra's name-component rename is applied, not refused", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      # Entra renames by sending the components and NO displayName. Recognizing
+      # only displayName answered 400 to both operations, so an Entra rename
+      # retried and failed forever.
+      {:ok, _} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "entra|name",
+          email: "name@acme.test",
+          full_name: "Old Name"
+        })
+
+      patch = %{
+        "schemas" => ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations" => [
+          %{"op" => "Add", "path" => "name.givenName", "value" => "Renamed"},
+          %{"op" => "Add", "path" => "name.familyName", "value" => "Entra R3"}
+        ]
+      }
+
+      body = conn |> scim_patch(token, ~p"/scim/v2/Users/entra|name", patch) |> json_response(200)
+      assert body["displayName"] == "Renamed Entra R3"
+    end
+
+    test "a component-only rename keeps the half it does not mention", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      {:ok, _} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "entra|half",
+          email: "half@acme.test",
+          full_name: "Ada Lovelace"
+        })
+
+      patch = %{
+        "schemas" => ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations" => [%{"op" => "replace", "path" => "name.givenName", "value" => "Augusta"}]
+      }
+
+      body = conn |> scim_patch(token, ~p"/scim/v2/Users/entra|half", patch) |> json_response(200)
+      assert body["displayName"] == "Augusta Lovelace"
+    end
+
     test "a PATCH with more operations than the cap → 400 tooMany", %{
       conn: conn,
       token: token,

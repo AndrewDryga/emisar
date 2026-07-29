@@ -127,6 +127,29 @@ defmodule EmisarWeb.SCIM.UserController do
   defp name_op(nil), do: :no_name_op
   defp name_op(full_name), do: {:ok, full_name}
 
+  # The stored name is one string, so split it to fill whichever half the batch
+  # left alone. Two words is the shape this reconstructs; anything else keeps the
+  # whole current value as the family part rather than inventing a split.
+  defp merged_name(identity, components) do
+    {current_given, current_family} = split_current_name(identity)
+
+    [
+      Map.get(components, :given, current_given),
+      Map.get(components, :family, current_family)
+    ]
+    |> Enum.reject(&(is_nil(&1) or &1 == ""))
+    |> Enum.join(" ")
+  end
+
+  defp split_current_name(%{user: %{full_name: name}}) when is_binary(name) and name != "" do
+    case String.split(name, " ", parts: 2) do
+      [given, family] -> {given, family}
+      [only] -> {only, nil}
+    end
+  end
+
+  defp split_current_name(_identity), do: {nil, nil}
+
   # Apply the (optional) rename first, then the (optional) active flip — a
   # rename failure (e.g. :not_found) must not half-apply the lifecycle change.
   # Lifecycle first, then the rename. The two are separate writes, so a PATCH
@@ -156,6 +179,21 @@ defmodule EmisarWeb.SCIM.UserController do
   end
 
   defp apply_rename(_conn, _external_id, :no_name_op), do: :ok
+
+  # Components name one half each, so the half this batch does not mention keeps
+  # the value it already has — a `givenName`-only correction must not drop the
+  # surname.
+  defp apply_rename(conn, external_id, {:components, components}) do
+    provider = conn.assigns.scim_provider
+
+    case SSO.scim_fetch_user(provider, external_id) do
+      {:ok, identity} ->
+        apply_rename(conn, external_id, {:ok, merged_name(identity, components)})
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 
   defp apply_rename(conn, external_id, {:ok, full_name}) do
     case SSO.scim_rename_user(conn.assigns.scim_provider, external_id, full_name) do
@@ -262,14 +300,25 @@ defmodule EmisarWeb.SCIM.UserController do
   # handling as `active_from_operations/1`. A non-string or empty value is
   # not a rename (the IdP sent nothing usable), never an error.
   # Last write wins, for the same ordering reason as `active` above.
+  # A whole name beats components, and later operations beat earlier ones — the
+  # same wire-order rule the rest of PATCH follows.
   defp name_from_operations(operations) do
-    Enum.reduce_while(operations, :no_name_op, fn op, acc ->
+    Enum.reduce(operations, :no_name_op, fn op, acc ->
       case operation_name(op) do
-        :skip -> {:cont, acc}
-        {:ok, full_name} -> {:cont, {:ok, full_name}}
+        :skip -> acc
+        {:ok, full_name} -> {:ok, full_name}
+        {:component, part, value} -> put_component(acc, part, value)
       end
     end)
   end
+
+  # A whole name already won; components cannot override it.
+  defp put_component({:ok, full_name}, _part, _value), do: {:ok, full_name}
+
+  defp put_component({:components, components}, part, value),
+    do: {:components, Map.put(components, part, value)}
+
+  defp put_component(_acc, part, value), do: {:components, %{part => value}}
 
   defp operation_name(%{} = op) do
     if replace_or_add?(Map.get(op, "op")) do
@@ -281,10 +330,19 @@ defmodule EmisarWeb.SCIM.UserController do
 
   defp operation_name(_op), do: :skip
 
-  defp name_from_op(path, value) when is_binary(path) do
-    if String.downcase(path) == "displayname" and is_binary(value) and value != "",
-      do: {:ok, value},
-      else: :skip
+  # Entra renames by sending the name COMPONENTS and no `displayName`:
+  #   {"op": "Add", "path": "name.givenName",  "value": "Renamed"},
+  #   {"op": "Add", "path": "name.familyName", "value": "Entra R3"}
+  # Recognizing only `displayName` answered 400 to both, so an Entra rename
+  # retried and failed forever.
+  defp name_from_op(path, value) when is_binary(path) and is_binary(value) and value != "" do
+    case String.downcase(path) do
+      "displayname" -> {:ok, value}
+      "name.formatted" -> {:ok, value}
+      "name.givenname" -> {:component, :given, value}
+      "name.familyname" -> {:component, :family, value}
+      _ -> :skip
+    end
   end
 
   defp name_from_op(nil, %{"displayName" => value}) when is_binary(value) and value != "",
