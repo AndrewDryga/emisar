@@ -301,7 +301,17 @@ func main() {
 		return cfg.Issuer == d.issuer, nil
 	})
 
+	// Order matters: discovery and the bearer boundary first (they touch no
+	// state), then provisioning, then the OIDC login that needs alice live —
+	// and offboarding last, because it revokes the session that login created.
+	d.testDiscovery()
+	d.testBearerBoundary()
 	d.testSCIM()
+	d.testGroupLifecycle()
+	d.testRoleMapping()
+	d.testUserOrdering()
+	d.testBounds()
 	d.testOIDC()
+	d.testOffboardingEndsAccess()
 	logf("ALL SSO e2e CHECKS PASSED ✓")
 }

@@ -96,6 +96,13 @@ func (a *App) e2eSSO(ctx context.Context) error {
 	env["KC_USER"] = "alice"
 	env["KC_PASS"] = "Sleep-tight-1234"
 	env["ALICE_KC_ID"] = "a11ce000-0000-4000-8000-000000000001"
+	// SCIM and OIDC show an IdP's view. Role recomputes, membership flags and
+	// session revocation are domain state no protocol surface exposes, so the
+	// harness reaches them the way an operator would on a box: an RPC into the
+	// running release.
+	env["PORTAL_RPC"] = strings.Join([]string{
+		"docker", "compose", "exec", "-T", "portal", "bin/emisar", "rpc",
+	}, " ")
 	return a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/sso-e2e")
 }
 
