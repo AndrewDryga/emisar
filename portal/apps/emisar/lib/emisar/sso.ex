@@ -781,20 +781,60 @@ defmodule Emisar.SSO do
       |> UserIdentity.Query.by_provider_and_identifier(provider.id, external_id)
 
     case Repo.peek(queryable) do
-      %UserIdentity{} = identity -> load_provisioned(provider, identity)
+      %UserIdentity{} = identity -> load_provisioned(provider, identity, external_id, attrs)
       nil -> provision_scim_user(provider, external_id, attrs)
     end
   end
 
-  # A re-POST of an existing identity RE-PROVISIONS the user (#4/#10): some IdPs
-  # re-create rather than PATCH active:true. Reinstate a suspended membership,
-  # or create one if it was removed (soft-deleted) while the identity lived on,
-  # and flip the identity back to scim_active. Idempotent for an active member.
-  defp load_provisioned(%IdentityProvider{} = provider, %UserIdentity{} = identity) do
+  # A re-POST of an existing identity RECONCILES it to the state the directory
+  # just asserted (#4/#10: some IdPs re-create rather than PATCH active:true).
+  #
+  # It reconciles to the POSTed `active`, and does NOT force the member active.
+  # Forcing it meant a duplicate or replayed create carrying `active: false`
+  # reinstated a suspended member — the IdP said "inactive" and we heard
+  # "active", silently undoing an offboarding.
+  #
+  # It also adopts an OIDC-first identity, which has a `provider_identifier` but
+  # no `scim_external_id`. Reusing one without stamping it left the member
+  # invisible to every SCIM lifecycle endpoint (they look up by
+  # `scim_external_id`), so the directory could create them and never offboard
+  # them.
+  defp load_provisioned(
+         %IdentityProvider{} = provider,
+         %UserIdentity{} = identity,
+         external_id,
+         attrs
+       ) do
     with {:ok, user} <- Users.fetch_user_by_id(identity.user_id),
-         {:ok, _membership} <- reprovision_membership(provider, user, identity),
+         {:ok, identity} <- adopt_scim_identity(identity, external_id) do
+      reconcile_provisioned(provider, user, identity, scim_active_from(attrs))
+    end
+  end
+
+  defp adopt_scim_identity(%UserIdentity{scim_external_id: nil} = identity, external_id)
+       when is_binary(external_id) do
+    identity
+    |> UserIdentity.Changeset.adopt_scim_external_id(external_id)
+    |> Repo.update()
+  end
+
+  defp adopt_scim_identity(%UserIdentity{} = identity, _external_id), do: {:ok, identity}
+
+  # active: true — reinstate a directory suspension (a MANUAL suspend still
+  # holds, per reprovision_membership) and recompute the mapped role.
+  defp reconcile_provisioned(%IdentityProvider{} = provider, user, identity, true) do
+    with {:ok, _membership} <- reprovision_membership(provider, user, identity),
          {:ok, identity} <- ensure_scim_active(identity),
          {:ok, membership} <- recompute_role_for_identity(provider, identity) do
+      {:ok, %{user: user, identity: identity, membership: membership}}
+    end
+  end
+
+  # active: false — the same deprovision a PATCH/DELETE performs, so a create
+  # that asserts "inactive" lands the member in exactly the offboarded state.
+  defp reconcile_provisioned(%IdentityProvider{} = provider, user, identity, false) do
+    with {:ok, membership} <- sync_membership(provider, identity.user_id, :deactivate),
+         {:ok, identity} <- Repo.update(UserIdentity.Changeset.set_scim_active(identity, false)) do
       {:ok, %{user: user, identity: identity, membership: membership}}
     end
   end

@@ -1443,6 +1443,64 @@ defmodule Emisar.SSOTest do
       scim_provider()
     end
 
+    test "a duplicate create carrying active:false offboards rather than reactivating", %{
+      provider: provider
+    } do
+      # A replayed or duplicated POST used to force the member active: the IdP
+      # said "inactive" and we heard "active", silently undoing an offboarding.
+      %{membership: created} = provision(provider, "departed-1", %{active: false})
+      refute is_nil(created.disabled_at)
+
+      %{identity: identity, membership: membership} =
+        provision(provider, "departed-1", %{active: false})
+
+      refute identity.scim_active
+      refute is_nil(membership.disabled_at), "a repeated active:false must not reinstate"
+    end
+
+    test "a create carrying active:false deactivates a member who is currently active", %{
+      provider: provider
+    } do
+      %{membership: active} = provision(provider, "leaver-1")
+      assert is_nil(active.disabled_at)
+
+      %{identity: identity, membership: membership} =
+        provision(provider, "leaver-1", %{active: false})
+
+      refute identity.scim_active
+      refute is_nil(membership.disabled_at)
+    end
+
+    test "adopts an OIDC-first identity so SCIM can later offboard it", %{
+      provider: provider,
+      account: account
+    } do
+      # An identity created by an SSO sign-in has a provider_identifier but no
+      # scim_external_id. The directory reuses it here — and without stamping it,
+      # every later GET/PATCH/DELETE /Users/{id} (which look up by
+      # scim_external_id) 404s and the member can never be offboarded.
+      user = Fixtures.Users.create_user()
+
+      {:ok, oidc_identity} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
+          provider_identifier: "shared-id",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+        |> Repo.insert()
+
+      assert is_nil(oidc_identity.scim_external_id)
+
+      %{identity: adopted} = provision(provider, "shared-id")
+      assert adopted.id == oidc_identity.id
+      assert adopted.scim_external_id == "shared-id"
+
+      # …and the lifecycle endpoints can now find it.
+      assert {:ok, %{identity: deactivated}} = SSO.scim_deactivate_user(provider, "shared-id")
+      refute deactivated.scim_active
+    end
+
     test "creates a user_identity + directory-owned membership at the provider defaults" do
       %{provider: provider, account: account, subject: subject} =
         scim_provider(%{
