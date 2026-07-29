@@ -734,8 +734,8 @@ defmodule EmisarWeb.SSOSettingsLive do
                to: ~p"/app/#{socket.assigns.current_account}/settings/sso/#{provider.id}"
              )}
 
-          {:error, %Ecto.Changeset{}} ->
-            {:noreply, assign(socket, :edit_form, edit_form(provider, params, :update))}
+          {:error, %Ecto.Changeset{} = changeset} ->
+            {:noreply, assign(socket, :edit_form, edit_form_from(changeset, provider))}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, error_message(reason))}
@@ -1063,8 +1063,32 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # Refresh just one provider's mapping list (after a mapping CRUD), leaving the
   # other providers' panels untouched.
-  defp reload_mappings(socket, provider),
-    do: put_mappings(socket, provider.id, list_mappings(socket, provider))
+  defp reload_mappings(socket, provider) do
+    socket
+    |> put_mappings(provider.id, list_mappings(socket, provider))
+    |> reannotate_synced_groups(provider.id)
+  end
+
+  # The synced-groups readout carries each group's mapping badge, so a mapping
+  # CRUD has to re-annotate it too. Refreshing only the mapping LIST left the
+  # readout showing a role badge for a mapping that had just been deleted. The
+  # groups themselves have not changed — this re-derives their annotation from
+  # the mapping lists now in the socket, with no extra read.
+  defp reannotate_synced_groups(socket, provider_id) do
+    annotated =
+      socket.assigns.synced_groups
+      |> Map.get(provider_id, [])
+      |> annotate_synced_groups(
+        Map.get(socket.assigns.group_mappings, provider_id, []),
+        Map.get(socket.assigns.runner_access_mappings, provider_id, [])
+      )
+
+    assign(
+      socket,
+      :synced_groups,
+      Map.put(socket.assigns.synced_groups, provider_id, annotated)
+    )
+  end
 
   defp reload_mappings_for_id(socket, provider_id) do
     case find_provider(socket, provider_id) do
@@ -1076,11 +1100,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp reload_runner_access_mappings(socket, provider) do
     mappings = list_runner_access_mappings(socket, provider)
 
-    assign(
-      socket,
+    socket
+    |> assign(
       :runner_access_mappings,
       Map.put(socket.assigns.runner_access_mappings, provider.id, mappings)
     )
+    |> reannotate_synced_groups(provider.id)
   end
 
   defp reload_runner_access_mappings_for_id(socket, provider_id) do
@@ -1356,6 +1381,18 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> maybe_put_action(action)
 
     to_form(changeset, as: "provider", id: "edit-provider-#{provider.id}")
+  end
+
+  # Render the changeset the WRITE returned. Rebuilding a fresh one from the same
+  # params re-runs only the in-process validations, so the database's verdict — a
+  # second connection claiming an allowed email domain already taken — was
+  # dropped and the form came back with no error at all. Only the STORED secret
+  # is redacted; the errors survive.
+  defp edit_form_from(%Ecto.Changeset{} = changeset, provider) do
+    changeset
+    |> Map.put(:data, %{changeset.data | client_secret: nil})
+    |> Map.put(:action, :update)
+    |> to_form(as: "provider", id: "edit-provider-#{provider.id}")
   end
 
   defp maybe_put_action(changeset, nil), do: changeset
@@ -2860,9 +2897,9 @@ defmodule EmisarWeb.SSOSettingsLive do
               >
                 Edit
               </.button>
-              <%!-- Reversible config (re-addable; members keep their role until
-                   the next sync) — a plain confirm fits the tier, not a
-                   typed-confirm. `delete_mapping` stays server-authz-gated. --%>
+              <%!-- Reversible config (re-addable) — a plain confirm fits the
+                   tier, not a typed-confirm. `delete_mapping` stays
+                   server-authz-gated. --%>
               <.confirm_button
                 id={"delete-mapping-#{mapping.id}"}
                 title="Delete this group mapping?"
@@ -2873,7 +2910,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 on_confirm={JS.push("delete_mapping", value: %{id: mapping.id})}
               >
                 <:body>
-                  Members keep their current role until the next sync recomputes it from their remaining mapped groups.
+                  Members of this group have their role recomputed straight away from whichever mapped groups they are still in.
                 </:body>
                 Delete
               </.confirm_button>
