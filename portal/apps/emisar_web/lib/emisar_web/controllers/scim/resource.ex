@@ -29,14 +29,20 @@ defmodule EmisarWeb.SCIM.Resource do
   the provision/lifecycle functions return (the user carries the email used
   for `userName`).
   """
+  # The lifecycle writes return `%{identity:, membership:}` with no `:user`, but
+  # the identity they carry has one preloaded. Taking the map's key alone meant a
+  # deactivate or reactivate answered with no name on it.
   def to_user(%{identity: %SSO.UserIdentity{} = identity} = result),
-    do: to_user(identity, result[:user])
+    do: to_user(identity, result[:user] || loaded_user(identity))
 
   # A preloaded user is the same source the create response renders from, so the
   # handle stays the same value across POST, GET and list.
   def to_user(%SSO.UserIdentity{user: %{} = user} = identity), do: to_user(identity, user)
 
   def to_user(%SSO.UserIdentity{} = identity), do: to_user(identity, nil)
+
+  defp loaded_user(%SSO.UserIdentity{user: %{} = user}), do: user
+  defp loaded_user(_identity), do: nil
 
   # The SCIM resource `id` is the IdP's externalId, not our internal UUID.
   # SCIM `id` is server-assigned and opaque to the client; the domain keys
@@ -159,10 +165,16 @@ defmodule EmisarWeb.SCIM.Resource do
 
   # Prefer `name.formatted`; else join `givenName` + `familyName`; else
   # `displayName`. Returns nil when the IdP sent nothing usable.
+  # `displayName` first. Serving `name.formatted` back to the IdP means the IdP
+  # echoes it on the next write — Okta sends a stale `name.formatted` alongside a
+  # FRESH `displayName` and fresh name components, and preferring the formatted
+  # value meant a rename was accepted, reported successful, and silently kept the
+  # old name. The freshest signal a client sends wins; `formatted` stays as the
+  # fallback for clients that send nothing else.
   defp parse_full_name(params) do
     name = Map.get(params, "name")
 
-    formatted_name(name) || assembled_name(name) || string_or_nil(Map.get(params, "displayName"))
+    string_or_nil(Map.get(params, "displayName")) || assembled_name(name) || formatted_name(name)
   end
 
   defp formatted_name(%{"formatted" => formatted}) when is_binary(formatted) and formatted != "",

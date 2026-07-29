@@ -342,6 +342,34 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["displayName"] == "Renamed"
     end
 
+    test "Okta's Group Push settle of `id` + displayName is applied, not refused", %{
+      conn: conn,
+      token: token
+    } do
+      # Okta pushes a pathless replace carrying the group's own id alongside its
+      # name. Splitting that map left an `id` operation nothing handled, and the
+      # 400 stopped the push before any membership could apply.
+      conn
+      |> auth(token)
+      |> post(~p"/scim/v2/Groups", group_payload("grp-push", []))
+      |> json_response(201)
+
+      body =
+        conn
+        |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-push", %{
+          "Operations" => [
+            %{
+              "op" => "replace",
+              "value" => %{"id" => "grp-push", "displayName" => "Pushed Name"}
+            }
+          ]
+        })
+        |> json_response(200)
+
+      assert body["displayName"] == "Pushed Name"
+      assert body["externalId"] == "grp-push"
+    end
+
     test "a rename batched with member changes applies both", %{
       conn: conn,
       token: token,

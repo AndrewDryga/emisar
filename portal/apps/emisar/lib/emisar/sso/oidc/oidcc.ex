@@ -338,7 +338,11 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   defp configuration_opts(%IdentityProvider{kind: :entra}) do
     %{
       request_opts: request_opts(),
-      quirks: %{document_overrides: %{code_challenge_methods_supported: [<<"S256">>]}}
+      # BINARY key: `document_overrides` is merged into the raw decoded discovery
+      # JSON before parsing, and oidcc looks every field up by
+      # `atom_to_binary(Key)`. An atom key here is silently ignored, which is
+      # exactly what happened the first time.
+      quirks: %{document_overrides: %{<<"code_challenge_methods_supported">> => [<<"S256">>]}}
     }
   end
 

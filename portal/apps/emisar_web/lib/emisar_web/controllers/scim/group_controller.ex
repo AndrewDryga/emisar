@@ -84,7 +84,7 @@ defmodule EmisarWeb.SCIM.GroupController do
     {renames, member_operations} =
       operations
       |> Enum.flat_map(&split_pathless_attributes/1)
-      |> Enum.reject(&settles_external_id?(&1, external_id))
+      |> Enum.reject(&settles_identity?(&1, external_id))
       |> Enum.split_with(&rename_op?/1)
 
     # Members first, then the rename. The display is a single scalar, so its
@@ -142,13 +142,20 @@ defmodule EmisarWeb.SCIM.GroupController do
   # left its role mapping permanently unapplied. A PATCH setting `externalId` to
   # THIS group's id is accepted as the no-op it is; one naming a different id is
   # left in place to be refused, because moving a resource is not something we do.
-  defp settles_external_id?(op, external_id) do
-    replace?(op) and external_id_path?(Map.get(op, "path")) and
+  # Okta's Group Push sends a pathless replace carrying `{id, displayName}`, and
+  # Entra PATCHes `externalId` after reading a group back. Both name the group's
+  # OWN identifier, so both ask for what is already true — but splitting them out
+  # left an `id` operation nothing could handle, and the 400 stopped Okta's push
+  # before any membership applied. An operation setting this group's identity to
+  # the value it already has is the no-op it claims to be; one naming a DIFFERENT
+  # value stays in the list to be refused, because we do not move a resource.
+  defp settles_identity?(op, external_id) do
+    replace?(op) and identity_path?(Map.get(op, "path")) and
       Map.get(op, "value") == external_id
   end
 
-  defp external_id_path?(path) when is_binary(path), do: downcase(path) == "externalid"
-  defp external_id_path?(_path), do: false
+  defp identity_path?(path) when is_binary(path), do: downcase(path) in ["id", "externalid"]
+  defp identity_path?(_path), do: false
 
   defp rename_op?(op), do: rename_display(op) != nil
 

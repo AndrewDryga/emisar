@@ -569,6 +569,34 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
+    test "a fresh displayName beats a stale name.formatted the IdP echoed back", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      # We serve `name.formatted`, so Okta sends it straight back on the next
+      # write — alongside the NEW displayName. Preferring the formatted value
+      # meant the rename was accepted, reported successful, and kept the old name.
+      {:ok, _} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|echo",
+          email: "echo@acme.test",
+          full_name: "Old Name"
+        })
+
+      body = %{
+        "schemas" => ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        "externalId" => "okta|echo",
+        "userName" => "echo@acme.test",
+        "active" => true,
+        "displayName" => "New Name",
+        "name" => %{"formatted" => "Old Name", "givenName" => "New"}
+      }
+
+      resp = conn |> scim_put(token, ~p"/scim/v2/Users/okta|echo", body) |> json_response(200)
+      assert resp["displayName"] == "New Name"
+    end
+
     test "a PATCH with more operations than the cap → 400 tooMany", %{
       conn: conn,
       token: token,
@@ -1596,25 +1624,24 @@ defmodule EmisarWeb.SCIMControllerTest do
                Resource.parse_user(%{"externalId" => "okta|h2", "userName" => "plainhandle"})
     end
 
-    test "full_name resolves formatted → assembled → displayName, in that order" do
-      formatted = %{
-        "externalId" => "okta|n1",
-        "name" => %{"formatted" => "Ada Lovelace", "givenName" => "Ada", "familyName" => "L"},
-        "displayName" => "Ada D"
-      }
+    test "full_name resolves displayName → assembled → formatted, in that order" do
+      # displayName FIRST, and the order matters live: we serve `name.formatted`
+      # back, so Okta echoes a stale one alongside the fresh displayName on the
+      # next write. Preferring formatted meant a rename was accepted, reported
+      # successful, and silently kept the old name.
+      assert Resource.parse_user(%{
+               "displayName" => "Fresh Name",
+               "name" => %{"formatted" => "Stale Name", "givenName" => "Fresh"}
+             })[:full_name] == "Fresh Name"
 
-      assert %{full_name: "Ada Lovelace"} = Resource.parse_user(formatted)
+      # Without a displayName, the components win over a formatted value…
+      assert Resource.parse_user(%{
+               "name" => %{"formatted" => "Stale Name", "givenName" => "Ada", "familyName" => "L"}
+             })[:full_name] == "Ada L"
 
-      assembled = %{
-        "externalId" => "okta|n2",
-        "name" => %{"givenName" => "Grace", "familyName" => "Hopper"},
-        "displayName" => "Grace D"
-      }
-
-      assert %{full_name: "Grace Hopper"} = Resource.parse_user(assembled)
-
-      display_only = %{"externalId" => "okta|n3", "displayName" => "Just Display"}
-      assert %{full_name: "Just Display"} = Resource.parse_user(display_only)
+      # …and formatted remains the fallback for a client that sends only it.
+      assert Resource.parse_user(%{"name" => %{"formatted" => "Only Formatted"}})[:full_name] ==
+               "Only Formatted"
     end
 
     test ~s|Entra's string `"True"`/`"False"` active is parsed case-insensitively|, %{
