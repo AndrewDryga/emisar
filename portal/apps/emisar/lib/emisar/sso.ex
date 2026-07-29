@@ -819,6 +819,7 @@ defmodule Emisar.SSO do
 
     Multi.new()
     |> put_active_account_lock(provider.account_id)
+    |> put_provider_lock(provider)
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
     |> Multi.run(:identity, fn _repo, %{user: user} ->
       create_identity(provider, user, identifier, claims, created_by, provisioned_via)
@@ -1149,6 +1150,7 @@ defmodule Emisar.SSO do
     }
 
     Multi.new()
+    |> put_provider_lock(provider)
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
     |> Multi.run(:identity, fn _repo, %{user: user} ->
       create_scim_identity(provider, user, external_id, attrs)
@@ -1203,6 +1205,25 @@ defmodule Emisar.SSO do
          {:ok, membership} <- sync_membership(provider, identity.user_id, :deactivate),
          {:ok, identity} <- Repo.update(UserIdentity.Changeset.set_scim_active(identity, false)) do
       {:ok, %{identity: identity, membership: membership}}
+    end
+  end
+
+  @doc """
+  Internal — would a deprovision be refused? `:ok`, or the reason it would fail.
+
+  The SCIM boundary asks before it writes anything else, because a PATCH may
+  carry a rename alongside the deactivation and the last-active-owner guard can
+  refuse the deactivation — committing the rename and then answering 409 tells
+  the directory its whole operation was rejected when half of it landed.
+  """
+  def scim_can_deactivate_user(%IdentityProvider{} = provider, external_id) do
+    with {:ok, identity} <- fetch_scim_identity(provider, external_id),
+         %Accounts.Membership{} = membership <-
+           Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
+      Accounts.ensure_sync_suspend_allowed(membership, provider)
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -1564,13 +1585,27 @@ defmodule Emisar.SSO do
     end
   end
 
+  defp lock_provider_row!(%IdentityProvider{} = provider, repo \\ Repo) do
+    IdentityProvider.Query.not_deleted()
+    |> IdentityProvider.Query.by_account_id(provider.account_id)
+    |> IdentityProvider.Query.by_id(provider.id)
+    |> IdentityProvider.Query.lock_for_update()
+    |> repo.fetch!(IdentityProvider.Query)
+  end
+
+  # Minting an identity takes the same provider lock a config edit does, so the
+  # namespace check and the write that would violate it cannot interleave. The
+  # check found no live identity while a callback was mid-flight, the edit
+  # committed, and the callback then wrote an identifier from the OLD namespace
+  # under the new configuration.
+  defp put_provider_lock(multi, %IdentityProvider{} = provider) do
+    Multi.run(multi, :locked_provider, fn repo, _changes ->
+      {:ok, lock_provider_row!(provider, repo)}
+    end)
+  end
+
   defp lock_provider!(%IdentityProvider{} = provider) do
-    locked =
-      IdentityProvider.Query.not_deleted()
-      |> IdentityProvider.Query.by_account_id(provider.account_id)
-      |> IdentityProvider.Query.by_id(provider.id)
-      |> IdentityProvider.Query.lock_for_update()
-      |> Repo.fetch!(IdentityProvider.Query)
+    locked = lock_provider_row!(provider)
 
     # Reaching a group write IS the directory pushing groups. Stamped under the
     # same lock the write holds, so the recompute below can tell an empty
@@ -2581,11 +2616,12 @@ defmodule Emisar.SSO do
          %IdentityProvider{} = provider,
          %LinkRequest{} = request,
          _access,
-         subject
+         %Subject{} = subject
        ) do
     Multi.new()
+    |> put_provider_lock(provider)
     |> Multi.run(:user, fn _repo, _changes ->
-      fetch_matched_member(provider, request)
+      fetch_matched_member(provider, request, subject)
     end)
     |> Multi.run(:identity, fn _repo, %{user: user} ->
       link_identity(provider, user, request)
@@ -2601,11 +2637,23 @@ defmodule Emisar.SSO do
 
   # Re-verify at approval time (the match was recorded at capture): the matched
   # user must still exist AND still be a member of this account.
-  defp fetch_matched_member(%IdentityProvider{} = provider, %LinkRequest{} = request) do
+  # Re-judge the target INSIDE the transaction, not just re-fetch them. The
+  # authority check that runs before the approval reads state the approval then
+  # acts on moments later: a concurrent promotion to owner, or a membership
+  # granted in another account, both landed after validation and before the
+  # binding — leaving an attacker-supplied credential attached to a user who had
+  # since become someone this admin has no authority over.
+  defp fetch_matched_member(
+         %IdentityProvider{} = provider,
+         %LinkRequest{} = request,
+         %Subject{} = subject
+       ) do
     with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
-         %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id) do
+         %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id),
+         :ok <- ensure_link_target_within_authority(request, provider, subject) do
       {:ok, user}
     else
+      {:error, reason} when is_atom(reason) -> {:error, reason}
       _ -> {:error, :matched_user_unavailable}
     end
   end

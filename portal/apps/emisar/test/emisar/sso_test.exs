@@ -1884,6 +1884,41 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "scim_can_deactivate_user/2" do
+    test "answers before a PATCH writes anything else" do
+      # A PATCH may carry a rename alongside the deactivation. Committing the
+      # rename and THEN answering 409 told the directory its whole operation was
+      # rejected when half of it had landed.
+      %{provider: provider, account: account, subject: subject} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|onlyowner")
+
+      # Make the synced member the account's ONLY owner — the state the guard
+      # exists for.
+      membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+      owner = Fixtures.Memberships.force_role(membership, "owner")
+      assert owner.role == :owner
+
+      account.id
+      |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+      |> Fixtures.Memberships.force_role("admin")
+
+      assert {:error, :last_owner} = SSO.scim_can_deactivate_user(provider, "okta|onlyowner")
+    end
+
+    test "allows a member the guard does not protect" do
+      %{provider: provider} = scim_provider()
+      provision(provider, "okta|ordinary")
+
+      assert :ok = SSO.scim_can_deactivate_user(provider, "okta|ordinary")
+    end
+
+    test "an unknown externalId is not found" do
+      %{provider: provider} = scim_provider()
+
+      assert {:error, :not_found} = SSO.scim_can_deactivate_user(provider, "okta|nobody")
+    end
+  end
+
   describe "scim_deactivate_user/2" do
     test "ends only this account's sessions — the person stays signed in elsewhere" do
       # A session token is per-user, not per-account, so revoking them all let one

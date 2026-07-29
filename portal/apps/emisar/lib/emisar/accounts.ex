@@ -1458,6 +1458,24 @@ defmodule Emisar.Accounts do
   # A non-owner leaving play never threatens owner coverage.
   defp ensure_not_last_active_owner(%Membership{}), do: :ok
 
+  @doc """
+  Internal — SCIM: would `sync_suspend_membership/2` be refused? `:ok` or the
+  reason. The SCIM boundary asks before it makes any other write in the same
+  PATCH, so a refusal leaves nothing half-applied. This is advisory — the real
+  guards still run under the row lock in the write itself.
+  """
+  def ensure_sync_suspend_allowed(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
+    with :ok <- ensure_membership_in_provider_account(membership, provider),
+         :ok <- ensure_not_suspended(membership) do
+      ensure_not_last_active_owner(membership)
+    else
+      # Already suspended is a legitimate no-op, not a refusal — the write path
+      # rides it out through the same channel.
+      {:error, {:noop, %Membership{}}} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   # A role change only threatens owner coverage when it demotes an owner.
   defp ensure_demotion_keeps_an_owner(%Membership{role: :owner} = membership, new_role)
        when new_role != :owner,

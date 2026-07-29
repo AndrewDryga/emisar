@@ -129,10 +129,29 @@ defmodule EmisarWeb.SCIM.UserController do
 
   # Apply the (optional) rename first, then the (optional) active flip — a
   # rename failure (e.g. :not_found) must not half-apply the lifecycle change.
+  # Lifecycle first, then the rename. The two are separate writes, so a PATCH
+  # carrying both used to commit the rename and THEN fail the deactivation — the
+  # last-active-owner guard answers 409 — leaving the directory told its whole
+  # operation was rejected while half of it had already landed. Ordering the
+  # refusable write first means a rejected PATCH changes nothing.
   defp apply_operations(conn, external_id, name_op, active_op) do
-    case apply_rename(conn, external_id, name_op) do
-      :ok -> apply_operations_active(conn, external_id, active_op)
+    with :ok <- check_active(conn, external_id, active_op),
+         :ok <- apply_rename(conn, external_id, name_op) do
+      apply_operations_active(conn, external_id, active_op)
+    else
       {:error, reason} -> render_error(conn, reason)
+    end
+  end
+
+  # Ask the domain whether the lifecycle change is permitted before anything is
+  # written. `scim_deactivate_user` is the only refusable one (last active owner).
+  defp check_active(_conn, _external_id, :no_active_op), do: :ok
+  defp check_active(_conn, _external_id, {:ok, true}), do: :ok
+
+  defp check_active(conn, external_id, {:ok, false}) do
+    case SSO.scim_can_deactivate_user(conn.assigns.scim_provider, external_id) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 

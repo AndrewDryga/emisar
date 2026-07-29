@@ -2274,6 +2274,41 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "ensure_sync_suspend_allowed/2" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      %{account: account, provider: provider}
+    end
+
+    test "refuses the last active owner before anything else is written", %{
+      account: account,
+      provider: provider
+    } do
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      assert {:error, :last_owner} =
+               Accounts.ensure_sync_suspend_allowed(owner, provider)
+    end
+
+    test "allows an ordinary member, and an already-suspended one", %{
+      account: account,
+      provider: provider
+    } do
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      assert :ok = Accounts.ensure_sync_suspend_allowed(member, provider)
+
+      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
+      assert :ok = Accounts.ensure_sync_suspend_allowed(suspended, provider)
+    end
+
+    test "refuses a membership outside the provider's account", %{provider: provider} do
+      other = Fixtures.Memberships.create_membership(role: "operator")
+
+      assert {:error, :not_found} = Accounts.ensure_sync_suspend_allowed(other, provider)
+    end
+  end
+
   describe "sync_reinstate_membership/2" do
     setup do
       account = Fixtures.Accounts.create_account()
