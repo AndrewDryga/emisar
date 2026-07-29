@@ -528,7 +528,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("delete_mapping", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.has_sso_permission?,
+      socket.assigns.can_configure_directory_sync?,
       &do_delete_mapping(&1, id)
     )
   end
@@ -638,7 +638,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("delete_runner_access_mapping", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.has_sso_permission?,
+      socket.assigns.can_configure_directory_sync?,
       &do_delete_runner_access_mapping(&1, id)
     )
   end
@@ -1952,7 +1952,8 @@ defmodule EmisarWeb.SSOSettingsLive do
                 >
                   <:body>
                     Removes the connection and stops new sign-ins through it. Members who sign in
-                    only through it lose access until it's re-added; existing sessions aren't ended.
+                    only through it lose access until it's re-added, and the sessions they signed
+                    in with are ended.
                     This can't be undone.
                   </:body>
                   Delete connection
@@ -1975,7 +1976,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <:body>
                 Permanently removes the <span class="font-medium text-rose-100">{provider.name}</span>
                 connection. Members who sign in only through it lose access until it's re-added.
-                Existing sessions aren't ended. This can't be undone.
+                The sessions they signed in through it are ended. This can't be undone.
               </:body>
             </.confirm_dialog>
           </div>
@@ -1998,17 +1999,49 @@ defmodule EmisarWeb.SSOSettingsLive do
     <section class="mt-8">
       <.section_header title={@provider.name} />
       <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-        This connection is still accepting sign-ins. Upgrade to configure it again, or remove it
-        now — removing it needs no plan.
+        This connection is still accepting sign-ins, and its directory token still works. Upgrade
+        to configure it again, or shut either one down now — neither needs a plan.
       </p>
       <div class="mt-4 divide-y divide-zinc-800/70">
+        <%!-- Containing a leaked directory token must not cost the operator their
+             working sign-in. Offering only "delete the connection" made it. --%>
+        <.confirm_zone
+          :if={@provider.scim_enabled}
+          title="Turn off directory sync"
+          phx-click={show_confirm_dialog("disable-scim-#{@provider.id}")}
+        >
+          <:body>
+            Clears this connection's directory token, so your identity provider stops pushing
+            users and the token stops authenticating. Sign-in through this connection is
+            unaffected. Members keep the roles the directory last gave them.
+          </:body>
+          Turn off directory sync
+        </.confirm_zone>
+
+        <.confirm_dialog
+          :if={@provider.scim_enabled}
+          id={"disable-scim-#{@provider.id}"}
+          title="Turn off directory sync"
+          confirm_label="Turn off"
+          on_confirm={
+            JS.push("disable_scim", value: %{id: @provider.id})
+            |> hide_confirm_dialog("disable-scim-#{@provider.id}")
+          }
+        >
+          <:body>
+            The directory token stops working immediately. Members keep their current roles, and
+            you take over managing them here.
+          </:body>
+        </.confirm_dialog>
+
         <.confirm_zone
           title="Delete this connection"
           phx-click={show_confirm_dialog("delete-provider-#{@provider.id}")}
         >
           <:body>
             Removes the connection and stops new sign-ins through it. Members who sign in only
-            through it lose access; existing sessions aren't ended. This can't be undone.
+            through it lose access, and the sessions they signed in with are ended. This can't be
+            undone.
           </:body>
           Delete connection
         </.confirm_zone>

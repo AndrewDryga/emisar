@@ -182,7 +182,13 @@ defmodule Emisar.SSO do
   def configure_provider(attrs, %Subject{account: account} = subject) do
     changeset = IdentityProvider.Changeset.create(account.id, attrs)
 
+    default_role = Ecto.Changeset.get_field(changeset, :default_role)
+
     with :ok <- ensure_can_configure_sso(subject),
+         # Creation checked runner access but never the role it hands every new
+         # member. The changeset only excludes :owner, so an admin could stand up
+         # a connection defaulting to a role they cannot themselves grant.
+         :ok <- ensure_grantable_role(default_role, subject),
          {:ok, access} <- provider_access_from_changeset(changeset),
          :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
          :ok <- Accounts.validate_runner_access_for_account(account.id, access) do
@@ -2026,7 +2032,7 @@ defmodule Emisar.SSO do
 
   @doc "Soft-delete a group→role mapping. `manage_sso` + enterprise; account-scoped. Reconciles current group members after commit."
   def delete_group_mapping(%GroupRoleMapping{id: id}, %Subject{} = subject) do
-    with :ok <- ensure_can_manage_sso(subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject) do
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -2141,7 +2147,7 @@ defmodule Emisar.SSO do
         %GroupRunnerAccessMapping{id: id},
         %Subject{} = subject
       ) do
-    with :ok <- ensure_can_manage_sso(subject) do
+    with :ok <- ensure_can_configure_directory_sync(subject) do
       GroupRunnerAccessMapping.Query.not_deleted()
       |> GroupRunnerAccessMapping.Query.by_id(id)
       |> Authorizer.for_subject(subject)
@@ -2607,6 +2613,13 @@ defmodule Emisar.SSO do
   # owner with live credentials they were structurally unable to retire: the
   # console could not list the connection, and delete/disable refused. Reads and
   # cleanup check the permission alone.
+  #
+  # "Destructive" means STOPS something, not "is spelled delete". Removing a group
+  # mapping recomputes its members, and a member left in no mapped group falls
+  # back to `default_role` — so with a provider defaulting to `admin` and a group
+  # mapped to `viewer`, the delete PROMOTES everyone it touches. Both mapping
+  # deletes are plan-gated for that reason; retiring the connection or its
+  # directory token is what a downgraded account uses to contain one.
   defp ensure_can_manage_sso(%Subject{} = subject),
     do: Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_sso_permission())
 

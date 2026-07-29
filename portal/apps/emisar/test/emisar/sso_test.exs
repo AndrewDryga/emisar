@@ -757,6 +757,36 @@ defmodule Emisar.SSOTest do
 
   # -- update_provider/3 -----------------------------------------------
 
+  describe "configure_provider/2 role coverage" do
+    test "an admin can't stand up a connection defaulting to a role they can't grant" do
+      # The changeset excludes only :owner, so creation was the one path that
+      # never asked whether the caller may hand out the role it defaults to.
+      {_owner, account, _owner_subject} = enterprise_owner()
+      admin_user = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin_user.id,
+          role: "admin"
+        )
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.example.test",
+        client_id: "cid",
+        client_secret: "secret",
+        default_role: :billing_manager
+      }
+
+      assert {:error, :role_exceeds_your_permissions} =
+               SSO.configure_provider(attrs, admin)
+    end
+  end
+
   describe "update_provider/3" do
     test "account A's provider cannot be fetched or updated by account B" do
       {_ua, account_a, _sa} = enterprise_owner()
@@ -952,6 +982,24 @@ defmodule Emisar.SSOTest do
       assert {:ok, %IdentityProvider{} = deleted} = SSO.delete_provider(provider, subject)
       assert deleted.deleted_at
       assert {:error, :not_found} = SSO.fetch_provider_by_id(provider.id, subject)
+    end
+
+    test "a downgraded plan cannot delete a mapping, because deleting one can promote" do
+      # A member left in no mapped group falls back to `default_role`. With the
+      # provider defaulting to :admin and the group mapped to :viewer, deleting
+      # the mapping RAISES everyone it touches — so it is not cleanup, and an
+      # unentitled account does not get to do it.
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, default_role: :admin)
+      {:ok, provider, _raw} = SSO.enable_scim(provider, subject)
+
+      {:ok, mapping} =
+        SSO.create_group_mapping(provider, %{external_group_id: "grp", role: :viewer}, subject)
+
+      Fixtures.Accounts.create_subscription(account, "free")
+
+      assert {:error, :directory_sync_not_available} =
+               SSO.delete_group_mapping(mapping, subject)
     end
 
     test "a downgraded plan can still delete — the connection outlived the plan, not the risk" do
