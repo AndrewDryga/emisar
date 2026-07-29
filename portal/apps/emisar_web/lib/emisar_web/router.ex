@@ -315,6 +315,7 @@ defmodule EmisarWeb.Router do
     # here shadow account slugs, so each is reserved in Account.Changeset.
     get "/agents", AccountRedirectController, :agents
     get "/agents/connect", AccountRedirectController, :connect_agent
+    get "/sso/new", AccountRedirectController, :add_sso_provider
 
     # Paddle's post-payment redirect. The checkout page can't know the account
     # slug at render time, so this resolves the session's current account and

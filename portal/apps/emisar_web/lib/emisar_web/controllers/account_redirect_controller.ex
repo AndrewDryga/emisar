@@ -24,6 +24,12 @@ defmodule EmisarWeb.AccountRedirectController do
     redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/agents/connect")
   end
 
+  # /sso/new — the provider guides open with "add the connection in emisar", and
+  # a docs page cannot know the reader's account slug to link it.
+  def add_sso_provider(conn, _params) do
+    redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/settings/sso/new")
+  end
+
   # /activate — the device-grant approval URL the MCP installer prints,
   # keeping the ?code= deep link through the forward.
   def activate(conn, %{"code" => code}) when is_binary(code) do

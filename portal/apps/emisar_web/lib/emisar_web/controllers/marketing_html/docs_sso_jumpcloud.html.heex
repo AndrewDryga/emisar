@@ -16,10 +16,8 @@
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        You need a JumpCloud administrator and an emisar
-        owner or admin, with
-        <strong class="text-zinc-200">Team → Single sign-on → Add provider</strong>
-        open in another tab.
+        You need a JumpCloud administrator and an emisar owner or admin. Step 1 opens the emisar
+        page you will carry values to and from.
       </p>
       <.docs_callout kind={:note} title="One application, both jobs">
         <p>
@@ -40,6 +38,25 @@
             1
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <.docs_step_venue>emisar</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">Start the connection.</p>
+            <p class="mt-1.5">
+              Open
+              <a
+                href={~p"/app/sso/new"}
+                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+              >Team → Single sign-on → Add provider</a>
+              and choose <strong class="text-zinc-200">JumpCloud</strong>. Leave the page open: the
+              callback URL on it is what JumpCloud asks for next, and JumpCloud's values come back here
+              at the end.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>JumpCloud</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Open SSO Applications.</p>
             <p class="mt-1.5">
@@ -58,7 +75,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
+            3
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>JumpCloud</.docs_step_venue>
@@ -77,7 +94,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
+            4
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>JumpCloud</.docs_step_venue>
@@ -107,7 +124,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
+            5
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>JumpCloud</.docs_step_venue>
@@ -129,7 +146,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
+            6
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>JumpCloud</.docs_step_venue>
@@ -152,7 +169,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            6
+            7
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>JumpCloud, then emisar</.docs_step_venue>

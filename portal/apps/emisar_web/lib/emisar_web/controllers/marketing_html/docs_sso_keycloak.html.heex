@@ -16,10 +16,9 @@
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        You need Keycloak realm-admin access and an emisar owner or admin. Keep
-        <strong class="text-zinc-200">Team → Single sign-on → Add provider</strong>
-        open in emisar so you can copy its callback URL. The screenshots are from Keycloak 26.7;
-        earlier versions arrange the same settings differently.
+        You need Keycloak realm-admin access and an emisar owner or admin. Step 1 opens the emisar
+        page you will carry values to and from. The screenshots are from Keycloak 26.7; earlier
+        versions arrange the same settings differently.
       </p>
 
       <.docs_h2 id="sso">Single sign-on</.docs_h2>
@@ -30,6 +29,25 @@
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             1
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <.docs_step_venue>emisar</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">Start the connection.</p>
+            <p class="mt-1.5">
+              Open
+              <a
+                href={~p"/app/sso/new"}
+                class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+              >Team → Single sign-on → Add provider</a>
+              and choose <strong class="text-zinc-200">Keycloak</strong>. Leave the page open: the
+              callback URL on it is what Keycloak asks for next, and Keycloak's values come back here
+              at the end.
+            </p>
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            2
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Keycloak</.docs_step_venue>
@@ -52,7 +70,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            2
+            3
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Keycloak</.docs_step_venue>
@@ -75,7 +93,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            3
+            4
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Keycloak</.docs_step_venue>
@@ -94,7 +112,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
+            5
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Keycloak</.docs_step_venue>
@@ -116,7 +134,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            5
+            6
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Keycloak</.docs_step_venue>
@@ -139,7 +157,7 @@
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            6
+            7
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>emisar</.docs_step_venue>
