@@ -34,7 +34,10 @@ const (
 func main() {
 	envPath := flag.String("env", "portal/.agent/secrets/google-workspace.env", "credential env file")
 	outDir := flag.String("out", "", "directory for captured PNGs")
-	headless := flag.Bool("headless", true, "run Chrome headless")
+	// Google's sign-in does not serve a headless browser: the navigation hangs
+	// until the context expires rather than failing, so a headless run reports a
+	// deadline with no output at all. Default it off.
+	headless := flag.Bool("headless", false, "run Chrome headless (Google sign-in refuses it)")
 	flag.Parse()
 
 	if *outDir == "" {
@@ -214,8 +217,16 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	if err := waitForText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
 		return err
 	}
+	if err := acceptTerms(ctx); err != nil {
+		return err
+	}
+	// Two shapes of the same console. A project with nothing configured opens the
+	// Get started wizard; one that is already set up opens straight onto the
+	// left-nav pages the wizard writes into. Photograph whichever we are given —
+	// the wizard is a one-time skin over Branding and Audience.
 	if err := waitForText(ctx, "Get started", 20*time.Second); err != nil {
-		return fmt.Errorf("the selected project is not at an unconfigured Google Auth Platform start screen: %w", err)
+		fmt.Println("  already configured — capturing Branding and Audience directly")
+		return configuredFlow(ctx, env, outDir)
 	}
 	if err := capture(ctx, env, outDir, "google-01-get-started", textHighlight("Get started")); err != nil {
 		return err
@@ -282,6 +293,12 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 		return err
 	}
 
+	return clientFlow(ctx, env, outDir)
+}
+
+// clientFlow makes the OAuth client emisar signs in with, and is the same on a
+// freshly walked wizard and an already-configured project.
+func clientFlow(ctx context.Context, env map[string]string, outDir string) error {
 	if err := clickExactText(ctx, "Clients"); err != nil {
 		return err
 	}
@@ -296,6 +313,12 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	}
 
 	if err := waitForText(ctx, "Create OAuth client ID", 30*time.Second); err != nil {
+		return err
+	}
+	if err := acceptTerms(ctx); err != nil {
+		return err
+	}
+	if err := dismissOverlays(ctx); err != nil {
 		return err
 	}
 	if err := chooseOption(ctx, "Application type", "Web application"); err != nil {
@@ -325,6 +348,133 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	}
 	fmt.Println("  capture complete; temporary OAuth client remains for caller cleanup")
 	return nil
+}
+
+// dismissOverlays clears the console's own promotional tooltips. One of them
+// ("Is this a production environment?") sat over the left nav and the page
+// heading in the first captured shot.
+func dismissOverlays(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  let closed = 0;
+  for (const button of document.querySelectorAll('button,[role=button]')) {
+    if (!visible(button)) continue;
+    const name = (button.getAttribute('aria-label') || button.textContent || '').trim().toLowerCase();
+    if (name === 'close' || name === 'dismiss' || name === 'got it' || name === 'no thanks') {
+      button.click();
+      closed++;
+    }
+  }
+  return closed;
+})()`
+	var closed int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &closed)); err != nil {
+		return err
+	}
+	if closed > 0 {
+		fmt.Printf("  dismissed %d console overlay(s)\n", closed)
+	}
+	return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+}
+
+// acceptTerms clears the Google Cloud Platform / Starter Tier agreement wall
+// that fronts a console the account has not agreed on yet. Accepting terms on
+// someone's Google account is their decision, so this runs only because the
+// account owner asked for it explicitly.
+func acceptTerms(ctx context.Context) error {
+	// Detect by the VISIBLE button, not by the words. "Terms of Service" appears in
+	// the console's own footer links, so matching the body text made this run —
+	// and fail — on every page whether the dialog was up or not.
+	const present = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  return [...document.querySelectorAll('button,[role=button]')]
+    .some(el => visible(el) && (el.textContent || '').trim() === 'Agree and continue');
+})()`
+	var showing bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(present, &showing)); err != nil {
+		return err
+	}
+	if !showing {
+		return nil
+	}
+	// Tick the agreement's OWN checkbox. The dialog carries two — the terms and a
+	// marketing opt-in — and a generic "first checkbox" click left Agree and
+	// continue disabled, so the dialog stayed up over every screen behind it.
+	// Never touch the marketing one.
+	const tick = `(() => {
+  // Climb, do not use closest(). A Material checkbox's nearest wrapper holds only
+  // the box; its label is a SIBLING further up, so requiring the text in the
+  // immediate parent never matched and the dialog stayed up over every screen.
+  const owns = box => {
+    let node = box;
+    for (let up = 0; up < 6 && node; up++) {
+      if ((node.textContent || '').includes('I agree to the')) return true;
+      node = node.parentElement;
+    }
+    return false;
+  };
+  const agree = [...document.querySelectorAll('input[type=checkbox]')].find(owns);
+  if (!agree) return false;
+  if (!agree.checked) {
+    agree.click();
+    if (!agree.checked) {
+      // Some Material builds only respond to the label's own click target.
+      const label = agree.id ? document.querySelector('label[for="' + agree.id + '"]') : null;
+      if (label) label.click();
+    }
+  }
+  return agree.checked;
+})()`
+	var ticked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(tick, &ticked)); err != nil {
+		return err
+	}
+	if !ticked {
+		// Say so and carry on: the pages behind this dialog still render, and only
+		// the create-client panel is actually obscured by it. Failing here would
+		// give up screens we can photograph.
+		fmt.Println("  terms dialog is up but its agreement box is unreachable; continuing")
+		return nil
+	}
+	if err := clickFirstText(ctx, "Agree and continue", "AGREE AND CONTINUE"); err != nil {
+		return err
+	}
+	fmt.Println("  accepted the Google Cloud terms")
+	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
+		return err
+	}
+	return dismissOverlays(ctx)
+}
+
+// configuredFlow captures the Auth Platform pages a project that is already set
+// up presents: Branding carries the app name and support email the wizard's App
+// Information step writes, Audience carries the Internal/External choice, and
+// Clients is where the OAuth client is made. Same fields, reachable pages.
+func configuredFlow(ctx context.Context, env map[string]string, outDir string) error {
+	if err := clickExactText(ctx, "Branding"); err != nil {
+		return err
+	}
+	if err := waitForText(ctx, "App name", 45*time.Second); err != nil {
+		return err
+	}
+	// Label-based, not field-based: this page's inputs carry no accessible name at
+	// all, and the support email is a menu rather than an input, so there is
+	// nothing for a field lookup to bind to.
+	if err := capture(ctx, env, outDir, "google-01-branding", textHighlight("App name", "User support email")); err != nil {
+		return err
+	}
+
+	if err := clickExactText(ctx, "Audience"); err != nil {
+		return err
+	}
+	if err := waitForText(ctx, "Internal", 45*time.Second); err != nil {
+		return err
+	}
+	if err := capture(ctx, env, outDir, "google-02-audience", textHighlight("Internal")); err != nil {
+		return err
+	}
+
+	return clientFlow(ctx, env, outDir)
 }
 
 type highlightScript struct {
@@ -394,6 +544,16 @@ func fieldHighlight(labels ...string) highlightScript {
 }
 
 func capture(ctx context.Context, env map[string]string, outDir, name string, marker highlightScript) error {
+	// Before every shot, not once at the start. The console's welcome dialog
+	// arrives on its own schedule — it rendered AFTER the first check and then sat
+	// over the create-client form, so "Application type" was never visible. Both
+	// calls are no-ops when there is nothing to clear.
+	if err := acceptTerms(ctx); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	if err := dismissOverlays(ctx); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
 	if err := deidentify(ctx, env); err != nil {
 		return fmt.Errorf("%s de-identification: %w", name, err)
 	}
@@ -416,6 +576,15 @@ func deidentify(ctx context.Context, env map[string]string) error {
 		env["GOOGLE_TEST_USER"]:     redactedUser,
 		env["GOOGLE_CLIENT_ID"]:     redactedClientID,
 		env["GOOGLE_CLIENT_SECRET"]: redactedClientSecret,
+	}
+	// The Branding page shows the tenant's real support address, which is a
+	// different value from the sign-in user and was shipping in the shot. Redact
+	// any address on the primary domain, then the bare domain itself — longest
+	// first, so the address substitution is not pre-empted by the domain one.
+	if domain := env["GOOGLE_PRIMARY_DOMAIN"]; domain != "" {
+		replacements["help@"+domain] = "help@example.com"
+		replacements["support@"+domain] = "support@example.com"
+		replacements[domain] = "example.com"
 	}
 	script := `(() => {
   const replacements = REPLACEMENTS;
