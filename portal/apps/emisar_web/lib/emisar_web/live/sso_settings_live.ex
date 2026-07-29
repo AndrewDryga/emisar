@@ -2226,22 +2226,21 @@ defmodule EmisarWeb.SSOSettingsLive do
           into the fields below.
         </:step>
       </.steps>
+      <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+        {provider_directory_note(@kind)}
+      </p>
       <%!-- Only providers whose OAuth app exposes a DPoP toggle get this note —
            Google and JumpCloud have no such setting, so it would only confuse. --%>
-      <%!-- Link out rather than inline more: /docs/sso has the screenshots, and a
-           rail teaches beside the task instead of duplicating it. --%>
-      <p class="mt-3 text-xs leading-relaxed text-zinc-400">
-        {provider_directory_note(@kind)}
-        <.link
-          navigate={docs_path_for_kind(@kind)}
-          target="_blank"
-          class="text-brand-400 underline underline-offset-2 hover:text-brand-300"
-        >{docs_link_label(@kind)}</.link>.
+      <p :if={dpop_relevant?(@kind)} class="mt-3 text-sm leading-relaxed text-zinc-400">
+        Leave <span class="text-zinc-300">DPoP</span>
+        (sender-constrained tokens) OFF. emisar reads the ID token only and never presents the
+        access token to an API, so turning it on would break the token request.
       </p>
-      <p :if={dpop_relevant?(@kind)} class="mt-3 text-xs leading-relaxed text-zinc-400">
-        Leave <span class="text-zinc-400">DPoP</span> (sender-constrained tokens) OFF. emisar
-        reads the ID token only and never presents the access token to an API, so DPoP adds no
-        security here and turning it on would break the token request.
+      <%!-- The docs link closes the rail on its own line, the shape `docs_rail`
+           uses on the list pages ("Runner docs"): `text-sm` on the HOST, since
+           `doc_link` carries no `text-*` of its own. --%>
+      <p class="mt-4 text-sm">
+        <.doc_link href={docs_path_for_kind(@kind)}>{docs_link_label(@kind)}</.doc_link>
       </p>
     </div>
     """
@@ -2277,16 +2276,15 @@ defmodule EmisarWeb.SSOSettingsLive do
     "Directory sync needs a provider that pushes SCIM; otherwise members arrive on first sign-in."
   end
 
-  # Deep-link to the provider's own guide so the reader lands on its screenshots
-  # rather than the top of the docs. Only the named providers have a console to
-  # photograph — promising screens for "any other OIDC provider" is a claim the
-  # reader disproves one click later — and Google's guide is mostly prose, so it
-  # gets the honest label too.
-  defp docs_link_label(kind) when kind in ~w[okta entra jumpcloud keycloak],
-    do: "See every screen"
+  # Deep-link to the provider's own guide rather than the top of the docs. The
+  # label says what the page IS, the house shape ("Runner docs"); a label that
+  # promised screenshots needed a per-provider honesty split, because only four
+  # of the guides have full console coverage. Naming the page plainly removes
+  # the claim, and with it the split.
+  defp docs_link_label(kind) when kind in ~w[okta entra jumpcloud keycloak google_workspace],
+    do: "Step-by-step guide"
 
-  defp docs_link_label("google_workspace"), do: "See the full guide"
-  defp docs_link_label(_), do: "See what your provider must supply"
+  defp docs_link_label(_), do: "Single sign-on docs"
 
   # `oid` exists for exactly one provider. Offering it under Keycloak or Google
   # invites an admin to pick a claim their IdP never issues, which fails at the

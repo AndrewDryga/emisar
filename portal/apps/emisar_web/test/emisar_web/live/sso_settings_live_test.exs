@@ -648,29 +648,27 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     test "only a named provider promises screenshots", %{conn: conn, account: account} do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
-      # No kind picked yet: there is no single console to photograph for "any
-      # other OIDC provider", so the link must not promise screens.
-      assert html =~ "See what your provider must supply"
-      refute html =~ "See every screen"
+      # No kind picked yet: there is no provider guide to point at, so the link
+      # names the docs page it does go to.
+      assert html =~ "Single sign-on docs"
+      refute html =~ "Step-by-step guide"
 
       picked =
         lv
         |> form("#provider_form", %{"provider" => %{"kind" => "okta"}})
         |> render_change()
 
-      # Okta's guide does carry console screenshots, so the promise is honest.
-      assert picked =~ "See every screen"
+      # A picked provider links its own guide, named for what the page is.
+      assert picked =~ "Step-by-step guide"
       assert picked =~ "/docs/integrations/okta"
 
-      # Google's guide is mostly prose — one screenshot, of our own form — so it
-      # gets the honest label rather than the same promise.
       google =
         lv
         |> form("#provider_form", %{"provider" => %{"kind" => "google_workspace"}})
         |> render_change()
 
-      assert google =~ "See the full guide"
-      refute google =~ "See every screen"
+      assert google =~ "Step-by-step guide"
+      assert google =~ "/docs/integrations/google-workspace"
     end
 
     test "the guide names what each provider does about the directory", %{
