@@ -497,8 +497,10 @@ func highlight(ctx context.Context, label string) error {
 		return err
 	}
 	if !marked {
-		fmt.Printf("  WARN nothing matching %q to highlight\n", label)
-		return nil
+		// FAIL, don't warn: a highlight that matched nothing ships a screenshot
+		// with no outline, which is a broken instruction rather than a cosmetic
+		// miss. One reached the docs that way.
+		return fmt.Errorf("nothing matching %q to highlight", label)
 	}
 	fmt.Printf("  highlighted %q\n", label)
 	return chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond))

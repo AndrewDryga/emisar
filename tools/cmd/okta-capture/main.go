@@ -579,6 +579,17 @@ func provisioningFlow(
 	if err := settle(2); err != nil {
 		return err
 	}
+	// The step names three controls the reader has to find on this screen: the two
+	// fields they paste emisar's values into, and the button that proves the pair
+	// works. Outline each.
+	for _, label := range []string{"Base URL", "API Token"} {
+		if err := highlightGroup(ctx, label, "Enter your"); err != nil {
+			return err
+		}
+	}
+	if err := highlight(ctx, "Test API Credentials"); err != nil {
+		return err
+	}
 	if err := shoot("10-test-api-credentials"); err != nil {
 		return err
 	}
@@ -687,8 +698,19 @@ func lifecycleFlow(
 		}
 	}
 	fmt.Println("  all three lifecycle operations verified ON")
-	if err := highlightGroup(ctx, "Create Users", "Deactivate Users"); err != nil {
-		return err
+	// One outline per control the step tells the operator to touch — including
+	// Sync Password, which the step says to LEAVE OFF and which the reader has to
+	// find to confirm that. Spanning the whole panel in a single group needed a
+	// climb deeper than the helper walks, so it silently marked nothing.
+	for _, label := range []string{
+		"Create Users",
+		"Update User Attributes",
+		"Deactivate Users",
+		"Sync Password",
+	} {
+		if err := highlightGroup(ctx, label, "Enable"); err != nil {
+			return err
+		}
 	}
 	if err := shoot("12-to-app-settings"); err != nil {
 		return err
@@ -810,8 +832,15 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
 		return err
 	}
-	fmt.Printf("  highlight group %q..%q: %t\n", anchor, mustInclude, marked)
-	return nil
+	// FAIL, don't warn. This printed the result and carried on, so a highlight
+	// that matched nothing shipped a screenshot with no outline on it — which is
+	// exactly how the "Provisioning to App" shot reached the docs bare. A missing
+	// outline is a broken instruction, not a cosmetic miss.
+	if !marked {
+		return fmt.Errorf("nothing spanning %q..%q to highlight", anchor, mustInclude)
+	}
+	fmt.Printf("  highlighted group %q..%q\n", anchor, mustInclude)
+	return chromedp.Run(ctx, chromedp.Sleep(600*time.Millisecond))
 }
 
 // typeRealKeys focuses a field and types with genuine key events, clearing what

@@ -778,8 +778,10 @@ func highlight(ctx context.Context, label string) error {
 		return err
 	}
 	if !marked {
-		fmt.Printf("  WARN nothing matching %q to highlight\n", label)
-		return nil
+		// FAIL, don't warn: a highlight that matched nothing ships a screenshot
+		// with no outline, which is a broken instruction rather than a cosmetic
+		// miss. One reached the docs that way.
+		return fmt.Errorf("nothing matching %q to highlight", label)
 	}
 	fmt.Printf("  highlighted %q\n", label)
 	return chromedp.Run(ctx, chromedp.Sleep(800*time.Millisecond))
@@ -812,8 +814,10 @@ func highlightControl(ctx context.Context, section string) error {
 		return err
 	}
 	if !marked {
-		fmt.Printf("  WARN no control near %q to highlight\n", section)
-		return nil
+		// FAIL, don't warn: a highlight that matched nothing ships a screenshot
+		// with no outline, which is a broken instruction rather than a cosmetic
+		// miss. One reached the docs that way.
+		return fmt.Errorf("no control near %q to highlight", section)
 	}
 	fmt.Printf("  highlighted control %q\n", section)
 	return chromedp.Run(ctx, chromedp.Sleep(800*time.Millisecond))
