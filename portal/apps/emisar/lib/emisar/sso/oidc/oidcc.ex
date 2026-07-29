@@ -135,7 +135,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     # sends us SOMEWHERE ELSE — the metadata service, loopback, an internal
     # RFC-1918 box — which is the actual SSRF, and which a perfectly ordinary
     # public issuer can do.
-    issuer_host = host_of(config.issuer)
+    origin = origin_of(config.issuer)
 
     [
       config.authorization_endpoint,
@@ -144,31 +144,40 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       config.jwks_uri
     ]
     |> Enum.reduce_while(:ok, fn endpoint, :ok ->
-      if endpoint_allowed?(endpoint, issuer_host),
+      if endpoint_allowed?(endpoint, origin),
         do: {:cont, :ok},
         else: {:halt, {:error, :blocked_discovery_endpoint}}
     end)
   end
 
-  defp endpoint_allowed?(endpoint, issuer_host) do
-    case host_of(endpoint) do
-      ^issuer_host when is_binary(issuer_host) -> true
+  defp endpoint_allowed?(endpoint, issuer_origin) do
+    case origin_of(endpoint) do
+      # Same ORIGIN is the same reach: whoever vouched for the issuer vouched for
+      # that host over that scheme. Comparing hosts alone was not enough — it let
+      # a document downgrade us to `http://<issuer-host>:9200/`, which is neither
+      # the issuer nor anything `validate_endpoint` would have passed. The issuer
+      # is forced to https upstream, so matching its scheme is https in practice.
+      ^issuer_origin when is_tuple(issuer_origin) -> true
       _ -> IssuerUrl.validate_endpoint(endpoint) == :ok
     end
   end
 
-  defp host_of(nil), do: nil
-  defp host_of(:undefined), do: nil
-  defp host_of(value) when is_list(value), do: value |> IO.iodata_to_binary() |> host_of()
+  defp origin_of(nil), do: nil
+  defp origin_of(:undefined), do: nil
+  defp origin_of(value) when is_list(value), do: value |> IO.iodata_to_binary() |> origin_of()
 
-  defp host_of(value) when is_binary(value) do
+  defp origin_of(value) when is_binary(value) do
     case URI.parse(value) do
-      %URI{host: host} when is_binary(host) and host != "" -> String.downcase(host)
-      _ -> nil
+      %URI{scheme: scheme, host: host}
+      when is_binary(scheme) and is_binary(host) and host != "" ->
+        {scheme, String.downcase(host)}
+
+      _ ->
+        nil
     end
   end
 
-  defp host_of(_value), do: nil
+  defp origin_of(_value), do: nil
 
   # oidcc renders an absent optional endpoint as :undefined and present ones as
   # uri_string iodata — normalize to a binary or nil for the UI.
@@ -207,7 +216,45 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   defp client_secret(%IdentityProvider{client_secret: nil}), do: :unauthenticated
   defp client_secret(%IdentityProvider{client_secret: secret}), do: secret
 
-  defp ensure_worker(%IdentityProvider{id: id, issuer: issuer}) do
+  @doc """
+  Stop every discovery worker for this provider, whatever issuer it was keyed by.
+
+  A worker is keyed `{provider_id, issuer}` and supervised `:transient`, so it
+  outlived both the connection being deleted and an issuer edit — quietly
+  refreshing discovery and JWKS against an IdP the account no longer uses.
+  """
+  @impl Emisar.SSO.OIDC
+  def stop_workers(%IdentityProvider{id: id}) do
+    @registry
+    |> Registry.select([{{{:"$1", :_}, :"$2", :_}, [{:==, :"$1", id}], [:"$2"]}])
+    |> Enum.each(&DynamicSupervisor.terminate_child(@supervisor, &1))
+
+    :ok
+  end
+
+  defp ensure_worker(%IdentityProvider{id: id, issuer: issuer} = provider) do
+    # Validate the document BEFORE any worker exists. Starting the worker is what
+    # performs the SSRF: its `load_configuration` continuation chains straight
+    # into `load_jwks`, so by the time a `get_provider_configuration` call could
+    # be answered, the request to whatever `jwks_uri` names has already gone out.
+    # Inspecting the worker afterwards and terminating it un-sends nothing.
+    #
+    # `load_configuration/2` fetches ONLY the discovery document, from the
+    # issuer — a host already SSRF-validated in the context — so doing it
+    # ourselves first costs one request and gives us the endpoints to judge.
+    with :ok <- ensure_issuer_document_reachable(provider) do
+      start_worker(id, issuer)
+    end
+  end
+
+  defp ensure_issuer_document_reachable(%IdentityProvider{issuer: issuer}) do
+    case Oidcc.ProviderConfiguration.load_configuration(issuer, %{request_opts: request_opts()}) do
+      {:ok, {config, _expiry}} -> ensure_endpoints_reachable(config)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp start_worker(id, issuer) do
     # Keyed by {id, issuer}: an issuer edit routes to a fresh worker (the old
     # one idles out) instead of serving stale discovery/JWKS — cluster-safe,
     # no cross-node invalidation needed.

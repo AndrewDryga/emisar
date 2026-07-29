@@ -70,6 +70,36 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     assert body =~ "code=authorization-code"
   end
 
+  test "a discovery document pointing elsewhere is refused before anything fetches it" do
+    # The SSRF is the JWKS fetch, and oidcc's worker performs it in the same
+    # startup continuation that loads discovery — so a check that runs after
+    # `start_child` returns is answering a question the network already asked.
+    # Nothing may start.
+    # A real listener stands in for the internal target, so "was it fetched" is
+    # observed rather than inferred. It is reachable — only the policy stops us.
+    forbidden_port = start_probe_listener()
+    issuer = start_local_idp(jwks_uri: "http://localhost:#{forbidden_port}/jwks")
+    provider = provider(%{issuer: issuer})
+
+    on_exit(fn -> terminate_provider_worker(provider) end)
+
+    params = %{"state" => "expected-state", "iss" => issuer, "code" => "authorization-code"}
+
+    assert {:error, :blocked_discovery_endpoint} =
+             Oidcc.verify_callback(provider, params, stashed())
+
+    # We read the document…
+    assert_receive {:oidc_request, "GET", "/.well-known/openid-configuration", _body}
+
+    # …and nothing ever connected to what it named.
+    refute_receive :forbidden_endpoint_contacted, 200
+
+    # No token exchange, and no worker left to refresh the document or chase
+    # that jwks_uri again on its expiry timer.
+    refute_receive {:oidc_request, "POST", "/token", _body}, 50
+    assert Registry.lookup(Emisar.SSO.OIDC.Registry, {provider.id, issuer}) == []
+  end
+
   defp provider(attrs \\ %{}) do
     defaults = %{
       id: System.unique_integer([:positive]),
@@ -90,26 +120,49 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     }
   end
 
-  defp start_local_idp do
+  # Accepts one connection and tells the test. Stands in for the internal host a
+  # malicious discovery document points at.
+  defp start_probe_listener do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, {_address, port}} = :inet.sockname(listener)
+    test_pid = self()
+
+    spawn_link(fn ->
+      case :gen_tcp.accept(listener) do
+        {:ok, socket} ->
+          send(test_pid, :forbidden_endpoint_contacted)
+          :gen_tcp.close(socket)
+
+        {:error, _reason} ->
+          :ok
+      end
+    end)
+
+    on_exit(fn -> :gen_tcp.close(listener) end)
+    port
+  end
+
+  defp start_local_idp(opts \\ []) do
     {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
     {:ok, {_address, port}} = :inet.sockname(listener)
     issuer = "http://127.0.0.1:#{port}"
     test_pid = self()
+    jwks_uri = Keyword.get(opts, :jwks_uri, issuer <> "/jwks")
 
-    spawn_link(fn -> serve(listener, test_pid, issuer) end)
+    spawn_link(fn -> serve(listener, test_pid, issuer, jwks_uri) end)
     on_exit(fn -> :gen_tcp.close(listener) end)
 
     issuer
   end
 
-  defp serve(listener, test_pid, issuer) do
+  defp serve(listener, test_pid, issuer, jwks_uri) do
     case :gen_tcp.accept(listener) do
       {:ok, socket} ->
         request = read_request(socket)
         send(test_pid, {:oidc_request, request.method, request.path, request.body})
-        :ok = :gen_tcp.send(socket, response(request.path, issuer))
+        :ok = :gen_tcp.send(socket, response(request.path, issuer, jwks_uri))
         :ok = :gen_tcp.close(socket)
-        serve(listener, test_pid, issuer)
+        serve(listener, test_pid, issuer, jwks_uri)
 
       {:error, :closed} ->
         :ok
@@ -160,13 +213,13 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     end
   end
 
-  defp response("/.well-known/openid-configuration", issuer) do
+  defp response("/.well-known/openid-configuration", issuer, jwks_uri) do
     body =
       Jason.encode!(%{
         issuer: issuer,
         authorization_endpoint: issuer <> "/authorize",
         token_endpoint: issuer <> "/token",
-        jwks_uri: issuer <> "/jwks",
+        jwks_uri: jwks_uri,
         scopes_supported: ["openid"],
         response_types_supported: ["code"],
         subject_types_supported: ["public"],
@@ -176,9 +229,9 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     http_response(200, body)
   end
 
-  defp response("/jwks", _issuer), do: http_response(200, ~s({"keys":[]}))
-  defp response("/token", _issuer), do: http_response(400, ~s({"error":"invalid_grant"}))
-  defp response(_path, _issuer), do: http_response(404, ~s({"error":"not_found"}))
+  defp response("/jwks", _issuer, _jwks), do: http_response(200, ~s({"keys":[]}))
+  defp response("/token", _issuer, _jwks), do: http_response(400, ~s({"error":"invalid_grant"}))
+  defp response(_path, _issuer, _jwks), do: http_response(404, ~s({"error":"not_found"}))
 
   defp http_response(status, body) do
     status_text = if status == 200, do: "OK", else: "Bad Request"

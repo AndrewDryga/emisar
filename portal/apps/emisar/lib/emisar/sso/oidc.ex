@@ -44,9 +44,12 @@ defmodule Emisar.SSO.OIDC do
               {:ok, verified()} | {:error, term()}
   @callback discover(provider :: struct()) :: {:ok, discovery()} | {:error, term()}
 
+  @callback stop_workers(provider :: struct()) :: :ok
+
   # Only the "Test connection" capstone calls discover/1; the real impl + that
   # one test stub implement it, so the other (login-flow) test stubs needn't.
-  @optional_callbacks discover: 1
+  # `stop_workers/1` is a lifecycle side effect with nothing for a stub to say.
+  @optional_callbacks discover: 1, stop_workers: 1
 
   def begin_authorization(provider, opts), do: impl().begin_authorization(provider, opts)
 
@@ -55,6 +58,19 @@ defmodule Emisar.SSO.OIDC do
 
   @doc "Probe an issuer's OIDC discovery document — used by `SSO.test_provider/2`, no row written."
   def discover(provider), do: impl().discover(provider)
+
+  @doc """
+  Stop any running discovery worker for a provider — called when the connection
+  is deleted or its issuer changes. A worker outlives the row that started it and
+  keeps refreshing discovery and JWKS against an IdP nobody is using any more.
+  """
+  def stop_workers(provider) do
+    module = impl()
+
+    if function_exported?(module, :stop_workers, 1),
+      do: module.stop_workers(provider),
+      else: :ok
+  end
 
   defp impl, do: Emisar.Config.get_env(:emisar, :sso_oidc_impl, Emisar.SSO.OIDC.Oidcc)
 end

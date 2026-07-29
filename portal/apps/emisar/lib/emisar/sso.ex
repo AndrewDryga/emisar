@@ -254,6 +254,7 @@ defmodule Emisar.SSO do
         after_commit: fn provider ->
           _ = return_role_control_to_operators(provider)
           _ = dismiss_pending_link_requests(provider)
+          _ = OIDC.stop_workers(provider)
           end_sessions_signed_in_through(provider)
         end
       )
@@ -419,6 +420,10 @@ defmodule Emisar.SSO do
   # mean a SCIM-enabled connection never reached the disable branch below.
   defp on_provider_updated(%IdentityProvider{} = provider, changeset) do
     _ = recompute_authorization_if_changed(provider, changeset)
+
+    # A worker is keyed by issuer, so an issuer edit strands the old one to keep
+    # refreshing against an IdP this connection no longer points at.
+    if Ecto.Changeset.get_change(changeset, :issuer), do: OIDC.stop_workers(provider)
 
     if Ecto.Changeset.get_change(changeset, :enabled) == false,
       do: end_sessions_signed_in_through(provider),
