@@ -168,9 +168,12 @@ defmodule Emisar.SSO.OIDC.Oidcc do
 
   defp origin_of(value) when is_binary(value) do
     case URI.parse(value) do
-      %URI{scheme: scheme, host: host}
+      %URI{scheme: scheme, host: host, port: port}
       when is_binary(scheme) and is_binary(host) and host != "" ->
-        {scheme, String.downcase(host)}
+        # PORT is part of an origin. Comparing scheme and host alone still let a
+        # document send us to `https://<issuer-host>:9200/` — a different service
+        # on the same box, which is the reach this exists to deny.
+        {scheme, String.downcase(host), port || URI.default_port(scheme)}
 
       _ ->
         nil
@@ -242,8 +245,21 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     # `load_configuration/2` fetches ONLY the discovery document, from the
     # issuer — a host already SSRF-validated in the context — so doing it
     # ourselves first costs one request and gives us the endpoints to judge.
-    with :ok <- ensure_issuer_document_reachable(provider) do
-      start_worker(id, issuer)
+    with :ok <- ensure_issuer_document_reachable(provider),
+         {:ok, pid} <- start_worker(id, issuer) do
+      # The pre-flight judged the document WE fetched. The worker fetches its
+      # own, and refetches on the expiry timer for as long as it lives — none of
+      # which the pre-flight ever sees. So the document the worker is actually
+      # holding is re-judged here, on every sign-in, and a worker whose
+      # configuration has drifted somewhere it should not reach is torn down
+      # rather than left refreshing.
+      #
+      # This does NOT make the fetch itself conditional: oidcc offers no
+      # pre-connect hook, so a drifted document still costs one request before we
+      # can refuse it. Closing that needs a validating HTTP client under oidcc —
+      # tracked separately. What this bounds is the repeat: one fetch per drift
+      # instead of an unbounded refresh loop.
+      ensure_worker_endpoints_reachable(pid)
     end
   end
 
@@ -278,8 +294,8 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     # still drives the keyed-by-{id,issuer} `:already_started` resolution above;
     # we just pass the live pid it returns to `create_redirect_url`/`retrieve_token`.
     case DynamicSupervisor.start_child(@supervisor, spec) do
-      {:ok, pid} -> ensure_worker_endpoints_reachable(pid)
-      {:error, {:already_started, pid}} -> ensure_worker_endpoints_reachable(pid)
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, pid}} -> {:ok, pid}
       {:error, reason} -> {:error, reason}
     end
   end
