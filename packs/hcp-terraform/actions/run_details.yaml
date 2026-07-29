@@ -1,0 +1,96 @@
+schema_version: 1
+id: tfc.run_details
+title: GET /runs/<id>?include=plan
+kind: script
+risk: low
+description: >
+  Show one run with its plan's add / change / destroy / import counts. This is
+  the review a token holding only "read runs" can perform — tfc.plan_summary
+  returns the per-resource detail but requires workspace admin. Use it to size a
+  run's blast radius before confirming it.
+side_effects:
+  - One read-only HTTP GET to the HCP Terraform API.
+  - Read-only.
+search_terms:
+  - how many resources will be destroyed
+  - blast radius
+args:
+  - name: run_id
+    type: string
+    required: true
+    description: Run ID from list_runs (run-…).
+    validation:
+      pattern: "^run-[A-Za-z0-9]{1,32}$"
+      max_length: 36
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [run_details, "{{ args.run_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [run, plan]
+    properties:
+      run:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+          - status
+          - message
+          - is_destroy
+          - plan_only
+          - has_changes
+          - source
+          - created_at
+          - workspace_id
+          - actions
+        properties:
+          id: {type: string}
+          status: {type: string}
+          message: {type: string}
+          is_destroy: {type: boolean}
+          plan_only: {type: boolean}
+          has_changes: {type: boolean}
+          source: {type: string}
+          created_at: {type: string}
+          workspace_id: {type: string}
+          actions:
+            type: object
+            additionalProperties: false
+            required: [confirmable, discardable, cancelable]
+            properties:
+              confirmable: {type: boolean}
+              discardable: {type: boolean}
+              cancelable: {type: boolean}
+      plan:
+        type: [object, "null"]
+        additionalProperties: false
+        required:
+          - id
+          - status
+          - has_changes
+          - resource_additions
+          - resource_changes
+          - resource_destructions
+          - resource_imports
+        properties:
+          id: {type: string}
+          status: {type: string}
+          has_changes: {type: boolean}
+          resource_additions: {type: integer}
+          resource_changes: {type: integer}
+          resource_destructions: {type: integer}
+          resource_imports: {type: integer}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: One run and its plan counts
+    args:
+      run_id: run-4Qm7TvLpXsRbNc2d

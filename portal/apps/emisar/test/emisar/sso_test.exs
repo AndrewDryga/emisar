@@ -481,7 +481,11 @@ defmodule Emisar.SSOTest do
 
       assert provider.kind == :okta
       assert provider.default_role == :viewer
-      assert provider.satisfies_mfa
+
+      # Trusting the provider's MFA is a claim the operator makes deliberately.
+      # It used to default ON, so a password-only OIDC server silently satisfied
+      # the account's 2FA requirement.
+      refute provider.satisfies_mfa
 
       assert {:ok, [event], _meta} =
                Audit.list_events(subject, filter: [event_type: ["sso.provider_configured"]])

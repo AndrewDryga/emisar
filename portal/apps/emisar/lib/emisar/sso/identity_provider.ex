@@ -35,7 +35,7 @@ defmodule Emisar.SSO.IdentityProvider do
     field :default_runner_scope_groups, {:array, :string}, default: []
     field :default_runner_scope_runner_ids, {:array, Ecto.UUID}, default: []
     field :authorization_version, :integer, default: 0
-    field :satisfies_mfa, :boolean, default: true
+    field :satisfies_mfa, :boolean, default: false
     field :allowed_email_domain, :string
     field :enabled, :boolean, default: false
 

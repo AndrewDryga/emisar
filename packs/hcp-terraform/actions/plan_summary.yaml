@@ -1,0 +1,95 @@
+schema_version: 1
+id: tfc.plan_summary
+title: Project an HCP Terraform plan into a reviewable summary
+kind: script
+risk: low
+search_terms:
+  - review plan
+  - what will change
+  - destroy count
+description: >
+  List every resource a run's plan would create, update, delete, or replace,
+  with per-action counts, drift, and planned output changes. Attribute and
+  output VALUES are never emitted — only addresses, types, actions, and names —
+  because the structured plan HCP Terraform serves carries every value in
+  cleartext, sensitive ones included. Needs a user or team token with admin
+  access to the workspace; tfc.run_details gives counts on a read-only token.
+side_effects:
+  - One read-only HTTP GET, followed to the API's presigned redirect.
+  - Read-only.
+args:
+  - name: run_id
+    type: string
+    required: true
+    description: Run ID from list_runs (run-…).
+    validation:
+      pattern: "^run-[A-Za-z0-9]{1,32}$"
+      max_length: 36
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [plan_summary, "{{ args.run_id }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [source, cli_version, summary, changes, drift, outputs]
+    properties:
+      source: {const: hcp_plan}
+      cli_version: {type: string}
+      summary:
+        type: object
+        additionalProperties: false
+        required: [total, create, update, delete, replace, read, import]
+        properties:
+          total: {type: integer, minimum: 0}
+          create: {type: integer, minimum: 0}
+          update: {type: integer, minimum: 0}
+          delete: {type: integer, minimum: 0}
+          replace: {type: integer, minimum: 0}
+          read: {type: integer, minimum: 0}
+          import: {type: integer, minimum: 0}
+      changes:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [address, resource_type, module, action, reason]
+          properties:
+            address: {type: string}
+            resource_type: {type: string}
+            module: {type: string}
+            action: {type: string}
+            reason: {type: string}
+      drift:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [address, resource_type, module, action]
+          properties:
+            address: {type: string}
+            resource_type: {type: string}
+            module: {type: string}
+            action: {type: string}
+      outputs:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, action, sensitive]
+          properties:
+            name: {type: string}
+            action: {type: string}
+            sensitive: {type: boolean}
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Review what a run would change
+    args:
+      run_id: run-4Qm7TvLpXsRbNc2d

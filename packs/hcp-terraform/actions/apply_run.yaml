@@ -1,0 +1,83 @@
+schema_version: 1
+id: tfc.apply_run
+title: POST /runs/<id>/actions/apply
+kind: script
+risk: high
+description: >
+  Confirm a planned run so HCP Terraform applies it. This is the real apply —
+  it creates, changes, and destroys whatever the plan says, and it cannot be
+  undone from here. Review the plan first with tfc.plan_summary or
+  tfc.run_details. Returns the run's state after confirmation.
+side_effects:
+  - Applies the plan — creates, modifies, and destroys real infrastructure.
+  - Cannot be reversed; a mistaken apply needs a corrective run.
+  - Requires a user or team token with permission to apply runs.
+args:
+  - name: run_id
+    type: string
+    required: true
+    description: Run ID to confirm (run-…).
+    validation:
+      pattern: "^run-[A-Za-z0-9]{1,32}$"
+      max_length: 36
+  - name: comment
+    type: string
+    required: false
+    default: ""
+    description: Comment recorded on the run in HCP Terraform.
+    validation:
+      max_length: 512
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [apply, "{{ args.run_id }}", "{{ args.comment }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [run]
+    properties:
+      run:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+          - status
+          - message
+          - is_destroy
+          - plan_only
+          - has_changes
+          - source
+          - created_at
+          - workspace_id
+          - actions
+        properties:
+          id: {type: string}
+          status: {type: string}
+          message: {type: string}
+          is_destroy: {type: boolean}
+          plan_only: {type: boolean}
+          has_changes: {type: boolean}
+          source: {type: string}
+          created_at: {type: string}
+          workspace_id: {type: string}
+          actions:
+            type: object
+            additionalProperties: false
+            required: [confirmable, discardable, cancelable]
+            properties:
+              confirmable: {type: boolean}
+              discardable: {type: boolean}
+              cancelable: {type: boolean}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Confirm a reviewed run
+    args:
+      run_id: run-4Qm7TvLpXsRbNc2d
+      comment: Reviewed via emisar

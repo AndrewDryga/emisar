@@ -1,0 +1,89 @@
+schema_version: 1
+id: tfc.list_workspaces
+title: GET /organizations/<name>/workspaces
+kind: script
+risk: low
+description: >
+  List an organization's workspaces with their execution mode, Terraform
+  version, auto-apply setting, lock state, and resource count. Use it to find
+  the workspace ID the run actions need, or to see which workspaces apply
+  without review.
+side_effects:
+  - One read-only HTTP GET to the HCP Terraform API.
+  - Read-only.
+search_terms:
+  - which workspaces auto-apply
+  - locked workspace
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization name.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"
+      max_length: 63
+  - name: page_size
+    type: integer
+    required: false
+    default: 20
+    description: Workspaces per page.
+    validation:
+      min: 1
+      max: 100
+  - name: page
+    type: integer
+    required: false
+    default: 1
+    description: Page number, starting at 1.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv:
+    - list_workspaces
+    - "{{ args.organization }}"
+    - "{{ args.page_size }}"
+    - "{{ args.page }}"
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [workspaces, next_page]
+    properties:
+      workspaces:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - id
+            - name
+            - execution_mode
+            - terraform_version
+            - auto_apply
+            - locked
+            - resource_count
+            - updated_at
+          properties:
+            id: {type: string}
+            name: {type: string}
+            execution_mode: {type: string}
+            terraform_version: {type: string}
+            auto_apply: {type: boolean}
+            locked: {type: boolean}
+            resource_count: {type: integer}
+            updated_at: {type: string}
+      next_page: {type: [integer, "null"]}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Workspaces in an organization
+    args:
+      organization: example-corp

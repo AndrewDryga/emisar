@@ -1,0 +1,100 @@
+schema_version: 1
+id: tfc.list_runs
+title: GET /workspaces/<id>/runs
+kind: script
+risk: low
+description: >
+  List a workspace's runs with status, the operator's message, whether the run
+  destroys or is plan-only, and which of confirm/discard/cancel the run will
+  currently accept. Use it to find a run awaiting confirmation.
+side_effects:
+  - One read-only HTTP GET to the HCP Terraform API.
+  - Read-only.
+search_terms:
+  - run waiting for approval
+  - pending apply
+  - stuck run
+args:
+  - name: workspace_id
+    type: string
+    required: true
+    description: Workspace ID from list_workspaces (ws-…).
+    validation:
+      pattern: "^ws-[A-Za-z0-9]{1,32}$"
+      max_length: 35
+  - name: page_size
+    type: integer
+    required: false
+    default: 20
+    description: Runs per page.
+    validation:
+      min: 1
+      max: 100
+  - name: page
+    type: integer
+    required: false
+    default: 1
+    description: Page number, starting at 1.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv:
+    - list_runs
+    - "{{ args.workspace_id }}"
+    - "{{ args.page_size }}"
+    - "{{ args.page }}"
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [runs, next_page]
+    properties:
+      runs:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - id
+            - status
+            - message
+            - is_destroy
+            - plan_only
+            - has_changes
+            - source
+            - created_at
+            - workspace_id
+            - actions
+          properties:
+            id: {type: string}
+            status: {type: string}
+            message: {type: string}
+            is_destroy: {type: boolean}
+            plan_only: {type: boolean}
+            has_changes: {type: boolean}
+            source: {type: string}
+            created_at: {type: string}
+            workspace_id: {type: string}
+            actions:
+              type: object
+              additionalProperties: false
+              required: [confirmable, discardable, cancelable]
+              properties:
+                confirmable: {type: boolean}
+                discardable: {type: boolean}
+                cancelable: {type: boolean}
+      next_page: {type: [integer, "null"]}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent runs in a workspace
+    args:
+      workspace_id: ws-8Rp2nKcQvWxYzA1b

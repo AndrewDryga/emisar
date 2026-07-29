@@ -1,0 +1,82 @@
+schema_version: 1
+id: tfc.discard_run
+title: POST /runs/<id>/actions/discard
+kind: script
+risk: medium
+description: >
+  Discard a run awaiting confirmation so its plan is never applied and the
+  workspace unlocks for the next run. Discards no infrastructure — it throws
+  away the pending plan. Returns the run's state afterwards.
+side_effects:
+  - Abandons the pending plan; it can never be applied afterwards.
+  - Unlocks the workspace, letting a queued run proceed.
+  - Requires a user or team token with permission to apply runs.
+args:
+  - name: run_id
+    type: string
+    required: true
+    description: Run ID to discard (run-…).
+    validation:
+      pattern: "^run-[A-Za-z0-9]{1,32}$"
+      max_length: 36
+  - name: comment
+    type: string
+    required: false
+    default: ""
+    description: Comment recorded on the run in HCP Terraform.
+    validation:
+      max_length: 512
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [discard, "{{ args.run_id }}", "{{ args.comment }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [run]
+    properties:
+      run:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+          - status
+          - message
+          - is_destroy
+          - plan_only
+          - has_changes
+          - source
+          - created_at
+          - workspace_id
+          - actions
+        properties:
+          id: {type: string}
+          status: {type: string}
+          message: {type: string}
+          is_destroy: {type: boolean}
+          plan_only: {type: boolean}
+          has_changes: {type: boolean}
+          source: {type: string}
+          created_at: {type: string}
+          workspace_id: {type: string}
+          actions:
+            type: object
+            additionalProperties: false
+            required: [confirmable, discardable, cancelable]
+            properties:
+              confirmable: {type: boolean}
+              discardable: {type: boolean}
+              cancelable: {type: boolean}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Discard a plan that should not ship
+    args:
+      run_id: run-4Qm7TvLpXsRbNc2d
+      comment: Superseded

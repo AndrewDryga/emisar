@@ -1,0 +1,60 @@
+schema_version: 1
+id: tfc.list_organizations
+title: GET /organizations
+kind: script
+risk: low
+description: >
+  List the HCP Terraform organizations this token can see, with the contact
+  email and creation date of each. Use it to confirm the token authenticates
+  and to find the organization name the workspace actions need.
+side_effects:
+  - One read-only HTTP GET to the HCP Terraform API.
+  - Read-only.
+args:
+  - name: page_size
+    type: integer
+    required: false
+    default: 20
+    description: Organizations per page.
+    validation:
+      min: 1
+      max: 100
+  - name: page
+    type: integer
+    required: false
+    default: 1
+    description: Page number, starting at 1.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [list_organizations, "{{ args.page_size }}", "{{ args.page }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [organizations, next_page]
+    properties:
+      organizations:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, email, created_at]
+          properties:
+            name: {type: string}
+            email: {type: string}
+            created_at: {type: string}
+      next_page: {type: [integer, "null"]}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Organizations this token can reach
+    args: {}

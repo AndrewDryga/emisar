@@ -1,0 +1,138 @@
+services: [tfc-api]
+versions:
+  - version: "3.14.0-alpine3.22"
+    digest: "@sha256:8373231e1e906ddfb457748bfc032c4c06ada8c759b7b62d9c73ec2a3c56e710"
+    default: true
+secret_env: [TFE_TOKEN]
+env:
+  TFE_ADDRESS: http://tfc-api:8080
+  TFE_TOKEN: packtest-canary-tfe-token-6d2a
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+      - packtest-canary-tfe-token-6d2a
+      - packtest-canary-tfe-plan-secret-91c7
+cases:
+  - action: tfc.list_organizations
+    expect:
+      json:
+        /organizations/0/name: example-corp
+        /organizations/0/email: platform@example.test
+        /next_page: null
+
+  - action: tfc.list_workspaces
+    args: {organization: example-corp}
+    expect:
+      json:
+        /workspaces/0/id: ws-8Rp2nKcQvWxYzA1b
+        /workspaces/0/name: production-network
+        /workspaces/0/auto_apply: false
+        /workspaces/0/locked: true
+        /workspaces/0/resource_count: 47
+        # The API said there is a second page, so the caller is told rather than
+        # being handed a silently truncated list.
+        /next_page: 2
+
+  - action: tfc.list_runs
+    args: {workspace_id: ws-8Rp2nKcQvWxYzA1b}
+    expect:
+      json:
+        /runs/0/id: run-4Qm7TvLpXsRbNc2d
+        /runs/0/status: planned
+        /runs/0/workspace_id: ws-8Rp2nKcQvWxYzA1b
+        /runs/0/actions/confirmable: true
+        /next_page: null
+
+  - action: tfc.run_details
+    args: {run_id: run-4Qm7TvLpXsRbNc2d}
+    expect:
+      json:
+        /run/status: planned
+        /plan/status: finished
+        /plan/resource_additions: 1
+        /plan/resource_changes: 1
+        /plan/resource_destructions: 2
+
+  # The fixture's plan carries the canary in a sensitive output AND in resource
+  # attributes, exactly where a real plan carries a secret. The default
+  # stdout_not_contains proves the projection reads neither.
+  - action: tfc.plan_summary
+    args: {run_id: run-4Qm7TvLpXsRbNc2d}
+    expect:
+      stdout_contains:
+        - aws_instance.api
+        - module.db
+        - delete_because_no_resource_config
+        - db_password
+      stdout_not_contains:
+        # no-op resources and outputs are review noise and are filtered out.
+        - aws_iam_role.unchanged
+        - stable
+      json:
+        /source: hcp_plan
+        /cli_version: 1.13.1
+        /summary/total: 3
+        /summary/create: 0
+        /summary/update: 1
+        /summary/delete: 1
+        /summary/replace: 1
+        /drift/0/address: aws_security_group.web
+        /outputs/0/name: db_password
+        /outputs/0/sensitive: true
+
+  - action: tfc.create_plan_only_run
+    args: {workspace_id: ws-8Rp2nKcQvWxYzA1b, message: Pre-change review}
+    expect:
+      json:
+        /run/id: run-9Zk3WdFyHnJqEr5t
+        /run/plan_only: true
+        /run/status: pending
+        /run/actions/confirmable: false
+    probes:
+      - name: the speculative run exists and can never be confirmed
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/runs/run-9Zk3WdFyHnJqEr5t"]
+        expect:
+          stdout_contains: ['"status": "pending"']
+
+  - action: tfc.apply_run
+    args: {run_id: run-4Qm7TvLpXsRbNc2d, comment: Reviewed via emisar}
+    expect:
+      json:
+        /run/status: applying
+        /run/actions/confirmable: false
+    probes:
+      - name: the run really left the planned state
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/runs/run-4Qm7TvLpXsRbNc2d"]
+        expect:
+          stdout_contains: ['"status": "applying"']
+
+  - action: tfc.discard_run
+    args: {run_id: run-4Qm7TvLpXsRbNc2d, comment: Superseded}
+    expect:
+      json:
+        /run/status: discarded
+        /run/actions/confirmable: false
+    probes:
+      - name: the plan can no longer be applied
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/runs/run-4Qm7TvLpXsRbNc2d"]
+        expect:
+          stdout_contains: ['"status": "discarded"']
+
+  - action: tfc.cancel_run
+    args: {run_id: run-4Qm7TvLpXsRbNc2d, comment: Interrupting a hung plan}
+    expect:
+      json:
+        /run/status: canceled
+    probes:
+      - name: the run was interrupted
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/runs/run-4Qm7TvLpXsRbNc2d"]
+        expect:
+          stdout_contains: ['"status": "canceled"']
+
+  - name: tfc.run_details-rejects-foreign-id
+    action: tfc.run_details
+    args: {run_id: ws-8Rp2nKcQvWxYzA1b}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]

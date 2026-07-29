@@ -87,6 +87,8 @@ execution:
     - SNMP_VERSION
     - TYPESENSE_API_KEY
     - TYPESENSE_URL
+    - TFE_ADDRESS
+    - TFE_TOKEN
     - TF_BIN
     - TF_DIR
     - TF_PLAN_DIR
