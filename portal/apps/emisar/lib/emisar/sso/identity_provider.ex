@@ -46,6 +46,10 @@ defmodule Emisar.SSO.IdentityProvider do
     # directory sync actually working?" signal on the connection detail page.
     # Stamped (throttled) on every authenticated SCIM request; nil = never synced.
     field :scim_last_seen_at, :utc_datetime_usec
+    # When this connection's directory first pushed groups since sync was turned
+    # on. Nil means no snapshot has arrived, which is NOT the same as "everyone
+    # is in no groups" — the role recompute must not act on the difference.
+    field :scim_groups_synced_at, :utc_datetime_usec
 
     field :deleted_at, :utc_datetime_usec
 

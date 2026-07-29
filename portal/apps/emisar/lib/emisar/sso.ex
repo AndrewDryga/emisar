@@ -981,7 +981,7 @@ defmodule Emisar.SSO do
 
     queryable =
       UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_provider_and_identifier(provider.id, external_id)
+      |> UserIdentity.Query.by_provider_and_scim_identity(provider.id, external_id)
 
     case Repo.peek(queryable) do
       %UserIdentity{} = identity -> load_provisioned(provider, identity, external_id, attrs)
@@ -1430,12 +1430,14 @@ defmodule Emisar.SSO do
     with :ok <- validate_scim_group_values(external_group_id, display, member_external_ids) do
       with {:ok, {current_provider, affected, member_count}} <-
              Repo.transaction(fn ->
-               locked_provider = lock_provider!(provider)
+               {locked_provider, first_push?} = lock_provider!(provider)
                desired_ids = resolve_member_identity_ids(locked_provider, member_external_ids)
                _ = refresh_group_display(locked_provider, external_group_id, display)
 
                affected =
                  replace_group_members(locked_provider, external_group_id, display, desired_ids)
+
+               affected = identities_to_recompute(locked_provider, affected, first_push?)
 
                current_provider =
                  prepare_scim_group_authorization_change!(locked_provider, affected)
@@ -1480,21 +1482,22 @@ defmodule Emisar.SSO do
       ) do
     with :ok <- validate_required_scim_string(external_group_id),
          :ok <- validate_scim_patch_member_ids(add_external_ids, remove_external_ids) do
-      with {:ok, {current_provider, added, removed}} <-
+      with {:ok, {current_provider, added, removed, affected}} <-
              Repo.transaction(fn ->
-               locked_provider = lock_provider!(provider)
+               {locked_provider, first_push?} = lock_provider!(provider)
                add_ids = resolve_member_identity_ids(locked_provider, add_external_ids)
                remove_ids = resolve_member_identity_ids(locked_provider, remove_external_ids)
                added = add_group_members(locked_provider, external_group_id, add_ids)
                removed = remove_group_members(locked_provider, external_group_id, remove_ids)
-               affected = Enum.uniq(added ++ removed)
+               touched = Enum.uniq(added ++ removed)
+               affected = identities_to_recompute(locked_provider, touched, first_push?)
 
                current_provider =
                  prepare_scim_group_authorization_change!(locked_provider, affected)
 
-               {current_provider, added, removed}
+               {current_provider, added, removed, affected}
              end),
-           :ok <- recompute_role_for_affected(current_provider, Enum.uniq(added ++ removed)) do
+           :ok <- recompute_role_for_affected(current_provider, affected) do
         {:ok,
          %{external_group_id: external_group_id, added: length(added), removed: length(removed)}}
       end
@@ -1508,12 +1511,27 @@ defmodule Emisar.SSO do
   # success — while a concurrent PUT adding someone committed, leaving them
   # privileged after the directory had said they were out.
   defp lock_provider!(%IdentityProvider{} = provider) do
-    IdentityProvider.Query.not_deleted()
-    |> IdentityProvider.Query.by_account_id(provider.account_id)
-    |> IdentityProvider.Query.by_id(provider.id)
-    |> IdentityProvider.Query.lock_for_update()
-    |> Repo.fetch!(IdentityProvider.Query)
+    locked =
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.by_account_id(provider.account_id)
+      |> IdentityProvider.Query.by_id(provider.id)
+      |> IdentityProvider.Query.lock_for_update()
+      |> Repo.fetch!(IdentityProvider.Query)
+
+    # Reaching a group write IS the directory pushing groups. Stamped under the
+    # same lock the write holds, so the recompute below can tell an empty
+    # snapshot from an absent one.
+    first_push? = is_nil(locked.scim_groups_synced_at)
+    {:ok, stamped} = locked |> IdentityProvider.Changeset.mark_groups_synced() |> Repo.update()
+    {stamped, first_push?}
   end
+
+  # The first push after sync is enabled is the moment the snapshot becomes
+  # authoritative, so EVERY identity is recomputed against it — not just the ones
+  # this particular group named. Otherwise a member the push never mentions keeps
+  # whatever role the discarded snapshot had given them, indefinitely.
+  defp identities_to_recompute(provider, _affected, true), do: provider_identities(provider)
+  defp identities_to_recompute(_provider, affected, false), do: affected
 
   # Takes the provider already locked by `lock_provider!/1` — same transaction,
   # so its `authorization_version` is the current one.
@@ -1623,11 +1641,36 @@ defmodule Emisar.SSO do
     # #3: an identity in NO mapped group resets to the provider `default_role`
     # (least-privilege — removing a user from their last privileged group in the
     # directory demotes them here), rather than keeping a stale elevated role.
-    group_ids = identity_group_ids(identity)
-    role = highest_role_for_groups(group_ids, role_mappings) || provider.default_role
-    access = effective_runner_access(provider, group_ids, runner_access_mappings)
-    membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
-    apply_recomputed_authorization(provider, role, access, membership)
+    #
+    # That reading is only valid once the directory has actually told us about
+    # groups. Before the first push there is no snapshot to read, and SCIM does
+    # not order Users before Groups — so recomputing then would revoke a grant
+    # that is still current, or, where the default outranks a mapping, hand
+    # someone a role no Group operation authorized.
+    if groups_ever_synced?(provider) do
+      group_ids = identity_group_ids(identity)
+      role = highest_role_for_groups(group_ids, role_mappings) || provider.default_role
+      access = effective_runner_access(provider, group_ids, runner_access_mappings)
+      membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
+      apply_recomputed_authorization(provider, role, access, membership)
+    else
+      {:ok, Accounts.peek_sync_membership(provider.account_id, identity.user_id)}
+    end
+  end
+
+  # A connection that never syncs groups (no group mappings configured at all)
+  # has nothing to wait for — its members sit at `default_role` by design.
+  defp groups_ever_synced?(%IdentityProvider{scim_groups_synced_at: %DateTime{}}), do: true
+
+  defp groups_ever_synced?(%IdentityProvider{} = provider),
+    do: not provider_maps_any_group?(provider)
+
+  defp provider_maps_any_group?(%IdentityProvider{} = provider) do
+    queryable =
+      GroupRoleMapping.Query.not_deleted()
+      |> GroupRoleMapping.Query.by_provider_id(provider.id)
+
+    Repo.exists?(queryable)
   end
 
   # Apply the recomputed authorization in one membership transaction. Accounts

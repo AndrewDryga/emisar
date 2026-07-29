@@ -24,6 +24,28 @@ defmodule Emisar.SSO.UserIdentity.Query do
     )
   end
 
+  @doc """
+  The identity a SCIM create addresses, by EITHER key.
+
+  An approved link rebinds `provider_identifier` to the OIDC subject while
+  `scim_external_id` keeps the directory's own id — deliberately, so the
+  directory can still address the person. Matching only `provider_identifier`
+  made a re-POST miss that row and start linking again, and the next approval
+  flipped the binding back, leaving the person alternating between a broken
+  directory push and a broken sign-in. The directory's own key is preferred when
+  both match different rows.
+  """
+  def by_provider_and_scim_identity(queryable, provider_id, external_id) do
+    queryable
+    |> where(
+      [identities: i],
+      i.provider_id == ^provider_id and
+        (i.scim_external_id == ^external_id or i.provider_identifier == ^external_id)
+    )
+    |> order_by([identities: i], desc: i.scim_external_id == ^external_id)
+    |> limit(1)
+  end
+
   def by_user_id(queryable, user_id),
     do: where(queryable, [identities: i], i.user_id == ^user_id)
 

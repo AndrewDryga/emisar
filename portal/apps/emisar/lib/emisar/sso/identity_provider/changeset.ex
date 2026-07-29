@@ -54,9 +54,18 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     change(provider,
       scim_enabled: false,
       scim_token_prefix: nil,
-      scim_token_hash: nil
+      scim_token_hash: nil,
+      # The snapshot is discarded with the sync, so the next enable starts with
+      # no group information — not with "nobody is in a group".
+      scim_groups_synced_at: nil
     )
   end
+
+  @doc "Stamp the first group push since sync was enabled; later pushes are a no-op."
+  def mark_groups_synced(%IdentityProvider{scim_groups_synced_at: nil} = provider),
+    do: change(provider, scim_groups_synced_at: DateTime.utc_now())
+
+  def mark_groups_synced(%IdentityProvider{} = provider), do: change(provider, %{})
 
   defp validate_fields(changeset) do
     changeset

@@ -2714,9 +2714,21 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, []} = SSO.list_synced_groups(reenabled, subject)
 
-      # A user-first re-sync now lands them at the connection default, not the
-      # admin role the old snapshot remembered.
+      # SCIM does not order Users before Groups. Until the directory pushes
+      # groups, there is no snapshot to reason from — so a user-first re-sync
+      # leaves the membership alone rather than reading an absence as "in no
+      # groups" and acting on it.
       %{identity: resynced} = provision(reenabled, "okta|snapshot")
+      assert role_of(account.id, resynced.user_id) == :admin
+
+      # Once groups DO arrive and this person is not among them, they drop to the
+      # connection default — the old snapshot is not what restored anything.
+      {:ok, _} =
+        SSO.scim_upsert_group(reenabled, %{
+          external_id: "grp-adm",
+          member_external_ids: []
+        })
+
       assert role_of(account.id, resynced.user_id) == :viewer
     end
 
