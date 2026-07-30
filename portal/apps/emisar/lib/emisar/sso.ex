@@ -1611,6 +1611,45 @@ defmodule Emisar.SSO do
   end
 
   @doc """
+  Internal — refuse to mint a session through a connection that is no longer enabled.
+
+  Called by `Emisar.Auth` from INSIDE the session transaction, with that
+  transaction's repo, so the provider row lock is held across the credential
+  write. `complete_auth/3` checks the same thing, but its lock is released when the
+  identity transaction commits — leaving a window where a disable commits, its
+  session sweep finds nothing, and the callback then inserts a session that
+  survives. Holding the lock here means either the insert precedes the disable, or
+  it is refused after it.
+
+  `:ok` when there is no identity (a non-SSO sign-in has nothing to check).
+  """
+  def ensure_identity_provider_enabled(_repo, nil), do: :ok
+
+  def ensure_identity_provider_enabled(repo, user_identity_id) do
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_id(user_identity_id)
+
+    case repo.peek(queryable) do
+      %UserIdentity{provider_id: provider_id, account_id: account_id} ->
+        locked =
+          IdentityProvider.Query.not_deleted()
+          |> IdentityProvider.Query.by_account_id(account_id)
+          |> IdentityProvider.Query.by_id(provider_id)
+          |> IdentityProvider.Query.lock_for_update()
+          |> repo.peek()
+
+        case locked do
+          %IdentityProvider{enabled: true} -> :ok
+          _ -> {:error, :provider_disabled}
+        end
+
+      nil ->
+        {:error, :provider_disabled}
+    end
+  end
+
+  @doc """
   Internal — is this a display name a group write would accept?
 
   The SCIM boundary needs to answer that BEFORE it writes anything: a batch

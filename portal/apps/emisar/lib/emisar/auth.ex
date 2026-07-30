@@ -13,6 +13,7 @@ defmodule Emisar.Auth do
   alias Emisar.Crypto
   alias Emisar.Repo
   alias Emisar.RequestContext
+  alias Emisar.SSO
   alias Emisar.Telemetry
   alias Emisar.Users
   require Logger
@@ -57,6 +58,16 @@ defmodule Emisar.Auth do
       case Accounts.fetch_and_lock_account(account_id, repo: repo) do
         {:ok, account} -> {:ok, account}
         {:error, :not_found} -> {:error, :account_disabled}
+      end
+    end)
+    # An SSO session re-reads its connection HERE, under a lock held across the
+    # insert below. The callback checked it too, but that lock is released when the
+    # identity transaction commits — so a disable could commit, sweep no sessions,
+    # and then this insert would add one that survives.
+    |> Multi.run(:sso_provider, fn repo, _changes ->
+      case SSO.ensure_identity_provider_enabled(repo, Keyword.get(opts, :user_identity_id)) do
+        :ok -> {:ok, :enabled}
+        {:error, reason} -> {:error, reason}
       end
     end)
     |> Multi.run(:sign_in, fn _repo, _changes ->

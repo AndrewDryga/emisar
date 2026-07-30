@@ -2653,6 +2653,29 @@ defmodule Emisar.SSOTest do
 
   # -- scim_patch_group_members/4 (provider-scoped) --------------------
 
+  describe "ensure_identity_provider_enabled/2" do
+    test "refuses a session for an identity whose connection has been disabled" do
+      # Auth calls this INSIDE the session transaction, holding the provider lock
+      # across the credential write. complete_auth checks the same thing, but its
+      # lock is released when the identity transaction commits — so a disable could
+      # commit, sweep no sessions, and the callback then insert one that survives.
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      %{identity: identity} = provision(provider, "okta|session-guard")
+
+      assert SSO.ensure_identity_provider_enabled(Repo, identity.id) == :ok
+
+      {:ok, _disabled} = SSO.update_provider(provider, %{enabled: false}, subject)
+
+      assert SSO.ensure_identity_provider_enabled(Repo, identity.id) ==
+               {:error, :provider_disabled}
+    end
+
+    test "a sign-in with no identity has no connection to check" do
+      assert SSO.ensure_identity_provider_enabled(Repo, nil) == :ok
+    end
+  end
+
   describe "validate_scim_group_display/1" do
     test "accepts an absent display and a reasonable one" do
       # The SCIM boundary asks this BEFORE it writes, so a batch carrying both a
