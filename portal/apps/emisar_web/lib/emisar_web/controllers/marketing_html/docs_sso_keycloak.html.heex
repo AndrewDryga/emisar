@@ -189,6 +189,18 @@
               with auto-provisioning they land at the default role, and with manual provisioning
               an admin gets a pending request instead.
             </p>
+            <.docs_callout kind={:warn} title="Your Keycloak has to be reachable from emisar">
+              <p>
+                Self-hosted means this is worth checking before you start. emisar fetches the realm's
+                discovery document, its JWKS and the token endpoint from its own network, so the
+                realm URL must resolve to a PUBLIC address and present a certificate from a
+                public CA — a private or internal address is refused outright, because from where we
+                stand it is indistinguishable from our own infrastructure. A Keycloak behind a VPN
+                or on an internal-only hostname needs to be published, or reached through a gateway
+                that is.
+              </p>
+            </.docs_callout>
+
             <.docs_screenshot
               src="/images/docs/sso/keycloak-emisar-credentials.webp"
               title="emisar · Add provider"
@@ -216,7 +228,9 @@
         Keycloak — and an outbound client that pushes users to an application like emisar is on the
         roadmap, not in a release. So Keycloak gives you
         single sign-on (above)
-        with members created on first sign-in, and nothing else: no role mapping, and nobody
+        with members created on first sign-in when the connection auto-provisions (with manual
+        provisioning an admin approves each first sign-in instead), and nothing else: no role
+        mapping, and nobody
         removed from emisar when they leave Keycloak. Offboarding is therefore two steps, and the
         second is the one that ends access: disabling the Keycloak user stops them starting a NEW
         sign-in, but it does not touch the session they already hold or any API key they minted.
@@ -226,8 +240,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The connection still offers directory sync, because emisar's endpoint is ordinary SCIM 2.0
         with a bearer token and a third-party Keycloak provisioning plugin can drive it. If you run
-        one, enable sync here and point it at the base URL and token above. That plugin is yours to
-        choose, configure, and support — we don't ship or certify one.
+        one, enable sync here and point it at the base URL and token above — directory sync is an
+        Enterprise feature, a tier above the one single sign-on needs.
+        <.plan_note tier={:enterprise} />
+        That plugin is yours to choose, configure, and support — we don't ship or certify one.
       </p>
     </.docs_layout>
   </section>

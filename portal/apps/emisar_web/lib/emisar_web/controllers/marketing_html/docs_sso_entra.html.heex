@@ -158,6 +158,25 @@
             />
           </div>
         </li>
+      </ol>
+
+      <.docs_h2 id="scim">Directory sync</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Sign-in is above and stands on its own. This half is what makes Entra the authority on who
+        exists: it provisions people into emisar and, the part that matters on an offboard, removes
+        their access when the directory says they are gone. <.plan_note tier={:enterprise} />
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You need the connection's <strong class="text-zinc-200">SCIM base URL</strong>
+        and <strong class="text-zinc-200">bearer token</strong>
+        —
+        <.link
+          navigate={~p"/docs/scim#enable"}
+          class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+        >enabling directory sync</.link>
+        shows where both come from.
+      </p>
+      <ol class="mt-8 space-y-10">
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
             1

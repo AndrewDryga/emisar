@@ -39,6 +39,12 @@ defmodule Emisar.SSO.OIDC.Guard do
 
   @profile :emisar_oidc
   @tasks Emisar.SSO.OIDC.GuardTasks
+  # A relay that never times out, and an unbounded number of them, is a way to
+  # exhaust the guard without the process ever looking unhealthy — SSO then fails
+  # for everyone while the supervisor sees nothing wrong. A tunnel gets an idle
+  # deadline, and the pool is capped.
+  @relay_idle_timeout :timer.minutes(2)
+  @max_tunnels 64
   @connect_timeout 10_000
 
   @doc "The httpc profile every OIDC request must use."
@@ -80,9 +86,16 @@ defmodule Emisar.SSO.OIDC.Guard do
     case :gen_tcp.accept(listener) do
       {:ok, socket} ->
         # One process per tunnel: a client that disappears mid-relay must not take
-        # the acceptor with it.
-        {:ok, pid} = Task.Supervisor.start_child(@tasks, fn -> serve(socket) end)
-        :ok = :gen_tcp.controlling_process(socket, pid)
+        # the acceptor with it. Past the cap the connection is closed rather than
+        # queued, so a flood cannot grow the pool without bound.
+        if Task.Supervisor.children(@tasks) |> length() >= @max_tunnels do
+          Logger.warning("OIDC guard refused a tunnel: #{@max_tunnels} already open")
+          :gen_tcp.close(socket)
+        else
+          {:ok, pid} = Task.Supervisor.start_child(@tasks, fn -> serve(socket) end)
+          :ok = :gen_tcp.controlling_process(socket, pid)
+        end
+
         accept_loop(listener)
 
       {:error, :closed} ->
@@ -272,6 +285,10 @@ defmodule Emisar.SSO.OIDC.Guard do
         close_both(client, origin)
 
       {:tcp_error, _socket, _reason} ->
+        close_both(client, origin)
+    after
+      @relay_idle_timeout ->
+        Logger.warning("OIDC guard closed an idle tunnel")
         close_both(client, origin)
     end
   end

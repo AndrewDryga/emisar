@@ -687,7 +687,8 @@ defmodule Emisar.SSO do
   @doc """
   Validate the OIDC callback (state/nonce/PKCE + ID-token signature/iss/aud/exp
   + RFC 9207 issuer check), then resolve the identity strictly by
-  `(provider, sub)` — never email. An unknown `sub` JIT-provisions a fresh user
+  `(provider, identifier_claim)` — the `sub` for every provider except Entra, which
+  uses `oid` — and never by email. An unknown `sub` JIT-provisions a fresh user
   when the provider's `provisioner` is `:jit`, or is captured as a pending link
   request and returns `{:pending, request}` when it is `:manual` (the web layer
   parks the person on the pending-approval page). Returns

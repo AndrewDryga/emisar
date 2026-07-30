@@ -220,7 +220,8 @@
         Google Workspace cannot drive directory sync into emisar. Google provisions to SaaS apps in
         its own catalog, and a custom OAuth client — which is what
         the setup above creates — is not one of them, so there is no SCIM connector to point here. Members are
-        created on first sign-in at the connection's default role, and nothing removes them
+        created on first sign-in at the connection's default role — or held for an admin to
+        approve, if you chose manual provisioning — and nothing removes them
         automatically. Offboarding is therefore two steps, and the second is the one that ends
         access: suspending the Google account stops them starting a NEW sign-in, but it does not
         touch the session they already hold or any API key they minted. Suspend or remove them in
@@ -234,9 +235,15 @@
           and connect <em>that</em>
           to emisar. An offboard in Google then reaches us as the standard
           <code class="rounded bg-zinc-950 px-1 py-0.5 text-xs">active: false</code>
-          signal and access is revoked without anyone touching emisar. Most orgs already federate
-          Google through an IdP, so there is usually nothing new to stand up. (Native Google
-          directory sync is on our roadmap — talk to us if you need it.)
+          signal and access is revoked without anyone touching emisar.
+        </p>
+        <p class="mt-3">
+          One condition, and it is easy to miss: federating sign-in through that IdP is not by
+          itself a lifecycle feed. The people must be MANAGED there — provisioned or synchronised
+          into it — because what deprovisions them in emisar is that IdP's own directory saying
+          they are gone. Most orgs that federate Google already sync their staff into the same
+          IdP, so there is usually nothing new to stand up. (Native Google directory sync is on
+          our roadmap — talk to us if you need it.)
         </p>
       </.docs_callout>
     </.docs_layout>
