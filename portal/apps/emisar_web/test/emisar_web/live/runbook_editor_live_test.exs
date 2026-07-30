@@ -155,6 +155,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert :binary.match(input_html, ~s(id="runbook-input-0")) <
                :binary.match(input_html, ~s(phx-click="add_input"))
 
+      assert has_element?(lv, "#runbook-input-0 h3", "Input 1")
+      assert has_element?(lv, ~s(#runbook-inputs > button.mt-6), "Add input")
+
       render_click(lv, "add_stage", %{})
       assert has_element?(lv, "#runbook-stage-1")
       assert has_element?(lv, "#runbook-stages button", "Add stage")
@@ -204,6 +207,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         )
 
       assert html =~ "Allowed values"
+      assert has_element?(lv, "#runbook-input-0 h3", "environment")
+      assert has_element?(lv, "#runbook-input-0", "Input 1 · Enum")
 
       assert has_element?(
                lv,
@@ -435,12 +440,21 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     } do
       subject = owner_subject(owner, account)
 
+      input =
+        RunbookDraft.input()
+        |> Map.merge(%{
+          "id" => "scope",
+          "description" => "Incident scope",
+          "type" => "enum",
+          "enum_values" => [%{"value" => "database"}]
+        })
+
       {:ok, runbook} =
         Runbooks.create_runbook(
           %{
             "title" => "Fleet health",
             "slug" => "fleet-health",
-            "definition" => valid_draft() |> RunbookDraft.definition()
+            "definition" => valid_draft(inputs: [input]) |> RunbookDraft.definition()
           },
           subject
         )
@@ -464,6 +478,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(lv, "#runbook-editor-form input[disabled]")
       refute has_element?(lv, "button", "Save draft")
       refute has_element?(lv, "#delete-runbook")
+      refute has_element?(lv, "button", "Add input")
+      refute has_element?(lv, ~s(button[aria-label="Remove input"]))
     end
   end
 

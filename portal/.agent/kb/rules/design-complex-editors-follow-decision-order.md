@@ -17,6 +17,12 @@ comes before its concurrency bound; a bound appears only for a mode where it
 changes execution. Stable identifiers and infrequently changed limits stay in a
 nearby disclosure after the behavior they refine.
 
+Inside a repeated form card, visual weight follows information weight. Group
+identity, purpose, behavior, and optional constraints in that scan order. Let
+flexible text fields grow, bound compact finite choices to a useful measure, and
+keep intentional negative space instead of stretching every control to fill a
+uniform grid.
+
 Do not show a control in a mode where it has no effect. If a value still changes
 execution, keep it visible beside the choice it qualifies and explain the
 interaction. On narrow screens, lifecycle actions may lead, but the primary
@@ -48,6 +54,8 @@ never a reduced model.
   wider task column; otherwise it follows the workflow.
 - Save and Publish stay together; the existing page navigation remains the one
   way to leave the editor.
+- A run-time input gives its ID room, keeps its type and Yes/No choices compact,
+  and reveals paired bounds together below the behavior they constrain.
 
 ## Bad
 
@@ -57,6 +65,8 @@ never a reduced model.
 - Showing a concurrency value in sequential mode where it does nothing.
 - A Cancel editing link in the lifecycle rail that only navigates back.
 - Removing advanced fields to make the editor look simpler.
+- Stretching an ID, type, Yes/No selector, and visibility selector into four
+  equally weighted boxes merely because the card has room.
 
 ## Enforced
 
@@ -64,9 +74,12 @@ Rendered LiveView tests pin the section and field order and assert that
 runtime-relevant controls remain present only in applicable modes and redundant
 Cancel editing navigation is absent. Catalog tests assert that target selection
 narrows compatible actions. Screenshot review covers the desktop split and the
-narrow stacked layout.
+narrow stacked layout. Shared repeating-list controls merge caller classes so
+their spacing remains part of the collection contract.
 
 Sweep complex editors for ID/version fields before behavior, behavior choices
 that are not derived from earlier scope choices, controls shown in modes where
 they have no effect, lifecycle rails that duplicate existing exit navigation,
-and breakpoint ordering that puts a secondary rail before the primary task.
+breakpoint ordering that puts a secondary rail before the primary task, and
+uniform grids that make short finite choices as visually heavy as primary
+identity or purpose fields.

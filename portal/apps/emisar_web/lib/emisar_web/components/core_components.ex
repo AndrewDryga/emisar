@@ -886,13 +886,17 @@ defmodule EmisarWeb.CoreComponents do
       <.add_row label="Add step" phx-click="add_action_step" />
   """
   attr :label, :string, required: true
+  attr :class, :any, default: nil
   attr :rest, :global, include: ~w(disabled)
 
   def add_row(assigns) do
     ~H"""
     <button
       type="button"
-      class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs font-medium text-zinc-400 transition-colors enabled:hover:border-zinc-700 enabled:hover:bg-white/[0.04] enabled:hover:text-zinc-200 disabled:opacity-40"
+      class={[
+        "flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs font-medium text-zinc-400 transition-colors enabled:hover:border-zinc-700 enabled:hover:bg-white/[0.04] enabled:hover:text-zinc-200 disabled:opacity-40",
+        @class
+      ]}
       {@rest}
     >
       <.icon name="hero-plus" class="h-4 w-4" />{@label}
