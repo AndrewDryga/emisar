@@ -169,7 +169,7 @@ services:
       # The OIDC guard refuses a private peer address, which is every address a
       # local Keycloak can have. Declaring it by name is how this stack says "that
       # one is my IdP"; production leaves this unset.
-      EMISAR_SSO_ALLOWED_IDP_HOSTS: "localhost,keycloak"
+      EMISAR_SSO_ALLOWED_IDP_HOSTS: "localhost:${KEYCLOAK_PORT:-8443},keycloak:8443"
       PADDLE_API_KEY: "${PADDLE_API_KEY:-}"
       PADDLE_WEBHOOK_SECRET: "${PADDLE_WEBHOOK_SECRET:-}"
       PADDLE_CLIENT_TOKEN: "${PADDLE_CLIENT_TOKEN:-}"

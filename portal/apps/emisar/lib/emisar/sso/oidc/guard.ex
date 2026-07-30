@@ -125,7 +125,7 @@ defmodule Emisar.SSO.OIDC.Guard do
 
   defp tunnel(authority, socket) do
     with {:ok, host, port} <- split_authority(authority),
-         {:ok, address} <- resolve_allowed(host) do
+         {:ok, address} <- resolve_allowed(host, port) do
       connect(socket, host, address, port)
     else
       {:error, {:blocked, host, address}} ->
@@ -141,10 +141,10 @@ defmodule Emisar.SSO.OIDC.Guard do
   # Resolve ONCE and hand back the address, so the connection below dials the thing
   # that was judged rather than repeating the lookup. An IP literal needs no
   # lookup at all; a name gets exactly one.
-  defp resolve_allowed(host) do
+  defp resolve_allowed(host, port) do
     charlist = String.to_charlist(host)
 
-    if declared?(host) do
+    if declared?(host, port) do
       resolve_declared(host, charlist)
     else
       case :inet.parse_address(charlist) do
@@ -155,21 +155,35 @@ defmodule Emisar.SSO.OIDC.Guard do
   end
 
   @doc """
-  Has this deployment declared `host` as one of its own identity providers?
+  Has this deployment declared this exact `host:port` as one of its own identity
+  providers?
 
   A deployment may legitimately run its IdP on a private address — and every test
-  harness must, since a local Keycloak cannot be given a public one. Such a host is
-  named EXACTLY, by whoever runs the deployment, and the list is empty unless set:
-  this is a declaration of "these are my IdPs", not a switch that relaxes the
-  policy for everything.
+  harness must, since a local Keycloak cannot be given a public one. Such an
+  endpoint is named EXACTLY, by whoever runs the deployment, and the list is empty
+  unless set.
+
+  **Host AND port.** The hostname reaching this function comes from a discovery
+  document, which is attacker-influenced, so a host-only declaration let any
+  tenant's document name a declared host and reach it on ANY TLS-speaking port —
+  the declaration was meant to admit one endpoint, not a machine. The port closes
+  that.
+
+  What it does NOT do is bind the exemption to the provider that asked. On a
+  deployment which declares an endpoint, any tenant's document may still name that
+  endpoint; scoping it per provider needs a profile per provider and is tracked
+  separately. In production the list is empty, so the capability does not exist
+  there.
 
   Public because the guard answers CONNECTs in a process with no relationship to
   any test, so this is the seam a test can actually reach.
   """
-  def declared?(host) do
+  def declared?(host, port) do
+    wanted = "#{String.downcase(host)}:#{port}"
+
     :emisar
     |> Emisar.Config.get_env(:sso_allowed_idp_hosts, [])
-    |> Enum.any?(&(String.downcase(&1) == String.downcase(host)))
+    |> Enum.any?(&(String.downcase(String.trim(&1)) == wanted))
   end
 
   # Still resolved, and still dialled by the address we resolved — being declared

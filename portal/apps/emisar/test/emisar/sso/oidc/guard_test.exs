@@ -74,19 +74,28 @@ defmodule Emisar.SSO.OIDC.GuardTest do
     # a per-test config override cannot reach it — the decision is asserted here and
     # the declared path end to end by `./run e2e sso`, whose stack declares its
     # local Keycloak.
-    Emisar.Config.put_override(:emisar, :sso_allowed_idp_hosts, ["idp.internal", "KEYCLOAK"])
+    Emisar.Config.put_override(:emisar, :sso_allowed_idp_hosts, [
+      "idp.internal:8443",
+      "KEYCLOAK:8443"
+    ])
 
-    assert Guard.declared?("idp.internal")
-    assert Guard.declared?("IDP.INTERNAL"), "the comparison must not be case-sensitive"
-    assert Guard.declared?("keycloak")
-    refute Guard.declared?("localhost")
-    refute Guard.declared?("idp.internal.evil.test"), "a declaration is exact, not a prefix"
-    refute Guard.declared?("169.254.169.254")
+    assert Guard.declared?("idp.internal", 8443)
+    assert Guard.declared?("IDP.INTERNAL", 8443), "the comparison must not be case-sensitive"
+    assert Guard.declared?("keycloak", 8443)
+
+    # The PORT is part of the declaration. Without it, a discovery document naming a
+    # declared host reached any TLS-speaking port on that machine.
+    refute Guard.declared?("idp.internal", 9200)
+    refute Guard.declared?("idp.internal", 443)
+
+    refute Guard.declared?("localhost", 8443)
+    refute Guard.declared?("idp.internal.evil.test", 8443), "a declaration is exact, not a prefix"
+    refute Guard.declared?("169.254.169.254", 80)
   end
 
   test "nothing is declared by default" do
-    refute Guard.declared?("localhost")
-    refute Guard.declared?("keycloak")
+    refute Guard.declared?("localhost", 8443)
+    refute Guard.declared?("keycloak", 8443)
   end
 
   test "lets a public address through the policy" do

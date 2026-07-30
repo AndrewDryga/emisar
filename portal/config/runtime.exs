@@ -182,12 +182,16 @@ if config_env() == :prod do
   # still complete sign-in.
   config :emisar_web, force_secure_cookies: https_fronted?
 
-  # Hosts this deployment declares as its own identity providers, so the OIDC
-  # guard lets them through the private-address policy. EMPTY unless set: an IdP on
-  # the public internet needs nothing here, and a private address is otherwise
-  # indistinguishable from our own internal infrastructure — which is the SSRF the
-  # guard exists to refuse. The e2e harness sets it to its local Keycloak, because
-  # a test IdP cannot have a public address.
+  # Endpoints this deployment declares as its own identity providers, as exact
+  # `host:port` values, so the OIDC guard lets them through the private-address
+  # policy. EMPTY unless set: an IdP on the public internet needs nothing here, and
+  # a private address is otherwise indistinguishable from our own internal
+  # infrastructure — which is the SSRF the guard exists to refuse. The e2e harness
+  # sets it to its local Keycloak, because a test IdP cannot have a public address.
+  #
+  # The PORT is part of it. A host-only declaration admitted a machine rather than
+  # an endpoint: a discovery document naming a declared host could reach any
+  # TLS-speaking port on it.
   config :emisar,
          :sso_allowed_idp_hosts,
          "EMISAR_SSO_ALLOWED_IDP_HOSTS"
