@@ -20,10 +20,6 @@ defmodule Emisar.Application do
       {Cluster.Supervisor,
        [Application.get_env(:emisar, :cluster_topologies, []), [name: Emisar.ClusterSupervisor]]},
 
-      # Per-account OIDC provider-config workers (discovery + JWKS cache)
-      # are started lazily under this supervisor, named via the registry by
-      # provider id. See `Emisar.SSO.OIDC.Oidcc`.
-
       # Do not start database-backed contexts until a new node has stable SQL access.
       Emisar.DatabaseReadiness,
 
@@ -38,7 +34,8 @@ defmodule Emisar.Application do
       Emisar.MCPOperations,
       Emisar.SSO,
       Emisar.Runners,
-      Emisar.Runs
+      Emisar.Runs,
+      Emisar.Runbooks
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Emisar.Supervisor)
