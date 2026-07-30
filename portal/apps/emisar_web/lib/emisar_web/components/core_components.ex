@@ -1509,6 +1509,12 @@ defmodule EmisarWeb.CoreComponents do
   attr :current_user, :map, required: true
   attr :current_account, :map, required: true
   attr :current_subject, :map, required: true
+  # The membership, so the person's name is the one THIS account knows them by. A
+  # directory can rename a member per account, and `users.full_name` is
+  # cross-account — a multi-account synced member was called two different things
+  # depending on which surface you looked at. Defaults to nil so a unit test
+  # rendering the shell without the on_mount hook still works.
+  attr :current_membership, :map, default: nil
   attr :switchable_accounts, :list, default: nil
   attr :section, :atom, default: :dashboard
 
@@ -1555,7 +1561,11 @@ defmodule EmisarWeb.CoreComponents do
           no_agents?={@no_agents?}
           onboarding_incomplete?={@onboarding_incomplete?}
         />
-        <.shell_user current_user={@current_user} current_account={@current_account} />
+        <.shell_user
+          current_user={@current_user}
+          current_account={@current_account}
+          current_membership={@current_membership}
+        />
       </aside>
 
       <%!-- Mobile drawer (hidden by default; JS toggles `open`) --%>
@@ -1600,7 +1610,11 @@ defmodule EmisarWeb.CoreComponents do
             no_agents?={@no_agents?}
             onboarding_incomplete?={@onboarding_incomplete?}
           />
-          <.shell_user current_user={@current_user} current_account={@current_account} />
+          <.shell_user
+            current_user={@current_user}
+            current_account={@current_account}
+            current_membership={@current_membership}
+          />
         </aside>
       </div>
 
@@ -1994,6 +2008,7 @@ defmodule EmisarWeb.CoreComponents do
 
   attr :current_user, :map, required: true
   attr :current_account, :map, required: true
+  attr :current_membership, :map, default: nil
 
   defp shell_user(assigns) do
     ~H"""
@@ -2005,9 +2020,14 @@ defmodule EmisarWeb.CoreComponents do
           class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition hover:bg-white/[0.04]"
           aria-label="Open profile settings"
         >
-          <.avatar name={TimeHelpers.user_display_name(@current_user)} size={:sm} />
+          <.avatar
+            name={TimeHelpers.member_display_name(@current_membership, @current_user)}
+            size={:sm}
+          />
           <div class="min-w-0 flex-1">
-            <div class="truncate font-medium">{TimeHelpers.user_display_name(@current_user)}</div>
+            <div class="truncate font-medium">
+              {TimeHelpers.member_display_name(@current_membership, @current_user)}
+            </div>
             <div
               :if={email = TimeHelpers.secondary_user_email(@current_user)}
               class="truncate text-xs text-zinc-400"

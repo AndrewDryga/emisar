@@ -1087,6 +1087,7 @@ defmodule EmisarWeb.PacksLive do
     ~H"""
     <.dashboard_shell
       current_subject={@current_subject}
+      current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
       pending_packs_count={@pending_packs_count}
       fleet_all_offline?={@fleet_all_offline?}

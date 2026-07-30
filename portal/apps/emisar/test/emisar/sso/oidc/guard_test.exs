@@ -99,9 +99,14 @@ defmodule Emisar.SSO.OIDC.GuardTest do
     refute IssuerUrl.address_allowed?({169, 254, 169, 254})
   end
 
+  # Generous timeouts on purpose. Two seconds was enough in isolation and flaked
+  # under the full suite, where connect + accept + resolve + reply competes with a
+  # few hundred other tests.
+  @wait 15_000
+
   defp speak(port, request) do
     {:ok, socket} =
-      :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false, packet: :raw], 2_000)
+      :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false, packet: :raw], @wait)
 
     :ok = :gen_tcp.send(socket, request)
     response = recv(socket)
@@ -110,7 +115,7 @@ defmodule Emisar.SSO.OIDC.GuardTest do
   end
 
   defp recv(socket, acc \\ "") do
-    case :gen_tcp.recv(socket, 0, 2_000) do
+    case :gen_tcp.recv(socket, 0, @wait) do
       {:ok, data} when byte_size(acc) + byte_size(data) < 4_096 -> recv(socket, acc <> data)
       {:ok, data} -> acc <> data
       {:error, _} -> acc
