@@ -560,12 +560,30 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Checking runners, packs, trust, and policy"
       refute has_element?(lv, "button:not([disabled])", "Publish")
 
+      assert has_element?(
+               lv,
+               ~s(#runbook-actions-desktop-publish-reason-tt[tabindex="0"][aria-describedby="runbook-actions-desktop-publish-reason"])
+             )
+
+      assert has_element?(
+               lv,
+               "#runbook-actions-desktop-publish-reason[role=\"tooltip\"]",
+               "Wait for the publish check to finish."
+             )
+
       send(lv.pid, {:runbook_preview, 1})
       html = render(lv)
 
       assert html =~ "Ready to publish", html |> LazyHTML.from_fragment() |> LazyHTML.text()
       assert html =~ "1"
-      assert has_element?(lv, "button:not([disabled])", "Publish")
+
+      assert has_element?(
+               lv,
+               "#runbook-actions-desktop-publish:not([disabled])",
+               "Publish"
+             )
+
+      refute has_element?(lv, "#runbook-actions-desktop-publish-reason")
 
       destination = ~p"/app/#{account}/runbooks"
 
@@ -583,6 +601,18 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Build the first stage"
       assert has_element?(lv, "button[disabled]", "Save draft")
 
+      assert has_element?(
+               lv,
+               "#runbook-actions-desktop-save-reason[role=\"tooltip\"]",
+               "No unsaved changes."
+             )
+
+      assert has_element?(
+               lv,
+               "#runbook-actions-mobile-save-reason[role=\"tooltip\"]",
+               "No unsaved changes."
+             )
+
       input =
         RunbookDraft.input()
         |> Map.merge(%{
@@ -595,8 +625,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       html = change(lv, valid_draft(inputs: [input]))
 
       assert html =~ "Input 1 · Default"
-      assert has_element?(lv, "button:not([disabled])", "Save draft")
+      assert has_element?(lv, "#runbook-actions-desktop-save:not([disabled])", "Save draft")
+      refute has_element?(lv, "#runbook-actions-desktop-save-reason")
       assert has_element?(lv, "button[disabled]", "Publish")
+
+      assert has_element?(
+               lv,
+               "#runbook-actions-desktop-publish-reason[role=\"tooltip\"]",
+               "Fix the 1 definition issue before publishing."
+             )
 
       destination = ~p"/app/#{account}/runbooks"
       assert {:error, {:live_redirect, %{to: ^destination}}} = render_click(lv, "save", %{})
@@ -615,6 +652,18 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert html =~ "can&#39;t be blank"
       refute html =~ "has invalid format"
+
+      assert has_element?(
+               lv,
+               "#runbook-actions-desktop-publish-reason[role=\"tooltip\"]",
+               "Fix the errors in Details before publishing."
+             )
+
+      assert has_element?(
+               lv,
+               "#runbook-actions-desktop-save-reason[role=\"tooltip\"]",
+               "Fix the errors in Details before saving."
+             )
     end
 
     test "a viewer inspects the same structured definition without mutation controls", %{

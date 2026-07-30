@@ -75,16 +75,56 @@ defmodule EmisarWeb.RunbookEditorComponents do
   end
 
   defp publish_ready?(assigns) do
-    changed_or_draft? =
-      assigns.dirty? or
-        (not is_nil(assigns.runbook) and assigns.runbook.status == :draft)
-
-    not assigns.read_only? and changed_or_draft? and assigns.form.source.valid? and
+    not assigns.read_only? and changed_or_draft?(assigns) and assigns.form.source.valid? and
       assigns.definition_issues == [] and assigns.preview.state == :ready
+  end
+
+  defp publish_blocker(assigns) do
+    cond do
+      publish_ready?(assigns) ->
+        nil
+
+      not assigns.form.source.valid? ->
+        "Fix the errors in Details before publishing."
+
+      assigns.definition_issues != [] ->
+        issue_count = length(assigns.definition_issues)
+
+        "Fix the #{issue_count} definition #{if issue_count == 1, do: "issue", else: "issues"} before publishing."
+
+      not changed_or_draft?(assigns) ->
+        "Make a change before publishing a new version."
+
+      assigns.preview.state == :loading ->
+        "Wait for the publish check to finish."
+
+      assigns.preview.state == :blocked ->
+        "Resolve the current infrastructure blockers before publishing."
+
+      assigns.preview.state == :unavailable ->
+        "Current infrastructure validation is unavailable."
+
+      true ->
+        "Publishing is unavailable."
+    end
   end
 
   defp draft_save_ready?(assigns) do
     not assigns.read_only? and assigns.dirty? and assigns.form.source.valid?
+  end
+
+  defp draft_save_blocker(assigns) do
+    cond do
+      draft_save_ready?(assigns) -> nil
+      not assigns.dirty? -> "No unsaved changes."
+      not assigns.form.source.valid? -> "Fix the errors in Details before saving."
+      true -> "Saving is unavailable."
+    end
+  end
+
+  defp changed_or_draft?(assigns) do
+    assigns.dirty? or
+      (not is_nil(assigns.runbook) and assigns.runbook.status == :draft)
   end
 
   def render(assigns) do
@@ -146,10 +186,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
         <div :if={not @read_only?} class="xl:hidden">
           <.editor_actions
+            id="runbook-actions-mobile"
             runbook={@runbook}
             dirty?={@dirty?}
-            publish_ready?={publish_ready?(assigns)}
-            save_ready?={draft_save_ready?(assigns)}
+            publish_blocker={publish_blocker(assigns)}
+            save_blocker={draft_save_blocker(assigns)}
             read_only?={@read_only?}
           />
         </div>
@@ -198,10 +239,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
           <aside class="space-y-8 xl:sticky xl:top-6 xl:col-start-2 xl:row-start-1 xl:self-start">
             <div :if={not @read_only?} class="hidden xl:block">
               <.editor_actions
+                id="runbook-actions-desktop"
                 runbook={@runbook}
                 dirty?={@dirty?}
-                publish_ready?={publish_ready?(assigns)}
-                save_ready?={draft_save_ready?(assigns)}
+                publish_blocker={publish_blocker(assigns)}
+                save_blocker={draft_save_blocker(assigns)}
                 read_only?={@read_only?}
               />
             </div>
@@ -235,10 +277,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
     """
   end
 
+  attr :id, :string, required: true
   attr :runbook, :any, default: nil
   attr :dirty?, :boolean, required: true
-  attr :publish_ready?, :boolean, required: true
-  attr :save_ready?, :boolean, required: true
+  attr :publish_blocker, :string, default: nil
+  attr :save_blocker, :string, default: nil
   attr :read_only?, :boolean, required: true
 
   defp editor_actions(assigns) do
@@ -246,26 +289,24 @@ defmodule EmisarWeb.RunbookEditorComponents do
     <section>
       <.section_header title="Actions" />
       <div class="grid grid-cols-2 gap-3">
-        <.button
-          type="button"
-          variant={if @publish_ready?, do: :primary, else: :secondary}
-          phx-click="publish"
-          phx-disable-with="Publishing…"
-          disabled={not @publish_ready?}
-          class="justify-center"
-        >
-          Publish
-        </.button>
-        <.button
-          type="button"
+        <.editor_action_button
+          id={"#{@id}-publish"}
+          label="Publish"
+          event="publish"
+          pending_label="Publishing…"
+          variant={if is_nil(@publish_blocker), do: :primary, else: :secondary}
+          blocked_reason={@publish_blocker}
+          align={:left}
+        />
+        <.editor_action_button
+          id={"#{@id}-save"}
+          label="Save draft"
+          event="save"
+          pending_label="Saving…"
           variant={:secondary}
-          phx-click="save"
-          phx-disable-with="Saving…"
-          disabled={not @save_ready?}
-          class="justify-center"
-        >
-          Save draft
-        </.button>
+          blocked_reason={@save_blocker}
+          align={:right}
+        />
       </div>
       <dl :if={@runbook} class="mt-4 space-y-2 text-xs text-zinc-400">
         <.kv label="Current">v{@runbook.version}</.kv>
@@ -273,6 +314,48 @@ defmodule EmisarWeb.RunbookEditorComponents do
         <.kv :if={@dirty? and not @read_only?} label="Next">v{@runbook.version + 1}</.kv>
       </dl>
     </section>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :label, :string, required: true
+  attr :event, :string, required: true
+  attr :pending_label, :string, required: true
+  attr :variant, :atom, required: true
+  attr :blocked_reason, :string, default: nil
+  attr :align, :atom, required: true
+
+  defp editor_action_button(assigns) do
+    ~H"""
+    <.tooltip
+      :if={@blocked_reason}
+      id={"#{@id}-reason"}
+      text={@blocked_reason}
+      placement={:bottom}
+      align={@align}
+      class="w-full flex-col"
+    >
+      <.button
+        id={@id}
+        type="button"
+        variant={@variant}
+        disabled
+        class="w-full justify-center"
+      >
+        {@label}
+      </.button>
+    </.tooltip>
+    <.button
+      :if={is_nil(@blocked_reason)}
+      id={@id}
+      type="button"
+      variant={@variant}
+      phx-click={@event}
+      phx-disable-with={@pending_label}
+      class="w-full justify-center"
+    >
+      {@label}
+    </.button>
     """
   end
 
