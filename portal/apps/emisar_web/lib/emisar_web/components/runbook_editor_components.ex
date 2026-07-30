@@ -486,7 +486,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
               </div>
             </div>
 
-            <div :if={input["type"] != "enum"}>
+            <div
+              :if={input["type"] != "enum"}
+              id={"runbook-input-#{index}-default-bounds"}
+              class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"
+            >
               <.input
                 :if={input["type"] == "string"}
                 name={"draft[inputs][#{index}][default]"}
@@ -528,13 +532,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 disabled={@read_only? or input["sensitive"] == "true"}
                 options={[{"No default", ""}, {"True", "true"}, {"False", "false"}]}
               />
-            </div>
-
-            <div
-              :if={input["type"] in ["integer", "number"]}
-              class="grid gap-4 sm:grid-cols-2"
-            >
               <.input
+                :if={input["type"] in ["integer", "number"]}
                 type="number"
                 step={if(input["type"] == "integer", do: "1", else: "any")}
                 name={"draft[inputs][#{index}][minimum]"}
@@ -544,6 +543,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 disabled={@read_only?}
               />
               <.input
+                :if={input["type"] in ["integer", "number"]}
                 type="number"
                 step={if(input["type"] == "integer", do: "1", else: "any")}
                 name={"draft[inputs][#{index}][maximum]"}
@@ -552,13 +552,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 label_variant={:eyebrow}
                 disabled={@read_only?}
               />
-            </div>
-
-            <div
-              :if={input["type"] == "string"}
-              class="grid gap-4 sm:grid-cols-2"
-            >
               <.input
+                :if={input["type"] == "string"}
                 type="number"
                 min="0"
                 name={"draft[inputs][#{index}][min_length]"}
@@ -568,6 +563,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 disabled={@read_only?}
               />
               <.input
+                :if={input["type"] == "string"}
                 type="number"
                 min="0"
                 name={"draft[inputs][#{index}][max_length]"}

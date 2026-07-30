@@ -142,7 +142,24 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         </div>
       </div>
 
-      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+      <div
+        id={"runbook-stage-#{@stage_index}-overview"}
+        class={[
+          "mt-4 grid gap-3 sm:grid-cols-2",
+          if(@stage["mode"] == "parallel",
+            do: "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_13rem]",
+            else: "xl:grid-cols-[9rem_minmax(0,1fr)_10rem]"
+          )
+        ]}
+      >
+        <.input
+          name={"draft[stages][#{@stage_index}][id]"}
+          value={@stage["id"]}
+          label="Identifier"
+          label_variant={:eyebrow}
+          disabled={@read_only?}
+          class="font-mono"
+        />
         <.input
           name={"draft[stages][#{@stage_index}][title]"}
           value={@stage["title"]}
@@ -159,39 +176,16 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           disabled={@read_only?}
           options={[{"Sequential", "sequential"}, {"Parallel", "parallel"}]}
         />
-        <div :if={@stage["mode"] == "parallel"} class="sm:col-span-2 sm:max-w-xs">
-          <.input
-            type="number"
-            min="1"
-            max="16"
-            name={"draft[stages][#{@stage_index}][max_parallel]"}
-            value={@stage["max_parallel"]}
-            label="Maximum concurrent actions"
-            label_variant={:eyebrow}
-            disabled={@read_only?}
-          />
-          <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-            Caps fan-out within this stage.
-          </p>
-        </div>
-      </div>
-
-      <.panel_toggle
-        panel_key={"stage-id-#{@stage_index}"}
-        open?={MapSet.member?(@open_panels, "stage-id-#{@stage_index}")}
-        label="Stage identifier"
-      />
-      <div
-        :if={MapSet.member?(@open_panels, "stage-id-#{@stage_index}")}
-        class="mt-3 max-w-sm"
-      >
         <.input
-          name={"draft[stages][#{@stage_index}][id]"}
-          value={@stage["id"]}
-          label="Stage ID"
+          :if={@stage["mode"] == "parallel"}
+          type="number"
+          min="1"
+          max="16"
+          name={"draft[stages][#{@stage_index}][max_parallel]"}
+          value={@stage["max_parallel"]}
+          label="Maximum concurrent actions"
           label_variant={:eyebrow}
           disabled={@read_only?}
-          class="font-mono text-xs"
         />
       </div>
 

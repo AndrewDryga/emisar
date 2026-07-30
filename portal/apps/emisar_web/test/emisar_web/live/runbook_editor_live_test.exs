@@ -142,6 +142,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ "steps_json"
       refute html =~ "definition_json"
       refute has_element?(lv, ~s(input[name="draft[stages][0][max_parallel]"]))
+      assert html =~ "xl:grid-cols-[9rem_minmax(0,1fr)_10rem]"
 
       assert has_element?(lv, "#runbook-stage-0")
 
@@ -179,8 +180,25 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       html = change(lv, valid_draft())
       assert html =~ "Maximum concurrent actions"
       assert has_element?(lv, ~s(input[name="draft[stages][0][max_parallel]"]))
-      assert has_element?(lv, "button", "Stage identifier")
+      assert html =~ "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_13rem]"
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-overview input[name="draft[stages][0][id]"])
+             )
+
+      refute has_element?(lv, "button", "Stage identifier")
+      refute html =~ "Caps fan-out within this stage."
       assert has_element?(lv, "section", "Details")
+
+      assert :binary.match(html, ~s(name="draft[stages][0][id]")) <
+               :binary.match(html, ~s(name="draft[stages][0][title]"))
+
+      assert :binary.match(html, ~s(name="draft[stages][0][title]")) <
+               :binary.match(html, ~s(name="draft[stages][0][mode]"))
+
+      assert :binary.match(html, ~s(name="draft[stages][0][mode]")) <
+               :binary.match(html, ~s(name="draft[stages][0][max_parallel]"))
 
       assert :binary.match(html, "Operator context") <
                :binary.match(html, ~s(id="runbook-inputs"))
@@ -330,10 +348,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert string_html =~ "Integer — whole numbers"
       assert string_html =~ "Number — decimals allowed"
 
+      assert string_html =~
+               ~s|id="runbook-input-0-default-bounds" class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"|
+
       assert has_element?(
                lv,
                ~s(input[type="text"][name="draft[inputs][0][default]"])
              )
+
+      assert :binary.match(string_html, ~s(name="draft[inputs][0][default]")) <
+               :binary.match(string_html, ~s(name="draft[inputs][0][min_length]"))
+
+      assert :binary.match(string_html, ~s(name="draft[inputs][0][min_length]")) <
+               :binary.match(string_html, ~s(name="draft[inputs][0][max_length]"))
 
       boolean =
         RunbookDraft.input()
@@ -345,6 +372,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                lv,
                ~s(select[name="draft[inputs][0][default]"] option[value="false"][selected])
              )
+
+      refute has_element?(lv, ~s([name="draft[inputs][0][minimum]"]))
+      refute has_element?(lv, ~s([name="draft[inputs][0][maximum]"]))
+      refute has_element?(lv, ~s([name="draft[inputs][0][min_length]"]))
+      refute has_element?(lv, ~s([name="draft[inputs][0][max_length]"]))
 
       integer =
         RunbookDraft.input()
@@ -360,6 +392,22 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                lv,
                ~s(input[type="number"][step="1"][name="draft[inputs][0][default]"])
              )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-input-0-default-bounds input[name="draft[inputs][0][minimum]"])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-input-0-default-bounds input[name="draft[inputs][0][maximum]"])
+             )
+
+      assert :binary.match(integer_html, ~s(name="draft[inputs][0][default]")) <
+               :binary.match(integer_html, ~s(name="draft[inputs][0][minimum]"))
+
+      assert :binary.match(integer_html, ~s(name="draft[inputs][0][minimum]")) <
+               :binary.match(integer_html, ~s(name="draft[inputs][0][maximum]"))
 
       number = RunbookDraft.input() |> Map.put("type", "number")
       change(lv, valid_draft(inputs: [number]), ["draft", "inputs", "0", "type"])

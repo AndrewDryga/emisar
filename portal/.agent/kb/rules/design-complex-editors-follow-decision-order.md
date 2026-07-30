@@ -14,8 +14,10 @@ what behavior is available. Select targets first, then offer only actions
 supported by every selected target. Resolve implementation facts such as the
 current pack version rather than asking the operator to pin them. Execution mode
 comes before its concurrency bound; a bound appears only for a mode where it
-changes execution. Stable identifiers and infrequently changed limits stay in a
-nearby disclosure after the behavior they refine.
+changes execution. Put a workflow unit's identifier beside its title when that
+identity belongs to the unit's overview. Keep lower-level binding identifiers
+and infrequently changed limits in a nearby disclosure after the behavior they
+refine.
 
 Inside a repeated form card, visual weight and row order follow the decisions an
 operator makes. Pair identity with purpose, put behavior choices next, then show
@@ -71,6 +73,9 @@ never a reduced model.
 ## Good
 
 - Context, inputs, ordered stages, then the details and publish review rail.
+- A stage overview puts its compact identifier, expanding title, execution mode,
+  and applicable concurrency bound on one wide row; narrow screens preserve the
+  same order while stacking.
 - Targets first; then an action compatible with all selected runners. The pack
   follows the action automatically and the step ID lives in a disclosure.
 - Parallel stages show a concurrency cap; sequential stages do not.
@@ -79,7 +84,8 @@ never a reduced model.
 - Save and Publish stay together; the existing page navigation remains the one
   way to leave the editor.
 - A run-time input pairs ID with description; then type, required, and sensitive;
-  then enum values when applicable, default, and paired bounds.
+  then enum values when applicable; otherwise its default and applicable lower
+  and upper bounds share one row.
 - Required and Sensitive use equal compact tracks while Type takes the remaining
   row width; every input row ends at the same edge.
 - The input collection is capped on the page, while every row inside each input
