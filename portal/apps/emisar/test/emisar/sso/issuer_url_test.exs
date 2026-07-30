@@ -75,6 +75,8 @@ defmodule Emisar.SSO.IssuerUrlTest do
             {198, 18, 0, 1},
             {198, 51, 100, 7},
             {203, 0, 113, 7},
+            # The deprecated 6to4 relay anycast prefix, which IANA marks non-global.
+            {192, 88, 99, 2},
             {224, 0, 0, 1},
             {255, 255, 255, 255}
           ] do
@@ -93,7 +95,16 @@ defmodule Emisar.SSO.IssuerUrlTest do
             {0xFF02, 0, 0, 0, 0, 0, 0, 1},
             {0, 0, 0, 0, 0, 0xFFFF, 0x7F00, 1},
             {0x64, 0xFF9B, 0, 0, 0, 0, 0x0A01, 0x0101},
-            {0x2002, 0x7F00, 0x0001, 0, 0, 0, 0, 0}
+            {0x2002, 0x7F00, 0x0001, 0, 0, 0, 0, 0},
+            # IANA carves special-purpose prefixes out of 2000::/3, so allowing the
+            # whole /3 let these through. 2001:db8::/32 sits OUTSIDE 2001::/23,
+            # which is how it survived the first attempt.
+            {0x2001, 0x0002, 0, 0, 0, 0, 0, 1},
+            {0x2001, 0x0DB8, 0, 0, 0, 0, 0, 1},
+            {0x2001, 0x0020, 0, 0, 0, 0, 0, 1},
+            {0x3FFF, 0, 0, 0, 0, 0, 0, 1},
+            {0x3FF0, 0, 0, 0, 0, 0, 0, 1},
+            {0x3FFE, 0, 0, 0, 0, 0, 0, 1}
           ] do
         refute IssuerUrl.address_allowed?(address), "#{:inet.ntoa(address)} was allowed"
       end
@@ -103,6 +114,8 @@ defmodule Emisar.SSO.IssuerUrlTest do
       assert IssuerUrl.address_allowed?({93, 184, 216, 34})
       assert IssuerUrl.address_allowed?({8, 8, 8, 8})
       assert IssuerUrl.address_allowed?({0x2606, 0x2800, 0, 0, 0, 0, 0, 1})
+      assert IssuerUrl.address_allowed?({0x2A00, 0x1450, 0, 0, 0, 0, 0, 1})
+      assert IssuerUrl.address_allowed?({0x2620, 0, 0, 0, 0, 0, 0, 1})
     end
   end
 end

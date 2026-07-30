@@ -107,6 +107,8 @@ defmodule Emisar.SSO.IssuerUrl do
   defp blocked_ip?({172, b, _, _}) when b in 16..31, do: true
   defp blocked_ip?({192, 0, 0, _}), do: true
   defp blocked_ip?({192, 0, 2, _}), do: true
+  # 192.88.99.0/24 — the deprecated 6to4 relay anycast prefix, marked non-global.
+  defp blocked_ip?({192, 88, 99, _}), do: true
   defp blocked_ip?({192, 168, _, _}), do: true
   defp blocked_ip?({198, b, _, _}) when b in 18..19, do: true
   defp blocked_ip?({198, 51, 100, _}), do: true
@@ -128,7 +130,21 @@ defmodule Emisar.SSO.IssuerUrl do
   defp blocked_ip?({0x2002, a, b, _, _, _, _, _}),
     do: blocked_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
 
-  defp blocked_ip?({h, _, _, _, _, _, _, _}) when h >= 0x2000 and h <= 0x3FFF, do: false
+  # 2000::/3 is where global unicast lives, but IANA carves special-purpose
+  # prefixes out of it — allowing the whole /3 let benchmarking, documentation and
+  # the 2001::/23 protocol assignments (Teredo among them) through. Those come out
+  # first; only what is left is treated as public.
+  #
+  # 2001::/23 — IETF protocol assignments: 2001:2::/48 benchmarking, 2001:20::/28
+  # ORCHIDv2 and Teredo all live in here.
+  defp blocked_ip?({0x2001, b, _, _, _, _, _, _}) when b <= 0x01FF, do: true
+  # 2001:db8::/32 — documentation. A separate assignment, OUTSIDE 2001::/23, which
+  # is how it slipped through the first attempt at this.
+  defp blocked_ip?({0x2001, 0x0DB8, _, _, _, _, _, _}), do: true
+  # 3ff0::/20 through 3fff::/20 — documentation, and 3ffe::/16 is the returned
+  # 6bone. The whole /20 goes, not just its last prefix.
+  defp blocked_ip?({h, _, _, _, _, _, _, _}) when h >= 0x3FF0, do: true
+  defp blocked_ip?({h, _, _, _, _, _, _, _}) when h >= 0x2000 and h <= 0x3FEF, do: false
   defp blocked_ip?({_, _, _, _, _, _, _, _}), do: true
 
   defp blocked_ip?(_ip), do: false
