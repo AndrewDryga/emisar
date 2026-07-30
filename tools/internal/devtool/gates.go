@@ -466,9 +466,13 @@ func (a *App) gate(ctx context.Context, args []string) error {
 }
 
 func (a *App) reviewGate(ctx context.Context) error {
-	base, err := a.output(ctx, a.Root, nil, "git", "rev-parse", "--verify", "refs/coop/session-parent^{commit}")
+	baseRef := strings.TrimSpace(os.Getenv("COOP_REVIEW_BASE"))
+	if baseRef == "" {
+		baseRef = "refs/coop/session-parent"
+	}
+	base, err := a.output(ctx, a.Root, nil, "git", "rev-parse", "--verify", baseRef+"^{commit}")
 	if err != nil {
-		return fmt.Errorf("Coop review base is unavailable: %w", err)
+		return fmt.Errorf("the Coop review base is unavailable: %w", err)
 	}
 	selection, err := ci.Select(ctx, a.Root, "pull_request", strings.TrimSpace(string(base)))
 	if err != nil {
