@@ -1,0 +1,76 @@
+schema_version: 1
+id: pure.volumes_performance
+title: GET /volumes/performance
+kind: script
+risk: low
+description: >
+  Show per-volume performance — read/write/mirrored IOPS, bandwidth, and latency
+  for each volume, either the latest sample or a window of history. Use after
+  pure.arrays_performance says the array is slow, to answer "which volume is
+  driving it?" by comparing the volumes in the page. Returns
+  {items:[...], more_items_remaining, ...}, one item per volume per sample.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+search_terms:
+  - noisy neighbor
+  - volume latency
+  - which volume is slow
+args:
+  - name: window
+    type: string
+    required: false
+    default: latest
+    description: History window ending now; latest returns only the newest sample.
+    validation:
+      enum: [latest, 5m, 1h, 6h, 24h, 7d]
+  - name: resolution
+    type: string
+    required: false
+    default: auto
+    description: >
+      Interval between samples. auto picks one that keeps a window to a dozen or
+      so samples per volume.
+    validation:
+      enum: [auto, 30s, 5m, 30m, 2h, 8h, 24h]
+  - name: names
+    type: string
+    required: false
+    default: ""
+    description: Comma-separated volume names; empty covers every volume.
+    validation:
+      pattern: "^[A-Za-z0-9._:/-]*(,[A-Za-z0-9._:/-]+)*$"
+      max_length: 512
+  - name: limit
+    type: integer
+    required: false
+    default: 200
+    description: >
+      Maximum samples in this page — one per volume per sample time, so a window
+      fits fewer volumes. more_items_remaining reports a full page.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  script:
+    path: scripts/pureperf.sh
+    interpreter: /bin/sh
+  argv:
+    - volumes
+    - "{{ args.window }}"
+    - "{{ args.resolution }}"
+    - "{{ args.limit }}"
+    - "{{ args.names }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Every volume's current latency and IOPS
+    args: {}
+  - title: One volume's last 24 hours
+    args:
+      names: prod-db-01
+      window: 24h

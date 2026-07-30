@@ -2,11 +2,12 @@ schema_version: 1
 
 id: pure-flasharray
 name: Pure Storage FlashArray (Purity//FA REST)
-version: 0.1.6
+version: 0.1.7
 description: >
   Read-only access to a Pure Storage FlashArray over its Purity//FA REST API
-  2.x: array identity / capacity / performance, alerts, controller and
-  hardware / drive health, volumes and per-volume space, protection groups,
+  2.x: array identity / capacity / performance, per-volume, per-host and
+  per-interface performance with an optional history window, alerts, controller
+  and hardware / drive health, volumes and per-volume space, protection groups,
   snapshots and membership, the host -> volume -> LUN connection map, host
   and target-port identities, per-controller network interface state, and
   replication / array-connection status. Drives a remote array via curl;
@@ -63,10 +64,13 @@ actions:
   - actions/drives.yaml
   - actions/volumes.yaml
   - actions/volumes_space.yaml
+  - actions/volumes_performance.yaml
   - actions/connections.yaml
   - actions/hosts.yaml
+  - actions/hosts_performance.yaml
   - actions/ports.yaml
   - actions/network_interfaces.yaml
+  - actions/network_interfaces_performance.yaml
   - actions/array_connections.yaml
   - actions/protection_groups.yaml
   - actions/default_protection.yaml

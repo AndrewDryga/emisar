@@ -1,0 +1,75 @@
+schema_version: 1
+id: pure.hosts_performance
+title: GET /hosts/performance
+kind: script
+risk: low
+description: >
+  Show per-host performance — read/write IOPS, bandwidth, and latency as seen by
+  each host object, either the latest sample or a window of history. Use to
+  answer "which server is generating the load?" and to compare what a host
+  reports with what the array served it. Returns
+  {items:[...], more_items_remaining, ...}, one item per host per sample.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+search_terms:
+  - which host is slow
+  - server storage latency
+args:
+  - name: window
+    type: string
+    required: false
+    default: latest
+    description: History window ending now; latest returns only the newest sample.
+    validation:
+      enum: [latest, 5m, 1h, 6h, 24h, 7d]
+  - name: resolution
+    type: string
+    required: false
+    default: auto
+    description: >
+      Interval between samples. auto picks one that keeps a window to a dozen or
+      so samples per host.
+    validation:
+      enum: [auto, 30s, 5m, 30m, 2h, 8h, 24h]
+  - name: names
+    type: string
+    required: false
+    default: ""
+    description: Comma-separated host names; empty covers every host.
+    validation:
+      pattern: "^[A-Za-z0-9._:/-]*(,[A-Za-z0-9._:/-]+)*$"
+      max_length: 512
+  - name: limit
+    type: integer
+    required: false
+    default: 200
+    description: >
+      Maximum samples in this page — one per host per sample time, so a window
+      fits fewer hosts. more_items_remaining reports a full page.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  script:
+    path: scripts/pureperf.sh
+    interpreter: /bin/sh
+  argv:
+    - hosts
+    - "{{ args.window }}"
+    - "{{ args.resolution }}"
+    - "{{ args.limit }}"
+    - "{{ args.names }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Every host's current IOPS and latency
+    args: {}
+  - title: One host's last hour
+    args:
+      names: app-node-3
+      window: 1h

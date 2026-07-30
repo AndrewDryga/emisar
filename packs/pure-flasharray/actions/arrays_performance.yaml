@@ -4,28 +4,51 @@ title: GET /arrays/performance
 kind: script
 risk: low
 description: >
-  Show array-wide performance — the latest sample of read/write/mirrored latency,
-  IOPS, and bandwidth. Use to answer "is the array slow right now?". Returns
-  {items:[...], more_items_remaining, ...}; the single item is the most recent
-  real-time sample for the array.
+  Show array-wide performance — read/write/mirrored latency, IOPS, and bandwidth,
+  either the latest sample or a window of history. Use to answer "is the array
+  slow right now?", and with a window "was it slow when the incident started?".
+  Returns {items:[...], more_items_remaining, ...}, one item per sample.
 side_effects:
   - One read-only HTTP GET to the FlashArray REST API.
   - Read-only — never writes or mutates array state.
 search_terms:
   - storage slow
   - san slow
-args: []
+args:
+  - name: window
+    type: string
+    required: false
+    default: latest
+    description: History window ending now; latest returns only the newest sample.
+    validation:
+      enum: [latest, 5m, 1h, 6h, 24h, 7d]
+  - name: resolution
+    type: string
+    required: false
+    default: auto
+    description: >
+      Interval between samples. auto picks one that keeps a window to a few dozen
+      samples; 1s is the array's finest and is array-wide only.
+    validation:
+      enum: [auto, 1s, 30s, 5m, 30m, 2h, 8h, 24h]
 execution:
   script:
-    path: scripts/pureget.sh
+    path: scripts/pureperf.sh
     interpreter: /bin/sh
   argv:
-    - "/arrays/performance"
+    - arrays
+    - "{{ args.window }}"
+    - "{{ args.resolution }}"
   timeout: 30s
 output:
   parser: json
-  max_stdout_bytes: 1048576
+  parser_required: true
+  max_stdout_bytes: 4194304
   max_stderr_bytes: 8192
 examples:
   - title: Latest array latency / IOPS / bandwidth
     args: {}
+  - title: The last five minutes, second by second
+    args:
+      window: 5m
+      resolution: 1s

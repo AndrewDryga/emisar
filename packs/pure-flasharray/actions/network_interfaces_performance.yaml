@@ -1,0 +1,75 @@
+schema_version: 1
+id: pure.network_interfaces_performance
+title: GET /network-interfaces/performance
+kind: script
+risk: low
+description: >
+  Show per-interface throughput — received and transmitted bytes and packets per
+  second on each array network interface, either the latest sample or a window
+  of history. Use to answer "is one target port carrying all the traffic?" or to
+  confirm a port went quiet when a path failed. Returns
+  {items:[...], more_items_remaining, ...}, one item per interface per sample.
+side_effects:
+  - One read-only HTTP GET to the FlashArray REST API.
+  - Read-only — never writes or mutates array state.
+search_terms:
+  - port saturated
+  - target port traffic
+args:
+  - name: window
+    type: string
+    required: false
+    default: latest
+    description: History window ending now; latest returns only the newest sample.
+    validation:
+      enum: [latest, 5m, 1h, 6h, 24h, 7d]
+  - name: resolution
+    type: string
+    required: false
+    default: auto
+    description: >
+      Interval between samples. auto picks one that keeps a window to a dozen or
+      so samples per interface.
+    validation:
+      enum: [auto, 30s, 5m, 30m, 2h, 8h, 24h]
+  - name: names
+    type: string
+    required: false
+    default: ""
+    description: Comma-separated interface names such as ct0.eth4; empty covers every interface.
+    validation:
+      pattern: "^[A-Za-z0-9._:/-]*(,[A-Za-z0-9._:/-]+)*$"
+      max_length: 512
+  - name: limit
+    type: integer
+    required: false
+    default: 200
+    description: >
+      Maximum samples in this page — one per interface per sample time, so a
+      window fits fewer interfaces. more_items_remaining reports a full page.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  script:
+    path: scripts/pureperf.sh
+    interpreter: /bin/sh
+  argv:
+    - network-interfaces
+    - "{{ args.window }}"
+    - "{{ args.resolution }}"
+    - "{{ args.limit }}"
+    - "{{ args.names }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Current throughput on every interface
+    args: {}
+  - title: One port's last six hours
+    args:
+      names: ct0.eth4
+      window: 6h

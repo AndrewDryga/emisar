@@ -39,6 +39,33 @@ cases:
     args: {member_type: host-groups, limit: 5}
     expect:
       stdout_contains: [harness-pgroup, harness-host-group]
+  - name: pure.arrays-performance-window
+    action: pure.arrays_performance
+    args: {window: 5m, resolution: 1s}
+    expect:
+      stdout_contains: [harness-array, '"window_ms": 300000']
+  - name: pure.volumes-performance-reports-a-full-page-as-truncated
+    action: pure.volumes_performance
+    args: {limit: 3}
+    expect:
+      stdout_contains: [harness-volume-cool, '"more_items_remaining": true']
+  - name: pure.volumes-performance-rejects-oversampled-window
+    action: pure.volumes_performance
+    args: {window: 7d, resolution: 30s}
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [needs more than 200 samples per object]
+  - name: pure.hosts-performance-named-window
+    action: pure.hosts_performance
+    args: {names: harness-host, window: 24h}
+    expect:
+      stdout_contains: [harness-host, '"writes_per_sec": 4200']
+  - name: pure.network-interfaces-performance-named
+    action: pure.network_interfaces_performance
+    args: {names: ct0.eth4, limit: 5}
+    expect:
+      stdout_contains: [ct0.eth4, received_bytes_per_sec]
   - name: pure.protection-groups-rejects-bad-token
     action: pure.protection_groups
     env:

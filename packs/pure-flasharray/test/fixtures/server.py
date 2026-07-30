@@ -44,6 +44,46 @@ def response(path, query):
             "created": 1785196800000,
             "destroyed": False,
         }])
+    if path == "/api/2.42/arrays/performance":
+        # A window renders both bounds plus the resolution the action asked for.
+        if sorted(query) != ["end_time", "limit", "resolution", "start_time"]:
+            return None
+        if query["resolution"] != ["1000"] or query["limit"] != ["1000"]:
+            return None
+        span = int(query["end_time"][0]) - int(query["start_time"][0])
+        return collection([{
+            "name": "harness-array",
+            "window_ms": span,
+            "usec_per_read_op": 412,
+            "reads_per_sec": 9100,
+        }])
+    if path == "/api/2.42/volumes/performance":
+        # A full page, reported the way the array reports it: nothing remains and
+        # no continuation token, however much was left behind.
+        if query != {"limit": ["3"]}:
+            return None
+        return collection([
+            {"name": "harness-volume", "usec_per_read_op": 990},
+            {"name": "harness-volume-warm", "usec_per_read_op": 310},
+            {"name": "harness-volume-cool", "usec_per_read_op": 120},
+        ])
+    if path == "/api/2.42/hosts/performance":
+        # Named host over a window: auto resolution for 24h is two hours.
+        if sorted(query) != ["end_time", "limit", "names", "resolution", "start_time"]:
+            return None
+        if query["names"] != ["harness-host"] or query["resolution"] != ["7200000"]:
+            return None
+        return collection([{
+            "name": "harness-host",
+            "writes_per_sec": 4200,
+        }])
+    if path == "/api/2.42/network-interfaces/performance":
+        if query != {"limit": ["5"], "names": ["ct0.eth4"]}:
+            return None
+        return collection([{
+            "name": "ct0.eth4",
+            "received_bytes_per_sec": 118000000,
+        }])
     member_names = {
         "/api/2.42/protection-groups/volumes": "harness-volume",
         "/api/2.42/protection-groups/hosts": "harness-host",
