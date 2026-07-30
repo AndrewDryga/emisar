@@ -120,8 +120,9 @@ defmodule EmisarWeb.RunbooksLive do
       </:actions>
 
       <.page_intro>
-        Procedures your operators and agents run as one ordered sequence — every step still clears
-        its own policy check and approval, so a runbook groups the steps without skipping a gate.
+        Procedures your operators and agents run as one ordered sequence. Every step is checked
+        against current policy; when approval is required, the complete frozen execution waits for
+        one decision.
         Drafts stay private until you publish.
         <.doc_link href="/docs/runbooks">Runbook docs</.doc_link>
       </.page_intro>

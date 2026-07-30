@@ -74,10 +74,8 @@ defmodule EmisarWeb.RunbookDraft do
       "type" => "string",
       "required" => "true",
       "sensitive" => "false",
-      "default_enabled" => "false",
       "default" => "",
-      "enum_enabled" => "false",
-      "enum" => "[]",
+      "enum_values" => [],
       "minimum" => "",
       "maximum" => "",
       "min_length" => "",
@@ -91,7 +89,6 @@ defmodule EmisarWeb.RunbookDraft do
       "title" => "Run actions",
       "mode" => "sequential",
       "max_parallel" => "5",
-      "approval" => "none",
       "steps" => [step()]
     }
   end
@@ -100,9 +97,7 @@ defmodule EmisarWeb.RunbookDraft do
     %{
       "id" => "step",
       "pack_id" => "",
-      "pack_requirement" => "",
       "action" => "",
-      "target_kind" => "group",
       "target_refs" => [],
       "args" => [],
       "outputs" => [],
@@ -117,9 +112,8 @@ defmodule EmisarWeb.RunbookDraft do
       "type" => "json",
       "required" => "false",
       "sensitive" => "false",
-      "enabled" => "true",
-      "source" => "literal",
-      "value" => "\"\"",
+      "source" => "omit",
+      "value" => "",
       "ref" => ""
     }
   end
@@ -132,17 +126,13 @@ defmodule EmisarWeb.RunbookDraft do
     required? = spec["required"] == true
     sensitive? = spec["sensitive"] == true
 
-    source =
-      if sensitive? and existing["source"] == "literal",
-        do: "input",
-        else: existing["source"] || "literal"
+    source = synced_argument_source(existing, existing?, required?, sensitive?)
 
     %{
       "name" => spec["name"] || "",
       "type" => type,
       "required" => bool_string(required?),
       "sensitive" => bool_string(sensitive?),
-      "enabled" => bool_string(required? or (existing? and existing["enabled"] != "false")),
       "source" => source,
       "value" => synced_literal_value(spec, existing, type, existing?),
       "ref" => existing["ref"] || ""
@@ -161,7 +151,7 @@ defmodule EmisarWeb.RunbookDraft do
   end
 
   def success do
-    %{"output" => "", "operator" => "equals", "value" => "\"\""}
+    %{"output" => "", "operator" => "equals", "value" => ""}
   end
 
   defp input_from_definition(input) do
@@ -172,10 +162,8 @@ defmodule EmisarWeb.RunbookDraft do
       "type" => input["type"] || "string",
       "required" => bool_string(input["required"]),
       "sensitive" => bool_string(input["sensitive"]),
-      "default_enabled" => bool_string(Map.has_key?(input, "default")),
       "default" => typed_value_text(input["default"], input["type"]),
-      "enum_enabled" => bool_string(Map.has_key?(input, "enum")),
-      "enum" => json_text(input["enum"] || []),
+      "enum_values" => Enum.map(input["enum"] || [], &%{"value" => optional_text(&1)}),
       "minimum" => optional_text(input["minimum"]),
       "maximum" => optional_text(input["maximum"]),
       "min_length" => optional_text(input["min_length"]),
@@ -193,12 +181,12 @@ defmodule EmisarWeb.RunbookDraft do
       "required" => input["required"] == "true",
       "sensitive" => input["sensitive"] == "true"
     }
+    |> maybe_put_nonblank("default", input["default"], &parse_typed_value(&1, type))
     |> maybe_put(
-      "default",
-      input["default_enabled"] == "true",
-      parse_typed_value(input["default"], type)
+      "enum",
+      type == "enum",
+      Enum.map(input["enum_values"] || [], &(&1["value"] || ""))
     )
-    |> maybe_put("enum", input["enum_enabled"] == "true", parse_json(input["enum"]))
     |> maybe_put_nonblank("minimum", input["minimum"], &parse_number/1)
     |> maybe_put_nonblank("maximum", input["maximum"], &parse_number/1)
     |> maybe_put_nonblank("min_length", input["min_length"], &parse_integer/1)
@@ -211,29 +199,28 @@ defmodule EmisarWeb.RunbookDraft do
       "title" => stage["title"] || "",
       "mode" => stage["mode"] || "sequential",
       "max_parallel" => optional_text(stage["max_parallel"] || 1),
-      "approval" => stage["approval"] || "none",
       "steps" => Enum.map(stage["steps"] || [], &step_from_definition/1)
     }
   end
 
   defp stage_to_definition(stage) do
-    %{
+    stage_definition = %{
       "id" => stage["id"] || "",
       "title" => stage["title"] || "",
       "mode" => stage["mode"] || "sequential",
-      "max_parallel" => parse_integer(stage["max_parallel"]),
-      "approval" => stage["approval"] || "none",
       "steps" => Enum.map(stage["steps"] || [], &step_to_definition/1)
     }
+
+    if stage_definition["mode"] == "parallel",
+      do: Map.put(stage_definition, "max_parallel", parse_integer(stage["max_parallel"])),
+      else: stage_definition
   end
 
   defp step_from_definition(step) do
     %{
       "id" => step["id"] || "",
       "pack_id" => get_in(step, ["pack", "id"]) || "",
-      "pack_requirement" => get_in(step, ["pack", "requirement"]) || "",
       "action" => step["action"] || "",
-      "target_kind" => get_in(step, ["targets", "kind"]) || "group",
       "target_refs" => get_in(step, ["targets", "refs"]) || [],
       "args" =>
         step
@@ -249,15 +236,9 @@ defmodule EmisarWeb.RunbookDraft do
   defp step_to_definition(step) do
     %{
       "id" => step["id"] || "",
-      "pack" => %{
-        "id" => step["pack_id"] || "",
-        "requirement" => step["pack_requirement"] || ""
-      },
+      "pack" => %{"id" => step["pack_id"] || ""},
       "action" => step["action"] || "",
-      "targets" => %{
-        "kind" => step["target_kind"] || "group",
-        "refs" => step["target_refs"] || []
-      },
+      "targets" => %{"refs" => step["target_refs"] || []},
       "args" => arguments_to_definition(step["args"] || []),
       "outputs" => Enum.map(step["outputs"] || [], &output_to_definition/1),
       "success" => Enum.map(step["success"] || [], &success_to_definition/1),
@@ -269,7 +250,6 @@ defmodule EmisarWeb.RunbookDraft do
     argument()
     |> Map.merge(%{
       "name" => name,
-      "enabled" => "true",
       "source" => "literal",
       "value" => json_text(value)
     })
@@ -279,18 +259,17 @@ defmodule EmisarWeb.RunbookDraft do
     argument()
     |> Map.merge(%{
       "name" => name,
-      "enabled" => "true",
       "source" => source,
       "ref" => ref || ""
     })
   end
 
   defp argument_from_definition({name, _binding}),
-    do: Map.merge(argument(), %{"name" => name, "enabled" => "true"})
+    do: Map.merge(argument(), %{"name" => name})
 
   defp arguments_to_definition(arguments) do
     Enum.reduce(arguments, %{}, fn argument, bindings ->
-      if argument["enabled"] == "true" do
+      if argument["source"] != "omit" do
         {name, binding} = argument_to_definition(argument)
         Map.put(bindings, name, binding)
       else
@@ -309,10 +288,12 @@ defmodule EmisarWeb.RunbookDraft do
           %{"source" => "output", "ref" => argument["ref"] || ""}
 
         _ ->
-          %{
-            "source" => "literal",
-            "value" => parse_argument_value(argument["value"], argument["type"])
-          }
+          %{"source" => "literal"}
+          |> maybe_put_nonblank(
+            "value",
+            argument["value"],
+            &parse_argument_value(&1, argument["type"])
+          )
       end
 
     {argument["name"] || "", binding}
@@ -361,9 +342,9 @@ defmodule EmisarWeb.RunbookDraft do
   defp success_to_definition(success) do
     %{
       "output" => success["output"] || "",
-      "operator" => success["operator"] || "equals",
-      "value" => parse_json(success["value"])
+      "operator" => success["operator"] || "equals"
     }
+    |> maybe_put_nonblank("value", success["value"], &parse_json/1)
   end
 
   defp wait_from_definition(nil), do: @default_wait
@@ -398,6 +379,7 @@ defmodule EmisarWeb.RunbookDraft do
   end
 
   defp parse_typed_value(value, "string"), do: value || ""
+  defp parse_typed_value(value, "enum"), do: value || ""
   defp parse_typed_value(value, "integer"), do: parse_integer(value)
   defp parse_typed_value(value, "number"), do: parse_number(value)
   defp parse_typed_value("true", "boolean"), do: true
@@ -474,12 +456,24 @@ defmodule EmisarWeb.RunbookDraft do
       end
     else
       case type do
-        "boolean" -> "false"
-        target when target in ["string_array", "integer_array"] -> "[]"
         _target -> ""
       end
     end
   end
+
+  defp synced_argument_source(existing, true, required?, sensitive?) do
+    source = existing["source"] || if(required?, do: "literal", else: "omit")
+
+    cond do
+      required? and source == "omit" -> if(sensitive?, do: "input", else: "literal")
+      sensitive? and source == "literal" -> "input"
+      true -> source
+    end
+  end
+
+  defp synced_argument_source(_existing, false, true, true), do: "input"
+  defp synced_argument_source(_existing, false, true, false), do: "literal"
+  defp synced_argument_source(_existing, false, false, _sensitive), do: "omit"
 
   defp optional_text(nil), do: ""
   defp optional_text(value), do: to_string(value)

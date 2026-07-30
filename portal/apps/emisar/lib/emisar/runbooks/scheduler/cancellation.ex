@@ -59,7 +59,7 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
   end
 
   defp compose_cancellation(%{execution: %{status: status}}, _runbook, _subject)
-       when status != :active,
+       when status not in [:pending_approval, :active],
        do: Multi.new()
 
   defp compose_cancellation(changes, runbook, subject) do
@@ -79,7 +79,7 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
 
     multi =
       Enum.reduce(changes.stages, multi, fn
-        %{status: status} = stage, multi when status in [:pending, :awaiting_approval, :active] ->
+        %{status: status} = stage, multi when status in [:pending, :active] ->
           audit_key = {:runbook_stage_cancel_audit, stage.id}
           stage_key = {:runbook_stage_cancelled, stage.id}
 
@@ -92,7 +92,6 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
             cancelled = Map.fetch!(changes, stage_key)
             Audit.Events.runbook_stage_cancelled(subject, execution, cancelled)
           end)
-          |> maybe_cancel_stage_request(stage)
 
         _terminal, multi ->
           multi
@@ -114,19 +113,15 @@ defmodule Emisar.Runbooks.Scheduler.Cancellation do
       _terminal, multi ->
         multi
     end)
+    |> Approvals.cancel_request_for_runbook_execution_in_multi(execution.id)
     |> Runs.cancel_undispatched_runbook_attempts_in_multi(
       execution.id,
       "runbook execution cancelled"
     )
   end
 
-  defp maybe_cancel_stage_request(multi, %{status: :awaiting_approval, id: stage_id}),
-    do: Approvals.cancel_request_for_runbook_stage_in_multi(multi, stage_id)
-
-  defp maybe_cancel_stage_request(multi, _stage), do: multi
-
   defp after_execution_cancelled(changes, subject) do
-    Approvals.after_runbook_stage_cancellation_committed(changes)
+    Approvals.after_runbook_execution_cancellation_committed(changes)
 
     case changes do
       %{execution_cancelled: execution} ->

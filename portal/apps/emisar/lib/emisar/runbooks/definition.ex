@@ -20,9 +20,6 @@ defmodule Emisar.Runbooks.Definition do
                         raise "invalid runbook definition schema: #{inspect(error)}"
                     end)
 
-  @exact_requirement ~r/\A== [0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z/
-  @pessimistic_requirement ~r/\A~> [0-9]+\.[0-9]+\.[0-9]+\z/
-  @range_requirement ~r/\A>= [0-9]+\.[0-9]+\.[0-9]+ and <(?:=)? [0-9]+\.[0-9]+\.[0-9]+\z/
   @runner_ref ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}~[0-9a-f]{32}\z/
   @group_ref ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}\z/
   @numeric_operators ~w[greater_than greater_than_or_equal less_than less_than_or_equal]
@@ -357,6 +354,7 @@ defmodule Emisar.Runbooks.Definition do
         "string" -> ["minimum", "maximum"]
         type when type in ["integer", "number"] -> ["min_length", "max_length"]
         "boolean" -> ["minimum", "maximum", "min_length", "max_length"]
+        "enum" -> ["minimum", "maximum", "min_length", "max_length"]
       end
 
     Enum.flat_map(irrelevant, fn field ->
@@ -470,6 +468,9 @@ defmodule Emisar.Runbooks.Definition do
   defp valid_input_value?(%{"type" => "boolean"} = input, value) when is_boolean(value),
     do: in_optional_enum?(value, input)
 
+  defp valid_input_value?(%{"type" => "enum"} = input, value) when is_binary(value),
+    do: in_optional_enum?(value, input)
+
   defp valid_input_value?(_input, _value), do: false
 
   defp valid_number?(input, value) do
@@ -519,8 +520,7 @@ defmodule Emisar.Runbooks.Definition do
   defp step_issues(step, stage_position, step_position, input_ids, step_index) do
     base = "/stages/#{stage_position}/steps/#{step_position}"
 
-    requirement_issues(step["pack"]["requirement"], "#{base}/pack/requirement") ++
-      target_issues(step["targets"], "#{base}/targets") ++
+    target_issues(step["targets"], "#{base}/targets") ++
       duplicate_issues(step["outputs"], "#{base}/outputs", "Output") ++
       binding_issues(step["args"], base, stage_position, input_ids, step_index) ++
       output_issues(step["outputs"], base) ++
@@ -528,36 +528,11 @@ defmodule Emisar.Runbooks.Definition do
       wait_issues(step["wait"], base)
   end
 
-  defp requirement_issues(requirement, path) do
-    if accepted_requirement_shape?(requirement) and
-         match?({:ok, _parsed}, Version.parse_requirement(requirement)) do
-      []
-    else
-      [
-        issue(
-          "invalid_definition",
-          path,
-          "Pack requirement must use one supported bounded version shape."
-        )
-      ]
-    end
-  end
-
-  defp accepted_requirement_shape?(requirement) do
-    Regex.match?(@exact_requirement, requirement) or
-      Regex.match?(@pessimistic_requirement, requirement) or
-      Regex.match?(@range_requirement, requirement)
-  end
-
-  defp target_issues(%{"kind" => kind, "refs" => refs}, base) do
+  defp target_issues(%{"refs" => refs}, base) do
     refs
     |> Enum.with_index()
     |> Enum.flat_map(fn {ref, index} ->
-      valid? =
-        case kind do
-          "group" -> byte_size(ref) <= 80 and Regex.match?(@group_ref, ref)
-          "runner" -> Regex.match?(@runner_ref, ref)
-        end
+      valid? = valid_target_ref?(ref)
 
       if valid? do
         []
@@ -566,6 +541,12 @@ defmodule Emisar.Runbooks.Definition do
       end
     end)
   end
+
+  defp valid_target_ref?("group:" <> ref),
+    do: byte_size(ref) <= 80 and Regex.match?(@group_ref, ref)
+
+  defp valid_target_ref?("runner:" <> ref), do: Regex.match?(@runner_ref, ref)
+  defp valid_target_ref?(_ref), do: false
 
   defp binding_issues(args, base, stage_position, input_ids, step_index) do
     args

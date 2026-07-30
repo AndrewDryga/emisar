@@ -11,6 +11,10 @@ defmodule Emisar.Runbooks.ExecutionItem do
     field :pack_ref, :string
     field :pack_hash, :string
     field :risk, :string
+    field :policy_version, :integer
+    field :policy_decision, :string
+    field :policy_reason, :string
+    field :matched_rules, {:array, :string}, default: []
     field :action_contract, :map, default: %{}
     field :binding_plan, :map, default: %{}
     field :output_plan, {:array, :map}, default: []
@@ -40,6 +44,7 @@ defmodule Emisar.Runbooks.ExecutionItem do
     belongs_to :runbook_execution, Emisar.Runbooks.RunbookExecution
     belongs_to :runbook_execution_stage, Emisar.Runbooks.ExecutionStage
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
+    belongs_to :policy, Emisar.Policies.Policy
 
     has_many :attempts, Emisar.Runs.ActionRun, foreign_key: :runbook_execution_item_id
 

@@ -201,9 +201,9 @@ defmodule Emisar.Approvals do
     end
   end
 
-  @doc "Lists the visible approval requests for a bounded set of runbook execution stages."
-  def list_requests_for_runbook_stages(stage_ids, %Subject{} = subject)
-      when is_list(stage_ids) and length(stage_ids) <= 64 do
+  @doc "Lists visible approval requests for a bounded set of runbook executions."
+  def list_requests_for_runbook_executions(execution_ids, %Subject{} = subject)
+      when is_list(execution_ids) and length(execution_ids) <= 64 do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -211,7 +211,7 @@ defmodule Emisar.Approvals do
            ) do
       requests =
         Request.Query.all()
-        |> Request.Query.by_runbook_execution_stage_ids(stage_ids)
+        |> Request.Query.by_runbook_execution_ids(execution_ids)
         |> scope_requests_to_subject(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -340,45 +340,53 @@ defmodule Emisar.Approvals do
     )
   end
 
-  @doc "Compose one stage-gate request into its scheduler transaction."
-  def create_runbook_stage_request_in_multi(
+  @doc "Compose the one whole-execution request into its creation transaction."
+  def create_runbook_execution_request_in_multi(%Multi{} = multi, _execution_key, nil),
+    do: multi
+
+  def create_runbook_execution_request_in_multi(
         %Multi{} = multi,
-        %Emisar.Runbooks.ExecutionStage{} = stage,
-        %Emisar.Runbooks.RunbookExecution{} = execution,
-        %{min_approvals: min_approvals, allow_self_approval: allow_self_approval}
+        execution_key,
+        %{
+          min_approvals: min_approvals,
+          allow_self_approval: allow_self_approval,
+          runbook: runbook
+        }
       ) do
     now = DateTime.utc_now()
     expires_at = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
-    stage_plan = Enum.at(execution.frozen_plan["stages"], stage.position)
-
-    attrs = %{
-      account_id: execution.account_id,
-      runbook_execution_stage_id: stage.id,
-      requested_by_id: effective_execution_requester(execution),
-      requested_at: now,
-      expires_at: expires_at,
-      reason: execution.reason,
-      min_approvals: min_approvals,
-      allow_self_approval: allow_self_approval,
-      context: %{
-        "kind" => "runbook_stage",
-        "execution_id" => execution.id,
-        "stage" => stage_plan
-      }
-    }
 
     Multi.insert(
       multi,
-      {:runbook_stage_approval_request, stage.id},
-      Request.Changeset.create(attrs)
+      nested_multi_key(:runbook_execution_approval_request, execution_key),
+      fn changes ->
+        execution = Map.fetch!(changes, execution_key)
+
+        Request.Changeset.create(%{
+          account_id: execution.account_id,
+          runbook_execution_id: execution.id,
+          requested_by_id: effective_execution_requester(execution),
+          requested_at: now,
+          expires_at: expires_at,
+          reason: execution.reason,
+          min_approvals: min_approvals,
+          allow_self_approval: allow_self_approval,
+          context: %{
+            "kind" => "runbook_execution",
+            "execution_id" => execution.id,
+            "runbook" => runbook,
+            "plan" => execution.frozen_plan
+          }
+        })
+      end
     )
   end
 
-  @doc "Return one stage gate's durable decision inside the caller transaction."
-  def runbook_stage_approval_status(repo, stage_id) when is_binary(stage_id) do
+  @doc "Return one execution gate's durable decision inside the caller transaction."
+  def runbook_execution_approval_status(repo, execution_id) when is_binary(execution_id) do
     request =
       Request.Query.all()
-      |> Request.Query.by_runbook_execution_stage_id(stage_id)
+      |> Request.Query.by_runbook_execution_id(execution_id)
       |> repo.one()
 
     case request do
@@ -387,11 +395,23 @@ defmodule Emisar.Approvals do
     end
   end
 
-  @doc "Post-commit stage request broadcast. Replays with no inserted row are no-ops."
-  def after_runbook_stage_request_committed(changes) when is_map(changes) do
+  @doc "Internal — whether the exact execution has its finalized whole-plan consent."
+  def runbook_execution_approved?(execution_id, account_id)
+      when is_binary(execution_id) and is_binary(account_id) do
+    Request.Query.all()
+    |> Request.Query.by_account_id(account_id)
+    |> Request.Query.by_runbook_execution_id(execution_id)
+    |> Request.Query.by_status(:approved)
+    |> Repo.exists?()
+  end
+
+  def runbook_execution_approved?(_execution_id, _account_id), do: false
+
+  @doc "Post-commit execution request broadcast. Replays with no inserted row are no-ops."
+  def after_runbook_execution_request_committed(changes) when is_map(changes) do
     Enum.each(changes, fn
-      {{:runbook_stage_approval_request, _stage_id}, %Request{} = request} ->
-        notify_runbook_stage_approval_created(request)
+      {{:runbook_execution_approval_request, _execution_key}, %Request{} = request} ->
+        notify_runbook_execution_approval_created(request)
 
       _other ->
         :ok
@@ -400,22 +420,22 @@ defmodule Emisar.Approvals do
     :ok
   end
 
-  @doc "Compose cancellation of one still-pending runbook-stage request."
-  def cancel_request_for_runbook_stage_in_multi(%Multi{} = multi, stage_id)
-      when is_binary(stage_id) do
-    Multi.run(multi, {:runbook_stage_request_cancel, stage_id}, fn repo, _changes ->
+  @doc "Compose cancellation of one still-pending runbook execution request."
+  def cancel_request_for_runbook_execution_in_multi(%Multi{} = multi, execution_id)
+      when is_binary(execution_id) do
+    Multi.run(multi, {:runbook_execution_request_cancel, execution_id}, fn repo, _changes ->
       now = DateTime.utc_now()
 
       {count, _} =
         repo.update_all(
-          Request.Query.cancel_pending_by_runbook_execution_stage_id(stage_id, now),
+          Request.Query.cancel_pending_by_runbook_execution_id(execution_id, now),
           []
         )
 
       if count == 1 do
         request =
           Request.Query.all()
-          |> Request.Query.by_runbook_execution_stage_id(stage_id)
+          |> Request.Query.by_runbook_execution_id(execution_id)
           |> repo.one()
 
         {:ok, {:cancelled, request}}
@@ -425,10 +445,10 @@ defmodule Emisar.Approvals do
     end)
   end
 
-  @doc "Broadcast stage-request cancellations after their enclosing transaction commits."
-  def after_runbook_stage_cancellation_committed(changes) when is_map(changes) do
+  @doc "Broadcast execution-request cancellations after their transaction commits."
+  def after_runbook_execution_cancellation_committed(changes) when is_map(changes) do
     Enum.each(changes, fn
-      {{:runbook_stage_request_cancel, _stage_id}, {:cancelled, %Request{} = request}} ->
+      {{:runbook_execution_request_cancel, _execution_id}, {:cancelled, %Request{} = request}} ->
         broadcast_approval(request)
 
       _other ->
@@ -506,9 +526,9 @@ defmodule Emisar.Approvals do
     :ok
   end
 
-  defp notify_runbook_stage_approval_created(%Request{} = request) do
+  defp notify_runbook_execution_approval_created(%Request{} = request) do
     broadcast_approval(request)
-    run_notify(fn -> notify_runbook_stage_approvers(request) end)
+    run_notify(fn -> notify_runbook_execution_approvers(request) end)
     :ok
   end
 
@@ -556,26 +576,26 @@ defmodule Emisar.Approvals do
     notify_approvers_pages(request, {:action_run, run}, requested_by_id, [run.runner], nil)
   end
 
-  defp notify_runbook_stage_approvers(%Request{} = request) do
+  defp notify_runbook_execution_approvers(%Request{} = request) do
     request = Repo.preload(request, :account)
 
     with {:ok, runner_ids} <-
-           Runbooks.runner_ids_for_stage_approval(
-             request.runbook_execution_stage_id,
+           Runbooks.runner_ids_for_execution_approval(
+             request.runbook_execution_id,
              request.account_id
            ),
          runner_facts <- Runners.runner_scope_facts_for_ids(request.account_id, runner_ids),
          true <- runner_ids != [] and length(runner_facts) == length(runner_ids) do
       notify_approvers_pages(
         request,
-        :runbook_stage,
+        :runbook_execution,
         request.requested_by_id,
         runner_facts,
         nil
       )
     else
       _ ->
-        Logger.warning("runbook_stage_approval_notification_scope_failed",
+        Logger.warning("runbook_execution_approval_notification_scope_failed",
           req_id: request.id
         )
     end
@@ -634,12 +654,12 @@ defmodule Emisar.Approvals do
     )
   end
 
-  defp deliver_approval_email(membership, request, :runbook_stage) do
+  defp deliver_approval_email(membership, request, :runbook_execution) do
     deliver_approval_email_result(
       membership,
       request,
       fn ->
-        Emisar.Mailers.UserNotifier.deliver_runbook_stage_approval_request(
+        Emisar.Mailers.UserNotifier.deliver_runbook_execution_approval_request(
           membership.user,
           request
         )
@@ -722,6 +742,7 @@ defmodule Emisar.Approvals do
              Authorizer.decide_approval_permission()
            ),
          {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
+         :ok <- ensure_request_pending(request),
          :ok <- check_self_approval(decision, request, subject),
          :ok <- recheck_trust(decision, request),
          :ok <- check_attestation_fresh(decision, request) do
@@ -737,6 +758,9 @@ defmodule Emisar.Approvals do
         Multi.new()
         |> Multi.run(:active_account, fn repo, _changes ->
           Accounts.fetch_and_lock_account(request.account_id, repo: repo)
+        end)
+        |> Multi.run(:approval_target, fn repo, _changes ->
+          lock_approval_target(repo, request)
         end)
         |> Multi.run(:locked, fn repo, _changes ->
           locked =
@@ -796,6 +820,11 @@ defmodule Emisar.Approvals do
     |> Repo.fetch(Request.Query)
   end
 
+  defp ensure_request_pending(%Request{status: :pending}), do: :ok
+  defp ensure_request_pending(%Request{status: :expired}), do: {:error, :expired}
+  defp ensure_request_pending(%Request{status: :cancelled}), do: {:error, :run_cancelled}
+  defp ensure_request_pending(%Request{}), do: {:error, :already_decided}
+
   defp request_visible_to_subject?(repo, request_id, %Subject{} = subject) do
     Request.Query.all()
     |> Request.Query.by_id(request_id)
@@ -803,6 +832,16 @@ defmodule Emisar.Approvals do
     |> Authorizer.for_subject(subject)
     |> repo.exists?()
   end
+
+  defp lock_approval_target(repo, %Request{run_id: run_id}) when is_binary(run_id),
+    do: Runs.fetch_and_lock_pending_approval_run(repo, run_id)
+
+  defp lock_approval_target(
+         repo,
+         %Request{runbook_execution_id: execution_id}
+       )
+       when is_binary(execution_id),
+       do: Runbooks.lock_pending_approval(repo, execution_id)
 
   # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only). Only an
   # APPROVE by the recorded requester is blocked, and only when the request's
@@ -829,35 +868,94 @@ defmodule Emisar.Approvals do
   # finalizing approve re-dispatches, so without this the operator's "yes"
   # against the trusted bytes would ship the new ones. Deny needs no trust
   # check — it cancels.
-  defp recheck_trust(:approve, %Request{status: :expired}), do: {:error, :expired}
-
   defp recheck_trust(:approve, %Request{run_id: run_id}) when is_binary(run_id),
     do: Runs.recheck_run_pack_trust(run_id)
 
   defp recheck_trust(
          :approve,
-         %Request{runbook_execution_stage_id: stage_id}
+         %Request{runbook_execution_id: execution_id} = request
        )
-       when is_binary(stage_id) do
-    case Emisar.Runbooks.recheck_stage_approval(stage_id) do
+       when is_binary(execution_id) do
+    case Emisar.Runbooks.recheck_execution_approval(execution_id) do
       :ok ->
         :ok
 
-      {:error, _reason} = error ->
-        _result = Emisar.Runbooks.stage_approval_settled(stage_id)
-        error
+      {:error, reason} ->
+        halt_unapprovable_execution(request, reason)
     end
   end
 
   defp recheck_trust(:deny, _request), do: :ok
+
+  defp halt_unapprovable_execution(request, initial_reason) do
+    {code, message} = execution_recheck_failure(initial_reason)
+    now = DateTime.utc_now()
+
+    result =
+      Multi.new()
+      |> Multi.run(:active_account, fn repo, _changes ->
+        Accounts.fetch_and_lock_account(request.account_id, repo: repo)
+      end)
+      |> Multi.run(:approval_target, fn repo, _changes ->
+        lock_approval_target(repo, request)
+      end)
+      |> Multi.run(:execution_recheck, fn _repo, _changes ->
+        {:ok, Emisar.Runbooks.recheck_execution_approval(request.runbook_execution_id)}
+      end)
+      |> Multi.merge(fn
+        %{execution_recheck: :ok} ->
+          Multi.error(Multi.new(), :execution_recheck, :became_approvable)
+
+        %{execution_recheck: {:error, _reason}} ->
+          Multi.new()
+          |> Runbooks.halt_pending_approval_in_multi(
+            request.runbook_execution_id,
+            code,
+            message
+          )
+          |> Multi.run(:cancel_invalid_execution_request, fn repo, _changes ->
+            {count, _} =
+              Request.Query.cancel_pending_by_ids([request.id], now, message)
+              |> repo.update_all([])
+
+            if count == 1, do: {:ok, :cancelled}, else: {:error, :not_pending}
+          end)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn _changes ->
+          request
+          |> then(&Request.Query.by_id(Request.Query.all(), &1.id))
+          |> Repo.peek()
+          |> case do
+            %Request{} = cancelled -> broadcast_approval(cancelled)
+            nil -> :ok
+          end
+        end
+      )
+
+    case result do
+      {:error, :became_approvable} -> :ok
+      {:ok, _changes} -> {:error, :runbook_execution_not_approvable}
+      {:error, _reason} -> {:error, :runbook_execution_not_approvable}
+    end
+  end
+
+  defp execution_recheck_failure(:authorization_lost),
+    do: {"authorization_lost", "Initiating authority is no longer allowed to dispatch."}
+
+  defp execution_recheck_failure(:denied_by_policy),
+    do: {"denied_by_policy", "Current policy denies at least one action in this execution."}
+
+  defp execution_recheck_failure(_reason),
+    do: {"approval_preflight_failed", "The frozen execution plan is no longer dispatchable."}
 
   # Fail-fast: refuse an approve when the parked signed dispatch would already
   # be stale at the enforcing runner (the runner remains authoritative).
   defp check_attestation_fresh(:approve, %Request{run_id: run_id}) when is_binary(run_id),
     do: Runs.check_run_attestation_fresh(run_id)
 
-  defp check_attestation_fresh(:approve, %Request{runbook_execution_stage_id: stage_id})
-       when is_binary(stage_id),
+  defp check_attestation_fresh(:approve, %Request{runbook_execution_id: execution_id})
+       when is_binary(execution_id),
        do: :ok
 
   defp check_attestation_fresh(:deny, _request), do: :ok
@@ -914,16 +1012,16 @@ defmodule Emisar.Approvals do
          %Request{
            status: :pending,
            run_id: nil,
-           runbook_execution_stage_id: stage_id
+           runbook_execution_id: execution_id
          } = locked,
          :deny,
          by_user_id,
          reason,
          _attrs
        )
-       when is_binary(stage_id) do
+       when is_binary(execution_id) do
     with {:ok, denied} <- guarded_transition(locked, :denied, by_user_id, reason) do
-      {:ok, %{action: :halt_runbook, request: denied, approved_count: nil}}
+      {:ok, %{action: :halt_runbook_execution, request: denied, approved_count: nil}}
     end
   end
 
@@ -958,9 +1056,20 @@ defmodule Emisar.Approvals do
        when is_binary(run_id),
        do: Runs.cancel_run_in_multi(multi, run_id, denial_reason(reason))
 
-  defp maybe_cancel_run(multi, :deny, %Request{runbook_execution_stage_id: stage_id}, _reason)
-       when is_binary(stage_id),
-       do: multi
+  defp maybe_cancel_run(
+         multi,
+         :deny,
+         %Request{runbook_execution_id: execution_id},
+         reason
+       )
+       when is_binary(execution_id) do
+    Runbooks.halt_pending_approval_in_multi(
+      multi,
+      execution_id,
+      "approval_denied",
+      denial_reason(reason)
+    )
+  end
 
   defp maybe_cancel_run(multi, :approve, _request, _reason), do: multi
 
@@ -971,20 +1080,22 @@ defmodule Emisar.Approvals do
          repo,
          %Request{
            run_id: nil,
-           runbook_execution_stage_id: stage_id
+           runbook_execution_id: execution_id
          } = locked,
          by_user_id,
          reason,
          _attrs,
          count
        )
-       when is_binary(stage_id) do
-    with :ok <- Emisar.Runbooks.ensure_stage_approvable(repo, stage_id),
+       when is_binary(execution_id) do
+    with {:ok, execution} <-
+           Emisar.Runbooks.activate_pending_approval(repo, execution_id),
          {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason) do
       {:ok,
        %{
-         action: :advance_runbook,
+         action: :advance_runbook_execution,
          request: approved,
+         execution: execution,
          run: nil,
          grant: nil,
          approved_count: count
@@ -1070,14 +1181,14 @@ defmodule Emisar.Approvals do
          subject,
          request,
          reason,
-         %{action: :advance_runbook}
+         %{action: :advance_runbook_execution}
        ) do
     Audit.Events.approval_approved(subject, request, reason, nil, %{})
     |> Repo.insert()
   end
 
   defp insert_finalize_audit(subject, request, reason, %{action: action})
-       when action in [:cancelled, :halt_runbook] do
+       when action in [:cancelled, :halt_runbook_execution] do
     Audit.Events.approval_denied(subject, request, reason)
     |> Repo.insert()
   end
@@ -1096,10 +1207,10 @@ defmodule Emisar.Approvals do
   defp after_decision(%{
          outcome: %{action: action, request: request}
        })
-       when action in [:advance_runbook, :halt_runbook] do
+       when action in [:advance_runbook_execution, :halt_runbook_execution] do
     broadcast_approval(request)
     count_approval_decision(request)
-    Emisar.Runbooks.stage_approval_settled(request.runbook_execution_stage_id)
+    Emisar.Runbooks.approval_settled(request.runbook_execution_id)
   end
 
   defp after_decision(%{outcome: %{action: :cancelled, request: request}, run_cancel: run_cancel}) do
@@ -1134,8 +1245,8 @@ defmodule Emisar.Approvals do
   defp decision_result(%{
          outcome: %{action: action, request: request}
        })
-       when action in [:advance_runbook, :halt_runbook],
-       do: {:ok, {request, :runbook_stage}}
+       when action in [:advance_runbook_execution, :halt_runbook_execution],
+       do: {:ok, {request, :runbook_execution}}
 
   defp decision_result(%{
          outcome: %{action: :cancelled, request: request},
@@ -1589,7 +1700,7 @@ defmodule Emisar.Approvals do
   @doc """
   Internal — the approval expiry job, system, no subject. Atomically
   transitions every pending request whose
-  `expires_at` has passed into `"expired"`, cancels the underlying run,
+  `expires_at` has passed into `"expired"`, cancels the held action or execution,
   and writes an audit row per expiry. Returns the count expired.
   Idempotent — runs every 5 minutes.
   """
@@ -1611,9 +1722,12 @@ defmodule Emisar.Approvals do
       Multi.new()
       # Every approval/dispatch/cancellation writer takes the account row
       # first. That one lock is the total order above their different target
-      # shapes (stage gates and individual action runs).
+      # shapes (whole executions and individual action runs).
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(request.account_id, repo: repo)
+      end)
+      |> Multi.run(:approval_target, fn repo, _changes ->
+        lock_approval_target(repo, request)
       end)
       # Claim the still-pending request as expired; 0 rows means another
       # decision landed between the sweep's SELECT and here — abort as a
@@ -1638,7 +1752,7 @@ defmodule Emisar.Approvals do
         broadcast_approval(changes.reloaded)
         count_approval_decision(changes.reloaded)
         Runs.broadcast_cancelled_run(Map.get(changes, :run_cancel))
-        maybe_advance_expired_stage(changes.reloaded)
+        maybe_advance_expired_execution(changes.reloaded)
       end
     )
   end
@@ -1646,13 +1760,22 @@ defmodule Emisar.Approvals do
   defp maybe_cancel_expired_target(multi, %Request{run_id: run_id}) when is_binary(run_id),
     do: Runs.cancel_run_in_multi(multi, run_id, "approval expired without decision")
 
-  defp maybe_cancel_expired_target(multi, %Request{runbook_execution_stage_id: stage_id})
-       when is_binary(stage_id),
-       do: multi
+  defp maybe_cancel_expired_target(
+         multi,
+         %Request{runbook_execution_id: execution_id}
+       )
+       when is_binary(execution_id) do
+    Runbooks.halt_pending_approval_in_multi(
+      multi,
+      execution_id,
+      "approval_expired",
+      "Approval expired without a decision."
+    )
+  end
 
-  defp maybe_advance_expired_stage(%Request{runbook_execution_stage_id: stage_id})
-       when is_binary(stage_id),
-       do: Emisar.Runbooks.stage_approval_settled(stage_id)
+  defp maybe_advance_expired_execution(%Request{runbook_execution_id: execution_id})
+       when is_binary(execution_id),
+       do: Emisar.Runbooks.approval_settled(execution_id)
 
-  defp maybe_advance_expired_stage(%Request{}), do: :ok
+  defp maybe_advance_expired_execution(%Request{}), do: :ok
 end

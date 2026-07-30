@@ -3,7 +3,7 @@ defmodule Emisar.Runbooks.ExecutionStage.Changeset do
   alias Emisar.Runbooks.ExecutionStage
 
   @create_fields ~w[
-    id account_id runbook_execution_id stage_id position title mode max_parallel approval status
+    id account_id runbook_execution_id stage_id position title mode max_parallel status
   ]a
 
   def create(attrs) do
@@ -18,12 +18,8 @@ defmodule Emisar.Runbooks.ExecutionStage.Changeset do
     |> unique_constraint([:runbook_execution_id, :stage_id])
     |> check_constraint(:status, name: :runbook_execution_stages_status_check)
     |> check_constraint(:mode, name: :runbook_execution_stages_mode_check)
-    |> check_constraint(:approval, name: :runbook_execution_stages_approval_check)
     |> check_constraint(:max_parallel, name: :runbook_execution_stages_max_parallel_check)
   end
-
-  def await_approval(%ExecutionStage{} = stage),
-    do: change(stage, status: :awaiting_approval)
 
   def activate(%ExecutionStage{} = stage, now),
     do: change(stage, status: :active, started_at: stage.started_at || now)

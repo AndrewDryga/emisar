@@ -853,9 +853,9 @@ defmodule Emisar.Runs do
       )
       when is_list(target_attrs) and is_binary(account_id) and is_binary(membership_id) do
     use_grants? = Keyword.get(opts, :use_grants?, true)
-    approved_stage_id = Keyword.get(opts, :approved_runbook_stage_id)
+    execution_id = Keyword.get(opts, :runbook_execution_id)
 
-    with :ok <- validate_runbook_attempt_batch(target_attrs, approved_stage_id) do
+    with :ok <- validate_runbook_attempt_batch(target_attrs, execution_id) do
       target_attrs =
         Enum.map(target_attrs, fn attrs ->
           attrs
@@ -872,7 +872,7 @@ defmodule Emisar.Runs do
            account_id,
            namespace,
            use_grants?,
-           approved_stage_id
+           execution_id
          )
        end)}
     end
@@ -888,25 +888,19 @@ defmodule Emisar.Runs do
       ),
       do: {:error, :invalid_targets}
 
-  defp validate_runbook_attempt_batch(target_attrs, approved_stage_id) do
+  defp validate_runbook_attempt_batch(target_attrs, execution_id) do
     valid? =
-      length(target_attrs) in 1..@max_mcp_fanout and
+      is_binary(execution_id) and
+        length(target_attrs) in 1..@max_mcp_fanout and
         Enum.all?(target_attrs, fn attrs ->
           is_map(attrs) and is_binary(attrs[:runner_id]) and
             is_binary(attrs[:runbook_execution_item_id]) and
-            valid_runbook_stage_approval?(attrs, approved_stage_id) and
+            attrs[:runbook_execution_id] == execution_id and
             is_integer(attrs[:attempt_number]) and attrs[:attempt_number] > 0
         end)
 
     if valid?, do: :ok, else: {:error, :invalid_targets}
   end
-
-  defp valid_runbook_stage_approval?(_attrs, nil), do: true
-
-  defp valid_runbook_stage_approval?(attrs, approved_stage_id) when is_binary(approved_stage_id),
-    do: attrs[:runbook_execution_stage_id] == approved_stage_id
-
-  defp valid_runbook_stage_approval?(_attrs, _approved_stage_id), do: false
 
   defp validate_dispatch_batch(target_attrs) do
     if length(target_attrs) in 1..@max_mcp_fanout and
@@ -922,12 +916,12 @@ defmodule Emisar.Runs do
          account_id,
          namespace,
          use_grants?,
-         approved_stage_id \\ nil
+         approved_execution_id \\ nil
        ) do
     target_attrs
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, Multi.new()}, fn {attrs, index}, {:ok, multi} ->
-      case plan_atomic_run(attrs, account_id, nil, use_grants?, approved_stage_id) do
+      case plan_atomic_run(attrs, account_id, nil, use_grants?, approved_execution_id) do
         {:ok, plan} ->
           run_key = {:composed_run, namespace, index}
           {:cont, {:ok, append_atomic_run(multi, plan, run_key, {namespace, index})}}
@@ -947,7 +941,7 @@ defmodule Emisar.Runs do
          account_id,
          operation_record_id,
          use_grants?,
-         approved_stage_id \\ nil
+         approved_execution_id \\ nil
        ) do
     attrs = Map.put(attrs, :account_id, account_id)
     runner_id = attrs[:runner_id]
@@ -967,6 +961,7 @@ defmodule Emisar.Runs do
          {:ok, contract} <-
            fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
          :ok <- ensure_frozen_runbook_contract(attrs, contract),
+         :ok <- ensure_runbook_item_identity(attrs, account_id),
          action = contract.action,
          :ok <- ensure_primary_executable_available(action) do
       attrs =
@@ -978,11 +973,11 @@ defmodule Emisar.Runs do
         |> Map.put(:requires_approval, false)
         |> Map.put(:mcp_operation_record_id, operation_record_id)
 
-      plan_mcp_policy(attrs, account_id, contract.descriptor, use_grants?, approved_stage_id)
+      plan_mcp_policy(attrs, account_id, contract.descriptor, use_grants?, approved_execution_id)
     end
   end
 
-  defp plan_mcp_policy(attrs, account_id, descriptor, use_grants?, approved_stage_id) do
+  defp plan_mcp_policy(attrs, account_id, descriptor, use_grants?, approved_execution_id) do
     eval_attrs = Map.merge(attrs, %{risk: descriptor["risk"], kind: descriptor["kind"]})
     group = runner_group(attrs[:runner_id])
 
@@ -1011,28 +1006,42 @@ defmodule Emisar.Runs do
           reason,
           matched,
           use_grants?,
-          approved_stage_id
+          approved_execution_id
         )
     end
   end
 
   defp plan_required_approval(
-         %{runbook_execution_stage_id: stage_id} = attrs,
+         %{runbook_execution_id: execution_id} = attrs,
          policy,
          reason,
          matched,
          _use_grants?,
-         stage_id
+         execution_id
        )
-       when is_binary(stage_id) do
-    {:ok,
-     %{
-       attrs:
-         attrs
-         |> Map.merge(policy_attrs(policy, "require_approval", reason, matched))
-         |> Map.put(:policy_reason, "#{reason}; satisfied by approved runbook stage"),
-       delivery: :runner
-     }}
+       when is_binary(execution_id) do
+    if Emisar.Approvals.runbook_execution_approved?(execution_id, attrs[:account_id]) do
+      {:ok,
+       %{
+         attrs:
+           attrs
+           |> Map.merge(policy_attrs(policy, "require_approval", reason, matched))
+           |> Map.put(:policy_reason, "#{reason}; satisfied by approved runbook execution"),
+         delivery: :runner
+       }}
+    else
+      {:ok,
+       %{
+         attrs:
+           attrs
+           |> Map.merge(policy_attrs(policy, "require_approval", reason, matched))
+           |> Map.merge(%{
+             status: :denied,
+             policy_reason: "#{reason}; runbook execution approval is required"
+           }),
+         delivery: :none
+       }}
+    end
   end
 
   defp plan_required_approval(
@@ -1264,8 +1273,8 @@ defmodule Emisar.Runs do
 
   @doc """
   Internal read-only runbook approval precheck. Revalidates one frozen target,
-  membership scope, trusted exact pack, executable readiness, and canonical
-  action contract without creating a run or evaluating policy.
+  membership scope, trusted exact pack, executable readiness, canonical action
+  contract, and the current policy veto without creating a run.
   """
   def recheck_runbook_attempt(attrs, account_id)
       when is_map(attrs) and is_binary(account_id) do
@@ -1289,7 +1298,8 @@ defmodule Emisar.Runs do
              attrs[:pack_ref]
            ),
          :ok <- ensure_frozen_runbook_contract(attrs, contract),
-         :ok <- ensure_primary_executable_available(contract.action) do
+         :ok <- ensure_primary_executable_available(contract.action),
+         :ok <- current_runbook_policy_allows?(attrs, account_id, contract.descriptor) do
       :ok
     else
       true -> {:error, :runner_requires_attestation}
@@ -1298,6 +1308,20 @@ defmodule Emisar.Runs do
   end
 
   def recheck_runbook_attempt(_attrs, _account_id), do: {:error, :invalid_targets}
+
+  defp current_runbook_policy_allows?(attrs, account_id, descriptor) do
+    evaluation =
+      attrs
+      |> Map.merge(%{risk: descriptor["risk"], kind: descriptor["kind"]})
+      |> then(
+        &Emisar.Policies.evaluate_with_policy(account_id, &1, runner_group(attrs.runner_id))
+      )
+
+    case evaluation do
+      {:deny, _matched, _reason, _policy} -> {:error, :denied_by_policy}
+      {_decision, _matched, _reason, _policy} -> :ok
+    end
+  end
 
   @doc """
   Internal — re-validate that an already-created run's action pack is STILL
@@ -1543,6 +1567,22 @@ defmodule Emisar.Runs do
   end
 
   defp ensure_frozen_runbook_contract(_attrs, _contract), do: :ok
+
+  defp ensure_runbook_item_identity(
+         %{
+           runbook_execution_id: execution_id,
+           runbook_execution_item_id: item_id,
+           attempt_number: attempt_number
+         } = attrs,
+         account_id
+       )
+       when is_binary(execution_id) and is_binary(item_id) and is_integer(attempt_number) do
+    if Emisar.Runbooks.attempt_identity_current?(attrs, account_id),
+      do: :ok,
+      else: {:error, :invalid_runbook_attempt}
+  end
+
+  defp ensure_runbook_item_identity(_attrs, _account_id), do: :ok
 
   defp audit_dispatch_contract_error(account_id, runner_id, action_id, event_fun) do
     case fetch_advertised_action(runner_id, action_id, account_id) do

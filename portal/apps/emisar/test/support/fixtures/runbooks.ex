@@ -16,14 +16,12 @@ defmodule Emisar.Fixtures.Runbooks do
         "id" => "main",
         "title" => "Run",
         "mode" => "sequential",
-        "max_parallel" => 1,
-        "approval" => "none",
         "steps" => [
           %{
             "id" => "inspect",
-            "pack" => %{"id" => "linux-core", "requirement" => "== 1.0.0"},
+            "pack" => %{"id" => "linux-core"},
             "action" => "linux.uptime",
-            "targets" => %{"kind" => "group", "refs" => ["default"]},
+            "targets" => %{"refs" => ["group:default"]},
             "args" => %{},
             "outputs" => [],
             "success" => [],

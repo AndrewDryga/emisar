@@ -1,12 +1,13 @@
 defmodule Emisar.RunbooksTest do
   use Emisar.DataCase, async: true
+  alias Ecto.Multi
   alias Emisar.Auth.Subject
   alias Emisar.Catalog
   alias Emisar.Fixtures
   alias Emisar.MCPOperations
   alias Emisar.Repo
   alias Emisar.Runbooks
-  alias Emisar.Runbooks.RunbookExecution
+  alias Emisar.Runbooks.{ExecutionItem, RunbookExecution}
   alias Emisar.Runners
   alias Emisar.Runs
 
@@ -701,35 +702,95 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "stage_approval_settled/1" do
-    test "treats a missing stage callback as an idempotent no-op" do
-      assert :noop = Runbooks.stage_approval_settled(Ecto.UUID.generate())
+  describe "approval_settled/1" do
+    test "treats a missing execution callback as idempotent success" do
+      assert :ok = Runbooks.approval_settled(Ecto.UUID.generate())
     end
   end
 
-  describe "recheck_stage_approval/1" do
-    test "fails closed when the stage is missing" do
-      assert Runbooks.recheck_stage_approval(Ecto.UUID.generate()) ==
-               {:error, :runbook_stage_not_approvable}
+  describe "recheck_execution_approval/1" do
+    test "fails closed when the execution is missing" do
+      assert Runbooks.recheck_execution_approval(Ecto.UUID.generate()) ==
+               {:error, :runbook_execution_not_approvable}
     end
   end
 
-  describe "runner_ids_for_stage_approval/2" do
-    test "fails closed for missing and malformed account-scoped stages" do
-      assert Runbooks.runner_ids_for_stage_approval(
+  describe "runner_ids_for_execution_approval/2" do
+    test "fails closed for missing and malformed account-scoped executions" do
+      assert Runbooks.runner_ids_for_execution_approval(
                Ecto.UUID.generate(),
                Ecto.UUID.generate()
              ) == {:error, :not_found}
 
-      assert Runbooks.runner_ids_for_stage_approval("bad", "bad") ==
+      assert Runbooks.runner_ids_for_execution_approval("bad", "bad") ==
                {:error, :not_found}
     end
   end
 
-  describe "ensure_stage_approvable/2" do
-    test "rejects a missing stage inside the caller's transaction boundary" do
-      assert Runbooks.ensure_stage_approvable(Repo, Ecto.UUID.generate()) ==
-               {:error, :runbook_stage_not_approvable}
+  describe "activate_pending_approval/2" do
+    test "activates the exact pending execution inside the caller transaction" do
+      {user, account, _subject} = Fixtures.Subjects.owner_subject()
+      request = Fixtures.Approvals.create_execution_request(account, user)
+
+      assert {:ok, {:ok, activated}} =
+               Repo.transaction(fn ->
+                 Runbooks.activate_pending_approval(Repo, request.runbook_execution_id)
+               end)
+
+      assert activated.status == :active
+    end
+  end
+
+  describe "lock_pending_approval/2" do
+    test "rejects a missing execution inside the caller's transaction boundary" do
+      assert Runbooks.lock_pending_approval(Repo, Ecto.UUID.generate()) ==
+               {:error, :runbook_execution_not_approvable}
+    end
+  end
+
+  describe "halt_pending_approval_in_multi/4" do
+    test "halts the execution and every pending stage in one transaction" do
+      {user, account, _subject} = Fixtures.Subjects.owner_subject()
+      request = Fixtures.Approvals.create_execution_request(account, user)
+
+      assert {:ok, _changes} =
+               Multi.new()
+               |> Runbooks.halt_pending_approval_in_multi(
+                 request.runbook_execution_id,
+                 "approval_denied",
+                 "Approval denied."
+               )
+               |> Repo.transaction()
+
+      assert fetch_execution(request.runbook_execution_id).status == :halted
+    end
+  end
+
+  describe "attempt_identity_current?/2" do
+    test "accepts only the exact current logical attempt identity" do
+      fixture = mcp_execution_fixture()
+
+      assert [attempt] =
+               Runs.list_runs_for_runbook_execution(fixture.account.id, fixture.execution_id)
+
+      item =
+        ExecutionItem.Query.by_id(attempt.runbook_execution_item_id)
+        |> Repo.one!()
+
+      attrs = %{
+        runbook_execution_item_id: item.id,
+        runbook_execution_id: item.runbook_execution_id,
+        runbook_execution_stage_id: item.runbook_execution_stage_id,
+        runner_id: item.runner_id,
+        action_id: item.action_id,
+        pack_ref: item.pack_ref,
+        runbook_pack_hash: item.pack_hash,
+        attempt_number: item.attempt_count
+      }
+
+      assert Runbooks.attempt_identity_current?(attrs, fixture.account.id)
+      refute Runbooks.attempt_identity_current?(%{attrs | attempt_number: 2}, fixture.account.id)
+      refute Runbooks.attempt_identity_current?(attrs, Ecto.UUID.generate())
     end
   end
 
@@ -847,8 +908,6 @@ defmodule Emisar.RunbooksTest do
       "id" => id,
       "title" => String.capitalize(id),
       "mode" => "sequential",
-      "max_parallel" => 1,
-      "approval" => "none",
       "steps" => steps
     }
   end
@@ -856,9 +915,9 @@ defmodule Emisar.RunbooksTest do
   defp step(id, group) do
     %{
       "id" => id,
-      "pack" => %{"id" => "linux-core", "requirement" => "~> 1.4.0"},
+      "pack" => %{"id" => "linux-core"},
       "action" => "linux.uptime",
-      "targets" => %{"kind" => "group", "refs" => [group]},
+      "targets" => %{"refs" => ["group:" <> group]},
       "args" => %{},
       "outputs" => [],
       "success" => [],

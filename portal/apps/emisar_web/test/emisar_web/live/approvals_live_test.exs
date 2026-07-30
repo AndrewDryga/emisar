@@ -61,14 +61,14 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "reboot for kernel patch"
   end
 
-  test "lists a runbook stage by frozen title and blast radius", %{conn: conn} do
+  test "lists a whole runbook execution by title and frozen blast radius", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _request = Fixtures.Approvals.create_stage_request(account, user)
+    _request = Fixtures.Approvals.create_execution_request(account, user)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
-    assert html =~ "Apply database change"
-    assert html =~ "2 actions across 2 runners"
+    assert html =~ "Database maintenance"
+    assert html =~ "1 stage · 2 actions across 2 runners"
     assert html =~ "Apply the reviewed database settings"
     assert html =~ "medium"
     refute html =~ "on —"

@@ -68,14 +68,12 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
           "id" => "inspect",
           "title" => "Inspect",
           "mode" => "sequential",
-          "max_parallel" => 5,
-          "approval" => "none",
           "steps" => [
             %{
               "id" => "observe",
-              "pack" => %{"id" => "linux-core", "requirement" => "~> 1.0.0"},
+              "pack" => %{"id" => "linux-core"},
               "action" => "linux.uptime",
-              "targets" => %{"kind" => "group", "refs" => ["edge"]},
+              "targets" => %{"refs" => ["group:edge"]},
               "args" => %{"host" => %{"source" => "input", "ref" => "host"}},
               "outputs" => [],
               "success" => [],

@@ -108,7 +108,7 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
   end
 
   @tag timeout: 60_000
-  test "cancellation racing an action approval cannot resurrect the execution" do
+  test "cancellation racing the execution approval cannot resurrect the runbook" do
     unboxed_account(fn account, subject, runner ->
       Runners.subscribe_runner_transport(runner)
 
@@ -136,11 +136,14 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
         )
 
       assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "approval contention", subject)
-      assert [run] = runs(account.id, result.execution_id)
-      assert run.status == :pending_approval
+      assert runs(account.id, result.execution_id) == []
+      assert execution(result.execution_id).status == :pending_approval
 
       assert {:ok, [request], _metadata} =
                Approvals.list_pending_approval_requests(subject)
+
+      assert request.runbook_execution_id == result.execution_id
+      assert is_nil(request.run_id)
 
       [cancel_result, approve_result] =
         concurrently([
@@ -154,7 +157,7 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
                approve_result in [
                  {:error, :already_decided},
                  {:error, :run_cancelled},
-                 {:error, :runbook_attempt_not_approvable}
+                 {:error, :runbook_execution_not_approvable}
                ]
 
       assert Scheduler.advance_execution(result.execution_id) in [:ok, :noop]
@@ -162,7 +165,7 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
 
       cancelled = execution(result.execution_id)
       assert cancelled.status == :cancelled
-      assert Repo.reload!(run).status in [:cancelled, :cancelling]
+      assert runs(account.id, result.execution_id) == []
 
       assert ExecutionItem.Query.by_execution_id(result.execution_id)
              |> Repo.one!()
@@ -304,22 +307,23 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
   end
 
   defp stage(id, mode, max_parallel, steps) do
-    %{
-      "id" => id,
-      "title" => String.capitalize(id),
-      "mode" => mode,
-      "max_parallel" => max_parallel,
-      "approval" => "none",
-      "steps" => steps
-    }
+    Map.merge(
+      %{
+        "id" => id,
+        "title" => String.capitalize(id),
+        "mode" => mode,
+        "steps" => steps
+      },
+      if(mode == "parallel", do: %{"max_parallel" => max_parallel}, else: %{})
+    )
   end
 
   defp step(id, group) do
     %{
       "id" => id,
-      "pack" => %{"id" => "linux-core", "requirement" => "~> 1.4.0"},
+      "pack" => %{"id" => "linux-core"},
       "action" => "linux.uptime",
-      "targets" => %{"kind" => "group", "refs" => [group]},
+      "targets" => %{"refs" => ["group:" <> group]},
       "args" => %{},
       "outputs" => [],
       "success" => [],

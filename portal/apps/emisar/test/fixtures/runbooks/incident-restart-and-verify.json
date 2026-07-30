@@ -17,20 +17,16 @@
       "id": "diagnose",
       "title": "Resolve the affected resource",
       "mode": "sequential",
-      "max_parallel": 1,
-      "approval": "none",
       "steps": [
         {
           "id": "resolve_resource",
           "pack": {
-            "id": "aws-incident",
-            "requirement": "== 3.2.1"
+            "id": "aws-incident"
           },
           "action": "aws.incident_resource",
           "targets": {
-            "kind": "group",
             "refs": [
-              "aws-control"
+              "group:aws-control"
             ]
           },
           "args": {
@@ -77,20 +73,16 @@
       "id": "remediate",
       "title": "Restart the resource",
       "mode": "sequential",
-      "max_parallel": 1,
-      "approval": "required",
       "steps": [
         {
           "id": "restart_resource",
           "pack": {
-            "id": "aws-incident",
-            "requirement": "== 3.2.1"
+            "id": "aws-incident"
           },
           "action": "aws.restart_resource",
           "targets": {
-            "kind": "group",
             "refs": [
-              "aws-control"
+              "group:aws-control"
             ]
           },
           "args": {
@@ -129,20 +121,16 @@
       "id": "verify",
       "title": "Wait for recovery",
       "mode": "sequential",
-      "max_parallel": 1,
-      "approval": "none",
       "steps": [
         {
           "id": "resource_health",
           "pack": {
-            "id": "aws-incident",
-            "requirement": "== 3.2.1"
+            "id": "aws-incident"
           },
           "action": "aws.resource_health",
           "targets": {
-            "kind": "group",
             "refs": [
-              "aws-control"
+              "group:aws-control"
             ]
           },
           "args": {

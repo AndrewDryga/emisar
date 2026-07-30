@@ -54,43 +54,16 @@ defmodule Emisar.Runbooks.DefinitionTest do
              ]
     end
 
-    test "accepts only the fixed version-requirement grammar" do
-      for requirement <- [
-            "== 1.4.3",
-            "== 1.4.3-rc.1",
-            "~> 1.4.0",
-            ">= 1.4.0 and < 2.0.0",
-            ">= 1.4.0 and <= 1.9.9"
-          ] do
-        assert {:ok, _definition} =
-                 valid_definition()
-                 |> put_in(
-                   ["stages", Access.at(0), "steps", Access.at(0), "pack", "requirement"],
-                   requirement
-                 )
-                 |> Definition.validate()
-      end
+    test "pack selection has one canonical id and rejects author-facing versions" do
+      definition =
+        put_in(
+          valid_definition(),
+          ["stages", Access.at(0), "steps", Access.at(0), "pack", "requirement"],
+          "~> 1.4.0"
+        )
 
-      for requirement <- [
-            "1.4.3",
-            "~> 1.4",
-            ">= 1.4.0",
-            "> 1.4.0",
-            "!= 1.4.0",
-            ">= 1.0.0 or < 2.0.0",
-            "~> 1.4.0-rc.1",
-            "== 1.4.3+build"
-          ] do
-        assert {:error, issues} =
-                 valid_definition()
-                 |> put_in(
-                   ["stages", Access.at(0), "steps", Access.at(0), "pack", "requirement"],
-                   requirement
-                 )
-                 |> Definition.validate()
-
-        assert Enum.any?(issues, &(&1.path == "/stages/0/steps/0/pack/requirement"))
-      end
+      assert {:error, issues} = Definition.validate(definition)
+      assert Enum.map(issues, & &1.path) == ["/stages/0/steps/0/pack/requirement"]
     end
 
     test "enforces typed input constraints and forbids sensitive defaults" do
@@ -243,14 +216,12 @@ defmodule Emisar.Runbooks.DefinitionTest do
           "id" => "inspect",
           "title" => "Inspect",
           "mode" => "sequential",
-          "max_parallel" => 5,
-          "approval" => "none",
           "steps" => [
             %{
               "id" => "observe",
-              "pack" => %{"id" => "linux-core", "requirement" => "~> 1.0.0"},
+              "pack" => %{"id" => "linux-core"},
               "action" => "linux.uptime",
-              "targets" => %{"kind" => "group", "refs" => ["edge"]},
+              "targets" => %{"refs" => ["group:edge"]},
               "args" => %{"host" => %{"source" => "input", "ref" => "host"}},
               "outputs" => [output("ready")],
               "success" => [%{"output" => "ready", "operator" => "equals", "value" => true}],

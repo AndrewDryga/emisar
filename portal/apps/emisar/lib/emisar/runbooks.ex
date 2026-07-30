@@ -10,10 +10,10 @@ defmodule Emisar.Runbooks do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, MCPOperations, Repo, Runs}
+  alias Emisar.{Accounts, Approvals, Audit, Auth, MCPOperations, Repo, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Compiler, Runbook, RunbookExecution, Scheduler}
-  alias Emisar.Runbooks.{ExecutionItem, ExecutionStage}
+  alias Emisar.Runbooks.ExecutionItem
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -463,9 +463,9 @@ defmodule Emisar.Runbooks do
   @doc """
   Compiles and dispatches a runbook through the durable stage scheduler.
 
-  The compiler resolves typed inputs, runner fan-out, pack requirements, and
-  action contracts before any execution row is created. The resulting plan is
-  immutable; current membership, runner scope, policy, lifecycle, trust, and
+  The compiler resolves typed inputs, runner fan-out, current trusted packs,
+  and action contracts before any execution row is created. The resulting plan
+  is immutable; current membership, runner scope, policy, lifecycle, trust, and
   content hash are rechecked before each physical attempt.
 
   MCP callers may pass their operation identity through `opts`. Matching
@@ -584,8 +584,17 @@ defmodule Emisar.Runbooks do
             )
         end)
 
-      with {:ok, %{mcp_operation: reservation}} <- Repo.commit_multi(multi) do
-        if reservation.fresh?, do: Scheduler.advance_execution(execution_id), else: :ok
+      with {:ok, changes} <-
+             Repo.commit_multi(multi,
+               after_commit: &Approvals.after_runbook_execution_request_committed/1
+             ) do
+        reservation = changes.mcp_operation
+        execution = Map.get(changes, {:runbook_execution, execution_id})
+
+        if reservation.fresh? and match?(%RunbookExecution{status: :active}, execution),
+          do: Scheduler.advance_execution(execution_id),
+          else: :ok
+
         Scheduler.fetch_result(execution_id, runbook.account_id)
       end
     end
@@ -778,29 +787,29 @@ defmodule Emisar.Runbooks do
   @doc "Internal terminal-attempt callback from the Runs context."
   def action_run_settled(run), do: Emisar.Runbooks.Scheduler.action_run_settled(run)
 
-  @doc "Internal stage-approval callback from the Approvals context."
-  def stage_approval_settled(stage_id),
-    do: Emisar.Runbooks.Scheduler.stage_approval_settled(stage_id)
+  @doc "Internal execution-approval callback from the Approvals context."
+  def approval_settled(execution_id),
+    do: Emisar.Runbooks.Scheduler.approval_settled(execution_id)
 
-  @doc "Internal stage-approval recheck used while deciding a request."
-  def recheck_stage_approval(stage_id),
-    do: Emisar.Runbooks.Scheduler.recheck_stage_approval(stage_id)
+  @doc "Internal execution-approval recheck used while deciding a request."
+  def recheck_execution_approval(execution_id),
+    do: Emisar.Runbooks.Scheduler.recheck_execution_approval(execution_id)
 
   @doc """
-  Internal bounded runner ids for a stage approval notification. The explicit
-  account scope prevents an adjacent-context notifier from turning a stage id
+  Internal bounded runner ids for an execution approval notification. The explicit
+  account scope prevents an adjacent-context notifier from turning an execution id
   into a cross-account lookup.
   """
-  def runner_ids_for_stage_approval(stage_id, account_id)
-      when is_binary(stage_id) and is_binary(account_id) do
-    stage_query =
-      ExecutionStage.Query.by_account_id(account_id)
-      |> ExecutionStage.Query.by_id(stage_id)
+  def runner_ids_for_execution_approval(execution_id, account_id)
+      when is_binary(execution_id) and is_binary(account_id) do
+    execution_query =
+      RunbookExecution.Query.by_account_id(account_id)
+      |> RunbookExecution.Query.by_id(execution_id)
 
-    with true <- Repo.valid_uuid?(stage_id) and Repo.valid_uuid?(account_id),
-         %ExecutionStage{} <- Repo.peek(stage_query) do
+    with true <- Repo.valid_uuid?(execution_id) and Repo.valid_uuid?(account_id),
+         %RunbookExecution{} <- Repo.peek(execution_query) do
       runner_ids =
-        ExecutionItem.Query.by_stage_id(stage_id)
+        ExecutionItem.Query.by_execution_id(execution_id)
         |> ExecutionItem.Query.select_runner_ids()
         |> Repo.all()
         |> Enum.uniq()
@@ -811,11 +820,51 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  def runner_ids_for_stage_approval(_stage_id, _account_id), do: {:error, :not_found}
+  def runner_ids_for_execution_approval(_execution_id, _account_id), do: {:error, :not_found}
 
-  @doc "Internal transaction-local stage eligibility check for Approvals."
-  def ensure_stage_approvable(repo, stage_id),
-    do: Emisar.Runbooks.Scheduler.ensure_stage_approvable(repo, stage_id)
+  @doc "Internal — activate an execution inside its final approval transaction."
+  def activate_pending_approval(repo, execution_id),
+    do: Emisar.Runbooks.Scheduler.activate_pending_approval(repo, execution_id)
+
+  @doc "Internal — lock an execution before its approval request is decided."
+  def lock_pending_approval(repo, execution_id),
+    do: Emisar.Runbooks.Scheduler.lock_pending_approval(repo, execution_id)
+
+  @doc "Internal — compose an approval denial or expiry into its transaction."
+  def halt_pending_approval_in_multi(multi, execution_id, code, message) do
+    Emisar.Runbooks.Scheduler.halt_pending_approval_in_multi(
+      multi,
+      execution_id,
+      code,
+      message
+    )
+  end
+
+  @doc "Internal — exact logical-attempt identity check for the Runs context."
+  def attempt_identity_current?(attrs, account_id)
+      when is_map(attrs) and is_binary(account_id) do
+    item =
+      ExecutionItem.Query.by_id(attrs[:runbook_execution_item_id])
+      |> Repo.peek()
+
+    case item do
+      %ExecutionItem{} ->
+        item.account_id == account_id and
+          item.runbook_execution_id == attrs[:runbook_execution_id] and
+          item.runbook_execution_stage_id == attrs[:runbook_execution_stage_id] and
+          item.runner_id == attrs[:runner_id] and
+          item.action_id == attrs[:action_id] and
+          item.pack_ref == attrs[:pack_ref] and
+          item.pack_hash == attrs[:runbook_pack_hash] and
+          item.status == :running and
+          item.attempt_count == attrs[:attempt_number]
+
+      nil ->
+        false
+    end
+  end
+
+  def attempt_identity_current?(_attrs, _account_id), do: false
 
   @doc "Internal — confirm an action approval still belongs to the current active attempt."
   def ensure_attempt_approvable(repo, run),

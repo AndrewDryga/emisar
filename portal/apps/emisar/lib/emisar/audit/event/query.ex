@@ -89,7 +89,6 @@ defmodule Emisar.Audit.Event.Query do
     {"runbook.execution_succeeded", "Runbook execution succeeded"},
     {"runbook.execution_halted", "Runbook execution halted"},
     {"runbook.execution_cancelled", "Runbook execution cancelled"},
-    {"runbook.stage_awaiting_approval", "Runbook stage awaiting approval"},
     {"runbook.stage_started", "Runbook stage started"},
     {"runbook.stage_succeeded", "Runbook stage succeeded"},
     {"runbook.stage_halted", "Runbook stage halted"},
@@ -267,7 +266,6 @@ defmodule Emisar.Audit.Event.Query do
        {"runbook.execution_succeeded", "Execution succeeded"},
        {"runbook.execution_halted", "Execution halted"},
        {"runbook.execution_cancelled", "Execution cancelled"},
-       {"runbook.stage_awaiting_approval", "Stage awaiting approval"},
        {"runbook.stage_started", "Stage started"},
        {"runbook.stage_succeeded", "Stage succeeded"},
        {"runbook.stage_halted", "Stage halted"},
@@ -866,8 +864,6 @@ defmodule Emisar.Audit.Event.Query do
       {false, false, true, "A blocking outcome halted the runbook before later work could start."},
     "runbook.execution_cancelled" =>
       {true, true, true, "An operator cancelled the runbook execution."},
-    "runbook.stage_awaiting_approval" =>
-      {false, false, true, "The next stage is waiting for its explicit human approval gate."},
     "runbook.stage_started" =>
       {false, false, true, "The scheduler made a stage eligible and began dispatching its items."},
     "runbook.stage_succeeded" => {false, false, true, "Every logical item in a stage succeeded."},

@@ -1,8 +1,9 @@
-defmodule Emisar.Runbooks.StageApprovalTest do
+defmodule Emisar.Runbooks.ExecutionApprovalTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.{Approvals, Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
-  alias Emisar.Runbooks.RunbookExecution
+  alias Emisar.Approvals.Request
+  alias Emisar.Runbooks.{ExecutionItem, RunbookExecution, Scheduler}
 
   @hash "sha256:" <> String.duplicate("c", 64)
 
@@ -25,7 +26,7 @@ defmodule Emisar.Runbooks.StageApprovalTest do
     %{account: account, approver: approver, runner: runner, subject: subject}
   end
 
-  test "a required stage creates one frozen approval before dispatch", %{
+  test "one frozen execution approval covers every stage before dispatch", %{
     account: account,
     approver: approver,
     runner: runner,
@@ -41,27 +42,99 @@ defmodule Emisar.Runbooks.StageApprovalTest do
              Approvals.list_pending_approval_requests(approver)
 
     assert is_nil(request.run_id)
-    assert is_binary(request.runbook_execution_stage_id)
-    assert request.context["kind"] == "runbook_stage"
+    assert request.runbook_execution_id == result.execution_id
+    assert request.context["kind"] == "runbook_execution"
+    assert request.context["runbook"]["id"] == runbook.id
+    assert request.context["runbook"]["title"] == runbook.title
 
-    assert get_in(request.context, ["stage", "items", Access.at(0), "pack_ref"]) ==
+    assert get_in(request.context, [
+             "plan",
+             "stages",
+             Access.at(0),
+             "items",
+             Access.at(0),
+             "pack_ref"
+           ]) ==
              "linux-core@1.4.2/#{@hash}"
 
-    assert {:ok, {_approved, :runbook_stage}} =
+    assert {:ok, {_approved, :runbook_execution}} =
              Approvals.approve_request(request, approver, "change window confirmed")
 
     assert [run] = Runs.list_runs_for_runbook_execution(account.id, result.execution_id)
     assert run.runbook_step_id == "inspect"
     assert run.expected_pack_hash == @hash
     assert run.policy_decision == "require_approval"
-    assert run.policy_reason =~ "satisfied by approved runbook stage"
+    assert run.policy_reason =~ "satisfied by approved runbook execution"
     refute run.requires_approval
 
     assert {:ok, [], _metadata} =
              Approvals.list_pending_approval_requests(approver)
   end
 
-  test "a denied stage halts without creating an action run", %{
+  test "an approved execution retries a wait without opening another request", %{
+    account: account,
+    approver: approver,
+    runner: runner,
+    subject: subject
+  } do
+    _policy =
+      Fixtures.Policies.create_policy(
+        account_id: account.id,
+        rules: %{
+          "schema_version" => 2,
+          "defaults" => %{
+            "low" => "require_approval",
+            "medium" => "require_approval",
+            "high" => "require_approval",
+            "critical" => "deny"
+          },
+          "overrides" => [],
+          "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
+        }
+      )
+
+    definition = waiting_definition(runner.group)
+    runbook = published_runbook(subject, definition)
+
+    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "wait after approval", subject)
+
+    assert {:ok, [request], _metadata} =
+             Approvals.list_pending_approval_requests(approver)
+
+    assert {:ok, {_approved, :runbook_execution}} =
+             Approvals.approve_request(request, approver, "observe until ready")
+
+    assert [first_attempt] =
+             Runs.list_runs_for_runbook_execution(account.id, result.execution_id)
+
+    assert {:ok, _first_attempt} =
+             Fixtures.Runs.finish(first_attempt, %{
+               "status" => "success",
+               "structured_output" => %{"ready" => false}
+             })
+
+    ExecutionItem.Query.by_execution_id(result.execution_id)
+    |> Repo.one!()
+    |> Ecto.Changeset.change(next_attempt_at: DateTime.add(DateTime.utc_now(), -1, :second))
+    |> Repo.update!()
+
+    assert Scheduler.advance_execution(result.execution_id) == :ok
+
+    assert [_first, second_attempt] =
+             Runs.list_runs_for_runbook_execution(account.id, result.execution_id)
+
+    assert second_attempt.attempt_number == 2
+
+    request_count =
+      Request.Query.all()
+      |> Request.Query.by_runbook_execution_id(result.execution_id)
+      |> Repo.aggregate(:count)
+
+    assert request_count == 1
+    assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(approver)
+  end
+
+  test "a denied execution halts without creating an action run", %{
     account: account,
     approver: approver,
     runner: runner,
@@ -74,7 +147,7 @@ defmodule Emisar.Runbooks.StageApprovalTest do
     assert {:ok, [request], _metadata} =
              Approvals.list_pending_approval_requests(approver)
 
-    assert {:ok, {_denied, :runbook_stage}} =
+    assert {:ok, {_denied, :runbook_execution}} =
              Approvals.deny_request(request, approver, "outside the change window")
 
     execution = execution(result.execution_id)
@@ -83,7 +156,7 @@ defmodule Emisar.Runbooks.StageApprovalTest do
     assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
   end
 
-  test "a fresh policy denial still wins after the stage was approved", %{
+  test "a fresh policy denial vetoes approval", %{
     account: account,
     approver: approver,
     runner: runner,
@@ -111,16 +184,10 @@ defmodule Emisar.Runbooks.StageApprovalTest do
         }
       )
 
-    assert {:ok, {_approved, :runbook_stage}} =
-             Approvals.approve_request(request, approver, "reviewed before policy change")
+    assert Approvals.approve_request(request, approver, "reviewed before policy change") ==
+             {:error, :runbook_execution_not_approvable}
 
-    assert [run] = Runs.list_runs_for_runbook_execution(account.id, result.execution_id)
-    assert run.status == :denied
-    assert run.policy_decision == "deny"
-
-    halted = execution(result.execution_id)
-    assert halted.status == :halted
-    assert halted.terminal_code == "denied_by_policy"
+    assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
   end
 
   test "cancelling while awaiting approval closes the request atomically", %{
@@ -140,10 +207,10 @@ defmodule Emisar.Runbooks.StageApprovalTest do
     assert Repo.reload!(request).status == :cancelled
 
     assert Approvals.approve_request(request, approver, "stale approval") ==
-             {:error, :runbook_stage_not_approvable}
+             {:error, :run_cancelled}
   end
 
-  test "restricted approvers must retain scope to every frozen stage runner", %{
+  test "restricted approvers must retain scope to every frozen execution runner", %{
     account: account,
     approver: approver,
     runner: first,
@@ -168,7 +235,7 @@ defmodule Emisar.Runbooks.StageApprovalTest do
              Approvals.list_pending_approval_requests(approver)
   end
 
-  test "cross-account approvers cannot see or decide a stage request", %{
+  test "cross-account approvers cannot see an execution request", %{
     runner: runner,
     subject: subject
   } do
@@ -181,7 +248,7 @@ defmodule Emisar.Runbooks.StageApprovalTest do
              Approvals.list_pending_approval_requests(other_subject)
   end
 
-  test "an expired stage request halts without dispatch and cannot be decided", %{
+  test "an expired execution request halts without dispatch and cannot be decided", %{
     account: account,
     approver: approver,
     runner: runner,
@@ -231,7 +298,7 @@ defmodule Emisar.Runbooks.StageApprovalTest do
     _suspended = Fixtures.Memberships.suspend_membership(membership)
 
     assert Approvals.approve_request(request, approver, "still approve") ==
-             {:error, :runbook_stage_not_approvable}
+             {:error, :runbook_execution_not_approvable}
 
     halted = execution(result.execution_id)
     assert halted.status == :halted
@@ -280,6 +347,25 @@ defmodule Emisar.Runbooks.StageApprovalTest do
                    "examples" => [],
                    "search_terms" => [],
                    "output_schema" => nil
+                 },
+                 %{
+                   "id" => "linux.health",
+                   "pack_id" => "linux-core",
+                   "title" => "Health",
+                   "kind" => "exec",
+                   "risk" => "low",
+                   "summary" => "Reports health",
+                   "description" => "Reports health",
+                   "side_effects" => [],
+                   "args" => [],
+                   "examples" => [],
+                   "search_terms" => [],
+                   "output_schema" => %{
+                     "type" => "object",
+                     "properties" => %{"ready" => %{"type" => "boolean"}},
+                     "required" => ["ready"],
+                     "additionalProperties" => false
+                   }
                  }
                ]
              })
@@ -319,13 +405,12 @@ defmodule Emisar.Runbooks.StageApprovalTest do
           "title" => "Apply change",
           "mode" => "parallel",
           "max_parallel" => 2,
-          "approval" => "required",
           "steps" => [
             %{
               "id" => "inspect",
-              "pack" => %{"id" => "linux-core", "requirement" => "~> 1.4.0"},
+              "pack" => %{"id" => "linux-core"},
               "action" => "linux.uptime",
-              "targets" => %{"kind" => "group", "refs" => [group]},
+              "targets" => %{"refs" => ["group:" <> group]},
               "args" => %{},
               "outputs" => [],
               "success" => [],
@@ -335,6 +420,33 @@ defmodule Emisar.Runbooks.StageApprovalTest do
         }
       ]
     }
+  end
+
+  defp waiting_definition(group) do
+    required_definition(group)
+    |> put_in(
+      ["stages", Access.at(0), "steps", Access.at(0), "action"],
+      "linux.health"
+    )
+    |> put_in(
+      ["stages", Access.at(0), "steps", Access.at(0), "outputs"],
+      [
+        %{
+          "id" => "ready",
+          "source" => "structured_output",
+          "sensitive" => false,
+          "extract" => %{"type" => "json_pointer", "expression" => "/ready"}
+        }
+      ]
+    )
+    |> put_in(
+      ["stages", Access.at(0), "steps", Access.at(0), "success"],
+      [%{"output" => "ready", "operator" => "equals", "value" => true}]
+    )
+    |> put_in(
+      ["stages", Access.at(0), "steps", Access.at(0), "wait"],
+      %{"interval_seconds" => 5, "timeout_seconds" => 20, "max_attempts" => 3}
+    )
   end
 
   defp execution(id),

@@ -154,15 +154,15 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert %{
              "id" => "check",
              "action" => "operations.health",
-             "pack" => %{"id" => "operations", "requirement" => "== 1.0.0"},
-             "targets" => %{"kind" => "runner", "refs" => [^runner_ref]}
+             "pack" => %{"id" => "operations"},
+             "targets" => %{"refs" => ["runner:" <> ^runner_ref]}
            } = get_in(fetched, ["runbook", "definition", "stages", Access.at(0), "steps"]) |> hd()
 
     draft_args = %{
       "title" => "Check database fleet",
       "slug" => nil,
       "description" => nil,
-      "definition" => runbook_definition(%{"kind" => "runner", "refs" => [runner_ref]})
+      "definition" => runbook_definition(%{"refs" => ["runner:" <> runner_ref]})
     }
 
     draft = call(conn, "create_runbook_draft", draft_args)
@@ -462,7 +462,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     definition =
       runbook_definition(
-        %{"kind" => "runner", "refs" => [runner_ref(runner)]},
+        %{"refs" => ["runner:" <> runner_ref(runner)]},
         args: %{"service" => %{"source" => "input", "ref" => "missing"}}
       )
 
@@ -524,7 +524,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "title" => "Revoked pack draft",
         "slug" => nil,
         "description" => nil,
-        "definition" => runbook_definition(%{"kind" => "runner", "refs" => [runner_ref(runner)]})
+        "definition" => runbook_definition(%{"refs" => ["runner:" <> runner_ref(runner)]})
       })
 
     assert draft["ok"]
@@ -537,8 +537,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "op_324NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert executed["error"]["code"] == "no_compatible_pack"
-    assert executed["error"]["path"] == "/stages/0/steps/0/pack/requirement"
+    assert executed["error"]["code"] == "pack_unavailable"
+    assert executed["error"]["path"] == "/stages/0/steps/0/pack"
     assert executed["dispatch_started"] == false
     assert Repo.aggregate(Operation, :count) == 1
     assert {:ok, [], _meta} = Runs.list_runs(subject)
@@ -1855,11 +1855,16 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       case selector do
         %{"runner_id" => ids} ->
           {:ok, runners} = Runners.list_all_runners_for_account(subject)
-          refs = runners |> Enum.filter(&(&1.id in ids)) |> Enum.map(&runner_ref/1)
-          %{"kind" => "runner", "refs" => refs}
+
+          refs =
+            runners
+            |> Enum.filter(&(&1.id in ids))
+            |> Enum.map(&("runner:" <> runner_ref(&1)))
+
+          %{"refs" => refs}
 
         %{"group" => groups} ->
-          %{"kind" => "group", "refs" => groups}
+          %{"refs" => Enum.map(groups, &("group:" <> &1))}
       end
 
     {:ok, draft} =
@@ -1888,11 +1893,10 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
           "title" => "Inspect",
           "mode" => "parallel",
           "max_parallel" => 16,
-          "approval" => "none",
           "steps" => [
             %{
               "id" => "check",
-              "pack" => %{"id" => "operations", "requirement" => "== 1.0.0"},
+              "pack" => %{"id" => "operations"},
               "action" => "operations.health",
               "targets" => targets,
               "args" => Keyword.get(opts, :args, %{}),

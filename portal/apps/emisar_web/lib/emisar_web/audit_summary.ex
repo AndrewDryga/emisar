@@ -213,7 +213,6 @@ defmodule EmisarWeb.AuditSummary do
        when event_type in [
               "runbook.execution_succeeded",
               "runbook.execution_cancelled",
-              "runbook.stage_awaiting_approval",
               "runbook.stage_started",
               "runbook.stage_succeeded",
               "runbook.stage_cancelled"

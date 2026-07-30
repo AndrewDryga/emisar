@@ -1476,13 +1476,12 @@ definition or `runbook_not_found`:
           "title": "Check replication",
           "mode": "parallel",
           "max_parallel": 4,
-          "approval": "none",
           "steps": [
             {
               "id": "check",
-              "pack": {"id": "postgres", "requirement": "~> 1.4.0"},
+              "pack": {"id": "postgres"},
               "action": "postgres.replication_status",
-              "targets": {"kind": "group", "refs": ["postgres"]},
+              "targets": {"refs": ["group:postgres"]},
               "args": {
                 "cluster": {"source": "input", "ref": "cluster"}
               },
@@ -1514,12 +1513,12 @@ definition or `runbook_not_found`:
 
 The `definition` object is the same strict JSON-compatible v1 contract used by
 the console, persistence, validation, compilation, and draft creation. It
-allows no aliases or unknown fields. A target has exactly one `kind` (`runner`
-or `group`) and 1 through 16 `refs`. Group membership is intentionally resolved
-and frozen only when execution begins; publishing a runbook does not claim a
-future runner set. The complete expanded set must be inside the caller's current
-scope or preflight returns generic `not_allowed` without refs or counts;
-partial-fleet execution is never inferred.
+allows no aliases or unknown fields. A target has 1 through 16 tagged `refs`;
+each is `runner:<runner_ref>` or `group:<group_name>`, and one step may mix the
+two forms. Group membership is resolved and frozen only when execution begins;
+publishing a runbook does not claim a future runner set. The complete expanded
+set must be inside the caller's current scope or preflight returns generic
+`not_allowed` without refs or counts; partial-fleet execution is never inferred.
 
 One definition is at most 64 KiB and contains at most 32 inputs, 16 stages, 32
 steps total, 16 target refs per step, and 256 resolved logical items. The
@@ -1538,17 +1537,19 @@ generic signature.
 
 Before creation, the portal validates the strict definition and typed inputs;
 expands every target to exact current runner refs; validates complete caller
-scope; selects the highest compatible trusted pack version per runner; requires
-a common action contract for every fan-out; checks every binding against that
-contract; and enforces the signature restriction for the complete plan. Any
-failure creates no execution.
+scope; resolves the current trusted pack behind each declared action; requires a
+common action contract for every fan-out; checks every binding against that
+contract; evaluates current account policy for every item; and enforces the
+signature restriction for the complete plan. Any failure creates no execution.
 
 The operation, immutable expanded plan, execution, stages, and logical
-step/runner items commit atomically. The scheduler then advances the initial
-stage to approval, dispatch, or a terminal state. Runner delivery starts only
-after its corresponding action-run row commits. Every later stage and wait
-attempt rechecks initiating membership, runner scope, policy, exact frozen
-action contract, pack trust, and runner availability before dispatch.
+step/runner items commit atomically. If any frozen item requires approval, the
+same transaction creates one request for the entire execution and no action-run
+rows. Otherwise the scheduler advances the initial stage after commit. Runner
+delivery starts only after its corresponding action-run row commits. Approval
+and every later stage or wait attempt recheck initiating membership, runner
+scope, policy, exact frozen action contract, pack trust, and runner availability
+before dispatch.
 
 Accepted response:
 
@@ -1568,7 +1569,6 @@ Accepted response:
         "position": 0,
         "mode": "parallel",
         "max_parallel": 4,
-        "approval": "none",
         "status": "active",
         "items": [
           {
@@ -1633,12 +1633,12 @@ Accepted response:
 }
 ```
 
-Execution statuses are `active`, `succeeded`, `halted`, and `cancelled`.
-Stage statuses are `pending`, `awaiting_approval`, `active`, `succeeded`,
-`halted`, and `cancelled`. Logical item statuses are `pending`, `running`,
-`waiting`, `succeeded`, `failed`, and `cancelled`. Policy denials and every
-physical action terminal outcome settle the accepted execution under
-`ok: true`; a caller does not retry the complete mutation.
+Execution statuses are `pending_approval`, `active`, `succeeded`, `halted`, and
+`cancelled`. Stage statuses are `pending`, `active`, `succeeded`, `halted`, and
+`cancelled`. Logical item statuses are `pending`, `running`, `waiting`,
+`succeeded`, `failed`, and `cancelled`. Policy denials and every physical action
+terminal outcome settle the accepted execution under `ok: true`; a caller does
+not retry the complete mutation.
 
 Each item identifies the exact runner, action, pack ref and hash, configured
 wait, extracted outputs, success-condition evidence, terminal error, attempt
@@ -1650,8 +1650,8 @@ their counts and item state. `output_values_omitted` makes this explicit.
 
 `blocking` is `null` when nothing needs explanation. Otherwise it carries a
 stable code and message plus the applicable stage, step, and runner identity.
-It describes stage approval, a scheduled wait, or the terminal cause. Only an
-active execution includes `next`.
+It describes whole-execution approval, a scheduled wait, or the terminal cause.
+Both `pending_approval` and `active` executions include `next`.
 
 Cloud-expanded runbooks cannot currently target a runner advertising
 `enforce_signatures: true`, because the client has not signed the frozen expanded
@@ -1691,14 +1691,12 @@ limits. Unknown fields are rejected at every level.
         "id": "preflight",
         "title": "Check replication",
         "mode": "sequential",
-        "max_parallel": 1,
-        "approval": "none",
         "steps": [
           {
             "id": "check",
-            "pack": {"id": "postgres", "requirement": "~> 1.4.0"},
+            "pack": {"id": "postgres"},
             "action": "postgres.replication_status",
-            "targets": {"kind": "group", "refs": ["postgres"]},
+            "targets": {"refs": ["group:postgres"]},
             "args": {},
             "outputs": [],
             "success": [],
@@ -1751,7 +1749,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `action_unavailable` | Exact visible contract is not executable. | Follow returned diagnostics. |
 | `dispatch_failed` | The atomic action operation did not commit. | Safe to retry with the same operation ID. |
 | `execution_failed` | The atomic runbook operation did not commit. | Safe to retry with the same operation ID. |
-| `ambiguous_pack_version` | A compatible pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
+| `ambiguous_pack_version` | The selected pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
 | `fan_out_too_large` | Target expansion exceeds the 256-item execution cap. | Narrow targets or split the reviewed runbook. |
 | `invalid_args` | Arguments fail fixed input or portable action validation. | Correct returned paths. |
 | `invalid_attestation` | The action signature is malformed or disagrees with the call. | Do not dispatch; refresh or fix bridge signing. |
@@ -1761,8 +1759,8 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `invalid_input` | Supplied run-time inputs do not satisfy the declaration. | Correct `input_values` at the returned path. |
 | `invalid_operation` | Transport operation identity is malformed or ambiguous. | Fix the transport; do not invent an ID. |
 | `invalid_runbook` | Draft metadata failed persistence validation. | Correct the returned fields. |
-| `incompatible_action_contracts` | Selected compatible pack versions disagree on the action contract. | Align target deployments or tighten the pack requirement. |
-| `no_compatible_pack` | A target has no trusted pack version matching the requirement. | Deploy or trust a compatible pack; do not substitute one silently. |
+| `incompatible_action_contracts` | Selected trusted packs disagree on the action contract. | Align target deployments or edit the target selection. |
+| `pack_unavailable` | A target has no current trusted pack exposing the declared action. | Deploy or trust the pack, or edit the runbook; do not substitute one silently. |
 | `not_allowed` | Current scope does not permit the request. | Do not probe. |
 | `operation_conflict` | Reused operation ID has different facts. | Security error; do not retry. |
 | `operation_incomplete` | A durable operation lacks its expected resource. | Reconcile; do not repeat the mutation. |

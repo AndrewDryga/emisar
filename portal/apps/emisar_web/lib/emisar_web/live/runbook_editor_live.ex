@@ -7,7 +7,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runbooks, Runners}
-  alias EmisarWeb.{LiveForm, Permissions, RunbookDraft}
+  alias EmisarWeb.{LiveForm, Permissions, RunbookDraft, RunbookEditorCatalog}
 
   @preview_delay_ms 350
 
@@ -32,6 +32,7 @@ defmodule EmisarWeb.RunbookEditorLive do
      |> assign(:baseline, RunbookDraft.fingerprint(draft))
      |> assign(:dirty?, false)
      |> assign(:definition_issues, [])
+     |> assign(:open_panels, MapSet.new())
      |> assign(:preview_generation, 0)
      |> assign(:preview, %{state: :idle, plan: nil, issues: [], checked_at: nil})
      |> assign_form(Runbooks.change_runbook())
@@ -54,6 +55,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       |> assign(:baseline, RunbookDraft.fingerprint(draft))
       |> assign(:dirty?, false)
       |> assign(:definition_issues, [])
+      |> assign(:open_panels, MapSet.new())
       |> assign(:preview_generation, 0)
       |> assign(:preview, %{state: :idle, plan: nil, issues: [], checked_at: nil})
       |> assign_form(Runbooks.change_runbook())
@@ -80,6 +82,7 @@ defmodule EmisarWeb.RunbookEditorLive do
           |> assign(:baseline, RunbookDraft.fingerprint(draft))
           |> assign(:dirty?, false)
           |> assign(:definition_issues, [])
+          |> assign(:open_panels, MapSet.new())
           |> assign(:preview_generation, 0)
           |> assign(:preview, %{state: :idle, plan: nil, issues: [], checked_at: nil})
           |> assign_form(
@@ -103,10 +106,12 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp assign_empty_catalog(socket) do
     socket
-    |> assign(:catalog, %{})
-    |> assign(:pack_ids, [])
-    |> assign(:groups, [])
-    |> assign(:runner_options, [])
+    |> assign(:catalog, %{
+      actions: %{},
+      target_labels: %{},
+      target_options: [],
+      target_runner_ids: %{}
+    })
     |> assign(:catalog_load_error?, false)
   end
 
@@ -125,91 +130,26 @@ defmodule EmisarWeb.RunbookEditorLive do
         {:error, _reason} -> {[], false}
       end
 
-    groups =
-      runners
-      |> Enum.map(& &1.group)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
-      |> Enum.sort()
-
-    runner_options =
-      runners
-      |> Enum.flat_map(fn runner ->
-        case Runners.public_ref(runner) do
-          {:ok, ref} -> [{runner_label(runner), ref}]
-          {:error, _reason} -> []
-        end
-      end)
-      |> Enum.sort()
-
-    catalog = catalog_by_action(runner_actions)
+    catalog = RunbookEditorCatalog.build(runner_actions, runners)
     draft = sync_draft_catalog(socket.assigns.draft, socket.assigns.draft, catalog)
 
     socket
     |> assign(:draft, draft)
     |> assign(:catalog, catalog)
-    |> assign(
-      :pack_ids,
-      runner_actions
-      |> Enum.map(& &1.pack_id)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
-      |> Enum.sort()
-    )
-    |> assign(:groups, groups)
-    |> assign(:runner_options, runner_options)
     |> assign(:catalog_load_error?, not actions_loaded? or not runners_loaded?)
     |> validate_and_preview()
-  end
-
-  defp catalog_by_action(runner_actions) do
-    risks = Catalog.most_severe_risk_by_action(runner_actions)
-
-    runner_actions
-    |> Enum.group_by(& &1.action_id)
-    |> Map.new(fn {action_id, actions} ->
-      packs =
-        actions
-        |> Enum.map(&%{id: &1.pack_id, version: &1.pack_version})
-        |> Enum.reject(&is_nil(&1.id))
-        |> Enum.uniq()
-        |> Enum.sort_by(&{&1.id, &1.version || ""})
-
-      args_by_pack =
-        actions
-        |> Enum.group_by(& &1.pack_id)
-        |> Map.new(fn {pack_id, pack_actions} ->
-          action = latest_action(pack_actions)
-          {pack_id, Map.get(action.args_schema, "args", [])}
-        end)
-
-      {action_id,
-       %{
-         title: latest_action(actions).title,
-         risk: risks[action_id],
-         packs: packs,
-         args_by_pack: args_by_pack
-       }}
-    end)
-  end
-
-  defp latest_action(actions) do
-    Enum.max_by(actions, fn action ->
-      case Version.parse(action.pack_version || "") do
-        {:ok, version} -> {version.major, version.minor, version.patch, version.pre}
-        :error -> {-1, -1, -1, []}
-      end
-    end)
   end
 
   def handle_event("draft_changed", %{"draft" => params} = event_params, socket) do
     if socket.assigns.read_only? do
       {:noreply, put_flash(socket, :error, "This runbook is read-only for your role.")}
     else
+      previous = socket.assigns.draft
+
       draft =
         params
         |> normalize_draft_params()
-        |> sync_draft_catalog(socket.assigns.draft, socket.assigns.catalog)
+        |> sync_draft_catalog(previous, socket.assigns.catalog)
 
       changeset =
         Runbooks.change_runbook(%{
@@ -222,6 +162,10 @@ defmodule EmisarWeb.RunbookEditorLive do
       {:noreply,
        socket
        |> assign(:draft, draft)
+       |> assign(
+         :open_panels,
+         open_changed_enum_panels(socket.assigns.open_panels, previous, draft)
+       )
        |> assign_form(changeset)
        |> mark_dirty()
        |> validate_and_preview()}
@@ -237,6 +181,30 @@ defmodule EmisarWeb.RunbookEditorLive do
       socket,
       &Map.update!(&1, "inputs", fn inputs -> List.delete_at(inputs, safe_index(index)) end)
     )
+  end
+
+  def handle_event("add_enum_value", %{"index" => index}, socket) do
+    mutate(socket, fn draft ->
+      Map.update!(draft, "inputs", fn inputs ->
+        List.update_at(inputs, safe_index(index), fn input ->
+          Map.update!(input, "enum_values", &(&1 ++ [%{"value" => ""}]))
+        end)
+      end)
+    end)
+  end
+
+  def handle_event(
+        "remove_enum_value",
+        %{"input" => input_index, "value" => value_index},
+        socket
+      ) do
+    mutate(socket, fn draft ->
+      Map.update!(draft, "inputs", fn inputs ->
+        List.update_at(inputs, safe_index(input_index), fn input ->
+          Map.update!(input, "enum_values", &List.delete_at(&1, safe_index(value_index)))
+        end)
+      end)
+    end)
   end
 
   def handle_event("add_stage", _params, socket) do
@@ -262,6 +230,37 @@ defmodule EmisarWeb.RunbookEditorLive do
         &Map.update!(&1, "steps", fn steps -> steps ++ [RunbookDraft.step()] end)
       )
     end)
+  end
+
+  def handle_event(
+        "add_target",
+        %{"stage" => stage_index, "step" => step_index, "target" => target},
+        socket
+      ) do
+    if Map.has_key?(socket.assigns.catalog.target_runner_ids, target) do
+      mutate_step(socket, stage_index, step_index, fn step ->
+        refs = step["target_refs"] || []
+
+        if target in refs or length(refs) >= 16,
+          do: step,
+          else: Map.put(step, "target_refs", refs ++ [target])
+      end)
+    else
+      {:noreply, put_flash(socket, :error, "Choose a current runner or group.")}
+    end
+  end
+
+  def handle_event(
+        "remove_target",
+        %{"stage" => stage_index, "step" => step_index, "target" => target},
+        socket
+      ) do
+    mutate_step(
+      socket,
+      stage_index,
+      step_index,
+      &Map.update!(&1, "target_refs", fn refs -> List.delete(refs, target) end)
+    )
   end
 
   def handle_event("remove_step", %{"stage" => stage_index, "step" => step_index}, socket) do
@@ -303,7 +302,15 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   def handle_event("add_success", %{"stage" => stage_index, "step" => step_index}, socket) do
-    mutate_step(socket, stage_index, step_index, &append_success/1)
+    step =
+      socket.assigns.draft["stages"]
+      |> Enum.at(safe_index(stage_index), %{})
+      |> Map.get("steps", [])
+      |> Enum.at(safe_index(step_index), %{})
+
+    if step["outputs"] in [nil, []],
+      do: {:noreply, put_flash(socket, :error, "Add an extracted output first.")},
+      else: mutate_step(socket, stage_index, step_index, &append_success/1)
   end
 
   def handle_event(
@@ -338,6 +345,10 @@ defmodule EmisarWeb.RunbookEditorLive do
       Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
       &delete_runbook/1
     )
+  end
+
+  def handle_event("toggle_panel", %{"key" => key}, socket) do
+    {:noreply, update(socket, :open_panels, &toggle_panel(&1, key))}
   end
 
   def handle_info(
@@ -378,7 +389,9 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp append_success(step) do
-    Map.update!(step, "success", &(&1 ++ [RunbookDraft.success()]))
+    output_id = step["outputs"] |> List.first(%{}) |> Map.get("id", "")
+    condition = Map.put(RunbookDraft.success(), "output", output_id)
+    Map.update!(step, "success", &(&1 ++ [condition]))
   end
 
   defp update_step(draft, stage_index, step_index, fun) do
@@ -409,6 +422,22 @@ defmodule EmisarWeb.RunbookEditorLive do
       {index, ""} when index >= 0 -> index
       _ -> 1_000_000_000
     end
+  end
+
+  defp toggle_panel(panels, key) do
+    if MapSet.member?(panels, key), do: MapSet.delete(panels, key), else: MapSet.put(panels, key)
+  end
+
+  defp open_changed_enum_panels(panels, previous, draft) do
+    draft["inputs"]
+    |> Enum.with_index()
+    |> Enum.reduce(panels, fn {input, index}, open ->
+      previous_type = get_in(previous, ["inputs", Access.at(index), "type"])
+
+      if input["type"] == "enum" and previous_type != "enum",
+        do: MapSet.put(open, "input-constraints-#{index}"),
+        else: open
+    end)
   end
 
   defp validate_and_preview(socket) do
@@ -492,6 +521,9 @@ defmodule EmisarWeb.RunbookEditorLive do
     definition = RunbookDraft.definition(socket.assigns.draft)
 
     cond do
+      not socket.assigns.dirty? and not publishable_saved_draft?(socket, publish?) ->
+        {:noreply, socket}
+
       not socket.assigns.form.source.valid? ->
         {:noreply, put_flash(socket, :error, "Fix the runbook details before saving.")}
 
@@ -533,6 +565,13 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp persist(%{assigns: %{runbook: nil}} = socket, attrs, false),
     do: Runbooks.create_runbook(attrs, socket.assigns.current_subject)
+
+  defp persist(
+         %{assigns: %{runbook: %{status: :draft} = runbook, dirty?: false}} = socket,
+         _attrs,
+         true
+       ),
+       do: Runbooks.publish(runbook, socket.assigns.current_subject)
 
   defp persist(%{assigns: %{runbook: runbook}} = socket, attrs, publish?) do
     with {:ok, new_version} <-
@@ -593,61 +632,8 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp sync_step_catalog(step, previous, catalog) do
-    action_changed? = step["action"] != previous["action"]
-    pack_changed? = step["pack_id"] != previous["pack_id"]
-    available_actions = action_ids_for_pack(catalog, step["pack_id"])
-
-    action_id =
-      if step["action"] in available_actions,
-        do: step["action"],
-        else: List.first(available_actions) || step["action"]
-
-    step = Map.put(step, "action", action_id)
-    action = catalog[action_id]
-
-    step =
-      if action && (action_changed? or pack_changed? or step["pack_requirement"] == ""),
-        do: choose_named_pack(step, action.packs, step["pack_id"]),
-        else: step
-
-    specs = get_in(catalog, [action_id, :args_by_pack, step["pack_id"]]) || []
-    existing = Map.new(step["args"], &{&1["name"], &1})
-
-    Map.put(
-      step,
-      "args",
-      Enum.map(specs, &RunbookDraft.sync_argument(&1, existing[&1["name"]]))
-    )
+    RunbookEditorCatalog.sync_step(step, previous, catalog)
   end
-
-  defp choose_named_pack(step, packs, id) do
-    case Enum.find(packs, &(&1.id == id)) do
-      nil -> step
-      pack -> put_pack(step, pack)
-    end
-  end
-
-  defp action_ids_for_pack(catalog, pack_id) do
-    catalog
-    |> Enum.filter(fn {_action_id, action} -> Enum.any?(action.packs, &(&1.id == pack_id)) end)
-    |> Enum.map(&elem(&1, 0))
-    |> Enum.sort()
-  end
-
-  defp put_pack(step, pack) do
-    step
-    |> Map.put("pack_id", pack.id)
-    |> Map.put("pack_requirement", compatible_requirement(pack.version))
-  end
-
-  defp compatible_requirement(version) when is_binary(version) do
-    case Version.parse(version) do
-      {:ok, parsed} -> "~> #{parsed.major}.#{parsed.minor}.0"
-      :error -> "== #{version}"
-    end
-  end
-
-  defp compatible_requirement(_version), do: ""
 
   defp normalize_draft_params(params) do
     %{
@@ -663,19 +649,31 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp normalize_input(input) do
     RunbookDraft.input()
     |> Map.merge(Map.take(input, Map.keys(RunbookDraft.input())))
+    |> Map.put(
+      "enum_values",
+      input["enum_values"]
+      |> indexed()
+      |> Enum.map(&%{"value" => &1["value"] || ""})
+    )
   end
 
   defp normalize_stage(stage) do
     RunbookDraft.stage()
-    |> Map.merge(Map.take(stage, ~w[id title mode max_parallel approval]))
+    |> Map.merge(Map.take(stage, ~w[id title mode max_parallel]))
     |> Map.put("steps", stage["steps"] |> indexed() |> Enum.map(&normalize_step/1))
   end
 
   defp normalize_step(step) do
+    {pack_id, action_id} =
+      RunbookEditorCatalog.split_action_value(
+        step["action_choice"] ||
+          RunbookEditorCatalog.action_value(step["pack_id"], step["action"])
+      )
+
     RunbookDraft.step()
-    |> Map.merge(
-      Map.take(step, ~w[id pack_id pack_requirement action target_kind target_refs wait])
-    )
+    |> Map.merge(Map.take(step, ~w[id target_refs target_candidate wait]))
+    |> Map.put("pack_id", pack_id)
+    |> Map.put("action", action_id)
     |> Map.put("target_refs", List.wrap(step["target_refs"]))
     |> Map.put("args", step["args"] |> indexed() |> Enum.map(&normalize_argument/1))
     |> Map.put("outputs", step["outputs"] |> indexed() |> Enum.map(&normalize_output/1))
@@ -686,7 +684,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp normalize_argument(argument) do
     Map.merge(
       RunbookDraft.argument(),
-      Map.take(argument, ~w[name type required sensitive enabled source value ref])
+      Map.take(argument, ~w[name type required sensitive source value ref])
     )
   end
 
@@ -709,10 +707,8 @@ defmodule EmisarWeb.RunbookEditorLive do
     |> Enum.map(&elem(&1, 1))
   end
 
-  defp runner_label(runner) do
-    name = runner.name || runner.external_id || runner.id
-    if runner.group, do: "#{name} · #{runner.group}", else: name
-  end
+  defp publishable_saved_draft?(%{assigns: %{runbook: %{status: :draft}}}, true), do: true
+  defp publishable_saved_draft?(_socket, _publish?), do: false
 
   def render(assigns), do: EmisarWeb.RunbookEditorComponents.render(assigns)
 end

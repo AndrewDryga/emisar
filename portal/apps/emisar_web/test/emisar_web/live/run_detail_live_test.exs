@@ -142,7 +142,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
-    run = run_with(account, %{})
+    run = run_with(account, %{status: :pending_approval})
     {:ok, request} = Emisar.Approvals.create_request(run, user.id, "deploy")
 
     {:ok, _} =

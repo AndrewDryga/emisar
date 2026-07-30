@@ -11,12 +11,10 @@ defmodule EmisarWeb.RunbookDraftTest do
         %{
           "id" => "environment",
           "description" => "Deployment environment",
-          "type" => "string",
+          "type" => "enum",
           "required" => true,
           "sensitive" => false,
-          "enum" => ["staging", "production"],
-          "min_length" => 7,
-          "max_length" => 10
+          "enum" => ["staging", "production"]
         },
         %{
           "id" => "threshold",
@@ -35,13 +33,12 @@ defmodule EmisarWeb.RunbookDraftTest do
           "title" => "Inspect replicas",
           "mode" => "parallel",
           "max_parallel" => 4,
-          "approval" => "none",
           "steps" => [
             %{
               "id" => "inspect_replica",
-              "pack" => %{"id" => "postgres", "requirement" => "~> 1.4.0"},
+              "pack" => %{"id" => "postgres"},
               "action" => "postgres.replication.inspect",
-              "targets" => %{"kind" => "group", "refs" => ["postgres"]},
+              "targets" => %{"refs" => ["group:postgres"]},
               "args" => %{
                 "environment" => %{"source" => "input", "ref" => "environment"},
                 "verbose" => %{"source" => "literal", "value" => true}
@@ -80,16 +77,13 @@ defmodule EmisarWeb.RunbookDraftTest do
           "id" => "confirm",
           "title" => "Confirm recovery",
           "mode" => "sequential",
-          "max_parallel" => 1,
-          "approval" => "required",
           "steps" => [
             %{
               "id" => "confirm_leader",
-              "pack" => %{"id" => "postgres", "requirement" => "== 1.4.3"},
+              "pack" => %{"id" => "postgres"},
               "action" => "postgres.primary.confirm",
               "targets" => %{
-                "kind" => "runner",
-                "refs" => ["db-1~aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+                "refs" => ["runner:db-1~aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
               },
               "args" => %{
                 "expected" => %{"source" => "output", "ref" => "inspect_replica.leader"}
@@ -114,8 +108,8 @@ defmodule EmisarWeb.RunbookDraftTest do
         RunbookDraft.input()
         |> Map.merge(%{
           "id" => "count",
+          "description" => "Number of observations",
           "type" => "integer",
-          "default_enabled" => "true",
           "default" => "not-a-number"
         })
       ])
@@ -123,9 +117,8 @@ defmodule EmisarWeb.RunbookDraftTest do
         RunbookDraft.step()
         | "id" => "inspect",
           "pack_id" => "linux-core",
-          "pack_requirement" => "== 1.0.0",
           "action" => "linux.uptime",
-          "target_refs" => ["default"]
+          "target_refs" => ["group:default"]
       })
 
     definition = RunbookDraft.definition(draft)

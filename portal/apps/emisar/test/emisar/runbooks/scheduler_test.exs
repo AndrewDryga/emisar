@@ -944,22 +944,23 @@ defmodule Emisar.Runbooks.SchedulerTest do
   end
 
   defp stage(id, mode, max_parallel, steps) do
-    %{
-      "id" => id,
-      "title" => String.capitalize(id),
-      "mode" => mode,
-      "max_parallel" => max_parallel,
-      "approval" => "none",
-      "steps" => steps
-    }
+    Map.merge(
+      %{
+        "id" => id,
+        "title" => String.capitalize(id),
+        "mode" => mode,
+        "steps" => steps
+      },
+      if(mode == "parallel", do: %{"max_parallel" => max_parallel}, else: %{})
+    )
   end
 
   defp step(id, group) do
     %{
       "id" => id,
-      "pack" => %{"id" => "linux-core", "requirement" => "~> 1.4.0"},
+      "pack" => %{"id" => "linux-core"},
       "action" => "linux.uptime",
-      "targets" => %{"kind" => "group", "refs" => [group]},
+      "targets" => %{"refs" => ["group:" <> group]},
       "args" => %{},
       "outputs" => [],
       "success" => [],

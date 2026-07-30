@@ -8,10 +8,9 @@ defmodule Emisar.Runbooks.ExecutionStage do
     field :title, :string
     field :mode, Ecto.Enum, values: [:sequential, :parallel]
     field :max_parallel, :integer
-    field :approval, Ecto.Enum, values: [:none, :required]
 
     field :status, Ecto.Enum,
-      values: [:pending, :awaiting_approval, :active, :succeeded, :halted, :cancelled],
+      values: [:pending, :active, :succeeded, :halted, :cancelled],
       default: :pending
 
     field :started_at, :utc_datetime_usec
@@ -23,8 +22,6 @@ defmodule Emisar.Runbooks.ExecutionStage do
     belongs_to :runbook_execution, Emisar.Runbooks.RunbookExecution
 
     has_many :items, Emisar.Runbooks.ExecutionItem, foreign_key: :runbook_execution_stage_id
-
-    has_one :approval_request, Emisar.Approvals.Request, foreign_key: :runbook_execution_stage_id
 
     timestamps()
   end

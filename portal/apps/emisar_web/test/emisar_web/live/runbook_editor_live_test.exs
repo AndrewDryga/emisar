@@ -20,15 +20,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           "title" => "Inspect",
           "mode" => "parallel",
           "max_parallel" => "4",
-          "approval" => "none",
           "steps" => [
             %{
               "id" => "uptime",
               "pack_id" => "linux-core",
-              "pack_requirement" => "~> 1.4.0",
               "action" => "linux.uptime",
-              "target_kind" => "group",
-              "target_refs" => [attrs[:group] || "default"],
+              "target_refs" => ["group:" <> (attrs[:group] || "default")],
               "args" => [],
               "outputs" => [],
               "success" => [],
@@ -129,44 +126,43 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       assert html =~ "Operator context"
-      assert html =~ "Typed values are supplied at run time"
-      assert html =~ "Stages are barriers"
-      assert html =~ "Arguments and bindings"
+      assert html =~ "Run-time inputs"
+      assert html =~ "A stage is a barrier"
+      assert html =~ "Arguments"
       assert html =~ "Extracted outputs"
       assert html =~ "Success conditions"
-      assert html =~ "Wait and observe again"
-      assert html =~ "Version requirement"
+      assert html =~ "Retry policy"
       assert html =~ "Build the first stage"
-      assert html =~ "Choose an action to configure its arguments."
+      assert html =~ "Choose runners first"
       refute html =~ "definition issues"
       refute html =~ "steps_json"
       refute html =~ "definition_json"
-      assert has_element?(lv, ~s(input[name="draft[stages][0][max_parallel]"][value="5"]))
+      refute has_element?(lv, ~s(input[name="draft[stages][0][max_parallel]"]))
 
       assert has_element?(lv, "#runbook-stage-0")
 
-      pack_select =
-        lv
-        |> element(~s(select[name="draft[stages][0][steps][0][pack_id]"]))
-        |> render()
-
-      assert pack_select =~ "Choose pack"
-      assert length(:binary.matches(pack_select, ~s(value=""))) == 1
+      assert has_element?(
+               lv,
+               ~s(select[name="draft[stages][0][steps][0][target_candidate]"])
+             )
 
       render_click(lv, "add_stage", %{})
       assert has_element?(lv, "#runbook-stage-1")
+      assert has_element?(lv, "#runbook-stages button", "Add stage")
+
+      staged_html = render(lv)
+      add_stage_position = staged_html |> :binary.matches("Add stage") |> List.last()
+
+      assert :binary.match(staged_html, ~s(id="runbook-stage-1")) < add_stage_position
 
       render_click(lv, "add_step", %{"stage" => "0"})
       assert has_element?(lv, "#runbook-stage-0-step-1")
 
       html = change(lv, valid_draft())
-      assert html =~ "Max concurrent runs"
+      assert html =~ "Maximum concurrent actions"
       assert has_element?(lv, ~s(input[name="draft[stages][0][max_parallel]"]))
-      assert has_element?(lv, "details summary", "Stage identifier")
-      assert has_element?(lv, "details summary", "Version and identifiers")
-
-      assert :binary.match(html, "Details") <
-               :binary.match(html, "Operator context")
+      assert has_element?(lv, "button", "Stage identifier")
+      assert has_element?(lv, "section", "Details")
 
       assert :binary.match(html, "Operator context") <
                :binary.match(html, ~s(id="runbook-inputs"))
@@ -174,26 +170,81 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert :binary.match(html, ~s(id="runbook-inputs")) <
                :binary.match(html, ~s(id="runbook-stages"))
 
-      assert :binary.match(html, ~s(id="runbook-stages")) <
-               :binary.match(html, "Publish review")
+      assert :binary.match(html, ~s(id="runbook-stages")) < :binary.match(html, "Details")
 
-      assert :binary.match(html, ~s(name="draft[stages][0][mode]")) <
-               :binary.match(html, ~s(name="draft[stages][0][max_parallel]"))
-
-      assert :binary.match(html, ~s(name="draft[stages][0][max_parallel]")) <
-               :binary.match(html, ~s(name="draft[stages][0][approval]"))
-
-      assert :binary.match(html, ~s(name="draft[stages][0][steps][0][pack_id]")) <
-               :binary.match(html, ~s(name="draft[stages][0][steps][0][action]"))
-
-      assert :binary.match(html, ~s(name="draft[stages][0][steps][0][action]")) <
-               :binary.match(html, ~s(name="draft[stages][0][steps][0][target_kind]"))
-
-      assert :binary.match(html, ~s(name="draft[stages][0][steps][0][target_kind]")) <
-               :binary.match(html, "Version and identifiers")
+      assert :binary.match(html, ~s(name="draft[stages][0][steps][0][target_candidate]")) <
+               :binary.match(html, ~s(name="draft[stages][0][steps][0][action_choice]"))
     end
 
-    test "catalog selection fills one pack and one compatible version requirement", %{
+    test "switching an input to enum opens stable add and remove controls", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      enum_input =
+        RunbookDraft.input()
+        |> Map.put("id", "environment")
+        |> Map.put("type", "enum")
+
+      html =
+        change(
+          lv,
+          valid_draft(inputs: [enum_input]),
+          ["draft", "inputs", "0", "type"]
+        )
+
+      assert html =~ "Allowed values"
+
+      assert has_element?(
+               lv,
+               ~s(button[aria-expanded="true"]),
+               "Default and constraints"
+             )
+
+      render_click(lv, "add_enum_value", %{"index" => "0"})
+
+      assert has_element?(
+               lv,
+               ~s(input[name="draft[inputs][0][enum_values][0][value]"])
+             )
+
+      assert has_element?(lv, ~s(button[aria-label="Remove allowed value"]))
+
+      render_click(lv, "remove_enum_value", %{"input" => "0", "value" => "0"})
+      refute has_element?(lv, ~s(input[name="draft[inputs][0][enum_values][0][value]"]))
+      assert has_element?(lv, ~s(button[aria-expanded="true"]))
+    end
+
+    test "success conditions require an output and start without a quoted empty value", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      change(lv, valid_draft())
+
+      assert has_element?(lv, "button[disabled]", "Add condition")
+
+      render_click(lv, "add_success", %{"stage" => "0", "step" => "0"})
+      assert render(lv) =~ "Add an extracted output first."
+      refute has_element?(lv, ~s(input[aria-label="Condition 1 JSON value"]))
+
+      render_click(lv, "add_output", %{"stage" => "0", "step" => "0"})
+      assert has_element?(lv, "button:not([disabled])", "Add condition")
+      render_click(lv, "add_success", %{"stage" => "0", "step" => "0"})
+
+      assert has_element?(
+               lv,
+               ~s(input[aria-label="Condition 1 JSON value"][value=""])
+             )
+
+      refute has_element?(
+               lv,
+               ~s(input[aria-label="Condition 1 JSON value"][value="\\"\\""])
+             )
+    end
+
+    test "target-first action selection derives the pack from current runner support", %{
       conn: conn,
       user: user,
       account: account
@@ -204,25 +255,25 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       draft =
         valid_draft()
         |> put_in(["stages", Access.at(0), "steps", Access.at(0), "pack_id"], "")
-        |> put_in(["stages", Access.at(0), "steps", Access.at(0), "pack_requirement"], "")
+        |> put_in(["stages", Access.at(0), "steps", Access.at(0), "action"], "")
 
       html =
         change(
           lv,
           draft,
-          ["draft", "stages", "0", "steps", "0", "action"]
+          ["draft", "stages", "0", "steps", "0", "action_choice"]
         )
 
       assert html =~ "linux-core"
-      assert html =~ "~&gt; 1.4.0"
+      refute html =~ "Version requirement"
 
       assert has_element?(
                lv,
-               ~s(select[name="draft[stages][0][steps][0][action]"] option[value="linux.uptime"])
+               ~s(select[name="draft[stages][0][steps][0][action_choice]"] option[value="linux-core|linux.uptime"])
              )
     end
 
-    test "pack-first action selection renders descriptor-owned typed bindings", %{
+    test "target-first action selection renders descriptor-owned typed bindings", %{
       conn: conn,
       user: user,
       account: account
@@ -245,7 +296,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(select[name="draft[stages][0][steps][0][action]"])
+               ~s(select[name="draft[stages][0][steps][0][action_choice]"])
              )
 
       assert has_element?(
@@ -255,7 +306,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(select[name="draft[stages][0][steps][0][args][1][enabled]"])
+               ~s(select[name="draft[stages][0][steps][0][args][1][source]"] option[value=omit])
              )
 
       refute has_element?(
@@ -278,7 +329,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert runbook.definition == RunbookDraft.definition(draft)
 
       assert get_in(runbook.definition, ["stages", Access.at(0), "steps", Access.at(0), "pack"]) ==
-               %{"id" => "linux-core", "requirement" => "~> 1.4.0"}
+               %{"id" => "linux-core"}
 
       refute Map.has_key?(runbook.definition, "steps")
     end
@@ -292,7 +343,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       html = change(lv, valid_draft())
-      assert html =~ "Resolving current runners, packs, and trust"
+      assert html =~ "Checking runners, packs, trust, and policy"
       refute has_element?(lv, "button:not([disabled])", "Publish")
 
       send(lv.pid, {:runbook_preview, 1})
@@ -315,20 +366,21 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       account: account
     } do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/new")
-      assert html =~ "Not saved yet"
+      assert html =~ "Build the first stage"
+      assert has_element?(lv, "button[disabled]", "Save draft")
 
       input =
         RunbookDraft.input()
         |> Map.merge(%{
           "id" => "count",
+          "description" => "Number of observations",
           "type" => "integer",
-          "default_enabled" => "true",
           "default" => "wrong"
         })
 
       html = change(lv, valid_draft(inputs: [input]))
 
-      assert html =~ "/inputs/0/default"
+      assert html =~ "Input 1 · Default"
       assert has_element?(lv, "button:not([disabled])", "Save draft")
       assert has_element?(lv, "button[disabled]", "Publish")
 

@@ -7,7 +7,7 @@ defmodule Emisar.Approvals.Request.Changeset do
     |> cast(attrs, [
       :account_id,
       :run_id,
-      :runbook_execution_stage_id,
+      :runbook_execution_id,
       :requested_by_id,
       :requested_at,
       :reason,
@@ -32,16 +32,16 @@ defmodule Emisar.Approvals.Request.Changeset do
     # One request per run — the standalone insert maps a duplicate to a clean
     # changeset error; the atomic dispatch path upserts on this index instead.
     |> unique_constraint(:run_id, name: :approval_requests_run_id_index)
-    |> unique_constraint(:runbook_execution_stage_id,
-      name: :approval_requests_runbook_stage_index
+    |> unique_constraint(:runbook_execution_id,
+      name: :approval_requests_runbook_execution_index
     )
     |> check_constraint(:run_id, name: :approval_requests_exactly_one_target_check)
   end
 
   defp validate_exactly_one_target(changeset) do
-    case {get_field(changeset, :run_id), get_field(changeset, :runbook_execution_stage_id)} do
+    case {get_field(changeset, :run_id), get_field(changeset, :runbook_execution_id)} do
       {run_id, nil} when is_binary(run_id) -> changeset
-      {nil, stage_id} when is_binary(stage_id) -> changeset
+      {nil, execution_id} when is_binary(execution_id) -> changeset
       _other -> add_error(changeset, :run_id, "must identify exactly one approval target")
     end
   end

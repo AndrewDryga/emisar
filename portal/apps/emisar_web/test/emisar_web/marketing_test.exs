@@ -1149,19 +1149,17 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "create_runbook_draft"
     end
 
-    test "the runbooks example uses a compatible action from the shipped Postgres pack", %{
+    test "the runbooks example uses an action from the shipped Postgres pack", %{
       conn: conn
     } do
       html = conn |> get(~p"/docs/runbooks") |> html_response(200)
       packs_root = Path.expand("../../../../../packs", __DIR__)
-      pack = File.read!(Path.join(packs_root, "postgres/pack.yaml"))
       action = File.read!(Path.join(packs_root, "postgres/actions/replication_lag.yaml"))
-      [_, version] = Regex.run(~r/^version: ([^\s]+)$/m, pack)
 
       assert action =~ "id: postgres.replication_lag"
-      assert Version.match?(version, "~> 0.2.0")
       assert html =~ "postgres.replication_lag"
-      assert html =~ "~&gt; 0.2.0"
+      assert html =~ "&quot;pack&quot;: {&quot;id&quot;: &quot;postgres&quot;}"
+      assert html =~ "group:data-postgres"
       refute html =~ "postgres.replication.inspect"
     end
 

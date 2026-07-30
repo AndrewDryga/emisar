@@ -330,7 +330,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     }
     |> maybe_put(
       :next,
-      if(execution.status == :active,
+      if(execution.status in [:active, :pending_approval],
         do: %{
           tool: "wait_for_run",
           arguments: %{runbook_execution_id: execution.id, timeout: "60s"}
@@ -346,7 +346,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
       position: stage.position,
       mode: to_string(stage.mode),
       max_parallel: stage.max_parallel,
-      approval: to_string(stage.approval),
       status: to_string(stage.status),
       items:
         Enum.map(items, fn item ->
@@ -480,12 +479,10 @@ defmodule EmisarWeb.MCP.RunbookTools do
     |> blocking_from_terminal(execution, stage)
   end
 
-  defp blocking(execution) do
-    case Enum.find(execution.stages, &(&1.status == :awaiting_approval)) do
-      nil -> waiting_block(execution)
-      stage -> stage_block("approval_required", "Stage approval is required.", stage)
-    end
-  end
+  defp blocking(%{status: :pending_approval}),
+    do: %{code: "approval_required", message: "Runbook execution approval is required."}
+
+  defp blocking(execution), do: waiting_block(execution)
 
   defp blocking_from_terminal(nil, execution, stage) do
     %{
@@ -526,9 +523,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
         |> maybe_put(:stage_id, stage && stage.stage_id)
     end
   end
-
-  defp stage_block(code, message, stage),
-    do: %{code: code, message: message, stage_id: stage.stage_id}
 
   defp published_summaries(conn, query) do
     case Runbooks.list_all_runbooks(conn.assigns.current_subject) do

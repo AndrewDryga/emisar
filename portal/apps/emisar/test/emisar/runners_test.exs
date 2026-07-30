@@ -201,7 +201,7 @@ defmodule Emisar.RunnersTest do
 
       assert {:ok, [%{id: runner_id, runner_ref: runner_ref}]} =
                Runners.resolve_runbook_targets(
-                 %{"kind" => "group", "refs" => ["database"]},
+                 %{"refs" => ["group:database"]},
                  subject
                )
 
@@ -209,7 +209,7 @@ defmodule Emisar.RunnersTest do
       assert is_binary(runner_ref)
 
       assert Runners.resolve_runbook_targets(
-               %{"kind" => "group", "refs" => ["missing"]},
+               %{"refs" => ["group:missing"]},
                subject
              ) == {:error, :unknown_target}
     end
@@ -224,8 +224,8 @@ defmodule Emisar.RunnersTest do
       assert {:ok, [[%{id: first_id}], [%{id: second_id}]]} =
                Runners.resolve_runbook_target_sets(
                  [
-                   %{"kind" => "group", "refs" => ["database"]},
-                   %{"kind" => "group", "refs" => ["web"]}
+                   %{"refs" => ["group:database"]},
+                   %{"refs" => ["group:web"]}
                  ],
                  subject
                )
@@ -234,8 +234,8 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.resolve_runbook_target_sets(
                [
-                 %{"kind" => "group", "refs" => ["database"]},
-                 %{"kind" => "runner", "refs" => ["missing"]}
+                 %{"refs" => ["group:database"]},
+                 %{"refs" => ["runner:missing"]}
                ],
                subject
              ) == {:error, {:unknown_target, 1}}

@@ -9,7 +9,7 @@
         {"authoring", "Authoring and versions"},
         {"inputs", "Inputs and bindings"},
         {"outputs", "Outputs, success, and waits"},
-        {"packs", "Pack version requirements"},
+        {"packs", "Pack resolution"},
         {"approvals", "Approvals and failure"},
         {"examples", "Production patterns"},
         {"results", "Results for people and agents"},
@@ -19,7 +19,8 @@
       <.docs_header current="runbooks">
         <:dek>
           Turn a reviewed operational procedure into typed, staged action dispatches. Every target,
-          pack, argument, approval, output check, and terminal result is frozen and audited.
+          runner, action, argument, output check, approval decision, and terminal result is frozen
+          and audited.
         </:dek>
       </.docs_header>
 
@@ -27,7 +28,7 @@
         src="/images/screenshots/runbooks.webp"
         preview_h="max-h-[28rem]"
         title="emisar console · Runbooks"
-        caption="The structured editor makes stage barriers, execution mode, approvals, actions, targets, bindings, outputs, conditions, and waits explicit."
+        caption="The structured editor makes stage barriers, actions, targets, bindings, outputs, conditions, and retry policy explicit."
         alt="The emisar runbook editor showing typed inputs, staged actions, and an exact publish review."
       />
 
@@ -35,8 +36,8 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runbook contains ordered <strong class="text-zinc-200">stages</strong>. A stage contains
         one or more <strong class="text-zinc-200">steps</strong>, and each step names one declared
-        catalog action, a pack version requirement, typed argument bindings, and runner or group
-        targets. A group target becomes one logical item per matching runner when execution begins.
+        catalog action, its pack, typed argument bindings, and runner or group targets. A group
+        target becomes one logical item per matching runner when execution begins.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -82,10 +83,11 @@
           New runbook
         </.link>.
         The structured editor covers every
-        field in the runbook contract: typed inputs, stages, concurrency, approvals, actions,
-        targets, bindings, outputs, conditions, and waits. It validates continuously and shows
-        the exact current runner and pack plan before publishing. There is no second raw-definition
-        editor to drift from the form.
+        field in the runbook contract: typed inputs, stages, concurrency, actions, targets,
+        bindings, outputs, conditions, and retry policy. It validates continuously and shows the
+        exact current runner, action, and pack plan before publishing. An invalid or unresolved
+        draft can be saved, but it cannot be published. There is no second raw-definition editor to
+        drift from the form.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -117,8 +119,9 @@
 
       <.docs_h2 id="inputs">Inputs and bindings</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Declare a run-time input as a string, integer, number, or boolean. Inputs can be required,
-        constrained by a range, length, or enum, and marked sensitive. Sensitive values are
+        Declare a run-time input as a string, integer, number, boolean, or enum. Inputs can be
+        required, constrained by a range or length, given a default, and marked sensitive.
+        Sensitive values are
         accepted for dispatch but replaced with
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[REDACTED]</code>
         in plans and results; sensitive inputs cannot carry stored defaults.
@@ -169,27 +172,30 @@
         </li>
       </ul>
 
-      <.docs_h2 id="packs">Pack version requirements</.docs_h2>
+      <.docs_h2 id="packs">Pack resolution</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A step has one <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack</code>
-        object containing its ID and requirement. Supported requirements are exact
-        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">== 1.4.2</code>),
-        pessimistic
-        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~&gt; 1.4.0</code>),
-        or one bounded range
-        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">&gt;= 1.4.0 and &lt; 2.0.0</code>).
-        Preflight selects the highest compatible trusted version on each target, requires one
-        compatible action contract across the selection, then freezes each exact <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack@version/sha256:hash</code>.
-        A later pack update cannot reinterpret an in-flight execution.
+        object containing its ID. The target selection comes first in the editor, so the action
+        menu includes only actions currently available across those runners. Preflight resolves
+        the current trusted pack behind that action, requires one compatible action contract across
+        the selection, then freezes each exact <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack@version/sha256:hash</code>.
+        A later pack update cannot reinterpret an in-flight execution. If the current catalog no
+        longer provides a compatible action, the runbook is blocked until you edit and publish a
+        working version.
       </p>
 
       <.docs_h2 id="approvals">Approvals and failure</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Set a stage's approval to
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">required</code>
-        to open one approval request for its complete frozen target and action set. No action run
-        exists for that stage before approval. Approver scope is checked against every frozen
-        runner, and policy still evaluates each action when it is dispatched.
+        Runbooks do not define another approval policy. The account policy evaluates every item in
+        the frozen plan. If any item requires approval, emisar opens one request for the complete
+        runbook execution: every stage, action, target, exact pack, argument, and policy decision
+        appears in that request. No action run exists before the request is approved.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Approval applies only to that exact frozen execution. Approver scope must cover every
+        runner. Before approval and before each physical attempt, emisar rechecks current
+        membership, runner access, policy, pack trust, action contract, and runner state. A current
+        denial or incompatible change stops the execution; approval never overrides policy drift.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A denial, refusal, timeout, cancellation, action failure, failed extraction, unmet terminal
@@ -219,13 +225,12 @@
       "title": "Inspect replication",
       "mode": "parallel",
       "max_parallel": 4,
-      "approval": "none",
       "steps": [
         {
           "id": "replication_lag",
-          "pack": {"id": "postgres", "requirement": "~> 0.2.0"},
+          "pack": {"id": "postgres"},
           "action": "postgres.replication_lag",
-          "targets": {"kind": "group", "refs": ["postgres"]},
+          "targets": {"refs": ["group:data-postgres"]},
           "args": {},
           "outputs": [
             {
@@ -251,8 +256,9 @@
 
       <h3 class="mt-8 text-lg font-semibold text-zinc-100">One-host-at-a-time maintenance</h3>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        Inspect all workers in parallel, approve the frozen fleet once, maintain one worker at a
-        time, and start fleet-wide verification only after every host succeeds.
+        Inspect all workers in parallel, maintain one worker at a time, and start fleet-wide
+        verification only after every host succeeds. If policy requires approval for the
+        maintenance action, the operator approves the complete frozen execution once.
       </p>
       <ol class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li>
@@ -260,7 +266,7 @@
         </li>
         <li>
           <strong class="text-zinc-200">2. Maintain:</strong>
-          one approved stage with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_parallel: 1</code>.
+          one parallel stage with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_parallel: 1</code>.
         </li>
         <li>
           <strong class="text-zinc-200">3. Verify:</strong> fleet-wide checks after the barrier.
@@ -274,10 +280,9 @@
 
       <.docs_h2 id="results">Results for people and agents</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The execution page keeps the operator context beside a stage-and-item matrix. Each item
-        shows its target, exact pack and hash, action, attempts, wait state, extracted outputs,
-        condition evidence, and a stable error when it did not succeed. Sensitive values stay
-        redacted.
+        The execution page keeps the operator context above a stage-and-item matrix. Each item shows
+        its target, exact pack and hash, action, attempts, wait state, extracted outputs, condition
+        evidence, and a stable error when it did not succeed. Sensitive values stay redacted.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Connected agents use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>,
@@ -298,8 +303,8 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         One definition is at most 64 KiB and contains up to 32 inputs, 16 stages, 32 steps in total,
         16 target refs per step, and 256 resolved logical items. A stage may run 1 through 16
-        attempts concurrently. Each step may retain 16 outputs and evaluate 16 conditions.
-        An execution, including waits, ends within 24 hours. The
+        attempts concurrently when it uses parallel mode. Each step may retain 16 outputs and
+        evaluate 16 conditions. An execution, including waits, ends within 24 hours. The
         <.link navigate={~p"/docs/limits"} class="text-brand-400 hover:text-brand-300">
           limits reference
         </.link>

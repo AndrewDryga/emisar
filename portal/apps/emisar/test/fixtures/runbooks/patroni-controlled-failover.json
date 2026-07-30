@@ -27,19 +27,16 @@
       "title": "Check cluster health",
       "mode": "parallel",
       "max_parallel": 3,
-      "approval": "none",
       "steps": [
         {
           "id": "current_leader",
           "pack": {
-            "id": "postgres-operations",
-            "requirement": "~> 2.4.0"
+            "id": "postgres-operations"
           },
           "action": "patroni.current_leader",
           "targets": {
-            "kind": "group",
             "refs": [
-              "patroni-control"
+              "group:patroni-control"
             ]
           },
           "args": {
@@ -72,14 +69,12 @@
         {
           "id": "replication_lag",
           "pack": {
-            "id": "postgres-operations",
-            "requirement": "~> 2.4.0"
+            "id": "postgres-operations"
           },
           "action": "postgres.replication_status",
           "targets": {
-            "kind": "group",
             "refs": [
-              "patroni-data"
+              "group:patroni-data"
             ]
           },
           "args": {
@@ -114,20 +109,16 @@
       "id": "failover",
       "title": "Move the database leader",
       "mode": "sequential",
-      "max_parallel": 1,
-      "approval": "required",
       "steps": [
         {
           "id": "move_leader",
           "pack": {
-            "id": "postgres-operations",
-            "requirement": "~> 2.4.0"
+            "id": "postgres-operations"
           },
           "action": "patroni.failover",
           "targets": {
-            "kind": "group",
             "refs": [
-              "patroni-control"
+              "group:patroni-control"
             ]
           },
           "args": {
@@ -179,20 +170,16 @@
       "id": "wait_for_health",
       "title": "Wait for the new leader",
       "mode": "sequential",
-      "max_parallel": 1,
-      "approval": "none",
       "steps": [
         {
           "id": "cluster_health",
           "pack": {
-            "id": "postgres-operations",
-            "requirement": "~> 2.4.0"
+            "id": "postgres-operations"
           },
           "action": "patroni.cluster_health",
           "targets": {
-            "kind": "group",
             "refs": [
-              "patroni-control"
+              "group:patroni-control"
             ]
           },
           "args": {
@@ -236,19 +223,16 @@
       "title": "Verify replication",
       "mode": "parallel",
       "max_parallel": 2,
-      "approval": "none",
       "steps": [
         {
           "id": "final_replication",
           "pack": {
-            "id": "postgres-operations",
-            "requirement": "~> 2.4.0"
+            "id": "postgres-operations"
           },
           "action": "postgres.replication_status",
           "targets": {
-            "kind": "group",
             "refs": [
-              "patroni-data"
+              "group:patroni-data"
             ]
           },
           "args": {

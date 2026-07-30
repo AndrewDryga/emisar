@@ -23,7 +23,8 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsTest do
         action_id: "linux.uptime",
         source: "operator",
         args: %{},
-        reason: "expiry sweep test"
+        reason: "expiry sweep test",
+        status: :pending_approval
       })
 
     {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
@@ -53,7 +54,8 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsTest do
         action_id: "linux.uptime",
         source: "operator",
         args: %{},
-        reason: "still fresh"
+        reason: "still fresh",
+        status: :pending_approval
       })
 
     {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
@@ -95,7 +97,8 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsLogTest do
         action_id: "linux.uptime",
         source: "operator",
         args: %{},
-        reason: "expiry sweep test"
+        reason: "expiry sweep test",
+        status: :pending_approval
       })
 
     {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")

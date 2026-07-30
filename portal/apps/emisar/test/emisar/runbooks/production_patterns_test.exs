@@ -15,8 +15,8 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
       "defaults" => %{
         "low" => "allow",
         "medium" => "allow",
-        "high" => "allow",
-        "critical" => "allow"
+        "high" => "require_approval",
+        "critical" => "require_approval"
       },
       "overrides" => [],
       "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
@@ -56,6 +56,9 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
              )
 
     assert result.total == 7
+    assert execution(result.execution_id).status == :pending_approval
+    assert attempts(account.id, result.execution_id) == []
+    approve_execution!(approver)
     assert length(attempts(account.id, result.execution_id)) == 3
 
     leader = attempt_by_action(account.id, result.execution_id, "patroni.current_leader")
@@ -65,9 +68,6 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
     |> attempts(result.execution_id)
     |> Enum.filter(&(&1.action_id == "postgres.replication_status"))
     |> Enum.each(&finish_structured!(&1, %{"max_lag_bytes" => 32_768}))
-
-    assert length(attempts(account.id, result.execution_id)) == 3
-    approve_stage!(approver)
 
     failover = attempt_by_action(account.id, result.execution_id, "patroni.failover")
 
@@ -158,6 +158,10 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
                input_values: %{"change_ticket" => "CHG-200"}
              )
 
+    assert execution(successful.execution_id).status == :pending_approval
+    assert attempts(account.id, successful.execution_id) == []
+    approve_execution!(approver)
+
     successful_inspection =
       account.id
       |> attempts(successful.execution_id)
@@ -165,9 +169,6 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
 
     assert length(successful_inspection) == 3
     Enum.each(successful_inspection, &finish_text!(&1, "READY worker\n"))
-
-    assert no_attempt?(account.id, successful.execution_id, "fleet.maintain_host")
-    approve_stage!(approver)
 
     Enum.reduce(1..3, MapSet.new(), fn expected_count, seen ->
       current =
@@ -216,11 +217,14 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
                input_values: %{"change_ticket" => "CHG-201"}
              )
 
+    assert execution(failed.execution_id).status == :pending_approval
+    assert attempts(account.id, failed.execution_id) == []
+    approve_execution!(approver)
+
     account.id
     |> attempts(failed.execution_id)
     |> Enum.each(&finish_text!(&1, "READY worker\n"))
 
-    approve_stage!(approver)
     first_host = attempt_by_action(account.id, failed.execution_id, "fleet.maintain_host")
     finish_structured!(first_host, %{"ready" => false})
 
@@ -261,6 +265,10 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
                input_values: %{"incident_id" => "INC-300"}
              )
 
+    assert execution(result.execution_id).status == :pending_approval
+    assert attempts(account.id, result.execution_id) == []
+    approve_execution!(approver)
+
     diagnose = attempt_by_action(account.id, result.execution_id, "aws.incident_resource")
 
     finish_structured!(diagnose, %{
@@ -268,7 +276,6 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
       "state" => "impaired"
     })
 
-    approve_stage!(approver)
     restart = attempt_by_action(account.id, result.execution_id, "aws.restart_resource")
 
     assert Jason.decode!(restart.args_raw) == %{
@@ -491,11 +498,11 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
     Fixtures.Subjects.membership_subject(membership)
   end
 
-  defp approve_stage!(approver) do
+  defp approve_execution!(approver) do
     assert {:ok, [request], _metadata} =
              Approvals.list_pending_approval_requests(approver)
 
-    assert {:ok, {_approved, :runbook_stage}} =
+    assert {:ok, {_approved, :runbook_execution}} =
              Approvals.approve_request(request, approver, "change window confirmed")
   end
 
@@ -556,12 +563,6 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
       nil -> flunk("expected action attempt #{action_id}")
       run -> run
     end
-  end
-
-  defp no_attempt?(account_id, execution_id, action_id) do
-    account_id
-    |> attempts(execution_id)
-    |> Enum.all?(&(&1.action_id != action_id))
   end
 
   defp count_active_attempts(account_id, execution_id) do

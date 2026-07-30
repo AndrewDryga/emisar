@@ -7,7 +7,7 @@ defmodule Emisar.Runbooks.Compiler do
   scheduling behavior.
   """
 
-  alias Emisar.{ActionContract, Catalog, Crypto, JSONValue, Runners}
+  alias Emisar.{ActionContract, Catalog, Crypto, JSONValue, Policies, Runners}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.Definition
 
@@ -28,6 +28,7 @@ defmodule Emisar.Runbooks.Compiler do
          {:ok, candidates} <- resolve_candidates(requests, runners, subject),
          {:ok, selected} <- select_candidates(steps, target_sets, candidates),
          {:ok, items} <- compile_items(selected, inputs, definition),
+         {:ok, items} <- snapshot_policies(items, subject.account.id),
          :ok <- validate_wait_safety(items),
          :ok <- validate_output_correlations(items),
          {:ok, plan} <- build_plan(definition, inputs, items) do
@@ -219,6 +220,9 @@ defmodule Emisar.Runbooks.Compiler do
        when is_boolean(value),
        do: in_enum?(value, declaration)
 
+  defp valid_input_value?(%{"type" => "enum"} = declaration, value) when is_binary(value),
+    do: in_enum?(value, declaration)
+
   defp valid_input_value?(_declaration, _value), do: false
 
   defp valid_number?(declaration, value) do
@@ -327,19 +331,17 @@ defmodule Emisar.Runbooks.Compiler do
   end
 
   defp select_step_candidates(indexed, runners, candidates) do
-    {:ok, requirement} = Version.parse_requirement(indexed.step["pack"]["requirement"])
-
     {selected, issues} =
       Enum.reduce(runners, {[], []}, fn runner, {selected, issues} ->
         key = {runner.id, indexed.step["pack"]["id"], indexed.step["action"]}
         available = Map.get(candidates, key, [])
 
-        case select_exact_candidate(available, requirement) do
+        case select_exact_candidate(available) do
           {:ok, candidate} ->
             {[Map.put(candidate, :runner, runner) | selected], issues}
 
           {:error, code, message} ->
-            {selected, [issue(code, "#{indexed.path}/pack/requirement", message) | issues]}
+            {selected, [issue(code, "#{indexed.path}/pack", message) | issues]}
         end
       end)
 
@@ -353,17 +355,9 @@ defmodule Emisar.Runbooks.Compiler do
     end
   end
 
-  defp select_exact_candidate(candidates, requirement) do
-    compatible =
-      Enum.filter(candidates, fn candidate ->
-        case Version.parse(candidate.version) do
-          {:ok, version} -> Version.match?(version, requirement)
-          :error -> false
-        end
-      end)
-
+  defp select_exact_candidate(candidates) do
     ambiguous? =
-      compatible
+      candidates
       |> Enum.group_by(& &1.version, & &1.hash)
       |> Enum.any?(fn {_version, hashes} -> length(Enum.uniq(hashes)) > 1 end)
 
@@ -371,13 +365,13 @@ defmodule Emisar.Runbooks.Compiler do
       ambiguous? ->
         {:error, "ambiguous_pack_version", "A compatible pack version has conflicting hashes."}
 
-      compatible == [] ->
-        {:error, "no_compatible_pack", "No compatible trusted pack is available on this runner."}
+      candidates == [] ->
+        {:error, "pack_unavailable", "This pack and action are not available on the runner."}
 
       true ->
         {:ok,
          Enum.max_by(
-           compatible,
+           candidates,
            &Version.parse!(&1.version),
            &(Version.compare(&1, &2) != :lt)
          )}
@@ -394,8 +388,8 @@ defmodule Emisar.Runbooks.Compiler do
        [
          issue(
            "incompatible_action_contracts",
-           "#{indexed.path}/pack/requirement",
-           "Selected pack versions expose different action contracts."
+           "#{indexed.path}/action",
+           "The selected runners expose incompatible action contracts."
          )
        ]}
     end
@@ -604,12 +598,12 @@ defmodule Emisar.Runbooks.Compiler do
          stage_title: indexed.stage["title"],
          stage_position: indexed.stage_position,
          stage_mode: indexed.stage["mode"],
-         stage_max_parallel: indexed.stage["max_parallel"],
-         stage_approval: indexed.stage["approval"],
+         stage_max_parallel: indexed.stage["max_parallel"] || 1,
          step_id: indexed.step["id"],
          step_position: indexed.step_position,
          runner_id: candidate.runner.id,
          runner_ref: candidate.runner.runner_ref,
+         runner_group: candidate.runner.group,
          action_id: indexed.step["action"],
          pack_id: candidate.pack_id,
          pack_version: candidate.version,
@@ -708,6 +702,56 @@ defmodule Emisar.Runbooks.Compiler do
     if issues == [], do: :ok, else: {:error, sort_issues(issues)}
   end
 
+  defp snapshot_policies(items, account_id) do
+    snapshots = Policies.snapshot_runbook_decisions(account_id, items)
+
+    {items, issues} =
+      items
+      |> Enum.zip(snapshots)
+      |> Enum.reduce({[], []}, fn {item, snapshot}, {authorized, issues} ->
+        case snapshot do
+          %{decision: decision, policy: policy, approval: approval}
+          when decision in [:allow, :require_approval] and not is_nil(policy) and
+                 approval != :invalid ->
+            item =
+              Map.merge(item, %{
+                policy_id: policy.id,
+                policy_version: policy.vsn,
+                policy_decision: decision,
+                policy_reason: snapshot.reason,
+                matched_rules: snapshot.matched_rules,
+                approval: approval
+              })
+
+            {[item | authorized], issues}
+
+          %{decision: :deny, reason: reason} ->
+            issue =
+              issue(
+                "denied_by_policy",
+                "#{item.path}/action",
+                "Current policy blocks this action: #{reason}."
+              )
+
+            {authorized, [issue | issues]}
+
+          _invalid ->
+            issue =
+              issue(
+                "invalid_policy",
+                "#{item.path}/action",
+                "The governing policy cannot authorize this action."
+              )
+
+            {authorized, [issue | issues]}
+        end
+      end)
+
+    if issues == [],
+      do: {:ok, Enum.reverse(items)},
+      else: {:error, sort_issues(issues)}
+  end
+
   defp validate_wait_safety(items) do
     issues =
       items
@@ -766,8 +810,7 @@ defmodule Emisar.Runbooks.Compiler do
           "title" => stage["title"],
           "position" => position,
           "mode" => stage["mode"],
-          "max_parallel" => stage["max_parallel"],
-          "approval" => stage["approval"],
+          "max_parallel" => stage["max_parallel"] || 1,
           "items" =>
             items
             |> Enum.filter(&(&1.stage_position == position))
@@ -780,7 +823,9 @@ defmodule Emisar.Runbooks.Compiler do
       "inputs" => inputs.redacted,
       "sensitive_input_names" => inputs.sensitive_names,
       "stages" => stages,
-      "total_items" => length(items)
+      "total_items" => length(items),
+      "approval_required" => Enum.any?(items, &(&1.policy_decision == :require_approval)),
+      "approval_trigger_count" => Enum.count(items, &(&1.policy_decision == :require_approval))
     }
 
     with {:ok, encoded} <- Jason.encode(plan),
@@ -808,6 +853,13 @@ defmodule Emisar.Runbooks.Compiler do
       "pack_ref" => item.pack_ref,
       "pack_hash" => item.pack_hash,
       "risk" => item.risk,
+      "policy" => %{
+        "id" => item.policy_id,
+        "version" => item.policy_version,
+        "decision" => to_string(item.policy_decision),
+        "reason" => item.policy_reason,
+        "matched_rules" => item.matched_rules
+      },
       "contract_digest" => item.contract_digest,
       "args" => item.public_args,
       "outputs" => item.outputs,

@@ -182,9 +182,13 @@ defmodule EmisarWeb.ApprovalsLive do
     end
   end
 
-  defp risk_for_request(%{context: %{"kind" => "runbook_stage", "stage" => stage}}, _subject) do
-    stage
-    |> Map.get("items", [])
+  defp risk_for_request(
+         %{context: %{"kind" => "runbook_execution", "plan" => plan}},
+         _subject
+       ) do
+    plan
+    |> Map.get("stages", [])
+    |> Enum.flat_map(&Map.get(&1, "items", []))
     |> Enum.map(& &1["risk"])
     |> Enum.max_by(&risk_rank/1, fn -> nil end)
   end
@@ -207,19 +211,23 @@ defmodule EmisarWeb.ApprovalsLive do
     end
   end
 
-  defp request_title(%{context: %{"kind" => "runbook_stage", "stage" => stage}}),
-    do: stage["title"] || stage["id"] || "Runbook stage"
+  defp request_title(%{
+         context: %{"kind" => "runbook_execution", "runbook" => runbook}
+       }),
+       do: runbook["title"] || "Runbook execution"
 
   defp request_title(%{context: context}), do: context["action_id"] || "—"
 
   defp request_scope_label(
-         %{context: %{"kind" => "runbook_stage", "stage" => %{"items" => items}}},
+         %{context: %{"kind" => "runbook_execution", "plan" => plan}},
          _labels
-       )
-       when is_list(items) do
+       ) do
+    stages = Map.get(plan, "stages", [])
+    items = Enum.flat_map(stages, &Map.get(&1, "items", []))
     runners = items |> Enum.map(& &1["runner_ref"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
-    "#{length(items)} #{plural(length(items), "action")} across " <>
+    "#{length(stages)} #{plural(length(stages), "stage")} · " <>
+      "#{length(items)} #{plural(length(items), "action")} across " <>
       "#{length(runners)} #{plural(length(runners), "runner")}"
   end
 
@@ -389,8 +397,8 @@ defmodule EmisarWeb.ApprovalsLive do
       <:title>Approvals</:title>
 
       <.page_intro>
-        Actions and runbook stages pause here before they run. Review the exact frozen work,
-        then approve or deny; your reason is logged.
+        Actions and whole runbook executions pause here before they run. Review the exact frozen
+        work, then approve or deny; your reason is logged.
         <.doc_link href="/docs/policies-and-approvals">Approvals docs</.doc_link>
       </.page_intro>
 
@@ -488,9 +496,8 @@ defmodule EmisarWeb.ApprovalsLive do
                   >
                     policy
                   </.link>
-                  gates a run as <code class="text-zinc-300">require_approval</code>
-                  — for example a high-risk
-                  mutating action from an LLM. You'll get an email too.
+                  evaluates an action as <code class="text-zinc-300">require_approval</code>
+                  — in a direct run or anywhere in a runbook. You'll get an email too.
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>
@@ -505,14 +512,15 @@ defmodule EmisarWeb.ApprovalsLive do
               >
                 policy
               </.link>
-              gates its action as
+              evaluates an action as
               <span class="font-mono text-[13px] text-zinc-300">require_approval</span>
-              — the runner holds it and nothing executes until someone decides.
+              . A direct action creates one request for that run. A runbook with any gated item
+              creates one request for its complete frozen execution.
             </p>
             <p>
-              Approve releases the held run; deny cancels it. Either way your reason is
+              Approve releases the exact frozen work; deny cancels it. Either way your reason is
               logged. A request nobody decides <span class="text-zinc-200">expires</span>
-              on its own and its held run is cancelled.
+              on its own and the held work is cancelled.
             </p>
           </.docs_rail>
         </section>

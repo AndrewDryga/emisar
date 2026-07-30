@@ -28,7 +28,7 @@ defmodule Emisar.Policies do
       }
   """
   alias Ecto.Multi
-  alias Emisar.{Audit, Auth, Repo}
+  alias Emisar.{Accounts, Audit, Auth, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.Policies.{Authorizer, Glob, Policy}
 
@@ -189,6 +189,25 @@ defmodule Emisar.Policies do
     end
   end
 
+  @doc """
+  Internal — snapshot the exact policy facts for one bounded runbook plan in
+  one policy read. The caller already owns authorization for the targets; this
+  helper is deliberately limited to execution preflight and creation rechecks.
+  """
+  def snapshot_runbook_decisions(account_id, targets)
+      when is_binary(account_id) and is_list(targets) do
+    runner_ids = targets |> Enum.map(& &1.runner_id) |> Enum.uniq()
+    groups = targets |> Enum.map(& &1[:group]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    policies =
+      Policy.Query.not_deleted()
+      |> Policy.Query.by_account_id(account_id)
+      |> Policy.Query.resolvable_for_many(runner_ids, groups)
+      |> Repo.all()
+
+    Enum.map(targets, &snapshot_runbook_decision(&1, policies))
+  end
+
   # One `resolve_policy` read per distinct `(runner_id, group)` — the N+1 guard.
   # `resolve_policy` filters `by_account_id`, so the subject's account scopes
   # the read; the caller already passed the view-policies gate above.
@@ -200,6 +219,43 @@ defmodule Emisar.Policies do
       {{runner_id, group}, resolve_policy(account_id, runner_id, group)}
     end)
   end
+
+  defp snapshot_runbook_decision(target, policies) do
+    policy =
+      Enum.find(
+        policies,
+        &(&1.scope_type == :runner and &1.scope_value == to_string(target.runner_id))
+      ) ||
+        Enum.find(
+          policies,
+          &(&1.scope_type == :group and &1.scope_value == to_string(target[:group]))
+        ) ||
+        Enum.find(policies, &(&1.scope_type == :account))
+
+    match_ctx = %{
+      "action_id" => target.action_id,
+      "risk" => to_string(target[:risk] || "low")
+    }
+
+    {decision, matched, reason} = evaluate(policy, match_ctx)
+
+    %{
+      decision: decision,
+      matched_rules: matched,
+      reason: annotate_scope(reason, policy),
+      policy: policy,
+      approval: approval_snapshot(decision, policy)
+    }
+  end
+
+  defp approval_snapshot(:require_approval, %Policy{rules: rules}) do
+    case approval_settings_for(rules) do
+      {:ok, settings} -> settings
+      {:error, :invalid_policy_approval} -> :invalid
+    end
+  end
+
+  defp approval_snapshot(_decision, _policy), do: nil
 
   @doc """
   The account's runner/group policy overrides (every non-account scope),
@@ -234,6 +290,9 @@ defmodule Emisar.Policies do
            ),
          :ok <- Subject.ensure_in_account(subject, policy.account_id) do
       Multi.new()
+      |> Multi.run(:active_account, fn repo, _changes ->
+        Accounts.fetch_and_lock_account(policy.account_id, repo: repo)
+      end)
       |> Multi.update(:policy, Policy.Changeset.delete(policy))
       |> Multi.insert(:audit, fn %{policy: deleted} ->
         Audit.Events.policy_scope_deleted(subject, deleted)
@@ -287,6 +346,9 @@ defmodule Emisar.Policies do
         })
 
       Multi.new()
+      |> Multi.run(:active_account, fn repo, _changes ->
+        Accounts.fetch_and_lock_account(account_id, repo: repo)
+      end)
       |> Multi.run(:before, fn repo, _changes ->
         {:ok, peek_scoped_policy(repo, account_id, scope_type, scope_value)}
       end)

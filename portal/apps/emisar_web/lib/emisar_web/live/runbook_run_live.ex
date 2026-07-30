@@ -40,7 +40,7 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
      |> assign(:result, nil)
      |> assign(:attempts_by_item, %{})
-     |> assign(:approval_requests_by_stage, %{})
+     |> assign(:approval_request, nil)
      |> assign(:recent_executions, [])
      |> assign(:expanded_plan_stages, MapSet.new())
      |> assign(:expanded_execution_stages, MapSet.new())
@@ -62,7 +62,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
           |> assign(:result, nil)
           |> assign(:attempts_by_item, %{})
-          |> assign(:approval_requests_by_stage, %{})
+          |> assign(:approval_request, nil)
           |> assign(:recent_executions, [])
           |> assign(:expanded_plan_stages, MapSet.new())
           |> assign(:expanded_execution_stages, MapSet.new())
@@ -100,31 +100,8 @@ defmodule EmisarWeb.RunbookRunLive do
   def handle_params(_params, _uri, socket) do
     {:noreply,
      socket
-     |> load_latest_execution()
+     |> reset_run_form()
      |> assign(:loaded?, true)}
-  end
-
-  defp load_latest_execution(socket) do
-    case Runbooks.fetch_latest_execution_for_runbook(
-           socket.assigns.runbook,
-           socket.assigns.current_subject
-         ) do
-      {:ok, result} ->
-        socket
-        |> subscribe_execution(result.execution.id)
-        |> load_execution(result.execution.id)
-
-      {:error, :not_found} ->
-        schedule_preflight(socket)
-
-      {:error, _reason} ->
-        assign(socket, :preflight, %{
-          state: :error,
-          plan: nil,
-          issues: [issue("dispatch_failed", "", "Could not load the current runbook state.")],
-          checked_at: DateTime.utc_now()
-        })
-    end
   end
 
   def handle_event("run_form_changed", params, socket) do
@@ -333,10 +310,10 @@ defmodule EmisarWeb.RunbookRunLive do
             :attempts_by_item,
             Map.new(result.latest_attempts, &{&1.runbook_execution_item_id, &1})
           )
-          |> load_stage_approval_requests(result)
+          |> load_execution_approval_request(result)
           |> load_recent_executions()
 
-        if result.execution.status == :active,
+        if result.execution.status in [:active, :pending_approval],
           do: socket,
           else: unsubscribe_execution(socket)
 
@@ -363,7 +340,7 @@ defmodule EmisarWeb.RunbookRunLive do
     |> unsubscribe_execution()
     |> assign(:result, nil)
     |> assign(:attempts_by_item, %{})
-    |> assign(:approval_requests_by_stage, %{})
+    |> assign(:approval_request, nil)
     |> assign(:reason, "")
     |> assign(:input_raw, initial_input_raw(socket.assigns.runbook.definition))
     |> schedule_preflight()
@@ -379,19 +356,14 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  defp load_stage_approval_requests(socket, result) do
-    stage_ids = Enum.map(result.execution.stages, & &1.id)
-
-    case Approvals.list_requests_for_runbook_stages(stage_ids, socket.assigns.current_subject) do
-      {:ok, requests} ->
-        assign(
-          socket,
-          :approval_requests_by_stage,
-          Map.new(requests, &{&1.runbook_execution_stage_id, &1})
-        )
-
-      {:error, _reason} ->
-        assign(socket, :approval_requests_by_stage, %{})
+  defp load_execution_approval_request(socket, result) do
+    case Approvals.list_requests_for_runbook_executions(
+           [result.execution.id],
+           socket.assigns.current_subject
+         ) do
+      {:ok, [request]} -> assign(socket, :approval_request, request)
+      {:ok, []} -> assign(socket, :approval_request, nil)
+      {:error, _reason} -> assign(socket, :approval_request, nil)
     end
   end
 
@@ -459,6 +431,11 @@ defmodule EmisarWeb.RunbookRunLive do
   defp parse_input_value(%{"type" => "boolean"}, "true"), do: {:ok, true}
   defp parse_input_value(%{"type" => "boolean"}, "false"), do: {:ok, false}
   defp parse_input_value(%{"type" => "boolean"}, _value), do: {:error, "Choose true or false."}
+
+  defp parse_input_value(%{"type" => "enum", "enum" => values}, value) do
+    if value in values, do: {:ok, value}, else: {:error, "Choose an allowed value."}
+  end
+
   defp parse_input_value(_declaration, _value), do: {:ok, :missing}
 
   defp input_value_to_string(value) when is_binary(value), do: value
@@ -467,12 +444,16 @@ defmodule EmisarWeb.RunbookRunLive do
   defp input_value_to_string(_value), do: nil
 
   defp input_type(%{"type" => "boolean"}), do: "select"
+  defp input_type(%{"type" => "enum"}), do: "select"
   defp input_type(%{"sensitive" => true}), do: "password"
   defp input_type(%{"type" => type}) when type in ["integer", "number"], do: "number"
   defp input_type(_input), do: "text"
 
   defp input_options(%{"type" => "boolean"}),
     do: [{"Choose…", ""}, {"true", "true"}, {"false", "false"}]
+
+  defp input_options(%{"type" => "enum", "enum" => values}),
+    do: [{"Choose…", ""} | Enum.map(values, &{&1, &1})]
 
   defp input_options(_input), do: []
 
@@ -499,7 +480,6 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp projected_item_status(item, stage, execution) do
     case item.status do
-      :pending when stage.status == :awaiting_approval -> :awaiting_approval
       :pending when stage.status == :halted or execution.status == :halted -> :halted
       :pending when stage.status == :cancelled or execution.status == :cancelled -> :cancelled
       :pending -> :queued
@@ -507,12 +487,14 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
+  defp execution_title(%{status: :pending_approval}), do: "Execution awaiting approval"
   defp execution_title(%{status: :active}), do: "Execution in progress"
   defp execution_title(%{status: :succeeded}), do: "Execution succeeded"
   defp execution_title(%{status: :halted}), do: "Execution halted"
   defp execution_title(%{status: :cancelled}), do: "Execution cancelled"
 
   defp execution_tone(%{status: :succeeded}), do: :brand
+  defp execution_tone(%{status: :pending_approval}), do: :amber
   defp execution_tone(%{status: :active}), do: :amber
   defp execution_tone(%{status: :halted}), do: :rose
   defp execution_tone(%{status: :cancelled}), do: :neutral
@@ -581,7 +563,7 @@ defmodule EmisarWeb.RunbookRunLive do
       </:title>
       <:actions>
         <.button
-          :if={@result && @result.execution.status == :active}
+          :if={@result && @result.execution.status in [:active, :pending_approval]}
           variant={:secondary}
           tone={:rose}
           phx-click="cancel_execution"
@@ -590,7 +572,7 @@ defmodule EmisarWeb.RunbookRunLive do
           Cancel execution
         </.button>
         <.button
-          :if={@result && @result.execution.status != :active}
+          :if={@result && @result.execution.status not in [:active, :pending_approval]}
           variant={:secondary}
           phx-click="run_again"
         >
@@ -611,7 +593,7 @@ defmodule EmisarWeb.RunbookRunLive do
           :if={@loaded? && @result}
           result={@result}
           attempts_by_item={@attempts_by_item}
-          approval_requests_by_stage={@approval_requests_by_stage}
+          approval_request={@approval_request}
           expanded_stages={@expanded_execution_stages}
           current_account={@current_account}
         />
@@ -649,79 +631,27 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp run_form(assigns) do
     ~H"""
-    <div class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div class="space-y-10">
-        <section :if={String.trim(@runbook.definition["context_markdown"] || "") != ""}>
-          <.section_header title="Operator context" />
-          <RunbookMarkdown.render markdown={@runbook.definition["context_markdown"]} />
-        </section>
+    <div class="max-w-5xl space-y-10">
+      <section :if={String.trim(@runbook.definition["context_markdown"] || "") != ""}>
+        <.section_header title="Operator context" />
+        <RunbookMarkdown.render markdown={@runbook.definition["context_markdown"]} />
+      </section>
 
-        <section>
-          <.section_header title="Current preflight">
-            <:subtitle>
-              Exact targets, packs, hashes, approvals, and concurrency resolved from current state.
-            </:subtitle>
-          </.section_header>
-
+      <section>
+        <.section_header title="Start execution">
+          <:subtitle>
+            Supply this execution's values and record why it should run now.
+          </:subtitle>
+        </.section_header>
+        <form
+          id="runbook-run-form"
+          phx-change="run_form_changed"
+          phx-submit="start"
+          class="space-y-5"
+        >
           <div
-            :if={@preflight.state == :loading}
-            class="flex items-center gap-2 text-sm text-zinc-400"
-          >
-            <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
-            Checking current runners, packs, trust, and policy…
-          </div>
-
-          <.event_block
-            :if={@preflight.state == :error}
-            icon="hero-exclamation-triangle"
-            tone={:rose}
-            title="Preflight blocked"
-          >
-            <:body>
-              <ul class="space-y-2">
-                <li :for={issue <- @preflight.issues}>
-                  <code class="text-xs text-zinc-300">{issue.path || "/"}</code> — {issue.message}
-                </li>
-              </ul>
-            </:body>
-          </.event_block>
-
-          <div :if={@preflight.state == :ready} class="space-y-8">
-            <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-zinc-400">
-              <span>
-                <strong class="font-medium text-zinc-200">
-                  {@preflight.plan["total_items"]}
-                </strong>
-                logical actions
-              </span>
-              <span>
-                <strong class="font-medium text-zinc-200">
-                  {length(@preflight.plan["stages"])}
-                </strong>
-                stages
-              </span>
-              <span :if={@preflight.checked_at}>
-                checked <.local_time value={@preflight.checked_at} mode={:relative} />
-              </span>
-            </div>
-
-            <.plan_stage
-              :for={stage <- @preflight.plan["stages"]}
-              stage={stage}
-              expanded?={MapSet.member?(@expanded_stages, stage["id"])}
-            />
-          </div>
-        </section>
-      </div>
-
-      <aside>
-        <section class="xl:sticky xl:top-6">
-          <.section_header title="Start execution" />
-          <form
-            id="runbook-run-form"
-            phx-change="run_form_changed"
-            phx-submit="start"
-            class="space-y-4"
+            :if={@runbook.definition["inputs"] != []}
+            class="grid gap-4 sm:grid-cols-2"
           >
             <div :for={input <- @runbook.definition["inputs"]}>
               <.input
@@ -743,30 +673,112 @@ defmodule EmisarWeb.RunbookRunLive do
                 {@input_errors[input["id"]]}
               </p>
             </div>
+          </div>
 
+          <div class="max-w-3xl">
             <.input
               type="textarea"
               name="reason"
               value={@reason}
               label="Reason"
               label_variant={:eyebrow}
-              rows="4"
+              rows="3"
               required
               placeholder="Why this runbook should run now"
             />
+          </div>
 
+          <div class="flex flex-wrap items-center gap-4 border-t border-zinc-800/70 pt-4">
             <.button
               type="submit"
               variant={if @can_start?, do: :primary, else: :secondary}
               phx-disable-with="Starting…"
               disabled={not @can_start?}
-              class="w-full"
             >
-              {if @can_start?, do: "Start runbook", else: "Preflight required"}
+              Start runbook
             </.button>
-          </form>
-        </section>
-      </aside>
+            <p class="text-xs text-zinc-400">
+              <%= cond do %>
+                <% @preflight.state == :loading -> %>
+                  Checking the current plan…
+                <% @preflight.state == :error -> %>
+                  Resolve the preflight issues below before starting.
+                <% String.trim(@reason) == "" -> %>
+                  Add a reason to start this execution.
+                <% true -> %>
+                  The frozen plan below will be dispatched exactly as shown.
+              <% end %>
+            </p>
+          </div>
+        </form>
+      </section>
+
+      <section>
+        <.section_header title="Current plan">
+          <:subtitle>
+            Exact runners, packs, hashes, policy decisions, and concurrency resolved from current
+            state.
+          </:subtitle>
+        </.section_header>
+
+        <div
+          :if={@preflight.state == :loading}
+          class="flex items-center gap-2 text-sm text-zinc-400"
+        >
+          <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+          Checking current runners, packs, trust, and policy…
+        </div>
+
+        <.event_block
+          :if={@preflight.state == :error}
+          icon="hero-exclamation-triangle"
+          tone={:rose}
+          title="Preflight blocked"
+        >
+          <:body>
+            <ul class="space-y-2">
+              <li :for={issue <- @preflight.issues}>
+                <span class="text-xs font-medium text-zinc-200">
+                  {preflight_issue_label(issue.path)}
+                </span>
+                — {issue.message}
+              </li>
+            </ul>
+          </:body>
+        </.event_block>
+
+        <div :if={@preflight.state == :ready} class="space-y-8">
+          <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-zinc-400">
+            <span>
+              <strong class="font-medium text-zinc-200">
+                {@preflight.plan["total_items"]}
+              </strong>
+              actions
+            </span>
+            <span>
+              <strong class="font-medium text-zinc-200">
+                {length(@preflight.plan["stages"])}
+              </strong>
+              stages
+            </span>
+            <span>
+              <strong class="font-medium text-zinc-200">
+                {if @preflight.plan["approval_required"], do: "Required", else: "Not required"}
+              </strong>
+              run approval
+            </span>
+            <span :if={@preflight.checked_at}>
+              checked <.local_time value={@preflight.checked_at} mode={:relative} />
+            </span>
+          </div>
+
+          <.plan_stage
+            :for={stage <- @preflight.plan["stages"]}
+            stage={stage}
+            expanded?={MapSet.member?(@expanded_stages, stage["id"])}
+          />
+        </div>
+      </section>
     </div>
     """
   end
@@ -790,10 +802,9 @@ defmodule EmisarWeb.RunbookRunLive do
         <div>
           <h3 class="text-sm font-semibold text-zinc-100">{@stage["title"]}</h3>
           <p class="mt-1 text-xs text-zinc-400">
-            {@stage["mode"]} · up to {@stage["max_parallel"]} at once · {if @stage["approval"] ==
-                                                                              "required",
-                                                                            do: "approval required",
-                                                                            else: "no stage approval"}
+            {if @stage["mode"] == "parallel",
+              do: "parallel · up to #{@stage["max_parallel"]} at once",
+              else: "sequential"}
           </p>
         </div>
         <span class="text-xs tabular-nums text-zinc-400">
@@ -836,9 +847,50 @@ defmodule EmisarWeb.RunbookRunLive do
     """
   end
 
+  defp preflight_issue_label(path) when is_binary(path) do
+    case String.split(path, "/", trim: true) do
+      ["stages", stage, "steps", step | fields] ->
+        "Stage #{one_based_index(stage)} · Step #{one_based_index(step)}#{preflight_field_suffix(fields)}"
+
+      ["stages", stage | fields] ->
+        "Stage #{one_based_index(stage)}#{preflight_field_suffix(fields)}"
+
+      fields when fields != [] ->
+        Enum.map_join(fields, " · ", &preflight_field_label/1)
+
+      [] ->
+        "Runbook"
+    end
+  end
+
+  defp preflight_issue_label(_path), do: "Runbook"
+
+  defp one_based_index(value) do
+    case Integer.parse(value) do
+      {index, ""} -> Integer.to_string(index + 1)
+      _other -> value
+    end
+  end
+
+  defp preflight_field_suffix([]), do: ""
+
+  defp preflight_field_suffix(fields),
+    do: " · " <> Enum.join(preflight_field_labels(fields), " · ")
+
+  defp preflight_field_labels(["outputs", index | fields]),
+    do: ["Output #{one_based_index(index)}" | Enum.map(fields, &preflight_field_label/1)]
+
+  defp preflight_field_labels(["success", index | fields]),
+    do: ["Condition #{one_based_index(index)}" | Enum.map(fields, &preflight_field_label/1)]
+
+  defp preflight_field_labels(fields), do: Enum.map(fields, &preflight_field_label/1)
+
+  defp preflight_field_label(field),
+    do: field |> String.replace("_", " ") |> String.capitalize()
+
   attr :result, :map, required: true
   attr :attempts_by_item, :map, required: true
-  attr :approval_requests_by_stage, :map, required: true
+  attr :approval_request, :any, default: nil
   attr :expanded_stages, :any, required: true
   attr :current_account, :map, required: true
 
@@ -867,6 +919,16 @@ defmodule EmisarWeb.RunbookRunLive do
           <span class="mt-1.5 block font-mono text-[11px] text-zinc-400">
             {@result.execution.id}
           </span>
+          <.link
+            :if={@approval_request}
+            navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+            class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-brand-300 hover:text-brand-200"
+          >
+            {if @approval_request.status == :pending,
+              do: "Review run approval",
+              else: "View run approval"}
+            <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+          </.link>
         </:body>
       </.event_block>
 
@@ -895,24 +957,9 @@ defmodule EmisarWeb.RunbookRunLive do
         id={"execution-stage-#{stage.id}"}
       >
         <.section_header title={stage.title}>
-          <:subtitle>
-            {stage_mode(stage)} · {if stage.approval == :required,
-              do: "approval required",
-              else: "no stage approval"}
-          </:subtitle>
+          <:subtitle>{stage_mode(stage)}</:subtitle>
           <:actions>
-            <div class="flex items-center gap-3">
-              <.link
-                :if={@approval_requests_by_stage[stage.id]}
-                navigate={
-                  ~p"/app/#{@current_account}/approvals/#{@approval_requests_by_stage[stage.id].id}"
-                }
-                class="text-xs font-medium text-brand-400 hover:text-brand-300"
-              >
-                Open approval
-              </.link>
-              <.status_badge status={stage.status} />
-            </div>
+            <.status_badge status={stage.status} />
           </:actions>
         </.section_header>
 

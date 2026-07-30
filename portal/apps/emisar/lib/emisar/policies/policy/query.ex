@@ -44,6 +44,20 @@ defmodule Emisar.Policies.Policy.Query do
     )
   end
 
+  def resolvable_for_many(queryable, runner_ids, groups)
+      when is_list(runner_ids) and is_list(groups) do
+    runner_ids = Enum.map(runner_ids, &to_string/1)
+    groups = Enum.map(groups, &to_string/1)
+
+    where(
+      queryable,
+      [policies: p],
+      p.scope_type == :account or
+        (p.scope_type == :runner and p.scope_value in ^runner_ids) or
+        (p.scope_type == :group and p.scope_value in ^groups)
+    )
+  end
+
   # Group overrides before runner overrides (enum string order), stable within
   # a type by scope_value so the editor list doesn't jump around.
   def ordered_by_scope(queryable),

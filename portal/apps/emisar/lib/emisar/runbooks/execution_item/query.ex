@@ -31,7 +31,7 @@ defmodule Emisar.Runbooks.ExecutionItem.Query do
     |> where(
       [runbook_execution_items: i, active_execution: e],
       i.account_id == ^account_id and
-        (e.status == :active or i.status == :running)
+        (e.status in [:pending_approval, :active] or i.status == :running)
     )
   end
 

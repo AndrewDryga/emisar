@@ -435,6 +435,28 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
+  describe "snapshot_runbook_decisions/2" do
+    test "returns the exact policy, decision reason, and approval settings for each target" do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      [snapshot] =
+        Policies.snapshot_runbook_decisions(account.id, [
+          %{
+            runner_id: runner.id,
+            group: runner.group,
+            action_id: "postgres.failover",
+            risk: "high"
+          }
+        ])
+
+      assert snapshot.decision == :require_approval
+      assert snapshot.policy.account_id == account.id
+      assert snapshot.approval == %{min_approvals: 1, allow_self_approval: true}
+      assert is_binary(snapshot.reason)
+    end
+  end
+
   describe "list_scoped_policies/1" do
     test "lists the account's scoped overrides, excluding the account default" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()

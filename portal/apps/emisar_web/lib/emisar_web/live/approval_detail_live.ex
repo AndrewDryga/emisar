@@ -27,8 +27,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:page_title, "Approval")
      |> assign(:request, nil)
      |> assign(:run, nil)
-     |> assign(:stage_plan, nil)
-     |> assign(:stage_request?, false)
+     |> assign(:execution_plan, nil)
+     |> assign(:execution_request?, false)
      |> assign(:action_args, %{})
      |> assign(:action_risk, nil)
      |> assign(:action_description, nil)
@@ -63,8 +63,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
         Runners.subscribe_connections(account_id)
 
         run = fetch_action_run(request, socket.assigns.current_subject)
-        stage_plan = stage_plan(request)
-        stage_request? = not is_nil(stage_plan)
+        execution_plan = execution_plan(request)
+        execution_request? = not is_nil(execution_plan)
 
         title = "Approval · " <> request_title(request)
 
@@ -82,10 +82,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:page_title, title)
          |> assign(:request, request)
          |> assign(:run, run)
-         |> assign(:stage_plan, stage_plan)
-         |> assign(:stage_request?, stage_request?)
+         |> assign(:execution_plan, execution_plan)
+         |> assign(:execution_request?, execution_request?)
          |> assign(:action_args, visible_action_args(run))
-         |> assign(:action_risk, (action && action.risk) || stage_risk(stage_plan))
+         |> assign(:action_risk, (action && action.risk) || execution_risk(execution_plan))
          |> assign(:action_description, action && action.description)
          # The exact command the runner will execute, arguments resolved into
          # the action's template — shown only when our compiled pack is provably
@@ -112,8 +112,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
          # config, fixed for this session — compute it once at mount).
          |> assign(
            :grant_duration_options,
-           if(stage_request?,
-             do: [{"This stage only", "once"}],
+           if(execution_request?,
+             do: [{"This run only", "once"}],
              else: grant_duration_options(account_id)
            )
          )}
@@ -129,25 +129,28 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp fetch_action_run(_request, _subject), do: nil
 
-  defp stage_plan(%{context: %{"kind" => "runbook_stage", "stage" => stage}})
-       when is_map(stage),
-       do: stage
+  defp execution_plan(%{context: %{"kind" => "runbook_execution", "plan" => plan}})
+       when is_map(plan),
+       do: plan
 
-  defp stage_plan(_request), do: nil
+  defp execution_plan(_request), do: nil
 
-  defp request_title(%{context: %{"kind" => "runbook_stage", "stage" => stage}}),
-    do: stage["title"] || stage["id"] || "Runbook stage"
+  defp request_title(%{
+         context: %{"kind" => "runbook_execution", "runbook" => runbook}
+       }),
+       do: runbook["title"] || "Runbook execution"
 
   defp request_title(%{context: context, id: id}),
     do: context["action_id"] || String.slice(id, 0, 8)
 
-  defp stage_risk(%{"items" => items}) when is_list(items) do
-    items
+  defp execution_risk(%{"stages" => stages}) when is_list(stages) do
+    stages
+    |> Enum.flat_map(&Map.get(&1, "items", []))
     |> Enum.map(& &1["risk"])
     |> Enum.max_by(&risk_rank/1, fn -> nil end)
   end
 
-  defp stage_risk(_stage), do: nil
+  defp execution_risk(_plan), do: nil
 
   defp risk_rank("critical"), do: 4
   defp risk_rank("high"), do: 3
@@ -155,24 +158,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp risk_rank("low"), do: 1
   defp risk_rank(_risk), do: 0
 
-  defp stage_mode_label(%{"mode" => "parallel", "max_parallel" => max_parallel}),
-    do: "Parallel · up to #{max_parallel} at once"
-
-  defp stage_mode_label(%{"mode" => "sequential"}), do: "Sequential"
-  defp stage_mode_label(_stage), do: "—"
-
-  defp stage_work_label(%{"items" => items}) when is_list(items) do
+  defp execution_work_label(%{"stages" => stages}) when is_list(stages) do
+    items = Enum.flat_map(stages, &Map.get(&1, "items", []))
     runners = items |> Enum.map(& &1["runner_ref"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
-    "#{length(items)} #{plural(length(items), "action")} · " <>
+    "#{length(stages)} #{plural(length(stages), "stage")} · " <>
+      "#{length(items)} #{plural(length(items), "action")} · " <>
       "#{length(runners)} #{plural(length(runners), "runner")}"
   end
 
-  defp stage_work_label(_stage), do: "—"
+  defp execution_work_label(_plan), do: "—"
 
   defp plural(1, noun), do: noun
   defp plural(_count, noun), do: noun <> "s"
-  defp target_noun(true), do: "stage"
+  defp target_noun(true), do: "runbook execution"
   defp target_noun(false), do: "action"
 
   defp grant_duration_options(account_id) do
@@ -377,12 +376,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
                opts
              ) do
           # Threshold met — finalized + dispatched.
-          {:ok, {request, :runbook_stage}} ->
+          {:ok, {request, :runbook_execution}} ->
             {:noreply,
              socket
              |> assign(:request, request)
              |> assign_decisions(request)
-             |> put_flash(:info, "Stage approved. Eligible actions are being dispatched.")}
+             |> put_flash(:info, "Runbook approved. Eligible actions are being dispatched.")}
 
           {:ok, {request, %_{} = _run}} ->
             {:noreply,
@@ -483,8 +482,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_error_message(reason) when reason in [:run_cancelled, :run_not_pending_approval],
     do: "The run was cancelled before approval, so there's nothing left to approve."
 
-  defp decision_error_message(:runbook_stage_not_approvable),
-    do: "The stage is no longer eligible to run. Refresh to see the execution's current state."
+  defp decision_error_message(:runbook_execution_not_approvable),
+    do: "The runbook execution is no longer awaiting approval. Refresh to see its current state."
 
   defp decision_error_message(:attestation_stale) do
     "This signed request expired before approval — its signature is now outside the runner's " <>
@@ -624,10 +623,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
           back="Approvals"
           navigate={~p"/app/#{@current_account}/approvals"}
           title={if @loaded?, do: request_title(@request), else: "Approval"}
-          mono={@loaded? and not @stage_request?}
+          mono={@loaded? and not @execution_request?}
         />
       </:title>
       <:actions>
+        <.button
+          :if={@execution_request?}
+          navigate={
+            ~p"/app/#{@current_account}/runbooks/#{@request.context["runbook"]["id"]}/runs/#{@request.runbook_execution_id}"
+          }
+          variant={:secondary}
+          size={:md}
+        >
+          View runbook execution
+        </.button>
         <%!-- BUTTONS, one grammar per actions row (the run/runner-detail
              correction): the run this request gates, and its audit-trail
              slice (requested / approved / denied / expired — subject-scoped
@@ -675,15 +684,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- Never clip the action on the decision screen — an approver must read
              the full action id before deciding. `wrap` gives it the full row on
              mobile and wraps rather than truncating; the risk pill flows after. --%>
-            <.meta_field label={if(@stage_request?, do: "Stage", else: "Action")} wrap>
+            <.meta_field label={if(@execution_request?, do: "Runbook", else: "Action")} wrap>
               <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class={[if(not @stage_request?, do: "font-mono"), "text-zinc-200"]}>
+                <span class={[if(not @execution_request?, do: "font-mono"), "text-zinc-200"]}>
                   {request_title(@request)}
                 </span>
                 <.risk_pill :if={@action_risk} risk={@action_risk} />
               </span>
             </.meta_field>
-            <.meta_field :if={not @stage_request?} label="Runner">
+            <.meta_field :if={not @execution_request?} label="Runner">
               <%= if @run && @run.runner do %>
                 <%!-- Identity only — run-detail's Runner meta is the same shape.
                  A wordless colored dot said "connectivity" by color alone;
@@ -700,11 +709,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 </span>
               <% end %>
             </.meta_field>
-            <.meta_field :if={@stage_request?} label="Execution mode">
-              <span class="text-zinc-200">{stage_mode_label(@stage_plan)}</span>
-            </.meta_field>
-            <.meta_field :if={@stage_request?} label="Frozen work">
-              <span class="text-zinc-200">{stage_work_label(@stage_plan)}</span>
+            <.meta_field :if={@execution_request?} label="Frozen work">
+              <span class="text-zinc-200">{execution_work_label(@execution_plan)}</span>
             </.meta_field>
             <%!-- Who (the accountable human) AND what asked: a request from an
              autonomous LLM agent (MCP) is the reason the gate exists and
@@ -763,11 +769,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <%= case verdict do %>
                 <% :expired -> %>
                   This request expired before anyone decided, so it was auto-denied — the {target_noun(
-                    @stage_request?
+                    @execution_request?
                   )} will not run. The requester can re-issue it if
                   it's still needed.
                 <% :cancelled -> %>
-                  This request was withdrawn before a decision, so the {target_noun(@stage_request?)} did not run.
+                  This request was withdrawn before a decision, so the {target_noun(
+                    @execution_request?
+                  )} did not run.
                 <% _ -> %>
                   <span :if={@request.decided_at}>
                     by {user_label(@decided_by, @request.decided_by_id)} ·
@@ -795,44 +803,57 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <%!-- Left: the decision record — the artifact (what will run), the raw
              args one click away, ONE why-cluster, then the vote trail. --%>
           <div class="space-y-10">
-            <section :if={@stage_request?}>
-              <.section_header title="Frozen stage plan">
+            <section :if={@execution_request?}>
+              <.section_header title="Frozen runbook plan">
                 <:subtitle>
-                  Exact actions, runners, packs, hashes, and redacted arguments
+                  Every stage, action, runner, pack, hash, and visible argument covered by this
+                  decision
                 </:subtitle>
               </.section_header>
-              <ul class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
-                <li
-                  :for={item <- @stage_plan["items"] || []}
-                  class="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto]"
-                >
-                  <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
-                      <.risk_pill :if={item["risk"]} risk={item["risk"]} />
-                    </div>
-                    <p class="mt-1 text-xs text-zinc-400">
-                      Runner <span class="font-mono text-zinc-300">{item["runner_ref"]}</span>
-                    </p>
-                    <p class="mt-1 break-all font-mono text-[11px] text-zinc-400">
-                      {item["pack_ref"]}
-                    </p>
+              <div class="space-y-6">
+                <section :for={stage <- @execution_plan["stages"] || []}>
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <h3 class="text-sm font-semibold text-zinc-100">{stage["title"]}</h3>
+                    <span class="text-xs text-zinc-400">
+                      {if stage["mode"] == "parallel",
+                        do: "Parallel · up to #{stage["max_parallel"]}",
+                        else: "Sequential"}
+                    </span>
                   </div>
-                  <details
-                    :if={item["args"] != %{}}
-                    class="group self-start text-xs sm:text-right"
-                  >
-                    <summary class="cursor-pointer text-zinc-400 hover:text-zinc-200">
-                      Arguments
-                    </summary>
-                    <pre
-                      tabindex="0"
-                      aria-label={"Arguments for #{item["action"]} on #{item["runner_ref"]}"}
-                      class="mt-2 max-h-48 max-w-xl overflow-auto whitespace-pre-wrap rounded-lg bg-black/40 px-3 py-2 text-left font-mono text-[11px] leading-relaxed text-zinc-300"
-                    >{format_json(item["args"])}</pre>
-                  </details>
-                </li>
-              </ul>
+                  <ul class="mt-2 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
+                    <li
+                      :for={item <- stage["items"] || []}
+                      class="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto]"
+                    >
+                      <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
+                          <.risk_pill :if={item["risk"]} risk={item["risk"]} />
+                        </div>
+                        <p class="mt-1 text-xs text-zinc-400">
+                          Runner <span class="font-mono text-zinc-300">{item["runner_ref"]}</span>
+                        </p>
+                        <p class="mt-1 break-all font-mono text-[11px] text-zinc-400">
+                          {item["pack_ref"]}
+                        </p>
+                      </div>
+                      <details
+                        :if={item["args"] != %{}}
+                        class="group self-start text-xs sm:text-right"
+                      >
+                        <summary class="cursor-pointer text-zinc-400 hover:text-zinc-200">
+                          Arguments
+                        </summary>
+                        <pre
+                          tabindex="0"
+                          aria-label={"Arguments for #{item["action"]} on #{item["runner_ref"]}"}
+                          class="mt-2 max-h-48 max-w-xl overflow-auto whitespace-pre-wrap rounded-lg bg-black/40 px-3 py-2 text-left font-mono text-[11px] leading-relaxed text-zinc-300"
+                        >{format_json(item["args"])}</pre>
+                      </details>
+                    </li>
+                  </ul>
+                </section>
+              </div>
             </section>
 
             <%!-- What will run: the plain-English effect from the pack manifest
@@ -988,7 +1009,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               grant_max_uses={@grant_max_uses}
               grant_duration_options={@grant_duration_options}
               runner_state={@runner_connection}
-              stage_request?={@stage_request?}
+              execution_request?={@execution_request?}
               self_blocked?={@self_blocked?}
               already_decided?={@already_decided?}
               approved_count={@approved_count}
@@ -1021,7 +1042,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Connection state of the target runner (:online | :offline | :unknown)
   # so the operator knows whether an approval will actually dispatch.
   attr :runner_state, :atom, default: :unknown
-  attr :stage_request?, :boolean, default: false
+  attr :execution_request?, :boolean, default: false
   # Server-computed UI gates. self_blocked? hides Approve when this user is the
   # requester and self-approval is forbidden; already_decided? hides both forms
   # once they've voted. The CONTEXT re-checks both (IL-15) — these are cosmetic.
@@ -1061,13 +1082,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
       </div>
 
       <p :if={@min_approvals > 1} class="text-xs leading-relaxed text-zinc-400">
-        This {target_noun(@stage_request?)} needs
+        This {target_noun(@execution_request?)} needs
         <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
         — {@approved_count} so far.
       </p>
 
       <.event_block
-        :if={not @stage_request? and @runner_state == :offline}
+        :if={not @execution_request? and @runner_state == :offline}
         icon="hero-bolt-slash"
         tone={:amber}
         title="Runner offline"
@@ -1097,7 +1118,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             You can't approve your own request — a different operator must approve it.
           </p>
           <p class="mt-4 text-xs leading-relaxed text-zinc-400">
-            {decision_intro(@stage_request?, @self_blocked?, @grant_duration_options)}
+            {decision_intro(@execution_request?, @self_blocked?, @grant_duration_options)}
             <.doc_link href={~p"/docs/policies-and-approvals"}>Approvals docs</.doc_link>
           </p>
           <%!-- ONE decision form: a single note field logged with whichever
@@ -1132,7 +1153,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                  affordance is gone. --%>
             <p
               :if={
-                not @stage_request? and not @self_blocked? and
+                not @execution_request? and not @self_blocked? and
                   length(@grant_duration_options) <= 1
               }
               class="text-[11px] leading-relaxed text-zinc-400"
@@ -1140,7 +1161,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               Standing grants are disabled for this account — every approval is single-use.
             </p>
             <.disclosure :if={
-              not @stage_request? and not @self_blocked? and
+              not @execution_request? and not @self_blocked? and
                 length(@grant_duration_options) > 1
             }>
               <:summary>
@@ -1217,7 +1238,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               icon="hero-check"
               phx-disable-with="Approving…"
             >
-              {if(@stage_request?, do: "Approve stage", else: "Approve and send")}
+              {if(@execution_request?, do: "Approve runbook", else: "Approve and send")}
             </.button>
             <.button
               name="decision"
@@ -1237,8 +1258,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   defp decision_intro(true, _self_blocked?, _options) do
-    "Approval releases the frozen stage. Each action still passes current policy, " <>
-      "runner access, and pack-trust checks before dispatch. Your decision is logged."
+    "Approval releases the complete frozen runbook plan. Each action still passes current " <>
+      "policy, runner access, and pack-trust checks before dispatch. Your decision is logged."
   end
 
   defp decision_intro(false, self_blocked?, options) do

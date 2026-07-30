@@ -634,7 +634,7 @@
     },
     "runbook_execution_status": {
       "type": "string",
-      "enum": ["active", "succeeded", "halted", "cancelled"]
+      "enum": ["pending_approval", "active", "succeeded", "halted", "cancelled"]
     },
     "runbook_execution_error": {
       "oneOf": [
@@ -812,7 +812,6 @@
         "position",
         "mode",
         "max_parallel",
-        "approval",
         "status",
         "items"
       ],
@@ -823,10 +822,9 @@
         "position": {"type": "integer", "minimum": 0, "maximum": 15},
         "mode": {"type": "string", "enum": ["sequential", "parallel"]},
         "max_parallel": {"type": "integer", "minimum": 1, "maximum": 16},
-        "approval": {"type": "string", "enum": ["none", "required"]},
         "status": {
           "type": "string",
-          "enum": ["pending", "awaiting_approval", "active", "succeeded", "halted", "cancelled"]
+          "enum": ["pending", "active", "succeeded", "halted", "cancelled"]
         },
         "items": {
           "type": "array",

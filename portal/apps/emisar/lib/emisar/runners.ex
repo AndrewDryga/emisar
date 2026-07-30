@@ -160,9 +160,9 @@ defmodule Emisar.Runners do
   runner scope. Every returned runner is enabled and online; every authored ref
   must resolve, so a partial target never silently shrinks the blast radius.
   """
-  def resolve_runbook_targets(%{"kind" => kind, "refs" => refs}, %Subject{} = subject)
-      when kind in ["group", "runner"] and is_list(refs) do
-    case resolve_runbook_target_sets([%{"kind" => kind, "refs" => refs}], subject) do
+  def resolve_runbook_targets(%{"refs" => refs}, %Subject{} = subject)
+      when is_list(refs) do
+    case resolve_runbook_target_sets([%{"refs" => refs}], subject) do
       {:ok, [selected]} -> {:ok, selected}
       {:error, {:unknown_target, 0}} -> {:error, :unknown_target}
     end
@@ -181,9 +181,8 @@ defmodule Emisar.Runners do
       targets
       |> Enum.with_index()
       |> Enum.reduce_while({:ok, []}, fn
-        {%{"kind" => kind, "refs" => refs}, index}, {:ok, selected}
-        when kind in ["group", "runner"] and is_list(refs) ->
-          case select_runbook_targets(kind, refs, available) do
+        {%{"refs" => refs}, index}, {:ok, selected} when is_list(refs) ->
+          case select_runbook_targets(refs, available) do
             {:ok, target_runners} -> {:cont, {:ok, [target_runners | selected]}}
             {:error, :unknown_target} -> {:halt, {:error, {:unknown_target, index}}}
           end
@@ -232,29 +231,39 @@ defmodule Emisar.Runners do
 
   defp runbook_runner(%Runner{}), do: []
 
-  defp select_runbook_targets("group", refs, available) do
+  defp select_runbook_targets(refs, available) do
     grouped = Enum.group_by(available, & &1.group)
-
-    if Enum.all?(refs, &Map.has_key?(grouped, &1)) do
-      selected =
-        refs
-        |> Enum.flat_map(&Map.fetch!(grouped, &1))
-        |> Enum.uniq_by(& &1.id)
-        |> Enum.sort_by(& &1.runner_ref)
-
-      {:ok, selected}
-    else
-      {:error, :unknown_target}
-    end
-  end
-
-  defp select_runbook_targets("runner", refs, available) do
     by_ref = Map.new(available, &{&1.runner_ref, &1})
 
-    if Enum.all?(refs, &Map.has_key?(by_ref, &1)) do
-      {:ok, refs |> Enum.map(&Map.fetch!(by_ref, &1)) |> Enum.sort_by(& &1.runner_ref)}
-    else
-      {:error, :unknown_target}
+    selected =
+      Enum.reduce_while(refs, [], fn
+        "group:" <> group, selected ->
+          case Map.fetch(grouped, group) do
+            {:ok, runners} -> {:cont, runners ++ selected}
+            :error -> {:halt, :unknown_target}
+          end
+
+        "runner:" <> ref, selected ->
+          case Map.fetch(by_ref, ref) do
+            {:ok, runner} -> {:cont, [runner | selected]}
+            :error -> {:halt, :unknown_target}
+          end
+
+        _ref, _selected ->
+          {:halt, :unknown_target}
+      end)
+
+    case selected do
+      :unknown_target ->
+        {:error, :unknown_target}
+
+      selected ->
+        selected =
+          selected
+          |> Enum.uniq_by(& &1.id)
+          |> Enum.sort_by(& &1.runner_ref)
+
+        {:ok, selected}
     end
   end
 

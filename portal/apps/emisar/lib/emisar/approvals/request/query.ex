@@ -18,11 +18,11 @@ defmodule Emisar.Approvals.Request.Query do
   def by_run_ids(queryable, run_ids) when is_list(run_ids),
     do: where(queryable, [requests: r], r.run_id in ^run_ids)
 
-  def by_runbook_execution_stage_id(queryable, stage_id),
-    do: where(queryable, [requests: r], r.runbook_execution_stage_id == ^stage_id)
+  def by_runbook_execution_id(queryable, execution_id),
+    do: where(queryable, [requests: r], r.runbook_execution_id == ^execution_id)
 
-  def by_runbook_execution_stage_ids(queryable, stage_ids) when is_list(stage_ids),
-    do: where(queryable, [requests: r], r.runbook_execution_stage_id in ^stage_ids)
+  def by_runbook_execution_ids(queryable, execution_ids) when is_list(execution_ids),
+    do: where(queryable, [requests: r], r.runbook_execution_id in ^execution_ids)
 
   def by_ids(queryable, ids) when is_list(ids),
     do: where(queryable, [requests: r], r.id in ^ids)
@@ -39,7 +39,7 @@ defmodule Emisar.Approvals.Request.Query do
         queryable,
         %Emisar.Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups}
       ) do
-    disallowed_stage_item =
+    disallowed_execution_item =
       Emisar.Runbooks.ExecutionItem.Query.all()
       |> with_named_binding(:scope_stage_runner, fn queryable, binding ->
         join(
@@ -53,7 +53,7 @@ defmodule Emisar.Approvals.Request.Query do
       end)
       |> where(
         [runbook_execution_items: item, scope_stage_runner: runner],
-        item.runbook_execution_stage_id == parent_as(:requests).runbook_execution_stage_id and
+        item.runbook_execution_id == parent_as(:requests).runbook_execution_id and
           (is_nil(runner.id) or
              (runner.id not in ^runner_ids and runner.group not in ^groups))
       )
@@ -84,8 +84,8 @@ defmodule Emisar.Approvals.Request.Query do
       [requests: request, scope_runner: runner],
       (not is_nil(request.run_id) and
          (runner.id in ^runner_ids or runner.group in ^groups)) or
-        (not is_nil(request.runbook_execution_stage_id) and
-           not exists(disallowed_stage_item))
+        (not is_nil(request.runbook_execution_id) and
+           not exists(disallowed_execution_item))
     )
   end
 
@@ -212,15 +212,15 @@ defmodule Emisar.Approvals.Request.Query do
   end
 
   @doc """
-  Conditional update for an execution-level cancellation. A pending stage
-  request becomes cancelled in the same transaction that closes its execution,
-  so a stale approval cannot make the stage eligible afterward.
+  Conditional update for an execution-level cancellation. Its pending request
+  becomes cancelled in the same transaction that closes the execution, so a
+  stale approval cannot reactivate it afterward.
   """
-  def cancel_pending_by_runbook_execution_stage_id(stage_id, now) do
+  def cancel_pending_by_runbook_execution_id(execution_id, now) do
     all()
     |> where(
       [requests: r],
-      r.runbook_execution_stage_id == ^stage_id and r.status == :pending
+      r.runbook_execution_id == ^execution_id and r.status == :pending
     )
     |> update(
       set: [

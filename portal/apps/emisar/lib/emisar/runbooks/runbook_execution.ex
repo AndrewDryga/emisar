@@ -9,7 +9,11 @@ defmodule Emisar.Runbooks.RunbookExecution do
 
   schema "runbook_executions" do
     field :reason, :string
-    field :status, Ecto.Enum, values: [:active, :succeeded, :halted, :cancelled], default: :active
+
+    field :status, Ecto.Enum,
+      values: [:pending_approval, :active, :succeeded, :halted, :cancelled],
+      default: :active
+
     field :halted_at, :utc_datetime_usec
     field :completed_at, :utc_datetime_usec
     field :last_advanced_at, :utc_datetime_usec
@@ -31,6 +35,7 @@ defmodule Emisar.Runbooks.RunbookExecution do
 
     has_many :stages, Emisar.Runbooks.ExecutionStage
     has_many :items, Emisar.Runbooks.ExecutionItem
+    has_one :approval_request, Emisar.Approvals.Request
 
     timestamps()
   end

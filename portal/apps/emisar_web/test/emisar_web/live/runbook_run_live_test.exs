@@ -69,18 +69,16 @@ defmodule EmisarWeb.RunbookRunLiveTest do
           "Inspect",
           "parallel",
           2,
-          "none",
           [step("inspect", runner.group, opts)]
         )
       ] ++
-        if Keyword.get(opts, :approval_stage, false) do
+        if Keyword.get(opts, :second_stage, false) do
           [
             stage(
               "change",
               "Apply change",
               "sequential",
               1,
-              "required",
               [step("apply", runner.group)]
             )
           ]
@@ -126,15 +124,11 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     published
   end
 
-  defp stage(id, title, mode, max_parallel, approval, steps) do
-    %{
-      "id" => id,
-      "title" => title,
-      "mode" => mode,
-      "max_parallel" => max_parallel,
-      "approval" => approval,
-      "steps" => steps
-    }
+  defp stage(id, title, mode, max_parallel, steps) do
+    Map.merge(
+      %{"id" => id, "title" => title, "mode" => mode, "steps" => steps},
+      if(mode == "parallel", do: %{"max_parallel" => max_parallel}, else: %{})
+    )
   end
 
   defp step(id, group, opts \\ []) do
@@ -164,9 +158,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
     %{
       "id" => id,
-      "pack" => %{"id" => "linux-core", "requirement" => "~> 1.4.0"},
+      "pack" => %{"id" => "linux-core"},
       "action" => "linux.uptime",
-      "targets" => %{"kind" => "group", "refs" => [group]},
+      "targets" => %{"refs" => ["group:" <> group]},
       "args" => bindings,
       "outputs" => outputs,
       "success" => success,
@@ -249,7 +243,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       send(lv.pid, {:run_preflight, 2})
       html = render(lv)
 
-      assert html =~ "Current preflight"
+      assert html =~ "Current plan"
       assert html =~ "Inspect"
       assert html =~ "linux-core@1.4.2/#{@hash}"
       assert has_element?(lv, "#preflight-stage-inspect pre", "[REDACTED]")
@@ -262,7 +256,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   describe "durable staged results" do
-    test "reloads the active execution and exposes its exact immutable item", %{
+    test "the execution URL reloads its exact item while /run starts fresh", %{
       conn: conn,
       account: account,
       subject: subject
@@ -285,10 +279,17 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "View raw action output"
 
       {:ok, _reloaded, reloaded_html} =
-        live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+        live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
 
       assert reloaded_html =~ execution().id
       assert reloaded_html =~ "Execution in progress"
+
+      {:ok, _fresh, fresh_html} =
+        live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      assert fresh_html =~ "Start execution"
+      assert fresh_html =~ execution().id
+      refute fresh_html =~ "Execution in progress"
     end
 
     test "shows extracted outputs and success evidence after completion", %{
@@ -343,7 +344,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       subject: subject
     } do
       runner = trusted_runner(account, subject)
-      runbook = published_runbook(subject, runner, approval_stage: true)
+      runbook = published_runbook(subject, runner, second_stage: true)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       start(lv)
 
@@ -383,44 +384,51 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute html =~ "Execution halted"
     end
 
-    test "a required stage waits without inventing an ActionRun", %{
+    test "a policy-gated run waits once without inventing an ActionRun", %{
       conn: conn,
       account: account,
       subject: subject
     } do
-      runner = trusted_runner(account, subject)
-      runbook = published_runbook(subject, runner, approval_stage: true)
+      _policy =
+        Fixtures.Policies.create_policy(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "allow",
+              "medium" => "allow",
+              "high" => "require_approval",
+              "critical" => "require_approval"
+            },
+            "overrides" => [],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
+          }
+        )
+
+      runner = trusted_runner(account, subject, risk: "high")
+      runbook = published_runbook(subject, runner)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       start(lv)
 
-      assert [run] = Runs.list_runs_for_runbook_execution(account.id, execution().id)
-
-      assert {:ok, _run} =
-               Fixtures.Runs.finish(run, %{
-                 "status" => "success",
-                 "structured_output" => %{"ready" => true}
-               })
-
       assert {:ok, result} = Runbooks.fetch_execution_result(execution().id, subject)
-      assert Enum.map(result.execution.stages, & &1.status) == [:succeeded, :awaiting_approval]
+      assert result.execution.status == :pending_approval
+      assert Enum.map(result.execution.stages, & &1.status) == [:pending]
 
       send(lv.pid, {:runbook_execution_updated, execution().id})
       html = render(lv)
-      assert html =~ "Apply change"
-      assert html =~ "awaiting approval", html |> LazyHTML.from_fragment() |> LazyHTML.text()
-      assert html =~ "approval required"
+      assert html =~ "Execution awaiting approval"
+      assert html =~ "Review run approval"
 
-      assert [_first_stage_only] =
-               Runs.list_runs_for_runbook_execution(account.id, execution().id)
+      assert Runs.list_runs_for_runbook_execution(account.id, execution().id) == []
 
       assert [request] = Repo.all(Emisar.Approvals.Request)
       assert request.run_id == nil
-      assert is_binary(request.runbook_execution_stage_id)
+      assert request.runbook_execution_id == execution().id
 
       assert has_element?(
                lv,
                ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]),
-               "Open approval"
+               "Review run approval"
              )
     end
 

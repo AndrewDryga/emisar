@@ -638,6 +638,7 @@ defmodule Emisar.Audit.Events do
       runbook_id: runbook.id,
       runbook_execution_id: execution.id,
       reason: execution.reason,
+      status: execution.status,
       total: total,
       stages: stages
     })
@@ -671,17 +672,6 @@ defmodule Emisar.Audit.Events do
       code: execution.terminal_code,
       message: execution.terminal_message
     })
-  end
-
-  def runbook_stage_awaiting_approval(
-        %Runbooks.RunbookExecution{} = execution,
-        %Runbooks.ExecutionStage{} = stage
-      ) do
-    runbook_system_event(
-      execution,
-      "runbook.stage_awaiting_approval",
-      stage_payload(execution, stage)
-    )
   end
 
   def runbook_stage_started(

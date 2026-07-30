@@ -122,13 +122,23 @@ defmodule Emisar.Runbooks.CompilerTest do
     assert issue.path == "/stages/0/steps/0/targets"
   end
 
-  test "requires a compatible trusted pack deployment", %{account: account, subject: subject} do
+  test "requires the selected pack to be trusted and deployed", %{
+    account: account,
+    subject: subject
+  } do
     runner = trusted_runner(account, subject)
-    definition = definition(runner.group, requirement: "~> 2.0.0")
+
+    definition =
+      runner.group
+      |> definition()
+      |> put_in(
+        ["stages", Access.at(0), "steps", Access.at(0), "pack", "id"],
+        "missing-pack"
+      )
 
     assert {:error, [issue]} = Compiler.compile(definition, %{}, subject)
-    assert issue.code == "no_compatible_pack"
-    assert issue.path == "/stages/0/steps/0/pack/requirement"
+    assert issue.code == "pack_unavailable"
+    assert issue.path == "/stages/0/steps/0/pack"
   end
 
   test "rejects waits for actions that are not low-risk reads", %{
@@ -252,16 +262,12 @@ defmodule Emisar.Runbooks.CompilerTest do
           "title" => "Inspect",
           "mode" => "parallel",
           "max_parallel" => 5,
-          "approval" => "none",
           "steps" => [
             %{
               "id" => "uptime",
-              "pack" => %{
-                "id" => "linux-core",
-                "requirement" => Keyword.get(opts, :requirement, "~> 1.4.0")
-              },
+              "pack" => %{"id" => "linux-core"},
               "action" => "linux.uptime",
-              "targets" => %{"kind" => "group", "refs" => [group]},
+              "targets" => %{"refs" => ["group:" <> group]},
               "args" => Keyword.get(opts, :args, %{}),
               "outputs" => [],
               "success" => [],

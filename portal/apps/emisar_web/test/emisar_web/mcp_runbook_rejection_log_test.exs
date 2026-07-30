@@ -41,7 +41,7 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     trust_all!(subject)
 
     _runbook =
-      publish_runbook!(subject, "fleet-health", %{"kind" => "group", "refs" => ["fleet"]})
+      publish_runbook!(subject, "fleet-health", %{"refs" => ["group:fleet"]})
 
     sentinel = "sentinel_DO_NOT_LOG_runbook_reason"
 
@@ -53,7 +53,7 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
             "reason" => sentinel
           })
 
-        assert result["error"]["code"] == "no_compatible_pack"
+        assert result["error"]["code"] == "pack_unavailable"
       end)
 
     assert length(String.split(log, "mcp.dispatch_rejected")) == 2
@@ -152,11 +152,10 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
                 "title" => "Inspect",
                 "mode" => "parallel",
                 "max_parallel" => 16,
-                "approval" => "none",
                 "steps" => [
                   %{
                     "id" => "check",
-                    "pack" => %{"id" => "operations", "requirement" => "== 1.0.0"},
+                    "pack" => %{"id" => "operations"},
                     "action" => "operations.health",
                     "targets" => selector,
                     "args" => %{},

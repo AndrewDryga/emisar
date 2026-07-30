@@ -5,7 +5,7 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
   @fields ~w[
     id account_id runbook_id initiating_membership_id requested_by_id api_key_id
     operation_id mcp_operation_record_id reason frozen_plan inputs_raw inputs_sha256
-    sensitive_input_names
+    sensitive_input_names status
   ]a
 
   def create(attrs) do
@@ -40,6 +40,9 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
       terminal_message: nil
     )
   end
+
+  def activate(%RunbookExecution{} = execution),
+    do: change(execution, status: :active)
 
   def halt(%RunbookExecution{} = execution, code, message, now) do
     change(execution,

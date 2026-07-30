@@ -21,7 +21,7 @@ alias Emisar.Catalog.{PackBaseline, PackVersion}
 alias Emisar.Policies
 alias Emisar.Repo
 alias Emisar.Runbooks
-alias Emisar.Runbooks.RunbookExecution
+alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Runbook, RunbookExecution}
 alias Emisar.Runners
 alias Emisar.Runners.Runner
 alias Emisar.Runs
@@ -356,178 +356,180 @@ jordan = invite_member.("jordan@emisar.dev", "Jordan Lee", "admin")
 priya = invite_member.("priya@emisar.dev", "Priya Shah", "operator")
 IO.puts(IO.ANSI.cyan() <> "✓ Teammates: Jordan (admin), Priya (operator)" <> IO.ANSI.reset())
 
-# -- Sample runbook (skip if exists) ---------------------------------
+# -- Sample runbooks -------------------------------------------------
 
 {:ok, runbooks, _metadata} = Runbooks.list_runbooks(owner_subject)
-morning_runbook = Enum.find(runbooks, &(&1.slug == "morning-edge-readiness"))
 
-unless morning_runbook do
-  {:ok, _rb} =
-    Runbooks.create_published_runbook(
-      %{
-        name: "morning-edge-readiness",
-        slug: "morning-edge-readiness",
-        title: "Morning edge readiness",
-        description:
-          "08:00 UTC check across the edge-web group before the EU traffic peak: " <>
-            "host load, disk pressure, and memory health.",
-        definition: %{
-          "schema_version" => 1,
-          "context_markdown" =>
-            "## Before you run\n\n- Confirm the morning readiness window.\n- Escalate any failed check before shifting traffic.",
-          "inputs" => [],
-          "stages" => [
-            %{
-              "id" => "inspect",
-              "title" => "Inspect edge readiness",
-              "mode" => "parallel",
-              "max_parallel" => 3,
-              "approval" => "none",
-              "steps" => [
-                %{
-                  "id" => "uptime",
-                  "pack" => %{
-                    "id" => "linux-core",
-                    "requirement" => ">= 0.0.0 and < 100.0.0"
-                  },
-                  "action" => "linux.uptime",
-                  "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
-                  "args" => %{},
-                  "outputs" => [],
-                  "success" => [],
-                  "wait" => nil
-                },
-                %{
-                  "id" => "disk",
-                  "pack" => %{
-                    "id" => "linux-core",
-                    "requirement" => ">= 0.0.0 and < 100.0.0"
-                  },
-                  "action" => "linux.disk_usage",
-                  "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
-                  "args" => %{},
-                  "outputs" => [],
-                  "success" => [],
-                  "wait" => nil
-                },
-                %{
-                  "id" => "memory",
-                  "pack" => %{
-                    "id" => "linux-core",
-                    "requirement" => ">= 0.0.0 and < 100.0.0"
-                  },
-                  "action" => "linux.memory",
-                  "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
-                  "args" => %{},
-                  "outputs" => [],
-                  "success" => [],
-                  "wait" => nil
-                }
-              ]
-            }
-          ]
+morning_definition = %{
+  "schema_version" => 1,
+  "context_markdown" =>
+    "## Before you run\n\n- Confirm the morning readiness window.\n- Escalate any failed check before shifting traffic.",
+  "inputs" => [],
+  "stages" => [
+    %{
+      "id" => "inspect",
+      "title" => "Inspect edge readiness",
+      "mode" => "parallel",
+      "max_parallel" => 3,
+      "steps" => [
+        %{
+          "id" => "uptime",
+          "pack" => %{"id" => "linux-core"},
+          "action" => "linux.uptime",
+          "targets" => %{"refs" => ["group:edge-web"]},
+          "args" => %{},
+          "outputs" => [],
+          "success" => [],
+          "wait" => nil
+        },
+        %{
+          "id" => "disk",
+          "pack" => %{"id" => "linux-core"},
+          "action" => "linux.disk_usage",
+          "targets" => %{"refs" => ["group:edge-web"]},
+          "args" => %{},
+          "outputs" => [],
+          "success" => [],
+          "wait" => nil
+        },
+        %{
+          "id" => "memory",
+          "pack" => %{"id" => "linux-core"},
+          "action" => "linux.memory",
+          "targets" => %{"refs" => ["group:edge-web"]},
+          "args" => %{},
+          "outputs" => [],
+          "success" => [],
+          "wait" => nil
         }
-      },
-      owner_subject
-    )
+      ]
+    }
+  ]
+}
 
-  IO.puts(IO.ANSI.cyan() <> "✓ Seeded sample runbook" <> IO.ANSI.reset())
-end
+morning_attrs = %{
+  name: "morning-edge-readiness",
+  slug: "morning-edge-readiness",
+  title: "Morning edge readiness",
+  description:
+    "08:00 UTC check across the edge-web group before the EU traffic peak: " <>
+      "host load, disk pressure, and memory health.",
+  definition: morning_definition
+}
+
+_morning_runbook =
+  case Enum.find(runbooks, &(&1.slug == "morning-edge-readiness")) do
+    nil ->
+      {:ok, runbook} = Runbooks.create_published_runbook(morning_attrs, owner_subject)
+      IO.puts(IO.ANSI.cyan() <> "✓ Seeded empty-history sample runbook" <> IO.ANSI.reset())
+      runbook
+
+    runbook ->
+      {:ok, runbook} =
+        runbook
+        |> Runbook.Changeset.update(morning_attrs)
+        |> Repo.update()
+
+      runbook
+  end
+
+approval_definition = %{
+  "schema_version" => 1,
+  "context_markdown" =>
+    "## Change window\n\n" <>
+      "- Confirm the candidate config has passed `caddy validate`.\n" <>
+      "- Keep the incident channel open while both edge nodes reload.\n\n" <>
+      "## Rollback\n\n" <>
+      "Restore the previous config and run this runbook again with its path.",
+  "inputs" => [
+    %{
+      "id" => "config_path",
+      "description" => "Absolute path to the validated Caddy configuration.",
+      "type" => "string",
+      "required" => false,
+      "sensitive" => false,
+      "default" => "/etc/caddy/Caddyfile",
+      "min_length" => 1,
+      "max_length" => 256
+    }
+  ],
+  "stages" => [
+    %{
+      "id" => "reload",
+      "title" => "Reload edge configuration",
+      "mode" => "parallel",
+      "max_parallel" => 2,
+      "steps" => [
+        %{
+          "id" => "reload_caddy",
+          "pack" => %{"id" => "caddy"},
+          "action" => "caddy.reload_config",
+          "targets" => %{"refs" => ["group:edge-web"]},
+          "args" => %{
+            "file" => %{"source" => "input", "ref" => "config_path"}
+          },
+          "outputs" => [],
+          "success" => [],
+          "wait" => nil
+        }
+      ]
+    },
+    %{
+      "id" => "verify",
+      "title" => "Verify the edge fleet",
+      "mode" => "parallel",
+      "max_parallel" => 2,
+      "steps" => [
+        %{
+          "id" => "check_version",
+          "pack" => %{"id" => "caddy"},
+          "action" => "caddy.version",
+          "targets" => %{"refs" => ["group:edge-web"]},
+          "args" => %{},
+          "outputs" => [],
+          "success" => [],
+          "wait" => nil
+        },
+        %{
+          "id" => "check_upstreams",
+          "pack" => %{"id" => "caddy"},
+          "action" => "caddy.reverse_proxy_upstreams",
+          "targets" => %{"refs" => ["group:edge-web"]},
+          "args" => %{},
+          "outputs" => [],
+          "success" => [],
+          "wait" => nil
+        }
+      ]
+    }
+  ]
+}
+
+approval_attrs = %{
+  name: "edge-configuration-rollout",
+  slug: "edge-configuration-rollout",
+  title: "Edge configuration rollout",
+  description:
+    "Reload a validated Caddy configuration across the edge fleet, " <>
+      "then verify the running version and upstream health.",
+  definition: approval_definition
+}
 
 approval_runbook =
   case Enum.find(runbooks, &(&1.slug == "edge-configuration-rollout")) do
     nil ->
-      {:ok, runbook} =
-        Runbooks.create_published_runbook(
-          %{
-            name: "edge-configuration-rollout",
-            slug: "edge-configuration-rollout",
-            title: "Edge configuration rollout",
-            description:
-              "Reload a validated Caddy configuration across the edge fleet, " <>
-                "then verify the running version and upstream health.",
-            definition: %{
-              "schema_version" => 1,
-              "context_markdown" =>
-                "## Change window\n\n" <>
-                  "- Confirm the candidate config has passed `caddy validate`.\n" <>
-                  "- Keep the incident channel open while both edge nodes reload.\n\n" <>
-                  "## Rollback\n\n" <>
-                  "Restore the previous config and run this runbook again with its path.",
-              "inputs" => [
-                %{
-                  "id" => "config_path",
-                  "description" => "Absolute path to the validated Caddy configuration.",
-                  "type" => "string",
-                  "required" => false,
-                  "sensitive" => false,
-                  "default" => "/etc/caddy/Caddyfile",
-                  "min_length" => 1,
-                  "max_length" => 256
-                }
-              ],
-              "stages" => [
-                %{
-                  "id" => "reload",
-                  "title" => "Reload edge configuration",
-                  "mode" => "parallel",
-                  "max_parallel" => 2,
-                  "approval" => "required",
-                  "steps" => [
-                    %{
-                      "id" => "reload_caddy",
-                      "pack" => %{"id" => "caddy", "requirement" => "~> 0.1.0"},
-                      "action" => "caddy.reload_config",
-                      "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
-                      "args" => %{
-                        "file" => %{"source" => "input", "ref" => "config_path"}
-                      },
-                      "outputs" => [],
-                      "success" => [],
-                      "wait" => nil
-                    }
-                  ]
-                },
-                %{
-                  "id" => "verify",
-                  "title" => "Verify the edge fleet",
-                  "mode" => "parallel",
-                  "max_parallel" => 2,
-                  "approval" => "none",
-                  "steps" => [
-                    %{
-                      "id" => "check_version",
-                      "pack" => %{"id" => "caddy", "requirement" => "~> 0.1.0"},
-                      "action" => "caddy.version",
-                      "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
-                      "args" => %{},
-                      "outputs" => [],
-                      "success" => [],
-                      "wait" => nil
-                    },
-                    %{
-                      "id" => "check_upstreams",
-                      "pack" => %{"id" => "caddy", "requirement" => "~> 0.1.0"},
-                      "action" => "caddy.reverse_proxy_upstreams",
-                      "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
-                      "args" => %{},
-                      "outputs" => [],
-                      "success" => [],
-                      "wait" => nil
-                    }
-                  ]
-                }
-              ]
-            }
-          },
-          owner_subject
-        )
+      {:ok, runbook} = Runbooks.create_published_runbook(approval_attrs, owner_subject)
 
       IO.puts(IO.ANSI.cyan() <> "✓ Seeded edge configuration rollout runbook" <> IO.ANSI.reset())
 
       runbook
 
     runbook ->
+      {:ok, runbook} =
+        runbook
+        |> Runbook.Changeset.update(approval_attrs)
+        |> Repo.update()
+
       runbook
   end
 
@@ -808,103 +810,184 @@ IO.puts(
     IO.ANSI.reset()
 )
 
-# -- Runbook execution awaiting stage approval -----------------------
+# -- Runbook execution history + whole-run approval ------------------
 #
-# Keep one production-shaped stage request ready for the approvals UI. If an
-# operator already approved, denied, or cancelled the seeded request, rerunning
-# seeds restores the intended demo state without accumulating active executions.
+# The readiness runbook intentionally stays empty. The rollout runbook carries
+# one success, one denied execution, and one current whole-plan approval so the
+# console's empty, history, and pending states are all visible after one reset.
+# These rows are demo fixtures, so rerunning seeds replaces only this runbook's
+# executions instead of accumulating another story.
 
-approval_execution_ids =
-  RunbookExecution.Query.by_runbook_id(approval_runbook.id)
-  |> RunbookExecution.Query.active()
-  |> Repo.all()
-  |> MapSet.new(& &1.id)
+RunbookExecution.Query.by_runbook_id(approval_runbook.id)
+|> Repo.delete_all()
 
-pending_execution_id =
-  ApprovalRequest.Query.all()
-  |> ApprovalRequest.Query.by_account_id(account.id)
-  |> ApprovalRequest.Query.pending()
-  |> ApprovalRequest.Query.ordered_by_recent()
-  |> Repo.all()
-  |> Enum.find_value(fn
-    %ApprovalRequest{
-      context: %{"kind" => "runbook_stage", "execution_id" => execution_id}
-    } ->
-      if MapSet.member?(approval_execution_ids, execution_id), do: execution_id
-
-    _request ->
-      nil
+temporary_connections =
+  runners
+  |> Enum.filter(&(&1.group == "edge-web"))
+  |> Enum.flat_map(fn runner ->
+    if Runners.online?(account.id, runner.id) do
+      []
+    else
+      case Runners.connect_runner(runner) do
+        {:ok, connected} -> [connected]
+        {:error, :already_connected} -> []
+      end
+    end
   end)
 
-stale_execution_ids =
-  if pending_execution_id do
-    MapSet.delete(approval_execution_ids, pending_execution_id)
-  else
-    approval_execution_ids
+fetch_execution_request = fn execution_id ->
+  ApprovalRequest.Query.all()
+  |> ApprovalRequest.Query.by_runbook_execution_id(execution_id)
+  |> Repo.one!()
+end
+
+dispatch_seed_execution = fn reason ->
+  {:ok, %{execution_id: execution_id, runs: []}} =
+    Runbooks.dispatch_runbook(approval_runbook, reason, owner_subject)
+
+  %RunbookExecution{status: :pending_approval} =
+    RunbookExecution.Query.by_id(execution_id)
+    |> Repo.one!()
+
+  execution_id
+end
+
+jordan_membership = Accounts.peek_sync_membership(account.id, jordan.id)
+jordan_subject = Subject.for_user(jordan, account, jordan_membership)
+
+seeded_execution_ids =
+  try do
+    succeeded_id =
+      dispatch_seed_execution.(
+        "Reload the validated Caddyfile during the completed Tuesday maintenance window."
+      )
+
+    halted_id =
+      dispatch_seed_execution.(
+        "Reload the edge configuration before the change window has opened."
+      )
+
+    halted_request = fetch_execution_request.(halted_id)
+
+    {:ok, {%ApprovalRequest{status: :denied}, :runbook_execution}} =
+      Approvals.deny_request(
+        halted_request,
+        jordan_subject,
+        "Wait for the approved change window."
+      )
+
+    pending_id =
+      dispatch_seed_execution.(
+        "Roll out the validated Caddyfile during the scheduled edge maintenance window."
+      )
+
+    %{succeeded: succeeded_id, halted: halted_id, pending: pending_id}
+  after
+    Enum.each(temporary_connections, fn connected ->
+      {:ok, disconnected} =
+        Runners.mark_disconnected(
+          connected.id,
+          connected.connection_generation,
+          connected.connection_lease_id,
+          "seed preflight complete"
+        )
+
+      spec = Enum.find(runner_specs, &(&1.name == disconnected.name))
+      stamp_runner_state.(disconnected, spec)
+    end)
   end
 
-Enum.each(stale_execution_ids, fn execution_id ->
-  {:ok, _cancelled} = Runbooks.cancel_execution(execution_id, owner_subject)
+backdate_execution = fn execution_id, timestamp ->
+  RunbookExecution.Query.by_id(execution_id)
+  |> Repo.one!()
+  |> Ecto.Changeset.change(inserted_at: timestamp, updated_at: timestamp)
+  |> Repo.update!()
+
+  ExecutionStage.Query.by_execution_id(execution_id)
+  |> Repo.update_all(set: [inserted_at: timestamp, updated_at: timestamp])
+
+  ExecutionItem.Query.by_execution_id(execution_id)
+  |> Repo.update_all(set: [inserted_at: timestamp, updated_at: timestamp])
+
+  ApprovalRequest.Query.all()
+  |> ApprovalRequest.Query.by_runbook_execution_id(execution_id)
+  |> Repo.update_all(
+    set: [
+      requested_at: timestamp,
+      expires_at: DateTime.add(timestamp, 24 * 3600, :second),
+      inserted_at: timestamp,
+      updated_at: timestamp
+    ]
+  )
+end
+
+succeeded_at = hours_ago.(4)
+succeeded_finished_at = DateTime.add(succeeded_at, 18, :second)
+succeeded_request = fetch_execution_request.(seeded_execution_ids.succeeded)
+
+succeeded_request
+|> Ecto.Changeset.change(
+  status: :approved,
+  decided_by_id: jordan.id,
+  decided_at: DateTime.add(succeeded_at, 5, :second),
+  decision_reason: "Validated config, drained connections, and an open change window."
+)
+|> Repo.update!()
+
+ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
+|> Repo.all()
+|> Enum.each(fn item ->
+  item
+  |> ExecutionItem.Changeset.succeed(%{}, nil, nil, [], succeeded_finished_at)
+  |> Repo.update!()
 end)
 
-unless pending_execution_id do
-  # A real dispatch resolves only runners that are online in Presence. Dev
-  # runners may not be running while seeds load, so briefly claim the two edge
-  # rows through the real connection lifecycle, freeze the plan, then restore
-  # their seeded last-seen history.
-  temporary_connections =
-    runners
-    |> Enum.filter(&(&1.group == "edge-web"))
-    |> Enum.flat_map(fn runner ->
-      if Runners.online?(account.id, runner.id) do
-        []
-      else
-        case Runners.connect_runner(runner) do
-          {:ok, connected} -> [connected]
-          {:error, :already_connected} -> []
-        end
-      end
-    end)
+ExecutionStage.Query.by_execution_id(seeded_execution_ids.succeeded)
+|> Repo.all()
+|> Enum.each(fn stage ->
+  stage
+  |> ExecutionStage.Changeset.succeed(succeeded_finished_at)
+  |> Ecto.Changeset.change(started_at: DateTime.add(succeeded_at, 6, :second))
+  |> Repo.update!()
+end)
 
-  dispatch_result =
-    try do
-      Runbooks.dispatch_runbook(
-        approval_runbook,
-        "Roll out the validated Caddyfile during the scheduled edge maintenance window.",
-        owner_subject
-      )
-    after
-      Enum.each(temporary_connections, fn connected ->
-        {:ok, disconnected} =
-          Runners.mark_disconnected(
-            connected.id,
-            connected.connection_generation,
-            connected.connection_lease_id,
-            "seed preflight complete"
-          )
+RunbookExecution.Query.by_id(seeded_execution_ids.succeeded)
+|> Repo.one!()
+|> RunbookExecution.Changeset.succeed(succeeded_finished_at)
+|> Repo.update!()
 
-        spec = Enum.find(runner_specs, &(&1.name == disconnected.name))
-        stamp_runner_state.(disconnected, spec)
-      end)
-    end
+backdate_execution.(seeded_execution_ids.succeeded, succeeded_at)
+halted_at = days_ago.(1)
+halted_finished_at = DateTime.add(halted_at, 3, :second)
+backdate_execution.(seeded_execution_ids.halted, halted_at)
 
-  {:ok, %{execution_id: execution_id}} = dispatch_result
+RunbookExecution.Query.by_id(seeded_execution_ids.halted)
+|> Repo.update_all(
+  set: [
+    halted_at: halted_finished_at,
+    completed_at: halted_finished_at,
+    updated_at: halted_finished_at
+  ]
+)
 
-  {:ok, %{execution: execution}} =
-    Runbooks.fetch_execution_result(execution_id, owner_subject)
+ExecutionStage.Query.by_execution_id(seeded_execution_ids.halted)
+|> Repo.update_all(set: [finished_at: halted_finished_at, updated_at: halted_finished_at])
 
-  awaiting_stage = Enum.find(execution.stages, &(&1.status == :awaiting_approval))
-  true = not is_nil(awaiting_stage)
+ExecutionItem.Query.by_execution_id(seeded_execution_ids.halted)
+|> Repo.update_all(set: [finished_at: halted_finished_at, updated_at: halted_finished_at])
 
-  %ApprovalRequest{status: :pending} =
-    ApprovalRequest.Query.all()
-    |> ApprovalRequest.Query.by_runbook_execution_stage_id(awaiting_stage.id)
-    |> Repo.one()
-end
+ApprovalRequest.Query.all()
+|> ApprovalRequest.Query.by_runbook_execution_id(seeded_execution_ids.halted)
+|> Repo.update_all(set: [decided_at: halted_finished_at, updated_at: halted_finished_at])
+
+backdate_execution.(seeded_execution_ids.pending, mins_ago.(8))
+
+%ApprovalRequest{status: :pending} =
+  fetch_execution_request.(seeded_execution_ids.pending)
 
 IO.puts(
   IO.ANSI.cyan() <>
-    "✓ Edge configuration rollout is waiting for stage approval" <>
+    "✓ Seeded runbook empty state, execution history, and whole-run approval" <>
     IO.ANSI.reset()
 )
 

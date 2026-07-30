@@ -45,8 +45,8 @@ defmodule Emisar.Fixtures.Approvals do
     end
   end
 
-  @doc "Persists an awaiting runbook-stage request for approval UI tests."
-  def create_stage_request(account, requested_by, attrs \\ %{}) do
+  @doc "Persists one pending whole-execution request for approval UI tests."
+  def create_execution_request(account, requested_by, attrs \\ %{}) do
     attrs = Map.new(attrs)
 
     runbook =
@@ -65,7 +65,6 @@ defmodule Emisar.Fixtures.Approvals do
           "title" => "Apply database change",
           "mode" => "parallel",
           "max_parallel" => 2,
-          "approval" => "required",
           "items" => [
             %{
               "action" => "postgres.config_validate",
@@ -94,11 +93,12 @@ defmodule Emisar.Fixtures.Approvals do
         reason: attrs[:reason] || "Apply the reviewed database settings",
         frozen_plan: %{"schema_version" => 1, "stages" => [stage_plan]},
         inputs_raw: "{}",
-        inputs_sha256: String.duplicate("0", 64)
+        inputs_sha256: String.duplicate("0", 64),
+        status: :pending_approval
       })
       |> Repo.insert!()
 
-    stage =
+    _stage =
       Runbooks.ExecutionStage.Changeset.create(%{
         id: Ecto.UUID.generate(),
         account_id: account.id,
@@ -108,14 +108,13 @@ defmodule Emisar.Fixtures.Approvals do
         title: stage_plan["title"],
         mode: stage_plan["mode"],
         max_parallel: stage_plan["max_parallel"],
-        approval: :required,
-        status: :awaiting_approval
+        status: :pending
       })
       |> Repo.insert!()
 
     Approvals.Request.Changeset.create(%{
       account_id: account.id,
-      runbook_execution_stage_id: stage.id,
+      runbook_execution_id: execution.id,
       requested_by_id: requested_by.id,
       requested_at: DateTime.utc_now(),
       expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
@@ -123,9 +122,14 @@ defmodule Emisar.Fixtures.Approvals do
       min_approvals: attrs[:min_approvals] || 1,
       allow_self_approval: Map.get(attrs, :allow_self_approval, true),
       context: %{
-        "kind" => "runbook_stage",
+        "kind" => "runbook_execution",
         "execution_id" => execution.id,
-        "stage" => stage_plan
+        "runbook" => %{
+          "id" => runbook.id,
+          "title" => runbook.title,
+          "version" => runbook.version
+        },
+        "plan" => execution.frozen_plan
       }
     })
     |> Repo.insert!()

@@ -2,23 +2,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   @moduledoc false
 
   use EmisarWeb, :html
-
-  defp target_options("runner", _groups, runner_options, selected),
-    do: preserve_selected(runner_options, selected)
-
-  defp target_options(_kind, groups, _runner_options, selected),
-    do: preserve_selected(Enum.map(groups, &{&1, &1}), selected)
-
-  defp preserve_selected(options, selected) do
-    known = MapSet.new(options, &elem(&1, 1))
-
-    selected =
-      Enum.reject(selected, fn value ->
-        is_nil(value) or (is_binary(value) and String.trim(value) == "")
-      end)
-
-    options ++ for(value <- selected, not MapSet.member?(known, value), do: {value, value})
-  end
+  alias EmisarWeb.RunbookEditorCatalog
 
   defp available_output_refs(draft, stage_index) do
     draft["stages"]
@@ -39,34 +23,27 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp reference_options(_source, _draft, _stage_index), do: []
 
-  defp step_risk(catalog, step), do: get_in(catalog, [step["action"], :risk])
-
-  defp action_options(catalog, pack_id, selected) do
-    options =
-      catalog
-      |> Enum.filter(fn {_action_id, action} -> Enum.any?(action.packs, &(&1.id == pack_id)) end)
-      |> Enum.map(fn {action_id, action} ->
-        label = if action.title, do: "#{action.title} · #{action_id}", else: action_id
-        {label, action_id}
-      end)
-      |> Enum.sort()
-
-    preserve_selected(options, List.wrap(selected))
-  end
-
   defp argument_label(argument) do
-    suffix = if argument["required"] == "true", do: "", else: " · optional"
-    "#{argument["name"]} · #{argument["type"]}#{suffix}"
+    suffix = if argument["required"] == "true", do: "required", else: "optional"
+    "#{argument["name"]} · #{argument["type"]} · #{suffix}"
   end
 
-  defp argument_source_options(%{"sensitive" => "true"}),
+  defp argument_source_options(%{"required" => "true", "sensitive" => "true"}),
     do: [{"Run-time input", "input"}, {"Prior output", "output"}]
 
-  defp argument_source_options(_argument),
+  defp argument_source_options(%{"required" => "true"}),
     do: [{"Literal", "literal"}, {"Run-time input", "input"}, {"Prior output", "output"}]
 
-  defp pack_options(pack_ids, selected),
-    do: pack_ids |> Enum.map(&{&1, &1}) |> preserve_selected(List.wrap(selected))
+  defp argument_source_options(%{"sensitive" => "true"}),
+    do: [{"Omit", "omit"}, {"Run-time input", "input"}, {"Prior output", "output"}]
+
+  defp argument_source_options(_argument),
+    do: [
+      {"Omit", "omit"},
+      {"Literal", "literal"},
+      {"Run-time input", "input"},
+      {"Prior output", "output"}
+    ]
 
   defp populated_step?(step) do
     String.trim(step["action"] || "") != "" or step["target_refs"] != [] or step["args"] != [] or
@@ -80,9 +57,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :total_stages, :integer, required: true
   attr :draft, :map, required: true
   attr :catalog, :map, required: true
-  attr :pack_ids, :list, required: true
-  attr :groups, :list, required: true
-  attr :runner_options, :list, required: true
+  attr :open_panels, :any, required: true
   attr :read_only?, :boolean, required: true
 
   def stage_editor(assigns) do
@@ -123,7 +98,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         </div>
       </div>
 
-      <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
         <.input
           name={"draft[stages][#{@stage_index}][title]"}
           value={@stage["title"]}
@@ -140,47 +115,41 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           disabled={@read_only?}
           options={[{"Sequential", "sequential"}, {"Parallel", "parallel"}]}
         />
-        <div>
+        <div :if={@stage["mode"] == "parallel"} class="sm:col-span-2 sm:max-w-xs">
           <.input
             type="number"
             min="1"
             max="16"
             name={"draft[stages][#{@stage_index}][max_parallel]"}
             value={@stage["max_parallel"]}
-            label="Max concurrent runs"
+            label="Maximum concurrent actions"
             label_variant={:eyebrow}
             disabled={@read_only?}
           />
           <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-            Caps runner fan-out. Sequential mode still keeps step order.
+            Caps fan-out within this stage.
           </p>
         </div>
-        <.input
-          type="select"
-          name={"draft[stages][#{@stage_index}][approval]"}
-          value={@stage["approval"]}
-          label="Before stage"
-          label_variant={:eyebrow}
-          disabled={@read_only?}
-          options={[{"No stage approval", "none"}, {"Require approval", "required"}]}
-        />
       </div>
 
-      <details class="mt-3">
-        <summary class="cursor-pointer text-xs font-medium text-zinc-400 hover:text-zinc-200">
-          Stage identifier
-        </summary>
-        <div class="mt-3 max-w-sm">
-          <.input
-            name={"draft[stages][#{@stage_index}][id]"}
-            value={@stage["id"]}
-            label="Stage ID"
-            label_variant={:eyebrow}
-            disabled={@read_only?}
-            class="font-mono text-xs"
-          />
-        </div>
-      </details>
+      <.panel_toggle
+        panel_key={"stage-id-#{@stage_index}"}
+        open?={MapSet.member?(@open_panels, "stage-id-#{@stage_index}")}
+        label="Stage identifier"
+      />
+      <div
+        :if={MapSet.member?(@open_panels, "stage-id-#{@stage_index}")}
+        class="mt-3 max-w-sm"
+      >
+        <.input
+          name={"draft[stages][#{@stage_index}][id]"}
+          value={@stage["id"]}
+          label="Stage ID"
+          label_variant={:eyebrow}
+          disabled={@read_only?}
+          class="font-mono text-xs"
+        />
+      </div>
 
       <div class="mt-6 space-y-4">
         <.step_editor
@@ -191,9 +160,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           stage_index={@stage_index}
           draft={@draft}
           catalog={@catalog}
-          pack_ids={@pack_ids}
-          groups={@groups}
-          runner_options={@runner_options}
+          open_panels={@open_panels}
           read_only?={@read_only?}
         />
       </div>
@@ -215,37 +182,48 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :stage_index, :integer, required: true
   attr :draft, :map, required: true
   attr :catalog, :map, required: true
-  attr :pack_ids, :list, required: true
-  attr :groups, :list, required: true
-  attr :runner_options, :list, required: true
+  attr :open_panels, :any, required: true
   attr :read_only?, :boolean, required: true
 
   defp step_editor(assigns) do
+    choice = RunbookEditorCatalog.action_value(assigns.step["pack_id"], assigns.step["action"])
+
     assigns =
       assigns
-      |> assign(:risk, step_risk(assigns.catalog, assigns.step))
+      |> assign(:action_choice, choice)
       |> assign(
-        :targets,
-        target_options(
-          assigns.step["target_kind"],
-          assigns.groups,
-          assigns.runner_options,
-          assigns.step["target_refs"]
+        :action_options,
+        RunbookEditorCatalog.action_options(
+          assigns.catalog,
+          assigns.step["target_refs"],
+          choice
         )
       )
       |> assign(
-        :pack_options,
-        pack_options(assigns.pack_ids, assigns.step["pack_id"])
+        :target_options,
+        RunbookEditorCatalog.target_options(assigns.catalog, assigns.step["target_refs"])
       )
       |> assign(
-        :action_options,
-        action_options(assigns.catalog, assigns.step["pack_id"], assigns.step["action"])
+        :action_available?,
+        RunbookEditorCatalog.action_available?(
+          assigns.catalog,
+          assigns.step["target_refs"],
+          choice
+        )
+      )
+      |> assign(
+        :risk,
+        RunbookEditorCatalog.risk(
+          assigns.catalog,
+          assigns.step["pack_id"],
+          assigns.step["action"]
+        )
       )
 
     ~H"""
     <section
       id={"runbook-stage-#{@stage_index}-step-#{@step_index}"}
-      class="rounded-xl border border-dashed border-zinc-800 p-5"
+      class="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5"
     >
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2">
@@ -285,91 +263,91 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         </div>
       </div>
 
-      <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <.input
-          type="select"
-          name={"draft[stages][#{@stage_index}][steps][#{@step_index}][pack_id]"}
-          value={@step["pack_id"]}
-          label="Pack"
-          label_variant={:eyebrow}
-          disabled={@read_only?}
-          options={@pack_options}
-          prompt="Choose pack"
-        />
-        <div class="sm:col-span-2">
-          <.input
-            type="select"
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][action]"}
-            value={@step["action"]}
-            label="Action"
-            label_variant={:eyebrow}
-            disabled={@read_only? or @step["pack_id"] == ""}
-            options={@action_options}
-            prompt="Choose action"
-            class="font-mono text-xs"
+      <div class="mt-5 grid gap-6 lg:grid-cols-2">
+        <div>
+          <.label variant={:eyebrow}>Targets</.label>
+          <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+            Choose runners first. The action list is limited to work available everywhere selected.
+          </p>
+
+          <div :if={@step["target_refs"] != []} class="mt-3 space-y-2">
+            <div
+              :for={target <- @step["target_refs"]}
+              class="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 px-3 py-2"
+            >
+              <span class="min-w-0 truncate text-sm text-zinc-200">
+                {RunbookEditorCatalog.target_label(@catalog, target)}
+              </span>
+              <.icon_button
+                icon="hero-x-mark"
+                label="Remove target"
+                phx-click="remove_target"
+                phx-value-stage={@stage_index}
+                phx-value-step={@step_index}
+                phx-value-target={target}
+                disabled={@read_only?}
+              />
+            </div>
+          </div>
+
+          <.select
+            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][target_candidate]"}
+            options={@target_options}
+            prompt={
+              if @catalog.target_options == [],
+                do: "No online runners available",
+                else: "Add a runner or group…"
+            }
+            prompt_selected
+            disabled={@read_only? or @catalog.target_options == []}
+            class="mt-3"
+            aria-label="Add target"
           />
         </div>
-        <.input
-          type="select"
-          name={"draft[stages][#{@stage_index}][steps][#{@step_index}][target_kind]"}
-          value={@step["target_kind"]}
-          label="Target by"
-          label_variant={:eyebrow}
-          disabled={@read_only?}
-          options={[{"Runner group", "group"}, {"Exact runner", "runner"}]}
-        />
-        <div class="sm:col-span-2">
-          <.label variant={:eyebrow}>Targets</.label>
-          <.checkbox_list
-            id={"stage-#{@stage_index}-step-#{@step_index}-targets"}
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][target_refs][]"}
-            options={
-              Enum.map(@targets, fn {label, value} ->
-                %{
-                  label: label,
-                  value: value,
-                  selected: value in @step["target_refs"],
-                  disabled: @read_only?
-                }
-              end)
-            }
-            class="mt-1"
+
+        <div>
+          <.label variant={:eyebrow}>Action</.label>
+          <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+            Pack selection follows the action automatically. Current pack drift blocks publication
+            and execution until this step is fixed.
+          </p>
+          <.select
+            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][action_choice]"}
+            options={@action_options}
+            prompt={if @step["target_refs"] == [], do: "Choose targets first", else: "Choose action…"}
+            prompt_selected={@action_choice == ""}
+            disabled={@read_only? or @step["target_refs"] == []}
+            class="mt-3"
+            aria-label="Action"
           />
-          <p :if={@targets == []} class="mt-1 text-[11px] text-zinc-400">
-            No matching runners are currently visible.
+          <p
+            :if={@action_choice != "" and not @action_available?}
+            class="mt-2 text-xs leading-relaxed text-rose-300"
+          >
+            This action is not available on every selected runner. Choose another action or update
+            the targets.
           </p>
         </div>
       </div>
 
-      <details class="mt-4">
-        <summary class="cursor-pointer text-xs font-medium text-zinc-400 hover:text-zinc-200">
-          Version and identifiers
-        </summary>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2">
-          <.input
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
-            value={@step["id"]}
-            label="Step ID"
-            label_variant={:eyebrow}
-            disabled={@read_only?}
-            class="font-mono text-xs"
-          />
-          <div>
-            <.input
-              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][pack_requirement]"}
-              value={@step["pack_requirement"]}
-              label="Version requirement"
-              label_variant={:eyebrow}
-              disabled={@read_only?}
-              class="font-mono text-xs"
-              placeholder="~> 1.4.0"
-            />
-            <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-              Examples: <code>== 1.4.2</code>, <code>~&gt; 1.4.0</code>, or <code>&gt;= 1.4.0 and &lt; 2.0.0</code>.
-            </p>
-          </div>
-        </div>
-      </details>
+      <.panel_toggle
+        panel_key={"step-id-#{@stage_index}-#{@step_index}"}
+        open?={MapSet.member?(@open_panels, "step-id-#{@stage_index}-#{@step_index}")}
+        label="Step identifier"
+      />
+      <div
+        :if={MapSet.member?(@open_panels, "step-id-#{@stage_index}-#{@step_index}")}
+        class="mt-3 max-w-sm"
+      >
+        <.input
+          name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
+          value={@step["id"]}
+          label="Step ID"
+          label_variant={:eyebrow}
+          disabled={@read_only?}
+          class="font-mono text-xs"
+        />
+      </div>
 
       <.bindings_editor
         step={@step}
@@ -390,10 +368,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         step_index={@step_index}
         read_only?={@read_only?}
       />
-      <.wait_editor
+      <.retry_editor
         wait={@step["wait"]}
         stage_index={@stage_index}
         step_index={@step_index}
+        open_panels={@open_panels}
         read_only?={@read_only?}
       />
     </section>
@@ -409,13 +388,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp bindings_editor(assigns) do
     ~H"""
     <div class="mt-6 border-t border-zinc-800/70 pt-5">
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold text-zinc-200">Arguments and bindings</p>
-          <p class="mt-0.5 text-[11px] text-zinc-400">
-            Bind a whole literal, run-time input, or earlier-stage output.
-          </p>
-        </div>
+      <div>
+        <p class="text-xs font-semibold text-zinc-200">Arguments</p>
+        <p class="mt-0.5 text-[11px] text-zinc-400">
+          Omit an optional argument or bind it from a literal, run-time input, or earlier output.
+        </p>
       </div>
 
       <p :if={@step["action"] == ""} class="mt-3 text-xs text-zinc-500">
@@ -431,21 +408,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           :for={{argument, index} <- Enum.with_index(@step["args"])}
           class="rounded-lg border border-zinc-800/70 p-3"
         >
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="font-mono text-xs font-medium text-zinc-200">
-              {argument_label(argument)}
-            </p>
-            <.input
-              :if={argument["required"] != "true"}
-              type="select"
-              size={:compact}
-              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][args][#{index}][enabled]"}
-              value={argument["enabled"]}
-              aria-label={"Use optional argument #{argument["name"]}"}
-              disabled={@read_only?}
-              options={[{"Not used", "false"}, {"Use", "true"}]}
-            />
-          </div>
+          <p class="font-mono text-xs font-medium text-zinc-200">
+            {argument_label(argument)}
+          </p>
 
           <input
             type="hidden"
@@ -467,19 +432,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             name={"draft[stages][#{@stage_index}][steps][#{@step_index}][args][#{index}][sensitive]"}
             value={argument["sensitive"]}
           />
-          <input
-            :if={argument["required"] == "true"}
-            type="hidden"
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][args][#{index}][enabled]"}
-            value="true"
-          />
 
-          <div
-            :if={argument["enabled"] == "true"}
-            class="mt-3 grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]"
-          >
+          <div class="mt-3 grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
             <.input
               type="select"
+              size={:compact}
               name={"draft[stages][#{@stage_index}][steps][#{@step_index}][args][#{index}][source]"}
               value={argument["source"]}
               aria-label={"#{argument["name"]} binding source"}
@@ -524,35 +481,43 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         value={@argument["value"]}
       />
       <input
-        :if={@argument["source"] == "literal"}
+        :if={@argument["source"] in ["literal", "omit"]}
         type="hidden"
         name={"#{@name}[ref]"}
         value={@argument["ref"]}
       />
 
+      <p :if={@argument["source"] == "omit"} class="px-1 py-2 text-xs text-zinc-500">
+        Not sent to the action.
+      </p>
       <.input
         :if={@argument["source"] == "literal" and @argument["type"] == "boolean"}
         type="select"
+        size={:compact}
         name={"#{@name}[value]"}
         value={@argument["value"]}
         aria-label={"#{@argument["name"]} literal value"}
         disabled={@read_only?}
+        prompt="Choose value"
         options={[{"False", "false"}, {"True", "true"}]}
       />
       <.input
         :if={@argument["source"] == "literal" and @argument["type"] in ["integer", "number"]}
         type="number"
+        size={:compact}
         step={if @argument["type"] == "number", do: "any", else: "1"}
         name={"#{@name}[value]"}
         value={@argument["value"]}
         aria-label={"#{@argument["name"]} literal value"}
         disabled={@read_only?}
+        placeholder="Value"
       />
       <.input
         :if={
           @argument["source"] == "literal" and
             @argument["type"] not in ["boolean", "integer", "number"]
         }
+        size={:compact}
         name={"#{@name}[value]"}
         value={@argument["value"]}
         aria-label={"#{@argument["name"]} literal value"}
@@ -565,8 +530,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         class={if @argument["type"] in ["string_array", "integer_array"], do: "font-mono text-xs"}
       />
       <.input
-        :if={@argument["source"] != "literal"}
+        :if={@argument["source"] in ["input", "output"]}
         type="select"
+        size={:compact}
         name={"#{@name}[ref]"}
         value={@argument["ref"]}
         aria-label={"#{@argument["name"]} reference"}
@@ -586,11 +552,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp outputs_editor(assigns) do
     ~H"""
     <div class="mt-6 border-t border-zinc-800/70 pt-5">
-      <div class="flex items-center justify-between gap-3">
+      <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-xs font-semibold text-zinc-200">Extracted outputs</p>
           <p class="mt-0.5 text-[11px] text-zinc-400">
-            JSON Pointer, contains, grep, or bounded regex.
+            Keep only the result fields later conditions or stages need.
           </p>
         </div>
         <.button
@@ -603,70 +569,91 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           phx-value-step={@step_index}
           disabled={@read_only?}
         >
-          Add
+          Add output
         </.button>
       </div>
 
-      <div class="mt-3 space-y-4">
+      <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-500">
+        No extracted outputs.
+      </p>
+
+      <div class="mt-3 space-y-3">
         <div
           :for={{output, index} <- Enum.with_index(@step["outputs"])}
-          class="grid gap-2 sm:grid-cols-2 xl:grid-cols-6"
+          class="rounded-lg border border-zinc-800/70 p-4"
         >
-          <.input
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][id]"}
-            value={output["id"]}
-            label="Output ID"
-            label_variant={:eyebrow}
-            aria-label={"Output #{index + 1} ID"}
-            placeholder="output_id"
-            disabled={@read_only?}
-            class="font-mono text-xs"
-          />
-          <.input
-            type="select"
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][source]"}
-            value={output["source"]}
-            label="Read from"
-            label_variant={:eyebrow}
-            aria-label={"Output #{index + 1} source"}
-            disabled={@read_only?}
-            options={[
-              {"Structured output", "structured_output"},
-              {"stdout", "stdout"},
-              {"stderr", "stderr"}
-            ]}
-          />
-          <.input
-            type="select"
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][extract_type]"}
-            value={output["extract_type"]}
-            label="Extract with"
-            label_variant={:eyebrow}
-            aria-label={"Output #{index + 1} extractor"}
-            disabled={@read_only?}
-            options={[
-              {"JSON Pointer", "json_pointer"},
-              {"Contains", "contains"},
-              {"Grep", "grep"},
-              {"Regex", "regex"}
-            ]}
-          />
-          <.input
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][expression]"}
-            value={output["expression"]}
-            label="Expression"
-            label_variant={:eyebrow}
-            aria-label={"Output #{index + 1} expression"}
-            placeholder={if output["extract_type"] == "json_pointer", do: "/status", else: "pattern"}
-            disabled={@read_only?}
-            class="font-mono text-xs xl:col-span-2"
-          />
-          <div class="flex items-center gap-2">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Output {index + 1}
+            </span>
+            <.icon_button
+              icon="hero-trash"
+              label="Remove output"
+              phx-click="remove_output"
+              phx-value-stage={@stage_index}
+              phx-value-step={@step_index}
+              phx-value-index={index}
+              disabled={@read_only?}
+            />
+          </div>
+
+          <div class="mt-3 grid gap-3 sm:grid-cols-2">
+            <.input
+              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][id]"}
+              value={output["id"]}
+              label="Output ID"
+              label_variant={:eyebrow}
+              aria-label={"Output #{index + 1} ID"}
+              placeholder="status"
+              disabled={@read_only?}
+              class="font-mono text-xs"
+            />
+            <.input
+              type="select"
+              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][source]"}
+              value={output["source"]}
+              label="Read from"
+              label_variant={:eyebrow}
+              aria-label={"Output #{index + 1} source"}
+              disabled={@read_only?}
+              options={[
+                {"Structured output", "structured_output"},
+                {"stdout", "stdout"},
+                {"stderr", "stderr"}
+              ]}
+            />
+            <.input
+              type="select"
+              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][extract_type]"}
+              value={output["extract_type"]}
+              label="Extract with"
+              label_variant={:eyebrow}
+              aria-label={"Output #{index + 1} extractor"}
+              disabled={@read_only?}
+              options={[
+                {"JSON Pointer", "json_pointer"},
+                {"Contains", "contains"},
+                {"Grep", "grep"},
+                {"Regex", "regex"}
+              ]}
+            />
+            <.input
+              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][expression]"}
+              value={output["expression"]}
+              label="Expression"
+              label_variant={:eyebrow}
+              aria-label={"Output #{index + 1} expression"}
+              placeholder={
+                if output["extract_type"] == "json_pointer", do: "/status", else: "pattern"
+              }
+              disabled={@read_only?}
+              class="font-mono text-xs"
+            />
             <.input
               :if={output["extract_type"] == "regex"}
               name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][capture]"}
               value={output["capture"]}
-              label="Capture"
+              label="Capture group"
               label_variant={:eyebrow}
               aria-label={"Output #{index + 1} regex capture"}
               placeholder="0"
@@ -683,15 +670,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               disabled={@read_only?}
               options={[{"Visible", "false"}, {"Sensitive", "true"}]}
             />
-            <.icon_button
-              icon="hero-trash"
-              label="Remove output"
-              phx-click="remove_output"
-              phx-value-stage={@stage_index}
-              phx-value-step={@step_index}
-              phx-value-index={index}
-              disabled={@read_only?}
-            />
           </div>
         </div>
       </div>
@@ -707,11 +685,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp success_editor(assigns) do
     ~H"""
     <div class="mt-6 border-t border-zinc-800/70 pt-5">
-      <div class="flex items-center justify-between gap-3">
+      <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-xs font-semibold text-zinc-200">Success conditions</p>
           <p class="mt-0.5 text-[11px] text-zinc-400">
-            All conditions must pass. Conditions read only extracted outputs.
+            Every condition must pass. Conditions can read only extracted outputs.
           </p>
         </div>
         <.button
@@ -722,66 +700,83 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           phx-click="add_success"
           phx-value-stage={@stage_index}
           phx-value-step={@step_index}
-          disabled={@read_only?}
+          disabled={@read_only? or @step["outputs"] == []}
         >
-          Add
+          Add condition
         </.button>
       </div>
+
+      <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-500">
+        Add an extracted output before adding a success condition.
+      </p>
+      <p :if={@step["outputs"] != [] and @step["success"] == []} class="mt-3 text-xs text-zinc-500">
+        No extra success conditions. A successful action exit is enough.
+      </p>
 
       <div class="mt-3 space-y-3">
         <div
           :for={{condition, index} <- Enum.with_index(@step["success"])}
-          class="grid gap-2 sm:grid-cols-[1fr_12rem_1fr_auto]"
+          class="rounded-lg border border-zinc-800/70 p-4"
         >
-          <.input
-            type="select"
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][output]"}
-            value={condition["output"]}
-            label="Output"
-            label_variant={:eyebrow}
-            aria-label={"Condition #{index + 1} output"}
-            disabled={@read_only?}
-            options={Enum.map(@step["outputs"], &{&1["id"], &1["id"]})}
-          />
-          <.input
-            type="select"
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][operator]"}
-            value={condition["operator"]}
-            label="Must be"
-            label_variant={:eyebrow}
-            aria-label={"Condition #{index + 1} operator"}
-            disabled={@read_only?}
-            options={[
-              {"Equals", "equals"},
-              {"Not equal", "not_equals"},
-              {"Greater than", "greater_than"},
-              {"Greater than or equal", "greater_than_or_equal"},
-              {"Less than", "less_than"},
-              {"Less than or equal", "less_than_or_equal"},
-              {"Contains", "contains"},
-              {"One of", "one_of"},
-              {"Matches regex", "matches"}
-            ]}
-          />
-          <.input
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][value]"}
-            value={condition["value"]}
-            label="Value"
-            label_variant={:eyebrow}
-            aria-label={"Condition #{index + 1} JSON value"}
-            placeholder="JSON value"
-            disabled={@read_only?}
-            class="font-mono text-xs"
-          />
-          <.icon_button
-            icon="hero-trash"
-            label="Remove condition"
-            phx-click="remove_success"
-            phx-value-stage={@stage_index}
-            phx-value-step={@step_index}
-            phx-value-index={index}
-            disabled={@read_only?}
-          />
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Condition {index + 1}
+            </span>
+            <.icon_button
+              icon="hero-trash"
+              label="Remove condition"
+              phx-click="remove_success"
+              phx-value-stage={@stage_index}
+              phx-value-step={@step_index}
+              phx-value-index={index}
+              disabled={@read_only?}
+            />
+          </div>
+          <div class="mt-3 grid gap-3 sm:grid-cols-2">
+            <.input
+              type="select"
+              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][output]"}
+              value={condition["output"]}
+              label="Output"
+              label_variant={:eyebrow}
+              aria-label={"Condition #{index + 1} output"}
+              disabled={@read_only?}
+              prompt="Choose output"
+              options={Enum.map(@step["outputs"], &{&1["id"], &1["id"]})}
+            />
+            <.input
+              type="select"
+              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][operator]"}
+              value={condition["operator"]}
+              label="Must be"
+              label_variant={:eyebrow}
+              aria-label={"Condition #{index + 1} operator"}
+              disabled={@read_only?}
+              options={[
+                {"Equals", "equals"},
+                {"Not equal", "not_equals"},
+                {"Greater than", "greater_than"},
+                {"Greater than or equal", "greater_than_or_equal"},
+                {"Less than", "less_than"},
+                {"Less than or equal", "less_than_or_equal"},
+                {"Contains", "contains"},
+                {"One of", "one_of"},
+                {"Matches regex", "matches"}
+              ]}
+            />
+            <div class="sm:col-span-2">
+              <.input
+                name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][value]"}
+                value={condition["value"]}
+                label="Expected JSON value"
+                label_variant={:eyebrow}
+                aria-label={"Condition #{index + 1} JSON value"}
+                placeholder="Enter a JSON value"
+                disabled={@read_only?}
+                class="font-mono text-xs"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -791,21 +786,31 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :wait, :map, required: true
   attr :stage_index, :integer, required: true
   attr :step_index, :integer, required: true
+  attr :open_panels, :any, required: true
   attr :read_only?, :boolean, required: true
 
-  defp wait_editor(assigns) do
+  defp retry_editor(assigns) do
+    key = "retry-#{assigns.stage_index}-#{assigns.step_index}"
+    assigns = assign(assigns, :panel_key, key)
+
     ~H"""
     <div class="mt-6 border-t border-zinc-800/70 pt-5">
-      <div class="grid gap-3 sm:grid-cols-4">
+      <.panel_toggle
+        panel_key={@panel_key}
+        open?={MapSet.member?(@open_panels, @panel_key)}
+        label="Retry policy"
+        hint={if @wait["enabled"] == "true", do: "Observe again", else: "No retry · halt on failure"}
+      />
+      <div :if={MapSet.member?(@open_panels, @panel_key)} class="mt-4 grid gap-3 sm:grid-cols-3">
         <.input
           type="select"
           name={"draft[stages][#{@stage_index}][steps][#{@step_index}][wait][enabled]"}
           value={@wait["enabled"]}
-          label="When conditions do not pass"
+          label="When conditions fail"
           label_variant={:eyebrow}
           disabled={@read_only?}
-          options={[{"Fail the item", "false"}, {"Wait and observe again", "true"}]}
-          class="sm:col-span-4"
+          options={[{"Halt execution", "false"}, {"Observe again", "true"}]}
+          class="sm:col-span-3"
         />
         <.input
           :if={@wait["enabled"] == "true"}
@@ -842,6 +847,33 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         />
       </div>
     </div>
+    """
+  end
+
+  attr :panel_key, :string, required: true
+  attr :label, :string, required: true
+  attr :hint, :string, default: nil
+  attr :open?, :boolean, required: true
+
+  defp panel_toggle(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="toggle_panel"
+      phx-value-key={@panel_key}
+      aria-expanded={to_string(@open?)}
+      class="inline-flex w-full items-center gap-1.5 text-left text-xs font-medium text-zinc-400 hover:text-zinc-200"
+    >
+      <.icon
+        name="hero-chevron-right"
+        class={
+          "h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none" <>
+            if(@open?, do: " rotate-90", else: "")
+        }
+      />
+      <span>{@label}</span>
+      <span :if={@hint} class="ml-auto font-normal text-zinc-500">{@hint}</span>
+    </button>
     """
   end
 end
