@@ -146,7 +146,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(select[name="draft[stages][0][steps][0][target_candidate]"])
              )
 
-      assert has_element?(lv, ~s(#runbook-inputs > button[phx-click="add_input"]), "Add input")
+      assert has_element?(lv, ~s(#runbook-inputs button[phx-click="add_input"]), "Add input")
       refute has_element?(lv, "a", "Cancel editing")
 
       render_click(lv, "add_input", %{})
@@ -156,7 +156,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                :binary.match(input_html, ~s(phx-click="add_input"))
 
       assert has_element?(lv, "#runbook-input-0 h3", "Input 1")
-      assert has_element?(lv, ~s(#runbook-inputs > button.mt-6), "Add input")
+      assert has_element?(lv, "#runbook-inputs > .max-w-5xl", "Add input")
 
       render_click(lv, "add_stage", %{})
       assert has_element?(lv, "#runbook-stage-1")
@@ -209,12 +209,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Allowed values"
       assert has_element?(lv, "#runbook-input-0 h3", "environment")
       assert has_element?(lv, "#runbook-input-0", "Input 1 · Enum")
-
-      assert has_element?(
-               lv,
-               ~s(button[aria-expanded="true"]),
-               "Default and constraints"
-             )
+      assert has_element?(lv, "#runbook-input-0 h4", "Default and constraints")
+      assert has_element?(lv, ~s(input[name="draft[inputs][0][default]"]))
+      refute has_element?(lv, "#runbook-input-0 button", "Default and constraints")
+      refute html =~ "input-constraints-0"
 
       render_click(lv, "add_enum_value", %{"index" => "0"})
 
@@ -232,7 +230,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       render_click(lv, "remove_enum_value", %{"input" => "0", "value" => "0"})
       refute has_element?(lv, ~s(input[name="draft[inputs][0][enum_values][0][value]"]))
-      assert has_element?(lv, ~s(button[aria-expanded="true"]))
+      assert has_element?(lv, "#runbook-input-0", "Allowed values")
     end
 
     test "success conditions require an output and start without a quoted empty value", %{

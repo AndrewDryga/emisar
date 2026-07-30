@@ -164,7 +164,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
             <.inputs_section
               draft={@draft}
               read_only?={@read_only?}
-              open_panels={@open_panels}
             />
 
             <section id="runbook-stages">
@@ -314,7 +313,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
   attr :draft, :map, required: true
   attr :read_only?, :boolean, required: true
-  attr :open_panels, :any, required: true
 
   defp inputs_section(assigns) do
     ~H"""
@@ -330,7 +328,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         No run-time inputs. Add one for a value that should be supplied for each execution.
       </p>
 
-      <div class="space-y-6">
+      <div class="max-w-5xl space-y-6">
         <div
           :for={{input, index} <- Enum.with_index(@draft["inputs"])}
           id={"runbook-input-#{index}"}
@@ -355,8 +353,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
             />
           </div>
 
-          <div class="mt-6 space-y-6">
-            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_14rem]">
+          <div class="mt-6 max-w-4xl space-y-6">
+            <div class="grid gap-4 sm:grid-cols-[minmax(20rem,36rem)_12rem]">
               <.input
                 name={"draft[inputs][#{index}][id]"}
                 value={input["id"]}
@@ -382,20 +380,22 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
             </div>
 
-            <.input
-              name={"draft[inputs][#{index}][description]"}
-              value={input["description"]}
-              label="Description"
-              label_variant={:eyebrow}
-              disabled={@read_only?}
-              placeholder="What the operator or LLM should supply"
-            />
+            <div class="max-w-3xl">
+              <.input
+                name={"draft[inputs][#{index}][description]"}
+                value={input["description"]}
+                label="Description"
+                label_variant={:eyebrow}
+                disabled={@read_only?}
+                placeholder="What the operator or LLM should supply"
+              />
+            </div>
 
-            <fieldset class="max-w-3xl">
+            <fieldset class="max-w-lg">
               <legend class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 Behavior
               </legend>
-              <div class="mt-3 grid gap-4 sm:grid-cols-[12rem_minmax(18rem,1fr)]">
+              <div class="mt-3 grid gap-4 sm:grid-cols-[9rem_16rem]">
                 <.input
                   type="select"
                   name={"draft[inputs][#{index}][required]"}
@@ -418,29 +418,23 @@ defmodule EmisarWeb.RunbookEditorComponents do
             </fieldset>
           </div>
 
-          <div class="mt-6 border-t border-zinc-800/70 pt-4">
-            <.panel_toggle
-              panel_key={"input-constraints-#{index}"}
-              open?={MapSet.member?(@open_panels, "input-constraints-#{index}")}
-              label="Default and constraints"
-            />
-
-            <div
-              :if={MapSet.member?(@open_panels, "input-constraints-#{index}")}
-              class="mt-5 max-w-3xl"
-            >
+          <div class="mt-6 border-t border-zinc-800/70 pt-5">
+            <h4 class="text-xs font-medium text-zinc-300">Default and constraints</h4>
+            <div class="mt-4 max-w-3xl">
               <div class="space-y-4">
-                <.input
-                  name={"draft[inputs][#{index}][default]"}
-                  value={input["default"]}
-                  label="Default value"
-                  label_variant={:eyebrow}
-                  disabled={@read_only? or input["sensitive"] == "true"}
-                  placeholder="No default"
-                />
+                <div class="max-w-xl">
+                  <.input
+                    name={"draft[inputs][#{index}][default]"}
+                    value={input["default"]}
+                    label="Default value"
+                    label_variant={:eyebrow}
+                    disabled={@read_only? or input["sensitive"] == "true"}
+                    placeholder="No default"
+                  />
+                </div>
                 <div
                   :if={input["type"] in ["integer", "number"]}
-                  class="grid gap-4 sm:grid-cols-2"
+                  class="grid max-w-lg gap-4 sm:grid-cols-2"
                 >
                   <.input
                     type="number"
@@ -461,7 +455,10 @@ defmodule EmisarWeb.RunbookEditorComponents do
                     disabled={@read_only?}
                   />
                 </div>
-                <div :if={input["type"] == "string"} class="grid gap-4 sm:grid-cols-2">
+                <div
+                  :if={input["type"] == "string"}
+                  class="grid max-w-lg gap-4 sm:grid-cols-2"
+                >
                   <.input
                     type="number"
                     min="0"
@@ -483,7 +480,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 </div>
               </div>
 
-              <div :if={input["type"] == "enum"} class="mt-5">
+              <div :if={input["type"] == "enum"} class="mt-5 max-w-xl">
                 <.label variant={:eyebrow}>Allowed values</.label>
                 <p :if={input["enum_values"] == []} class="mt-2 text-xs text-zinc-400">
                   Add at least one value.
@@ -521,13 +518,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
             </div>
           </div>
         </div>
+        <.add_row
+          :if={not @read_only?}
+          label="Add input"
+          phx-click="add_input"
+        />
       </div>
-      <.add_row
-        :if={not @read_only?}
-        label="Add input"
-        class="mt-6"
-        phx-click="add_input"
-      />
     </section>
     """
   end
@@ -698,31 +694,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
         class="mt-4"
       />
     </details>
-    """
-  end
-
-  attr :panel_key, :string, required: true
-  attr :label, :string, required: true
-  attr :open?, :boolean, required: true
-
-  defp panel_toggle(assigns) do
-    ~H"""
-    <button
-      type="button"
-      phx-click="toggle_panel"
-      phx-value-key={@panel_key}
-      aria-expanded={to_string(@open?)}
-      class="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200"
-    >
-      <.icon
-        name="hero-chevron-right"
-        class={
-          "h-3.5 w-3.5 transition-transform motion-reduce:transition-none" <>
-            if(@open?, do: " rotate-90", else: "")
-        }
-      />
-      {@label}
-    </button>
     """
   end
 

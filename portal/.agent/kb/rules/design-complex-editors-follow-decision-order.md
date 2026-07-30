@@ -19,9 +19,11 @@ nearby disclosure after the behavior they refine.
 
 Inside a repeated form card, visual weight follows information weight. Group
 identity, purpose, behavior, and optional constraints in that scan order. Let
-flexible text fields grow, bound compact finite choices to a useful measure, and
-keep intentional negative space instead of stretching every control to fill a
-uniform grid.
+flexible text fields grow only to a readable measure, keep finite choices at a
+content-sized width, and cap the collection on wide canvases. Intentional
+negative space is better than stretching controls to fill a uniform grid.
+Routine defaults and constraints remain visible; disclosure is for genuinely
+secondary detail, not a way to reclaim vertical space.
 
 Do not show a control in a mode where it has no effect. If a value still changes
 execution, keep it visible beside the choice it qualifies and explain the
@@ -55,7 +57,7 @@ never a reduced model.
 - Save and Publish stay together; the existing page navigation remains the one
   way to leave the editor.
 - A run-time input gives its ID room, keeps its type and Yes/No choices compact,
-  and reveals paired bounds together below the behavior they constrain.
+  and shows paired bounds together below the behavior they constrain.
 
 ## Bad
 
@@ -67,6 +69,8 @@ never a reduced model.
 - Removing advanced fields to make the editor look simpler.
 - Stretching an ID, type, Yes/No selector, and visibility selector into four
   equally weighted boxes merely because the card has room.
+- Hiding a normal default or validation bound behind a disclosure to make the
+  card shorter.
 
 ## Enforced
 
@@ -81,5 +85,5 @@ Sweep complex editors for ID/version fields before behavior, behavior choices
 that are not derived from earlier scope choices, controls shown in modes where
 they have no effect, lifecycle rails that duplicate existing exit navigation,
 breakpoint ordering that puts a secondary rail before the primary task, and
-uniform grids that make short finite choices as visually heavy as primary
-identity or purpose fields.
+unbounded collections or uniform grids that make short finite choices as
+visually heavy as primary identity or purpose fields.

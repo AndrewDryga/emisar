@@ -162,10 +162,6 @@ defmodule EmisarWeb.RunbookEditorLive do
       {:noreply,
        socket
        |> assign(:draft, draft)
-       |> assign(
-         :open_panels,
-         open_changed_enum_panels(socket.assigns.open_panels, previous, draft)
-       )
        |> assign_form(changeset)
        |> mark_dirty()
        |> validate_and_preview()}
@@ -426,18 +422,6 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp toggle_panel(panels, key) do
     if MapSet.member?(panels, key), do: MapSet.delete(panels, key), else: MapSet.put(panels, key)
-  end
-
-  defp open_changed_enum_panels(panels, previous, draft) do
-    draft["inputs"]
-    |> Enum.with_index()
-    |> Enum.reduce(panels, fn {input, index}, open ->
-      previous_type = get_in(previous, ["inputs", Access.at(index), "type"])
-
-      if input["type"] == "enum" and previous_type != "enum",
-        do: MapSet.put(open, "input-constraints-#{index}"),
-        else: open
-    end)
   end
 
   defp validate_and_preview(socket) do
