@@ -21,6 +21,7 @@ import (
 	"encoding/base32"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -481,6 +482,113 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 
 // provisioningFlow captures the half that actually wires Okta to emisar: the
 // API-integration form, the credential test, and the To App lifecycle settings.
+// highlightSelector rings a control named outright, for a form whose visible
+// labels do not identify its fields.
+func highlightSelector(ctx context.Context, selector string) error {
+	script := fmt.Sprintf(`(() => {
+  const el = document.querySelector(%q);
+  if (!el || !(el.offsetWidth > 0 || el.offsetHeight > 0)) return false;
+  el.style.boxShadow = 'inset 0 0 0 3px #10b981';
+  el.style.borderRadius = '8px';
+  el.scrollIntoView({block: 'center'});
+  return true;
+})()`, selector)
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return fmt.Errorf("nothing matching %s to highlight", selector)
+	}
+	fmt.Printf("  highlighted %s\n", selector)
+	return chromedp.Run(ctx, chromedp.Sleep(600*time.Millisecond))
+}
+
+// captureConfiguredCredentials opens the saved SCIM connection for editing and
+// shoots it. Nothing is saved and Test API Credentials is NOT pressed — the point
+// is to show the operator which three controls matter, and pressing it against an
+// endpoint this run cannot reach would photograph an error instead.
+func captureConfiguredCredentials(
+	ctx context.Context,
+	env map[string]string,
+	shoot func(string) error,
+	step func(string) error,
+	settle func(int) error,
+) error {
+	if err := step("Integration"); err != nil {
+		return err
+	}
+	if err := settle(4); err != nil {
+		return err
+	}
+	if err := step("Edit"); err != nil {
+		return err
+	}
+	if err := settle(3); err != nil {
+		return err
+	}
+
+	// By FIELD NAME, not by label. The creation path fills these the same way,
+	// with the comment that the labels are decorative — and matching a label is
+	// what failed here.
+	// Named outright, and NOT the same names the creation form uses: on a saved
+	// configuration the token field is `scim_auth_header_value_new`, because the
+	// stored token is write-only and you supply a replacement rather than read it.
+	for _, selector := range []string{
+		`[name="scim_base_url"]`,
+		`[name="scim_auth_header_value_new"]`,
+		`[name="m-verify"]`,
+	} {
+		if err := highlightSelector(ctx, selector); err != nil {
+			return err
+		}
+	}
+
+	// The saved Base URL is the capture rig's tunnel. Swap it for the product host
+	// before the shot — a customer's reads emisar.dev, and ours must not ship.
+	docsHost := env["EMISAR_DOCS_HOST"]
+	if docsHost == "" {
+		docsHost = "https://emisar.dev"
+	}
+
+	// Rewrite whatever ORIGIN the field holds, rather than the tunnel this run
+	// happens to have: the saved value was written by an earlier capture, under a
+	// different ngrok host, so matching the current one replaced nothing and the
+	// old tunnel shipped in the shot. The path is kept — /scim/v2 is the real
+	// shape a reader needs.
+	rewrite := fmt.Sprintf(`(() => {
+  const field = document.querySelector('[name="scim_base_url"]');
+  if (!field) return false;
+  let path = '/scim/v2';
+  try { path = new URL(field.value).pathname || path } catch (_) {}
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(field, %q + path);
+  field.dispatchEvent(new Event('input', {bubbles: true}));
+  return true;
+})()`, strings.TrimSuffix(docsHost, "/"))
+
+	var rewritten bool
+
+	if err := chromedp.Run(ctx, chromedp.Evaluate(rewrite, &rewritten)); err != nil {
+		return err
+	}
+
+	if !rewritten {
+		return errors.New("could not de-identify the SCIM base URL before the shot")
+	}
+
+	if err := shoot("10-test-api-credentials"); err != nil {
+		return err
+	}
+
+	// Leave the saved configuration exactly as it was.
+	if _, err := clickText(ctx, "Cancel"); err != nil {
+		return err
+	}
+
+	return settle(3)
+}
+
 func provisioningFlow(
 	ctx context.Context,
 	env map[string]string,
@@ -518,7 +626,16 @@ func provisioningFlow(
 		return err
 	}
 	if !configuring {
-		fmt.Println("  already configured — skipping to To App")
+		// The credential screen still EXISTS on a configured app, behind
+		// Integration → Edit. Skipping straight to the lifecycle half is why
+		// okta-scim-verified shipped with no outlines on the three controls its
+		// step names.
+		fmt.Println("  already configured — opening Integration to shoot the credentials")
+
+		if err := captureConfiguredCredentials(ctx, env, shoot, step, settle); err != nil {
+			return err
+		}
+
 		return lifecycleFlow(ctx, instance, shoot, step, settle)
 	}
 	if err := settle(5); err != nil {
