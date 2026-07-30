@@ -33,13 +33,22 @@ defmodule EmisarWeb.SCIM.Resource do
   # the identity they carry has one preloaded. Taking the map's key alone meant a
   # deactivate or reactivate answered with no name on it.
   def to_user(%{identity: %SSO.UserIdentity{} = identity} = result),
-    do: to_user(identity, result[:user] || loaded_user(identity))
+    do: to_user(identity, result[:user] || loaded_user(identity), result[:membership])
 
   # A preloaded user is the same source the create response renders from, so the
   # handle stays the same value across POST, GET and list.
-  def to_user(%SSO.UserIdentity{user: %{} = user} = identity), do: to_user(identity, user)
+  def to_user(%SSO.UserIdentity{user: %{} = user} = identity), do: to_user(identity, user, nil)
 
-  def to_user(%SSO.UserIdentity{} = identity), do: to_user(identity, nil)
+  def to_user(%SSO.UserIdentity{} = identity), do: to_user(identity, nil, nil)
+
+  # What the IdP is told, and it has to be the truth. Marking the identity
+  # `scim_active` is not the same as the person being usable: a directory
+  # `active: true` deliberately does NOT lift a manual break-glass hold, so
+  # reporting the identity's flag answered "active" for someone who cannot sign in.
+  # The IdP acts on that — it stops flagging them — and nobody finds out.
+  defp active?(%SSO.UserIdentity{} = identity, %{disabled_at: nil}), do: identity.scim_active
+  defp active?(%SSO.UserIdentity{}, %{disabled_at: _}), do: false
+  defp active?(%SSO.UserIdentity{} = identity, _membership), do: identity.scim_active
 
   defp loaded_user(%SSO.UserIdentity{user: %{} = user}), do: user
   defp loaded_user(_identity), do: nil
@@ -50,7 +59,7 @@ defmodule EmisarWeb.SCIM.Resource do
   # `provider_identifier == scim_external_id`), so making it the canonical
   # `id` lets the IdP's `GET/PATCH/DELETE /Users/{id}` round-trip without a
   # separate UUID→externalId lookup. The internal UUID is never exposed.
-  defp to_user(%SSO.UserIdentity{} = identity, user) do
+  defp to_user(%SSO.UserIdentity{} = identity, user, membership) do
     external_id = identity.scim_external_id || identity.provider_identifier
 
     # `displayName` and `name` are what the IdP wrote and expects to read back.
@@ -62,7 +71,7 @@ defmodule EmisarWeb.SCIM.Resource do
       "id" => external_id,
       "externalId" => external_id,
       "userName" => user_name(identity, user),
-      "active" => identity.scim_active,
+      "active" => active?(identity, membership),
       "meta" => %{"resourceType" => "User"}
     }
     |> put_name(user)

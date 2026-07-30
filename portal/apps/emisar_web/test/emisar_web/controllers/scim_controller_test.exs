@@ -471,6 +471,37 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
+    test "reactivating a manually suspended member reports them still inactive", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account,
+      subject: subject
+    } do
+      # A directory `active: true` deliberately does NOT lift a manual break-glass
+      # hold — an operator placed it, an operator lifts it. What was wrong is what
+      # we then TOLD the IdP: the identity's flag said active, so the response said
+      # active, for someone who cannot sign in. The IdP stops flagging them and
+      # nobody finds out.
+      {:ok, %{user: user, membership: membership}} =
+        SSO.scim_provision_user(provider, %{external_id: "okta|held", email: "held@acme.test"})
+
+      {:ok, _suspended} = Accounts.suspend_membership(membership, subject)
+
+      body =
+        conn
+        |> scim_patch(token, ~p"/scim/v2/Users/okta|held", %{
+          "Operations" => [%{"op" => "replace", "path" => "active", "value" => true}]
+        })
+        |> json_response(200)
+
+      # The hold stands...
+      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+
+      # ...and the IdP is told so, rather than being told the reactivation worked.
+      assert body["active"] == false
+    end
+
     test "a PATCH whose ops never touch `active` → 400 invalidPath", %{
       conn: conn,
       token: token,
