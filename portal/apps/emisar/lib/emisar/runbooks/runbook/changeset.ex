@@ -1,59 +1,25 @@
 defmodule Emisar.Runbooks.Runbook.Changeset do
   use Emisar, :changeset
-  alias Emisar.Runbooks.{Runbook, StepSelector}
+  alias Emisar.Runbooks.{Definition, Runbook}
+  alias Emisar.Slug
 
-  @fields ~w[id name slug title description status definition]a
-  @create_fields ~w[id name slug title description definition]a
-
-  # Each step's `id` is the dispatch identity: runs are matched to plan rows
-  # by `{step_id, runner_id}` and that pair is the `action_runs` unique index.
-  # A duplicate id makes two distinct steps collide — one is treated as
-  # already-dispatched and silently skipped — so a published runbook must give
-  # every step a bounded, non-empty, definition-unique id.
-  @max_step_id_length 80
-
-  # Bound the definition before it's stored or expanded: an unbounded one lets a
-  # hostile/mistaken operator force huge DB rows, list materialization, plan
-  # assigns, and dispatch fan-out. Steps × selectors caps the upper bound on
-  # resolved work here; `Runbooks.resolve_work_list` enforces the post-resolution
-  # total (groups can expand). These run on every save (draft included), not just
-  # publish — a giant draft is the same DoS.
-  @max_definition_bytes 65_536
-  @max_steps 100
-  @max_selector_values 50
+  @fields ~w[id slug title description status definition]a
+  @create_fields ~w[id slug title description definition]a
 
   @doc """
-  Validation-only changeset for the runbook editor's metadata form. Casts the
-  operator-facing text fields (title required + length, slug format when typed)
-  so the LiveView can drive `phx-change` validation and render inline field
-  errors. `definition`/`steps` are structured editor state, not a text input, so
-  they're left out of the cast and validated on save by the real
-  `create`/`new_version` changesets.
+  Validation-only metadata changeset for the structured editor. The definition
+  is validated separately when a draft is saved or published.
   """
   def form(attrs \\ %{}) do
     %Runbook{}
     |> cast(attrs, [:title, :slug, :description])
-    # Slug is optional in the editor — blank means "auto-derive from title on
-    # save", so drop an empty slug before validating its format.
     |> update_change(:slug, &nilify_blank/1)
     |> validate_required([:title])
     |> validate_length(:title, min: 1, max: 80)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
   end
 
-  defp nilify_blank(value) when is_binary(value) do
-    if String.trim(value) == "", do: nil, else: value
-  end
-
-  defp nilify_blank(value), do: value
-
-  @doc """
-  Creation never casts `:status` — the row is born `:draft` no matter what the
-  client sends. The changeset (not an upstream controller whitelist) is what
-  guarantees a client-supplied status can't mint published content; publishing
-  is its own transition (`create_published/3` at birth, or `update/2` via
-  `Runbooks.publish/2`).
-  """
+  @doc "Create a bounded, potentially incomplete v1 draft. Client status is never cast."
   def create(account_id, user_id, attrs) do
     attrs
     |> new_runbook(account_id, user_id)
@@ -61,12 +27,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> changeset()
   end
 
-  @doc """
-  A runbook born `:published` — the editor's one-click publish-from-new. The
-  status is put by this transition, never cast from attrs, and the publishable-
-  definition validations run at insert, so a bad definition fails atomically
-  with no row.
-  """
+  @doc "Create a strict v1 runbook already published through the named transition."
   def create_published(account_id, user_id, attrs) do
     attrs
     |> new_runbook(account_id, user_id)
@@ -80,14 +41,11 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:version, 1)
+    |> put_name_from_title()
+    |> put_slug_from_title()
   end
 
-  @doc """
-  Builds the next version of an existing runbook: carries the prior row's
-  fields as the base, applies `attrs` on top, and bumps the version. Keeping
-  the carry-over in the struct (not a map merged with `attrs`) avoids mixing
-  atom and string keys when `attrs` comes from a form.
-  """
+  @doc "Build the next immutable version from a previous runbook."
   def new_version(%Runbook{} = previous, user_id, attrs) do
     %Runbook{
       name: previous.name,
@@ -101,11 +59,17 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> put_change(:account_id, previous.account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:version, previous.version + 1)
+    |> put_name_from_title()
+    |> put_slug_from_title()
     |> changeset()
   end
 
   def update(%Runbook{} = runbook, attrs) do
-    runbook |> cast(attrs, @fields) |> changeset()
+    runbook
+    |> cast(attrs, @fields)
+    |> put_name_from_title()
+    |> put_slug_from_title()
+    |> changeset()
   end
 
   def delete(%Runbook{} = runbook),
@@ -115,129 +79,61 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     changeset
     |> validate_required([:account_id, :name, :slug, :title, :definition])
     |> validate_length(:name, min: 1, max: 80)
+    |> validate_length(:title, min: 1, max: 80)
+    |> validate_length(:description, max: 4_096)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
-    |> validate_definition_bounds()
-    |> validate_publishable_steps()
+    |> validate_definition()
     |> unique_constraint([:account_id, :slug, :version])
   end
 
-  # Step count is checked first (cheap, and bounds the encode that follows),
-  # then serialized size, then per-step target count.
-  defp validate_definition_bounds(changeset) do
-    case get_field(changeset, :definition) do
-      definition when is_map(definition) ->
-        cond do
-          too_many_steps?(definition) ->
-            add_error(changeset, :definition, "has too many steps (max #{@max_steps})")
+  defp validate_definition(changeset) do
+    validator =
+      if get_field(changeset, :status) == :published,
+        do: &Definition.validate/1,
+        else: &Definition.validate_draft/1
 
-          definition_too_large?(definition) ->
-            add_error(changeset, :definition, "is too large (max #{@max_definition_bytes} bytes)")
+    case validator.(get_field(changeset, :definition)) do
+      {:ok, _definition} ->
+        changeset
 
-          any_step_has_opts?(definition) ->
-            add_error(changeset, :definition, "runbook steps do not support execution options")
+      {:error, [first | rest]} ->
+        suffix = if rest == [], do: "", else: " (+#{length(rest)} more)"
 
-          any_step_too_many_targets?(definition) ->
-            add_error(
-              changeset,
-              :definition,
-              "a step targets too many runners or groups (max #{@max_selector_values})"
-            )
+        add_error(
+          changeset,
+          :definition,
+          "#{first.message} at #{first.path}#{suffix}",
+          code: first.code,
+          path: first.path,
+          issues: [first | rest]
+        )
+    end
+  end
 
-          true ->
-            changeset
+  defp put_name_from_title(changeset) do
+    case get_field(changeset, :title) do
+      title when is_binary(title) -> put_change(changeset, :name, title)
+      _missing -> changeset
+    end
+  end
+
+  defp put_slug_from_title(changeset) do
+    case {get_field(changeset, :slug), get_field(changeset, :title)} do
+      {slug, title} when is_binary(title) ->
+        if is_nil(slug) or String.trim(slug) == "" do
+          put_change(changeset, :slug, Slug.slugify(title, max_length: 79))
+        else
+          changeset
         end
 
-      _ ->
+      _missing ->
         changeset
     end
   end
 
-  defp too_many_steps?(%{"steps" => steps}) when is_list(steps), do: length(steps) > @max_steps
-  defp too_many_steps?(_), do: false
-
-  defp definition_too_large?(definition) do
-    case Jason.encode(definition) do
-      {:ok, json} -> byte_size(json) > @max_definition_bytes
-      {:error, _} -> true
-    end
+  defp nilify_blank(value) when is_binary(value) do
+    if String.trim(value) == "", do: nil, else: value
   end
 
-  defp any_step_has_opts?(%{"steps" => steps}) when is_list(steps) do
-    Enum.any?(steps, fn step ->
-      is_map(step) and (Map.has_key?(step, "opts") or Map.has_key?(step, :opts))
-    end)
-  end
-
-  defp any_step_has_opts?(_definition), do: false
-
-  defp any_step_too_many_targets?(%{"steps" => steps}) when is_list(steps),
-    do: Enum.any?(steps, &too_many_targets?/1)
-
-  defp any_step_too_many_targets?(_), do: false
-
-  defp too_many_targets?(step) when is_map(step) do
-    {_kind, values} = StepSelector.parse(step["runner_selector"])
-    length(values) > @max_selector_values
-  end
-
-  defp too_many_targets?(_), do: false
-
-  # A draft can be an unfinished work-in-progress, but a *published* runbook
-  # must actually run: a step with a blank action otherwise publishes fine and
-  # only blows up mid-fan-out at dispatch (step_attrs hands a nil action_id to
-  # dispatch_run — the worst place to find out), and a step with no runner
-  # target has nowhere to run (the engine resolves each step against its own
-  # runner_selector). The empty-list case is the dispatch-time :empty_runbook
-  # guard pulled forward to save. Surfaced on :definition (no field input) via
-  # the editor's save_error_message/1.
-  #
-  # `get_field` (not validate_change): publish changes only :status, so the
-  # existing :definition isn't in `changes` — we must validate its current
-  # value, not just an on-change edit.
-  defp validate_publishable_steps(changeset) do
-    if get_field(changeset, :status) == :published do
-      case publishable_steps_error(get_field(changeset, :definition)) do
-        nil -> changeset
-        message -> add_error(changeset, :definition, message)
-      end
-    else
-      changeset
-    end
-  end
-
-  defp publishable_steps_error(%{"steps" => steps}) when is_list(steps) and steps != [] do
-    cond do
-      Enum.any?(steps, &blank_step_action?/1) ->
-        "every step needs an action before publishing"
-
-      Enum.any?(steps, &StepSelector.empty?(&1["runner_selector"])) ->
-        "every step needs exactly one runner or group target before publishing"
-
-      Enum.any?(steps, &invalid_step_id?/1) ->
-        "every step needs an ID of 1–#{@max_step_id_length} characters before publishing"
-
-      duplicate_step_ids?(steps) ->
-        "every step needs a unique ID before publishing"
-
-      true ->
-        nil
-    end
-  end
-
-  defp publishable_steps_error(_), do: "add at least one step before publishing"
-
-  defp blank_step_action?(step) do
-    action = step["action_id"] || step["action"]
-    not (is_binary(action) and String.trim(action) != "")
-  end
-
-  defp invalid_step_id?(step) do
-    id = step["id"]
-    not (is_binary(id) and String.trim(id) != "" and String.length(id) <= @max_step_id_length)
-  end
-
-  defp duplicate_step_ids?(steps) do
-    ids = Enum.map(steps, & &1["id"])
-    ids != Enum.uniq(ids)
-  end
+  defp nilify_blank(value), do: value
 end

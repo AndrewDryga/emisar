@@ -17,7 +17,7 @@ defmodule EmisarWeb.CommandPreview do
   Display-only and pure — no Repo, no side effects.
   """
 
-  alias EmisarWeb.MCP.RawJSON.Number
+  alias Emisar.JSONNumber
 
   @doc """
   Render `command` (`%{binary, argv}`) into a shell line, applying the
@@ -157,7 +157,7 @@ defmodule EmisarWeb.CommandPreview do
   defp format_scalar(false), do: {:ok, "false"}
   defp format_scalar(value) when is_integer(value), do: {:ok, Integer.to_string(value)}
   defp format_scalar(value) when is_float(value), do: {:ok, format_float(value)}
-  defp format_scalar(%Number{raw: raw}), do: {:ok, raw}
+  defp format_scalar(%JSONNumber{raw: raw}), do: {:ok, raw}
   defp format_scalar(_value), do: :error
 
   # The runner formats floats with Go's `'f', -1` (shortest, no exponent). An

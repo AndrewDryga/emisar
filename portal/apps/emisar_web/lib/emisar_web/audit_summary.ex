@@ -178,6 +178,58 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("runbook.published", p),
     do: pairs(version: format_version(get(p, :version)))
 
+  defp summarize("runbook.dispatched", p),
+    do: pairs(stages: get(p, :stages), items: get(p, :total), reason: get(p, :reason))
+
+  defp summarize("runbook.execution_halted", p),
+    do: pairs(code: get(p, :code), message: get(p, :message))
+
+  defp summarize("runbook.stage_halted", p) do
+    pairs(
+      stage: get(p, :stage_id),
+      code: get(p, :code),
+      message: get(p, :message)
+    )
+  end
+
+  defp summarize("runbook.item_failed", p) do
+    pairs(
+      step: get(p, :step_id),
+      runner: get(p, :runner_ref),
+      attempt: get(p, :attempt_number),
+      code: get(p, :code)
+    )
+  end
+
+  defp summarize("runbook.item_waiting", p) do
+    pairs(
+      step: get(p, :step_id),
+      runner: get(p, :runner_ref),
+      attempt: get(p, :attempt_number)
+    )
+  end
+
+  defp summarize(event_type, p)
+       when event_type in [
+              "runbook.execution_succeeded",
+              "runbook.execution_cancelled",
+              "runbook.stage_awaiting_approval",
+              "runbook.stage_started",
+              "runbook.stage_succeeded",
+              "runbook.stage_cancelled"
+            ],
+       do: pairs(stage: get(p, :stage_id), status: get(p, :status))
+
+  defp summarize(event_type, p)
+       when event_type in ["runbook.item_succeeded", "runbook.item_cancelled"] do
+    pairs(
+      step: get(p, :step_id),
+      runner: get(p, :runner_ref),
+      attempt: get(p, :attempt_number),
+      status: get(p, :status)
+    )
+  end
+
   # -- Approvals / runs ------------------------------------------------
 
   defp summarize("approval.approved", p) do

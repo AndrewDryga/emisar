@@ -223,6 +223,43 @@ defmodule Emisar.Mailers.UserNotifier do
     deliver(approver.email, "Approval needed: #{run.action_id}", body)
   end
 
+  @stage_email_item_limit 12
+
+  @doc """
+  Notifies an approver about a runbook stage without assuming an ActionRun
+  exists. The request context is the frozen, already-redacted stage plan.
+  """
+  def deliver_runbook_stage_approval_request(%Users.User{} = approver, %{} = request) do
+    stage = request.context["stage"] || %{}
+    title = stage["title"] || stage["id"] || "Runbook stage"
+    url = PublicUrl.url("/app/#{request.account.slug}/approvals/#{request.id}")
+
+    body = """
+    Hi #{approver.full_name || approver.email},
+
+    A runbook stage is waiting on your decision:
+
+      Stage:     #{title}
+      Execution: #{request.context["execution_id"] || "(unknown)"}
+      Mode:      #{stage_mode(stage)}
+      Reason:    #{request.reason || "(none)"}
+
+    Frozen stage plan:
+    #{format_stage_items(stage["items"])}
+
+    Review and approve or deny:
+
+      #{url}
+
+    Approval releases this stage only. The exact actions still pass current
+    policy, runner access, and pack-trust checks before dispatch.
+
+    — emisar
+    """
+
+    deliver(approver.email, "Approval needed: #{single_line(title)}", body)
+  end
+
   defp runner_email_label(%{runner: %{name: name}}) when is_binary(name) and name != "",
     do: name
 
@@ -248,6 +285,40 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   defp format_args_for_email(_), do: "  (none)"
+
+  defp stage_mode(%{"mode" => "parallel", "max_parallel" => max_parallel}),
+    do: "parallel, up to #{max_parallel} at once"
+
+  defp stage_mode(%{"mode" => "sequential"}), do: "sequential"
+  defp stage_mode(_stage), do: "(unknown)"
+
+  defp format_stage_items(items) when is_list(items) do
+    shown = Enum.take(items, @stage_email_item_limit)
+
+    lines =
+      Enum.map_join(shown, "\n", fn item ->
+        action = item["action"] || "(unknown action)"
+        runner = item["runner_ref"] || "(unknown runner)"
+        pack = item["pack_ref"] || "(unknown pack)"
+        risk = item["risk"] || "unknown"
+        args = Jason.encode!(item["args"] || %{})
+
+        "  - #{action} on #{runner}\n    Pack: #{pack}\n    Risk: #{risk}\n    Arguments: #{args}"
+      end)
+
+    remaining = length(items) - length(shown)
+
+    if remaining > 0 do
+      lines <> "\n  - … and #{remaining} more #{if remaining == 1, do: "item", else: "items"}"
+    else
+      lines
+    end
+  end
+
+  defp format_stage_items(_items), do: "  (no items)"
+
+  defp single_line(value) when is_binary(value),
+    do: value |> String.replace(~r/\s+/, " ") |> String.trim()
 
   def deliver_account_invitation(%Users.User{} = invitee, %{} = inviter, account, token) do
     url = PublicUrl.url("/accept_invitation/#{token}")

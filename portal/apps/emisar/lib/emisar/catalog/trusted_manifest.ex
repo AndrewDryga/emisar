@@ -51,6 +51,9 @@ defmodule Emisar.Catalog.TrustedManifest do
           required(String.t()) => 1 | %{required(String.t()) => map()}
         }
 
+  @doc "Maximum actions a complete trusted pack manifest may contain."
+  def max_actions, do: @max_actions
+
   @doc "Build a trusted manifest from release-frozen catalog action objects."
   @spec from_catalog_actions([map()]) :: {:ok, map()} | {:error, :invalid_manifest}
   def from_catalog_actions(actions) when is_list(actions) do

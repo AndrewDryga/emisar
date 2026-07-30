@@ -7,7 +7,8 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @create_fields ~w[
     account_id runner_id request_id action_id args_raw args_sha256 sensitive_arg_names client_info mcp_client_metadata
     ip_address user_agent opts attestation reason evidence expected source requested_by_id api_key_id initiating_membership_id
-    operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id expected_pack_hash
+    operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id
+    runbook_execution_item_id attempt_number expected_pack_hash
     structured_output_expected output_schema_snapshot
     policy_id policy_version policy_decision
     policy_reason matched_rules requires_approval status queued_at
@@ -80,8 +81,11 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> unique_constraint([:mcp_operation_record_id, :runner_id],
       name: :action_runs_mcp_operation_runner_index
     )
-    |> unique_constraint([:runbook_execution_id, :runbook_step_id, :runner_id],
-      name: :action_runs_execution_step_runner_index
+    |> unique_constraint([:runbook_execution_item_id, :attempt_number],
+      name: :action_runs_runbook_item_attempt_index
+    )
+    |> check_constraint(:runbook_execution_item_id,
+      name: :action_runs_runbook_attempt_identity_check
     )
   end
 

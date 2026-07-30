@@ -437,6 +437,11 @@
         "code": {"type": "string", "minLength": 1, "maxLength": 80},
         "message": {"type": "string", "minLength": 1, "maxLength": 512},
         "retryable": {"type": "boolean"},
+        "path": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^(?:|/(?:[^~/]|~[01])*)*$"
+        },
         "details": {"type": "object"},
         "next": {"$ref": "#/$defs/read_next"}
       },
@@ -627,102 +632,239 @@
         }
       ]
     },
-    "runner_selector": {
+    "runbook_execution_status": {
+      "type": "string",
+      "enum": ["active", "succeeded", "halted", "cancelled"]
+    },
+    "runbook_execution_error": {
       "oneOf": [
+        {"type": "null"},
         {
           "type": "object",
-          "required": ["runner_refs"],
-          "additionalProperties": false,
-          "properties": {"runner_refs": {"$ref": "#/$defs/runner_refs"}}
-        },
-        {
-          "type": "object",
-          "required": ["groups"],
+          "required": ["code", "message"],
           "additionalProperties": false,
           "properties": {
-            "groups": {
-              "type": "array",
-              "minItems": 1,
-              "maxItems": 16,
-              "uniqueItems": true,
-              "items": {"type": "string", "minLength": 1, "maxLength": 80}
+            "code": {"type": "string", "minLength": 1, "maxLength": 80},
+            "message": {"type": "string", "minLength": 1, "maxLength": 512},
+            "stage_id": {"$ref": "#/$defs/step_id"},
+            "step_id": {"$ref": "#/$defs/step_id"},
+            "runner_ref": {"$ref": "#/$defs/runner_ref"}
+          }
+        }
+      ]
+    },
+    "runbook_output_value": {},
+    "runbook_output_result": {
+      "type": "object",
+      "required": ["output_id", "source", "sensitive", "status", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "output_id": {"$ref": "#/$defs/step_id"},
+        "source": {"type": "string", "enum": ["structured_output", "stdout", "stderr"]},
+        "sensitive": {"type": "boolean"},
+        "status": {"type": "string", "enum": ["pending", "extracted", "error"]},
+        "value": {"$ref": "#/$defs/runbook_output_value"}
+      }
+    },
+    "runbook_condition_result": {
+      "type": "object",
+      "required": ["output", "operator", "expected", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "output": {"$ref": "#/$defs/step_id"},
+        "operator": {
+          "type": "string",
+          "enum": [
+            "equals",
+            "not_equals",
+            "greater_than",
+            "greater_than_or_equal",
+            "less_than",
+            "less_than_or_equal",
+            "contains",
+            "one_of",
+            "matches"
+          ]
+        },
+        "expected": {},
+        "status": {"type": "string", "enum": ["pending", "passed", "failed", "error"]}
+      }
+    },
+    "runbook_wait": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": [
+            "interval_seconds",
+            "timeout_seconds",
+            "max_attempts",
+            "started_at",
+            "next_attempt_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "interval_seconds": {"type": "integer", "minimum": 5, "maximum": 3600},
+            "timeout_seconds": {"type": "integer", "minimum": 5, "maximum": 86400},
+            "max_attempts": {"type": "integer", "minimum": 2, "maximum": 100},
+            "started_at": {
+              "oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]
+            },
+            "next_attempt_at": {
+              "oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]
             }
           }
         }
       ]
     },
-    "runbook_step": {
-      "type": "object",
-      "required": ["step_id", "action_id", "pack_ref", "args", "runner_selector"],
-      "additionalProperties": false,
-      "properties": {
-        "step_id": {"$ref": "#/$defs/step_id"},
-        "action_id": {"$ref": "#/$defs/action_id"},
-        "pack_ref": {"$ref": "#/$defs/pack_ref"},
-        "args": {"type": "object", "x-maxRawUtf8Bytes": 32768},
-        "runner_selector": {"$ref": "#/$defs/runner_selector"}
-      }
-    },
-    "runbook_execution_status": {
-      "type": "string",
-      "enum": ["pending", "running", "pending_approval", "success", "failed"]
-    },
-    "runbook_step_status": {
-      "type": "string",
-      "enum": ["pending", "running", "pending_approval", "success", "failed"]
-    },
-    "runbook_execution_step": {
-      "type": "object",
-      "required": ["step_id", "action_id", "status", "run_count", "status_counts"],
-      "additionalProperties": false,
-      "properties": {
-        "step_id": {"$ref": "#/$defs/step_id"},
-        "action_id": {"$ref": "#/$defs/action_id"},
-        "status": {"$ref": "#/$defs/runbook_step_status"},
-        "run_count": {"type": "integer", "minimum": 1, "maximum": 256},
-        "status_counts": {
+    "runbook_latest_attempt": {
+      "oneOf": [
+        {"type": "null"},
+        {
           "type": "object",
-          "minProperties": 1,
+          "required": [
+            "run_id",
+            "attempt_number",
+            "status",
+            "duration_ms",
+            "started_at",
+            "finished_at"
+          ],
           "additionalProperties": false,
           "properties": {
-            "pending": {"type": "integer", "minimum": 1, "maximum": 256},
-            "pending_approval": {"type": "integer", "minimum": 1, "maximum": 256},
-            "sent": {"type": "integer", "minimum": 1, "maximum": 256},
-            "running": {"type": "integer", "minimum": 1, "maximum": 256},
-            "success": {"type": "integer", "minimum": 1, "maximum": 256},
-            "failed": {"type": "integer", "minimum": 1, "maximum": 256},
-            "error": {"type": "integer", "minimum": 1, "maximum": 256},
-            "validation_failed": {"type": "integer", "minimum": 1, "maximum": 256},
-            "unknown_action": {"type": "integer", "minimum": 1, "maximum": 256},
-            "cancelled": {"type": "integer", "minimum": 1, "maximum": 256},
-            "timed_out": {"type": "integer", "minimum": 1, "maximum": 256},
-            "refused": {"type": "integer", "minimum": 1, "maximum": 256},
-            "denied": {"type": "integer", "minimum": 1, "maximum": 256}
+            "run_id": {"$ref": "#/$defs/run_id"},
+            "attempt_number": {"type": "integer", "minimum": 1, "maximum": 100},
+            "status": {"$ref": "#/$defs/run_status"},
+            "duration_ms": {
+              "oneOf": [
+                {"type": "null"},
+                {"type": "integer", "minimum": 0, "maximum": 86400000}
+              ]
+            },
+            "started_at": {
+              "oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]
+            },
+            "finished_at": {
+              "oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]
+            }
           }
+        }
+      ]
+    },
+    "runbook_execution_item": {
+      "type": "object",
+      "required": [
+        "item_id",
+        "step_id",
+        "runner_ref",
+        "status",
+        "action_id",
+        "pack_ref",
+        "pack_hash",
+        "risk",
+        "attempt_count",
+        "wait",
+        "outputs",
+        "output_count",
+        "output_values_omitted",
+        "conditions",
+        "condition_count",
+        "error",
+        "latest_attempt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {"type": "string", "format": "uuid"},
+        "step_id": {"$ref": "#/$defs/step_id"},
+        "runner_ref": {"$ref": "#/$defs/runner_ref"},
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "waiting", "succeeded", "failed", "cancelled"]
+        },
+        "action_id": {"$ref": "#/$defs/action_id"},
+        "pack_ref": {"$ref": "#/$defs/pack_ref"},
+        "pack_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "risk": {"$ref": "#/$defs/risk"},
+        "attempt_count": {"type": "integer", "minimum": 0, "maximum": 100},
+        "wait": {"$ref": "#/$defs/runbook_wait"},
+        "outputs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/runbook_output_result"}
+        },
+        "output_count": {"type": "integer", "minimum": 0, "maximum": 16},
+        "output_values_omitted": {"type": "boolean"},
+        "conditions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/runbook_condition_result"}
+        },
+        "condition_count": {"type": "integer", "minimum": 0, "maximum": 16},
+        "error": {"$ref": "#/$defs/runbook_execution_error"},
+        "latest_attempt": {"$ref": "#/$defs/runbook_latest_attempt"}
+      }
+    },
+    "runbook_execution_stage": {
+      "type": "object",
+      "required": [
+        "stage_id",
+        "title",
+        "position",
+        "mode",
+        "max_parallel",
+        "approval",
+        "status",
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "stage_id": {"$ref": "#/$defs/step_id"},
+        "title": {"type": "string", "minLength": 1, "maxLength": 80},
+        "position": {"type": "integer", "minimum": 0, "maximum": 15},
+        "mode": {"type": "string", "enum": ["sequential", "parallel"]},
+        "max_parallel": {"type": "integer", "minimum": 1, "maximum": 16},
+        "approval": {"type": "string", "enum": ["none", "required"]},
+        "status": {
+          "type": "string",
+          "enum": ["pending", "awaiting_approval", "active", "succeeded", "halted", "cancelled"]
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {"$ref": "#/$defs/runbook_execution_item"}
         }
       }
     },
     "runbook_execution": {
       "type": "object",
-      "x-maxEncodedUtf8Bytes": 98304,
-      "required": ["runbook_execution_id", "runbook_ref", "status", "steps", "runs_next"],
+      "x-maxEncodedUtf8Bytes": 524288,
+      "required": [
+        "runbook_execution_id",
+        "runbook_ref",
+        "status",
+        "blocking",
+        "stages",
+        "runs_next"
+      ],
       "additionalProperties": false,
       "properties": {
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
         "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
         "status": {"$ref": "#/$defs/runbook_execution_status"},
-        "steps": {
+        "blocking": {"$ref": "#/$defs/runbook_execution_error"},
+        "stages": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 32,
-          "items": {"$ref": "#/$defs/runbook_execution_step"}
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/runbook_execution_stage"}
         },
         "runs_next": {"$ref": "#/$defs/next_recent_runs"},
         "next": {"$ref": "#/$defs/next_wait"}
       },
       "allOf": [
         {
-          "if": {"properties": {"status": {"enum": ["pending", "running", "pending_approval"]}}},
+          "if": {"properties": {"status": {"const": "active"}}},
           "then": {"required": ["next"]},
           "else": {"not": {"required": ["next"]}}
         }
@@ -1118,7 +1260,7 @@
     },
     "list_runbooks": {
       "title": "List runbooks",
-      "description": "List visible immutable published runbooks whose steps resolve to currently operator-trusted packs. Use get_runbook to inspect the exact frozen steps before execution.",
+      "description": "List visible immutable published runbooks with concise input, stage, and step counts. Use get_runbook to inspect the canonical definition before execution.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -1145,12 +1287,21 @@
                 "maxItems": 50,
                 "items": {
                   "type": "object",
-                  "required": ["runbook_ref", "title", "summary", "step_count"],
+                  "required": [
+                    "runbook_ref",
+                    "title",
+                    "summary",
+                    "input_count",
+                    "stage_count",
+                    "step_count"
+                  ],
                   "additionalProperties": false,
                   "properties": {
                     "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
                     "title": {"type": "string", "minLength": 1, "maxLength": 160},
                     "summary": {"type": "string", "maxLength": 512},
+                    "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
+                    "stage_count": {"type": "integer", "minimum": 1, "maximum": 16},
                     "step_count": {"type": "integer", "minimum": 1, "maximum": 32}
                   }
                 }
@@ -1163,7 +1314,7 @@
     },
     "get_runbook": {
       "title": "Get runbook",
-      "description": "Get one exact immutable published runbook definition by runbook_ref, including ordered actions, arguments, selectors, and dependencies.",
+      "description": "Get one exact immutable published runbook by runbook_ref. Metadata stays separate from the canonical typed definition used by authoring and execution.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -1183,14 +1334,31 @@
               "ok": {"const": true},
               "runbook": {
                 "type": "object",
-                "x-maxEncodedUtf8Bytes": 57344,
-                "required": ["runbook_ref", "title", "description", "steps"],
+                "x-maxEncodedUtf8Bytes": 73728,
+                "required": ["runbook_ref", "title", "description", "definition", "summary"],
                 "additionalProperties": false,
                 "properties": {
                   "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
                   "title": {"type": "string", "minLength": 1, "maxLength": 160},
-                  "description": {"type": "string", "maxLength": 4096},
-                  "steps": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/runbook_step"}}
+                  "description": {
+                    "oneOf": [
+                      {"type": "null"},
+                      {"type": "string", "maxLength": 4096}
+                    ]
+                  },
+                  "definition": {
+                    "$ref": "https://emisar.dev/schemas/runbook-definition-v1.json"
+                  },
+                  "summary": {
+                    "type": "object",
+                    "required": ["input_count", "stage_count", "step_count"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
+                      "stage_count": {"type": "integer", "minimum": 1, "maximum": 16},
+                      "step_count": {"type": "integer", "minimum": 1, "maximum": 32}
+                    }
+                  }
                 }
               }
             }
@@ -1208,7 +1376,12 @@
         "additionalProperties": false,
         "properties": {
           "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
-          "reason": {"$ref": "#/$defs/reason"}
+          "reason": {"$ref": "#/$defs/reason"},
+          "input_values": {
+            "type": "object",
+            "default": {},
+            "x-maxEncodedUtf8Bytes": 32768
+          }
         }
       },
       "outputSchema": {
@@ -1234,14 +1407,33 @@
       "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
-        "x-maxEncodedUtf8Bytes": 57344,
-        "required": ["title", "steps"],
+        "x-maxEncodedUtf8Bytes": 73728,
+        "required": ["title", "slug", "description", "definition"],
         "additionalProperties": false,
         "properties": {
           "title": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S"},
-          "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
-          "description": {"type": "string", "maxLength": 4096},
-          "steps": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/runbook_step"}}
+          "slug": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "string",
+                "maxLength": 80,
+                "anyOf": [
+                  {"pattern": "^\\s*$"},
+                  {"pattern": "^[a-z][a-z0-9_-]{0,79}$"}
+                ]
+              }
+            ]
+          },
+          "description": {
+            "oneOf": [
+              {"type": "null"},
+              {"type": "string", "maxLength": 4096}
+            ]
+          },
+          "definition": {
+            "$ref": "https://emisar.dev/schemas/runbook-definition-v1.json"
+          }
         }
       },
       "outputSchema": {

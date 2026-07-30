@@ -789,7 +789,7 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal - current active runner access by account and membership id. Runbook
-  continuations use this before each wave; malformed identifiers fail closed.
+  attempts use this before dispatch; malformed identifiers fail closed.
   """
   def runner_access_for_membership(account_id, membership_id)
       when is_binary(account_id) and is_binary(membership_id) do
@@ -1082,11 +1082,11 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — the runbook engine's per-wave authorization re-check: the
+  Internal — the runbook scheduler's per-attempt authorization re-check: the
   membership `membership_id` in `account_id`, nil-or-struct, ONLY if it is still
   active (not deleted, not disabled). No `%Subject{}` — the caller is the
-  user-less runbook continuation, which already authorized at first dispatch and
-  re-validates the anchor here before each wave. A `nil` result means the
+  user-less scheduler, which already authorized at execution creation and
+  re-validates the anchor before later work. A `nil` result means the
   initiating member was suspended/deleted mid-execution → the engine halts.
   """
   def peek_active_membership(account_id, membership_id)

@@ -7,6 +7,33 @@ defmodule Emisar.Fixtures.Runbooks do
   alias Emisar.{Fixtures, Repo}
   alias Emisar.Runbooks.Runbook
 
+  @default_definition %{
+    "schema_version" => 1,
+    "context_markdown" => "",
+    "inputs" => [],
+    "stages" => [
+      %{
+        "id" => "main",
+        "title" => "Run",
+        "mode" => "sequential",
+        "max_parallel" => 1,
+        "approval" => "none",
+        "steps" => [
+          %{
+            "id" => "inspect",
+            "pack" => %{"id" => "linux-core", "requirement" => "== 1.0.0"},
+            "action" => "linux.uptime",
+            "targets" => %{"kind" => "group", "refs" => ["default"]},
+            "args" => %{},
+            "outputs" => [],
+            "success" => [],
+            "wait" => nil
+          }
+        ]
+      }
+    ]
+  }
+
   @doc """
   Persists a draft runbook. Caller supplies `:account_id` (or the helper makes
   a fresh account) and may override `:title`/`:created_by_id`.
@@ -23,10 +50,13 @@ defmodule Emisar.Fixtures.Runbooks do
         name: attrs[:name] || "runbook-#{Fixtures.Random.unique_int()}",
         slug: attrs[:slug] || "runbook-#{Fixtures.Random.unique_int()}",
         title: title,
-        definition: attrs[:definition] || %{"steps" => []}
+        definition: attrs[:definition] || @default_definition
       })
       |> Repo.insert()
 
     runbook
   end
+
+  @doc "Returns a fresh canonical minimal v1 definition for context tests."
+  def default_definition, do: @default_definition
 end

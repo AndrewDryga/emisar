@@ -60,6 +60,42 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_runbook_execution_id(queryable, execution_id),
     do: where(queryable, [runs: r], r.runbook_execution_id == ^execution_id)
 
+  def latest_runbook_attempts(queryable \\ all()) do
+    queryable
+    |> where([runs: r], not is_nil(r.runbook_execution_item_id))
+    |> distinct([runs: r], r.runbook_execution_item_id)
+    |> order_by(
+      [runs: r],
+      asc: r.runbook_execution_item_id,
+      desc: r.attempt_number,
+      desc: r.inserted_at
+    )
+  end
+
+  def terminal_runbook_callbacks(queryable \\ all(), terminal_statuses) do
+    queryable
+    |> join(
+      :inner,
+      [runs: r],
+      item in Emisar.Runbooks.ExecutionItem,
+      on:
+        item.id == r.runbook_execution_item_id and item.status == :running and
+          item.attempt_count == r.attempt_number,
+      as: :callback_item
+    )
+    |> join(
+      :inner,
+      [callback_item: i],
+      execution in Emisar.Runbooks.RunbookExecution,
+      on:
+        execution.id == i.runbook_execution_id and
+          execution.status in [:active, :halted],
+      as: :callback_execution
+    )
+    |> where([runs: r], r.status in ^terminal_statuses)
+    |> order_by([runs: r], asc: r.finished_at, asc: r.id)
+  end
+
   def by_credential_lineage(queryable, lineage_id) do
     queryable
     |> with_named_binding(:api_key, fn queryable, binding ->
@@ -122,6 +158,9 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   def by_ids(queryable \\ all(), ids) when is_list(ids),
     do: where(queryable, [runs: r], r.id in ^ids)
+
+  def select_ids(queryable),
+    do: select(queryable, [runs: r], r.id)
 
   def by_action_id(queryable, action_id),
     do: where(queryable, [runs: r], r.action_id == ^action_id)
@@ -212,6 +251,9 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   def ordered_by_oldest(queryable \\ all()),
     do: order_by(queryable, [runs: r], asc: r.inserted_at)
+
+  def ordered_by_id(queryable \\ all()),
+    do: order_by(queryable, [runs: r], asc: r.id)
 
   def limit_to(queryable, n), do: limit(queryable, ^n)
 

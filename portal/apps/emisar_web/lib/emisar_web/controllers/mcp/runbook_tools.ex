@@ -2,12 +2,13 @@ defmodule EmisarWeb.MCP.RunbookTools do
   @moduledoc """
   Fixed MCP runbook discovery, draft creation, and execution boundary.
 
-  Public refs are translated once at this boundary. The Runbooks context owns
-  immutable versions, authorization, frozen work lists, wave dispatch, and audit.
+  MCP accepts and returns the same strict JSON-compatible definition used by
+  persistence and the console. Runbooks owns compilation, authorization, and
+  scheduling; this module only handles wire identity and bounded projection.
   """
 
-  alias Emisar.{Catalog, Crypto, MCPOperations, Runbooks, Runners, Runs, Slug}
-  alias EmisarWeb.MCP.{ActionContract, CatalogCursor, ResponseBudget, RunbookContract}
+  alias Emisar.{Crypto, MCPOperations, Runbooks, Slug}
+  alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract}
   alias EmisarWeb.MCP.ValidationError
 
   @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
@@ -40,8 +41,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     query = args["query"]
     limit = args["limit"] || @default_limit
 
-    with {:ok, snapshot} <- catalog_snapshot(conn),
-         {:ok, summaries} <- published_summaries(conn, query, snapshot),
+    with {:ok, summaries} <- published_summaries(conn, query),
          scope <- cursor_scope(conn),
          filters <- %{"query" => query, "limit" => limit},
          {:ok, after_key} <-
@@ -62,60 +62,62 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp get_runbook(conn, args) do
-    # Schema-validated: runbook_ref always matches the published pattern.
     {:ok, {slug, version}} = parse_runbook_ref(args["runbook_ref"])
 
     with {:ok, runbook} <-
            Runbooks.fetch_published_runbook_version(slug, version, conn.assigns.current_subject),
-         {:ok, snapshot} <- catalog_snapshot(conn),
-         {:ok, public_runbook} <- RunbookContract.project(runbook, snapshot) do
+         :ok <-
+           Runbooks.validate_model_visible_runbook(runbook, conn.assigns.current_subject),
+         {:ok, public_runbook} <- RunbookContract.project(runbook) do
       {:ok, %{ok: true, runbook: public_runbook}}
     else
-      {:error, :not_found} ->
-        {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
-
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read runbooks.")}
 
-      {:error, :incomplete_contract} ->
+      {:error, reason} when reason in [:not_found, :incomplete_contract] ->
+        {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
+
+      {:error, issues} when is_list(issues) ->
         {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
     end
   end
 
   defp create_draft(conn, args, operation_id) do
-    with {:ok, input} <- validate_draft(args) do
-      fingerprint = mutation_fingerprint("create_runbook_draft", draft_facts(input))
-      operation_attrs = draft_operation_attrs(input, operation_id, fingerprint, conn)
+    input = draft_input(args)
+    fingerprint = mutation_fingerprint("create_runbook_draft", draft_facts(input))
+    operation_attrs = draft_operation_attrs(input, operation_id, fingerprint, conn)
 
-      case create_or_replay_draft(conn, input, operation_attrs) do
-        {:ok, _kind, runbook} ->
-          {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
+    case create_or_replay_draft(conn, input, operation_attrs) do
+      {:ok, _kind, runbook} ->
+        {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
 
-        {:error, :operation_conflict} ->
-          {:error,
-           error("operation_conflict", "This operation_id already belongs to another mutation.")}
+      {:error, :operation_conflict} ->
+        {:error,
+         error("operation_conflict", "This operation_id already belongs to another mutation.")}
 
-        {:error, :operation_incomplete} ->
-          {:error,
-           error(
-             "operation_incomplete",
-             "The operation committed without its draft resource.",
-             true,
-             %{operation_id: operation_id}
-           )}
+      {:error, :operation_incomplete} ->
+        {:error,
+         error(
+           "operation_incomplete",
+           "The operation committed without its draft resource.",
+           true,
+           %{operation_id: operation_id}
+         )}
 
-        {:error, %Ecto.Changeset{} = changeset} ->
-          {:error,
-           error("invalid_runbook", "The draft failed validation.", false, %{
-             fields: changeset_errors(changeset)
-           })}
+      {:error, issues} when is_list(issues) ->
+        {:error, issue_error(issues)}
 
-        {:error, :unauthorized} ->
-          {:error, error("not_allowed", "This key cannot create runbook drafts.")}
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:error,
+         error("invalid_runbook", "The draft failed validation.", false, %{
+           fields: changeset_errors(changeset)
+         })}
 
-        {:error, %{} = payload} ->
-          {:error, payload}
-      end
+      {:error, :unauthorized} ->
+        {:error, error("not_allowed", "This key cannot create runbook drafts.")}
+
+      {:error, %{} = payload} ->
+        {:error, payload}
     end
   end
 
@@ -131,10 +133,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
         end
 
       {:error, :not_found} ->
-        with {:ok, snapshot} <- catalog_snapshot(conn),
-             {:ok, steps} <- normalize_draft_steps(input.steps, snapshot) do
-          attrs = draft_attrs(input, steps)
-
+        with {:ok, definition} <- validate_draft(input),
+             attrs <- draft_attrs(input, definition) do
           Runbooks.create_mcp_draft(
             attrs,
             operation_attrs.operation_id,
@@ -149,18 +149,23 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp execute_runbook(conn, args, operation_id) do
-    input = %{runbook_ref: args["runbook_ref"], reason: args["reason"]}
+    input = %{
+      runbook_ref: args["runbook_ref"],
+      reason: args["reason"],
+      input_values: args["input_values"] || %{}
+    }
 
     fingerprint =
       mutation_fingerprint("execute_runbook", %{
         "runbook_ref" => input.runbook_ref,
-        "reason" => input.reason
+        "reason" => input.reason,
+        "input_values" => input.input_values
       })
 
     operation_attrs = execution_operation_attrs(input, operation_id, fingerprint, conn)
 
-    with {:ok, execution, runbook} <- execute_or_replay(conn, input, operation_attrs),
-         {:ok, payload} <- execution_payload(conn, execution, runbook) do
+    with {:ok, execution} <- execute_or_replay(conn, input, operation_attrs),
+         {:ok, payload} <- execution_payload(conn, execution.id) do
       {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
     else
       {:error, :operation_conflict} ->
@@ -176,39 +181,42 @@ defmodule EmisarWeb.MCP.RunbookTools do
            %{operation_id: operation_id}
          )}
 
-      {:error, :signed_runbook_unsupported} ->
-        {:error,
-         error(
-           "signed_runbook_unsupported",
-           "A runbook cannot execute on a signed-only runner because the bridge signs only direct run_action calls."
-         )}
-
-      {:error, :target_contract_changed} ->
-        target_contract_changed(conn, input)
-
       {:error, :unauthorized} ->
         not_allowed(conn, input)
 
       {:error, reason} ->
-        {:error, execution_failure(reason)}
+        execution_rejected(conn, input, reason)
     end
   end
 
-  defp target_contract_changed(conn, input) do
-    :ok = log_rejected(conn, input, "target_contract_changed")
-    {:error, execution_failure(:target_contract_changed)}
-  end
-
   defp not_allowed(conn, input) do
-    :ok = log_rejected(conn, input, "not_allowed")
+    :ok =
+      ValidationError.log_dispatch_rejected(conn, "execute_runbook", "not_allowed",
+        runbook_ref: input.runbook_ref
+      )
+
     {:error, error("not_allowed", "This key cannot execute this runbook.")}
   end
 
-  defp log_rejected(conn, input, reason) do
-    ValidationError.log_dispatch_rejected(conn, "execute_runbook", reason,
-      runbook_ref: input.runbook_ref
-    )
+  defp execution_rejected(conn, input, [%{code: _code, path: _path} | _rest] = reason) do
+    :ok =
+      ValidationError.log_dispatch_rejected(conn, "execute_runbook", "target_contract_changed",
+        runbook_ref: input.runbook_ref
+      )
+
+    {:error, execution_failure(reason)}
   end
+
+  defp execution_rejected(conn, input, reason) when reason in @hidden_contract_reasons do
+    :ok =
+      ValidationError.log_dispatch_rejected(conn, "execute_runbook", "target_contract_changed",
+        runbook_ref: input.runbook_ref
+      )
+
+    {:error, execution_failure(reason)}
+  end
+
+  defp execution_rejected(_conn, _input, reason), do: {:error, execution_failure(reason)}
 
   @doc false
   def execution_failure(reason) when reason in @hidden_contract_reasons do
@@ -222,17 +230,16 @@ defmodule EmisarWeb.MCP.RunbookTools do
     )
   end
 
-  def execution_failure({:step_no_runners, step}) do
-    error("execution_failed", "Step #{step} has no executable runner.")
+  def execution_failure(:runbook_capacity_exceeded) do
+    "runbook_capacity_exceeded"
+    |> error(
+      "This account already has 1,024 active runbook items. Wait for an execution to finish or cancel one, then try again."
+    )
+    |> put_in([:error, :retryable], true)
   end
 
-  def execution_failure({:step_fan_out_too_large, max}) do
-    error("execution_failed", "One resolved runbook step exceeds #{max} runners.")
-  end
-
-  def execution_failure({:fan_out_too_large, max}) do
-    error("execution_failed", "The resolved runbook exceeds #{max} runs.")
-  end
+  def execution_failure([%{code: _code, message: _message, path: _path} | _rest] = issues),
+    do: issue_error(issues)
 
   def execution_failure(_reason) do
     error("execution_failed", "The runbook could not be started.")
@@ -246,77 +253,284 @@ defmodule EmisarWeb.MCP.RunbookTools do
         fetch_committed_execution(operation_attrs.operation_id, subject)
 
       {:error, :not_found} ->
-        execute_new(conn, input, operation_attrs)
+        execute_new(input, operation_attrs, subject)
 
       other ->
         other
     end
   end
 
-  defp execute_new(conn, input, operation_attrs) do
-    subject = conn.assigns.current_subject
-
+  defp execute_new(input, operation_attrs, subject) do
     with {:ok, {slug, version}} <- parse_runbook_ref(input.runbook_ref),
          {:ok, runbook} <- Runbooks.fetch_published_runbook_version(slug, version, subject),
-         :ok <- preflight_runbook(conn, runbook),
          {:ok, _result} <-
            Runbooks.dispatch_runbook(runbook, input.reason, subject,
              operation_id: operation_attrs.operation_id,
              operation_fingerprint: operation_attrs.fingerprint,
              operation_ref: input.runbook_ref,
-             max_runners_per_step: 16,
-             max_fan_out: 256
+             input_values: input.input_values
            ) do
       fetch_committed_execution(operation_attrs.operation_id, subject)
     end
   end
 
   defp fetch_committed_execution(operation_id, subject) do
-    with {:ok, execution} <- Runbooks.fetch_execution_by_operation(operation_id, subject),
-         {:ok, runbook} <- Runbooks.fetch_runbook_for_execution(execution, subject) do
-      {:ok, execution, runbook}
-    else
+    case Runbooks.fetch_execution_by_operation(operation_id, subject) do
+      {:ok, execution} -> {:ok, execution}
       {:error, :not_found} -> {:error, :operation_incomplete}
       other -> other
     end
   end
 
   @doc "Builds the fixed execution projection used by execute, wait, and recovery."
-  def execution_payload(conn, execution, runbook) do
-    subject = conn.assigns.current_subject
-
-    with {:ok, runs} <- Runs.list_runs_by_runbook_execution(execution.id, subject) do
-      execution_payload_from_runs(execution, runbook, runs)
+  def execution_payload(conn, execution_id) when is_binary(execution_id) do
+    with {:ok, result} <-
+           Runbooks.fetch_execution_result(execution_id, conn.assigns.current_subject) do
+      project_execution(result)
     end
   end
 
-  @doc "Builds the fixed execution projection from an already authorized run list."
-  def execution_payload_from_runs(execution, runbook, runs) when is_list(runs) do
-    status = execution_status(execution, runs)
+  @doc false
+  def project_execution(%{
+        execution: execution,
+        runbook: runbook,
+        latest_attempts: latest_attempts
+      }) do
+    attempts_by_item = Map.new(latest_attempts, &{&1.runbook_execution_item_id, &1})
 
-    {:ok,
-     %{
-       runbook_execution_id: execution.id,
-       runbook_ref: runbook_ref(runbook),
-       status: status,
-       steps: execution_steps(runbook, execution, runs),
-       runs_next: %{
-         tool: "recent_runs",
-         arguments: %{runbook_execution_id: execution.id, limit: 15}
-       }
-     }
-     |> maybe_put(
-       :next,
-       if(status in ~w(pending running pending_approval),
-         do: %{
-           tool: "wait_for_run",
-           arguments: %{runbook_execution_id: execution.id, timeout: "60s"}
-         }
-       )
-     )}
+    [:full, :summary, :minimal]
+    |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
+      payload = execution_projection(execution, runbook, attempts_by_item, mode)
+
+      if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
+        {:halt, {:ok, payload}}
+      else
+        {:cont, {:error, :response_too_large}}
+      end
+    end)
   end
 
-  defp published_summaries(conn, query, snapshot) do
+  defp execution_projection(execution, runbook, attempts_by_item, mode) do
+    items_by_stage = Enum.group_by(execution.items, & &1.runbook_execution_stage_id)
+
+    %{
+      runbook_execution_id: execution.id,
+      runbook_ref: runbook_ref(runbook),
+      status: to_string(execution.status),
+      blocking: blocking(execution),
+      stages:
+        Enum.map(execution.stages, fn stage ->
+          stage_items = Map.get(items_by_stage, stage.id, [])
+          stage_projection(stage, stage_items, attempts_by_item, mode)
+        end),
+      runs_next: %{
+        tool: "recent_runs",
+        arguments: %{runbook_execution_id: execution.id, limit: 15}
+      }
+    }
+    |> maybe_put(
+      :next,
+      if(execution.status == :active,
+        do: %{
+          tool: "wait_for_run",
+          arguments: %{runbook_execution_id: execution.id, timeout: "60s"}
+        }
+      )
+    )
+  end
+
+  defp stage_projection(stage, items, attempts_by_item, mode) do
+    %{
+      stage_id: stage.stage_id,
+      title: stage.title,
+      position: stage.position,
+      mode: to_string(stage.mode),
+      max_parallel: stage.max_parallel,
+      approval: to_string(stage.approval),
+      status: to_string(stage.status),
+      items:
+        Enum.map(items, fn item ->
+          item_projection(item, Map.get(attempts_by_item, item.id), mode)
+        end)
+    }
+  end
+
+  defp item_projection(item, attempt, mode) do
+    %{
+      item_id: item.id,
+      step_id: item.step_id,
+      runner_ref: item.runner_ref,
+      status: to_string(item.status),
+      action_id: item.action_id,
+      pack_ref: item.pack_ref,
+      pack_hash: item.pack_hash,
+      risk: item.risk,
+      attempt_count: item.attempt_count,
+      wait: wait_projection(item),
+      outputs: output_results(item, mode),
+      output_count: length(item.output_plan),
+      output_values_omitted: mode != :full,
+      conditions: condition_results(item, mode),
+      condition_count: length(item.success_plan),
+      error: item_error(item),
+      latest_attempt: attempt_projection(attempt)
+    }
+  end
+
+  defp output_results(_item, :minimal), do: []
+
+  defp output_results(item, mode) do
+    evidence =
+      item.success_evidence
+      |> Enum.filter(&(&1["kind"] == "extraction"))
+      |> Map.new(&{&1["output"], &1})
+
+    Enum.map(item.output_plan, fn declaration ->
+      id = declaration["id"]
+      row = Map.get(evidence, id, %{})
+      value = Map.get(item.outputs, id)
+
+      %{
+        output_id: id,
+        source: declaration["source"],
+        sensitive: declaration["sensitive"],
+        status: row["status"] || "pending",
+        value: output_value(value, declaration["sensitive"], mode)
+      }
+    end)
+  end
+
+  defp output_value(value, _sensitive, :full), do: value
+  defp output_value("[REDACTED]", true, :summary), do: "[REDACTED]"
+  defp output_value(nil, _sensitive, :summary), do: nil
+
+  defp output_value(value, _sensitive, :summary) do
+    encoded = Jason.encode!(value)
+
+    %{
+      omitted: true,
+      encoded_bytes: byte_size(encoded),
+      sha256: Crypto.hash_hex(encoded)
+    }
+  end
+
+  defp condition_results(_item, :minimal), do: []
+
+  defp condition_results(item, mode) do
+    evidence = Enum.filter(item.success_evidence, &(&1["kind"] == "condition"))
+
+    item.success_plan
+    |> Enum.with_index()
+    |> Enum.map(fn {condition, index} ->
+      row = Enum.at(evidence, index, %{})
+      sensitive? = output_sensitive?(item.output_plan, condition["output"])
+
+      %{
+        output: condition["output"],
+        operator: condition["operator"],
+        expected: expected_value(condition["value"], sensitive?, mode),
+        status: row["status"] || "pending"
+      }
+    end)
+  end
+
+  defp expected_value(_value, true, _mode), do: "[REDACTED]"
+  defp expected_value(value, false, :full), do: value
+  defp expected_value(_value, false, :summary), do: nil
+
+  defp output_sensitive?(output_plan, output_id) do
+    Enum.any?(output_plan, &(&1["id"] == output_id and &1["sensitive"]))
+  end
+
+  defp wait_projection(%{wait: nil}), do: nil
+
+  defp wait_projection(item) do
+    %{
+      interval_seconds: item.wait["interval_seconds"],
+      timeout_seconds: item.wait["timeout_seconds"],
+      max_attempts: item.wait["max_attempts"],
+      started_at: item.wait_started_at,
+      next_attempt_at: item.next_attempt_at
+    }
+  end
+
+  defp item_error(%{terminal_code: nil}), do: nil
+
+  defp item_error(item),
+    do: %{code: item.terminal_code, message: item.terminal_message || "Item halted."}
+
+  defp attempt_projection(nil), do: nil
+
+  defp attempt_projection(attempt) do
+    %{
+      run_id: attempt.id,
+      attempt_number: attempt.attempt_number,
+      status: to_string(attempt.status),
+      duration_ms: attempt.duration_ms,
+      started_at: attempt.started_at,
+      finished_at: attempt.finished_at
+    }
+  end
+
+  defp blocking(%{terminal_code: code} = execution) when is_binary(code) do
+    stage = Enum.find(execution.stages, &(&1.status in [:halted, :cancelled]))
+
+    execution.items
+    |> Enum.find(&(&1.status in [:failed, :cancelled]))
+    |> blocking_from_terminal(execution, stage)
+  end
+
+  defp blocking(execution) do
+    case Enum.find(execution.stages, &(&1.status == :awaiting_approval)) do
+      nil -> waiting_block(execution)
+      stage -> stage_block("approval_required", "Stage approval is required.", stage)
+    end
+  end
+
+  defp blocking_from_terminal(nil, execution, stage) do
+    %{
+      code: execution.terminal_code,
+      message: execution.terminal_message || "Execution halted."
+    }
+    |> maybe_put(:stage_id, stage && stage.stage_id)
+  end
+
+  defp blocking_from_terminal(item, _execution, stage) do
+    %{
+      code: item.terminal_code || "action_failed",
+      message: item.terminal_message || "A runbook item did not succeed.",
+      step_id: item.step_id,
+      runner_ref: item.runner_ref
+    }
+    |> maybe_put(:stage_id, stage && stage.stage_id)
+  end
+
+  defp waiting_block(execution) do
+    case Enum.find(execution.items, &(&1.status == :waiting)) do
+      nil ->
+        nil
+
+      item ->
+        stage =
+          Enum.find(
+            execution.stages,
+            &(&1.id == item.runbook_execution_stage_id)
+          )
+
+        %{
+          code: "waiting",
+          message: "A success condition is waiting for another observation.",
+          step_id: item.step_id,
+          runner_ref: item.runner_ref
+        }
+        |> maybe_put(:stage_id, stage && stage.stage_id)
+    end
+  end
+
+  defp stage_block(code, message, stage),
+    do: %{code: code, message: message, stage_id: stage.stage_id}
+
+  defp published_summaries(conn, query) do
     case Runbooks.list_all_runbooks(conn.assigns.current_subject) do
       {:ok, runbooks} ->
         summaries =
@@ -325,9 +539,15 @@ defmodule EmisarWeb.MCP.RunbookTools do
           |> Enum.group_by(& &1.slug)
           |> Enum.map(fn {_slug, versions} -> Enum.max_by(versions, & &1.version) end)
           |> Enum.flat_map(fn runbook ->
-            case RunbookContract.project(runbook, snapshot) do
-              {:ok, public_runbook} -> [runbook_summary(runbook, public_runbook)]
-              {:error, :incomplete_contract} -> []
+            with :ok <-
+                   Runbooks.validate_model_visible_runbook(
+                     runbook,
+                     conn.assigns.current_subject
+                   ),
+                 {:ok, public_runbook} <- RunbookContract.project(runbook) do
+              [runbook_summary(runbook, public_runbook)]
+            else
+              _hidden_or_invalid -> []
             end
           end)
           |> Enum.filter(&summary_matches?(&1, query))
@@ -344,15 +564,17 @@ defmodule EmisarWeb.MCP.RunbookTools do
     %{
       runbook_ref: runbook_ref(runbook),
       title: runbook.title,
-      summary: summary(runbook.description),
-      step_count: length(public_runbook.steps)
+      summary: text_summary(runbook.description),
+      input_count: public_runbook.summary.input_count,
+      stage_count: public_runbook.summary.stage_count,
+      step_count: public_runbook.summary.step_count
     }
   end
 
-  defp summary(value) when is_binary(value),
+  defp text_summary(value) when is_binary(value),
     do: value |> String.replace(~r/\s+/, " ") |> String.slice(0, 512)
 
-  defp summary(_value), do: ""
+  defp text_summary(_value), do: ""
 
   defp summary_matches?(_summary, nil), do: true
 
@@ -364,112 +586,44 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end)
   end
 
-  # The controller already validated the published create_runbook_draft
-  # inputSchema; the aggregate byte budget it documents as x-maxEncodedUtf8Bytes
-  # is enforced here, where the whole-arguments encoding is at hand.
-  defp validate_draft(args) do
-    with :ok <- encoded_size(args, 57_344) do
-      {:ok,
-       %{
-         title: args["title"],
-         slug: args["slug"],
-         description: args["description"] || "",
-         steps: args["steps"]
-       }}
+  defp draft_input(args) do
+    %{
+      title: args["title"],
+      slug: normalized_slug(args["slug"], args["title"]),
+      description: args["description"],
+      definition: args["definition"]
+    }
+  end
+
+  defp validate_draft(input) do
+    envelope = %{
+      "title" => input.title,
+      "slug" => input.slug,
+      "description" => input.description,
+      "definition" => input.definition
+    }
+
+    with :ok <-
+           encoded_size(envelope, Runbooks.Definition.limit!(:max_definition_bytes) + 8_192) do
+      Runbooks.Definition.validate(input.definition)
     end
   end
 
-  defp normalize_draft_steps(steps, snapshot) do
-    steps
-    |> Enum.reduce_while({:ok, [], MapSet.new(), 0}, fn step,
-                                                        {:ok, normalized, seen, run_count} ->
-      with {:ok, item, selected_count} <- normalize_draft_step(step, snapshot),
-           false <- MapSet.member?(seen, item["id"]),
-           next_count = run_count + selected_count,
-           true <- next_count <= 256 do
-        {:cont, {:ok, [item | normalized], MapSet.put(seen, item["id"]), next_count}}
-      else
-        _ ->
-          {:halt,
-           {:error,
-            error("invalid_runbook", "Every step needs a unique valid exact action contract.")}}
-      end
-    end)
-    |> case do
-      {:ok, normalized, _seen, _run_count} -> {:ok, Enum.reverse(normalized)}
-      error -> error
-    end
-  end
-
-  # The published runbook_step schema owns field shapes; this keeps only what
-  # it cannot express — the per-step args byte budget it documents as
-  # x-maxRawUtf8Bytes, the trusted-contract match, and selector resolution.
-  defp normalize_draft_step(step, snapshot) do
-    with true <- byte_size(Jason.encode!(step["args"])) <= 32_768,
-         %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == step["pack_ref"])),
-         %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == step["action_id"])),
-         :ok <- ActionContract.validate(step["args"], action),
-         {:ok, selector, selected_count} <-
-           normalize_selector(step["runner_selector"], snapshot, action) do
-      {:ok,
-       %{
-         "id" => step["step_id"],
-         "action_id" => step["action_id"],
-         "pack_ref" => step["pack_ref"],
-         "args" => step["args"],
-         "runner_selector" => selector
-       }, selected_count}
-    else
-      _ -> {:error, :invalid_step}
-    end
-  end
-
-  defp normalize_selector(%{"runner_refs" => refs}, snapshot, action) do
-    by_ref = Map.new(snapshot.runners, &{&1.runner_ref, &1})
-    compatible = MapSet.new(action.compatible_runner_ids)
-    selected = Enum.map(refs, &Map.get(by_ref, &1))
-
-    if Enum.all?(selected, &(&1 && MapSet.member?(compatible, &1.id))) do
-      {:ok, %{"runner_id" => Enum.map(selected, & &1.id), "runner_refs" => refs},
-       length(selected)}
-    else
-      {:error, :invalid_selector}
-    end
-  end
-
-  defp normalize_selector(%{"groups" => groups}, snapshot, action) do
-    compatible = MapSet.new(action.compatible_runner_ids)
-    visible_ids = MapSet.new(snapshot.runners, & &1.id)
-    selected = Enum.filter(snapshot.account_runners, &(&1.group in groups))
-
-    if length(selected) in 1..16 and
-         Enum.all?(selected, fn runner ->
-           MapSet.member?(visible_ids, runner.id) and MapSet.member?(compatible, runner.id)
-         end) do
-      {:ok, %{"group" => groups}, length(selected)}
-    else
-      {:error, :invalid_selector}
-    end
-  end
-
-  defp draft_attrs(input, steps) do
-    slug = draft_slug(input)
-
+  defp draft_attrs(input, definition) do
     %{
       "title" => input.title,
-      "name" => input.title,
-      "slug" => slug,
+      "slug" => input.slug,
       "description" => input.description,
-      "definition" => %{"steps" => steps}
+      "definition" => definition
     }
   end
 
   defp draft_facts(input) do
     %{
       "title" => input.title,
-      "slug" => draft_slug(input),
+      "slug" => input.slug,
       "description" => input.description,
-      "steps" => input.steps
+      "definition" => input.definition
     }
   end
 
@@ -481,7 +635,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       tool: :create_runbook_draft,
       fingerprint: fingerprint,
       resource_id: MCPOperations.resource_id(operation_id, :create_runbook_draft, subject),
-      resource_ref: draft_slug(input)
+      resource_ref: input.slug
     }
   end
 
@@ -497,7 +651,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
     }
   end
 
-  defp draft_slug(input), do: input.slug || Slug.slugify(input.title, max_length: 79)
+  defp normalized_slug(nil, title), do: Slug.slugify(title, max_length: 79)
+
+  defp normalized_slug(slug, title) when is_binary(slug) do
+    if String.trim(slug) == "", do: Slug.slugify(title, max_length: 79), else: slug
+  end
 
   defp draft_payload(runbook, operation_id, subject) do
     %{
@@ -509,139 +667,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
       review_url:
         "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
     }
-  end
-
-  defp preflight_runbook(conn, runbook) do
-    with {:ok, snapshot} <- catalog_snapshot(conn),
-         {:ok, public_runbook} <- RunbookContract.project(runbook, snapshot),
-         {:ok, plan} <- Runbooks.resolve_plan(runbook, conn.assigns.current_subject),
-         :ok <- validate_plan_contract(public_runbook, plan.plan, snapshot),
-         false <- enforcing_plan?(plan.plan, snapshot.runners) do
-      :ok
-    else
-      true -> {:error, :signed_runbook_unsupported}
-      {:error, :unauthorized} -> {:error, :unauthorized}
-      {:error, :incomplete_contract} -> {:error, :incomplete_contract}
-      _ -> {:error, :target_contract_changed}
-    end
-  end
-
-  defp validate_plan_contract(public_runbook, plan, snapshot) do
-    steps = Map.new(public_runbook.steps, &{&1.step_id, &1})
-    packs = Map.new(snapshot.packs, &{&1.pack_ref, &1})
-
-    if RunbookContract.valid_plan_size?(plan) and
-         Enum.all?(plan, &valid_plan_item?(&1, steps, packs)),
-       do: :ok,
-       else: {:error, :target_contract_changed}
-  end
-
-  defp valid_plan_item?(item, steps, packs) do
-    with %{} = step <- Map.get(steps, item.step_id),
-         pack_ref when is_binary(pack_ref) <- step.pack_ref,
-         %{} = pack <- Map.get(packs, pack_ref),
-         %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == item.action_id)) do
-      item.runner_id in action.compatible_runner_ids
-    else
-      _ -> false
-    end
-  end
-
-  defp enforcing_plan?(plan, runners) do
-    enforcing_ids = runners |> Enum.filter(& &1.enforce_signatures) |> MapSet.new(& &1.id)
-    Enum.any?(plan, &MapSet.member?(enforcing_ids, &1.runner_id))
-  end
-
-  defp execution_status(%{status: :halted}, _runs), do: "failed"
-  defp execution_status(_execution, []), do: "pending"
-
-  defp execution_status(execution, runs) do
-    total = length(execution.work_list)
-
-    cond do
-      Enum.any?(runs, &(&1.status == :pending_approval)) ->
-        "pending_approval"
-
-      length(runs) < total ->
-        "running"
-
-      Enum.any?(runs, &(Runs.ActionRun.terminal?(&1.status) and &1.status != :success)) ->
-        "failed"
-
-      Enum.all?(runs, &(&1.status == :success)) ->
-        "success"
-
-      true ->
-        "running"
-    end
-  end
-
-  defp execution_steps(runbook, execution, runs) do
-    steps = Runbooks.expand(runbook)
-    runs_by_step = Enum.group_by(runs, & &1.runbook_step_id)
-
-    execution.work_list
-    |> Enum.group_by(& &1["step_index"])
-    |> Enum.sort_by(fn {index, _items} -> index end)
-    |> Enum.map(fn {index, items} ->
-      step = Enum.at(steps, index)
-      step_runs = Map.get(runs_by_step, step["id"], [])
-
-      %{
-        step_id: step["id"],
-        action_id: step["action_id"],
-        status: step_status(step_runs, length(items)),
-        run_count: length(items),
-        status_counts: step_status_counts(step_runs, length(items))
-      }
-    end)
-  end
-
-  defp step_status([], _planned), do: "pending"
-
-  defp step_status(runs, planned) do
-    cond do
-      Enum.any?(runs, &(&1.status == :pending_approval)) ->
-        "pending_approval"
-
-      Enum.any?(runs, &(Runs.ActionRun.terminal?(&1.status) and &1.status != :success)) ->
-        "failed"
-
-      length(runs) == planned and Enum.all?(runs, &(&1.status == :success)) ->
-        "success"
-
-      true ->
-        "running"
-    end
-  end
-
-  defp step_status_counts(runs, planned) do
-    counts =
-      runs
-      |> Enum.frequencies_by(&to_string(&1.status))
-      |> Map.new()
-
-    missing = planned - length(runs)
-    if missing > 0, do: Map.update(counts, "pending", missing, &(&1 + missing)), else: counts
-  end
-
-  defp catalog_snapshot(conn) do
-    subject = conn.assigns.current_subject
-
-    with {:ok, runners} <- Runners.list_all_runners_for_account(subject),
-         {:ok, actions} <- Catalog.list_all_actions_for_account(subject),
-         {:ok, versions} <- Catalog.list_all_pack_versions_for_account(subject) do
-      account_runners = runners
-      ids = MapSet.new(runners, & &1.id)
-      actions = Enum.filter(actions, &MapSet.member?(ids, &1.runner_id))
-
-      snapshot =
-        versions
-        |> Catalog.MCPProjection.build(actions, runners)
-        |> Map.put(:account_runners, account_runners)
-
-      {:ok, snapshot}
-    end
   end
 
   defp mutation_fingerprint(tool, facts) do
@@ -695,11 +720,24 @@ defmodule EmisarWeb.MCP.RunbookTools do
       :ok
     else
       {:error,
-       ValidationError.payload("Arguments exceed the size limit.",
-         stage: :arguments,
-         issues: [ValidationError.issue([], :size)]
-       )}
+       [
+         %{
+           code: "invalid_definition",
+           path: "",
+           message: "Draft exceeds the encoded byte limit."
+         }
+       ]}
     end
+  rescue
+    Jason.EncodeError ->
+      {:error,
+       [
+         %{
+           code: "invalid_definition",
+           path: "",
+           message: "Draft must contain only JSON values."
+         }
+       ]}
   end
 
   defp split_more(items, limit) do
@@ -744,6 +782,14 @@ defmodule EmisarWeb.MCP.RunbookTools do
         String.replace(rendered, "%{#{key}}", to_string(value))
       end)
     end)
+  end
+
+  defp issue_error([first | _rest] = issues) do
+    details = %{issues: Enum.take(issues, 8)}
+
+    first.code
+    |> error(first.message, false, details)
+    |> update_in([:error], &Map.put(&1, :path, first.path))
   end
 
   defp maybe_put(map, _key, nil), do: map

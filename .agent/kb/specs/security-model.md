@@ -148,6 +148,12 @@ its actions from itself:
 | Output contains a stray bearer token     | Default + per-action redaction rules; size caps.              |
 | Runaway process                          | Timeouts enforced via `context.WithTimeout`.                  |
 | Output flood                             | Stdout/stderr byte caps; buffered progress is bounded, dropped chunks are counted structurally, and portal summaries mark incomplete delivery. |
+| Runbook definition exhausts parser or scheduler | One strict JSON-only schema rejects unknown shapes and enforces byte, depth, node, stage, step, target, output, condition, fan-out, wait, and lifetime caps before persistence or dispatch. |
+| Runbook regex consumes unbounded work | Expressions and source text are byte-bounded; PCRE match and recursion limits fail the item closed. Patterns remain data and never enter a command. |
+| Runbook binds output from the wrong host | Output bindings may name only an earlier stage and must resolve to one unique producer or the same runner across fan-out. Ambiguous correlation fails preflight. |
+| Pack fleet moves after runbook review | Preflight selects a compatible trusted version per exact runner and freezes its full pack ref, hash, and action contract. Every later attempt rechecks those frozen facts. |
+| Partial fleet mutation after target drift | The complete expanded target set must be in caller scope before creation; later authorization or trust loss halts before the next attempt or stage. Already-running peers only settle their real outcome. |
+| Approval hides a wider stage fan-out | A required stage opens one approval over the complete frozen item set before any action run exists; approver runner scope is checked against every item at notification, visibility, and decision. |
 | Pack swapped on disk after trust         | Runner recomputes the cloud-pinned trusted hash before execution. |
 | Pack sets `LD_PRELOAD`/`BASH_ENV`        | Hijack-vector env vars rejected at pack validation.           |
 | Action outlives a dying runner           | `Pdeathsig` (Linux) + process-group SIGTERM/SIGKILL on cancel/timeout. |
@@ -184,6 +190,21 @@ The runner-side guarantees above pair with the control plane's own model:
   runner ACLs narrow which hosts an operator or key can touch at all.
 - Operator sign-in supports TOTP MFA with one-shot hashed recovery
   codes; approvals and credential lifecycles are all audited.
+
+Runbook definitions, typed inputs, bindings, extractor patterns, action output,
+and runner/catalog state are all untrusted input. Static validation happens
+before save or publication; execution preflight then resolves dynamic scope and
+trusted contracts. The operation record, immutable expanded plan, execution,
+stages, and logical items commit atomically. Physical action attempts commit
+before runner delivery, and every scheduler advance locks the durable execution
+state so overlapping callbacks and recovery sweeps are idempotent.
+
+Sensitive inputs and extracted outputs are redacted from human/model plans,
+result projections, approval context, and audit evidence. Their bounded raw
+values remain in the control-plane execution record where needed to materialize
+later bindings and wait attempts. Treat database access and backups as access
+to operational secrets; redaction is an output boundary, not application-level
+encryption of those execution fields.
 
 | Question | Answer |
 | --- | --- |

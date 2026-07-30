@@ -38,7 +38,7 @@ defmodule EmisarWeb.RunnerSocket do
     # The connect request's IP + UA, carried on socket state so the
     # runner's own lifecycle events (connect / disconnect / error) stamp
     # them — and ONLY those. Engine work that happens to run in this
-    # process (a runbook continuation wave) builds its own events with no
+    # process (a runbook scheduler callback) builds its own events with no
     # context, so the runner's connect metadata can't bleed onto them.
     request_context =
       RequestContext.new(%{ip_address: upgrade[:ip_address], user_agent: upgrade[:user_agent]})

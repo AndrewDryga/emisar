@@ -86,7 +86,18 @@ defmodule Emisar.Audit.Event.Query do
     {"runbook.updated", "Runbook updated"},
     {"runbook.published", "Runbook published"},
     {"runbook.dispatched", "Runbook dispatched"},
-    {"runbook.step_dispatch_failed", "Runbook step dispatch failed"},
+    {"runbook.execution_succeeded", "Runbook execution succeeded"},
+    {"runbook.execution_halted", "Runbook execution halted"},
+    {"runbook.execution_cancelled", "Runbook execution cancelled"},
+    {"runbook.stage_awaiting_approval", "Runbook stage awaiting approval"},
+    {"runbook.stage_started", "Runbook stage started"},
+    {"runbook.stage_succeeded", "Runbook stage succeeded"},
+    {"runbook.stage_halted", "Runbook stage halted"},
+    {"runbook.stage_cancelled", "Runbook stage cancelled"},
+    {"runbook.item_waiting", "Runbook item waiting"},
+    {"runbook.item_succeeded", "Runbook item succeeded"},
+    {"runbook.item_failed", "Runbook item failed"},
+    {"runbook.item_cancelled", "Runbook item cancelled"},
     {"approval.approved", "Approval granted"},
     {"approval.denied", "Approval denied"},
     {"approval.expired", "Approval expired"},
@@ -134,9 +145,9 @@ defmodule Emisar.Audit.Event.Query do
   # one source, read by both (the web reads it, never copies it). Lifecycle
   # positives (connected, enabled, accepted, confirmed) stay :neutral on
   # purpose: green marks verdicts, not activity, or it becomes wallpaper.
-  @danger_suffixes ~w[_failed .failed .error .timed_out]
+  @danger_suffixes ~w[_failed .failed .error .timed_out _halted]
   @warn_suffixes ~w[.denied .refused .revoked _revoked .rejected _rejected .disabled .deleted _deleted .removed .suspended .expired .cancelled]
-  @pass_suffixes ~w[.success .approved _approved .grant_used .consent_granted]
+  @pass_suffixes ~w[.success .succeeded .approved _approved .grant_used .consent_granted]
 
   def outcome(event_type) when is_binary(event_type) do
     cond do
@@ -253,7 +264,18 @@ defmodule Emisar.Audit.Event.Query do
        {"runbook.updated", "Updated (new version)"},
        {"runbook.published", "Published"},
        {"runbook.dispatched", "Dispatched"},
-       {"runbook.step_dispatch_failed", "Step dispatch failed"}
+       {"runbook.execution_succeeded", "Execution succeeded"},
+       {"runbook.execution_halted", "Execution halted"},
+       {"runbook.execution_cancelled", "Execution cancelled"},
+       {"runbook.stage_awaiting_approval", "Stage awaiting approval"},
+       {"runbook.stage_started", "Stage started"},
+       {"runbook.stage_succeeded", "Stage succeeded"},
+       {"runbook.stage_halted", "Stage halted"},
+       {"runbook.stage_cancelled", "Stage cancelled"},
+       {"runbook.item_waiting", "Item waiting"},
+       {"runbook.item_succeeded", "Item succeeded"},
+       {"runbook.item_failed", "Item failed"},
+       {"runbook.item_cancelled", "Item cancelled"}
      ]},
     {"Approval",
      [
@@ -838,8 +860,29 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An operator published a runbook version for dispatch."},
     "runbook.dispatched" =>
       {true, true, true, "A runbook run started — its steps dispatch in order."},
-    "runbook.step_dispatch_failed" =>
-      {false, false, true, "The engine couldn't dispatch a runbook step to its runner."},
+    "runbook.execution_succeeded" =>
+      {false, false, true, "Every logical item succeeded and the runbook execution completed."},
+    "runbook.execution_halted" =>
+      {false, false, true, "A blocking outcome halted the runbook before later work could start."},
+    "runbook.execution_cancelled" =>
+      {true, true, true, "An operator cancelled the runbook execution."},
+    "runbook.stage_awaiting_approval" =>
+      {false, false, true, "The next stage is waiting for its explicit human approval gate."},
+    "runbook.stage_started" =>
+      {false, false, true, "The scheduler made a stage eligible and began dispatching its items."},
+    "runbook.stage_succeeded" => {false, false, true, "Every logical item in a stage succeeded."},
+    "runbook.stage_halted" =>
+      {false, false, true, "A blocking outcome halted the current stage."},
+    "runbook.stage_cancelled" =>
+      {true, true, true, "An operator cancellation closed a pending or active stage."},
+    "runbook.item_waiting" =>
+      {false, false, true, "A successful observation did not yet meet its declared conditions."},
+    "runbook.item_succeeded" =>
+      {false, false, true, "A logical step and runner item met every success condition."},
+    "runbook.item_failed" =>
+      {false, false, true, "A logical step and runner item reached a terminal failure."},
+    "runbook.item_cancelled" =>
+      {true, true, true, "An operator cancellation closed a logical runbook item."},
     "approval.approved" =>
       {true, true, true, "An approver granted a held action (optionally with a standing grant)."},
     "approval.denied" => {true, true, true, "An approver denied a held action."},

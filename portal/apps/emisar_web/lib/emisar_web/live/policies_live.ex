@@ -1424,6 +1424,7 @@ defmodule EmisarWeb.PoliciesLive do
     <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-start sm:gap-2 sm:space-y-0">
       <div class="sm:col-span-2">
         <.input
+          id={"policy-#{@editor_id}-override-#{@index}-name"}
           name={"policy[overrides][#{@index}][name]"}
           value={@override["name"]}
           label="Name"
@@ -1435,6 +1436,7 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
       <div class="sm:col-span-4">
         <.input
+          id={"policy-#{@editor_id}-override-#{@index}-action"}
           name={"policy[overrides][#{@index}][action]"}
           value={@override["action"]}
           label="Action (glob ok)"
@@ -1448,6 +1450,7 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
       <div class="sm:col-span-2">
         <.input
+          id={"policy-#{@editor_id}-override-#{@index}-decision"}
           name={"policy[overrides][#{@index}][decision]"}
           type="select"
           label="Decision"

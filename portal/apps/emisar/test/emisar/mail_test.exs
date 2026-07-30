@@ -314,6 +314,48 @@ defmodule Emisar.MailTest do
       end)
     end
 
+    test "renders a frozen runbook stage without leaking redacted arguments", %{
+      approver: approver
+    } do
+      request = %{
+        id: "req-stage-1",
+        reason: "apply the reviewed settings",
+        account: %{slug: "acme"},
+        context: %{
+          "execution_id" => "exec-123",
+          "stage" => %{
+            "id" => "apply",
+            "title" => "Apply database change",
+            "mode" => "parallel",
+            "max_parallel" => 2,
+            "items" => [
+              %{
+                "action" => "postgres.config_validate",
+                "runner_ref" => "db-01",
+                "pack_ref" => "postgres@1.4.2/sha256:" <> String.duplicate("a", 64),
+                "risk" => "medium",
+                "args" => %{"token" => "[REDACTED]"}
+              }
+            ]
+          }
+        }
+      }
+
+      UserNotifier.deliver_runbook_stage_approval_request(approver, request)
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Approval needed: Apply database change"
+        assert email.text_body =~ "parallel, up to 2 at once"
+        assert email.text_body =~ "postgres.config_validate"
+        assert email.text_body =~ "db-01"
+        assert email.text_body =~ "postgres@1.4.2/sha256:"
+        assert email.text_body =~ "[REDACTED]"
+        assert email.text_body =~ "/app/acme/approvals/req-stage-1"
+        refute email.text_body =~ "secret-value"
+        true
+      end)
+    end
+
     test "skips a suppressed decider", %{approver: approver} do
       {:ok, _} = Mail.suppress(approver.email, :hard_bounce, "bounce")
       request = %{id: "r", reason: "x", matched_rules: [], account: %{slug: "acme"}}

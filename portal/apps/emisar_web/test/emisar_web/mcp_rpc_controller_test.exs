@@ -364,15 +364,9 @@ defmodule EmisarWeb.MCPRpcControllerTest do
         {"create_runbook_draft",
          %{
            "title" => 7,
-           "steps" => [
-             %{
-               "step_id" => "inspect",
-               "action_id" => "linux.uptime",
-               "pack_ref" => "linux@1.0.0/sha256:" <> String.duplicate("a", 64),
-               "args" => %{},
-               "runner_selector" => %{"groups" => ["prod"]}
-             }
-           ]
+           "slug" => nil,
+           "description" => nil,
+           "definition" => Emisar.Fixtures.Runbooks.default_definition()
          }, "type", "$.title", "type"},
         {"execute_runbook", %{"runbook_ref" => "diagnose@1", "reason" => 7}, "type", "$.reason",
          "type"},

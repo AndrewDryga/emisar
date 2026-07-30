@@ -16,16 +16,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
           "title" => title,
           "name" => title,
           "slug" => String.downcase(String.replace(title, " ", "-")),
-          "definition" => %{
-            "steps" => [
-              %{
-                "id" => "s1",
-                "action_id" => "linux.uptime",
-                "args" => %{},
-                "runner_selector" => %{"group" => ["default"]}
-              }
-            ]
-          }
+          "definition" => Emisar.Fixtures.Runbooks.default_definition()
         },
         subject
       )
@@ -76,7 +67,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
   test "a viewer gets the list but no New action", %{conn: conn} do
     {_owner_conn, user, account} = register_and_log_in(conn)
-    _ = create_runbook!(user, account, "Visible to all")
+    runbook = create_runbook!(user, account, "Visible to all")
 
     viewer = Fixtures.Users.create_user()
 
@@ -93,6 +84,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
       |> live(~p"/app/#{account}/runbooks")
 
     assert html =~ "Visible to all"
+    assert html =~ ~p"/app/#{account}/runbooks/#{runbook.id}/edit"
     refute html =~ ~p"/app/#{account}/runbooks/new"
   end
 

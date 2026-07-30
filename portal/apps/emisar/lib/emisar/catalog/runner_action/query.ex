@@ -19,6 +19,23 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_runner_ids(queryable, runner_ids) when is_list(runner_ids),
     do: where(queryable, [runner_actions: a], a.runner_id in ^runner_ids)
 
+  def by_deployments(queryable, []), do: none(queryable)
+
+  def by_deployments(queryable, deployments) when is_list(deployments) do
+    predicate =
+      Enum.reduce(deployments, dynamic(false), fn {runner_id, pack_id, version, hash},
+                                                  predicate ->
+        dynamic(
+          [runner_actions: action],
+          ^predicate or
+            (action.runner_id == ^runner_id and action.pack_id == ^pack_id and
+               action.pack_version == ^version and action.pack_hash == ^hash)
+        )
+      end)
+
+    where(queryable, ^predicate)
+  end
+
   def by_action_id(queryable, action_id),
     do: where(queryable, [runner_actions: a], a.action_id == ^action_id)
 
@@ -74,6 +91,8 @@ defmodule Emisar.Catalog.RunnerAction.Query do
 
   def ordered_by_action_seen(queryable),
     do: order_by(queryable, [runner_actions: a], asc: a.action_id, asc: a.last_seen_at)
+
+  def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
   # -- Pagination ------------------------------------------------------
 

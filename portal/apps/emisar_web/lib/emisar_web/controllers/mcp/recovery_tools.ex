@@ -255,7 +255,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       if timeout_ms == 0 or terminal_execution?(initial.payload.status) do
         {:ok, %{execution: initial.payload}}
       else
-        :ok = Runs.subscribe_runbook_execution(subject.account.id, execution_id)
+        :ok = Runbooks.subscribe_execution(subject.account.id, execution_id)
         deadline = System.monotonic_time(:millisecond) + timeout_ms
 
         try do
@@ -267,7 +267,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
             Cancellation.topic(conn)
           )
         after
-          :ok = Runs.unsubscribe_runbook_execution(subject.account.id, execution_id)
+          :ok = Runbooks.unsubscribe_execution(subject.account.id, execution_id)
         end
       end
     end
@@ -298,13 +298,15 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   defp execution_state(conn, execution_id) do
     subject = conn.assigns.current_subject
 
-    with {:ok, execution} <- Runbooks.fetch_execution_by_id(execution_id, subject),
-         {:ok, runbook} <- Runbooks.fetch_runbook_for_execution(execution, subject),
-         {:ok, runs} <- Runs.list_runs_by_runbook_execution(execution.id, subject),
-         {:ok, payload} <- RunbookTools.execution_payload_from_runs(execution, runbook, runs) do
+    with {:ok, result} <- Runbooks.fetch_execution_result(execution_id, subject),
+         {:ok, payload} <- RunbookTools.project_execution(result) do
+      execution = result.execution
+
       token =
         {execution.status, execution.updated_at,
-         Enum.map(runs, &{&1.id, &1.status, &1.updated_at})}
+         Enum.map(execution.stages, &{&1.id, &1.status, &1.updated_at}),
+         Enum.map(execution.items, &{&1.id, &1.status, &1.updated_at}),
+         Enum.map(result.latest_attempts, &{&1.id, &1.status, &1.updated_at})}
 
       {:ok, %{payload: payload, token: token}}
     end
@@ -410,7 +412,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       {:run_updated, _run} ->
         :changed
 
-      {:runbook_execution_updated, _run} ->
+      {:runbook_execution_updated, _execution_id} ->
         :changed
 
       # In tail mode, arrival of the next event to deliver is the change the
@@ -438,7 +440,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   # incidental side effect. The `wait_for_run tail wakes on a new output chunk`
   # test guards this: a chunk must move the token.
   defp run_token(run), do: {run.status, run.progress_event_count}
-  defp terminal_execution?(status), do: status not in ~w(pending running pending_approval)
+  defp terminal_execution?(status), do: status != "active"
 
   defp error(code, message) do
     %{

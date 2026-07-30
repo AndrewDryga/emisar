@@ -182,7 +182,20 @@ defmodule EmisarWeb.ApprovalsLive do
     end
   end
 
+  defp risk_for_request(%{context: %{"kind" => "runbook_stage", "stage" => stage}}, _subject) do
+    stage
+    |> Map.get("items", [])
+    |> Enum.map(& &1["risk"])
+    |> Enum.max_by(&risk_rank/1, fn -> nil end)
+  end
+
   defp risk_for_request(_request, _subject), do: nil
+
+  defp risk_rank("critical"), do: 4
+  defp risk_rank("high"), do: 3
+  defp risk_rank("medium"), do: 2
+  defp risk_rank("low"), do: 1
+  defp risk_rank(_risk), do: 0
 
   defp runner_label(request, labels) do
     id = runner_id_from(request)
@@ -193,6 +206,27 @@ defmodule EmisarWeb.ApprovalsLive do
       true -> "—"
     end
   end
+
+  defp request_title(%{context: %{"kind" => "runbook_stage", "stage" => stage}}),
+    do: stage["title"] || stage["id"] || "Runbook stage"
+
+  defp request_title(%{context: context}), do: context["action_id"] || "—"
+
+  defp request_scope_label(
+         %{context: %{"kind" => "runbook_stage", "stage" => %{"items" => items}}},
+         _labels
+       )
+       when is_list(items) do
+    runners = items |> Enum.map(& &1["runner_ref"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    "#{length(items)} #{plural(length(items), "action")} across " <>
+      "#{length(runners)} #{plural(length(runners), "runner")}"
+  end
+
+  defp request_scope_label(request, labels), do: "on #{runner_label(request, labels)}"
+
+  defp plural(1, noun), do: noun
+  defp plural(_count, noun), do: noun <> "s"
 
   defp user_label(nil, _labels), do: "—"
   defp user_label(id, labels), do: labels[id] || String.slice(id, 0, 8) <> "…"
@@ -354,8 +388,8 @@ defmodule EmisarWeb.ApprovalsLive do
       <:title>Approvals</:title>
 
       <.page_intro>
-        Risky actions pause here before they run. You review the resolved command — the exact
-        action and arguments the runner will execute — then approve or deny; your reason is logged.
+        Actions and runbook stages pause here before they run. Review the exact frozen work,
+        then approve or deny; your reason is logged.
         <.doc_link href="/docs/policies-and-approvals">Approvals docs</.doc_link>
       </.page_intro>
 
@@ -391,7 +425,7 @@ defmodule EmisarWeb.ApprovalsLive do
                     <div class="min-w-0 flex-1">
                       <div class="flex flex-wrap items-center gap-2">
                         <span class="truncate font-mono text-sm text-zinc-200">
-                          {request.context["action_id"] || "—"}
+                          {request_title(request)}
                         </span>
                         <.risk_pill
                           :if={@risk_labels[request.id]}
@@ -400,7 +434,7 @@ defmodule EmisarWeb.ApprovalsLive do
                         />
                       </div>
                       <div class="mt-0.5 text-xs text-zinc-400 sm:truncate">
-                        on {runner_label(request, @runner_labels)} · requested by {user_label(
+                        {request_scope_label(request, @runner_labels)} · requested by {user_label(
                           request.requested_by_id,
                           @user_labels
                         )}
@@ -678,10 +712,10 @@ defmodule EmisarWeb.ApprovalsLive do
                   >
                     <div class="min-w-0 flex-1">
                       <div class="truncate font-mono text-sm text-zinc-200">
-                        {request.context["action_id"] || "—"}
+                        {request_title(request)}
                       </div>
                       <div class="text-xs text-zinc-400 sm:truncate">
-                        on {runner_label(request, @runner_labels)}
+                        {request_scope_label(request, @runner_labels)}
                         <%!-- The status badge on the right carries the outcome word
                            (approved / denied / expired); the meta just attributes
                            the decider. An expired request has none, so it shows

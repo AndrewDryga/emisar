@@ -5,19 +5,21 @@
     <.docs_layout
       current="runbooks"
       toc={[
-        {"made-of", "What a runbook is made of"},
-        {"authoring", "Authoring"},
-        {"running", "Running one"},
-        {"worked-example", "Worked example: a fleet health-check"},
-        {"llm", "Runbooks and your LLM"}
+        {"model", "The execution model"},
+        {"authoring", "Authoring and versions"},
+        {"inputs", "Inputs and bindings"},
+        {"outputs", "Outputs, success, and waits"},
+        {"packs", "Pack version requirements"},
+        {"approvals", "Approvals and failure"},
+        {"examples", "Production patterns"},
+        {"results", "Results for people and agents"},
+        {"limits", "Limits"}
       ]}
     >
       <.docs_header current="runbooks">
         <:dek>
-          A runbook is a saved, versioned sequence of actions — the "how we restart the cache
-          tier" knowledge that usually lives in a wiki page going stale. Here it's executable:
-          every run of it is
-          policy-gated and audited, and your LLM can read and run it over MCP.
+          Turn a reviewed operational procedure into typed, staged action dispatches. Every target,
+          pack, argument, approval, output check, and terminal result is frozen and audited.
         </:dek>
       </.docs_header>
 
@@ -25,156 +27,289 @@
         src="/images/screenshots/runbooks.webp"
         preview_h="max-h-[28rem]"
         title="emisar console · Runbooks"
-        caption="Saved, versioned action sequences — every step policy-gated and audited when the runbook runs."
-        alt="The Runbooks page: saved, versioned action sequences an operator or LLM can run, each step policy-gated and audited."
+        caption="The structured editor makes stage barriers, execution mode, approvals, actions, targets, bindings, outputs, conditions, and waits explicit."
+        alt="The emisar runbook editor showing typed inputs, staged actions, and an exact publish review."
       />
 
-      <.docs_h2 id="made-of">What a runbook is made of</.docs_h2>
+      <.docs_h2 id="model">The execution model</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An ordered list of steps. Each step names an action from your catalog, the arguments to
-        pass, and where it runs — a <strong class="text-zinc-200">specific runner</strong>
-        or a <strong class="text-zinc-200">runner group</strong>
-        (a group step fans out to every
-        matching runner). Because steps reference catalog actions, a runbook can never do
-        anything your packs don't already declare.
-      </p>
-
-      <.docs_h2 id="authoring">Authoring</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong>Runbooks → New</strong> in the dashboard. The editor is a form: pick an action
-        from the catalog, fill its declared arguments, choose the
-        target, reorder steps with the arrow controls. Owners and admins author and edit;
-        operators and viewers (and connected LLMs) see published runbooks read-only.
+        A runbook contains ordered <strong class="text-zinc-200">stages</strong>. A stage contains
+        one or more <strong class="text-zinc-200">steps</strong>, and each step names one declared
+        catalog action, a pack version requirement, typed argument bindings, and runner or group
+        targets. A group target becomes one logical item per matching runner when execution begins.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Draft → published.</strong> Drafts are editable and
-            invisible to dispatch. Publishing freezes that version; every later save bumps the
-            version number, so you can tell which revision ran during an incident.
+            <strong class="text-zinc-200">Stages are barriers.</strong> The next stage starts only
+            after every item in the current stage succeeds.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Title, slug, description.</strong> The description is
-            what an LLM reads when it lists runbooks — write it like you'd brief a new on-call:
-            when to reach for this, when not to.
+            <strong class="text-zinc-200">Sequential mode</strong> completes one step's complete
+            fan-out before starting the next step. Use it when order matters between different
+            actions.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Parallel mode</strong>
+            makes the stage's items eligible
+            together, while
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_parallel</code>
+            caps active attempts. Set it to
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">1</code>
+            for one-host-at-a-time fleet maintenance.
           </span>
         </li>
       </ul>
+      <.docs_callout kind={:note} title="One action is still the execution boundary.">
+        A runner receives one declared pack action at a time. Runbooks coordinate those actions in
+        the control plane; they do not add a shell, script, HTTP, or code escape hatch.
+      </.docs_callout>
 
-      <.docs_h2 id="running">Running one</.docs_h2>
+      <.docs_h2 id="authoring">Authoring and versions</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Dispatch from the runbook's page with a required reason — same as any single action.
-        Execution runs in waves: up to five runs dispatch together, and the whole wave must reach a
-        terminal state before the next wave starts — a run held for approval keeps its wave open, and
-        later waves wait. Two properties matter operationally:
+        Open
+        <.link navigate="/app/runbooks" class="text-brand-400 hover:text-brand-300">
+          Runbooks
+        </.link>
+        and choose <.link navigate="/app/runbooks/new" class="text-brand-400 hover:text-brand-300">
+          New runbook
+        </.link>.
+        The structured editor covers every
+        field in the runbook contract: typed inputs, stages, concurrency, approvals, actions,
+        targets, bindings, outputs, conditions, and waits. It validates continuously and shows
+        the exact current runner and pack plan before publishing. There is no second raw-definition
+        editor to drift from the form.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Policy applies per step.</strong> A runbook isn't a
-            policy bypass: a high-risk step stops for approval exactly as it would standalone,
-            and the runbook continues once a human approves.
+            <strong class="text-zinc-200">Drafts are reviewable, not runnable.</strong> Saving a
+            change creates a new draft version. Publishing freezes that version under <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@version</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Failure halts the sequence.</strong> A denied or
-            failed step stops the runbook rather than marching on against a host in an unknown
-            state. Every step's run is individually visible — output, exit code, duration —
-            under the execution.
+            <strong class="text-zinc-200">Context travels with the procedure.</strong> Add
+            prerequisites, stop conditions, ownership, and expected outcomes using headings,
+            paragraphs, lists, and fenced code. Links, images, and raw HTML stay inert text.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">JSON is the canonical interchange format.</strong>
+            The
+            console, persistence layer, and MCP use the same strict
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">schema_version: 1</code>
+            definition. Unknown fields and old flat step lists are rejected.
           </span>
         </li>
       </ul>
 
-      <.docs_h2 id="worked-example">Worked example: a fleet health-check</.docs_h2>
+      <.docs_h2 id="inputs">Inputs and bindings</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The classic case for your first runbook is the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">health-check.sh</code>
-        that SSHes to every node and greps a dozen things. As a runbook it's an ordered list of
-        <strong class="text-zinc-200">read-only</strong>
-        steps pointed at a runner <strong class="text-zinc-200">group</strong>
-        — no SSH, no inbound
-        port, every check declared and journaled. Because the checks are read-only they sit in the
-        low-risk tier, so they fan out across the whole fleet without stopping for an approval:
+        Declare a run-time input as a string, integer, number, or boolean. Inputs can be required,
+        constrained by a range, length, or enum, and marked sensitive. Sensitive values are
+        accepted for dispatch but replaced with
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[REDACTED]</code>
+        in plans and results; sensitive inputs cannot carry stored defaults.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Every action argument uses exactly one whole-value binding:
+        a JSON literal, a declared runbook input, or a named output from an earlier stage. The
+        compiler checks the binding against the trusted action argument schema before any execution
+        row is created. It also rejects ambiguous fan-out: a later item may consume one unique
+        producer output, or the output from the same runner when both stages fan out over that
+        runner.
+      </p>
+
+      <.docs_h2 id="outputs">Outputs, success, and waits</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        An action may return more than the procedure needs. Name only the values the runbook should
+        retain. Extract them from structured JSON with a JSON Pointer, or from complete
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">stdout</code>
+        or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">stderr</code>
+        using contains, literal grep, or a bounded regular expression capture. Text extraction
+        fails closed if the stream is missing, truncated, invalid UTF-8, or over its safety budget.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">linux.uptime</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemd.failed_units</code>
-            on the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">edge</code>
-            group — is anything down, did anything crash-loop since the last sweep.
+            <strong class="text-zinc-200">Success is explicit.</strong> Conditions compare named
+            extracted values with equality, ordering, membership, containment, or a regular
+            expression. Every configured condition must pass.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">linux.disk_usage</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">linux.memory</code>
-            — the two things that fill before they page you.
+            <strong class="text-zinc-200">Waits repeat observations only.</strong> If an action
+            succeeds but its conditions are not met, a wait can run that same action again after a
+            fixed interval until the timeout or attempt cap. Action failure, denial, refusal, or
+            extraction failure is never retried by a wait.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">time.chrony_tracking</code>
-            — clock drift, the quiet cause of half of "impossible" distributed bugs.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            one cluster-wide step —
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">consul.node_health</code>
-            from a single runner that can reach Consul — for the leader, members, and any failing
-            service checks.
+            <strong class="text-zinc-200">Evidence survives.</strong> Extracted values, their
+            integrity digest, condition outcomes, attempts, and wait state remain attached to the
+            logical item and its audit events.
           </span>
         </li>
       </ul>
+
+      <.docs_h2 id="packs">Pack version requirements</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Dispatch it with a reason and each group step fans out in parallel waves. Publish it once and the
-        whole sweep is a single click for the on-call, or a single
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
-        for an agent triaging a live alert. Then an agent can do one-off remediation later — a
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemd.unit_restart</code>
-        for a unit it found dead that will wait for your approval by default.
+        A step has one <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack</code>
+        object containing its ID and requirement. Supported requirements are exact
+        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">== 1.4.2</code>),
+        pessimistic
+        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~&gt; 1.4.0</code>),
+        or one bounded range
+        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">&gt;= 1.4.0 and &lt; 2.0.0</code>).
+        Preflight selects the highest compatible trusted version on each target, requires one
+        compatible action contract across the selection, then freezes each exact <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack@version/sha256:hash</code>.
+        A later pack update cannot reinterpret an in-flight execution.
       </p>
 
-      <.docs_h2 id="llm">Runbooks and your LLM</.docs_h2>
+      <.docs_h2 id="approvals">Approvals and failure</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Connected agents see four runbook tools:
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
-        (published
-        runbooks with their descriptions) and
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
-        (one runbook's
-        ordered steps, targets resolved to current runner names).
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
-        sends a published runbook through the governed end-to-end path; every step still passes
-        its normal policy, approval, target, and audit checks. One limit: it refuses any runbook
-        whose targets include a signature-enforcing runner — the bridge signs only direct
+        Set a stage's approval to
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">required</code>
+        to open one approval request for its complete frozen target and action set. No action run
+        exists for that stage before approval. Approver scope is checked against every frozen
+        runner, and policy still evaluates each action when it is dispatched.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A denial, refusal, timeout, cancellation, action failure, failed extraction, unmet terminal
+        condition, lost authorization, or unusable frozen pack halts the execution. Already-running
+        peers may report their real outcomes, but no new item and no later stage starts. Cancelling
+        an execution also cancels pending stages, waits, and active attempts without erasing their
+        history.
+      </p>
+
+      <.docs_h2 id="examples">Production patterns</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        This minimal definition is valid Definition v1 JSON. The editor can build the larger
+        production patterns described below without introducing another authoring format.
+      </p>
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">PostgreSQL replication gate</h3>
+      <p class="mt-3 text-base leading-7 text-zinc-400">
+        Fan out the catalog's read-only replication check, require a streaming replica, and wait
+        within a fixed observation budget when the first result is not ready.
+      </p>
+      <.docs_code phx-no-format label="Definition v1 JSON">{~s({
+  "schema_version": 1,
+  "context_markdown": "Confirm the incident and current leader before proceeding.",
+  "inputs": [],
+  "stages": [
+    {
+      "id": "preflight",
+      "title": "Inspect replication",
+      "mode": "parallel",
+      "max_parallel": 4,
+      "approval": "none",
+      "steps": [
+        {
+          "id": "replication_lag",
+          "pack": {"id": "postgres", "requirement": "~> 0.2.0"},
+          "action": "postgres.replication_lag",
+          "targets": {"kind": "group", "refs": ["postgres"]},
+          "args": {},
+          "outputs": [
+            {
+              "id": "has_streaming_replica",
+              "source": "stdout",
+              "sensitive": false,
+              "extract": {"type": "contains", "expression": "|streaming|"}
+            }
+          ],
+          "success": [
+            {"output": "has_streaming_replica", "operator": "equals", "value": true}
+          ],
+          "wait": {
+            "interval_seconds": 15,
+            "timeout_seconds": 300,
+            "max_attempts": 20
+          }
+        }
+      ]
+    }
+  ]
+})}</.docs_code>
+
+      <h3 class="mt-8 text-lg font-semibold text-zinc-100">One-host-at-a-time maintenance</h3>
+      <p class="mt-3 text-base leading-7 text-zinc-400">
+        Inspect all workers in parallel, approve the frozen fleet once, maintain one worker at a
+        time, and start fleet-wide verification only after every host succeeds.
+      </p>
+      <ol class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li>
+          <strong class="text-zinc-200">1. Inspect:</strong> parallel reads across the fleet.
+        </li>
+        <li>
+          <strong class="text-zinc-200">2. Maintain:</strong>
+          one approved stage with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_parallel: 1</code>.
+        </li>
+        <li>
+          <strong class="text-zinc-200">3. Verify:</strong> fleet-wide checks after the barrier.
+        </li>
+      </ol>
+      <.docs_callout kind={:tip} title="Use composite actions at the right boundary.">
+        If each host must drain, mutate, and confirm local recovery before the next host starts,
+        expose that as one independently useful pack action. A sequential runbook step completes its
+        complete fan-out; it does not interleave separate steps per runner.
+      </.docs_callout>
+
+      <.docs_h2 id="results">Results for people and agents</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The execution page keeps the operator context beside a stage-and-item matrix. Each item
+        shows its target, exact pack and hash, action, attempts, wait state, extracted outputs,
+        condition evidence, and a stable error when it did not succeed. Sensitive values stay
+        redacted.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Connected agents use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>,
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>.
+        They receive the same canonical definition and structured stage/item result, with a
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">blocking</code>
+        reason and exact <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+        continuation while work remains. Draft creation never publishes or executes.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Runbooks currently fail closed on a signature-enforcing runner with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signed_runbook_unsupported</code>.
+        The MCP bridge signs exact direct
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>
-        calls, so run those runbooks from the console.
-      </p>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
-        validates an agent's proposed plan and saves it for human review, but never publishes it.
-        An agent can still use
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
-        and dispatch steps itself when it needs to stop, reassess, or escalate between them.
+        calls, not an expanded multi-stage plan.
       </p>
 
-      <.docs_callout kind={:note} title="What to put in a runbook.">
-        Diagnostics-then-remediation sequences you run more than twice: drain-and-restart a
-        service tier, rotate a stuck consumer group, the standard triage ladder for a noisy
-        alert. Keep one-off investigation ad-hoc — that's what the catalog itself is for.
+      <.docs_h2 id="limits">Limits</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        One definition is at most 64 KiB and contains up to 32 inputs, 16 stages, 32 steps in total,
+        16 target refs per step, and 256 resolved logical items. A stage may run 1 through 16
+        attempts concurrently. Each step may retain 16 outputs and evaluate 16 conditions.
+        An execution, including waits, ends within 24 hours. The
+        <.link navigate={~p"/docs/limits"} class="text-brand-400 hover:text-brand-300">
+          limits reference
+        </.link>
+        covers the wider API and retention caps.
+      </p>
+
+      <.docs_callout kind={:note} title="What belongs in a runbook?">
+        Use one for a reviewed diagnostic or remediation sequence whose stages, stopping rules, and
+        expected result are known. Keep open-ended investigation in the action catalog, where an
+        operator or agent can inspect evidence and choose the next exact action.
       </.docs_callout>
     </.docs_layout>
   </section>

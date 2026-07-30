@@ -127,3 +127,73 @@ func TestSelectConnectedRunnerRequiresExactGroupAndStatus(t *testing.T) {
 		t.Errorf("runnerRef = %q", got.runnerRef)
 	}
 }
+
+func TestDecodeAndValidateSuccessfulExecution(t *testing.T) {
+	t.Parallel()
+
+	executeResult := bridgeResult{
+		structured: json.RawMessage(`{
+			"execution": {
+				"runbook_execution_id": "execution-1",
+				"runbook_ref": "morning-edge-readiness@1",
+				"status": "active",
+				"stages": [{"status": "active", "items": [
+					{"status": "running"},
+					{"status": "running"},
+					{"status": "running"}
+				]}]
+			}
+		}`),
+	}
+	started, err := decodeStartedExecution(executeResult)
+	if err != nil {
+		t.Fatalf("decodeStartedExecution() error = %v", err)
+	}
+	if started.ID != "execution-1" || started.Status != "active" {
+		t.Fatalf("started execution = %#v", started)
+	}
+
+	waitResult := bridgeResult{
+		structured: json.RawMessage(`{
+			"execution": {
+				"runbook_execution_id": "execution-1",
+				"runbook_ref": "morning-edge-readiness@1",
+				"status": "succeeded",
+				"stages": [{"status": "succeeded", "items": [
+					{"status": "succeeded"},
+					{"status": "succeeded"},
+					{"status": "succeeded"}
+				]}]
+			}
+		}`),
+	}
+	finished, err := decodeWaitedExecution(waitResult)
+	if err != nil {
+		t.Fatalf("decodeWaitedExecution() error = %v", err)
+	}
+	if err := validateSuccessfulExecution(finished, "morning-edge-readiness@1", 3); err != nil {
+		t.Fatalf("validateSuccessfulExecution() error = %v", err)
+	}
+}
+
+func TestValidateSuccessfulExecutionRejectsPartialSuccess(t *testing.T) {
+	t.Parallel()
+
+	var execution stagedExecution
+	if err := json.Unmarshal([]byte(`{
+		"runbook_execution_id": "execution-1",
+		"runbook_ref": "morning-edge-readiness@1",
+		"status": "succeeded",
+		"stages": [{"status": "succeeded", "items": [
+			{"status": "succeeded"},
+			{"status": "failed"},
+			{"status": "succeeded"}
+		]}]
+	}`), &execution); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+
+	if err := validateSuccessfulExecution(execution, "morning-edge-readiness@1", 3); err == nil {
+		t.Fatal("validateSuccessfulExecution() error = nil, want failed item rejection")
+	}
+}

@@ -61,6 +61,19 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "reboot for kernel patch"
   end
 
+  test "lists a runbook stage by frozen title and blast radius", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    _request = Fixtures.Approvals.create_stage_request(account, user)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert html =~ "Apply database change"
+    assert html =~ "2 actions across 2 runners"
+    assert html =~ "Apply the reviewed database settings"
+    assert html =~ "medium"
+    refute html =~ "on —"
+  end
+
   test "a pending request shows its expiry, amber only when it's about to lapse", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request!(account, user.id, "kernel patch")

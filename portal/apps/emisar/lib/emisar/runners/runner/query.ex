@@ -44,6 +44,9 @@ defmodule Emisar.Runners.Runner.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [runners: r], r.account_id == ^account_id)
 
+  def select_scope_facts(queryable),
+    do: select(queryable, [runners: r], %{id: r.id, group: r.group})
+
   def with_active_account(queryable) do
     join(
       queryable,

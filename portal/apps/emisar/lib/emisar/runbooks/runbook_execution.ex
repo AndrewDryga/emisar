@@ -1,25 +1,24 @@
 defmodule Emisar.Runbooks.RunbookExecution do
   @moduledoc """
-  One runbook invocation: the durable authorization anchor for every wave it
-  dispatches. Records the initiating membership and a FROZEN authorized
-  work-list (`%{"step_index", "runner_id"}` per item, resolved once at the first
-  wave) so a later wave — fired from a user-less continuation callback — can
-  revalidate the membership + each runner instead of re-resolving group
-  membership (which would silently pick up runners added mid-execution).
+  One runbook invocation and its frozen authorization/preflight plan.
+
+  Durable stage and item rows carry scheduling state; this row is the
+  authorization anchor and terminal execution summary.
   """
   use Emisar, :schema
 
   schema "runbook_executions" do
     field :reason, :string
-    # A row-less dispatch failure has no action run for the wave engine to
-    # inspect, so it halts the execution here before a later wave can advance.
-    field :status, Ecto.Enum, values: [:active, :halted], default: :active
+    field :status, Ecto.Enum, values: [:active, :succeeded, :halted, :cancelled], default: :active
     field :halted_at, :utc_datetime_usec
-
-    # Frozen authorized work-list: the full step×runner set resolved at the
-    # first wave. Each item is `%{"step_index" => i, "runner_id" => id}`; the
-    # step's action/args are re-read from the immutable runbook version by index.
-    field :work_list, {:array, :map}, default: []
+    field :completed_at, :utc_datetime_usec
+    field :last_advanced_at, :utc_datetime_usec
+    field :terminal_code, :string
+    field :terminal_message, :string
+    field :frozen_plan, :map, default: %{}
+    field :inputs_raw, :binary
+    field :inputs_sha256, :string
+    field :sensitive_input_names, {:array, :string}, default: []
 
     field :api_key_id, Ecto.UUID
     field :operation_id, :string
@@ -29,6 +28,9 @@ defmodule Emisar.Runbooks.RunbookExecution do
     belongs_to :initiating_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
     belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :mcp_operation_record, Emisar.MCPOperations.Operation
+
+    has_many :stages, Emisar.Runbooks.ExecutionStage
+    has_many :items, Emisar.Runbooks.ExecutionItem
 
     timestamps()
   end

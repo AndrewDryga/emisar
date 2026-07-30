@@ -239,11 +239,11 @@ SCIM provision/deprovision behavior, and completes a real OIDC login. No
 separate `./run serve` process is required, and cleanup removes the scenario's
 containers, network, volumes, and temporary realm.
 
-## `signing/`
+## Signing and runbooks end to end
 
-End-to-end coverage for **signed dispatch** (the CA-issued-certificate feature)
-against the root demo stack. Two profile-gated `test` services in
-`docker-compose.yml` plus the `./run e2e signing` driver:
+End-to-end coverage for **signed dispatch** and **staged runbooks** against the
+root demo stack. Two profile-gated `test` services, the normal demo runner, and
+the `./run e2e signing` driver:
 
 - **`signing-init`** mints a CA + leaf key + certificate at stack-up via
   `emisar signing init` (run `init.sh`), into the shared `signing_material`
@@ -253,17 +253,18 @@ against the root demo stack. Two profile-gated `test` services in
   `--config` at the config `signing-init` wrote (with the freshly-minted CA's
   public key) and runs a dispatch only if it carries a valid, in-scope,
   CA-vouched attestation. Group `signed-iad`, matching the cert's scope.
-- **`tools/cmd/signing-e2e`** drives the real MCP bridge to prove the property end to end — a
-  **signed** dispatch runs, the **same** dispatch **unsigned** is refused with
-  `signature_required` (the portal won't relay an unsigned call to an
-  enforcing runner):
+- **`tools/cmd/signing-e2e`** drives the real MCP bridge to prove both paths end
+  to end. A **signed** dispatch runs, the **same** dispatch **unsigned** is
+  refused with `signature_required`, and the published three-step
+  `morning-edge-readiness@1` runbook reaches durable success through the
+  scheduler and normal runner:
 
 ```sh
 ./run e2e signing
 ```
 
-The host-side stdlib Go driver performs every
-discovery and dispatch call through the bridge over the in-network
-`portal:4000`, so signing happens exactly as on a real stdio client.
+The host-side stdlib Go driver performs every discovery, dispatch, runbook, and
+wait call through the bridge over the in-network `portal:4000`, so signing and
+runbook execution happen exactly as on a real stdio client.
 Each workspace gets an isolated Compose project with Docker-assigned host ports;
 the driver removes its containers, network, and test volumes when it exits.

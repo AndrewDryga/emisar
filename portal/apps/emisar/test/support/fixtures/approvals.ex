@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.Approvals do
   """
 
   import Ecto.Changeset, only: [change: 2]
-  alias Emisar.{Approvals, Fixtures, Repo}
+  alias Emisar.{Approvals, Fixtures, Repo, Runbooks}
 
   @doc """
   Persists a `:pending` approval request by default. Caller supplies
@@ -43,6 +43,92 @@ defmodule Emisar.Fixtures.Approvals do
       nil ->
         request
     end
+  end
+
+  @doc "Persists an awaiting runbook-stage request for approval UI tests."
+  def create_stage_request(account, requested_by, attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    runbook =
+      Fixtures.Runbooks.create_runbook(
+        account_id: account.id,
+        created_by_id: requested_by.id,
+        title: attrs[:runbook_title] || "Database maintenance"
+      )
+
+    membership = Fixtures.Memberships.fetch_membership(account.id, requested_by.id)
+
+    stage_plan =
+      attrs[:stage_plan] ||
+        %{
+          "id" => "apply",
+          "title" => "Apply database change",
+          "mode" => "parallel",
+          "max_parallel" => 2,
+          "approval" => "required",
+          "items" => [
+            %{
+              "action" => "postgres.config_validate",
+              "runner_ref" => "db-01",
+              "pack_ref" => "postgres@1.4.2/sha256:" <> String.duplicate("a", 64),
+              "risk" => "medium",
+              "args" => %{"token" => "[REDACTED]"}
+            },
+            %{
+              "action" => "postgres.config_validate",
+              "runner_ref" => "db-02",
+              "pack_ref" => "postgres@1.4.2/sha256:" <> String.duplicate("a", 64),
+              "risk" => "medium",
+              "args" => %{}
+            }
+          ]
+        }
+
+    execution =
+      Runbooks.RunbookExecution.Changeset.create(%{
+        id: Ecto.UUID.generate(),
+        account_id: account.id,
+        runbook_id: runbook.id,
+        initiating_membership_id: membership.id,
+        requested_by_id: requested_by.id,
+        reason: attrs[:reason] || "Apply the reviewed database settings",
+        frozen_plan: %{"schema_version" => 1, "stages" => [stage_plan]},
+        inputs_raw: "{}",
+        inputs_sha256: String.duplicate("0", 64)
+      })
+      |> Repo.insert!()
+
+    stage =
+      Runbooks.ExecutionStage.Changeset.create(%{
+        id: Ecto.UUID.generate(),
+        account_id: account.id,
+        runbook_execution_id: execution.id,
+        stage_id: stage_plan["id"],
+        position: 0,
+        title: stage_plan["title"],
+        mode: stage_plan["mode"],
+        max_parallel: stage_plan["max_parallel"],
+        approval: :required,
+        status: :awaiting_approval
+      })
+      |> Repo.insert!()
+
+    Approvals.Request.Changeset.create(%{
+      account_id: account.id,
+      runbook_execution_stage_id: stage.id,
+      requested_by_id: requested_by.id,
+      requested_at: DateTime.utc_now(),
+      expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
+      reason: execution.reason,
+      min_approvals: attrs[:min_approvals] || 1,
+      allow_self_approval: Map.get(attrs, :allow_self_approval, true),
+      context: %{
+        "kind" => "runbook_stage",
+        "execution_id" => execution.id,
+        "stage" => stage_plan
+      }
+    })
+    |> Repo.insert!()
   end
 
   @doc """

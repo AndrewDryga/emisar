@@ -686,6 +686,19 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "list_requests_for_runbook_stages/2" do
+    test "returns only visible requests for the bounded stage set" do
+      account = Fixtures.Accounts.create_account()
+      subject = operator_subject(account)
+
+      assert Approvals.list_requests_for_runbook_stages([], subject) == {:ok, []}
+
+      other_account = Fixtures.Accounts.create_account()
+      other_subject = operator_subject(other_account)
+      assert Approvals.list_requests_for_runbook_stages([], other_subject) == {:ok, []}
+    end
+  end
+
   describe "fetch_request_for_visible_run/2" do
     test "lets an API client read only the approval attached to its visible account run" do
       {account, run} = run_fixture()
@@ -995,6 +1008,74 @@ defmodule Emisar.ApprovalsTest do
                |> Repo.transaction()
 
       assert run_id == run.id
+    end
+  end
+
+  describe "create_runbook_stage_request_in_multi/4" do
+    test "composes a stage-owned request without manufacturing an action run" do
+      account_id = Ecto.UUID.generate()
+      stage_id = Ecto.UUID.generate()
+      requested_by_id = Ecto.UUID.generate()
+
+      stage = %Emisar.Runbooks.ExecutionStage{id: stage_id, position: 0}
+
+      execution = %Emisar.Runbooks.RunbookExecution{
+        id: Ecto.UUID.generate(),
+        account_id: account_id,
+        requested_by_id: requested_by_id,
+        reason: "maintenance",
+        frozen_plan: %{"stages" => [%{"id" => "approve", "items" => []}]}
+      }
+
+      multi =
+        Approvals.create_runbook_stage_request_in_multi(
+          Multi.new(),
+          stage,
+          execution,
+          %{min_approvals: 2, allow_self_approval: false}
+        )
+
+      assert [
+               {{:runbook_stage_approval_request, ^stage_id},
+                {:insert, %Ecto.Changeset{} = changeset, []}}
+             ] = Multi.to_list(multi)
+
+      assert changeset.valid?
+      assert Ecto.Changeset.get_field(changeset, :run_id) == nil
+      assert Ecto.Changeset.get_field(changeset, :runbook_execution_stage_id) == stage_id
+      assert Ecto.Changeset.get_field(changeset, :requested_by_id) == requested_by_id
+      assert Ecto.Changeset.get_field(changeset, :min_approvals) == 2
+    end
+  end
+
+  describe "runbook_stage_approval_status/2" do
+    test "returns missing when no durable stage request exists" do
+      assert Approvals.runbook_stage_approval_status(Repo, Ecto.UUID.generate()) == :missing
+    end
+  end
+
+  describe "after_runbook_stage_request_committed/1" do
+    test "is idempotent when a replay inserted no stage request" do
+      assert :ok = Approvals.after_runbook_stage_request_committed(%{})
+    end
+  end
+
+  describe "cancel_request_for_runbook_stage_in_multi/2" do
+    test "records an explicit no-op when no pending stage request exists" do
+      stage_id = Ecto.UUID.generate()
+
+      assert {:ok, changes} =
+               Multi.new()
+               |> Approvals.cancel_request_for_runbook_stage_in_multi(stage_id)
+               |> Repo.transaction()
+
+      assert changes[{:runbook_stage_request_cancel, stage_id}] == :none
+    end
+  end
+
+  describe "after_runbook_stage_cancellation_committed/1" do
+    test "is idempotent when no stage request changed" do
+      assert :ok = Approvals.after_runbook_stage_cancellation_committed(%{})
     end
   end
 
@@ -2328,6 +2409,42 @@ defmodule Emisar.ApprovalsTest do
                Multi.new()
                |> Approvals.cancel_request_for_run_in_multi(run.id)
                |> Repo.transaction()
+    end
+  end
+
+  describe "lock_pending_requests_for_runs/2" do
+    test "locks only the pending requests for the selected runs in stable order" do
+      %{run: run, request: request} = gated_request()
+
+      assert {:ok, [locked]} = Approvals.lock_pending_requests_for_runs(Repo, [run.id])
+      assert locked.id == request.id
+      assert locked.status == :pending
+      assert {:ok, []} = Approvals.lock_pending_requests_for_runs(Repo, [])
+    end
+  end
+
+  describe "cancel_locked_requests/3" do
+    test "cancels the exact rows already locked by the parent transaction" do
+      %{run: run, request: request} = gated_request()
+      assert {:ok, locked} = Approvals.lock_pending_requests_for_runs(Repo, [run.id])
+
+      assert {:ok, [cancelled]} =
+               Approvals.cancel_locked_requests(Repo, locked, "parent execution halted")
+
+      assert cancelled.id == request.id
+      assert cancelled.status == :cancelled
+      assert Repo.reload!(request).status == :cancelled
+    end
+  end
+
+  describe "broadcast_cancelled_requests/1" do
+    test "broadcasts every cancelled request returned by the transaction helper" do
+      %{account: account, request: request} = gated_request()
+      assert :ok = Approvals.subscribe_account_approvals(account.id)
+
+      assert :ok = Approvals.broadcast_cancelled_requests([request])
+      assert_receive {:approval_updated, request_id}
+      assert request_id == request.id
     end
   end
 

@@ -1,4 +1,4 @@
-defmodule EmisarWeb.MCP.ActionContract do
+defmodule Emisar.ActionContract do
   @moduledoc """
   Validates the portable part of a trusted runner action contract.
 
@@ -8,7 +8,7 @@ defmodule EmisarWeb.MCP.ActionContract do
   draft, or operation record.
   """
 
-  alias EmisarWeb.MCP.RawJSON.Number
+  alias Emisar.JSONNumber
 
   @default_max_string_bytes 32_768
   @duration ~r/\A[+-]?(?:0|(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:ns|us|µs|μs|ms|s|m|h))+)\z/u
@@ -29,6 +29,28 @@ defmodule EmisarWeb.MCP.ActionContract do
 
   @type issue :: %{arg: String.t(), code: String.t(), message: String.t()}
 
+  @doc """
+  Normalize the trusted fields whose equality makes one authored runbook step
+  safe across every selected pack version and runner.
+  """
+  def snapshot(descriptor) when is_map(descriptor) do
+    %{
+      "contract_version" => 1,
+      "args_schema" => descriptor["args_schema"] || %{"args" => []},
+      "output_schema" => descriptor["output_schema"],
+      "risk" => descriptor["risk"],
+      "execution_limits" => descriptor["execution_limits"] || %{}
+    }
+  end
+
+  @doc "Stable SHA-256 identity for a normalized action-contract snapshot."
+  def digest(snapshot) when is_map(snapshot) do
+    snapshot
+    |> canonical_json()
+    |> Jason.encode!()
+    |> Emisar.Crypto.hash_hex()
+  end
+
   @doc "Validate one action argument map against its trusted manifest descriptor."
   @spec validate(map(), map()) :: :ok | {:error, issue()}
   def validate(args, action) when is_map(args) and is_map(action) do
@@ -43,6 +65,16 @@ defmodule EmisarWeb.MCP.ActionContract do
   end
 
   def validate(_args, _action), do: issue("args", "type", "expected object")
+
+  defp canonical_json(%{} = value) do
+    value
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.map(fn {key, child} -> {key, canonical_json(child)} end)
+    |> Jason.OrderedObject.new()
+  end
+
+  defp canonical_json(value) when is_list(value), do: Enum.map(value, &canonical_json/1)
+  defp canonical_json(value), do: value
 
   defp validate_specs(specs, args) do
     Enum.reduce_while(specs, :ok, fn spec, :ok ->
@@ -276,7 +308,7 @@ defmodule EmisarWeb.MCP.ActionContract do
     end)
   end
 
-  defp exact_integer(%Number{raw: raw}), do: exact_integer(raw)
+  defp exact_integer(%JSONNumber{raw: raw}), do: exact_integer(raw)
 
   defp exact_integer(value)
        when is_integer(value) and value in -9_223_372_036_854_775_808..9_223_372_036_854_775_807,
@@ -295,7 +327,7 @@ defmodule EmisarWeb.MCP.ActionContract do
 
   defp exact_integer(_value), do: :error
 
-  defp exact_number(%Number{raw: raw}) do
+  defp exact_number(%JSONNumber{raw: raw}) do
     with {_float, ""} <- Float.parse(raw),
          {decimal, ""} <- Decimal.parse(raw) do
       {:ok, decimal}

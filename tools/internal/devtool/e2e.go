@@ -165,15 +165,15 @@ func (a *App) e2eSigning(ctx context.Context) error {
 	}
 	_ = compose(ctx, "down", "-v", "--remove-orphans")
 	defer func() { _ = compose(context.Background(), "down", "-v", "--remove-orphans") }()
-	fmt.Fprintln(a.Out, "[signed-dispatch-e2e] building current portal + runner + mcp images (cached if unchanged)...")
+	fmt.Fprintln(a.Out, "[automation-e2e] building current portal + runner + mcp images (cached if unchanged)...")
 	if err := compose(ctx, "build", "portal", "runner-signed", "mcp"); err != nil {
 		return err
 	}
-	fmt.Fprintln(a.Out, "[signed-dispatch-e2e] bringing up portal + signing-init + runner-signed (profile: test)...")
+	fmt.Fprintln(a.Out, "[automation-e2e] bringing up portal + signed and runbook runners (profile: test)...")
 	if err := compose(ctx, "up", "-d", "--wait", "--wait-timeout", "120", "portal"); err != nil {
 		return err
 	}
-	if err := compose(ctx, "up", "-d", "--force-recreate", "signing-init", "runner-signed"); err != nil {
+	if err := compose(ctx, "up", "-d", "--force-recreate", "signing-init", "runner-signed", "runner-1"); err != nil {
 		return err
 	}
 	return a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/signing-e2e")

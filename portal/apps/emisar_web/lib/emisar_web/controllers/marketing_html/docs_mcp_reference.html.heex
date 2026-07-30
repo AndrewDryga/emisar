@@ -106,7 +106,7 @@
                 {"wait_for_run", "Wait for one run to change or reach a terminal state."},
                 {"recent_runs", "Inspect scoped run history with exact identity filters."},
                 {"list_runbooks", "List visible immutable published runbooks."},
-                {"get_runbook", "Read one frozen runbook and its ordered steps."},
+                {"get_runbook", "Read one frozen typed runbook definition."},
                 {"execute_runbook", "Execute one published runbook through policy and approval."},
                 {"create_runbook_draft", "Save an agent-proposed draft for human review."}
               ] do %>
@@ -226,17 +226,20 @@
 
         <h2 id="runbooks-signing">Runbooks and signing</h2>
         <p>
-          Published runbooks are immutable <code>slug@version</code> records. Inspect the frozen
-          steps with <code>get_runbook</code> before calling <code>execute_runbook</code>. Draft
-          creation only saves a reviewable draft; it never publishes or executes it.
+          Published runbooks are immutable <code>slug@version</code>
+          records. Inspect the complete
+          typed definition with <code>get_runbook</code>
+          before calling <code>execute_runbook</code>. Draft creation accepts that same strict
+          definition and saves it for review; it never publishes or executes it.
         </p>
         <p>
-          The MCP projection is limited to 32 steps, 16 resolved runners per step, 256 runs total,
-          and a 56 KiB encoded definition. Larger operator-authored runbooks remain available in
-          the console but are not exposed or executable through MCP. Execution returns after its
-          first wave commits; follow the returned <code>wait_for_run</code>
-          continuation to observe
-          progress.
+          A definition may contain 32 inputs, 16 stages, 32 steps in total, 16 target refs per
+          step, and 256 resolved items within 64 KiB. Execution returns after the durable execution
+          and its initial stage state commit. The response groups exact items under stages and shows
+          extracted output and condition evidence, wait state, stable blocking reason, and only the
+          latest physical attempt. Follow its <code>wait_for_run</code>
+          continuation while it remains active; use <code>recent_runs</code>
+          for paginated attempt history.
         </p>
         <p>
           Customer-CA signing currently protects only <code>run_action</code>. A runbook that targets

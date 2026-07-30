@@ -116,6 +116,34 @@ bytes is not a compatible edit; publish a new version. See
 [`packs/PUBLISHING.md`](../../../packs/PUBLISHING.md) for the append-only registry and
 retirement rules.
 
+### Runbook definition schema
+
+**What it is.** A published or draft runbook carries one strict JSON-compatible
+DefinitionV1 object. It declares Markdown context, typed inputs, ordered stages,
+stage mode and concurrency, optional stage approval, action steps, one
+`pack: {id, requirement}` per step, targets, whole-value bindings, named output
+extractors, success conditions, and optional bounded waits. The console,
+persistence layer, compiler, and MCP tools consume and return this same object;
+there is no alternate YAML or legacy flat-step contract.
+
+**How it is versioned today.** The definition requires exact
+`schema_version: 1`. Its machine schema is
+[`definition-v1.schema.json`](../../../portal/apps/emisar/priv/runbooks/definition-v1.schema.json)
+and the MCP schema references that identity as
+`https://emisar.dev/schemas/runbook-definition-v1.json`. Unknown fields are
+rejected. Pack requirements accept only `== X.Y.Z`, `~> X.Y.Z`, or one bounded
+`>= X.Y.Z and <[=] A.B.C` range. Execution resolves a requirement to an exact
+trusted pack ref and hash per runner; changing the selected pack is not a
+reinterpretation of the saved definition.
+
+**What happens on skew.** A consumer or stored definition using an unsupported
+schema version fails closed with `unsupported_schema_version`. It is never
+treated as v1 by resemblance. After 1.0, an incompatible definition change
+adds a new schema version and keeps the old reader and semantics for the
+deprecation window. Additive fields still need either optional v1 semantics
+that old consumers safely ignore where allowed, or a new schema version when
+the strict v1 object would reject them.
+
 ### MCP transport and the 12-tool surface
 
 **What it is.** The portal exposes stateless, JSON-only Streamable HTTP at

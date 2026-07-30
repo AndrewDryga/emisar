@@ -50,6 +50,45 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     request
   end
 
+  defp pending_stage_request(account, requested_by) do
+    Fixtures.Approvals.create_stage_request(account, requested_by)
+  end
+
+  test "renders a frozen runbook stage without ActionRun or grant assumptions", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_stage_request(account, user)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Apply database change"
+    assert html =~ "Frozen stage plan"
+    assert html =~ "Parallel · up to 2 at once"
+    assert html =~ "2 actions · 2 runners"
+    assert html =~ "postgres.config_validate"
+    assert html =~ "postgres@1.4.2/sha256:"
+    assert html =~ "[REDACTED]"
+    assert html =~ "Approve stage"
+    refute html =~ "Allow the LLM to reuse this approval"
+    refute html =~ "Approve and send"
+  end
+
+  test "approving a stage follows the explicit non-ActionRun result branch", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_stage_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    html =
+      render_submit(lv, "decide", %{
+        "decision" => "approve",
+        "reason" => "change window confirmed"
+      })
+
+    assert html =~ "Stage approved. Eligible actions are being dispatched."
+    assert html =~ "Approved"
+    refute html =~ "Approve stage"
+  end
+
   test "a high-risk action shows its risk pill so the approver sees the stakes", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -596,10 +635,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     dest = ~p"/app/#{account}/approvals"
 
-    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+    assert {:error, {:live_redirect, %{to: ^dest}}} =
              live(conn, ~p"/app/#{account}/approvals/#{Ecto.UUID.generate()}")
-
-    assert flash["error"] == "Approval not found."
   end
 
   test "another account's request id is a 404 (redirect), not a 403", %{conn: conn} do
@@ -614,10 +651,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     dest = ~p"/app/#{account}/approvals"
 
-    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+    assert {:error, {:live_redirect, %{to: ^dest}}} =
              live(conn, ~p"/app/#{account}/approvals/#{foreign_request.id}")
-
-    assert flash["error"] == "Approval not found."
   end
 
   test "a multi-approver request shows the N-of-M tally and the per-vote Decisions card", %{

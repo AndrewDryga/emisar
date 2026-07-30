@@ -169,23 +169,15 @@ defmodule EmisarWeb.RunbooksLive do
             <%!-- Canvas rows; the per-row icon disc died with the island. --%>
             <:item :let={runbook}>
               <.list_row padding="py-4">
-                <%!-- Row 1: title (managers → editor; everyone else plain —
-                     linking a viewer into a form they can't save loses their
-                     20 minutes to a denial flash) + status pill + version --%>
+                <%!-- Row 1: every role can inspect the structured definition;
+                     the editor itself removes mutation controls for viewers. --%>
                 <:title>
                   <.link
-                    :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}
                     navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/edit"}
                     class="truncate font-medium text-zinc-100 hover:text-brand-300"
                   >
                     {runbook.title}
                   </.link>
-                  <span
-                    :if={not Runbooks.subject_can_manage_runbooks?(@current_subject)}
-                    class="truncate font-medium text-zinc-100"
-                  >
-                    {runbook.title}
-                  </span>
                   <.status_badge status={runbook.status} />
                   <span class="font-mono text-[11px] text-zinc-400">v{runbook.version}</span>
                   <%!-- Headline risk — the most-severe step's risk, so the

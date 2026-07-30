@@ -3,12 +3,16 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
 
   @descriptor_fields ~w(annotations description inputSchema outputSchema title)
 
-  @spec compile!(Path.t(), [String.t()]) :: [map()]
+  @spec compile!(Path.t(), [String.t()], map()) :: [map()]
   # The production caller passes the compile-known @schema_path derived from
   # __DIR__; no request input reaches this file read.
   # sobelow_skip ["Traversal.FileModule"]
-  def compile!(path, expected_names) do
-    registry = path |> File.read!() |> Jason.decode!()
+  def compile!(path, expected_names, external_schemas \\ %{}) do
+    registry =
+      path
+      |> File.read!()
+      |> Jason.decode!()
+      |> inline_external_schemas(external_schemas)
 
     unless registry["schema_version"] == 1 do
       raise ArgumentError,
@@ -52,6 +56,15 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
         |> Map.put("$schema", Map.fetch!(registry, "$schema"))
         |> Map.put("$defs", definitions)
     end
+  end
+
+  @doc "Inlines explicitly owned external schemas as namespaced local definitions."
+  @spec inline_external_schemas(map(), map()) :: map()
+  def inline_external_schemas(registry, external_schemas)
+      when is_map(registry) and is_map(external_schemas) do
+    Enum.reduce(external_schemas, registry, fn {uri, {root_name, schema}}, acc ->
+      import_external_schema(acc, uri, root_name, schema)
+    end)
   end
 
   @doc "Expands one bundled schema for internal compile-time introspection."
@@ -177,6 +190,68 @@ defmodule EmisarWeb.MCP.SchemaRegistry.Compiler do
     |> String.replace("~1", "/")
     |> String.replace("~0", "~")
   end
+
+  defp import_external_schema(registry, uri, root_name, schema) do
+    prefix = root_name <> "_"
+
+    root =
+      schema
+      |> Map.drop(["$schema", "$id", "$defs", "x-emisar-limits"])
+      |> rewrite_local_refs(prefix)
+
+    nested =
+      schema
+      |> Map.get("$defs", %{})
+      |> Map.new(fn {name, definition} ->
+        {prefix <> name, rewrite_local_refs(definition, prefix)}
+      end)
+
+    imported = Map.put(nested, root_name, root)
+    existing = Map.get(registry, "$defs", %{})
+
+    collisions =
+      existing
+      |> Map.keys()
+      |> MapSet.new()
+      |> MapSet.intersection(MapSet.new(Map.keys(imported)))
+
+    if MapSet.size(collisions) > 0 do
+      raise ArgumentError,
+            "MCP imported schema definitions collide: #{inspect(Enum.sort(collisions))}"
+    end
+
+    registry
+    |> rewrite_external_ref(uri, "#/$defs/#{root_name}")
+    |> Map.put("$defs", Map.merge(existing, imported))
+  end
+
+  defp rewrite_external_ref(%{"$ref" => uri} = value, uri, replacement),
+    do: Map.put(value, "$ref", replacement)
+
+  defp rewrite_external_ref(%{} = value, uri, replacement) do
+    Map.new(value, fn {key, child} ->
+      {key, rewrite_external_ref(child, uri, replacement)}
+    end)
+  end
+
+  defp rewrite_external_ref(value, uri, replacement) when is_list(value),
+    do: Enum.map(value, &rewrite_external_ref(&1, uri, replacement))
+
+  defp rewrite_external_ref(value, _uri, _replacement), do: value
+
+  defp rewrite_local_refs(%{"$ref" => "#/$defs/" <> encoded} = value, prefix) do
+    name = decode_pointer_token!(encoded, "#/$defs/" <> encoded)
+    Map.put(value, "$ref", "#/$defs/#{prefix}#{name}")
+  end
+
+  defp rewrite_local_refs(%{} = value, prefix) do
+    Map.new(value, fn {key, child} -> {key, rewrite_local_refs(child, prefix)} end)
+  end
+
+  defp rewrite_local_refs(value, prefix) when is_list(value),
+    do: Enum.map(value, &rewrite_local_refs(&1, prefix))
+
+  defp rewrite_local_refs(value, _prefix), do: value
 end
 
 defmodule EmisarWeb.MCP.SchemaRegistry do
@@ -188,6 +263,7 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
   shared schemas.
   """
 
+  alias Emisar.Runbooks
   alias EmisarWeb.MCP.SchemaRegistry.Compiler
 
   @tool_names ~w(
@@ -208,7 +284,11 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
   @schema_path Path.expand("../../../../priv/mcp/api-schemas.json", __DIR__)
   @external_resource @schema_path
   @schema_version @schema_path |> File.read!() |> Jason.decode!() |> Map.fetch!("schema_version")
-  @contracts Compiler.compile!(@schema_path, @tool_names)
+  @runbook_definition Runbooks.Definition.schema()
+  @external_schemas %{
+    @runbook_definition["$id"] => {"runbook_definition_v1", @runbook_definition}
+  }
+  @contracts Compiler.compile!(@schema_path, @tool_names, @external_schemas)
   @tools Enum.map(@contracts, &Map.delete(&1, "outputSchema"))
 
   @doc "Returns the lean wire descriptors served by tools/list."

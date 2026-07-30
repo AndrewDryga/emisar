@@ -140,9 +140,9 @@ var docsShots = []shot{
 	{Name: "connect-llm-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude.ai")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-llm-agents.webp"},
 	// Same connect panel with a LOCAL/CLI client selected — the bridge + key setup.
 	{Name: "connect-cli-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude Code")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-cli-agents.webp"},
-	// Runbook editor: open a seeded runbook and crop to its ordered, gated steps —
-	// what a runbook IS, not two list rows.
-	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-steps"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
+	// Runbook editor: open a seeded runbook and crop to its staged action model —
+	// what a runbook IS, not two list rows or the old flat step editor.
+	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-stages"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
 	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, openIdPGuide, showProductionHost}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps

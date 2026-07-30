@@ -1,7 +1,7 @@
 defmodule Emisar.Runbooks.Authorizer do
   @moduledoc "Authorization for cloud runbooks."
   use Emisar.Auth.Authorizer
-  alias Emisar.Runbooks.Runbook
+  alias Emisar.Runbooks.{Runbook, RunbookExecution}
 
   def manage_runbooks_permission, do: build(Runbook, :manage)
   def draft_runbooks_permission, do: build(Runbook, :draft)
@@ -28,8 +28,13 @@ defmodule Emisar.Runbooks.Authorizer do
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
-  def for_subject(queryable, %Subject{account: %{id: account_id}}),
-    do: Runbook.Query.by_account_id(queryable, account_id)
+  def for_subject(queryable, %Subject{account: %{id: account_id}}) do
+    case query_source(queryable) do
+      :runbooks -> Runbook.Query.by_account_id(queryable, account_id)
+      :runbook_executions -> RunbookExecution.Query.by_account_id(queryable, account_id)
+      _ -> Runbook.Query.none(queryable)
+    end
+  end
 
   def for_subject(queryable, _), do: Runbook.Query.none(queryable)
 end

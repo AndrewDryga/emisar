@@ -8,14 +8,12 @@ defmodule Emisar.Catalog.MCPProjection do
   manifest.
   """
   alias Emisar.Catalog.{PackBaseline, PackVersion, RunnerAction, TrustedManifest}
-  alias Emisar.{Crypto, Runners}
+  alias Emisar.Runners
 
   @pack_id_format ~r/\A[a-z][a-z0-9_-]*\z/
   @pack_version_format ~r/\A[0-9]+(?:\.[0-9]+)*\z/
   @pack_hash_format ~r/\Asha256:[0-9a-f]{64}\z/
-  @runner_name_format ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}\z/
   @unsafe_text ~r/[\p{Cc}\p{Cf}\p{Cs}]/u
-  @max_external_id_bytes 256
   @max_labels 32
   @max_label_key_length 80
   @max_label_value_length 256
@@ -73,15 +71,7 @@ defmodule Emisar.Catalog.MCPProjection do
 
   @doc "Stable readable runner reference derived from the durable runner external id."
   @spec runner_ref(Runners.Runner.t()) :: {:ok, String.t()} | {:error, :invalid_runner}
-  def runner_ref(%Runners.Runner{name: name, external_id: external_id}) do
-    with true <- valid_runner_name?(name),
-         true <- valid_external_id?(external_id) do
-      digest = external_id |> Crypto.hash_hex() |> binary_part(0, 32)
-      {:ok, name <> "~" <> digest}
-    else
-      _ -> {:error, :invalid_runner}
-    end
-  end
+  def runner_ref(%Runners.Runner{} = runner), do: Runners.public_ref(runner)
 
   @doc "Canonical exact pack reference, or an error for an unrepresentable advertisement."
   @spec pack_ref(String.t(), String.t(), String.t()) ::
@@ -507,13 +497,6 @@ defmodule Emisar.Catalog.MCPProjection do
   end
 
   defp safe_text?(_value, _min, _max), do: false
-
-  defp valid_runner_name?(name),
-    do: is_binary(name) and Regex.match?(@runner_name_format, name)
-
-  defp valid_external_id?(external_id) do
-    is_binary(external_id) and byte_size(external_id) in 1..@max_external_id_bytes
-  end
 
   defp runner_status(%Runners.Runner{disabled_at: %DateTime{}}), do: "disabled"
   defp runner_status(%Runners.Runner{online?: true}), do: "connected"

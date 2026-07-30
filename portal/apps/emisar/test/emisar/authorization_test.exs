@@ -135,7 +135,7 @@ defmodule Emisar.AuthorizationTest do
                    "name" => "x",
                    "slug" => "x",
                    "title" => "X",
-                   "definition" => %{"steps" => []}
+                   "definition" => Fixtures.Runbooks.default_definition()
                  },
                  subject
                )
@@ -150,7 +150,7 @@ defmodule Emisar.AuthorizationTest do
                    name: "smoke",
                    slug: "smoke",
                    title: "Smoke test",
-                   definition: %{"steps" => []}
+                   definition: Fixtures.Runbooks.default_definition()
                  },
                  subject
                )
@@ -169,16 +169,7 @@ defmodule Emisar.AuthorizationTest do
                    "title" => "From the form",
                    "description" => "",
                    "status" => "published",
-                   "definition" => %{
-                     "steps" => [
-                       %{
-                         "id" => "1",
-                         "action_id" => "nomad.job_status_all",
-                         "args" => %{},
-                         "runner_selector" => %{"group" => ["ops"]}
-                       }
-                     ]
-                   }
+                   "definition" => Fixtures.Runbooks.default_definition()
                  },
                  subject
                )
@@ -198,7 +189,7 @@ defmodule Emisar.AuthorizationTest do
             slug: "ops-#{System.unique_integer()}",
             title: "Restart",
             description: "b's runbook",
-            definition: %{"steps" => []}
+            definition: Fixtures.Runbooks.default_definition()
           },
           subject_b
         )

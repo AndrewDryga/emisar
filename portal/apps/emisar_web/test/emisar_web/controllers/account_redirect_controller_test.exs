@@ -42,4 +42,18 @@ defmodule EmisarWeb.AccountRedirectControllerTest do
       assert redirected_to(conn) == "/app/#{account.slug}/agents/connect"
     end
   end
+
+  describe "GET /app/runbooks" do
+    test "forwards list and new links to the current account", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      list_conn = get(conn, ~p"/app/runbooks")
+      assert redirected_to(list_conn) == "/app/#{account.slug}/runbooks"
+
+      assert list_conn
+             |> recycle()
+             |> get(~p"/app/runbooks/new")
+             |> redirected_to() == "/app/#{account.slug}/runbooks/new"
+    end
+  end
 end

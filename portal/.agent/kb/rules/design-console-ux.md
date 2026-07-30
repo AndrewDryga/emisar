@@ -78,6 +78,12 @@ list, detail, and forms use the archetype widths below, never per-page drift.
 
 Structural rules that ride along:
 
+- **Complex editors follow operator decision order.** Identity and intent precede
+  workflow; action and target precede version pins and stable identifiers;
+  runtime-relevant controls stay visible beside the behavior they qualify; and a
+  review rail follows the primary workflow when stacked. Preserve the complete
+  model through local disclosures instead of deleting features. See
+  `design-complex-editors-follow-decision-order.md`.
 - **The attention spine owns remedies.** Page-level actionable notices sit together between
   the intro and the summary/list, never on opposite sides of counters or filters. If a
   notice tells the operator to run a command, copy a secret, or take another concrete

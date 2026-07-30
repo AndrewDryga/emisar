@@ -8,6 +8,8 @@ defmodule EmisarWeb.MCP.RawJSON do
   offsets so signed action arguments can be sliced from the original body.
   """
 
+  alias Emisar.JSONNumber
+
   defmodule Node do
     @moduledoc false
     defstruct [:type, :start, :stop, :value, children: nil]
@@ -19,13 +21,6 @@ defmodule EmisarWeb.MCP.RawJSON do
             value: term(),
             children: %{optional(String.t()) => t()} | [t()] | nil
           }
-  end
-
-  defmodule Number do
-    @moduledoc "An exact JSON number token retained without float normalization."
-    defstruct [:raw]
-
-    @type t :: %__MODULE__{raw: binary()}
   end
 
   @max_depth 64
@@ -359,7 +354,7 @@ defmodule EmisarWeb.MCP.RawJSON do
   end
 
   defp to_term(%Node{type: :array, children: children}), do: Enum.map(children, &to_term/1)
-  defp to_term(%Node{type: :number, value: raw}), do: %Number{raw: raw}
+  defp to_term(%Node{type: :number, value: raw}), do: %JSONNumber{raw: raw}
   defp to_term(%Node{value: value}), do: value
 
   defp skip_whitespace(raw, position) do
@@ -383,13 +378,5 @@ defmodule EmisarWeb.MCP.RawJSON do
       {:ok, %Node{value: value}, _position} -> value
       _ -> "<invalid>"
     end
-  end
-end
-
-defimpl Jason.Encoder, for: EmisarWeb.MCP.RawJSON.Number do
-  @number ~r/\A-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\z/
-
-  def encode(%{raw: raw}, _opts) do
-    if Regex.match?(@number, raw), do: raw, else: raise(ArgumentError, "invalid JSON number")
   end
 end

@@ -1,5 +1,6 @@
 defmodule EmisarWeb.MCP.SchemaRegistryTest do
   use ExUnit.Case, async: true
+  alias Emisar.Runbooks
   alias EmisarWeb.MCP.{ResponseBudget, SchemaRegistry}
   alias EmisarWeb.MCP.SchemaRegistry.Compiler
 
@@ -128,7 +129,15 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
   end
 
   test "published contracts retain self-contained input and response schemas" do
-    registry = @schema_path |> File.read!() |> Jason.decode!()
+    definition = Runbooks.Definition.schema()
+
+    registry =
+      @schema_path
+      |> File.read!()
+      |> Jason.decode!()
+      |> Compiler.inline_external_schemas(%{
+        definition["$id"] => {"runbook_definition_v1", definition}
+      })
 
     Enum.each(SchemaRegistry.contracts(), fn contract ->
       expected =

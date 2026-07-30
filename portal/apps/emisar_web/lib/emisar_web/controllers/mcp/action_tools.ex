@@ -8,8 +8,8 @@ defmodule EmisarWeb.MCP.ActionTools do
   persistence authority.
   """
 
+  alias Emisar.ActionContract
   alias Emisar.{Catalog, Crypto, MCPOperations, Runners}
-  alias EmisarWeb.MCP.ActionContract
   alias EmisarWeb.MCP.Attestation
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.MCP.Service

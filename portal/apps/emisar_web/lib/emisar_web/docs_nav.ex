@@ -100,7 +100,8 @@ defmodule EmisarWeb.DocsNav do
          title: "Runbooks",
          path: "/docs/runbooks",
          icon: "hero-queue-list",
-         desc: "Saved, versioned action sequences your LLM can read and run, gated per step."
+         desc:
+           "Typed, staged automation with bounded fan-out, exact packs, approvals, output checks, waits, and durable results."
        },
        %{
          slug: "runs",

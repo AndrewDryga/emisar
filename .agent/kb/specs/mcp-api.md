@@ -1419,6 +1419,8 @@ Input accepts `query` (case-insensitive slug/title words), `limit` (1 through
       "runbook_ref": "restart-postgres@3",
       "title": "Restart PostgreSQL safely",
       "summary": "Checks replication, restarts the primary, then verifies recovery.",
+      "input_count": 1,
+      "stage_count": 3,
       "step_count": 3
     }
   ],
@@ -1436,12 +1438,13 @@ Published runbook versions are immutable portal records. A newly published
 revision receives the next version and therefore a new ref. The response does
 not repeat version beside the ref.
 
-Runbook reads apply the atomic visibility rule above. Every exact runner ref in
-the frozen definition must be currently in scope or the whole runbook is absent
-from list and exact reads. Definitions are never redacted because that would no
-longer be the object named by `runbook_ref`. Group-selector strings are
-account-authored runbook data, not runner advertisements, and are returned
-verbatim once the runbook is visible.
+Runbook reads apply the atomic visibility rule above. The complete definition
+must currently resolve to in-scope runners and trusted compatible pack/action
+contracts or the whole runbook is absent from list and exact reads.
+Definitions are never redacted because that would no longer be the object
+named by `runbook_ref`. Group target strings are account-authored runbook data,
+not runner advertisements, and are returned verbatim once the runbook is
+visible.
 
 ### `get_runbook`
 
@@ -1455,56 +1458,97 @@ definition or `runbook_not_found`:
     "runbook_ref": "restart-postgres@3",
     "title": "Restart PostgreSQL safely",
     "description": "Checks replication, restarts the primary, then verifies recovery.",
-    "steps": [
-      {
-        "step_id": "check",
-        "action_id": "postgres.replication_status",
-        "pack_ref": "postgres@1.4.0/sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
-        "args": {},
-        "runner_selector": {
-          "runner_refs": [
-            "postgres-primary~18a65e2f86b2548f847095a6f36d2fc9"
+    "definition": {
+      "schema_version": 1,
+      "context_markdown": "Confirm the maintenance window.",
+      "inputs": [
+        {
+          "id": "cluster",
+          "description": "Cluster name.",
+          "type": "string",
+          "required": true,
+          "sensitive": false
+        }
+      ],
+      "stages": [
+        {
+          "id": "preflight",
+          "title": "Check replication",
+          "mode": "parallel",
+          "max_parallel": 4,
+          "approval": "none",
+          "steps": [
+            {
+              "id": "check",
+              "pack": {"id": "postgres", "requirement": "~> 1.4.0"},
+              "action": "postgres.replication_status",
+              "targets": {"kind": "group", "refs": ["postgres"]},
+              "args": {
+                "cluster": {"source": "input", "ref": "cluster"}
+              },
+              "outputs": [
+                {
+                  "id": "healthy",
+                  "source": "structured_output",
+                  "sensitive": false,
+                  "extract": {"type": "json_pointer", "expression": "/healthy"}
+                }
+              ],
+              "success": [
+                {"output": "healthy", "operator": "equals", "value": true}
+              ],
+              "wait": null
+            }
           ]
         }
-      }
-    ]
+      ]
+    },
+    "summary": {
+      "input_count": 1,
+      "stage_count": 1,
+      "step_count": 1
+    }
   }
 }
 ```
 
-Each selector has exactly one of `runner_refs` (1 through 16 exact generations)
-or `groups` (1 through 16 exact group names). Group membership is intentionally
-resolved and frozen only when execution begins; publishing a runbook does not
-claim a future runner set. Group expansion uses the complete account group, not
-only the caller's visible subset. The complete expanded set must be inside the
-caller's current scope or preflight returns generic `not_allowed` without refs
-or counts; partial-fleet execution is never inferred. The MCP public projection
-has at most 32 steps, resolves at most 16 current runners per step and 256 runs
-overall, and its complete encoded `runbook` object is at most 56 KiB.
-`list_runbooks`, `get_runbook`, and `execute_runbook` use that same projection.
-A larger portal-authored runbook remains available to operators but is absent
-from MCP discovery and exact reads and cannot be executed through MCP. MCP draft
-validation enforces the same bounds before saving, leaving room for the result
-envelope.
+The `definition` object is the same strict JSON-compatible v1 contract used by
+the console, persistence, validation, compilation, and draft creation. It
+allows no aliases or unknown fields. A target has exactly one `kind` (`runner`
+or `group`) and 1 through 16 `refs`. Group membership is intentionally resolved
+and frozen only when execution begins; publishing a runbook does not claim a
+future runner set. The complete expanded set must be inside the caller's current
+scope or preflight returns generic `not_allowed` without refs or counts;
+partial-fleet execution is never inferred.
+
+One definition is at most 64 KiB and contains at most 32 inputs, 16 stages, 32
+steps total, 16 target refs per step, and 256 resolved logical items. The
+complete `get_runbook` object is at most 72 KiB. `list_runbooks`,
+`get_runbook`, `execute_runbook`, MCP draft creation, and the console use these
+same canonical definition limits.
 
 ### `execute_runbook`
 
 Input requires exact `runbook_ref` and nonblank `reason` (the same bound as
-`run_action`, including rejection of whitespace-only values). Execution returns
-after the complete first wave commits; use the returned `wait_for_run`
-continuation for bounded observation. The bridge injects an operation ID using
-the common mutation-idempotency contract; the authenticated request does not
-carry a generic signature.
+`run_action`, including rejection of whitespace-only values). Optional
+`input_values` is an object whose values must satisfy the definition's typed
+input declarations. The bridge injects an operation ID using the common
+mutation-idempotency contract; the authenticated request does not carry a
+generic signature.
 
-Before creation, the portal expands every selector to exact current runner refs
-and validates scope, trusted pack/action membership, arguments, and the
-signature-enforcement restriction for the complete plan. Any failure creates no
-execution. Expansion is limited to 16 runners per step and 256 total runs;
-larger work must be split into reviewed runbooks. In one transaction it persists
-the immutable expanded work list, the execution, and the complete first batch
-of runs and approval records. Runner delivery starts only after commit. Later
-batches are created only after the current batch succeeds, with current scope,
-policy, pack trust, retirement, and grant usability rechecked each time.
+Before creation, the portal validates the strict definition and typed inputs;
+expands every target to exact current runner refs; validates complete caller
+scope; selects the highest compatible trusted pack version per runner; requires
+a common action contract for every fan-out; checks every binding against that
+contract; and enforces the signature restriction for the complete plan. Any
+failure creates no execution.
+
+The operation, immutable expanded plan, execution, stages, and logical
+step/runner items commit atomically. The scheduler then advances the initial
+stage to approval, dispatch, or a terminal state. Runner delivery starts only
+after its corresponding action-run row commits. Every later stage and wait
+attempt rechecks initiating membership, runner scope, policy, exact frozen
+action contract, pack trust, and runner availability before dispatch.
 
 Accepted response:
 
@@ -1515,25 +1559,60 @@ Accepted response:
   "execution": {
     "runbook_execution_id": "60aeb528-cde1-5be6-8d2b-5b903f036d1c",
     "runbook_ref": "restart-postgres@3",
-    "status": "running",
-    "steps": [
+    "status": "active",
+    "blocking": null,
+    "stages": [
       {
-        "step_id": "check",
-        "action_id": "postgres.replication_status",
-        "status": "running",
-        "run_count": 1,
-        "status_counts": {
-          "running": 1
-        }
-      },
-      {
-        "step_id": "restart",
-        "action_id": "postgres.restart",
-        "status": "pending",
-        "run_count": 1,
-        "status_counts": {
-          "pending": 1
-        }
+        "stage_id": "preflight",
+        "title": "Check replication",
+        "position": 0,
+        "mode": "parallel",
+        "max_parallel": 4,
+        "approval": "none",
+        "status": "active",
+        "items": [
+          {
+            "item_id": "8828f094-e608-47cc-bcc5-98c13e40accd",
+            "step_id": "check",
+            "runner_ref": "postgres-primary~18a65e2f86b2548f847095a6f36d2fc9",
+            "status": "running",
+            "action_id": "postgres.replication_status",
+            "pack_ref": "postgres@1.4.2/sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
+            "pack_hash": "sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
+            "risk": "low",
+            "attempt_count": 1,
+            "wait": null,
+            "outputs": [
+              {
+                "output_id": "healthy",
+                "source": "structured_output",
+                "sensitive": false,
+                "status": "pending",
+                "value": null
+              }
+            ],
+            "output_count": 1,
+            "output_values_omitted": false,
+            "conditions": [
+              {
+                "output": "healthy",
+                "operator": "equals",
+                "expected": true,
+                "status": "pending"
+              }
+            ],
+            "condition_count": 1,
+            "error": null,
+            "latest_attempt": {
+              "run_id": "581ddfb4-579e-4bf8-b7e8-911e57de276f",
+              "attempt_number": 1,
+              "status": "sent",
+              "duration_ms": null,
+              "started_at": null,
+              "finished_at": null
+            }
+          }
+        ]
       }
     ],
     "runs_next": {
@@ -1554,24 +1633,25 @@ Accepted response:
 }
 ```
 
-Runbook execution and step statuses are `pending`, `running`,
-`pending_approval`, `success`, and `failed`. Policy denials and execution
-failures are accepted step/run outcomes under `ok: true`; no caller retries the
-complete execution. The execution is an aggregate bounded to 96 KiB: each step
-includes its action ID, frozen `run_count`, and nonzero `status_counts` whose
-values sum exactly to `run_count`, never embedded run objects or approval URLs.
-`runs_next`
-paginates the complete per-run details through `recent_runs`; add `step_id` to
-inspect one wave. Call `wait_for_run` with an individual run ID for its bounded
-output.
+Execution statuses are `active`, `succeeded`, `halted`, and `cancelled`.
+Stage statuses are `pending`, `awaiting_approval`, `active`, `succeeded`,
+`halted`, and `cancelled`. Logical item statuses are `pending`, `running`,
+`waiting`, `succeeded`, `failed`, and `cancelled`. Policy denials and every
+physical action terminal outcome settle the accepted execution under
+`ok: true`; a caller does not retry the complete mutation.
 
-Aggregate reduction is deterministic. Planned targets without a run row count
-as `pending`. An outstanding approval makes the step `pending_approval`; active
-or partially completed work is `running`; every successful target makes it
-`success`; any terminal non-success outcome makes it `failed`. A halted
-execution is `failed`, an untouched execution is `pending`, and otherwise the
-execution reduces its step/run state with the same priority. Only nonterminal
-aggregates include `next`.
+Each item identifies the exact runner, action, pack ref and hash, configured
+wait, extracted outputs, success-condition evidence, terminal error, attempt
+count, and latest physical attempt. `runs_next` paginates complete attempt
+history through `recent_runs`. When a result approaches the 512 KiB tool budget,
+the projection first replaces non-sensitive output values with their encoded
+size and SHA-256 digest, then may omit the output/condition rows while retaining
+their counts and item state. `output_values_omitted` makes this explicit.
+
+`blocking` is `null` when nothing needs explanation. Otherwise it carries a
+stable code and message plus the applicable stage, step, and runner identity.
+It describes stage approval, a scheduled wait, or the terminal cause. Only an
+active execution includes `next`.
 
 Cloud-expanded runbooks cannot currently target a runner advertising
 `enforce_signatures: true`, because the client has not signed the frozen expanded
@@ -1581,40 +1661,61 @@ fallback to unsigned action calls. A future design must expose and sign one
 exact expanded plan that every target runner can independently verify.
 
 `wait_for_run` accepts exactly one of `run_id` or `runbook_execution_id`. For a
-runbook ID it returns the same aggregate execution summary, including newly
-started batches and another `next` only while nonterminal. Per-run approvals and
-results stay behind the paginated `runs_next`. If any expanded target is no
+runbook ID it returns the same staged execution result, including newly
+dispatched attempts and another `next` only while active. Complete attempt
+history stays behind the paginated `runs_next`. If any frozen target is no
 longer in current scope, it returns `not_allowed` without a partial graph or
 hidden counts. Cancellation stops observation, never the runbook.
 
 ### `create_runbook_draft`
 
-Input requires a nonblank `title` (1 through 80 characters) and 1 through 32 ordered
-`steps`; optional `slug` and `description` use their portal bounds. Each step
-requires unique `step_id`, exact `action_id` and `pack_ref`, a validated argument
-object, and one selector shape above. Unknown fields are rejected.
+Input requires a nonblank `title` (1 through 80 characters), nullable `slug` and
+`description`, and one complete DefinitionV1 object under `definition`. A blank
+or null slug is derived from the title. The machine-readable DefinitionV1 schema
+is the external `$ref` at
+`https://emisar.dev/schemas/runbook-definition-v1.json` inside
+`api-schemas.json`; `Emisar.Runbooks.Definition` owns its semantic checks and
+limits. Unknown fields are rejected at every level.
 
 ```json
 {
   "title": "Restart PostgreSQL safely",
-  "steps": [
-    {
-      "step_id": "check",
-      "action_id": "postgres.replication_status",
-      "pack_ref": "postgres@1.4.0/sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
-      "args": {},
-      "runner_selector": {
-        "groups": ["postgres"]
+  "slug": "restart-postgres",
+  "description": "Checks replication, restarts the primary, then verifies recovery.",
+  "definition": {
+    "schema_version": 1,
+    "context_markdown": "Confirm the maintenance window.",
+    "inputs": [],
+    "stages": [
+      {
+        "id": "preflight",
+        "title": "Check replication",
+        "mode": "sequential",
+        "max_parallel": 1,
+        "approval": "none",
+        "steps": [
+          {
+            "id": "check",
+            "pack": {"id": "postgres", "requirement": "~> 1.4.0"},
+            "action": "postgres.replication_status",
+            "targets": {"kind": "group", "refs": ["postgres"]},
+            "args": {},
+            "outputs": [],
+            "success": [],
+            "wait": null
+          }
+        ]
       }
-    }
-  ]
+    ]
+  }
 }
 ```
 
 The bridge injects an operation ID. The result is `ok: true` with
 `operation_id`, `draft_id`, `slug`, `status: "draft"`, and `review_url`. It
-creates neither a published ref nor a run. The portal validates currently
-visible contracts for useful feedback, but human review and publication remain
+creates neither a published ref nor a run. Static DefinitionV1 validation is
+required when saving; current target/pack preflight happens in the console
+before publication and again at execution. Human review and publication remain
 mandatory. Retry returns the same draft through the common operation contract.
 `get_operation` recovers the draft ID, slug, and review URL after an ambiguous
 response; no synthetic run is created for recovery.
@@ -1650,11 +1751,18 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `action_unavailable` | Exact visible contract is not executable. | Follow returned diagnostics. |
 | `dispatch_failed` | The atomic action operation did not commit. | Safe to retry with the same operation ID. |
 | `execution_failed` | The atomic runbook operation did not commit. | Safe to retry with the same operation ID. |
+| `ambiguous_pack_version` | A compatible pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
+| `fan_out_too_large` | Target expansion exceeds the 256-item execution cap. | Narrow targets or split the reviewed runbook. |
 | `invalid_args` | Arguments fail fixed input or portable action validation. | Correct returned paths. |
 | `invalid_attestation` | The action signature is malformed or disagrees with the call. | Do not dispatch; refresh or fix bridge signing. |
+| `invalid_binding` | A runbook binding is unknown, sensitive in the wrong place, type-incompatible, or ambiguous after fan-out. | Correct the returned definition path. |
 | `invalid_cursor` | Cursor expired, mismatched, or scope changed. | Restart the same read. |
+| `invalid_definition` | DefinitionV1 shape or semantics are invalid. | Correct the returned definition path. |
+| `invalid_input` | Supplied run-time inputs do not satisfy the declaration. | Correct `input_values` at the returned path. |
 | `invalid_operation` | Transport operation identity is malformed or ambiguous. | Fix the transport; do not invent an ID. |
-| `invalid_runbook` | A draft does not form a valid current action plan. | Correct the returned fields. |
+| `invalid_runbook` | Draft metadata failed persistence validation. | Correct the returned fields. |
+| `incompatible_action_contracts` | Selected compatible pack versions disagree on the action contract. | Align target deployments or tighten the pack requirement. |
+| `no_compatible_pack` | A target has no trusted pack version matching the requirement. | Deploy or trust a compatible pack; do not substitute one silently. |
 | `not_allowed` | Current scope does not permit the request. | Do not probe. |
 | `operation_conflict` | Reused operation ID has different facts. | Security error; do not retry. |
 | `operation_incomplete` | A durable operation lacks its expected resource. | Reconcile; do not repeat the mutation. |
@@ -1664,6 +1772,8 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `signature_required` | A selected runner requires a customer-CA action attestation; `details.runner_refs` names the enforcing runners. | Use a signing-enabled bridge or select only non-enforcing runners. |
 | `signed_runbook_unsupported` | Runbook includes enforcing runners. | Use signed actions or await plan signing. |
 | `target_contract_changed` | The selected runner's exact pack/action contract is stale or invalid. | Call the supplied `get_action`, inspect the new result, then retry once. |
+| `unknown_target` | A declared runner or group target does not resolve in current scope. | Correct the target; do not probe hidden refs. |
+| `unsupported_schema_version` | The definition schema version is not supported. | Produce the advertised DefinitionV1 shape. |
 
 Descriptor mismatch, missing executables, connectivity, partial deployment, and
 version skew are stable catalog issue codes inside read results for trusted
@@ -1674,6 +1784,13 @@ changed. `denied`, `failed`, `error`, `validation_failed`, `unknown_action`,
 `cancelled`, `timed_out`, and `refused` are terminal run statuses inside an
 accepted operation, not top-level tool errors. No error reveals inaccessible
 runners, actions, packs, or accounts.
+
+Accepted runbook executions use stable `blocking.code` and item `error.code`
+values including `approval_denied`, `approval_expired`, `authorization_lost`,
+`denied_by_policy`, `dispatch_failed`, `execution_timed_out`, `runner_refused`,
+`action_failed`, `extraction_failed`, `condition_unmet`, `wait_timed_out`,
+`invalid_binding`, and `cancelled`. These describe durable outcomes; they are
+not instructions to repeat the mutation.
 
 ## Agent instructions
 

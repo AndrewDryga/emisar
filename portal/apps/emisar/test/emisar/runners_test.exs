@@ -58,6 +58,21 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "runner_scope_facts_for_ids/2" do
+    test "returns only bounded facts from the named account" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      other = Fixtures.Runners.create_runner(account_id: other_account.id)
+
+      assert [%{id: id, group: "database"}] =
+               Runners.runner_scope_facts_for_ids(account.id, [runner.id, other.id])
+
+      assert id == runner.id
+      assert Runners.runner_scope_facts_for_ids(account.id, List.duplicate(runner.id, 257)) == []
+    end
+  end
+
   describe "list_runners_for_account/2" do
     test "filters by account, group, and status" do
       {account, _user, subject} = account_with_owner_subject()
@@ -176,6 +191,72 @@ defmodule Emisar.RunnersTest do
       no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
 
       assert {:error, :unauthorized} = Runners.list_all_runners_for_account(no_view)
+    end
+  end
+
+  describe "resolve_runbook_targets/2" do
+    test "resolves every authored reference through current account scope" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      assert {:ok, [%{id: runner_id, runner_ref: runner_ref}]} =
+               Runners.resolve_runbook_targets(
+                 %{"kind" => "group", "refs" => ["database"]},
+                 subject
+               )
+
+      assert runner_id == runner.id
+      assert is_binary(runner_ref)
+
+      assert Runners.resolve_runbook_targets(
+               %{"kind" => "group", "refs" => ["missing"]},
+               subject
+             ) == {:error, :unknown_target}
+    end
+  end
+
+  describe "resolve_runbook_target_sets/2" do
+    test "preserves target order and reports the first unresolved target index" do
+      {account, _user, subject} = account_with_owner_subject()
+      first = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      second = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      assert {:ok, [[%{id: first_id}], [%{id: second_id}]]} =
+               Runners.resolve_runbook_target_sets(
+                 [
+                   %{"kind" => "group", "refs" => ["database"]},
+                   %{"kind" => "group", "refs" => ["web"]}
+                 ],
+                 subject
+               )
+
+      assert {first_id, second_id} == {first.id, second.id}
+
+      assert Runners.resolve_runbook_target_sets(
+               [
+                 %{"kind" => "group", "refs" => ["database"]},
+                 %{"kind" => "runner", "refs" => ["missing"]}
+               ],
+               subject
+             ) == {:error, {:unknown_target, 1}}
+    end
+  end
+
+  describe "public_ref/1" do
+    test "derives a stable readable reference without exposing external identity" do
+      runner =
+        Fixtures.Runners.create_runner(
+          name: "database-1",
+          external_id: "customer-host-identity",
+          connected?: false
+        )
+
+      assert {:ok, "database-1~" <> digest} = Runners.public_ref(runner)
+      assert byte_size(digest) == 32
+      refute digest =~ runner.external_id
+
+      assert Runners.public_ref(%Runner{name: "bad name", external_id: "id"}) ==
+               {:error, :invalid_runner}
     end
   end
 

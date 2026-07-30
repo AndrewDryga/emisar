@@ -20,11 +20,10 @@ defmodule Emisar.Runs.ActionRun do
     field :request_id, :string
     field :action_id, :string
     field :runbook_step_id, :string
-    # Groups the runs minted by one runbook invocation; the runbook engine
-    # reads wave state (dispatched / in-flight / failed) off these rows. The
-    # invocation's authorization anchor + frozen work-list live on the matching
-    # `runbook_executions` row, not duplicated here.
+    # Groups physical attempts under one durable staged execution. Stage and
+    # logical-item state live in Runbooks; this row is only one runner attempt.
     field :runbook_execution_id, Ecto.UUID
+    field :attempt_number, :integer
 
     field :api_key_id, Ecto.UUID
     field :initiating_membership_id, Ecto.UUID
@@ -165,6 +164,7 @@ defmodule Emisar.Runs.ActionRun do
     belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :policy, Emisar.Policies.Policy, where: [deleted_at: nil]
     belongs_to :mcp_operation_record, Emisar.MCPOperations.Operation
+    belongs_to :runbook_execution_item, Emisar.Runbooks.ExecutionItem
     # api_key_id is already a field above; this reuses it so the run can
     # name its initiator (e.g. the "Claude Code" key) without a second FK.
     belongs_to :api_key, Emisar.ApiKeys.ApiKey,
@@ -196,13 +196,16 @@ defmodule Emisar.Runs.ActionRun do
 
   @doc """
   Is `status` a terminal state? The single source of truth for "this run has
-  settled" across the run engine, the runbook wave logic, the web, and MCP —
+  settled" across the run engine, the staged runbook scheduler, the web, and MCP —
   never re-list these states elsewhere. `:denied` (policy refused at creation)
   and `:refused` (runner refused at dispatch) are terminal: the run won't
   progress, so it can't be cancelled or re-dispatched.
   """
   def terminal?(status) when is_atom(status), do: status in @terminal_statuses
   def terminal?(_), do: false
+
+  @doc "The complete terminal status set for context-owned recovery queries."
+  def terminal_statuses, do: @terminal_statuses
 
   @doc """
   The terminal NON-success statuses (`terminal?/1` minus `:success`) — the single

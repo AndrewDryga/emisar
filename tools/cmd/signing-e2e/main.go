@@ -1,4 +1,4 @@
-// Command signing-e2e is the signed-dispatch end-to-end check for the
+// Command signing-e2e is the governed-automation end-to-end check for the
 // docker-compose stack (driven by ./run e2e signing).
 //
 // Proves the CA-issued-certificate feature works through the WHOLE topology
@@ -10,6 +10,8 @@
 //     cert) to that runner RUNS.
 //  3. The SAME dispatch UNSIGNED is refused with `signature_required` before
 //     the portal creates a run.
+//  4. A published three-step runbook executes through the real MCP bridge,
+//     scheduler, runner, callback, and durable-result path.
 //
 // Signing is exercised through the actual `emisar-mcp` bridge — the bridge is
 // what builds the canonical claim and signs it — so this tests the real
@@ -98,9 +100,9 @@ func selectConnectedRunner(structured []byte, group string) (runnerTarget, error
 	return runnerTarget{}, fmt.Errorf("no connected runner in exact group %q", group)
 }
 
-// waitForEnforcingRunner polls through the real bridge until canonical MCP
-// discovery returns a connected runner in the exact signing-test group.
-func waitForEnforcingRunner(group string, deadline time.Time) runnerTarget {
+// waitForConnectedRunner polls through the real bridge until canonical MCP
+// discovery returns a connected runner in the exact group.
+func waitForConnectedRunner(group string, deadline time.Time) runnerTarget {
 	last := ""
 	attempt := 0
 	for time.Now().Before(deadline) {
@@ -131,7 +133,7 @@ func waitForEnforcingRunner(group string, deadline time.Time) runnerTarget {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	fail("timed out waiting for an enforcing runner in group %s (%s)", group, last)
+	fail("timed out waiting for a connected runner in group %s (%s)", group, last)
 	return runnerTarget{}
 }
 
@@ -313,9 +315,130 @@ func structuredErrorCode(result bridgeResult) string {
 	return body.Error.Code
 }
 
+type stagedExecution struct {
+	ID         string `json:"runbook_execution_id"`
+	RunbookRef string `json:"runbook_ref"`
+	Status     string `json:"status"`
+	Blocking   any    `json:"blocking"`
+	Stages     []struct {
+		Status string `json:"status"`
+		Items  []struct {
+			Status string `json:"status"`
+		} `json:"items"`
+	} `json:"stages"`
+}
+
+func decodeStartedExecution(result bridgeResult) (stagedExecution, error) {
+	var body struct {
+		Execution stagedExecution `json:"execution"`
+	}
+	if err := json.Unmarshal(result.structured, &body); err != nil {
+		return stagedExecution{}, fmt.Errorf("decode execute_runbook structuredContent: %w", err)
+	}
+	if body.Execution.ID == "" {
+		return stagedExecution{}, errors.New("execute_runbook response has no execution id")
+	}
+	return body.Execution, nil
+}
+
+func decodeWaitedExecution(result bridgeResult) (stagedExecution, error) {
+	var body struct {
+		Execution stagedExecution `json:"execution"`
+	}
+	if err := json.Unmarshal(result.structured, &body); err != nil {
+		return stagedExecution{}, fmt.Errorf("decode wait_for_run structuredContent: %w", err)
+	}
+	if body.Execution.ID == "" {
+		return stagedExecution{}, errors.New("wait_for_run response has no execution id")
+	}
+	return body.Execution, nil
+}
+
+func validateSuccessfulExecution(execution stagedExecution, runbookRef string, itemCount int) error {
+	if execution.RunbookRef != runbookRef {
+		return fmt.Errorf("runbook_ref = %q, want %q", execution.RunbookRef, runbookRef)
+	}
+	if execution.Status != "succeeded" {
+		return fmt.Errorf(
+			"execution status = %q, want succeeded (blocking=%v)",
+			execution.Status,
+			execution.Blocking,
+		)
+	}
+	if len(execution.Stages) != 1 {
+		return fmt.Errorf("stage count = %d, want 1", len(execution.Stages))
+	}
+	stage := execution.Stages[0]
+	if stage.Status != "succeeded" {
+		return fmt.Errorf("stage status = %q, want succeeded", stage.Status)
+	}
+	if len(stage.Items) != itemCount {
+		return fmt.Errorf("item count = %d, want %d", len(stage.Items), itemCount)
+	}
+	for index, item := range stage.Items {
+		if item.Status != "succeeded" {
+			return fmt.Errorf("item %d status = %q, want succeeded", index, item.Status)
+		}
+	}
+	return nil
+}
+
+func runPublishedRunbook(runbookRef, group string, deadline time.Time) {
+	logf("waiting for the runbook target group %s...", group)
+	runner := waitForConnectedRunner(group, deadline)
+	logf("runbook target connected: %s (%s)", runner.name, runner.runnerRef)
+
+	requestID := fmt.Sprintf("runbook-e2e-%d", time.Now().UnixNano())
+	started := callBridgeTool(
+		"execute_runbook",
+		map[string]any{
+			"runbook_ref":  runbookRef,
+			"reason":       "governed automation e2e " + requestID,
+			"input_values": map[string]any{},
+		},
+		requestID,
+		nil,
+	)
+	if started.isError {
+		fail("execute_runbook returned a tool error:\n%s", head(started.text, 600))
+	}
+	execution, err := decodeStartedExecution(started)
+	if err != nil {
+		fail("execute_runbook returned an invalid result: %v", err)
+	}
+	logf("runbook accepted: %s (%s)", execution.RunbookRef, execution.ID)
+
+	attempt := 0
+	for execution.Status == "active" && time.Now().Before(deadline) {
+		attempt++
+		waited := callBridgeTool(
+			"wait_for_run",
+			map[string]any{
+				"runbook_execution_id": execution.ID,
+				"timeout":              "30s",
+			},
+			fmt.Sprintf("%s-wait-%d", requestID, attempt),
+			nil,
+		)
+		if waited.isError {
+			fail("wait_for_run returned a tool error:\n%s", head(waited.text, 600))
+		}
+		execution, err = decodeWaitedExecution(waited)
+		if err != nil {
+			fail("wait_for_run returned an invalid result: %v", err)
+		}
+	}
+	if err := validateSuccessfulExecution(execution, runbookRef, 3); err != nil {
+		fail("published runbook did not complete successfully: %v", err)
+	}
+	logf("published runbook reached succeeded with one stage and three successful items")
+}
+
 func main() {
 	group := envOr("SIGNED_GROUP", "signed-iad")
 	action := envOr("SIGNED_ACTION", "linux.uptime")
+	runbookGroup := envOr("RUNBOOK_GROUP", "edge-web")
+	runbookRef := envOr("RUNBOOK_REF", "morning-edge-readiness@1")
 	timeout := 120 * time.Second
 	if v := os.Getenv("E2E_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v + "s"); err == nil {
@@ -325,7 +448,7 @@ func main() {
 	deadline := time.Now().Add(timeout)
 
 	logf("waiting for an enforcing runner in group %s...", group)
-	runner := waitForEnforcingRunner(group, deadline)
+	runner := waitForConnectedRunner(group, deadline)
 	logf("enforcing runner connected: %s (%s)", runner.name, runner.runnerRef)
 	runner = discoverFixedContract(runner, action)
 	logf("fixed contract discovered: runner_ref=%s pack_ref=%s", runner.runnerRef, runner.packRef)
@@ -366,7 +489,11 @@ func main() {
 	}
 	logf("unsigned dispatch refused with signature_required")
 
-	logf("PASS — enforcing runner runs a signed dispatch and refuses an unsigned one")
+	// 3. A published staged runbook must complete through the full automation
+	// path on a normal runner.
+	runPublishedRunbook(runbookRef, runbookGroup, deadline)
+
+	logf("PASS — signed dispatch enforcement and staged runbook execution both passed")
 }
 
 func head(s string, n int) string {

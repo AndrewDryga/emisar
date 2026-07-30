@@ -348,14 +348,14 @@ defmodule Emisar.AuthAuditTest do
         slug: "ops-#{System.unique_integer()}",
         title: "Restart ops",
         description: "Restart the ops services",
-        definition: %{"steps" => []}
+        definition: Fixtures.Runbooks.default_definition()
       }
 
       {:ok, runbook} = Emisar.Runbooks.create_runbook(attrs, subject)
 
       assert [event] = events_of(account, "runbook.created")
       assert event.target_id == runbook.id
-      assert event.payload["name"] == attrs.name
+      assert event.payload["name"] == attrs.title
       assert event.payload["version"] == 1
     end
 
@@ -370,7 +370,7 @@ defmodule Emisar.AuthAuditTest do
             slug: "ops-#{System.unique_integer()}",
             title: "Restart",
             description: "first cut",
-            definition: %{"steps" => []}
+            definition: Fixtures.Runbooks.default_definition()
           },
           subject
         )
@@ -391,7 +391,7 @@ defmodule Emisar.AuthAuditTest do
             name: "ops-#{System.unique_integer()}",
             slug: "ops-#{System.unique_integer()}",
             title: "Restart",
-            definition: %{"steps" => []}
+            definition: Fixtures.Runbooks.default_definition()
           },
           subject
         )
@@ -401,7 +401,10 @@ defmodule Emisar.AuthAuditTest do
       assert {:ok, v2} =
                Emisar.Runbooks.save_new_version(
                  runbook,
-                 %{"description" => "tweaked", "definition" => %{"steps" => []}},
+                 %{
+                   "description" => "tweaked",
+                   "definition" => Fixtures.Runbooks.default_definition()
+                 },
                  subject
                )
 
@@ -416,16 +419,7 @@ defmodule Emisar.AuthAuditTest do
             slug: "ops-#{System.unique_integer()}",
             title: "Restart",
             description: "go",
-            definition: %{
-              "steps" => [
-                %{
-                  "id" => "s1",
-                  "action_id" => "linux.uptime",
-                  "args" => %{},
-                  "runner_selector" => %{"group" => ["default"]}
-                }
-              ]
-            }
+            definition: Fixtures.Runbooks.default_definition()
           },
           subject
         )

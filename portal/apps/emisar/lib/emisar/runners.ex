@@ -82,6 +82,24 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Internal — bounded account-scoped facts for checking a previously authorized
+  resource against current membership runner access. Missing or cross-account
+  ids stay missing so the caller can fail closed.
+  """
+  def runner_scope_facts_for_ids(account_id, ids)
+      when is_binary(account_id) and is_list(ids) and length(ids) <= 256 do
+    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    Runner.Query.all()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_ids(ids)
+    |> Runner.Query.select_scope_facts()
+    |> Repo.all()
+  end
+
+  def runner_scope_facts_for_ids(_account_id, _ids), do: []
+
+  @doc """
   Paginated, filterable runner listing for the RunnersLive UI —
   `:group` / `:status` opts narrow the set. The authenticated subject's
   runner access applies in the query before pagination: `none` returns no rows,
@@ -134,6 +152,109 @@ defmodule Emisar.Runners do
         |> decorate_connection()
 
       {:ok, runners}
+    end
+  end
+
+  @doc """
+  Resolves one strict runbook target against the caller's complete current
+  runner scope. Every returned runner is enabled and online; every authored ref
+  must resolve, so a partial target never silently shrinks the blast radius.
+  """
+  def resolve_runbook_targets(%{"kind" => kind, "refs" => refs}, %Subject{} = subject)
+      when kind in ["group", "runner"] and is_list(refs) do
+    case resolve_runbook_target_sets([%{"kind" => kind, "refs" => refs}], subject) do
+      {:ok, [selected]} -> {:ok, selected}
+      {:error, {:unknown_target, 0}} -> {:error, :unknown_target}
+    end
+  end
+
+  def resolve_runbook_targets(_targets, %Subject{}), do: {:error, :unknown_target}
+
+  @doc "Resolves several strict targets through one bounded, scoped fleet read."
+  def resolve_runbook_target_sets(targets, %Subject{} = subject) when is_list(targets) do
+    with {:ok, runners} <- list_all_runners_for_account(subject) do
+      available =
+        runners
+        |> Enum.filter(&(connection_state(&1) == :online))
+        |> Enum.flat_map(&runbook_runner/1)
+
+      targets
+      |> Enum.with_index()
+      |> Enum.reduce_while({:ok, []}, fn
+        {%{"kind" => kind, "refs" => refs}, index}, {:ok, selected}
+        when kind in ["group", "runner"] and is_list(refs) ->
+          case select_runbook_targets(kind, refs, available) do
+            {:ok, target_runners} -> {:cont, {:ok, [target_runners | selected]}}
+            {:error, :unknown_target} -> {:halt, {:error, {:unknown_target, index}}}
+          end
+
+        {_target, index}, _selected ->
+          {:halt, {:error, {:unknown_target, index}}}
+      end)
+      |> case do
+        {:ok, selected} -> {:ok, Enum.reverse(selected)}
+        {:error, {:unknown_target, _index}} = error -> error
+      end
+    end
+  end
+
+  @doc "The stable readable runner reference owned by the runner identity domain."
+  def public_ref(%Runner{name: name, external_id: external_id})
+      when is_binary(name) and is_binary(external_id) do
+    if Regex.match?(~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}\z/, name) and
+         byte_size(external_id) in 1..256 do
+      digest = external_id |> Crypto.hash_hex() |> binary_part(0, 32)
+      {:ok, name <> "~" <> digest}
+    else
+      {:error, :invalid_runner}
+    end
+  end
+
+  def public_ref(_runner), do: {:error, :invalid_runner}
+
+  defp runbook_runner(%Runner{disabled_at: nil} = runner) do
+    case public_ref(runner) do
+      {:ok, runner_ref} ->
+        [
+          %{
+            id: runner.id,
+            runner_ref: runner_ref,
+            group: runner.group,
+            enforce_signatures: runner.enforce_signatures,
+            runner: runner
+          }
+        ]
+
+      {:error, :invalid_runner} ->
+        []
+    end
+  end
+
+  defp runbook_runner(%Runner{}), do: []
+
+  defp select_runbook_targets("group", refs, available) do
+    grouped = Enum.group_by(available, & &1.group)
+
+    if Enum.all?(refs, &Map.has_key?(grouped, &1)) do
+      selected =
+        refs
+        |> Enum.flat_map(&Map.fetch!(grouped, &1))
+        |> Enum.uniq_by(& &1.id)
+        |> Enum.sort_by(& &1.runner_ref)
+
+      {:ok, selected}
+    else
+      {:error, :unknown_target}
+    end
+  end
+
+  defp select_runbook_targets("runner", refs, available) do
+    by_ref = Map.new(available, &{&1.runner_ref, &1})
+
+    if Enum.all?(refs, &Map.has_key?(by_ref, &1)) do
+      {:ok, refs |> Enum.map(&Map.fetch!(by_ref, &1)) |> Enum.sort_by(& &1.runner_ref)}
+    else
+      {:error, :unknown_target}
     end
   end
 

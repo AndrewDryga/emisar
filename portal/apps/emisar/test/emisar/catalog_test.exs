@@ -2378,6 +2378,49 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "resolve_runbook_candidates/3" do
+    test "returns only trusted exact candidates for the requested runner deployment" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:ok, _observed} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(
+                   packs: %{"demo" => %{"version" => "1.2.3", "hash" => "candidate"}},
+                   actions: [action("demo.inspect", pack_id: "demo")]
+                 )
+               )
+
+      assert {:ok, [pack_version], _metadata} = Catalog.list_pack_versions(subject)
+      assert {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+      assert {:ok, [runner]} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+
+      request = %{
+        runner_id: runner.id,
+        runner_ref: runner_ref,
+        pack_id: "demo",
+        action_id: "demo.inspect"
+      }
+
+      assert {:ok, candidates} =
+               Catalog.resolve_runbook_candidates([request], [runner], subject)
+
+      assert [%{version: "1.2.3", runner_id: runner_id, descriptor: descriptor}] =
+               candidates[{runner.id, "demo", "demo.inspect"}]
+
+      assert runner_id == runner.id
+      assert descriptor["action_id"] == "demo.inspect"
+
+      assert Catalog.resolve_runbook_candidates(
+               List.duplicate(request, 257),
+               [runner],
+               subject
+             ) == {:error, :fan_out_too_large}
+    end
+  end
+
   describe "risk_by_action_ids/2" do
     setup do
       {account, subject} = account_with_owner()

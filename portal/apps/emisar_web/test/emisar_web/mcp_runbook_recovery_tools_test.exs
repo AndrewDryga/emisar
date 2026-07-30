@@ -96,6 +96,11 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert generic.error.code == "execution_failed"
     assert generic.error.message == "The runbook could not be started."
     refute Jason.encode!(generic) =~ "unexpected_internal_reason"
+
+    capacity = RunbookTools.execution_failure(:runbook_capacity_exceeded)
+    assert capacity.error.code == "runbook_capacity_exceeded"
+    assert capacity.error.retryable
+    assert capacity.error.message =~ "1,024 active runbook items"
   end
 
   test "every recent_runs schema fault identifies its kind and field", %{
@@ -147,25 +152,17 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     fetched = call(conn, "get_runbook", %{"runbook_ref" => "database-health@1"})
 
     assert %{
-             "step_id" => "check",
-             "action_id" => "operations.health",
-             "pack_ref" => @pack_ref,
-             "runner_selector" => %{"runner_refs" => [^runner_ref]}
-           } = hd(fetched["runbook"]["steps"])
-
-    refute Map.has_key?(hd(fetched["runbook"]["steps"]), "depends_on")
+             "id" => "check",
+             "action" => "operations.health",
+             "pack" => %{"id" => "operations", "requirement" => "== 1.0.0"},
+             "targets" => %{"kind" => "runner", "refs" => [^runner_ref]}
+           } = get_in(fetched, ["runbook", "definition", "stages", Access.at(0), "steps"]) |> hd()
 
     draft_args = %{
       "title" => "Check database fleet",
-      "steps" => [
-        %{
-          "step_id" => "check",
-          "action_id" => "operations.health",
-          "pack_ref" => @pack_ref,
-          "args" => %{},
-          "runner_selector" => %{"runner_refs" => [runner_ref]}
-        }
-      ]
+      "slug" => nil,
+      "description" => nil,
+      "definition" => runbook_definition(%{"kind" => "runner", "refs" => [runner_ref]})
     }
 
     draft = call(conn, "create_runbook_draft", draft_args)
@@ -198,13 +195,20 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     execute_operation = execution["operation_id"]
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
-    assert execution["execution"]["run_count"] == nil
     execution_id = execution["execution"]["runbook_execution_id"]
 
-    assert [%{"run_count" => 1, "status_counts" => status_counts}] =
-             execution["execution"]["steps"]
-
-    assert Enum.sum(Map.values(status_counts)) == 1
+    assert [
+             %{
+               "stage_id" => "inspect",
+               "items" => [
+                 %{
+                   "step_id" => "check",
+                   "runner_ref" => ^runner_ref,
+                   "attempt_count" => 1
+                 }
+               ]
+             }
+           ] = execution["execution"]["stages"]
 
     assert {:ok, _deleted} = Runbooks.delete_runbook(runbook, subject)
 
@@ -241,7 +245,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "timeout" => "0"
       })
 
-    assert waited_execution["execution"]["status"] == "success"
+    assert waited_execution["execution"]["status"] == "succeeded"
     refute Map.has_key?(waited_execution["execution"], "next")
 
     rejected_wait =
@@ -261,69 +265,156 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Repo.aggregate(Operation, :count) == 2
   end
 
-  test "console-authored and seeded runbooks without pack refs list and execute via MCP", %{
+  test "typed input values bind safely and participate in replay identity", %{
     conn: conn,
     account: account,
-    subject: subject,
-    user: user
+    subject: subject
   } do
-    runner = setup_runner!(account, subject, "edge-primary", group: "edge-web")
+    service_arg = %{
+      "name" => "service",
+      "type" => "string",
+      "required" => true,
+      "sensitive" => true
+    }
+
+    runner = setup_runner!(account, subject, "typed-input", action: action([service_arg]))
     :ok = Runners.subscribe_runner_transport(runner)
 
-    editor_conn = log_in_user(build_conn(), user)
-    {:ok, lv, _html} = live(editor_conn, ~p"/app/#{account}/runbooks/new")
+    input = %{
+      "id" => "service",
+      "description" => "Service name",
+      "type" => "string",
+      "required" => true,
+      "sensitive" => true
+    }
 
-    render_change(lv, "meta_change", %{"title" => "Console edge health", "slug" => "console-edge"})
-
-    render_change(lv, "step_change", %{
-      "index" => "0",
-      "step_id" => "check",
-      "action_id" => "operations.health",
-      "selector_kind" => "group",
-      "selector_values" => ["edge-web"]
-    })
-
-    assert {:error, {:live_redirect, _}} = render_click(lv, "publish", %{})
-    assert [%{slug: "console-edge"} = console_runbook] = Repo.all(Emisar.Runbooks.Runbook)
-
-    seeded_runbook =
-      publish_runbook!(subject, "seeded-edge", %{"group" => ["edge-web"]},
-        include_pack_ref: false
+    runbook =
+      publish_runbook!(
+        subject,
+        "typed-input",
+        %{"runner_id" => [runner.id]},
+        inputs: [input],
+        args: %{"service" => %{"source" => "input", "ref" => "service"}}
       )
 
-    listed = call(conn, "list_runbooks", %{})
-    listed_refs = Enum.map(listed["runbooks"], & &1["runbook_ref"])
-    assert Enum.sort(listed_refs) == ["console-edge@1", "seeded-edge@1"]
+    operation_id = "op_124NN9NMDZ1T76NARWCKM5A0D6"
+    secret = "billing-api"
 
-    for runbook_ref <- ["console-edge@1", "seeded-edge@1"] do
-      fetched = call(conn, "get_runbook", %{"runbook_ref" => runbook_ref})
-      assert [%{"pack_ref" => @pack_ref}] = fetched["runbook"]["steps"]
-    end
+    args = %{
+      "runbook_ref" => "#{runbook.slug}@#{runbook.version}",
+      "reason" => "Verify one service",
+      "input_values" => %{"service" => secret}
+    }
 
-    console_execution =
+    executed = call(conn, "execute_runbook", args, operation_id)
+    execution_id = executed["execution"]["runbook_execution_id"]
+    refute Jason.encode!(executed) =~ secret
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+
+    replayed = call(conn, "execute_runbook", args, operation_id)
+    assert replayed["execution"]["runbook_execution_id"] == execution_id
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
+
+    conflict =
       call(
         conn,
         "execute_runbook",
-        %{"runbook_ref" => "console-edge@1", "reason" => "Check the edge host"},
-        "op_424NN9NMDZ1T76NARWCKM5A0D6"
+        put_in(args, ["input_values", "service"], "payments-api"),
+        operation_id
       )
 
-    assert console_execution["ok"]
-    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert conflict["error"]["code"] == "operation_conflict"
 
-    seeded_execution =
+    assert {:ok, [stored_run]} = Runs.list_runs_by_runbook_execution(execution_id, subject)
+    assert Jason.decode!(stored_run.args_raw) == %{"service" => secret}
+  end
+
+  test "execution recovery exposes extracted outputs and condition evidence", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    output_schema = %{
+      "type" => "object",
+      "required" => ["ready"],
+      "additionalProperties" => false,
+      "properties" => %{"ready" => %{"type" => "boolean"}}
+    }
+
+    runner =
+      setup_runner!(account, subject, "output-evidence",
+        action: action([], output_schema: output_schema)
+      )
+
+    :ok = Runners.subscribe_runner_transport(runner)
+
+    output = %{
+      "id" => "ready",
+      "source" => "structured_output",
+      "sensitive" => false,
+      "extract" => %{"type" => "json_pointer", "expression" => "/ready"}
+    }
+
+    condition = %{"output" => "ready", "operator" => "equals", "value" => true}
+
+    _runbook =
+      publish_runbook!(
+        subject,
+        "output-evidence",
+        %{"runner_id" => [runner.id]},
+        outputs: [output],
+        success: [condition]
+      )
+
+    executed =
       call(
         conn,
         "execute_runbook",
-        %{"runbook_ref" => "seeded-edge@1", "reason" => "Check the seeded host"},
-        "op_624NN9NMDZ1T76NARWCKM5A0D6"
+        %{"runbook_ref" => "output-evidence@1", "reason" => "Confirm the service is healthy"},
+        "op_224NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert seeded_execution["ok"]
+    execution_id = executed["execution"]["runbook_execution_id"]
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
+    assert {:ok, [run]} = Runs.list_runs_by_runbook_execution(execution_id, subject)
 
-    assert console_runbook.definition["steps"] |> hd() |> Map.has_key?("pack_ref") == false
-    assert seeded_runbook.definition["steps"] |> hd() |> Map.has_key?("pack_ref") == false
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{
+               "status" => "success",
+               "structured_output" => %{"ready" => true}
+             })
+
+    recovered =
+      call(conn, "wait_for_run", %{
+        "runbook_execution_id" => execution_id,
+        "timeout" => "0"
+      })
+
+    assert recovered["execution"]["status"] == "succeeded"
+
+    item =
+      recovered
+      |> get_in(["execution", "stages", Access.at(0), "items"])
+      |> hd()
+
+    assert item["outputs"] == [
+             %{
+               "output_id" => "ready",
+               "sensitive" => false,
+               "source" => "structured_output",
+               "status" => "extracted",
+               "value" => true
+             }
+           ]
+
+    assert item["conditions"] == [
+             %{
+               "expected" => true,
+               "operator" => "equals",
+               "output" => "ready",
+               "status" => "passed"
+             }
+           ]
   end
 
   test "a group runbook stays listable when one member is offline", %{
@@ -354,7 +445,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Enum.any?(listed["runbooks"], &(&1["runbook_ref"] == "partial-fleet@1"))
   end
 
-  test "draft creation rejects invalid step arguments before reserving an operation", %{
+  test "draft creation rejects an invalid canonical definition before reserving an operation", %{
     conn: conn,
     account: account,
     subject: subject
@@ -369,26 +460,27 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     trust_all!(subject)
 
+    definition =
+      runbook_definition(
+        %{"kind" => "runner", "refs" => [runner_ref(runner)]},
+        args: %{"service" => %{"source" => "input", "ref" => "missing"}}
+      )
+
     result =
       call(conn, "create_runbook_draft", %{
         "title" => "Invalid draft",
-        "steps" => [
-          %{
-            "step_id" => "check",
-            "action_id" => "operations.health",
-            "pack_ref" => @pack_ref,
-            "args" => %{},
-            "runner_selector" => %{"runner_refs" => [runner_ref(runner)]}
-          }
-        ]
+        "slug" => nil,
+        "description" => nil,
+        "definition" => definition
       })
 
     refute result["ok"]
-    assert result["error"]["code"] == "invalid_runbook"
+    assert result["error"]["code"] == "invalid_binding"
+    assert result["error"]["path"] == "/stages/0/steps/0/args/service/ref"
     refute Repo.exists?(Operation)
   end
 
-  test "all runbook tools hide and refuse a published selector over the MCP blast radius", %{
+  test "discovery keeps fan-out separate from bounded stage parallelism", %{
     conn: conn,
     account: account,
     subject: subject
@@ -397,20 +489,14 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     _runbook = publish_runbook!(subject, "wide-book", %{"group" => ["wide"]})
 
     listed = call(conn, "list_runbooks", %{})
-    refute Enum.any?(listed["runbooks"], &(&1["runbook_ref"] == "wide-book@1"))
+    assert Enum.any?(listed["runbooks"], &(&1["runbook_ref"] == "wide-book@1"))
 
     fetched = call(conn, "get_runbook", %{"runbook_ref" => "wide-book@1"})
-    assert fetched["error"]["code"] == "runbook_not_found"
+    assert fetched["runbook"]["summary"]["stage_count"] == 1
 
-    executed =
-      call(
-        conn,
-        "execute_runbook",
-        %{"runbook_ref" => "wide-book@1", "reason" => "Must remain bounded"},
-        "op_324NN9NMDZ1T76NARWCKM5A0D6"
-      )
+    assert get_in(fetched, ["runbook", "definition", "stages", Access.at(0), "max_parallel"]) ==
+             16
 
-    assert executed["error"]["code"] == "runbook_not_found"
     refute Repo.exists?(Operation)
   end
 
@@ -436,18 +522,12 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     draft =
       call(conn, "create_runbook_draft", %{
         "title" => "Revoked pack draft",
-        "steps" => [
-          %{
-            "step_id" => "check",
-            "action_id" => "operations.health",
-            "pack_ref" => @pack_ref,
-            "args" => %{},
-            "runner_selector" => %{"runner_refs" => [runner_ref(runner)]}
-          }
-        ]
+        "slug" => nil,
+        "description" => nil,
+        "definition" => runbook_definition(%{"kind" => "runner", "refs" => [runner_ref(runner)]})
       })
 
-    assert draft["error"]["code"] == "invalid_runbook"
+    assert draft["ok"]
 
     executed =
       call(
@@ -457,9 +537,10 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "op_324NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert executed["error"]["code"] == "runbook_not_found"
+    assert executed["error"]["code"] == "no_compatible_pack"
+    assert executed["error"]["path"] == "/stages/0/steps/0/pack/requirement"
     assert executed["dispatch_started"] == false
-    refute Repo.exists?(Operation)
+    assert Repo.aggregate(Operation, :count) == 1
     assert {:ok, [], _meta} = Runs.list_runs(subject)
   end
 
@@ -537,8 +618,12 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert is_binary(first["next_cursor"])
 
     second = call(conn, "recent_runs", %{"cursor" => first["next_cursor"]})
-    assert length(second["runs"]) == 5
-    assert second["next_cursor"] == nil
+    assert length(second["runs"]) == 15
+    assert is_binary(second["next_cursor"])
+
+    {run_ids, pages} = walk_recent_pages(conn, nil, MapSet.new(), 0)
+    assert MapSet.size(run_ids) == 64
+    assert pages == 1
 
     wrong_query =
       call(conn, "recent_runs", %{
@@ -1730,7 +1815,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     observe_catalog!(
       runner,
       %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
-      [action()]
+      [Keyword.get(opts, :action, action())]
     )
 
     trust_all!(subject)
@@ -1766,17 +1851,16 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   end
 
   defp publish_runbook!(subject, slug, selector, opts \\ []) do
-    step = %{
-      "id" => "check",
-      "action_id" => "operations.health",
-      "args" => %{},
-      "runner_selector" => selector
-    }
+    targets =
+      case selector do
+        %{"runner_id" => ids} ->
+          {:ok, runners} = Runners.list_all_runners_for_account(subject)
+          refs = runners |> Enum.filter(&(&1.id in ids)) |> Enum.map(&runner_ref/1)
+          %{"kind" => "runner", "refs" => refs}
 
-    step =
-      if Keyword.get(opts, :include_pack_ref, true),
-        do: Map.put(step, "pack_ref", @pack_ref),
-        else: step
+        %{"group" => groups} ->
+          %{"kind" => "group", "refs" => groups}
+      end
 
     {:ok, draft} =
       Runbooks.create_runbook(
@@ -1784,9 +1868,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
           "title" => String.replace(slug, "-", " "),
           "name" => slug,
           "slug" => slug,
-          "definition" => %{
-            "steps" => [step]
-          }
+          "definition" => runbook_definition(targets, opts)
         },
         subject
       )
@@ -1795,11 +1877,40 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     published
   end
 
+  defp runbook_definition(targets, opts \\ []) do
+    %{
+      "schema_version" => 1,
+      "context_markdown" => "Verify the selected fleet.",
+      "inputs" => Keyword.get(opts, :inputs, []),
+      "stages" => [
+        %{
+          "id" => "inspect",
+          "title" => "Inspect",
+          "mode" => "parallel",
+          "max_parallel" => 16,
+          "approval" => "none",
+          "steps" => [
+            %{
+              "id" => "check",
+              "pack" => %{"id" => "operations", "requirement" => "== 1.0.0"},
+              "action" => "operations.health",
+              "targets" => targets,
+              "args" => Keyword.get(opts, :args, %{}),
+              "outputs" => Keyword.get(opts, :outputs, []),
+              "success" => Keyword.get(opts, :success, []),
+              "wait" => Keyword.get(opts, :wait)
+            }
+          ]
+        }
+      ]
+    }
+  end
+
   defp runner_ref(runner),
     do: "#{runner.name}~#{binary_part(Crypto.hash_hex(runner.external_id), 0, 32)}"
 
-  defp action(args \\ []) do
-    %{
+  defp action(args \\ [], opts \\ []) do
+    action = %{
       "id" => "operations.health",
       "pack_id" => "operations",
       "title" => "Check health",
@@ -1812,5 +1923,10 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       "examples" => [],
       "search_terms" => ["health"]
     }
+
+    case Keyword.fetch(opts, :output_schema) do
+      {:ok, output_schema} -> Map.put(action, "output_schema", output_schema)
+      :error -> action
+    end
   end
 end

@@ -17,6 +17,35 @@ defmodule EmisarWeb.ApprovalDetailLive do
   ]
 
   def mount(%{"id" => id}, _session, socket) do
+    if connected?(socket), do: mount_connected(id, socket), else: mount_disconnected(socket)
+  end
+
+  defp mount_disconnected(socket) do
+    {:ok,
+     socket
+     |> assign(:loaded?, false)
+     |> assign(:page_title, "Approval")
+     |> assign(:request, nil)
+     |> assign(:run, nil)
+     |> assign(:stage_plan, nil)
+     |> assign(:stage_request?, false)
+     |> assign(:action_args, %{})
+     |> assign(:action_risk, nil)
+     |> assign(:action_description, nil)
+     |> assign(:executed_command, nil)
+     |> assign(:runner_connection, :unknown)
+     |> assign(:requested_by, nil)
+     |> assign(:decided_by, nil)
+     |> assign(:decisions, [])
+     |> assign(:approved_count, 0)
+     |> assign(:already_decided?, false)
+     |> assign(:self_blocked?, false)
+     |> assign_decision_fields(%{})
+     |> assign(:grant_duration, "once")
+     |> assign(:grant_duration_options, [])}
+  end
+
+  defp mount_connected(id, socket) do
     account_id = socket.assigns.current_account.id
     subject = socket.assigns.current_subject
 
@@ -30,41 +59,33 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
 
       {:ok, request} ->
-        if connected?(socket) do
-          Approvals.subscribe_request(account_id, request.id)
-          Runners.subscribe_connections(account_id)
-        end
+        Approvals.subscribe_request(account_id, request.id)
+        Runners.subscribe_connections(account_id)
 
-        run =
-          case Runs.fetch_run_by_id(request.run_id, socket.assigns.current_subject,
-                 preload: [:runner, :api_key]
-               ) do
-            {:ok, r} -> r
-            {:error, _} -> nil
-          end
+        run = fetch_action_run(request, socket.assigns.current_subject)
+        stage_plan = stage_plan(request)
+        stage_request? = not is_nil(stage_plan)
 
-        title = "Approval · " <> ((run && run.action_id) || String.slice(request.id, 0, 8))
+        title = "Approval · " <> request_title(request)
 
-        # Display-only label lookups (requester / decider emails) — defer
-        # behind connected?/1 so they don't run on the dead render; they
-        # fall back to a placeholder until the socket connects.
-        requested_by = if connected?(socket), do: lookup_user(request.requested_by_id), else: nil
-        decided_by = if connected?(socket), do: lookup_user(request.decided_by_id), else: nil
+        requested_by = lookup_user(request.requested_by_id)
+        decided_by = lookup_user(request.decided_by_id)
 
         # Risk + the plain-English "what this does" are the approver's headline
         # signals but aren't on the request — look the action up from the catalog
         # (display-only, connected pass; nil if it's no longer advertised).
-        action =
-          if connected?(socket),
-            do: fetch_action_for(request.context, socket.assigns.current_subject)
+        action = fetch_action_for(request.context, socket.assigns.current_subject)
 
         {:ok,
          socket
+         |> assign(:loaded?, true)
          |> assign(:page_title, title)
          |> assign(:request, request)
          |> assign(:run, run)
+         |> assign(:stage_plan, stage_plan)
+         |> assign(:stage_request?, stage_request?)
          |> assign(:action_args, visible_action_args(run))
-         |> assign(:action_risk, action && action.risk)
+         |> assign(:action_risk, (action && action.risk) || stage_risk(stage_plan))
          |> assign(:action_description, action && action.description)
          # The exact command the runner will execute, arguments resolved into
          # the action's template — shown only when our compiled pack is provably
@@ -89,9 +110,70 @@ defmodule EmisarWeb.ApprovalDetailLive do
          # Only offer durations the account's lifetime cap allows, so an
          # approver can't pick one the server would reject (the cap is account
          # config, fixed for this session — compute it once at mount).
-         |> assign(:grant_duration_options, grant_duration_options(account_id))}
+         |> assign(
+           :grant_duration_options,
+           if(stage_request?,
+             do: [{"This stage only", "once"}],
+             else: grant_duration_options(account_id)
+           )
+         )}
     end
   end
+
+  defp fetch_action_run(%{run_id: run_id}, subject) when is_binary(run_id) do
+    case Runs.fetch_run_by_id(run_id, subject, preload: [:runner, :api_key]) do
+      {:ok, run} -> run
+      {:error, _} -> nil
+    end
+  end
+
+  defp fetch_action_run(_request, _subject), do: nil
+
+  defp stage_plan(%{context: %{"kind" => "runbook_stage", "stage" => stage}})
+       when is_map(stage),
+       do: stage
+
+  defp stage_plan(_request), do: nil
+
+  defp request_title(%{context: %{"kind" => "runbook_stage", "stage" => stage}}),
+    do: stage["title"] || stage["id"] || "Runbook stage"
+
+  defp request_title(%{context: context, id: id}),
+    do: context["action_id"] || String.slice(id, 0, 8)
+
+  defp stage_risk(%{"items" => items}) when is_list(items) do
+    items
+    |> Enum.map(& &1["risk"])
+    |> Enum.max_by(&risk_rank/1, fn -> nil end)
+  end
+
+  defp stage_risk(_stage), do: nil
+
+  defp risk_rank("critical"), do: 4
+  defp risk_rank("high"), do: 3
+  defp risk_rank("medium"), do: 2
+  defp risk_rank("low"), do: 1
+  defp risk_rank(_risk), do: 0
+
+  defp stage_mode_label(%{"mode" => "parallel", "max_parallel" => max_parallel}),
+    do: "Parallel · up to #{max_parallel} at once"
+
+  defp stage_mode_label(%{"mode" => "sequential"}), do: "Sequential"
+  defp stage_mode_label(_stage), do: "—"
+
+  defp stage_work_label(%{"items" => items}) when is_list(items) do
+    runners = items |> Enum.map(& &1["runner_ref"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    "#{length(items)} #{plural(length(items), "action")} · " <>
+      "#{length(runners)} #{plural(length(runners), "runner")}"
+  end
+
+  defp stage_work_label(_stage), do: "—"
+
+  defp plural(1, noun), do: noun
+  defp plural(_count, noun), do: noun <> "s"
+  defp target_noun(true), do: "stage"
+  defp target_noun(false), do: "action"
 
   defp grant_duration_options(account_id) do
     allowed = Approvals.allowed_grant_durations(account_id)
@@ -295,6 +377,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                opts
              ) do
           # Threshold met — finalized + dispatched.
+          {:ok, {request, :runbook_stage}} ->
+            {:noreply,
+             socket
+             |> assign(:request, request)
+             |> assign_decisions(request)
+             |> put_flash(:info, "Stage approved. Eligible actions are being dispatched.")}
+
           {:ok, {request, %_{} = _run}} ->
             {:noreply,
              socket
@@ -393,6 +482,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_error_message(reason) when reason in [:run_cancelled, :run_not_pending_approval],
     do: "The run was cancelled before approval, so there's nothing left to approve."
+
+  defp decision_error_message(:runbook_stage_not_approvable),
+    do: "The stage is no longer eligible to run. Refresh to see the execution's current state."
 
   defp decision_error_message(:attestation_stale) do
     "This signed request expired before approval — its signature is now outside the runner's " <>
@@ -530,8 +622,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
         <.detail_header
           back="Approvals"
           navigate={~p"/app/#{@current_account}/approvals"}
-          title={@request.context["action_id"] || "—"}
-          mono
+          title={if @loaded?, do: request_title(@request), else: "Approval"}
+          mono={@loaded? and not @stage_request?}
         />
       </:title>
       <:actions>
@@ -548,6 +640,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           View run
         </.button>
         <.button
+          :if={@loaded?}
           navigate={
             ~p"/app/#{@current_account}/audit?#{[target_kind: "approval_request", target_id: @request.id]}"
           }
@@ -557,10 +650,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
           View activity
         </.button>
       </:actions>
+      <div :if={not @loaded?} class="mt-8 flex items-center gap-2 text-sm text-zinc-400">
+        <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+        Loading approval…
+      </div>
       <%!-- The page owns its rhythm (§3.3): ONE space-y-12 child, mt-4 for air
            under the title; the STATUS block groups the naked meta row with the
            verdict that elaborates it. --%>
-      <div class="mt-4 space-y-12">
+      <div :if={@loaded?} class="mt-4 space-y-12">
         <div>
           <%!-- Request facts on the CANVAS — the naked meta row (run-detail
                grammar), no island. Status leads; one flex row at sm+, 2-col
@@ -577,13 +674,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- Never clip the action on the decision screen — an approver must read
              the full action id before deciding. `wrap` gives it the full row on
              mobile and wraps rather than truncating; the risk pill flows after. --%>
-            <.meta_field label="Action" wrap>
+            <.meta_field label={if(@stage_request?, do: "Stage", else: "Action")} wrap>
               <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class="font-mono text-zinc-200">{@request.context["action_id"] || "—"}</span>
+                <span class={[if(not @stage_request?, do: "font-mono"), "text-zinc-200"]}>
+                  {request_title(@request)}
+                </span>
                 <.risk_pill :if={@action_risk} risk={@action_risk} />
               </span>
             </.meta_field>
-            <.meta_field label="Runner">
+            <.meta_field :if={not @stage_request?} label="Runner">
               <%= if @run && @run.runner do %>
                 <%!-- Identity only — run-detail's Runner meta is the same shape.
                  A wordless colored dot said "connectivity" by color alone;
@@ -599,6 +698,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   {truncated_runner_id(@request.context["runner_id"])}
                 </span>
               <% end %>
+            </.meta_field>
+            <.meta_field :if={@stage_request?} label="Execution mode">
+              <span class="text-zinc-200">{stage_mode_label(@stage_plan)}</span>
+            </.meta_field>
+            <.meta_field :if={@stage_request?} label="Frozen work">
+              <span class="text-zinc-200">{stage_work_label(@stage_plan)}</span>
             </.meta_field>
             <%!-- Who (the accountable human) AND what asked: a request from an
              autonomous LLM agent (MCP) is the reason the gate exists and
@@ -656,10 +761,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <:body>
               <%= case verdict do %>
                 <% :expired -> %>
-                  This request expired before anyone decided, so it was auto-denied — the
-                  action will not run. The requester can re-issue it if it's still needed.
+                  This request expired before anyone decided, so it was auto-denied — the {target_noun(
+                    @stage_request?
+                  )} will not run. The requester can re-issue it if
+                  it's still needed.
                 <% :cancelled -> %>
-                  This request was withdrawn before a decision, so the action did not run.
+                  This request was withdrawn before a decision, so the {target_noun(@stage_request?)} did not run.
                 <% _ -> %>
                   <span :if={@request.decided_at}>
                     by {user_label(@decided_by, @request.decided_by_id)} ·
@@ -687,6 +794,46 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <%!-- Left: the decision record — the artifact (what will run), the raw
              args one click away, ONE why-cluster, then the vote trail. --%>
           <div class="space-y-10">
+            <section :if={@stage_request?}>
+              <.section_header title="Frozen stage plan">
+                <:subtitle>
+                  Exact actions, runners, packs, hashes, and redacted arguments
+                </:subtitle>
+              </.section_header>
+              <ul class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
+                <li
+                  :for={item <- @stage_plan["items"] || []}
+                  class="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto]"
+                >
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
+                      <.risk_pill :if={item["risk"]} risk={item["risk"]} />
+                    </div>
+                    <p class="mt-1 text-xs text-zinc-400">
+                      Runner <span class="font-mono text-zinc-300">{item["runner_ref"]}</span>
+                    </p>
+                    <p class="mt-1 break-all font-mono text-[11px] text-zinc-400">
+                      {item["pack_ref"]}
+                    </p>
+                  </div>
+                  <details
+                    :if={item["args"] != %{}}
+                    class="group self-start text-xs sm:text-right"
+                  >
+                    <summary class="cursor-pointer text-zinc-400 hover:text-zinc-200">
+                      Arguments
+                    </summary>
+                    <pre
+                      tabindex="0"
+                      aria-label={"Arguments for #{item["action"]} on #{item["runner_ref"]}"}
+                      class="mt-2 max-h-48 max-w-xl overflow-auto whitespace-pre-wrap rounded-lg bg-black/40 px-3 py-2 text-left font-mono text-[11px] leading-relaxed text-zinc-300"
+                    >{format_json(item["args"])}</pre>
+                  </details>
+                </li>
+              </ul>
+            </section>
+
             <%!-- What will run: the plain-English effect from the pack manifest
                as NAKED prose (a note about the artifact never lives inside the
                artifact's box), then the exact command in the standard
@@ -840,6 +987,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               grant_max_uses={@grant_max_uses}
               grant_duration_options={@grant_duration_options}
               runner_state={@runner_connection}
+              stage_request?={@stage_request?}
               self_blocked?={@self_blocked?}
               already_decided?={@already_decided?}
               approved_count={@approved_count}
@@ -872,6 +1020,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Connection state of the target runner (:online | :offline | :unknown)
   # so the operator knows whether an approval will actually dispatch.
   attr :runner_state, :atom, default: :unknown
+  attr :stage_request?, :boolean, default: false
   # Server-computed UI gates. self_blocked? hides Approve when this user is the
   # requester and self-approval is forbidden; already_decided? hides both forms
   # once they've voted. The CONTEXT re-checks both (IL-15) — these are cosmetic.
@@ -911,12 +1060,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
       </div>
 
       <p :if={@min_approvals > 1} class="text-xs leading-relaxed text-zinc-400">
-        This action needs <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
+        This {target_noun(@stage_request?)} needs
+        <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
         — {@approved_count} so far.
       </p>
 
       <.event_block
-        :if={@runner_state == :offline}
+        :if={not @stage_request? and @runner_state == :offline}
         icon="hero-bolt-slash"
         tone={:amber}
         title="Runner offline"
@@ -946,7 +1096,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             You can't approve your own request — a different operator must approve it.
           </p>
           <p class="mt-4 text-xs leading-relaxed text-zinc-400">
-            Approve runs this action once{reuse_clause(@self_blocked?, @grant_duration_options)} decision is logged.
+            {decision_intro(@stage_request?, @self_blocked?, @grant_duration_options)}
             <.doc_link href={~p"/docs/policies-and-approvals"}>Approvals docs</.doc_link>
           </p>
           <%!-- ONE decision form: a single note field logged with whichever
@@ -980,12 +1130,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
                  would be a dead one-option select; a quiet line says why the
                  affordance is gone. --%>
             <p
-              :if={not @self_blocked? and length(@grant_duration_options) <= 1}
+              :if={
+                not @stage_request? and not @self_blocked? and
+                  length(@grant_duration_options) <= 1
+              }
               class="text-[11px] leading-relaxed text-zinc-400"
             >
               Standing grants are disabled for this account — every approval is single-use.
             </p>
-            <.disclosure :if={not @self_blocked? and length(@grant_duration_options) > 1}>
+            <.disclosure :if={
+              not @stage_request? and not @self_blocked? and
+                length(@grant_duration_options) > 1
+            }>
               <:summary>
                 <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
                 Allow the LLM to reuse this approval
@@ -1060,7 +1216,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               icon="hero-check"
               phx-disable-with="Approving…"
             >
-              Approve and send
+              {if(@stage_request?, do: "Approve stage", else: "Approve and send")}
             </.button>
             <.button
               name="decision"
@@ -1077,6 +1233,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
       <% end %>
     </section>
     """
+  end
+
+  defp decision_intro(true, _self_blocked?, _options) do
+    "Approval releases the frozen stage. Each action still passes current policy, " <>
+      "runner access, and pack-trust checks before dispatch. Your decision is logged."
+  end
+
+  defp decision_intro(false, self_blocked?, options) do
+    "Approve runs this action once#{reuse_clause(self_blocked?, options)} decision is logged."
   end
 
   # The middle clause of the decide-form lead line. The reuse-window offer

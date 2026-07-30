@@ -15,6 +15,18 @@ defmodule Emisar.Approvals.Request.Query do
   def by_run_id(queryable, run_id),
     do: where(queryable, [requests: r], r.run_id == ^run_id)
 
+  def by_run_ids(queryable, run_ids) when is_list(run_ids),
+    do: where(queryable, [requests: r], r.run_id in ^run_ids)
+
+  def by_runbook_execution_stage_id(queryable, stage_id),
+    do: where(queryable, [requests: r], r.runbook_execution_stage_id == ^stage_id)
+
+  def by_runbook_execution_stage_ids(queryable, stage_ids) when is_list(stage_ids),
+    do: where(queryable, [requests: r], r.runbook_execution_stage_id in ^stage_ids)
+
+  def by_ids(queryable, ids) when is_list(ids),
+    do: where(queryable, [requests: r], r.id in ^ids)
+
   def by_status(queryable, status),
     do: where(queryable, [requests: r], r.status == ^status)
 
@@ -27,11 +39,31 @@ defmodule Emisar.Approvals.Request.Query do
         queryable,
         %Emisar.Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups}
       ) do
+    disallowed_stage_item =
+      Emisar.Runbooks.ExecutionItem.Query.all()
+      |> with_named_binding(:scope_stage_runner, fn queryable, binding ->
+        join(
+          queryable,
+          :left,
+          [runbook_execution_items: item],
+          runner in ^Emisar.Runners.Runner.Query.all(),
+          on: item.runner_id == runner.id,
+          as: ^binding
+        )
+      end)
+      |> where(
+        [runbook_execution_items: item, scope_stage_runner: runner],
+        item.runbook_execution_stage_id == parent_as(:requests).runbook_execution_stage_id and
+          (is_nil(runner.id) or
+             (runner.id not in ^runner_ids and runner.group not in ^groups))
+      )
+      |> select([runbook_execution_items: _item], 1)
+
     queryable
     |> with_named_binding(:scope_run, fn queryable, binding ->
       join(
         queryable,
-        :inner,
+        :left,
         [requests: request],
         run in ^Emisar.Runs.ActionRun.Query.all(),
         on: request.run_id == run.id,
@@ -41,7 +73,7 @@ defmodule Emisar.Approvals.Request.Query do
     |> with_named_binding(:scope_runner, fn queryable, binding ->
       join(
         queryable,
-        :inner,
+        :left,
         [scope_run: run],
         runner in ^Emisar.Runners.Runner.Query.all(),
         on: run.runner_id == runner.id,
@@ -49,8 +81,11 @@ defmodule Emisar.Approvals.Request.Query do
       )
     end)
     |> where(
-      [scope_runner: runner],
-      runner.id in ^runner_ids or runner.group in ^groups
+      [requests: request, scope_runner: runner],
+      (not is_nil(request.run_id) and
+         (runner.id in ^runner_ids or runner.group in ^groups)) or
+        (not is_nil(request.runbook_execution_stage_id) and
+           not exists(disallowed_stage_item))
     )
   end
 
@@ -62,6 +97,9 @@ defmodule Emisar.Approvals.Request.Query do
 
   def ordered_by_recent(queryable \\ all()),
     do: order_by(queryable, [requests: r], desc: r.requested_at)
+
+  def ordered_by_id(queryable \\ all()),
+    do: order_by(queryable, [requests: r], asc: r.id)
 
   def requested_in_window(queryable, %DateTime{} = from, %DateTime{} = to),
     do: where(queryable, [requests: r], r.requested_at >= ^from and r.requested_at < ^to)
@@ -155,6 +193,40 @@ defmodule Emisar.Approvals.Request.Query do
         status: :cancelled,
         decided_at: ^now,
         decision_reason: "run cancelled before approval",
+        updated_at: ^now
+      ]
+    )
+  end
+
+  def cancel_pending_by_ids(ids, now, reason) when is_list(ids) do
+    all()
+    |> where([requests: r], r.id in ^ids and r.status == :pending)
+    |> update(
+      set: [
+        status: :cancelled,
+        decided_at: ^now,
+        decision_reason: ^reason,
+        updated_at: ^now
+      ]
+    )
+  end
+
+  @doc """
+  Conditional update for an execution-level cancellation. A pending stage
+  request becomes cancelled in the same transaction that closes its execution,
+  so a stale approval cannot make the stage eligible afterward.
+  """
+  def cancel_pending_by_runbook_execution_stage_id(stage_id, now) do
+    all()
+    |> where(
+      [requests: r],
+      r.runbook_execution_stage_id == ^stage_id and r.status == :pending
+    )
+    |> update(
+      set: [
+        status: :cancelled,
+        decided_at: ^now,
+        decision_reason: "runbook execution cancelled before approval",
         updated_at: ^now
       ]
     )

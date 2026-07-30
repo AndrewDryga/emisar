@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "context_markdown": "## Controlled Patroni failover\n\nUse only during an approved database maintenance window.\n\n- Confirm replicas are healthy before changing the leader.\n- Stop if replication lag or the final health check is outside the declared limit.",
+  "inputs": [
+    {
+      "id": "cluster",
+      "description": "Patroni cluster name.",
+      "type": "string",
+      "required": true,
+      "sensitive": false,
+      "min_length": 1,
+      "max_length": 80
+    },
+    {
+      "id": "candidate",
+      "description": "Replica that should become the new leader.",
+      "type": "string",
+      "required": true,
+      "sensitive": false,
+      "min_length": 1,
+      "max_length": 80
+    }
+  ],
+  "stages": [
+    {
+      "id": "preflight",
+      "title": "Check cluster health",
+      "mode": "parallel",
+      "max_parallel": 3,
+      "approval": "none",
+      "steps": [
+        {
+          "id": "current_leader",
+          "pack": {
+            "id": "postgres-operations",
+            "requirement": "~> 2.4.0"
+          },
+          "action": "patroni.current_leader",
+          "targets": {
+            "kind": "group",
+            "refs": [
+              "patroni-control"
+            ]
+          },
+          "args": {
+            "cluster": {
+              "source": "input",
+              "ref": "cluster"
+            }
+          },
+          "outputs": [
+            {
+              "id": "leader",
+              "source": "stdout",
+              "sensitive": false,
+              "extract": {
+                "type": "regex",
+                "expression": "leader=(?<leader>[a-z0-9-]+)",
+                "capture": "leader"
+              }
+            }
+          ],
+          "success": [
+            {
+              "output": "leader",
+              "operator": "matches",
+              "value": "^[a-z0-9-]+$"
+            }
+          ],
+          "wait": null
+        },
+        {
+          "id": "replication_lag",
+          "pack": {
+            "id": "postgres-operations",
+            "requirement": "~> 2.4.0"
+          },
+          "action": "postgres.replication_status",
+          "targets": {
+            "kind": "group",
+            "refs": [
+              "patroni-data"
+            ]
+          },
+          "args": {
+            "cluster": {
+              "source": "input",
+              "ref": "cluster"
+            }
+          },
+          "outputs": [
+            {
+              "id": "max_lag_bytes",
+              "source": "structured_output",
+              "sensitive": false,
+              "extract": {
+                "type": "json_pointer",
+                "expression": "/max_lag_bytes"
+              }
+            }
+          ],
+          "success": [
+            {
+              "output": "max_lag_bytes",
+              "operator": "less_than_or_equal",
+              "value": 1048576
+            }
+          ],
+          "wait": null
+        }
+      ]
+    },
+    {
+      "id": "failover",
+      "title": "Move the database leader",
+      "mode": "sequential",
+      "max_parallel": 1,
+      "approval": "required",
+      "steps": [
+        {
+          "id": "move_leader",
+          "pack": {
+            "id": "postgres-operations",
+            "requirement": "~> 2.4.0"
+          },
+          "action": "patroni.failover",
+          "targets": {
+            "kind": "group",
+            "refs": [
+              "patroni-control"
+            ]
+          },
+          "args": {
+            "cluster": {
+              "source": "input",
+              "ref": "cluster"
+            },
+            "candidate": {
+              "source": "input",
+              "ref": "candidate"
+            },
+            "expected_leader": {
+              "source": "output",
+              "ref": "current_leader.leader"
+            }
+          },
+          "outputs": [
+            {
+              "id": "accepted",
+              "source": "structured_output",
+              "sensitive": false,
+              "extract": {
+                "type": "json_pointer",
+                "expression": "/accepted"
+              }
+            },
+            {
+              "id": "operation_id",
+              "source": "structured_output",
+              "sensitive": false,
+              "extract": {
+                "type": "json_pointer",
+                "expression": "/operation_id"
+              }
+            }
+          ],
+          "success": [
+            {
+              "output": "accepted",
+              "operator": "equals",
+              "value": true
+            }
+          ],
+          "wait": null
+        }
+      ]
+    },
+    {
+      "id": "wait_for_health",
+      "title": "Wait for the new leader",
+      "mode": "sequential",
+      "max_parallel": 1,
+      "approval": "none",
+      "steps": [
+        {
+          "id": "cluster_health",
+          "pack": {
+            "id": "postgres-operations",
+            "requirement": "~> 2.4.0"
+          },
+          "action": "patroni.cluster_health",
+          "targets": {
+            "kind": "group",
+            "refs": [
+              "patroni-control"
+            ]
+          },
+          "args": {
+            "cluster": {
+              "source": "input",
+              "ref": "cluster"
+            },
+            "operation_id": {
+              "source": "output",
+              "ref": "move_leader.operation_id"
+            }
+          },
+          "outputs": [
+            {
+              "id": "healthy",
+              "source": "structured_output",
+              "sensitive": false,
+              "extract": {
+                "type": "json_pointer",
+                "expression": "/healthy"
+              }
+            }
+          ],
+          "success": [
+            {
+              "output": "healthy",
+              "operator": "equals",
+              "value": true
+            }
+          ],
+          "wait": {
+            "interval_seconds": 5,
+            "timeout_seconds": 30,
+            "max_attempts": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "post_change",
+      "title": "Verify replication",
+      "mode": "parallel",
+      "max_parallel": 2,
+      "approval": "none",
+      "steps": [
+        {
+          "id": "final_replication",
+          "pack": {
+            "id": "postgres-operations",
+            "requirement": "~> 2.4.0"
+          },
+          "action": "postgres.replication_status",
+          "targets": {
+            "kind": "group",
+            "refs": [
+              "patroni-data"
+            ]
+          },
+          "args": {
+            "cluster": {
+              "source": "input",
+              "ref": "cluster"
+            }
+          },
+          "outputs": [
+            {
+              "id": "max_lag_bytes",
+              "source": "structured_output",
+              "sensitive": false,
+              "extract": {
+                "type": "json_pointer",
+                "expression": "/max_lag_bytes"
+              }
+            }
+          ],
+          "success": [
+            {
+              "output": "max_lag_bytes",
+              "operator": "less_than_or_equal",
+              "value": 1048576
+            }
+          ],
+          "wait": null
+        }
+      ]
+    }
+  ]
+}

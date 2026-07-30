@@ -629,7 +629,7 @@ defmodule Emisar.Audit.Events do
         %Runbooks.Runbook{} = runbook,
         %Runbooks.RunbookExecution{} = execution,
         total,
-        waves
+        stages
       ) do
     runbook_event(subject, runbook, "runbook.dispatched", %{
       name: runbook.name,
@@ -639,32 +639,126 @@ defmodule Emisar.Audit.Events do
       runbook_execution_id: execution.id,
       reason: execution.reason,
       total: total,
-      waves: waves
+      stages: stages
     })
   end
 
-  # A wave-engine dispatch that produced no run row (runner offline, a
-  # row-less error) — the engine continuation has no acting subject, so
-  # the actor is the system.
-  def runbook_step_dispatch_failed(
+  def runbook_execution_cancelled(
+        %Subject{} = subject,
         %Runbooks.Runbook{} = runbook,
-        execution_id,
-        step_id,
-        runner_id,
-        reason
+        %Runbooks.RunbookExecution{} = execution
       ) do
-    Audit.changeset(runbook.account_id, "runbook.step_dispatch_failed",
-      actor_kind: "system",
-      target_kind: "runbook",
-      target_id: runbook.id,
-      target_label: runbook.title,
-      payload: %{
-        runbook_id: runbook.id,
-        runbook_execution_id: execution_id,
-        runbook_step_id: step_id,
-        runner_id: runner_id,
-        reason: inspect(reason)
-      }
+    runbook_event(subject, runbook, "runbook.execution_cancelled", %{
+      name: runbook.name,
+      title: runbook.title,
+      version: runbook.version,
+      runbook_id: runbook.id,
+      runbook_execution_id: execution.id
+    })
+  end
+
+  def runbook_execution_succeeded(%Runbooks.RunbookExecution{} = execution) do
+    runbook_system_event(execution, "runbook.execution_succeeded", %{
+      runbook_execution_id: execution.id,
+      status: "succeeded"
+    })
+  end
+
+  def runbook_execution_halted(%Runbooks.RunbookExecution{} = execution) do
+    runbook_system_event(execution, "runbook.execution_halted", %{
+      runbook_execution_id: execution.id,
+      status: "halted",
+      code: execution.terminal_code,
+      message: execution.terminal_message
+    })
+  end
+
+  def runbook_stage_awaiting_approval(
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionStage{} = stage
+      ) do
+    runbook_system_event(
+      execution,
+      "runbook.stage_awaiting_approval",
+      stage_payload(execution, stage)
+    )
+  end
+
+  def runbook_stage_started(
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionStage{} = stage
+      ) do
+    runbook_system_event(execution, "runbook.stage_started", stage_payload(execution, stage))
+  end
+
+  def runbook_stage_succeeded(
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionStage{} = stage
+      ) do
+    runbook_system_event(execution, "runbook.stage_succeeded", stage_payload(execution, stage))
+  end
+
+  def runbook_stage_halted(
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionStage{} = stage
+      ) do
+    payload =
+      execution
+      |> stage_payload(stage)
+      |> Map.merge(%{code: stage.terminal_code, message: stage.terminal_message})
+
+    runbook_system_event(execution, "runbook.stage_halted", payload)
+  end
+
+  def runbook_stage_cancelled(
+        %Subject{} = subject,
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionStage{} = stage
+      ) do
+    runbook_subject_event(
+      subject,
+      execution,
+      "runbook.stage_cancelled",
+      stage_payload(execution, stage)
+    )
+  end
+
+  def runbook_item_waiting(
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionItem{} = item
+      ) do
+    runbook_system_event(execution, "runbook.item_waiting", item_payload(execution, item))
+  end
+
+  def runbook_item_succeeded(
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionItem{} = item
+      ) do
+    runbook_system_event(execution, "runbook.item_succeeded", item_payload(execution, item))
+  end
+
+  def runbook_item_failed(
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionItem{} = item
+      ) do
+    payload =
+      execution
+      |> item_payload(item)
+      |> Map.merge(%{code: item.terminal_code, message: item.terminal_message})
+
+    runbook_system_event(execution, "runbook.item_failed", payload)
+  end
+
+  def runbook_item_cancelled(
+        %Subject{} = subject,
+        %Runbooks.RunbookExecution{} = execution,
+        %Runbooks.ExecutionItem{} = item
+      ) do
+    runbook_subject_event(
+      subject,
+      execution,
+      "runbook.item_cancelled",
+      item_payload(execution, item)
     )
   end
 
@@ -1652,6 +1746,55 @@ defmodule Emisar.Audit.Events do
           payload: payload
         ]
     )
+  end
+
+  defp runbook_system_event(execution, event_type, payload) do
+    Audit.changeset(execution.account_id, event_type,
+      actor_kind: "system",
+      target_kind: "runbook",
+      target_id: execution.runbook_id,
+      payload: payload
+    )
+  end
+
+  defp runbook_subject_event(subject, execution, event_type, payload) do
+    Audit.changeset(
+      execution.account_id,
+      event_type,
+      actor(subject) ++
+        [
+          target_kind: "runbook",
+          target_id: execution.runbook_id,
+          payload: payload
+        ]
+    )
+  end
+
+  defp stage_payload(execution, stage) do
+    %{
+      runbook_execution_id: execution.id,
+      stage_id: stage.stage_id,
+      stage_position: stage.position,
+      status: Atom.to_string(stage.status)
+    }
+  end
+
+  defp item_payload(execution, item) do
+    %{
+      runbook_execution_id: execution.id,
+      runbook_execution_item_id: item.id,
+      stage_position: item.stage_position,
+      step_id: item.step_id,
+      step_position: item.step_position,
+      runner_ref: item.runner_ref,
+      action: item.action_id,
+      pack_ref: item.pack_ref,
+      pack_hash: item.pack_hash,
+      attempt_number: item.attempt_count,
+      status: Atom.to_string(item.status),
+      output_ids: Map.keys(item.outputs),
+      success_evidence: item.success_evidence
+    }
   end
 
   defp member_event(%Subject{} = subject, %Accounts.Membership{} = membership, event_type) do

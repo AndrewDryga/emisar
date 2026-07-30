@@ -117,7 +117,19 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
       assert html =~ marker
     else
       assert {:error, {:live_redirect, %{to: ^denied_path, flash: flash}}} = result
-      assert flash["error"] == denied_message
+      assert flash_message(flash, "error") == denied_message
     end
+  end
+
+  # A redirect from the disconnected mount carries the decoded map. One from
+  # the connected mount carries LiveView's signed handoff token; both are the
+  # same browser-visible flash and the route matrix should verify that contract,
+  # not depend on which mount discovered the denial.
+  defp flash_message(flash, key) when is_map(flash), do: flash[key]
+
+  defp flash_message(flash, key) when is_binary(flash) do
+    EmisarWeb.Endpoint
+    |> Phoenix.LiveView.Utils.verify_flash(flash)
+    |> Map.get(key)
   end
 end

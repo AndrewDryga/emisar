@@ -86,4 +86,20 @@ defmodule Emisar.Fixtures.Runs do
       payload
     )
   end
+
+  @doc """
+  Persists a terminal runner result without invoking the post-commit runbook
+  callback. This models a process loss after the ActionRun transaction commits
+  and before the scheduler sees the terminal attempt.
+  """
+  def finish_without_runbook_callback(%ActionRun{} = run, status, structured_output)
+      when status in [:success, :failed] and is_map(structured_output) do
+    run
+    |> Repo.reload!()
+    |> ActionRun.Changeset.transition(status, %{
+      finished_at: DateTime.utc_now(),
+      structured_output: structured_output
+    })
+    |> Repo.update!()
+  end
 end

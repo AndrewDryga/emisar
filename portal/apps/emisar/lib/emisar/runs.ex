@@ -9,6 +9,7 @@ defmodule Emisar.Runs do
   alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.ApiKeys
+  alias Emisar.Approvals
   alias Emisar.Audit
   alias Emisar.Auth
   alias Emisar.Auth.Subject
@@ -406,6 +407,26 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc "Lists only the latest physical attempt for each item in one runbook execution."
+  def list_latest_runbook_attempts(execution_id, %Subject{} = subject)
+      when is_binary(execution_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      runs =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_runbook_execution_id(execution_id)
+        |> ActionRun.Query.latest_runbook_attempts()
+        |> scope_runs_to_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, runs}
+    end
+  end
+
   # `:own` narrows to the calling agent's own runs (its API key) — the MCP
   # `recent_runs` "recall what I ran" path; only an API-key subject has "own"
   # runs, so any other actor falls through to `:account` (the for_subject scope).
@@ -531,6 +552,7 @@ defmodule Emisar.Runs do
     case result do
       {:ok, %{run: %ActionRun{request_id: ^request_id} = run} = changes} ->
         broadcast_run(run)
+        notify_runbook_settled(run)
         run_on_create(opts[:on_create], changes)
         {:ok, run}
 
@@ -596,6 +618,41 @@ defmodule Emisar.Runs do
       |> put_dispatcher_context(subject)
       |> put_dispatcher_identity(subject)
       |> dispatch_run_for_account(account_id)
+    end
+  end
+
+  @doc """
+  Internal dispatch seam for an already-account-scoped caller.
+
+  The public subject-aware path establishes attribution and membership scope
+  before entering here. Durable schedulers may also supply the initiating
+  membership explicitly, so every attempt rechecks current runner access.
+  """
+  def dispatch_run_for_account(attrs, account_id) when is_binary(account_id) do
+    attrs = Map.put(attrs, :account_id, account_id)
+    runner_id = attrs[:runner_id]
+    action_id = attrs[:action_id]
+    reason = attrs[:reason]
+    membership_id = Map.get(attrs, :requested_by_membership_id)
+
+    with :ok <- require_runner(runner_id),
+         :ok <- require_action(action_id),
+         :ok <- require_reason(reason),
+         :ok <- runner_in_account(runner_id, account_id),
+         :ok <- check_attestation(attrs, runner_id, account_id),
+         :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
+         {:ok, runner_ref} <- public_runner_ref(runner_id),
+         {:ok, contract} <-
+           fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
+         action = contract.action,
+         :ok <- ensure_primary_executable_available(action) do
+      attrs
+      |> persist_initiating_membership()
+      |> put_action_arguments(contract)
+      |> Map.put(:runner_ref, runner_ref)
+      |> Map.put(:expected_pack_hash, contract.pack_hash)
+      |> Map.put(:requires_approval, false)
+      |> evaluate_and_dispatch(account_id, contract.descriptor)
     end
   end
 
@@ -771,6 +828,86 @@ defmodule Emisar.Runs do
   def compose_dispatch_batch_in_multi(%Multi{}, _target_attrs, %Subject{}, _namespace, _opts),
     do: {:error, :invalid_targets}
 
+  @doc """
+  Internal runbook seam: compose physical attempts into a Runbooks-owned
+  transaction using the durable initiating membership instead of fabricating a
+  request subject. Current runner scope, policy, pack trust, and the frozen
+  action contract are rechecked while the transaction runs.
+  """
+  def compose_runbook_attempts_in_multi(
+        multi,
+        target_attrs,
+        account_id,
+        membership_id,
+        namespace,
+        opts \\ []
+      )
+
+  def compose_runbook_attempts_in_multi(
+        %Multi{} = multi,
+        target_attrs,
+        account_id,
+        membership_id,
+        namespace,
+        opts
+      )
+      when is_list(target_attrs) and is_binary(account_id) and is_binary(membership_id) do
+    use_grants? = Keyword.get(opts, :use_grants?, true)
+    approved_stage_id = Keyword.get(opts, :approved_runbook_stage_id)
+
+    with :ok <- validate_runbook_attempt_batch(target_attrs, approved_stage_id) do
+      target_attrs =
+        Enum.map(target_attrs, fn attrs ->
+          attrs
+          |> Map.put(:source, "runbook")
+          |> Map.put(:requested_by_membership_id, membership_id)
+        end)
+
+      {:ok,
+       multi
+       |> put_active_account_lock(account_id, {:active_account, namespace})
+       |> Multi.merge(fn _changes ->
+         compose_dispatch_batch(
+           target_attrs,
+           account_id,
+           namespace,
+           use_grants?,
+           approved_stage_id
+         )
+       end)}
+    end
+  end
+
+  def compose_runbook_attempts_in_multi(
+        %Multi{},
+        _target_attrs,
+        _account_id,
+        _membership_id,
+        _namespace,
+        _opts
+      ),
+      do: {:error, :invalid_targets}
+
+  defp validate_runbook_attempt_batch(target_attrs, approved_stage_id) do
+    valid? =
+      length(target_attrs) in 1..@max_mcp_fanout and
+        Enum.all?(target_attrs, fn attrs ->
+          is_map(attrs) and is_binary(attrs[:runner_id]) and
+            is_binary(attrs[:runbook_execution_item_id]) and
+            valid_runbook_stage_approval?(attrs, approved_stage_id) and
+            is_integer(attrs[:attempt_number]) and attrs[:attempt_number] > 0
+        end)
+
+    if valid?, do: :ok, else: {:error, :invalid_targets}
+  end
+
+  defp valid_runbook_stage_approval?(_attrs, nil), do: true
+
+  defp valid_runbook_stage_approval?(attrs, approved_stage_id) when is_binary(approved_stage_id),
+    do: attrs[:runbook_execution_stage_id] == approved_stage_id
+
+  defp valid_runbook_stage_approval?(_attrs, _approved_stage_id), do: false
+
   defp validate_dispatch_batch(target_attrs) do
     if length(target_attrs) in 1..@max_mcp_fanout and
          Enum.all?(target_attrs, &(is_map(&1) and is_binary(Map.get(&1, :runner_id)))) do
@@ -780,11 +917,17 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp compose_dispatch_batch(target_attrs, account_id, namespace, use_grants?) do
+  defp compose_dispatch_batch(
+         target_attrs,
+         account_id,
+         namespace,
+         use_grants?,
+         approved_stage_id \\ nil
+       ) do
     target_attrs
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, Multi.new()}, fn {attrs, index}, {:ok, multi} ->
-      case plan_atomic_run(attrs, account_id, nil, use_grants?) do
+      case plan_atomic_run(attrs, account_id, nil, use_grants?, approved_stage_id) do
         {:ok, plan} ->
           run_key = {:composed_run, namespace, index}
           {:cont, {:ok, append_atomic_run(multi, plan, run_key, {namespace, index})}}
@@ -799,7 +942,13 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp plan_atomic_run(attrs, account_id, operation_record_id, use_grants?) do
+  defp plan_atomic_run(
+         attrs,
+         account_id,
+         operation_record_id,
+         use_grants?,
+         approved_stage_id \\ nil
+       ) do
     attrs = Map.put(attrs, :account_id, account_id)
     runner_id = attrs[:runner_id]
     action_id = attrs[:action_id]
@@ -817,6 +966,7 @@ defmodule Emisar.Runs do
          {:ok, runner_ref} <- public_runner_ref(runner_id),
          {:ok, contract} <-
            fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
+         :ok <- ensure_frozen_runbook_contract(attrs, contract),
          action = contract.action,
          :ok <- ensure_primary_executable_available(action) do
       attrs =
@@ -828,11 +978,11 @@ defmodule Emisar.Runs do
         |> Map.put(:requires_approval, false)
         |> Map.put(:mcp_operation_record_id, operation_record_id)
 
-      plan_mcp_policy(attrs, account_id, contract.descriptor, use_grants?)
+      plan_mcp_policy(attrs, account_id, contract.descriptor, use_grants?, approved_stage_id)
     end
   end
 
-  defp plan_mcp_policy(attrs, account_id, descriptor, use_grants?) do
+  defp plan_mcp_policy(attrs, account_id, descriptor, use_grants?, approved_stage_id) do
     eval_attrs = Map.merge(attrs, %{risk: descriptor["risk"], kind: descriptor["kind"]})
     group = runner_group(attrs[:runner_id])
 
@@ -855,9 +1005,46 @@ defmodule Emisar.Runs do
          }}
 
       {:require_approval, matched, reason, policy} ->
-        with {:ok, approval} <- Emisar.Policies.approval_settings_for(policy.rules) do
-          {:ok, plan_mcp_approval(attrs, policy, reason, matched, use_grants?, approval)}
-        end
+        plan_required_approval(
+          attrs,
+          policy,
+          reason,
+          matched,
+          use_grants?,
+          approved_stage_id
+        )
+    end
+  end
+
+  defp plan_required_approval(
+         %{runbook_execution_stage_id: stage_id} = attrs,
+         policy,
+         reason,
+         matched,
+         _use_grants?,
+         stage_id
+       )
+       when is_binary(stage_id) do
+    {:ok,
+     %{
+       attrs:
+         attrs
+         |> Map.merge(policy_attrs(policy, "require_approval", reason, matched))
+         |> Map.put(:policy_reason, "#{reason}; satisfied by approved runbook stage"),
+       delivery: :runner
+     }}
+  end
+
+  defp plan_required_approval(
+         attrs,
+         policy,
+         reason,
+         matched,
+         use_grants?,
+         _approved_stage_id
+       ) do
+    with {:ok, approval} <- Emisar.Policies.approval_settings_for(policy.rules) do
+      {:ok, plan_mcp_approval(attrs, policy, reason, matched, use_grants?, approval)}
     end
   end
 
@@ -956,6 +1143,7 @@ defmodule Emisar.Runs do
     |> composed_runs_from_changes()
     |> Enum.each(fn {run_key, run} ->
       broadcast_run(run)
+      notify_runbook_settled(run)
       after_mcp_run_committed(changes, run_key, run)
     end)
 
@@ -1024,8 +1212,8 @@ defmodule Emisar.Runs do
   # from the request context onto the run attrs, so every run-lifecycle audit
   # event — including the terminal one logged from the runner socket — attributes
   # the action to where it came from and carries the caller's correlation
-  # metadata. The subject-less dispatch_run_for_account path (the runbook
-  # continuation) carries none, which is correct: no request, no dispatcher.
+  # metadata. A subject-less internal dispatch carries none, which is correct:
+  # no request, no dispatcher.
   defp put_dispatcher_context(attrs, %Subject{context: %RequestContext{} = context}) do
     attrs
     |> Map.put(:ip_address, context.ip_address)
@@ -1075,49 +1263,46 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal: dispatch a run for an explicit account with no `%Subject{}`.
-  Used by the runbook engine to continue a chain after a terminal runner result
-  callback, where no user is in scope. The originating dispatch already
-  authorized the operator; the continuation re-validates by threading the
-  initiating membership through `requested_by_membership_id`, so this path runs
-  the same per-membership runner-scope check as the first wave (a scope revoked
-  mid-execution stops it). `nil` membership means a genuinely user-less dispatch
-  with no per-user scope to enforce — never the runbook continuation.
+  Internal read-only runbook approval precheck. Revalidates one frozen target,
+  membership scope, trusted exact pack, executable readiness, and canonical
+  action contract without creating a run or evaluating policy.
   """
-  def dispatch_run_for_account(attrs, account_id) when is_binary(account_id) do
-    attrs = Map.put(attrs, :account_id, account_id)
+  def recheck_runbook_attempt(attrs, account_id)
+      when is_map(attrs) and is_binary(account_id) do
     runner_id = attrs[:runner_id]
-    action_id = attrs[:action_id]
-    reason = attrs[:reason]
-    membership_id = Map.get(attrs, :requested_by_membership_id)
 
     with :ok <- require_runner(runner_id),
-         :ok <- require_action(action_id),
-         :ok <- require_reason(reason),
+         :ok <- require_action(attrs[:action_id]),
          :ok <- runner_in_account(runner_id, account_id),
-         :ok <- check_attestation(attrs, runner_id, account_id),
-         :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
-         {:ok, runner_ref} <- public_runner_ref(runner_id),
+         false <- Emisar.Runners.runner_enforces_signatures?(runner_id, account_id),
+         :ok <-
+           runner_in_membership_scope(
+             runner_id,
+             account_id,
+             attrs[:requested_by_membership_id]
+           ),
          {:ok, contract} <-
-           fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
-         action = contract.action,
-         :ok <- ensure_primary_executable_available(action) do
-      attrs
-      |> persist_initiating_membership()
-      |> put_action_arguments(contract)
-      |> Map.put(:runner_ref, runner_ref)
-      # Snapshot the trusted hash as part of the authorization decision (MAJOR-5)
-      # so the run ships the exact bytes authorized here, not a send-time re-read.
-      |> Map.put(:expected_pack_hash, contract.pack_hash)
-      |> Map.put(:requires_approval, false)
-      |> evaluate_and_dispatch(account_id, contract.descriptor)
+           fetch_dispatch_contract(
+             account_id,
+             runner_id,
+             attrs[:action_id],
+             attrs[:pack_ref]
+           ),
+         :ok <- ensure_frozen_runbook_contract(attrs, contract),
+         :ok <- ensure_primary_executable_available(contract.action) do
+      :ok
+    else
+      true -> {:error, :runner_requires_attestation}
+      {:error, _reason} = error -> error
     end
   end
 
+  def recheck_runbook_attempt(_attrs, _account_id), do: {:error, :invalid_targets}
+
   @doc """
   Internal — re-validate that an already-created run's action pack is STILL
-  trusted, for the approval path. `dispatch_run_for_account` gates pack
-  trust at run creation, but `Approvals.approve_request` re-dispatches the
+  trusted for the approval path. Initial dispatch gates pack trust, but
+  `Approvals.approve_request` re-dispatches the
   parked run directly; without this re-check a runner that re-advertised
   the pack with a tampered hash during the approval window (flipping the
   pack to `:pending`) would have the operator's approval ship the new,
@@ -1211,8 +1396,8 @@ defmodule Emisar.Runs do
   # (`created_by_membership_id`, set at mint), so revoking a user's scope
   # shrinks every key they minted. Do NOT "simplify" MCP to pass nil here:
   # nil means "no per-user scope" (a genuinely user-less system dispatch) — the
-  # runbook continuation does NOT pass nil, it threads the initiating membership
-  # so later waves re-run this check. Routing a scoped key through nil would
+  # runbook scheduler does NOT pass nil; it threads the initiating membership
+  # so every later attempt re-runs this check. Routing a scoped key through nil would
   # unscope the key. `runner_in_account/2` runs first in the with chain, so
   # the runner is guaranteed to belong to `account_id` by the time we get
   # here.
@@ -1341,6 +1526,23 @@ defmodule Emisar.Runs do
         other
     end
   end
+
+  defp ensure_frozen_runbook_contract(
+         %{
+           runbook_action_contract: expected_contract,
+           runbook_pack_hash: expected_hash
+         },
+         %{descriptor: descriptor, pack_hash: pack_hash}
+       )
+       when is_map(expected_contract) and is_binary(expected_hash) do
+    current_contract = Emisar.ActionContract.snapshot(descriptor)
+
+    if current_contract == expected_contract and pack_hash == expected_hash,
+      do: :ok,
+      else: {:error, :action_contract_changed}
+  end
+
+  defp ensure_frozen_runbook_contract(_attrs, _contract), do: :ok
 
   defp audit_dispatch_contract_error(account_id, runner_id, action_id, event_fun) do
     case fetch_advertised_action(runner_id, action_id, account_id) do
@@ -1663,10 +1865,9 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — the runbook engine's view of one execution: every run minted
-  by that invocation, in dispatch order. The engine derives wave state
-  (dispatched / in-flight / failed) from these rows; an execution is at
-  most steps × group-members runs, so a plain list is fine.
+  Internal — every physical attempt minted for one bounded runbook execution,
+  in dispatch order. The staged scheduler uses this only for cancellation and
+  recovery; result projections use the latest attempt per durable item.
   """
   def list_runs_for_runbook_execution(account_id, execution_id) do
     ActionRun.Query.all()
@@ -1676,48 +1877,12 @@ defmodule Emisar.Runs do
     |> Repo.all()
   end
 
-  @doc """
-  The runbook's most recent execution, if it's still in flight — so the run page
-  can rehydrate after a refresh / reconnect (mount otherwise resets to a blank
-  plan and the live execution silently vanishes). `%Subject{}` needs `view_runs`.
-  `{:ok, %{execution_id, runs}}` (runs in dispatch order, `:runner` preloaded for
-  the row render), or `{:error, :not_found}` when the runbook has no execution or
-  its latest one is fully settled.
-  """
-  def fetch_active_runbook_execution(runbook_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()) do
-      latest_query =
-        ActionRun.Query.all()
-        |> ActionRun.Query.by_runbook_id(runbook_id)
-        |> ActionRun.Query.ordered_by_recent()
-        |> ActionRun.Query.limit_to(1)
-        |> Authorizer.for_subject(subject)
-
-      case Repo.peek(latest_query) do
-        nil ->
-          {:error, :not_found}
-
-        %ActionRun{runbook_execution_id: execution_id} ->
-          runs_query =
-            ActionRun.Query.all()
-            |> ActionRun.Query.by_runbook_execution_id(execution_id)
-            |> ActionRun.Query.with_preloaded_runner()
-            |> ActionRun.Query.ordered_by_oldest()
-            |> Authorizer.for_subject(subject)
-
-          runs = Repo.all(runs_query)
-
-          if Enum.any?(runs, &active_run_status?(&1.status)),
-            do: {:ok, %{execution_id: execution_id, runs: runs}},
-            else: {:error, :not_found}
-      end
-    end
+  @doc "Internal — bounded terminal attempts whose runbook settlement callback was lost."
+  def list_terminal_runbook_callbacks(limit) when is_integer(limit) and limit > 0 do
+    ActionRun.Query.terminal_runbook_callbacks(ActionRun.terminal_statuses())
+    |> ActionRun.Query.limit_to(limit)
+    |> Repo.all()
   end
-
-  # A run still doing work — not yet settled. An execution with at least one is
-  # in flight and worth rehydrating. (`:denied` is terminal, so it's excluded.)
-  defp active_run_status?(status), do: not ActionRun.terminal?(status)
 
   @doc """
   Claims a never-sent `:pending` run and emits its run_action envelope onto the
@@ -1919,6 +2084,7 @@ defmodule Emisar.Runs do
     reason = reason || "operator cancelled"
 
     Multi.new()
+    |> put_active_account_lock(run.account_id, :active_account)
     |> request_run_cancellation_in_multi(run.id, reason)
     |> add_cancel_requested_audit(subject, reason)
     |> Emisar.Approvals.cancel_request_for_run_in_multi(run.id)
@@ -1956,6 +2122,89 @@ defmodule Emisar.Runs do
       repo, %{run_cancel: {:cancelled, run}} -> repo.insert(Audit.run_event_changeset(run))
       _repo, %{run_cancel: _} -> {:ok, nil}
     end)
+  end
+
+  @doc """
+  Internal — atomically cancel every not-yet-dispatched physical attempt for a
+  runbook execution. Approval rows lock before their parent runs, matching the
+  approval finalizer's lock order, so cancel-vs-approve has one durable winner.
+  """
+  def cancel_undispatched_runbook_attempts_in_multi(
+        %Multi{} = multi,
+        execution_id,
+        reason
+      )
+      when is_binary(execution_id) and is_binary(reason) do
+    ids_key = {:runbook_undispatched_ids, execution_id}
+    requests_key = {:runbook_pending_requests, execution_id}
+    runs_key = {:runbook_cancelled_attempts, execution_id}
+    cancelled_requests_key = {:runbook_cancelled_requests, execution_id}
+
+    multi
+    |> Multi.run(ids_key, fn repo, _changes ->
+      ids =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_runbook_execution_id(execution_id)
+        |> ActionRun.Query.status_in([:pending, :pending_approval])
+        |> ActionRun.Query.ordered_by_id()
+        |> select_run_ids(repo)
+
+      {:ok, ids}
+    end)
+    |> Multi.run(requests_key, fn repo, changes ->
+      Approvals.lock_pending_requests_for_runs(repo, Map.fetch!(changes, ids_key))
+    end)
+    |> Multi.run(runs_key, fn repo, changes ->
+      cancel_undispatched_runs(repo, Map.fetch!(changes, ids_key), reason)
+    end)
+    |> Multi.run(cancelled_requests_key, fn repo, changes ->
+      Approvals.cancel_locked_requests(repo, Map.fetch!(changes, requests_key), reason)
+    end)
+  end
+
+  defp select_run_ids(query, repo) do
+    query
+    |> ActionRun.Query.select_ids()
+    |> repo.all()
+  end
+
+  defp cancel_undispatched_runs(_repo, [], _reason), do: {:ok, []}
+
+  defp cancel_undispatched_runs(repo, run_ids, reason) do
+    runs =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_ids(run_ids)
+      |> ActionRun.Query.status_in([:pending, :pending_approval])
+      |> ActionRun.Query.ordered_by_id()
+      |> ActionRun.Query.lock_for_update()
+      |> repo.all()
+
+    Enum.reduce_while(runs, {:ok, []}, fn run, {:ok, cancelled} ->
+      with {:ok, {:cancelled, cancelled_run}} <- cancel_loaded_run(repo, run, reason),
+           {:ok, _event} <- repo.insert(Audit.run_event_changeset(cancelled_run)) do
+        {:cont, {:ok, [cancelled_run | cancelled]}}
+      else
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, cancelled} -> {:ok, Enum.reverse(cancelled)}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  @doc "Post-commit broadcasts for atomic runbook-attempt cancellation."
+  def after_undispatched_runbook_attempts_cancelled(changes, execution_id)
+      when is_map(changes) and is_binary(execution_id) do
+    changes
+    |> Map.get({:runbook_cancelled_attempts, execution_id}, [])
+    |> Enum.each(&broadcast_and_settle/1)
+
+    changes
+    |> Map.get({:runbook_cancelled_requests, execution_id}, [])
+    |> Approvals.broadcast_cancelled_requests()
+
+    :ok
   end
 
   defp request_run_cancellation_in_multi(multi, run_id, reason) do
@@ -2005,7 +2254,7 @@ defmodule Emisar.Runs do
 
   defp broadcast_cancellation({outcome, %ActionRun{} = run})
        when outcome in [:cancelled, :cancelling],
-       do: broadcast_run(run)
+       do: broadcast_and_settle(run)
 
   defp broadcast_cancellation(_), do: :ok
 
@@ -2127,16 +2376,7 @@ defmodule Emisar.Runs do
            result_attrs(run, result_payload, structured_output, output_error),
            connection
          ) do
-      {:ok, finished} = ok ->
-        # If this run was part of a runbook execution, let the engine
-        # decide whether the next wave fires — it no-ops while wave
-        # peers are still in flight and halts on any failure (the failed
-        # run surfaces on the runbook run page). Dispatch failures are
-        # audited inside the engine. The wave's run events are system-origin
-        # (no `%Subject{}`), so they carry no caller request context — the
-        # runner's connect IP/UA can't bleed onto them.
-        Emisar.Runbooks.dispatch_next_batch(finished)
-
+      {:ok, _finished} = ok ->
         ok
 
       other ->
@@ -2355,6 +2595,7 @@ defmodule Emisar.Runs do
   # (intermediate :sent/:running transitions don't count an outcome).
   defp after_run_committed(%ActionRun{} = run) do
     broadcast_run(run)
+    notify_runbook_settled(run)
 
     if ActionRun.terminal?(run.status) do
       Emisar.Telemetry.run_finished(run.status, run.duration_ms)
@@ -2778,6 +3019,96 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Internal bounded materialization for runbook extractors. Reads only the
+  requested persisted, redacted sources and fails closed when a relevant text
+  stream is incomplete, truncated, invalid UTF-8, or exceeds `byte_budget`.
+  """
+  def materialize_runbook_output(run_id, account_id, sources, byte_budget)
+      when is_binary(run_id) and is_binary(account_id) and is_list(sources) and
+             is_integer(byte_budget) and byte_budget in 1..65_536 do
+    requested = MapSet.new(sources)
+    run = fetch_runbook_output_run(run_id, account_id)
+
+    with true <-
+           MapSet.subset?(
+             requested,
+             MapSet.new(["structured_output", "stdout", "stderr"])
+           ),
+         %ActionRun{} = run <- run,
+         true <- ActionRun.terminal?(run.status),
+         {:ok, stdout} <- materialize_requested_stream(run, requested, "stdout", byte_budget),
+         {:ok, stderr} <- materialize_requested_stream(run, requested, "stderr", byte_budget) do
+      {:ok,
+       %{
+         "structured_output" => run.structured_output,
+         "stdout" => stdout,
+         "stderr" => stderr
+       }}
+    else
+      false -> {:error, :invalid_output_request}
+      nil -> {:error, :not_found}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  def materialize_runbook_output(_run_id, _account_id, _sources, _byte_budget),
+    do: {:error, :invalid_output_request}
+
+  defp fetch_runbook_output_run(run_id, account_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_id(run_id)
+    |> ActionRun.Query.by_account_id(account_id)
+    |> Repo.one()
+  end
+
+  defp materialize_requested_stream(run, requested, stream, byte_budget) do
+    if MapSet.member?(requested, stream) do
+      with true <- run.output_complete,
+           false <- stream_truncated?(run, stream) do
+        materialize_progress_stream(run, stream, byte_budget)
+      else
+        _incomplete_or_truncated -> {:error, :output_incomplete}
+      end
+    else
+      {:ok, nil}
+    end
+  end
+
+  defp stream_truncated?(run, "stdout"), do: run.stdout_truncated
+  defp stream_truncated?(run, "stderr"), do: run.stderr_truncated
+
+  defp materialize_progress_stream(run, stream, byte_budget) do
+    queryable =
+      RunEvent.Query.all()
+      |> RunEvent.Query.by_run_id(run.id)
+      |> RunEvent.Query.by_kind(:progress)
+      |> RunEvent.Query.by_stream(stream)
+      |> RunEvent.Query.ordered_by_seq()
+
+    {:ok, result} =
+      Repo.transaction(fn ->
+        queryable
+        |> Repo.stream(max_rows: 64)
+        |> Enum.reduce_while({[], 0}, fn event, {chunks, bytes} ->
+          chunk = progress_chunk(event)
+          next_bytes = bytes + byte_size(chunk)
+
+          cond do
+            not String.valid?(chunk) -> {:halt, {:error, :output_invalid}}
+            next_bytes > byte_budget -> {:halt, {:error, :output_too_large}}
+            true -> {:cont, {[chunk | chunks], next_bytes}}
+          end
+        end)
+        |> case do
+          {:error, reason} -> {:error, reason}
+          {chunks, _bytes} -> {:ok, chunks |> Enum.reverse() |> IO.iodata_to_binary()}
+        end
+      end)
+
+    result
+  end
+
+  @doc """
   The most recent `limit` progress chunks before `before_seq`, in chronological
   (`seq`-ASC) order — the next older page for the run-detail output viewer's
   "load earlier" control. The run is fetched via `fetch_run_by_id/3` first so the
@@ -2819,22 +3150,8 @@ defmodule Emisar.Runs do
   def unsubscribe_run(account_id, run_id),
     do: Emisar.PubSub.unsubscribe(run_topic(account_id, run_id))
 
-  @doc """
-  Subscribe to full run transitions for one runbook execution
-  (`{:runbook_execution_updated, run}`). Callers must derive both ids from an
-  execution already authorized for their subject.
-  """
-  def subscribe_runbook_execution(account_id, execution_id),
-    do: Emisar.PubSub.subscribe(runbook_execution_topic(account_id, execution_id))
-
-  def unsubscribe_runbook_execution(account_id, execution_id),
-    do: Emisar.PubSub.unsubscribe(runbook_execution_topic(account_id, execution_id))
-
   defp account_runs_topic(account_id), do: "account:#{account_id}:runs"
   defp run_topic(account_id, run_id), do: "account:#{account_id}:run:#{run_id}"
-
-  defp runbook_execution_topic(account_id, execution_id),
-    do: "account:#{account_id}:runbook-execution:#{execution_id}"
 
   # Exact subscribers need `runner.name` to render — make `runner` preloaded
   # part of the payload contract so an update arriving after mount can cleanly
@@ -2844,8 +3161,25 @@ defmodule Emisar.Runs do
   caller's `commit_multi(after_commit:)`. No-op for the already-terminal /
   no-run shapes (nothing changed, so there's nothing to announce).
   """
-  def broadcast_cancelled_run({:cancelled, %ActionRun{} = run}), do: broadcast_run(run)
+  def broadcast_cancelled_run({:cancelled, %ActionRun{} = run}), do: broadcast_and_settle(run)
   def broadcast_cancelled_run(_), do: :ok
+
+  defp broadcast_and_settle(%ActionRun{} = run) do
+    broadcast_run(run)
+    notify_runbook_settled(run)
+  end
+
+  defp notify_runbook_settled(
+         %ActionRun{
+           runbook_execution_item_id: item_id,
+           status: status
+         } = run
+       )
+       when is_binary(item_id) do
+    if ActionRun.terminal?(status), do: Emisar.Runbooks.action_run_settled(run), else: :ok
+  end
+
+  defp notify_runbook_settled(%ActionRun{}), do: :ok
 
   defp broadcast_run(%ActionRun{} = run) do
     run =
@@ -2855,19 +3189,8 @@ defmodule Emisar.Runs do
       end
 
     Emisar.PubSub.broadcast(run_topic(run.account_id, run.id), {:run_updated, run})
-    broadcast_runbook_execution(run)
     Emisar.PubSub.broadcast(account_runs_topic(run.account_id), {:run_updated, run.id})
   end
-
-  defp broadcast_runbook_execution(%ActionRun{runbook_execution_id: execution_id} = run)
-       when is_binary(execution_id) do
-    Emisar.PubSub.broadcast(
-      runbook_execution_topic(run.account_id, execution_id),
-      {:runbook_execution_updated, run}
-    )
-  end
-
-  defp broadcast_runbook_execution(_run), do: :ok
 
   defp broadcast_run_event(%ActionRun{} = run, %RunEvent{} = event),
     do: Emisar.PubSub.broadcast(run_topic(run.account_id, run.id), {:run_event, event})
@@ -2881,6 +3204,13 @@ defmodule Emisar.Runs do
   @doc "Whether `subject` may dispatch action runs (operator+)."
   def subject_can_dispatch_run?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.dispatch_run_permission())
+
+  @doc "Whether a current membership role may dispatch action runs."
+  def role_can_dispatch_run?(role) when is_atom(role) do
+    Authorizer.dispatch_run_permission() in Authorizer.list_permissions_for_role(role)
+  end
+
+  def role_can_dispatch_run?(_role), do: false
 
   @doc "Whether `subject` may cancel action runs (operator+)."
   def subject_can_cancel_run?(%Subject{} = subject),

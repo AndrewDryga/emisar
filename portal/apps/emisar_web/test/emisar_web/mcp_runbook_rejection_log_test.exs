@@ -6,7 +6,6 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
   alias EmisarWeb.MCP.RunbookTools
 
   @hash "sha256:" <> String.duplicate("b", 64)
-  @pack_ref "operations@1.0.0/#{@hash}"
 
   setup %{conn: conn} do
     :ok = Logger.put_application_level(:emisar_web, :info)
@@ -28,7 +27,7 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     %{conn: authorize(conn, raw), account: account, subject: subject, key: key, raw: raw}
   end
 
-  test "a target-contract reject logs only its fixed reason and safe runbook ref", %{
+  test "an availability reject logs only its fixed reason and safe runbook ref", %{
     conn: conn,
     account: account,
     subject: subject,
@@ -40,7 +39,9 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     observe_catalog!(compatible, [action()])
     observe_catalog!(incompatible, [])
     trust_all!(subject)
-    _runbook = publish_runbook!(subject, "fleet-health", %{"group" => ["fleet"]})
+
+    _runbook =
+      publish_runbook!(subject, "fleet-health", %{"kind" => "group", "refs" => ["fleet"]})
 
     sentinel = "sentinel_DO_NOT_LOG_runbook_reason"
 
@@ -52,7 +53,7 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
             "reason" => sentinel
           })
 
-        assert result["error"]["code"] == "runbook_not_found"
+        assert result["error"]["code"] == "no_compatible_pack"
       end)
 
     assert length(String.split(log, "mcp.dispatch_rejected")) == 2
@@ -142,13 +143,28 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
           "name" => slug,
           "slug" => slug,
           "definition" => %{
-            "steps" => [
+            "schema_version" => 1,
+            "context_markdown" => "Verify the selected fleet.",
+            "inputs" => [],
+            "stages" => [
               %{
-                "id" => "check",
-                "action_id" => "operations.health",
-                "pack_ref" => @pack_ref,
-                "args" => %{},
-                "runner_selector" => selector
+                "id" => "inspect",
+                "title" => "Inspect",
+                "mode" => "parallel",
+                "max_parallel" => 16,
+                "approval" => "none",
+                "steps" => [
+                  %{
+                    "id" => "check",
+                    "pack" => %{"id" => "operations", "requirement" => "== 1.0.0"},
+                    "action" => "operations.health",
+                    "targets" => selector,
+                    "args" => %{},
+                    "outputs" => [],
+                    "success" => [],
+                    "wait" => nil
+                  }
+                ]
               }
             ]
           }

@@ -249,6 +249,20 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "list_latest_runbook_attempts/2" do
+    test "returns an empty scoped projection and enforces view permission" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      execution_id = Ecto.UUID.generate()
+
+      assert Runs.list_latest_runbook_attempts(execution_id, subject) == {:ok, []}
+
+      assert Runs.list_latest_runbook_attempts(
+               execution_id,
+               no_permissions_subject(account)
+             ) == {:error, :unauthorized}
+    end
+  end
+
   describe "list_run_operator_options/1" do
     test "returns the distinct dispatching operators, deduplicated" do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -1595,6 +1609,29 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "compose_runbook_attempts_in_multi/6" do
+    test "rejects empty and malformed attempt batches before composing writes" do
+      account_id = Ecto.UUID.generate()
+      membership_id = Ecto.UUID.generate()
+
+      assert Runs.compose_runbook_attempts_in_multi(
+               Multi.new(),
+               [],
+               account_id,
+               membership_id,
+               :empty
+             ) == {:error, :invalid_targets}
+
+      assert Runs.compose_runbook_attempts_in_multi(
+               Multi.new(),
+               [%{runner_id: Ecto.UUID.generate()}],
+               account_id,
+               membership_id,
+               :malformed
+             ) == {:error, :invalid_targets}
+    end
+  end
+
   describe "after_composed_dispatches_committed/1" do
     test "delivers and broadcasts the rows only after the outer transaction commits" do
       %{changes: changes, runner: runner} = composed_dispatch_fixture(:post_commit_contract)
@@ -2056,6 +2093,26 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "recheck_runbook_attempt/2" do
+    test "fails closed for malformed and cross-account frozen targets" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runs.recheck_runbook_attempt(%{}, account.id) ==
+               {:error, :runner_required}
+
+      assert Runs.recheck_runbook_attempt(
+               %{
+                 runner_id: runner.id,
+                 action_id: "linux.uptime",
+                 requested_by_membership_id: Ecto.UUID.generate()
+               },
+               other_account.id
+             ) == {:error, :runner_not_found}
+    end
+  end
+
   describe "dispatch_run_for_account/2" do
     setup do
       account = Fixtures.Accounts.create_account()
@@ -2105,9 +2162,8 @@ defmodule Emisar.RunsTest do
       account: account,
       runner: runner
     } do
-      # The continuation threads `requested_by_membership_id`; if that membership's
-      # runner scope no longer covers this runner (a scope revoked mid-execution),
-      # the wave is refused — the same per-membership check the first wave runs.
+      # A durable caller threads `requested_by_membership_id`; if that membership's
+      # runner scope no longer covers this runner, the attempt is refused.
       user = Fixtures.Users.create_user()
 
       membership =
@@ -2129,7 +2185,7 @@ defmodule Emisar.RunsTest do
                Runs.dispatch_run_for_account(attrs, account.id)
     end
 
-    test "stops subjectless continuation while the account is disabled", %{
+    test "stops subjectless dispatch while the account is disabled", %{
       account: account,
       runner: runner
     } do
@@ -2783,95 +2839,14 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "fetch_active_runbook_execution/2" do
-    setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+  describe "list_terminal_runbook_callbacks/1" do
+    test "excludes terminal runs that do not belong to a waiting runbook item" do
+      account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      # runbook_id is a real FK, so the run needs a persisted runbook to point at.
-      runbook = create_runbook(subject)
-      %{account: account, runner: runner, subject: subject, runbook: runbook}
-    end
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert {:ok, _finished} = Fixtures.Runs.finish(run, %{"status" => "success"})
 
-    test "returns the latest in-flight execution's runs (runner preloaded)", %{
-      account: account,
-      runner: runner,
-      subject: subject,
-      runbook: runbook
-    } do
-      execution_id = Ecto.UUID.generate()
-
-      {:ok, _run} =
-        Runs.create_run(
-          base_attrs(account.id, runner.id, %{
-            status: :running,
-            runbook_id: runbook.id,
-            runbook_execution_id: execution_id
-          })
-        )
-
-      assert {:ok, %{execution_id: ^execution_id, runs: [run]}} =
-               Runs.fetch_active_runbook_execution(runbook.id, subject)
-
-      assert %Emisar.Runners.Runner{} = run.runner
-    end
-
-    test "is :not_found when the runbook's latest execution is fully settled", %{
-      account: account,
-      runner: runner,
-      subject: subject,
-      runbook: runbook
-    } do
-      {:ok, _settled} =
-        Runs.create_run(
-          base_attrs(account.id, runner.id, %{
-            status: :success,
-            runbook_id: runbook.id,
-            runbook_execution_id: Ecto.UUID.generate()
-          })
-        )
-
-      assert {:error, :not_found} = Runs.fetch_active_runbook_execution(runbook.id, subject)
-    end
-
-    test "is :not_found when the runbook has no executions at all", %{
-      subject: subject,
-      runbook: runbook
-    } do
-      assert {:error, :not_found} = Runs.fetch_active_runbook_execution(runbook.id, subject)
-    end
-
-    test "an owner of another account can't rehydrate this runbook's execution (cross-account)",
-         %{
-           account: account,
-           runner: runner,
-           runbook: runbook
-         } do
-      {:ok, _run} =
-        Runs.create_run(
-          base_attrs(account.id, runner.id, %{
-            status: :running,
-            runbook_id: runbook.id,
-            runbook_execution_id: Ecto.UUID.generate()
-          })
-        )
-
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.fetch_active_runbook_execution(runbook.id, subject_b)
-    end
-
-    defp create_runbook(subject) do
-      {:ok, runbook} =
-        Emisar.Runbooks.create_runbook(
-          %{
-            "title" => "rb-#{System.unique_integer([:positive])}",
-            "name" => "rb-#{System.unique_integer([:positive])}",
-            "slug" => "rb-#{System.unique_integer([:positive])}",
-            "definition" => %{"steps" => []}
-          },
-          subject
-        )
-
-      runbook
+      assert Runs.list_terminal_runbook_callbacks(50) == []
     end
   end
 
@@ -3476,6 +3451,35 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "cancel_undispatched_runbook_attempts_in_multi/3" do
+    test "is an idempotent empty transaction for an execution with no attempts" do
+      execution_id = Ecto.UUID.generate()
+
+      assert {:ok, changes} =
+               Multi.new()
+               |> Runs.cancel_undispatched_runbook_attempts_in_multi(
+                 execution_id,
+                 "execution halted"
+               )
+               |> Repo.commit_multi()
+
+      assert changes[{:runbook_undispatched_ids, execution_id}] == []
+      assert changes[{:runbook_pending_requests, execution_id}] == []
+      assert changes[{:runbook_cancelled_attempts, execution_id}] == []
+      assert changes[{:runbook_cancelled_requests, execution_id}] == []
+    end
+  end
+
+  describe "after_undispatched_runbook_attempts_cancelled/2" do
+    test "is a no-op when the enclosing transaction cancelled no attempts" do
+      assert :ok =
+               Runs.after_undispatched_runbook_attempts_cancelled(
+                 %{},
+                 Ecto.UUID.generate()
+               )
+    end
+  end
+
   describe "mark_errored/2" do
     test "transitions to :error with the provided message + finished_at" do
       account = Fixtures.Accounts.create_account()
@@ -3705,126 +3709,6 @@ defmodule Emisar.RunsTest do
       assert finished.error_message == "exit status 1"
       assert finished.reason == "operator why"
       assert is_nil(finished.reason_text)
-    end
-
-    test "a next-wave step that fails to dispatch writes a runbook.step_dispatch_failed audit row" do
-      # Regression: a continuation that can't dispatch (denied / out-of-scope /
-      # unknown action) used to stop the runbook with NO audit event and NO
-      # signal — operators couldn't see WHY it halted. The failure must leave
-      # a trace. Six steps: the first wave of five is advertised + allowed,
-      # step 6 names an action no runner advertises, so its wave-2 dispatch
-      # returns {:error, :action_not_found}.
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
-
-      target = %{"runner_id" => [runner.id]}
-
-      good_steps =
-        for n <- 1..5 do
-          %{
-            "id" => "step#{n}",
-            "action_id" => "linux.uptime",
-            "args" => %{},
-            "runner_selector" => target
-          }
-        end
-
-      steps =
-        good_steps ++
-          [
-            %{
-              "id" => "step6",
-              "action_id" => "linux.missing",
-              "args" => %{},
-              "runner_selector" => target
-            }
-          ]
-
-      {:ok, runbook} =
-        Emisar.Runbooks.create_runbook(
-          %{
-            "title" => "six-step",
-            "name" => "six-step",
-            "slug" => "six-step",
-            "definition" => %{"steps" => steps}
-          },
-          subject
-        )
-
-      {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
-
-      {:ok, %{execution_id: execution_id, runs: wave1, errors: []}} =
-        Emisar.Runbooks.dispatch_runbook(runbook, "ship it", subject)
-
-      assert length(wave1) == 5
-
-      # The wave finishes successfully → fires the (doomed) step 6 dispatch.
-      Enum.each(wave1, fn run ->
-        {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 5})
-      end)
-
-      {:ok, events, _} =
-        Emisar.Audit.list_events(subject, page: [limit: 50])
-
-      failed = Enum.find(events, &(&1.event_type == "runbook.step_dispatch_failed"))
-
-      assert failed, "expected a runbook.step_dispatch_failed audit row"
-      assert failed.target_kind == "runbook"
-      assert failed.target_id == runbook.id
-      assert failed.payload["runbook_id"] == runbook.id
-      assert failed.payload["runbook_execution_id"] == execution_id
-      assert failed.payload["runbook_step_id"] == "step6"
-      assert failed.payload["runner_id"] == runner.id
-      assert failed.payload["reason"] =~ "action_not_found"
-    end
-
-    test "a successful continuation writes no failure audit row" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
-      _ = Fixtures.Policies.create_policy(account_id: account.id)
-
-      {:ok, runbook} =
-        Emisar.Runbooks.create_runbook(
-          %{
-            "title" => "two-step-ok",
-            "name" => "two-step-ok",
-            "slug" => "two-step-ok",
-            "definition" => %{
-              "steps" => [
-                %{
-                  "id" => "step1",
-                  "action_id" => "linux.uptime",
-                  "args" => %{},
-                  "runner_selector" => %{"runner_id" => [runner.id]}
-                },
-                %{
-                  "id" => "step2",
-                  "action_id" => "linux.uptime",
-                  "args" => %{},
-                  "runner_selector" => %{"runner_id" => [runner.id]}
-                }
-              ]
-            }
-          },
-          subject
-        )
-
-      {:ok, runbook} = Emisar.Runbooks.publish(runbook, subject)
-
-      {:ok, %{runs: runs, errors: []}} =
-        Emisar.Runbooks.dispatch_runbook(runbook, "ship it", subject)
-
-      Enum.each(runs, fn run ->
-        {:ok, _} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 5})
-      end)
-
-      {:ok, events, _} =
-        Emisar.Audit.list_events(subject, page: [limit: 50])
-
-      refute Enum.any?(events, &(&1.event_type == "runbook.step_dispatch_failed"))
     end
   end
 
@@ -4652,6 +4536,41 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "materialize_runbook_output/4" do
+    test "returns only requested persisted sources within the account boundary" do
+      account = Fixtures.Accounts.create_account()
+      run = Fixtures.Runs.create_run(account_id: account.id, status: :success)
+
+      run =
+        run
+        |> ActionRun.Changeset.transition(:success, %{
+          output_complete: true,
+          structured_output: %{"ready" => true}
+        })
+        |> Repo.update!()
+
+      assert {:ok,
+              %{
+                "structured_output" => %{"ready" => true},
+                "stdout" => nil,
+                "stderr" => nil
+              }} =
+               Runs.materialize_runbook_output(
+                 run.id,
+                 account.id,
+                 ["structured_output"],
+                 1_024
+               )
+
+      assert Runs.materialize_runbook_output(
+               run.id,
+               Ecto.UUID.generate(),
+               ["structured_output"],
+               1_024
+             ) == {:error, :not_found}
+    end
+  end
+
   describe "list_events_for_run_before/4" do
     setup do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
@@ -4798,72 +4717,6 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "subscribe_runbook_execution/2" do
-    test "the subscriber receives full runs only for that account and execution" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      watched_execution_id = Repo.generate_id()
-      other_execution_id = Repo.generate_id()
-
-      assert :ok = Runs.subscribe_runbook_execution(account.id, watched_execution_id)
-
-      assert :ok =
-               Runs.broadcast_cancelled_run(
-                 {:cancelled, %{run | runbook_execution_id: other_execution_id}}
-               )
-
-      refute_receive {:runbook_execution_updated, _}, 100
-
-      assert :ok =
-               Runs.broadcast_cancelled_run(
-                 {:cancelled, %{run | runbook_execution_id: watched_execution_id}}
-               )
-
-      assert_receive {:runbook_execution_updated,
-                      %ActionRun{id: run_id, runner: %Emisar.Runners.Runner{}}},
-                     500
-
-      assert run_id == run.id
-    end
-
-    test "the exact execution topic is account-qualified" do
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
-      {:ok, run_a} = Runs.create_run(base_attrs(account_a.id, runner_a.id))
-      execution_id = Repo.generate_id()
-
-      assert :ok = Runs.subscribe_runbook_execution(account_b.id, execution_id)
-
-      assert :ok =
-               Runs.broadcast_cancelled_run(
-                 {:cancelled, %{run_a | runbook_execution_id: execution_id}}
-               )
-
-      refute_receive {:runbook_execution_updated, _}, 100
-    end
-  end
-
-  describe "unsubscribe_runbook_execution/2" do
-    test "stops delivery from the exact execution topic" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      execution_id = Repo.generate_id()
-
-      assert :ok = Runs.subscribe_runbook_execution(account.id, execution_id)
-      assert :ok = Runs.unsubscribe_runbook_execution(account.id, execution_id)
-
-      assert :ok =
-               Runs.broadcast_cancelled_run(
-                 {:cancelled, %{run | runbook_execution_id: execution_id}}
-               )
-
-      refute_receive {:runbook_execution_updated, _}, 100
-    end
-  end
-
   describe "broadcast_cancelled_run/1" do
     test "broadcasts the run for the {:cancelled, run} shape" do
       account = Fixtures.Accounts.create_account()
@@ -4940,6 +4793,15 @@ defmodule Emisar.RunsTest do
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
       refute Runs.subject_can_dispatch_run?(viewer_subject)
+    end
+  end
+
+  describe "role_can_dispatch_run?/1" do
+    test "uses the canonical role permission table and rejects unknown values" do
+      assert Runs.role_can_dispatch_run?(:owner)
+      assert Runs.role_can_dispatch_run?(:operator)
+      refute Runs.role_can_dispatch_run?(:viewer)
+      refute Runs.role_can_dispatch_run?("operator")
     end
   end
 

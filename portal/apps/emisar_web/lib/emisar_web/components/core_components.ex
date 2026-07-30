@@ -329,7 +329,7 @@ defmodule EmisarWeb.CoreComponents do
       aria-label={@label}
       title={@label}
       class={[
-        "rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent",
+        "inline-flex min-h-10 min-w-10 items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
         icon_button_tone(@tone),
         @class
@@ -536,6 +536,12 @@ defmodule EmisarWeb.CoreComponents do
     |> input()
   end
 
+  def input(%{id: nil, name: name} = assigns) when is_binary(name) do
+    assigns
+    |> assign(:id, input_id(name))
+    |> input()
+  end
+
   def input(%{type: "checkbox"} = assigns) do
     assigns =
       assign_new(assigns, :checked, fn ->
@@ -648,6 +654,8 @@ defmodule EmisarWeb.CoreComponents do
   # is the standard comfortable field every other caller renders.
   defp input_size(:compact), do: "mt-1 px-2 py-1.5 text-sm"
   defp input_size(_default), do: "mt-2 px-3 py-2.5 text-sm"
+
+  defp input_id(name), do: "input-" <> String.replace(name, ~r/[^a-zA-Z0-9_-]+/, "-")
 
   @doc """
   iPhone-style one-box-per-character code entry, driven by the `CodeInput` JS
@@ -2422,14 +2430,16 @@ defmodule EmisarWeb.CoreComponents do
   """
   def status_tone(status) do
     case to_string(status) do
-      s when s in ~w[success connected approved published running sent cancelling] ->
+      s
+      when s in ~w[success succeeded connected approved published active running sent cancelling] ->
         :pass
 
-      s when s in ~w[pending_approval refused rejected expired cancelled] ->
+      s
+      when s in ~w[pending pending_approval awaiting_approval queued waiting refused rejected expired cancelled] ->
         :pending
 
       s
-      when s in ~w[failed error validation_failed unknown_action timed_out dispatch_failed denied retired] ->
+      when s in ~w[failed halted error validation_failed unknown_action timed_out dispatch_failed denied retired] ->
         :deny
 
       _ ->
@@ -2440,11 +2450,16 @@ defmodule EmisarWeb.CoreComponents do
   # The badge dot's {tone, pulse?} per status. In-flight runs pulse so they
   # read as "still happening", not done — the one cue that separates
   # sent/running (and a held pending_approval) from a static same-hue dot.
-  defp status_dot_spec(s) when s in ~w[success connected approved published trusted enabled],
-    do: {:brand, false}
+  defp status_dot_spec(s)
+       when s in ~w[success succeeded connected approved published trusted enabled],
+       do: {:brand, false}
 
-  defp status_dot_spec(s) when s in ~w[running sent cancelling], do: {:brand, true}
-  defp status_dot_spec("pending_approval"), do: {:amber, true}
+  defp status_dot_spec(s) when s in ~w[active running sent cancelling], do: {:brand, true}
+
+  defp status_dot_spec(s) when s in ~w[pending_approval awaiting_approval waiting],
+    do: {:amber, true}
+
+  defp status_dot_spec("queued"), do: {:amber, false}
   defp status_dot_spec("refused"), do: {:amber, false}
   defp status_dot_spec("offline"), do: {:amber, false}
   defp status_dot_spec("pending"), do: {:amber, false}
@@ -2455,12 +2470,13 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_spec("retired"), do: {:rose, false}
 
   defp status_dot_spec(s)
-       when s in ~w[failed error validation_failed unknown_action timed_out dispatch_failed],
+       when s in ~w[failed halted error validation_failed unknown_action timed_out dispatch_failed],
        do: {:rose, false}
 
   defp status_dot_spec(_), do: {:neutral, false}
 
   defp format_status("pending_approval"), do: "awaiting approval"
+  defp format_status("awaiting_approval"), do: "awaiting approval"
   defp format_status("validation_failed"), do: "validation failed"
   defp format_status("unknown_action"), do: "unknown action"
   defp format_status("timed_out"), do: "timed out"

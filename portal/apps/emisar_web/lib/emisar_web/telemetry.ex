@@ -170,6 +170,31 @@ defmodule EmisarWeb.Telemetry do
       last_value("emisar.approvals.pending.oldest_age_seconds",
         description: "Age of the longest-waiting unresolved approval request, in seconds (gauge)"
       ),
+      # Runbook recovery gauges are emitted by the five-second durable sweep.
+      last_value("emisar.runbooks.recovery.active",
+        description: "Active runbook executions across the fleet (gauge)"
+      ),
+      last_value("emisar.runbooks.recovery.waiting",
+        description: "Runbook items waiting for another observation (gauge)"
+      ),
+      last_value("emisar.runbooks.recovery.overdue",
+        description: "Runbook waits past their next observation time (gauge)"
+      ),
+      last_value("emisar.runbooks.recovery.recovery_lag_seconds",
+        description: "Age of the oldest overdue runbook wait, in seconds (gauge)"
+      ),
+      last_value("emisar.runbooks.recovery.callback_batch",
+        description: "Lost run callbacks reconciled by the latest recovery cycle (gauge)"
+      ),
+      last_value("emisar.runbooks.recovery.execution_batch",
+        description: "Executions advanced by the latest recovery cycle (gauge)"
+      ),
+      last_value("emisar.runbooks.recovery.scrub_batch",
+        description: "Terminal raw payloads scrubbed by the latest recovery cycle (gauge)"
+      ),
+      last_value("emisar.runbooks.recovery.saturated_batches",
+        description: "Recovery work classes that filled their bounded batch (gauge)"
+      ),
       # Runner connection tally (sampled by Emisar.Telemetry.measure_runner_connections/0)
       # from the DURABLE connection record — fleet-wide capacity + offline trend.
       # Presence is the live per-account truth; this trails an ungraceful drop.

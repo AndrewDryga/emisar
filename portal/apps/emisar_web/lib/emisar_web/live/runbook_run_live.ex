@@ -1,26 +1,24 @@
 defmodule EmisarWeb.RunbookRunLive do
+  @moduledoc """
+  Preflight and durable staged execution detail for one published runbook.
+
+  The LiveView never reconstructs scheduler state from ActionRuns. It renders
+  the bounded Runbooks result projection and re-reads it after exact execution
+  notifications, so reloads and reconnects preserve approval, wait, halt, and
+  peer-settlement state.
+  """
   use EmisarWeb, :live_view
-  alias Emisar.{Catalog, Policies, Runbooks, Runners, Runs}
-  alias EmisarWeb.Permissions
-  alias EmisarWeb.RunnerPresence
+  alias Emisar.{Approvals, Runbooks, Runs}
+  alias EmisarWeb.{Permissions, RunbookMarkdown}
 
-  # The blast-radius assign's resting shape, so the render reads it without a
-  # nil-guard: `counts` (step_index => runner count), `total`/`waves` (nil until
-  # resolved), `no_runners_step` (the step a `group:` empties to, or nil), `plan`
-  # (the resolved %{step_index, action_id, runner_id} work-list, reused to predict
-  # each step's policy decision).
-  @empty_blast %{counts: %{}, total: nil, waves: nil, no_runners_step: nil, plan: []}
-
-  # Tail of a finished run's output shown inline on its execution row — a
-  # glanceable preview, not the full terminal (that's the run-detail page).
-  @output_preview_lines 8
+  @preflight_delay_ms 300
+  @item_page_size 25
 
   def mount(%{"id" => id}, _session, socket) do
-    # A dispatch surface — a role that can't dispatch would get a live Run
-    # form (and, plan resolution being dispatch-gated, LOSE the read posture
-    # too). Runbook contents stay readable from the list.
     if Runs.subject_can_dispatch_run?(socket.assigns.current_subject) do
-      mount_run_page(id, socket)
+      if connected?(socket),
+        do: mount_runbook(id, socket),
+        else: mount_disconnected(socket)
     else
       {:ok,
        socket
@@ -29,44 +27,49 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  defp mount_run_page(id, socket) do
+  defp mount_disconnected(socket) do
+    {:ok,
+     socket
+     |> assign(:page_title, "Runbook")
+     |> assign(:runbook, nil)
+     |> assign(:loaded?, false)
+     |> assign(:reason, "")
+     |> assign(:input_raw, %{})
+     |> assign(:input_errors, %{})
+     |> assign(:preflight_generation, 0)
+     |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
+     |> assign(:result, nil)
+     |> assign(:attempts_by_item, %{})
+     |> assign(:approval_requests_by_stage, %{})
+     |> assign(:recent_executions, [])
+     |> assign(:expanded_plan_stages, MapSet.new())
+     |> assign(:expanded_execution_stages, MapSet.new())
+     |> assign(:subscribed_execution_id, nil)}
+  end
+
+  defp mount_runbook(id, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
       {:ok, runbook} ->
-        # The runbook fetch above gates render/redirect, so it stays in
-        # mount. The runner list + step expansion are heavier reads only
-        # the connected page needs — defer them behind `connected?/1` so
-        # they don't run twice (IL-18). The dead pass renders an empty plan.
         socket =
           socket
           |> assign(:page_title, "Run #{runbook.title}")
           |> assign(:runbook, runbook)
-          # False until the connected pass loads the plan + rehydrates any active
-          # run, so the dead render shows a loading state instead of flashing the
-          # empty plan + dispatch form (which then flip to the live execution).
           |> assign(:loaded?, false)
           |> assign(:reason, "")
-          |> assign(:errors, %{})
-          |> assign(:execution, nil)
+          |> assign(:input_raw, initial_input_raw(runbook.definition))
+          |> assign(:input_errors, %{})
+          |> assign(:preflight_generation, 0)
+          |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
+          |> assign(:result, nil)
+          |> assign(:attempts_by_item, %{})
+          |> assign(:approval_requests_by_stage, %{})
+          |> assign(:recent_executions, [])
+          |> assign(:expanded_plan_stages, MapSet.new())
+          |> assign(:expanded_execution_stages, MapSet.new())
           |> assign(:subscribed_execution_id, nil)
-          |> assign(:run_statuses, %{})
-          # run_id => run, so a presence change can re-insert the streamed
-          # rows to refresh their offline markers (streams don't re-render
-          # on a bare assign change).
-          |> assign(:run_index, %{})
-          # run_id => tail events, fetched once per run as it finishes, so
-          # its output preview survives a presence re-render of the row.
-          |> assign(:run_outputs, %{})
-          |> stream(:execution_runs, [])
+          |> load_recent_executions()
 
-        if connected?(socket) do
-          {:ok,
-           socket
-           |> load_run_form(runbook)
-           |> maybe_rehydrate_execution(runbook)
-           |> assign(:loaded?, true)}
-        else
-          {:ok, empty_run_form(socket)}
-        end
+        {:ok, socket}
 
       {:error, _} ->
         {:ok,
@@ -76,618 +79,481 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  defp load_run_form(socket, runbook) do
-    subject = socket.assigns.current_subject
-    {:ok, runners, _} = Runners.list_runners_for_account(subject)
-    {:ok, runner_actions} = Catalog.list_all_actions_for_account(subject)
+  def handle_params(_params, _uri, %{assigns: %{runbook: nil}} = socket),
+    do: {:noreply, socket}
 
-    # The connection feed lets a row flag its runner dropping mid-execution
-    # (why an in-flight wave stalled). Run transitions use an exact execution
-    # topic once dispatch or rehydration has authorized that execution.
-    Runners.subscribe_connections(socket.assigns.current_account.id)
-
-    action_risk = Catalog.most_severe_risk_by_action(runner_actions)
-    blast_radius = build_blast_radius(runbook, subject)
-    online_runner_ids = runners |> Enum.filter(& &1.online?) |> MapSet.new(& &1.id)
-
-    socket
-    # Runners back the per-step target labels (runner-id selectors resolve
-    # to names) — each step carries its own target, set in the editor.
-    |> assign(:runners, runners)
-    |> assign(:online_runner_ids, online_runner_ids)
-    |> assign(:steps, Runbooks.expand(runbook))
-    # action_id → risk, so the plan can show which steps are read-only
-    # (low) vs which will stop for approval before a fleet-wide dispatch.
-    # Most-severe across runners — a group target hits every member, so
-    # showing the recent-but-lower risk would under-warn.
-    |> assign(:action_risk, action_risk)
-    # Blast radius: resolve the work-list NOW (no dispatch) so the operator sees
-    # how many runs each step fans out to + the wave total before pressing Start.
-    |> assign(:blast_radius, blast_radius)
-    # step_index => :require_approval | :deny — the decision dispatch's policy
-    # will reach for that step, so the operator isn't surprised mid-run by a
-    # step queueing for a human (or being blocked) instead of running.
-    |> assign(
-      :step_decisions,
-      predict_step_decisions(blast_radius.plan, runners, action_risk, subject)
-    )
-  end
-
-  defp empty_run_form(socket) do
-    socket
-    |> assign(:runners, [])
-    |> assign(:online_runner_ids, MapSet.new())
-    |> assign(:steps, [])
-    |> assign(:action_risk, %{})
-    |> assign(:blast_radius, @empty_blast)
-    |> assign(:step_decisions, %{})
-  end
-
-  # Normalize `Runbooks.resolve_plan/2` for the render: per-step runner counts
-  # keyed by step index (so the plan rows match), the run + wave totals, or a
-  # `no_runners_step` warning when a step's target resolves to nothing (dispatch
-  # would refuse it — better the operator sees that here than after Start). The
-  # resting `@empty_blast` when the runbook can't resolve (empty / unauthorized).
-  defp build_blast_radius(runbook, subject) do
-    case Runbooks.resolve_plan(runbook, subject) do
-      {:ok, %{plan: plan, total: total, waves: waves}} ->
-        %{
-          @empty_blast
-          | counts: Enum.frequencies_by(plan, & &1.step_index),
-            total: total,
-            waves: waves,
-            plan: plan
-        }
-
-      {:error, {:step_no_runners, step_number}} ->
-        %{@empty_blast | no_runners_step: step_number}
-
-      {:error, _} ->
-        @empty_blast
-    end
-  end
-
-  # step_index => :require_approval | :deny — the policy verdict dispatch will
-  # reach for each step. Built from the SAME (runner, group, action, risk) inputs
-  # dispatch feeds `Policies.evaluate_with_policy/3`, through `predict_decisions/2`
-  # (one policy read per distinct runner — no N+1), so the plan's prediction
-  # matches the real verdict. A step is gated by the MOST-restrictive decision
-  # across its target runners (a group fans out to all members): deny > approval.
-  defp predict_step_decisions([], _runners, _action_risk, _subject), do: %{}
-
-  defp predict_step_decisions(plan, runners, action_risk, subject) do
-    runner_groups = Map.new(runners, &{&1.id, &1.group})
-
-    targets =
-      Enum.map(plan, fn item ->
-        %{
-          runner_id: item.runner_id,
-          group: Map.get(runner_groups, item.runner_id),
-          action_id: item.action_id,
-          risk: Map.get(action_risk, item.action_id)
-        }
-      end)
-
-    case Policies.predict_decisions(targets, subject) do
-      {:ok, decisions} ->
-        Enum.reduce(plan, %{}, fn item, acc ->
-          decision = Map.get(decisions, {item.runner_id, item.action_id})
-          merge_step_decision(acc, item.step_index, decision)
-        end)
-
-      {:error, _} ->
-        %{}
-    end
-  end
-
-  # Keep only the surprising verdicts (a planned `:allow` runs as expected, so
-  # it gets no marker), and let the most-restrictive one per step win.
-  defp merge_step_decision(acc, _step_index, :allow), do: acc
-  defp merge_step_decision(acc, _step_index, nil), do: acc
-
-  defp merge_step_decision(acc, step_index, decision) do
-    Map.update(acc, step_index, decision, &more_restrictive(&1, decision))
-  end
-
-  defp more_restrictive(:deny, _), do: :deny
-  defp more_restrictive(_, :deny), do: :deny
-  defp more_restrictive(current, _), do: current
-
-  # A live execution survives a refresh / reconnect — mount otherwise resets to
-  # the idle plan and the running execution vanishes. Re-query the runbook's
-  # latest in-flight execution and rebuild the streamed rows + counts from its
-  # persisted runs. The plan is re-resolved for the placeholders; if a step's
-  # group emptied since dispatch (resolve_plan errors), fall back to the runs
-  # alone so the operator still sees the live execution.
-  defp maybe_rehydrate_execution(socket, runbook) do
-    case Runs.fetch_active_runbook_execution(runbook.id, socket.assigns.current_subject) do
-      {:ok, %{execution_id: execution_id, runs: runs}} ->
-        socket = subscribe_execution(socket, execution_id)
-        runs = current_execution_runs(socket, execution_id, runs)
-        plan = rehydrated_plan(runbook, socket.assigns.current_subject)
-        # Load the tail output of any run that already settled before this
-        # refresh, so its rehydrated terminal row shows the preview too.
-        socket = Enum.reduce(runs, socket, &maybe_load_output(&2, &1))
-
-        rows =
-          merged_execution_rows(plan, socket.assigns.runners, runs, socket.assigns.run_outputs)
-
-        socket
-        |> assign(:execution, %{
-          execution_id: execution_id,
-          total: rehydrated_total(plan, runs),
-          plan: plan,
-          runs: [],
-          errors: []
-        })
-        |> assign(:run_statuses, Map.new(runs, &{&1.id, &1.status}))
-        |> assign(:run_index, Map.new(runs, &{&1.id, &1}))
-        # ONE ordered pass, in plan order. Streaming the placeholders and THEN
-        # re-inserting the runs (the old shape) shoved every dispatched run to
-        # the end of the list on reload — scrambling the step order.
-        |> stream(:execution_runs, rows, reset: true)
-
-      {:error, :not_found} ->
-        socket
-    end
-  end
-
-  defp rehydrated_plan(runbook, subject) do
-    case Runbooks.resolve_plan(runbook, subject) do
-      {:ok, %{plan: plan}} -> plan
-      {:error, _} -> []
-    end
-  end
-
-  defp rehydrated_total([], runs), do: length(runs)
-  defp rehydrated_total(plan, _runs), do: length(plan)
-
-  # Risk of a plan step's action, or nil when the catalog hasn't observed
-  # it (no connected runner advertises it yet) — the pill then hides.
-  defp step_risk(action_risk, step),
-    do: Map.get(action_risk, step["action_id"] || step["action"])
-
-  # The predicted policy decision for a step by index (`:require_approval` /
-  # `:deny`), or nil when it runs straight through (an `:allow`, or the plan
-  # couldn't resolve) — the marker then hides.
-  defp step_decision(step_decisions, idx), do: Map.get(step_decisions, idx)
-
-  # The runbook's headline risk: the most-severe risk across its steps, so the
-  # operator sees the worst this run can do before pressing Start. nil (the pill
-  # hides) when no step's action is in the catalog yet — never a false low.
-  defp plan_max_risk(action_risk, steps),
-    do: steps |> Enum.map(&step_risk(action_risk, &1)) |> Catalog.max_risk()
-
-  # Where a plan step will run, from its own runner_selector: group names
-  # as-is, runner ids resolved to names against the loaded runner list.
-  # nil when the step has no target (a draft being test-run).
-  defp step_target_label(step, runners) do
-    case Runbooks.StepSelector.parse(step["runner_selector"]) do
-      {"group", [_ | _] = groups} ->
-        "group: " <> Enum.join(groups, ", ")
-
-      {"runner_id", [_ | _] = ids} ->
-        names = runner_names(ids, runners)
-        if names == [], do: nil, else: Enum.join(names, ", ")
-
-      _ ->
-        nil
-    end
-  end
-
-  defp runner_names(ids, runners),
-    do: runners |> Enum.filter(&(&1.id in ids)) |> Enum.map(& &1.name)
-
-  # Per-field validation of the operator-entered run parameters. Keyed by the
-  # form field so the LiveView can render each message inline under its input.
-  # Targets now come from the steps, so reason is the only run-time input.
-  defp run_param_errors(reason) do
-    %{}
-    |> put_error(
-      :reason,
-      String.trim(reason || "") == "",
-      "Reason is required — describe why you're running this runbook."
-    )
-  end
-
-  defp put_error(errors, _field, false, _msg), do: errors
-  defp put_error(errors, field, true, msg), do: Map.put(errors, field, msg)
-
-  # Drop a field's inline error once it's been filled in — leaves any still-
-  # blank field's error in place so a partial fix doesn't hide the rest.
-  defp clear_resolved_errors(errors, reason) do
-    resolved = run_param_errors(reason)
-    Map.filter(errors, fn {field, _msg} -> Map.has_key?(resolved, field) end)
-  end
-
-  # Genuine, non-field dispatch failures (policy denial, runner offline, a
-  # run-row constraint) are surfaced in a concise flash — they aren't a single
-  # input the operator can correct in place.
-  defp format_reason(%Ecto.Changeset{}), do: "the run could not be created"
-  defp format_reason(reason) when is_binary(reason), do: reason
-
-  # Operator-reachable atoms get a real sentence in the operator's vocabulary —
-  # the generic underscore-replace below would leak schema jargon ("runner
-  # requires attestation").
-  defp format_reason(:runner_requires_attestation) do
-    "a target runner only accepts signed runs from an MCP client — the portal can't dispatch to it"
-  end
-
-  defp format_reason(:pack_untrusted),
-    do: "a target runner is advertising an untrusted version of the action's pack"
-
-  defp format_reason(:action_unavailable),
-    do: "the action's primary executable is missing on a target runner"
-
-  defp format_reason(:pack_retired) do
-    "a target runner is advertising a retired version of the action's pack — update the pack " <>
-      "on the runner, or re-trust the version on the Packs page"
-  end
-
-  defp format_reason(:duplicate_step_ids),
-    do: "two steps share the same ID — give each step a unique ID in the editor before running"
-
-  defp format_reason({:fan_out_too_large, max}) do
-    "this runbook would fan out to more than #{max} runs — narrow the steps' targets " <>
-      "or split it across several runbooks"
-  end
-
-  defp format_reason(reason) when is_atom(reason),
-    do: reason |> Atom.to_string() |> String.replace("_", " ")
-
-  defp format_reason(_), do: "unknown error"
-
-  def handle_event("validate", params, socket) do
-    reason = params["reason"] || socket.assigns.reason
-
+  def handle_params(%{"execution_id" => execution_id}, _uri, socket) do
     {:noreply,
      socket
-     |> assign(:reason, reason)
-     # Clear the error as soon as the operator fills the field in. We only
-     # *remove* errors here (never add) — a blank field shouldn't show "required"
-     # until the operator actually tries to dispatch.
-     |> assign(:errors, clear_resolved_errors(socket.assigns.errors, reason))}
+     |> subscribe_execution(execution_id)
+     |> load_execution(execution_id)
+     |> assign(:loaded?, true)}
   end
 
-  def handle_event("dispatch", params, socket) do
+  def handle_params(%{"new" => "true"}, _uri, socket) do
+    {:noreply,
+     socket
+     |> reset_run_form()
+     |> assign(:loaded?, true)}
+  end
+
+  def handle_params(_params, _uri, socket) do
+    {:noreply,
+     socket
+     |> load_latest_execution()
+     |> assign(:loaded?, true)}
+  end
+
+  defp load_latest_execution(socket) do
+    case Runbooks.fetch_latest_execution_for_runbook(
+           socket.assigns.runbook,
+           socket.assigns.current_subject
+         ) do
+      {:ok, result} ->
+        socket
+        |> subscribe_execution(result.execution.id)
+        |> load_execution(result.execution.id)
+
+      {:error, :not_found} ->
+        schedule_preflight(socket)
+
+      {:error, _reason} ->
+        assign(socket, :preflight, %{
+          state: :error,
+          plan: nil,
+          issues: [issue("dispatch_failed", "", "Could not load the current runbook state.")],
+          checked_at: DateTime.utc_now()
+        })
+    end
+  end
+
+  def handle_event("run_form_changed", params, socket) do
+    {:noreply,
+     socket
+     |> assign(:reason, params["reason"] || "")
+     |> assign(:input_raw, params["inputs"] || %{})
+     |> schedule_preflight()}
+  end
+
+  def handle_event("start", _params, socket) do
     Permissions.gated(
       socket,
       Runs.subject_can_dispatch_run?(socket.assigns.current_subject),
-      &do_dispatch(&1, params)
+      &start_execution/1
     )
   end
 
-  defp do_dispatch(socket, params) do
-    reason = (params["reason"] || socket.assigns.reason || "") |> String.trim()
-    errors = run_param_errors(reason)
-
-    # A missing reason is a validation of the one operator-entered run
-    # parameter, so it renders inline under the field, not in a flash.
-    if errors != %{} do
-      {:noreply, socket |> assign(:reason, reason) |> assign(:errors, errors)}
-    else
-      case Runbooks.dispatch_runbook(
-             socket.assigns.runbook,
-             reason,
-             socket.assigns.current_subject
-           ) do
-        {:ok, execution} ->
-          # Dispatch creates the first wave before returning. Subscribe to the
-          # exact execution, then read that bounded execution once so no initial
-          # transition can fall into the handoff gap. Later transitions stream.
-          socket = subscribe_execution(socket, execution.execution_id)
-          runs = current_execution_runs(socket, execution.execution_id, execution.runs)
-          execution = %{execution | runs: runs}
-
-          {:noreply,
-           socket
-           |> assign(:execution, execution)
-           |> assign(:run_statuses, Map.new(runs, &{&1.id, &1.status}))
-           |> assign(:run_index, Map.new(runs, &{&1.id, &1}))
-           |> assign(:run_outputs, %{})
-           |> stream(
-             :execution_runs,
-             merged_execution_rows(
-               execution.plan,
-               socket.assigns.runners,
-               runs,
-               %{},
-               execution.errors
-             ),
-             reset: true
-           )
-           |> flash_dispatch_result(execution)}
-
-        {:error, :empty_runbook} ->
-          {:noreply, put_flash(socket, :error, "Runbook has no steps to run.")}
-
-        {:error, {:step_no_runners, step_number}} ->
-          {:noreply,
-           put_flash(
-             socket,
-             :error,
-             "Step #{step_number} has no available runners — its group is empty or its " <>
-               "runners are offline. Edit the runbook's targets and try again."
-           )}
-
-        {:error, reason} ->
-          {:noreply,
-           put_flash(socket, :error, "Could not start runbook: #{format_reason(reason)}")}
-      end
-    end
-  end
-
-  defp flash_dispatch_result(socket, %{errors: []} = execution),
-    do: put_flash(socket, :info, "Runbook dispatched — #{execution.total} runs planned.")
-
-  # Some of the first wave failed to dispatch — one honest flash (not a green
-  # "dispatched" beside a red "failed"); the failed rows are marked below.
-  defp flash_dispatch_result(socket, %{errors: errors} = execution) do
-    put_flash(
+  def handle_event("cancel_execution", _params, socket) do
+    Permissions.gated(
       socket,
-      :error,
-      "Runbook dispatched — #{execution.total} runs planned, but #{length(errors)} of the " <>
-        "first wave failed to dispatch (marked below)."
+      Runbooks.subject_can_cancel_execution?(socket.assigns.current_subject),
+      &cancel_execution/1
     )
   end
 
-  def handle_info({:runbook_execution_updated, run}, socket) do
-    execution = socket.assigns.execution
-
-    if execution && run.runbook_execution_id == execution.execution_id do
-      # Same dom_id as the placeholder (step_id, runner_id) → replaces it in
-      # place rather than appending a new row.
-      socket =
-        socket
-        |> assign(:run_statuses, Map.put(socket.assigns.run_statuses, run.id, run.status))
-        |> assign(:run_index, Map.put(socket.assigns.run_index, run.id, run))
-        |> maybe_load_output(run)
-
-      {:noreply,
-       stream_insert(socket, :execution_runs, live_row(run, socket.assigns.run_outputs))}
-    else
-      {:noreply, socket}
-    end
+  def handle_event("run_again", _params, socket) do
+    {:noreply,
+     push_patch(socket,
+       to:
+         ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/run?new=true"
+     )}
   end
 
-  def handle_info(%{event: "presence_diff"} = event, socket) do
-    changes = RunnerPresence.normalize(event)
-    tracked_ids = tracked_runner_ids(socket)
-    affected_ids = MapSet.intersection(changes.topology_ids, tracked_ids)
-
-    if MapSet.size(affected_ids) == 0 do
-      {:noreply, socket}
-    else
-      online_ids =
-        RunnerPresence.patch_online_ids(
-          socket.assigns.online_runner_ids,
-          changes,
-          tracked_ids
-        )
-
-      socket =
-        socket
-        |> assign(:online_runner_ids, online_ids)
-        |> reinsert_affected_runs(affected_ids)
-
-      {:noreply, socket}
-    end
+  def handle_event("toggle_plan_stage", %{"id" => id}, socket) do
+    {:noreply, update(socket, :expanded_plan_stages, &toggle_set(&1, id))}
   end
 
-  # The shared badge hooks forward account-topic broadcasts to every
-  # authenticated LiveView — swallow whatever this page doesn't render.
+  def handle_event("toggle_execution_stage", %{"id" => id}, socket) do
+    {:noreply, update(socket, :expanded_execution_stages, &toggle_set(&1, id))}
+  end
+
+  def handle_info(
+        {:run_preflight, generation},
+        %{assigns: %{preflight_generation: generation}} = socket
+      ) do
+    {:noreply, run_preflight(socket)}
+  end
+
+  def handle_info({:run_preflight, _stale_generation}, socket), do: {:noreply, socket}
+
+  def handle_info(
+        {:runbook_execution_updated, execution_id},
+        %{assigns: %{subscribed_execution_id: execution_id}} = socket
+      ) do
+    {:noreply, load_execution(socket, execution_id)}
+  end
+
   def handle_info(_message, socket), do: {:noreply, socket}
 
-  defp subscribe_execution(
-         %{assigns: %{subscribed_execution_id: execution_id}} = socket,
-         execution_id
-       ),
-       do: socket
+  def terminate(_reason, socket) do
+    _ = unsubscribe_execution(socket)
+    :ok
+  end
+
+  defp start_execution(socket) do
+    {input_values, input_errors} =
+      parse_input_values(socket.assigns.runbook.definition, socket.assigns.input_raw)
+
+    cond do
+      input_errors != %{} ->
+        {:noreply,
+         socket
+         |> assign(:input_errors, input_errors)
+         |> put_flash(:error, "Fix the input values before starting.")}
+
+      String.trim(socket.assigns.reason) == "" ->
+        {:noreply, put_flash(socket, :error, "Add a reason before starting.")}
+
+      true ->
+        case Runbooks.dispatch_runbook(
+               socket.assigns.runbook,
+               socket.assigns.reason,
+               socket.assigns.current_subject,
+               input_values: input_values
+             ) do
+          {:ok, %{execution_id: execution_id}} ->
+            {:noreply,
+             push_patch(socket,
+               to:
+                 ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/runs/#{execution_id}"
+             )}
+
+          {:error, issues} when is_list(issues) ->
+            {:noreply,
+             assign(socket, :preflight, %{
+               state: :error,
+               plan: nil,
+               issues: issues,
+               checked_at: DateTime.utc_now()
+             })}
+
+          {:error, :runbook_capacity_exceeded} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This account already has 1,024 active runbook items. Wait for an execution to finish or cancel one, then try again."
+             )}
+
+          {:error, _reason} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "The runbook did not start. Re-run preflight and try again."
+             )}
+        end
+    end
+  end
+
+  defp cancel_execution(%{assigns: %{result: %{execution: execution}}} = socket) do
+    case Runbooks.cancel_execution(execution.id, socket.assigns.current_subject) do
+      {:ok, _execution} ->
+        {:noreply,
+         socket
+         |> load_execution(execution.id)
+         |> put_flash(:info, "Runbook execution cancelled.")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not cancel this execution.")}
+    end
+  end
+
+  defp cancel_execution(socket), do: {:noreply, socket}
+
+  defp schedule_preflight(%{assigns: %{result: nil}} = socket) do
+    generation = socket.assigns.preflight_generation + 1
+    Process.send_after(self(), {:run_preflight, generation}, @preflight_delay_ms)
+
+    socket
+    |> assign(:preflight_generation, generation)
+    |> assign(:preflight, %{socket.assigns.preflight | state: :loading})
+  end
+
+  defp schedule_preflight(socket), do: socket
+
+  defp run_preflight(socket) do
+    {input_values, input_errors} =
+      parse_input_values(socket.assigns.runbook.definition, socket.assigns.input_raw)
+
+    socket = assign(socket, :input_errors, input_errors)
+
+    if input_errors == %{} do
+      case Runbooks.resolve_plan(
+             socket.assigns.runbook,
+             input_values,
+             socket.assigns.current_subject
+           ) do
+        {:ok, %{plan: plan}} ->
+          assign(socket, :preflight, %{
+            state: :ready,
+            plan: plan,
+            issues: [],
+            checked_at: DateTime.utc_now()
+          })
+
+        {:error, issues} when is_list(issues) ->
+          assign(socket, :preflight, %{
+            state: :error,
+            plan: nil,
+            issues: issues,
+            checked_at: DateTime.utc_now()
+          })
+
+        {:error, _reason} ->
+          assign(socket, :preflight, %{
+            state: :error,
+            plan: nil,
+            issues: [issue("dispatch_failed", "", "Current preflight could not be completed.")],
+            checked_at: DateTime.utc_now()
+          })
+      end
+    else
+      issues =
+        Enum.map(input_errors, fn {id, message} ->
+          issue("invalid_input", "/input_values/#{id}", message)
+        end)
+
+      assign(socket, :preflight, %{
+        state: :error,
+        plan: nil,
+        issues: issues,
+        checked_at: DateTime.utc_now()
+      })
+    end
+  end
+
+  defp load_execution(socket, execution_id) do
+    case Runbooks.fetch_execution_result(execution_id, socket.assigns.current_subject) do
+      {:ok, result} when result.execution.runbook_id == socket.assigns.runbook.id ->
+        socket =
+          socket
+          |> assign(:result, result)
+          |> assign(
+            :attempts_by_item,
+            Map.new(result.latest_attempts, &{&1.runbook_execution_item_id, &1})
+          )
+          |> load_stage_approval_requests(result)
+          |> load_recent_executions()
+
+        if result.execution.status == :active,
+          do: socket,
+          else: unsubscribe_execution(socket)
+
+      {:error, _reason} ->
+        socket
+        |> unsubscribe_execution()
+        |> put_flash(:error, "This execution is no longer visible.")
+        |> push_navigate(
+          to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/run"
+        )
+
+      {:ok, _other_runbook_result} ->
+        socket
+        |> unsubscribe_execution()
+        |> put_flash(:error, "Execution not found for this runbook.")
+        |> push_navigate(
+          to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/run"
+        )
+    end
+  end
+
+  defp reset_run_form(socket) do
+    socket
+    |> unsubscribe_execution()
+    |> assign(:result, nil)
+    |> assign(:attempts_by_item, %{})
+    |> assign(:approval_requests_by_stage, %{})
+    |> assign(:reason, "")
+    |> assign(:input_raw, initial_input_raw(socket.assigns.runbook.definition))
+    |> schedule_preflight()
+  end
+
+  defp load_recent_executions(socket) do
+    case Runbooks.list_recent_executions_for_runbook(
+           socket.assigns.runbook,
+           socket.assigns.current_subject
+         ) do
+      {:ok, executions} -> assign(socket, :recent_executions, executions)
+      {:error, _reason} -> assign(socket, :recent_executions, [])
+    end
+  end
+
+  defp load_stage_approval_requests(socket, result) do
+    stage_ids = Enum.map(result.execution.stages, & &1.id)
+
+    case Approvals.list_requests_for_runbook_stages(stage_ids, socket.assigns.current_subject) do
+      {:ok, requests} ->
+        assign(
+          socket,
+          :approval_requests_by_stage,
+          Map.new(requests, &{&1.runbook_execution_stage_id, &1})
+        )
+
+      {:error, _reason} ->
+        assign(socket, :approval_requests_by_stage, %{})
+    end
+  end
 
   defp subscribe_execution(socket, execution_id) do
-    account_id = socket.assigns.current_account.id
-
-    if previous_id = socket.assigns.subscribed_execution_id do
-      :ok = Runs.unsubscribe_runbook_execution(account_id, previous_id)
-    end
-
-    :ok = Runs.subscribe_runbook_execution(account_id, execution_id)
+    socket = unsubscribe_execution(socket)
+    :ok = Runbooks.subscribe_execution(socket.assigns.current_account.id, execution_id)
     assign(socket, :subscribed_execution_id, execution_id)
   end
 
-  defp current_execution_runs(socket, execution_id, fallback_runs) do
-    case Runs.list_runs_by_runbook_execution(execution_id, socket.assigns.current_subject) do
-      {:ok, runs} -> runs
-      {:error, _reason} -> attach_runners(fallback_runs, socket.assigns.runners)
-    end
+  defp unsubscribe_execution(%{assigns: %{subscribed_execution_id: nil}} = socket), do: socket
+
+  defp unsubscribe_execution(socket) do
+    :ok =
+      Runbooks.unsubscribe_execution(
+        socket.assigns.current_account.id,
+        socket.assigns.subscribed_execution_id
+      )
+
+    assign(socket, :subscribed_execution_id, nil)
   end
 
-  defp attach_runners(runs, runners) do
-    runners_by_id = Map.new(runners, &{&1.id, &1})
+  defp initial_input_raw(%{"inputs" => inputs}) when is_list(inputs) do
+    Map.new(inputs, fn input ->
+      value = if Map.has_key?(input, "default"), do: input_value_to_string(input["default"])
+      {input["id"], value}
+    end)
+  end
 
-    Enum.map(runs, fn run ->
-      case Map.fetch(runners_by_id, run.runner_id) do
-        {:ok, runner} -> %{run | runner: runner}
-        :error -> run
+  defp initial_input_raw(_definition), do: %{}
+
+  defp parse_input_values(%{"inputs" => declarations}, raw) when is_list(declarations) do
+    Enum.reduce(declarations, {%{}, %{}}, fn declaration, {values, errors} ->
+      id = declaration["id"]
+
+      case parse_input_value(declaration, Map.get(raw, id)) do
+        {:ok, :missing} -> {values, errors}
+        {:ok, value} -> {Map.put(values, id, value), errors}
+        {:error, message} -> {values, Map.put(errors, id, message)}
       end
     end)
   end
 
-  # Fetch a finished run's tail output once, the first time it settles — so
-  # the row can show an inline preview. In-flight runs and already-fetched
-  # ones are left alone (lazy: one read per run, not on every transition).
-  defp maybe_load_output(socket, run) do
-    if run_settled?(run.status) and not Map.has_key?(socket.assigns.run_outputs, run.id) do
-      case Runs.list_recent_events_for_run(
-             run.id,
-             @output_preview_lines,
-             socket.assigns.current_subject
-           ) do
-        {:ok, events} ->
-          assign(socket, :run_outputs, Map.put(socket.assigns.run_outputs, run.id, events))
+  defp parse_input_values(_definition, _raw), do: {%{}, %{}}
 
-        {:error, _} ->
-          socket
-      end
-    else
-      socket
+  defp parse_input_value(%{"required" => false}, value) when value in [nil, ""],
+    do: {:ok, :missing}
+
+  defp parse_input_value(%{"type" => "string"}, nil), do: {:ok, :missing}
+  defp parse_input_value(%{"type" => "string"}, value), do: {:ok, value}
+
+  defp parse_input_value(%{"type" => "integer"}, value) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} -> {:ok, integer}
+      _ -> {:error, "Enter a whole number."}
     end
   end
 
-  defp tracked_runner_ids(socket) do
-    runner_ids = MapSet.new(socket.assigns.runners, & &1.id)
-    run_ids = MapSet.new(socket.assigns.run_index, fn {_id, run} -> run.runner_id end)
-    MapSet.union(runner_ids, run_ids)
-  end
-
-  defp reinsert_affected_runs(socket, affected_ids) do
-    socket.assigns.run_index
-    |> Map.values()
-    |> Enum.filter(&MapSet.member?(affected_ids, &1.runner_id))
-    |> Enum.reduce(socket, fn run, socket ->
-      stream_insert(socket, :execution_runs, live_row(run, socket.assigns.run_outputs))
-    end)
-  end
-
-  defp finished_count(run_statuses),
-    do: Enum.count(run_statuses, fn {_id, status} -> run_settled?(status) end)
-
-  defp failed_count(run_statuses),
-    do: Enum.count(run_statuses, fn {_id, status} -> run_failed?(status) end)
-
-  # The engine stops launching waves once a run in the current wave failed/
-  # denied, so the planned-but-undispatched runs never get a row's worth of
-  # progress. Report how many that is — but only once the wave that gates the
-  # next batch has fully settled (no run still in flight) and a failure exists,
-  # so we don't cry "halted" during a normal between-waves lull. 0 = not halted.
-  defp halted_count(run_statuses, total) do
-    dispatched = map_size(run_statuses)
-    undispatched = total - dispatched
-
-    if undispatched > 0 and failed_count(run_statuses) > 0 and
-         finished_count(run_statuses) == dispatched do
-      undispatched
-    else
-      0
+  defp parse_input_value(%{"type" => "number"}, value) when is_binary(value) do
+    case Float.parse(value) do
+      {number, ""} -> {:ok, number}
+      _ -> {:error, "Enter a number."}
     end
   end
 
-  # True while a dispatched run is still in flight — finished_count hasn't caught
-  # up to the planned total and the engine hasn't halted between waves. Drives
-  # hiding the dispatch/re-run form mid-run (no double-dispatch); flips false once
-  # the run completes or halts, so the form returns as the re-run form.
-  defp run_in_progress?(nil, _run_statuses), do: false
+  defp parse_input_value(%{"type" => "boolean"}, "true"), do: {:ok, true}
+  defp parse_input_value(%{"type" => "boolean"}, "false"), do: {:ok, false}
+  defp parse_input_value(%{"type" => "boolean"}, _value), do: {:error, "Choose true or false."}
+  defp parse_input_value(_declaration, _value), do: {:ok, :missing}
 
-  defp run_in_progress?(execution, run_statuses) do
-    finished_count(run_statuses) < execution.total and
-      halted_count(run_statuses, execution.total) == 0
+  defp input_value_to_string(value) when is_binary(value), do: value
+  defp input_value_to_string(value) when is_boolean(value), do: to_string(value)
+  defp input_value_to_string(value) when is_number(value), do: to_string(value)
+  defp input_value_to_string(_value), do: nil
+
+  defp input_type(%{"type" => "boolean"}), do: "select"
+  defp input_type(%{"sensitive" => true}), do: "password"
+  defp input_type(%{"type" => type}) when type in ["integer", "number"], do: "number"
+  defp input_type(_input), do: "text"
+
+  defp input_options(%{"type" => "boolean"}),
+    do: [{"Choose…", ""}, {"true", "true"}, {"false", "false"}]
+
+  defp input_options(_input), do: []
+
+  defp input_step(%{"type" => "integer"}), do: "1"
+  defp input_step(%{"type" => "number"}), do: "any"
+  defp input_step(_input), do: nil
+
+  defp issue(code, path, message), do: %{code: code, path: path, message: message}
+
+  defp items_for_stage(result, stage),
+    do: Enum.filter(result.execution.items, &(&1.runbook_execution_stage_id == stage.id))
+
+  defp visible_items(items, expanded?, limit \\ @item_page_size) do
+    if expanded?, do: items, else: Enum.take(items, limit)
   end
 
-  # "denied" never reaches a terminal transition but is as settled as a
-  # run gets — count it alongside the terminal states.
-  defp run_settled?(status), do: Runs.ActionRun.terminal?(status)
-
-  defp run_failed?(status), do: run_settled?(status) and status != :success
-
-  # An in-flight run whose runner's socket is currently gone — surfaces *why*
-  # a wave stalled instead of leaving the row looking merely slow.
-  defp offline_mid_run?(%{status: status} = run, online_runner_ids)
-       when status in [:pending, :sent, :running, :cancelling],
-       do: not MapSet.member?(online_runner_ids, run.runner_id)
-
-  defp offline_mid_run?(_run, _online_runner_ids), do: false
-
-  # Pre-Start offline preflight: the distinct planned target runners that are
-  # currently offline. Dispatch to an offline runner QUEUES (waits for reconnect)
-  # rather than failing, so this is a heads-up before Start, not a hard blocker.
-  defp offline_planned_runners(plan, runners, online_runner_ids) do
-    names = Map.new(runners, &{&1.id, &1.name})
-
-    plan
-    |> Enum.map(& &1.runner_id)
-    |> Enum.uniq()
-    |> Enum.reject(&MapSet.member?(online_runner_ids, &1))
-    |> Enum.map(&Map.get(names, &1, "a runner"))
+  defp hidden_item_count(items, expanded?, limit \\ @item_page_size) do
+    if expanded?, do: 0, else: max(length(items) - limit, 0)
   end
 
-  defp offline_preflight_title([name]), do: "Target runner #{name} is offline"
-
-  defp offline_preflight_title(names),
-    do: "#{length(names)} target runners are offline (#{Enum.join(names, ", ")})"
-
-  defp pluralize(1, word), do: word
-  defp pluralize(_, word), do: word <> "s"
-
-  # The execution table streams unified row structs (not raw runs): a
-  # `:planned` placeholder per planned (step, runner), each flipped to its
-  # live run by a shared dom_id. `run` is nil until the run arrives.
-  # Rehydrate rows in PLAN order: each (step, runner) slot shows its run if one
-  # was dispatched (matched by the shared step_id/runner_id), else its
-  # placeholder. Runs whose plan slot no longer resolves (a step's group changed
-  # since dispatch) are appended in dispatch order so nothing the operator saw
-  # disappears. Built as one ordered list so a single `stream(reset: true)`
-  # renders it — no follow-up `stream_insert` to reshuffle the order.
-  defp merged_execution_rows(plan, runners, runs, outputs, errors \\ []) do
-    by_slot = Map.new(runs, &{{&1.runbook_step_id, &1.runner_id}, &1})
-    planned_slots = MapSet.new(plan, &{&1.step_id, &1.runner_id})
-    failed = Map.new(errors, &{{&1.step_id, &1.runner_id}, &1.reason})
-
-    plan_part =
-      Enum.map(plan, fn item ->
-        case Map.fetch(by_slot, {item.step_id, item.runner_id}) do
-          {:ok, run} -> live_row(run, outputs)
-          :error -> plan_row(item, runners, failed)
-        end
-      end)
-
-    orphan_part =
-      runs
-      |> Enum.reject(&MapSet.member?(planned_slots, {&1.runbook_step_id, &1.runner_id}))
-      |> Enum.map(&live_row(&1, outputs))
-
-    plan_part ++ orphan_part
+  defp toggle_set(set, id) do
+    if MapSet.member?(set, id), do: MapSet.delete(set, id), else: MapSet.put(set, id)
   end
 
-  defp plan_row(item, runners, failed) do
-    # A (step, runner) the first wave couldn't dispatch never gets a run, so
-    # mark its placeholder `:dispatch_failed` (+ why) instead of leaving it grey.
-    {status, dispatch_error} =
-      case Map.fetch(failed, {item.step_id, item.runner_id}) do
-        {:ok, reason} -> {:dispatch_failed, format_reason(reason)}
-        :error -> {:planned, nil}
-      end
-
-    %{
-      id: row_dom_id(item.step_id, item.runner_id),
-      action_id: item.action_id,
-      runner_name: runner_name(item.runner_id, runners),
-      status: status,
-      run: nil,
-      output: [],
-      dispatch_error: dispatch_error
-    }
-  end
-
-  defp live_row(run, outputs) do
-    %{
-      id: row_dom_id(run.runbook_step_id, run.runner_id),
-      action_id: run.action_id,
-      runner_name: run.runner.name,
-      status: run.status,
-      run: run,
-      output: Map.get(outputs, run.id, []),
-      dispatch_error: nil
-    }
-  end
-
-  defp row_dom_id(step_id, runner_id), do: "run-#{step_id}-#{runner_id}"
-
-  defp runner_name(runner_id, runners) do
-    case Enum.find(runners, &(&1.id == runner_id)) do
-      nil -> "(unknown runner)"
-      runner -> runner.name
+  defp projected_item_status(item, stage, execution) do
+    case item.status do
+      :pending when stage.status == :awaiting_approval -> :awaiting_approval
+      :pending when stage.status == :halted or execution.status == :halted -> :halted
+      :pending when stage.status == :cancelled or execution.status == :cancelled -> :cancelled
+      :pending -> :queued
+      status -> status
     end
   end
+
+  defp execution_title(%{status: :active}), do: "Execution in progress"
+  defp execution_title(%{status: :succeeded}), do: "Execution succeeded"
+  defp execution_title(%{status: :halted}), do: "Execution halted"
+  defp execution_title(%{status: :cancelled}), do: "Execution cancelled"
+
+  defp execution_tone(%{status: :succeeded}), do: :brand
+  defp execution_tone(%{status: :active}), do: :amber
+  defp execution_tone(%{status: :halted}), do: :rose
+  defp execution_tone(%{status: :cancelled}), do: :neutral
+
+  defp stage_mode(%{mode: :parallel, max_parallel: max_parallel}),
+    do: "parallel · up to #{max_parallel} at once"
+
+  defp stage_mode(%{mode: :sequential}), do: "sequential"
+
+  defp wait_label(%{status: :waiting, attempt_count: attempts, wait: wait}) when is_map(wait) do
+    "#{attempts} of #{wait["max_attempts"]} observations"
+  end
+
+  defp wait_label(_item), do: nil
+
+  defp can_start?(assigns) do
+    assigns.preflight.state == :ready and String.trim(assigns.reason) != "" and
+      assigns.input_errors == %{}
+  end
+
+  defp output_rows(outputs), do: Enum.sort_by(outputs, &elem(&1, 0))
+
+  defp evidence_label(%{"kind" => "condition", "output" => output, "operator" => operator}),
+    do: "#{output} · #{String.replace(operator, "_", " ")}"
+
+  defp evidence_label(%{"output" => output}) when is_binary(output), do: output
+  defp evidence_label(%{"kind" => kind}) when is_binary(kind), do: String.replace(kind, "_", " ")
+  defp evidence_label(_evidence), do: "Evidence"
+
+  defp evidence_kind(%{"kind" => "condition"}), do: "Success condition"
+  defp evidence_kind(%{"kind" => "extraction"}), do: "Output extraction"
+  defp evidence_kind(_evidence), do: "Execution evidence"
+
+  defp evidence_status(%{"status" => "failed"}, :waiting), do: "not met"
+  defp evidence_status(%{"status" => status}, _item_status), do: status
+  defp evidence_status(_evidence, _item_status), do: "pending"
+
+  defp evidence_tone(status) when status in ["passed", "extracted"], do: :brand
+  defp evidence_tone("failed"), do: :rose
+  defp evidence_tone(status) when status in ["not met", "pending"], do: :amber
+  defp evidence_tone(_status), do: :neutral
 
   def render(assigns) do
     ~H"""
@@ -706,281 +572,538 @@ defmodule EmisarWeb.RunbookRunLive do
       width={:table}
     >
       <:title>
-        <.detail_header back="Runbooks" navigate={~p"/app/#{@current_account}/runbooks"}>
-          Run {@runbook.title}
-          <:meta>
-            <span class="font-mono">v{@runbook.version} · {@runbook.status}</span>
-          </:meta>
-        </.detail_header>
+        <.detail_header
+          back="Runbooks"
+          navigate={~p"/app/#{@current_account}/runbooks"}
+          title={if @runbook, do: @runbook.title, else: "Runbook"}
+        />
       </:title>
+      <:actions>
+        <.button
+          :if={@result && @result.execution.status == :active}
+          variant={:secondary}
+          tone={:rose}
+          phx-click="cancel_execution"
+          data-confirm="Cancel this runbook execution? Already-running actions receive a cancellation request."
+        >
+          Cancel execution
+        </.button>
+        <.button
+          :if={@result && @result.execution.status != :active}
+          variant={:secondary}
+          phx-click="run_again"
+        >
+          Run again
+        </.button>
+      </:actions>
 
-      <div class="mt-4 space-y-12">
-        <%!-- How-it-works strip — short paragraph, replaces the
-             stranded `-mt-4` lead-in that fought the page padding. --%>
-        <p class="max-w-prose text-sm leading-relaxed text-zinc-400">
-          Steps dispatch in parallel waves, each against the runner — or group — it
-          targets. A failed run stops the waves behind it.
-        </p>
+      <div class="mt-4">
+        <.empty_state
+          :if={not @loaded?}
+          icon="hero-arrow-path"
+          title="Loading runbook…"
+        >
+          Reading the current plan and latest execution.
+        </.empty_state>
 
-        <%!-- Dead/pre-connect render: the plan + active-run state load on
-             connect, so show a neutral placeholder rather than the empty plan
-             and dispatch form (which would flash, then flip to the live run). --%>
-        <.loading_state :if={not @loaded?} />
+        <.execution_result
+          :if={@loaded? && @result}
+          result={@result}
+          attempts_by_item={@attempts_by_item}
+          approval_requests_by_stage={@approval_requests_by_stage}
+          expanded_stages={@expanded_execution_stages}
+          current_account={@current_account}
+        />
 
-        <%!-- One list, not two, NAKED on the canvas. Idle: the plan (numbered
-             steps). Once dispatched: the live runs replace those rows in
-             place, while the planned-step count stays in the header for
-             context — a step fans out to one run per targeted runner, so
-             there can be more runs than steps. --%>
-        <section :if={@loaded?} id="execution">
-          <.section_header title={if @execution, do: "Execution", else: "Plan"}>
-            <:actions>
-              <%!-- Headline risk: the most-severe step's risk, so the operator
-                   sees the worst this runbook can do at a glance. Hidden when no
-                   step's action is in the catalog yet (never a false low). --%>
-              <.risk_pill
-                :if={plan_max_risk(@action_risk, @steps)}
-                risk={plan_max_risk(@action_risk, @steps)}
-                class="flex-none"
-              />
-              <span class="text-xs text-zinc-400">
-                {length(@steps)} {if length(@steps) == 1, do: "step", else: "steps"}
-                <span :if={!@execution && @blast_radius.total} class="text-zinc-400">
-                  → {@blast_radius.total} {pluralize(@blast_radius.total, "run")} in {@blast_radius.waves} {pluralize(
-                    @blast_radius.waves,
-                    "wave"
-                  )}
-                </span>
-                <span :if={@execution}>
-                  · {finished_count(@run_statuses)}/{@execution.total} finished
-                  <span :if={failed_count(@run_statuses) > 0} class="text-rose-400">
-                    · {failed_count(@run_statuses)} failed
-                  </span>
-                </span>
-              </span>
-            </:actions>
-          </.section_header>
+        <.run_form
+          :if={@loaded? && is_nil(@result)}
+          runbook={@runbook}
+          reason={@reason}
+          input_raw={@input_raw}
+          input_errors={@input_errors}
+          preflight={@preflight}
+          expanded_stages={@expanded_plan_stages}
+          can_start?={can_start?(assigns)}
+        />
 
-          <%!-- The engine stops launching waves after a failed/denied run, so
-               the remaining placeholder rows never dispatch — without this they
-               sit grey and the page reads as stuck/broken. In-flight runs still
-               finish; only the un-launched waves are dropped. --%>
-          <.event_block
-            :if={@execution && halted_count(@run_statuses, @execution.total) > 0}
-            icon="hero-hand-raised"
-            tone={:amber}
-            title={"Halted — #{halted_count(@run_statuses, @execution.total)} planned #{pluralize(halted_count(@run_statuses, @execution.total), "run")} won't dispatch"}
-            class="mb-6"
-          >
-            <:body>
-              An earlier step failed, so the engine stops launching the waves behind it.
-              Any in-flight runs will still finish.
-            </:body>
-          </.event_block>
+        <.execution_history
+          :if={@loaded? && @runbook}
+          executions={@recent_executions}
+          current_execution_id={@result && @result.execution.id}
+          current_account={@current_account}
+          runbook={@runbook}
+        />
+      </div>
+    </.dashboard_shell>
+    """
+  end
 
-          <%!-- Live runs once dispatched. Each row updates in place as its
-               run transitions (the status badge flips to success / failed). --%>
-          <ul
-            :if={@execution}
-            id="execution-runs"
-            phx-update="stream"
-            class="divide-y divide-zinc-800/70"
-          >
-            <li :for={{dom_id, row} <- @streams.execution_runs} id={dom_id} class="py-3 text-sm">
-              <div class="flex items-center gap-3">
-                <.status_badge status={row.status} />
-                <div class="min-w-0 flex-1">
-                  <%!-- The action id names what dispatches — it wraps to show in
-                       full on a phone, never clips to "…upstr…". --%>
-                  <span class="break-all font-mono text-zinc-200">{row.action_id}</span>
-                  <span class="ml-2 text-xs text-zinc-400">
-                    on {row.runner_name}
-                  </span>
-                  <span
-                    :if={row.run && offline_mid_run?(row.run, @online_runner_ids)}
-                    class="ml-1 inline-flex items-center gap-1 text-xs text-amber-400"
-                    title="Runner offline — this run may stall until it reconnects or times out"
-                  >
-                    <.icon name="hero-signal-slash" class="h-3 w-3" /> offline
-                  </span>
-                  <%!-- Why this (step, runner) never started — humanized from the
-                       dispatch error, so the rose "dispatch failed" badge isn't mute. --%>
-                  <span
-                    :if={row.dispatch_error}
-                    class="ml-1 inline-flex items-center gap-1 text-xs text-rose-400"
-                  >
-                    <.icon name="hero-exclamation-triangle" class="h-3 w-3" /> {row.dispatch_error}
-                  </span>
-                </div>
-                <span :if={row.run && row.run.duration_ms} class="text-xs tabular-nums text-zinc-400">
-                  {row.run.duration_ms} ms
-                </span>
-                <.link
-                  :if={row.run}
-                  navigate={~p"/app/#{@current_account}/runs/#{row.run.id}"}
-                  class="text-xs text-brand-400 hover:text-brand-300"
-                >
-                  View
-                </.link>
-              </div>
-              <%!-- Tail of the run's output once it finishes — a glanceable
-                   preview spanning the full row (the artifact wants the width);
-                   the full terminal is on the run-detail page. --%>
-              <.output_preview events={row.output} class="mt-2 max-h-32" />
-            </li>
-          </ul>
+  attr :runbook, :map, required: true
+  attr :reason, :string, required: true
+  attr :input_raw, :map, required: true
+  attr :input_errors, :map, required: true
+  attr :preflight, :map, required: true
+  attr :expanded_stages, :any, required: true
+  attr :can_start?, :boolean, required: true
 
-          <%!-- A group step that resolves to zero active runners makes dispatch
-               refuse the whole runbook — surface that here, before Start. --%>
-          <.event_block
-            :if={!@execution && @blast_radius.no_runners_step}
-            icon="hero-signal-slash"
-            tone={:amber}
-            title={"Step #{@blast_radius.no_runners_step}'s target has no active runners"}
-            class="mb-6"
-          >
-            <:body>Dispatch will refuse the runbook until one connects.</:body>
-          </.event_block>
-
-          <%!-- Offline preflight: a planned target that's offline queues (doesn't
-               fail) until it reconnects — surface it before Start so a half-dark
-               fleet isn't a surprise mid-run. --%>
-          <% offline_targets =
-            offline_planned_runners(@blast_radius.plan, @runners, @online_runner_ids) %>
-          <.event_block
-            :if={!@execution && offline_targets != []}
-            icon="hero-signal-slash"
-            tone={:amber}
-            title={offline_preflight_title(offline_targets)}
-            class="mb-6"
-          >
-            <:body>
-              Dispatch queues their steps until they reconnect — a heads-up, not a blocker.
-            </:body>
-          </.event_block>
-
-          <%!-- Plan steps, shown until the first dispatch. --%>
-          <.steps :if={!@execution && @steps != []} variant={:plan}>
-            <:step :for={{step, idx} <- Enum.with_index(@steps)}>
-              <% target = step_target_label(step, @runners) %>
-              <%!-- flex-wrap so the action id (the step's identity) reads in full
-                   on a phone — the risk pill + policy chips wrap below it rather
-                   than holding the line and clipping the id to "…upst…". --%>
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="break-all font-mono text-zinc-200">
-                  {step["action"] || step["action_id"] || "—"}
-                </span>
-                <.risk_pill
-                  :if={step_risk(@action_risk, step)}
-                  risk={step_risk(@action_risk, step)}
-                  class="flex-none"
-                />
-                <%!-- What this step's policy will decide at dispatch, so a
-                     mid-run pause (or a refusal) isn't a surprise. "Pauses for
-                     approval" is the POLICY stance — a standing grant could let
-                     it run without pausing, so the tooltip avoids a false
-                     promise. A `:deny` step would FAIL on dispatch; flag it too. --%>
-                <span
-                  :if={step_decision(@step_decisions, idx) == :require_approval}
-                  class="flex-none"
-                  title="Per policy, this step queues for human approval before it runs. A standing grant may let it run without pausing."
-                >
-                  <.chip upcase tone={:amber}>Pauses for approval</.chip>
-                </span>
-                <span
-                  :if={step_decision(@step_decisions, idx) == :deny}
-                  class="flex-none"
-                  title="Policy denies this step — dispatch will refuse it. Edit the policy or the runbook's targets."
-                >
-                  <.chip upcase tone={:rose}>Blocked by policy</.chip>
-                </span>
-              </div>
-              <p :if={step["description"]} class="mt-0.5 truncate text-xs text-zinc-400">
-                {step["description"]}
-              </p>
-              <% count = @blast_radius.counts[idx] %>
-              <p :if={target} class="mt-0.5 truncate text-xs text-zinc-400">
-                → {target}
-                <span :if={count}>
-                  · {count} {if count == 1, do: "runner", else: "runners"}
-                </span>
-              </p>
-              <p :if={!target} class="mt-0.5 truncate text-xs text-amber-400/80">
-                → no target set
-              </p>
-            </:step>
-          </.steps>
-
-          <%!-- Nothing to run — nudge to the editor instead of dispatching
-               an empty runbook. --%>
-          <p :if={!@execution && @steps == []} class="py-4 text-sm text-zinc-400">
-            No steps defined.
-            <.link
-              navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.id}/edit"}
-              class="text-brand-400 hover:text-brand-300"
-            >
-              Edit the runbook
-            </.link>
-            first.
-          </p>
+  defp run_form(assigns) do
+    ~H"""
+    <div class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div class="space-y-10">
+        <section :if={String.trim(@runbook.definition["context_markdown"] || "") != ""}>
+          <.section_header title="Operator context" />
+          <RunbookMarkdown.render markdown={@runbook.definition["context_markdown"]} />
         </section>
 
-        <%!-- Dispatch form — NAKED below the plan (forms are naked, §8.1),
-             capped at a reading width; doubles as the re-run form once a run
-             settles. Hidden while a run is IN PROGRESS so a stray submit can't
-             double-dispatch mid-run (a "running" note takes its place); it
-             returns when every run finishes or the run halts. --%>
-        <section :if={@loaded? and not run_in_progress?(@execution, @run_statuses)} class="max-w-3xl">
-          <.section_header title="Run" />
-          <form
-            id="runbook-dispatch-form"
-            phx-change="validate"
-            phx-submit="dispatch"
-            class="space-y-4"
+        <section>
+          <.section_header title="Current preflight">
+            <:subtitle>
+              Exact targets, packs, hashes, approvals, and concurrency resolved from current state.
+            </:subtitle>
+          </.section_header>
+
+          <div
+            :if={@preflight.state == :loading}
+            class="flex items-center gap-2 text-sm text-zinc-400"
           >
-            <div>
-              <%!-- Non-FormField field: `reason` posts a top-level key and its
-                   error is a plain map entry (set only on dispatch, never on
-                   `validate`), so pass value/errors explicitly. List.wrap turns
-                   the single message into the list `<.input>`'s `<.error>`s want. --%>
-              <.input
-                type="textarea"
-                name="reason"
-                value={@reason}
-                label="Reason"
-                errors={List.wrap(@errors[:reason])}
-                rows="2"
-                required
-                placeholder="Why are you running this runbook now?"
-              />
-              <p class="mt-1 text-xs text-zinc-400">Logged in audit and propagated to every step.</p>
+            <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+            Checking current runners, packs, trust, and policy…
+          </div>
+
+          <.event_block
+            :if={@preflight.state == :error}
+            icon="hero-exclamation-triangle"
+            tone={:rose}
+            title="Preflight blocked"
+          >
+            <:body>
+              <ul class="space-y-2">
+                <li :for={issue <- @preflight.issues}>
+                  <code class="text-xs text-zinc-300">{issue.path || "/"}</code> — {issue.message}
+                </li>
+              </ul>
+            </:body>
+          </.event_block>
+
+          <div :if={@preflight.state == :ready} class="space-y-8">
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-zinc-400">
+              <span>
+                <strong class="font-medium text-zinc-200">
+                  {@preflight.plan["total_items"]}
+                </strong>
+                logical actions
+              </span>
+              <span>
+                <strong class="font-medium text-zinc-200">
+                  {length(@preflight.plan["stages"])}
+                </strong>
+                stages
+              </span>
+              <span :if={@preflight.checked_at}>
+                checked <.local_time value={@preflight.checked_at} mode={:relative} />
+              </span>
             </div>
 
-            <%!-- Re-dispatching resets the execution stream above, so confirm
-                 while one's already showing — otherwise a stray click wipes the
-                 run an operator is watching. --%>
+            <.plan_stage
+              :for={stage <- @preflight.plan["stages"]}
+              stage={stage}
+              expanded?={MapSet.member?(@expanded_stages, stage["id"])}
+            />
+          </div>
+        </section>
+      </div>
+
+      <aside>
+        <section class="xl:sticky xl:top-6">
+          <.section_header title="Start execution" />
+          <form
+            id="runbook-run-form"
+            phx-change="run_form_changed"
+            phx-submit="start"
+            class="space-y-4"
+          >
+            <div :for={input <- @runbook.definition["inputs"]}>
+              <.input
+                type={input_type(input)}
+                name={"inputs[#{input["id"]}]"}
+                value={@input_raw[input["id"]]}
+                label={input["id"]}
+                label_variant={:eyebrow}
+                options={input_options(input)}
+                step={input_step(input)}
+                required={input["required"]}
+                autocomplete={if(input["sensitive"], do: "off")}
+              />
+              <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
+                {input["description"]}
+                <span :if={input["sensitive"]} class="text-amber-300"> · sensitive</span>
+              </p>
+              <p :if={@input_errors[input["id"]]} class="mt-1 text-xs text-rose-300">
+                {@input_errors[input["id"]]}
+              </p>
+            </div>
+
+            <.input
+              type="textarea"
+              name="reason"
+              value={@reason}
+              label="Reason"
+              label_variant={:eyebrow}
+              rows="4"
+              required
+              placeholder="Why this runbook should run now"
+            />
+
             <.button
-              phx-disable-with="Starting..."
-              data-confirm={
-                @execution && "A run is already showing above — start a new one and replace it?"
-              }
+              type="submit"
+              variant={if @can_start?, do: :primary, else: :secondary}
+              phx-disable-with="Starting…"
+              disabled={not @can_start?}
+              class="w-full"
             >
-              Run runbook
+              {if @can_start?, do: "Start runbook", else: "Preflight required"}
             </.button>
           </form>
         </section>
+      </aside>
+    </div>
+    """
+  end
 
-        <%!-- Stands in for the dispatch form while a run is in progress, so the
-             form's absence reads as intentional rather than missing. --%>
-        <section :if={@loaded? and run_in_progress?(@execution, @run_statuses)}>
-          <.section_header title="Run" />
-          <p class="flex items-center gap-2 text-sm text-zinc-400">
-            <.icon name="hero-arrow-path" class="h-4 w-4 flex-none animate-spin text-brand-400" />
-            Runbook is running — you can start another run once it finishes.
+  attr :stage, :map, required: true
+  attr :expanded?, :boolean, required: true
+
+  defp plan_stage(assigns) do
+    assigns =
+      assigns
+      |> assign(:visible_items, visible_items(assigns.stage["items"], assigns.expanded?))
+      |> assign(:hidden_count, hidden_item_count(assigns.stage["items"], assigns.expanded?))
+      |> assign(:page_size, @item_page_size)
+
+    ~H"""
+    <section
+      id={"preflight-stage-#{@stage["id"]}"}
+      class="border-t border-zinc-800/70 pt-5"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-100">{@stage["title"]}</h3>
+          <p class="mt-1 text-xs text-zinc-400">
+            {@stage["mode"]} · up to {@stage["max_parallel"]} at once · {if @stage["approval"] ==
+                                                                              "required",
+                                                                            do: "approval required",
+                                                                            else: "no stage approval"}
           </p>
-        </section>
+        </div>
+        <span class="text-xs tabular-nums text-zinc-400">
+          {length(@stage["items"])} {if length(@stage["items"]) == 1, do: "item", else: "items"}
+        </span>
       </div>
-    </.dashboard_shell>
+
+      <ul class="mt-3 divide-y divide-zinc-800/60">
+        <li :for={item <- @visible_items} class="grid gap-2 py-3 sm:grid-cols-[1fr_auto]">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-mono text-xs text-zinc-200">{item["action"]}</span>
+              <.risk_pill :if={item["risk"]} risk={item["risk"]} />
+            </div>
+            <p class="mt-1 flex flex-col gap-0.5 text-xs text-zinc-400 sm:block">
+              <span>{item["runner_ref"]}</span>
+              <span class="hidden sm:inline"> · </span>
+              <span class="break-all font-mono text-[11px]">{item["pack_ref"]}</span>
+            </p>
+            <pre
+              :if={item["args"] != %{}}
+              class="mt-2 max-h-40 overflow-auto rounded-lg bg-black/40 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-300"
+            >{format_json(item["args"])}</pre>
+          </div>
+          <span class="font-mono text-[11px] text-zinc-400">{item["step_id"]}</span>
+        </li>
+      </ul>
+      <.button
+        :if={@hidden_count > 0 or (@expanded? and length(@stage["items"]) > @page_size)}
+        type="button"
+        variant={:ghost}
+        size={:sm}
+        phx-click="toggle_plan_stage"
+        phx-value-id={@stage["id"]}
+        class="mt-2"
+      >
+        {if @expanded?, do: "Show first #{@page_size}", else: "Show #{@hidden_count} more"}
+      </.button>
+    </section>
+    """
+  end
+
+  attr :result, :map, required: true
+  attr :attempts_by_item, :map, required: true
+  attr :approval_requests_by_stage, :map, required: true
+  attr :expanded_stages, :any, required: true
+  attr :current_account, :map, required: true
+
+  defp execution_result(assigns) do
+    assigns = assign(assigns, :page_size, @item_page_size)
+
+    ~H"""
+    <div class="space-y-12">
+      <.event_block
+        icon={
+          if @result.execution.status == :succeeded,
+            do: "hero-check-circle",
+            else: "hero-command-line"
+        }
+        tone={execution_tone(@result.execution)}
+        title={execution_title(@result.execution)}
+      >
+        <:body>
+          <span class="block">{@result.execution.reason}</span>
+          <span
+            :if={@result.execution.terminal_message}
+            class="mt-1.5 block text-zinc-200"
+          >
+            {@result.execution.terminal_code}: {@result.execution.terminal_message}
+          </span>
+          <span class="mt-1.5 block font-mono text-[11px] text-zinc-400">
+            {@result.execution.id}
+          </span>
+        </:body>
+      </.event_block>
+
+      <section>
+        <.section_header title="Stages">
+          <:subtitle>
+            A later stage starts only after every item in the current stage succeeds.
+          </:subtitle>
+        </.section_header>
+        <ol class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <li
+            :for={stage <- @result.execution.stages}
+            class="border-l-2 border-zinc-800 py-1 pl-3"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <span class="min-w-0 text-sm font-medium leading-5 text-zinc-200">{stage.title}</span>
+              <span class="shrink-0"><.status_badge status={stage.status} /></span>
+            </div>
+            <p class="mt-1 text-xs text-zinc-400">{stage_mode(stage)}</p>
+          </li>
+        </ol>
+      </section>
+
+      <section
+        :for={stage <- @result.execution.stages}
+        id={"execution-stage-#{stage.id}"}
+      >
+        <.section_header title={stage.title}>
+          <:subtitle>
+            {stage_mode(stage)} · {if stage.approval == :required,
+              do: "approval required",
+              else: "no stage approval"}
+          </:subtitle>
+          <:actions>
+            <div class="flex items-center gap-3">
+              <.link
+                :if={@approval_requests_by_stage[stage.id]}
+                navigate={
+                  ~p"/app/#{@current_account}/approvals/#{@approval_requests_by_stage[stage.id].id}"
+                }
+                class="text-xs font-medium text-brand-400 hover:text-brand-300"
+              >
+                Open approval
+              </.link>
+              <.status_badge status={stage.status} />
+            </div>
+          </:actions>
+        </.section_header>
+
+        <.event_block
+          :if={stage.terminal_message}
+          icon="hero-exclamation-triangle"
+          tone={:rose}
+          title={stage.terminal_code || "Stage halted"}
+          class="mb-5"
+        >
+          <:body>{stage.terminal_message}</:body>
+        </.event_block>
+
+        <% stage_items = items_for_stage(@result, stage) %>
+        <% expanded? = MapSet.member?(@expanded_stages, stage.id) %>
+        <div class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
+          <.execution_item
+            :for={item <- visible_items(stage_items, expanded?)}
+            item={item}
+            stage={stage}
+            execution={@result.execution}
+            attempt={@attempts_by_item[item.id]}
+            current_account={@current_account}
+          />
+        </div>
+        <% hidden_count = hidden_item_count(stage_items, expanded?) %>
+        <.button
+          :if={hidden_count > 0 or (expanded? and length(stage_items) > @page_size)}
+          type="button"
+          variant={:ghost}
+          size={:sm}
+          phx-click="toggle_execution_stage"
+          phx-value-id={stage.id}
+          class="mt-3"
+        >
+          {if expanded?, do: "Show first #{@page_size}", else: "Show #{hidden_count} more"}
+        </.button>
+      </section>
+    </div>
+    """
+  end
+
+  attr :executions, :list, required: true
+  attr :current_execution_id, :any, default: nil
+  attr :current_account, :map, required: true
+  attr :runbook, :map, required: true
+
+  defp execution_history(assigns) do
+    ~H"""
+    <section class="mt-12">
+      <.section_header title="Recent executions">
+        <:subtitle>
+          Durable history for this exact published runbook version.
+        </:subtitle>
+      </.section_header>
+
+      <.empty_state
+        :if={@executions == []}
+        icon="hero-clock"
+        title="No executions yet."
+      >
+        A completed preflight and explicit reason are required before the first run.
+      </.empty_state>
+
+      <ul :if={@executions != []} class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
+        <li :for={execution <- @executions}>
+          <.link
+            navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.id}/runs/#{execution.id}"}
+            class={[
+              "grid gap-2 py-3 text-sm hover:text-zinc-100 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center",
+              execution.id == @current_execution_id && "text-brand-300",
+              execution.id != @current_execution_id && "text-zinc-300"
+            ]}
+          >
+            <span class="min-w-0 truncate font-mono text-xs">{execution.id}</span>
+            <.status_badge status={execution.status} />
+            <.local_time value={execution.inserted_at} mode={:relative} />
+          </.link>
+        </li>
+      </ul>
+    </section>
+    """
+  end
+
+  attr :item, :map, required: true
+  attr :stage, :map, required: true
+  attr :execution, :map, required: true
+  attr :attempt, :any, default: nil
+  attr :current_account, :map, required: true
+
+  defp execution_item(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :projected_status,
+        projected_item_status(assigns.item, assigns.stage, assigns.execution)
+      )
+
+    ~H"""
+    <details id={"execution-item-#{@item.id}"} class="group py-4">
+      <summary class="grid cursor-pointer list-none gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
+            <.risk_pill :if={@item.risk} risk={@item.risk} />
+          </div>
+          <p class="mt-1 text-xs text-zinc-400">
+            {@item.step_id} · {@item.runner_ref}
+          </p>
+        </div>
+        <span class="text-xs tabular-nums text-zinc-400">
+          {@item.attempt_count} {if @item.attempt_count == 1, do: "attempt", else: "attempts"}
+        </span>
+        <div class="flex items-center justify-between gap-3 sm:justify-end">
+          <.status_badge status={@projected_status} />
+          <.icon
+            name="hero-chevron-down"
+            class="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+          />
+        </div>
+      </summary>
+
+      <div class="mt-5 grid gap-8 pl-0 sm:grid-cols-2 sm:pl-4">
+        <dl class="space-y-3 text-xs">
+          <.kv label="Exact pack"><span class="break-all font-mono">{@item.pack_ref}</span></.kv>
+          <.kv label="Pack hash"><span class="break-all font-mono">{@item.pack_hash}</span></.kv>
+          <.kv :if={@attempt} label="Raw action status">
+            <.status_badge status={@attempt.status} />
+          </.kv>
+          <.kv :if={@attempt} label="Duration">{format_duration(@attempt.duration_ms)}</.kv>
+          <.kv :if={wait_label(@item)} label="Wait">{wait_label(@item)}</.kv>
+          <.kv :if={@item.next_attempt_at} label="Next observation">
+            <.local_time value={@item.next_attempt_at} mode={:relative} />
+          </.kv>
+        </dl>
+
+        <div class="space-y-5">
+          <.event_block
+            :if={@item.terminal_message}
+            icon="hero-exclamation-triangle"
+            tone={:rose}
+            title={@item.terminal_code || "Item failed"}
+          >
+            <:body>{@item.terminal_message}</:body>
+          </.event_block>
+
+          <div :if={@item.outputs != %{}}>
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Extracted outputs
+            </p>
+            <dl class="mt-2 space-y-2 text-xs">
+              <.kv :for={{name, value} <- output_rows(@item.outputs)} label={name}>
+                <code class="break-all text-[11px] text-zinc-200">{format_json(value)}</code>
+              </.kv>
+            </dl>
+          </div>
+
+          <div :if={@item.success_evidence != []}>
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Success evidence
+            </p>
+            <ul class="mt-2 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
+              <li
+                :for={evidence <- @item.success_evidence}
+                class="flex items-start justify-between gap-4 py-2.5"
+              >
+                <div class="min-w-0">
+                  <p class="break-words font-mono text-[11px] text-zinc-200">
+                    {evidence_label(evidence)}
+                  </p>
+                  <p class="mt-0.5 text-[11px] text-zinc-400">{evidence_kind(evidence)}</p>
+                </div>
+                <% evidence_status = evidence_status(evidence, @item.status) %>
+                <.status_badge
+                  status={evidence_status}
+                  tone={evidence_tone(evidence_status)}
+                  class="shrink-0"
+                />
+              </li>
+            </ul>
+          </div>
+
+          <.link
+            :if={@attempt}
+            navigate={~p"/app/#{@current_account}/runs/#{@attempt.id}"}
+            class="inline-flex items-center gap-1.5 text-xs font-medium text-brand-400 hover:text-brand-300"
+          >
+            View raw action output <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+          </.link>
+        </div>
+      </div>
+    </details>
     """
   end
 end

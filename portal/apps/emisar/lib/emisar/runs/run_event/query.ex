@@ -50,6 +50,9 @@ defmodule Emisar.Runs.RunEvent.Query do
   def by_kind(queryable, kind),
     do: where(queryable, [events: e], e.kind == ^kind)
 
+  def by_stream(queryable, stream),
+    do: where(queryable, [events: e], e.stream == ^stream)
+
   def by_seq_from(queryable \\ all(), seq),
     do: where(queryable, [events: e], e.seq >= ^seq)
 

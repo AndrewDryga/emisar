@@ -4,6 +4,8 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def all,
     do: from(packs in Emisar.Catalog.PackVersion, as: :packs)
 
+  def none(queryable), do: where(queryable, false)
+
   def by_id(queryable, id),
     do: where(queryable, [packs: p], p.id == ^id)
 
@@ -18,6 +20,20 @@ defmodule Emisar.Catalog.PackVersion.Query do
 
   def by_pack_id_and_version(queryable, pack_id, version) do
     where(queryable, [packs: p], p.pack_id == ^pack_id and p.version == ^version)
+  end
+
+  def by_pack_refs(queryable, []), do: none(queryable)
+
+  def by_pack_refs(queryable, pack_refs) when is_list(pack_refs) do
+    predicate =
+      Enum.reduce(pack_refs, dynamic(false), fn {pack_id, version}, predicate ->
+        dynamic(
+          [packs: pack],
+          ^predicate or (pack.pack_id == ^pack_id and pack.version == ^version)
+        )
+      end)
+
+    where(queryable, ^predicate)
   end
 
   def pending(queryable \\ all()),
@@ -43,6 +59,8 @@ defmodule Emisar.Catalog.PackVersion.Query do
 
   def ordered_by_pack(queryable \\ all()),
     do: order_by(queryable, [packs: p], asc: p.pack_id, asc: p.version)
+
+  def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
   @doc """
   Row lock for the trust/reject re-read (`FOR NO KEY UPDATE`) so a

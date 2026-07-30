@@ -345,23 +345,60 @@ unless morning_runbook do
         title: "Morning edge readiness",
         description:
           "08:00 UTC check across the edge-web group before the EU traffic peak: " <>
-            "host load, disk pressure, and Caddy upstream health.",
+            "host load, disk pressure, and memory health.",
         definition: %{
-          "steps" => [
+          "schema_version" => 1,
+          "context_markdown" =>
+            "## Before you run\n\n- Confirm the morning readiness window.\n- Escalate any failed check before shifting traffic.",
+          "inputs" => [],
+          "stages" => [
             %{
-              "id" => "uptime",
-              "action_id" => "linux.uptime",
-              "runner_selector" => %{"group" => ["edge-web"]}
-            },
-            %{
-              "id" => "disk",
-              "action_id" => "linux.disk_usage",
-              "runner_selector" => %{"group" => ["edge-web"]}
-            },
-            %{
-              "id" => "upstreams",
-              "action_id" => "caddy.reverse_proxy_upstreams",
-              "runner_selector" => %{"group" => ["edge-web"]}
+              "id" => "inspect",
+              "title" => "Inspect edge readiness",
+              "mode" => "parallel",
+              "max_parallel" => 3,
+              "approval" => "none",
+              "steps" => [
+                %{
+                  "id" => "uptime",
+                  "pack" => %{
+                    "id" => "linux-core",
+                    "requirement" => ">= 0.0.0 and < 100.0.0"
+                  },
+                  "action" => "linux.uptime",
+                  "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
+                  "args" => %{},
+                  "outputs" => [],
+                  "success" => [],
+                  "wait" => nil
+                },
+                %{
+                  "id" => "disk",
+                  "pack" => %{
+                    "id" => "linux-core",
+                    "requirement" => ">= 0.0.0 and < 100.0.0"
+                  },
+                  "action" => "linux.disk_usage",
+                  "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
+                  "args" => %{},
+                  "outputs" => [],
+                  "success" => [],
+                  "wait" => nil
+                },
+                %{
+                  "id" => "memory",
+                  "pack" => %{
+                    "id" => "linux-core",
+                    "requirement" => ">= 0.0.0 and < 100.0.0"
+                  },
+                  "action" => "linux.memory",
+                  "targets" => %{"kind" => "group", "refs" => ["edge-web"]},
+                  "args" => %{},
+                  "outputs" => [],
+                  "success" => [],
+                  "wait" => nil
+                }
+              ]
             }
           ]
         }

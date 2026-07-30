@@ -86,6 +86,26 @@ defmodule Emisar.Telemetry do
     )
   end
 
+  @doc "One bounded runbook-recovery cycle and its fleet-wide queue gauges."
+  def runbook_recovery(stats, batches, batch_limit)
+      when is_map(stats) and is_map(batches) and is_integer(batch_limit) do
+    saturated_batches =
+      batches
+      |> Map.values()
+      |> Enum.count(&(&1 >= batch_limit))
+
+    :telemetry.execute(
+      [:emisar, :runbooks, :recovery],
+      Map.merge(stats, %{
+        callback_batch: batches.callbacks,
+        execution_batch: batches.executions,
+        scrub_batch: batches.scrubs,
+        saturated_batches: saturated_batches
+      }),
+      %{}
+    )
+  end
+
   # -- Periodic gauges (poller-invoked samplers) ------------------------
 
   @doc """

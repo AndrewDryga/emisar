@@ -1517,6 +1517,124 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  Returns bounded trusted exact pack/action candidates for already scoped
+  runbook runners. The caller owns requirement matching; this context owns the
+  trusted-manifest projection and hides untrusted, retired, drifted, offline,
+  or incomplete deployments.
+  """
+  def resolve_runbook_candidates(requests, runners, %Subject{} = subject)
+      when is_list(requests) and is_list(runners) do
+    with true <- length(requests) <= 256,
+         :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ),
+         deployments = requested_deployments(requests, runners),
+         {:ok, actions} <- runbook_deployment_actions(deployments, subject),
+         {:ok, pack_versions} <- runbook_pack_versions(deployments, subject) do
+      requested_runner_ids = MapSet.new(requests, & &1.runner_id)
+      requested_runners = Enum.filter(runners, &MapSet.member?(requested_runner_ids, &1.id))
+      snapshot = MCPProjection.build(pack_versions, actions, requested_runners)
+
+      candidates =
+        Map.new(requests, fn request ->
+          key = {request.runner_id, request.pack_id, request.action_id}
+          {key, runbook_candidates(snapshot, request)}
+        end)
+
+      {:ok, candidates}
+    else
+      false -> {:error, :fan_out_too_large}
+      other -> other
+    end
+  end
+
+  defp requested_deployments(requests, runners) do
+    runners_by_id = Map.new(runners, &{&1.id, &1})
+
+    requests
+    |> Enum.flat_map(fn request ->
+      with %Runners.Runner{} = runner <- Map.get(runners_by_id, request.runner_id),
+           %{"version" => version, "hash" => hash} <- get_in(runner.packs, [request.pack_id]) do
+        [{runner.id, request.pack_id, version, hash}]
+      else
+        _missing_deployment -> []
+      end
+    end)
+    |> Enum.uniq()
+  end
+
+  defp runbook_deployment_actions(deployments, subject) do
+    max_actions = length(deployments) * TrustedManifest.max_actions()
+
+    actions =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_deployments(deployments)
+      |> Authorizer.for_subject(subject)
+      |> RunnerAction.Query.limit_to(max_actions + 1)
+      |> Repo.all()
+
+    oversized_deployment? =
+      actions
+      |> Enum.group_by(&{&1.runner_id, &1.pack_id, &1.pack_version, &1.pack_hash})
+      |> Enum.any?(fn {_deployment, rows} ->
+        length(rows) > TrustedManifest.max_actions()
+      end)
+
+    if length(actions) <= max_actions and not oversized_deployment?,
+      do: {:ok, actions},
+      else: {:error, :candidate_catalog_too_large}
+  end
+
+  defp runbook_pack_versions(deployments, subject) do
+    pack_refs =
+      deployments
+      |> Enum.map(fn {_runner_id, pack_id, version, _hash} -> {pack_id, version} end)
+      |> Enum.uniq()
+
+    pack_versions =
+      PackVersion.Query.all()
+      |> PackVersion.Query.by_pack_refs(pack_refs)
+      |> Authorizer.for_subject(subject)
+      |> PackVersion.Query.limit_to(length(pack_refs) + 1)
+      |> Repo.all()
+
+    if length(pack_versions) <= length(pack_refs),
+      do: {:ok, pack_versions},
+      else: {:error, :candidate_catalog_too_large}
+  end
+
+  defp runbook_candidates(snapshot, request) do
+    snapshot.packs
+    |> Enum.filter(&(&1.pack_id == request.pack_id))
+    |> Enum.flat_map(fn pack ->
+      case Enum.find(pack.actions, &(&1["action_id"] == request.action_id)) do
+        %{compatible_runner_ids: runner_ids} = descriptor ->
+          if request.runner_id in runner_ids do
+            [
+              %{
+                runner_id: request.runner_id,
+                runner_ref: request.runner_ref,
+                pack_id: pack.pack_id,
+                version: pack.version,
+                hash: pack.hash,
+                pack_ref: pack.pack_ref,
+                descriptor: Map.drop(descriptor, [:compatible_runner_ids])
+              }
+            ]
+          else
+            []
+          end
+
+        _unavailable ->
+          []
+      end
+    end)
+    |> Enum.sort_by(&Version.parse!(&1.version), :desc)
+  end
+
+  @doc """
   `%{action_id => most-severe risk}` for a set of `action_id`s, in ONE
   account-scoped query — the runbook list resolves every listed runbook's
   steps' risks at once (no per-runbook DB call). Same `view_catalog` gate +

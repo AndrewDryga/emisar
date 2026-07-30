@@ -1,6 +1,6 @@
 defmodule Emisar.AuditTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Approvals, Audit, RequestContext, Runbooks, Runs, SSO}
+  alias Emisar.{Approvals, Audit, RequestContext, Runs, SSO}
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
 
@@ -1636,17 +1636,13 @@ defmodule Emisar.AuditTest do
 
       {:ok, request} = Approvals.create_request(run, user.id, "needs approval")
 
-      {:ok, runbook} =
-        Runbooks.create_runbook(
-          %{
-            "title" => "deploy-book",
-            "name" => "deploy-book",
-            "slug" => "deploy-book",
-            "definition" => %{
-              "steps" => [%{"id" => "s1", "action_id" => "linux.uptime", "args" => %{}}]
-            }
-          },
-          subject
+      runbook =
+        Fixtures.Runbooks.create_runbook(
+          account_id: account.id,
+          created_by_id: subject.actor.id,
+          title: "deploy-book",
+          name: "deploy-book",
+          slug: "deploy-book"
         )
 
       {:ok, e_enrollment_key} =
