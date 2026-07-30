@@ -353,7 +353,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
             />
           </div>
 
-          <div class="mt-6 max-w-3xl space-y-6">
+          <div class="mt-6 space-y-6">
             <div class="grid gap-4 sm:grid-cols-[16rem_minmax(0,1fr)]">
               <.input
                 name={"draft[inputs][#{index}][id]"}

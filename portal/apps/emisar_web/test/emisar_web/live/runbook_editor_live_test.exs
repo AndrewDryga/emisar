@@ -161,6 +161,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(lv, "#runbook-input-0 h3", "Input 1")
       assert has_element?(lv, "#runbook-inputs > .max-w-5xl", "Add input")
+      assert has_element?(lv, "#runbook-input-0 > .mt-6.space-y-6")
+      refute has_element?(lv, "#runbook-input-0 .max-w-3xl")
 
       render_click(lv, "add_stage", %{})
       assert has_element?(lv, "#runbook-stage-1")

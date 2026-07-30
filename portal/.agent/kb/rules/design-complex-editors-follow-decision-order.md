@@ -24,9 +24,11 @@ that order is already clear; do not add a group heading merely to restate it.
 Let flexible text fields grow only to a readable measure, keep finite choices at
 a content-sized width, and cap the collection on wide canvases. Intentional
 negative space is better than stretching controls to fill a uniform grid. Give
-related rows one measure and right edge. Inside a row, equal binary choices use
-the same compact width while the domain-bearing choice takes the remaining
-space. Font treatment must not change peer control heights.
+related rows one measure and right edge. The collection or card owns that
+measure; do not add a second inner width cap that leaves a dead rail inside the
+card. Inside a row, equal binary choices use the same compact width while the
+domain-bearing choice takes the remaining space. Font treatment must not change
+peer control heights.
 
 A typed value uses a type-aware editor. Booleans offer no default, true, or
 false; integer and number defaults use numeric controls with whole-number and
@@ -80,6 +82,8 @@ never a reduced model.
   then enum values when applicable, default, and paired bounds.
 - Required and Sensitive use equal compact tracks while Type takes the remaining
   row width; every input row ends at the same edge.
+- The input collection is capped on the page, while every row inside each input
+  card fills the card's content width.
 - Integer reads as whole numbers and Number as decimals allowed. Their default
   and bound controls enforce the corresponding numeric step.
 - Every enum value carries one aligned Default toggle; selecting one clears the
@@ -104,6 +108,8 @@ never a reduced model.
   card shorter.
 - Replacing a removed disclosure with a one-off heading and horizontal rule, or
   giving adjacent rows in one group unrelated right edges.
+- Capping both a form collection and its field rows, leaving an unused rail
+  inside every card.
 - Adding a Behavior legend when Type, Required, Sensitive, Default value, and
   bounds already explain the sequence.
 - A generic text field for boolean or numeric defaults.
@@ -137,4 +143,6 @@ control box, headings that restate their field labels, and dividers that merely
 preserve a removed disclosure's shell. Sweep button event metadata for generic
 `phx-value-value`, and repeated rows for mismatched peer enclosures. Rendered
 tests pin selected authoring controls to neutral classes and reject semantic
-brand classes inside them.
+brand classes inside them. Sweep capped form collections for a second inner
+`max-w-*` around card fields; rendered tests pin one page-level cap and reject
+the nested field cap.
