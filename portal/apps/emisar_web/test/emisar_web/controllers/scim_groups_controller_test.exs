@@ -398,6 +398,35 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert group.member_external_ids == [joiner.scim_external_id]
     end
 
+    test "a rejected rename takes the batched membership change with it", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      # The rename was applied AFTER the members, so an unacceptable name returned
+      # 400 with the privilege change already committed — the IdP read total
+      # failure and our state disagreed with it. The name is judged first now, so
+      # nothing is written.
+      joiner = provision(provider, "okta|not-applied")
+      overlong = String.duplicate("n", 300)
+
+      conn
+      |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-atomic", %{
+        "Operations" => [
+          %{"op" => "replace", "path" => "displayName", "value" => overlong},
+          %{"op" => "add", "path" => "members", "value" => [%{"value" => "okta|not-applied"}]}
+        ]
+      })
+      |> json_response(400)
+
+      groups = SSO.scim_list_groups(provider)
+      group = Enum.find(groups, &(&1.external_group_id == "grp-atomic"))
+
+      # No group, and certainly no membership: the batch did not half-apply.
+      refute group
+      refute joiner.scim_external_id in Enum.flat_map(groups, & &1.member_external_ids)
+    end
+
     test "a PATCH with too many operations → 400 invalidValue", %{conn: conn, token: token} do
       operations =
         for _n <- 1..(@max_patch_operations + 1) do

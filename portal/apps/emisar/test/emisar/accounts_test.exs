@@ -2202,6 +2202,26 @@ defmodule Emisar.AccountsTest do
       assert Membership.disabled?(Repo.reload!(member))
     end
 
+    test "records WHICH connection placed the hold, not just that one did", %{
+      account: account,
+      provider: provider
+    } do
+      # An account can run several connections, and a person can hold an identity
+      # on each. Only the one that deactivated them may lift the hold, so the
+      # attribution has to be exact — a backfill migration guessed it from a join
+      # that could match two identities, and a misattributed suspension leaves the
+      # right connection unable to reactivate and a wrong one able to.
+      other = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :entra)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      assert {:ok, %Membership{} = suspended} =
+               Accounts.sync_suspend_membership(member, provider)
+
+      assert suspended.directory_provider_id == provider.id
+      assert suspended.directory_suspended
+      refute suspended.directory_provider_id == other.id
+    end
+
     test "revokes the API keys the deprovisioned member minted", %{
       account: account,
       provider: provider

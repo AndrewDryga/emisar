@@ -1610,6 +1610,17 @@ defmodule Emisar.SSO do
   end
 
   @doc """
+  Internal — is this a display name a group write would accept?
+
+  The SCIM boundary needs to answer that BEFORE it writes anything: a batch
+  carrying both a membership change and a rename used to commit the membership
+  and only then reject the rename, so the IdP saw a total failure after a
+  privilege change had already landed. Same rule the write itself applies, read
+  from one place so the two cannot drift. `:ok | {:error, reason}`.
+  """
+  def validate_scim_group_display(display), do: validate_optional_scim_string(display)
+
+  @doc """
   Internal — SCIM group patch (`PATCH /Groups` member ops): add/remove members
   of a group, then recompute the role of every affected identity. Add ids are
   resolved to the provider's identities (unknown ids ignored); remove ids

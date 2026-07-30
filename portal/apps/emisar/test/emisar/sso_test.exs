@@ -2623,6 +2623,20 @@ defmodule Emisar.SSOTest do
 
   # -- scim_patch_group_members/4 (provider-scoped) --------------------
 
+  describe "validate_scim_group_display/1" do
+    test "accepts an absent display and a reasonable one" do
+      # The SCIM boundary asks this BEFORE it writes, so a batch carrying both a
+      # membership change and a bad rename fails without half-applying.
+      assert SSO.validate_scim_group_display(nil) == :ok
+      assert SSO.validate_scim_group_display("Platform Engineers") == :ok
+    end
+
+    test "refuses what a group write would refuse" do
+      assert {:error, _} = SSO.validate_scim_group_display(String.duplicate("n", 300))
+      assert {:error, _} = SSO.validate_scim_group_display(123)
+    end
+  end
+
   describe "scim_patch_group_members/4" do
     setup do
       scim_provider()
