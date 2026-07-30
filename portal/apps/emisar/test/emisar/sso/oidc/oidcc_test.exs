@@ -46,8 +46,6 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     issuer = start_local_idp()
     provider = provider(%{issuer: issuer})
 
-    on_exit(fn -> terminate_provider_worker(provider) end)
-
     params = %{
       "state" => "expected-state",
       "iss" => issuer,
@@ -71,17 +69,14 @@ defmodule Emisar.SSO.OIDC.OidccTest do
   end
 
   test "a discovery document pointing elsewhere is refused before anything fetches it" do
-    # The SSRF is the JWKS fetch, and oidcc's worker performs it in the same
-    # startup continuation that loads discovery — so a check that runs after
-    # `start_child` returns is answering a question the network already asked.
-    # Nothing may start.
+    # The SSRF is the JWKS fetch. It is ours to make now, and it is made only
+    # after the document naming it has passed — so the refusal lands before any
+    # connection rather than after one.
     # A real listener stands in for the internal target, so "was it fetched" is
     # observed rather than inferred. It is reachable — only the policy stops us.
     forbidden_port = start_probe_listener()
     issuer = start_local_idp(jwks_uri: "http://localhost:#{forbidden_port}/jwks")
     provider = provider(%{issuer: issuer})
-
-    on_exit(fn -> terminate_provider_worker(provider) end)
 
     params = %{"state" => "expected-state", "iss" => issuer, "code" => "authorization-code"}
 
@@ -94,10 +89,9 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     # …and nothing ever connected to what it named.
     refute_receive :forbidden_endpoint_contacted, 200
 
-    # No token exchange, and no worker left to refresh the document or chase
-    # that jwks_uri again on its expiry timer.
+    # No token exchange either, and nothing is left holding the document — there
+    # is no worker to refresh it or chase that jwks_uri again on a timer.
     refute_receive {:oidc_request, "POST", "/token", _body}, 50
-    assert Registry.lookup(Emisar.SSO.OIDC.Registry, {provider.id, issuer}) == []
   end
 
   defp provider(attrs \\ %{}) do
@@ -243,15 +237,5 @@ defmodule Emisar.SSO.OIDC.OidccTest do
       "connection: close\r\n\r\n",
       body
     ]
-  end
-
-  defp terminate_provider_worker(provider) do
-    provider_key = {provider.id, provider.issuer}
-
-    Emisar.SSO.OIDC.Registry
-    |> Registry.lookup(provider_key)
-    |> Enum.each(fn {pid, _value} ->
-      DynamicSupervisor.terminate_child(Emisar.SSO.OIDC.ProviderSupervisor, pid)
-    end)
   end
 end

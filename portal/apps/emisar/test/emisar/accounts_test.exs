@@ -2507,6 +2507,21 @@ defmodule Emisar.AccountsTest do
       refute Membership.disabled?(reinstated)
     end
 
+    test "the directory's name goes with the directory" do
+      # Left set, this account kept calling the person whatever the IdP called
+      # them — forever, since their own profile name can never take over a
+      # directory name — so a rename after the disable was permanent.
+      account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      Fixtures.Memberships.mark_directory_managed(member)
+      Fixtures.Memberships.sync_display_name(member, "Directory Name")
+
+      Accounts.clear_directory_managed_for_users(account.id, provider.id, [member.user_id])
+
+      refute Repo.reload!(member).directory_display_name
+    end
+
     test "clears the flag only for the named members, leaving other synced members" do
       account = Fixtures.Accounts.create_account()
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)

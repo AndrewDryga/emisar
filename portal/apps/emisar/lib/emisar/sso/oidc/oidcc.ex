@@ -2,19 +2,25 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   @moduledoc """
   Real `oidcc`-backed implementation of the `Emisar.SSO.OIDC` seam (oidcc 3.7).
 
-  A per-provider `Oidcc.ProviderConfiguration.Worker` (discovery doc + an
-  auto-refreshing JWKS cache) is started lazily under
-  `Emisar.SSO.OIDC.ProviderSupervisor`, named via `Emisar.SSO.OIDC.Registry`
-  by `{provider id, issuer}`. Keying on the issuer means an operator's issuer
-  edit transparently routes the next login — on any node — to a fresh worker
-  for the new discovery/JWKS, with no stale cache to invalidate; the prior
-  worker idles until the node restarts (issuer edits are rare). The `client_id`
-  / `client_secret` are read fresh from the provider on each request, not baked
-  into the worker, so those edits take effect immediately. Outbound
-  discovery/JWKS/token requests go over OTP `httpc` with TLS peer + hostname
-  verification against the system CA store (the /security-deps-audit caveat — httpc does
-  not verify by default, and a MITM on the JWKS/token endpoint would forge
-  tokens).
+  **We fetch; oidcc parses.** There is no discovery worker. Each sign-in loads
+  the discovery document, judges every endpoint it names, and only then loads the
+  JWKS — so the request to a `jwks_uri` pointing at loopback, RFC-1918 or the
+  cloud metadata service is never made. That ordering is the whole point: oidcc's
+  worker chains `load_configuration` straight into `load_jwks` inside one startup
+  continuation, so any check placed after it is answering a question the network
+  already asked, and tearing the worker down afterwards un-sends nothing.
+
+  The cost is two requests to the IdP on the login path instead of a cached
+  document, and it is worth paying here: logins are infrequent, a rotated JWKS or
+  a corrected issuer takes effect on the next attempt with no cache to
+  invalidate, and there is no supervised process left refreshing a document an
+  account no longer uses. `client_id` / `client_secret` are read fresh from the
+  provider on every request, so those edits are immediate too.
+
+  Outbound discovery/JWKS/token requests go over OTP `httpc` with TLS peer +
+  hostname verification against the system CA store (the /security-deps-audit
+  caveat — httpc does not verify by default, and a MITM on the JWKS or token
+  endpoint would forge tokens).
 
   oidcc's `retrieve_token/5` validates the ID-token signature (JWKS), `iss`,
   `aud` (== our `client_id`, rejecting untrusted extra audiences), `exp`, and
@@ -26,8 +32,6 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   alias Emisar.Crypto
   alias Emisar.SSO.{IdentityProvider, IssuerUrl}
 
-  @registry Emisar.SSO.OIDC.Registry
-  @supervisor Emisar.SSO.OIDC.ProviderSupervisor
   @default_scopes ["openid", "email", "profile"]
   # We hold a client secret, not a signing key — restrict client authentication to
   # the secret-based methods so oidcc never tries the JWT methods an IdP may
@@ -63,14 +67,8 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       preferred_auth_methods: @secret_auth_methods
     }
 
-    with {:ok, worker} <- ensure_worker(provider),
-         {:ok, url} <-
-           Oidcc.create_redirect_url(
-             worker,
-             provider.client_id,
-             client_secret(provider),
-             url_opts
-           ) do
+    with {:ok, context} <- client_context(provider),
+         {:ok, url} <- Oidcc.Authorization.create_redirect_url(context, url_opts) do
       {:ok,
        %{
          authorize_url: IO.iodata_to_binary(url),
@@ -94,15 +92,8 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     with :ok <- ensure_state_matches(params, stashed),
          :ok <- ensure_response_issuer(params, provider),
          {:ok, code} <- fetch_code(params),
-         {:ok, worker} <- ensure_worker(provider),
-         {:ok, token} <-
-           Oidcc.retrieve_token(
-             code,
-             worker,
-             provider.client_id,
-             client_secret(provider),
-             token_opts
-           ),
+         {:ok, context} <- client_context(provider),
+         {:ok, token} <- Oidcc.Token.retrieve(code, context, token_opts),
          {:ok, identifier} <- extract_identifier(token, provider) do
       {:ok, %{identifier: identifier, claims: token.id.claims}}
     end
@@ -146,11 +137,16 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     # public issuer can do.
     origin = origin_of(config.issuer)
 
+    # The PAR endpoint is a POST we make before the browser ever leaves, so it is
+    # as much an SSRF sink as the token endpoint and belongs under the same
+    # policy. Leaving it out meant a document could keep every other endpoint
+    # honest and still have us post the authorization request internally.
     [
       config.authorization_endpoint,
       config.token_endpoint,
       config.userinfo_endpoint,
-      config.jwks_uri
+      config.jwks_uri,
+      config.pushed_authorization_request_endpoint
     ]
     |> Enum.reduce_while(:ok, fn endpoint, :ok ->
       if endpoint_allowed?(endpoint, origin),
@@ -228,102 +224,37 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   defp client_secret(%IdentityProvider{client_secret: nil}), do: :unauthenticated
   defp client_secret(%IdentityProvider{client_secret: secret}), do: secret
 
-  @doc """
-  Stop every discovery worker for this provider, whatever issuer it was keyed by.
-
-  A worker is keyed `{provider_id, issuer}` and supervised `:transient`, so it
-  outlived both the connection being deleted and an issuer edit — quietly
-  refreshing discovery and JWKS against an IdP the account no longer uses.
-  """
-  @impl Emisar.SSO.OIDC
-  def stop_workers(%IdentityProvider{id: id}) do
-    @registry
-    |> Registry.select([{{{:"$1", :_}, :"$2", :_}, [{:==, :"$1", id}], [:"$2"]}])
-    |> Enum.each(&DynamicSupervisor.terminate_child(@supervisor, &1))
-
-    :ok
-  end
-
-  defp ensure_worker(%IdentityProvider{} = provider) do
-    # Validate the document BEFORE any worker exists. Starting the worker is what
-    # performs the SSRF: its `load_configuration` continuation chains straight
-    # into `load_jwks`, so by the time a `get_provider_configuration` call could
-    # be answered, the request to whatever `jwks_uri` names has already gone out.
-    # Inspecting the worker afterwards and terminating it un-sends nothing.
-    #
-    # `load_configuration/2` fetches ONLY the discovery document, from the
-    # issuer — a host already SSRF-validated in the context — so doing it
-    # ourselves first costs one request and gives us the endpoints to judge.
-    with :ok <- ensure_issuer_document_reachable(provider),
-         {:ok, pid} <- start_worker(provider) do
-      # The pre-flight judged the document WE fetched. The worker fetches its
-      # own, and refetches on the expiry timer for as long as it lives — none of
-      # which the pre-flight ever sees. So the document the worker is actually
-      # holding is re-judged here, on every sign-in, and a worker whose
-      # configuration has drifted somewhere it should not reach is torn down
-      # rather than left refreshing.
-      #
-      # This does NOT make the fetch itself conditional: oidcc offers no
-      # pre-connect hook, so a drifted document still costs one request before we
-      # can refuse it. Closing that needs a validating HTTP client under oidcc —
-      # tracked separately. What this bounds is the repeat: one fetch per drift
-      # instead of an unbounded refresh loop.
-      ensure_worker_endpoints_reachable(pid)
+  # The ONE place a provider becomes something oidcc can act with, and the only
+  # place any of these requests are made. Order is the security property: the
+  # document is judged between the two fetches, so a `jwks_uri` we would refuse
+  # is refused before anything connects to it.
+  defp client_context(%IdentityProvider{} = provider) do
+    with {:ok, config} <- load_configuration(provider),
+         :ok <- ensure_endpoints_reachable(config),
+         {:ok, jwks} <- load_jwks(config, provider) do
+      {:ok,
+       Oidcc.ClientContext.from_manual(
+         config,
+         jwks,
+         provider.client_id,
+         client_secret(provider)
+       )}
     end
   end
 
-  defp ensure_issuer_document_reachable(%IdentityProvider{issuer: issuer} = provider) do
+  defp load_configuration(%IdentityProvider{issuer: issuer} = provider) do
     case Oidcc.ProviderConfiguration.load_configuration(issuer, configuration_opts(provider)) do
-      {:ok, {config, _expiry}} -> ensure_endpoints_reachable(config)
+      {:ok, {config, _expiry}} -> {:ok, config}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp start_worker(%IdentityProvider{id: id, issuer: issuer} = provider) do
-    # Keyed by {id, issuer}: an issuer edit routes to a fresh worker (the old
-    # one idles out) instead of serving stale discovery/JWKS — cluster-safe,
-    # no cross-node invalidation needed.
-    name = {:via, Registry, {@registry, {id, issuer}}}
-
-    worker_opts = %{
-      issuer: issuer,
-      name: name,
-      provider_configuration_opts: configuration_opts(provider)
-    }
-
-    spec = %{
-      id: {:oidc_provider, id},
-      start: {Oidcc.ProviderConfiguration.Worker, :start_link, [worker_opts]},
-      restart: :transient
-    }
-
-    # Hand oidcc the worker PID, not the `{:via, Registry, …}` name: oidcc's
-    # `from_configuration_worker/4` resolves a non-pid via `:erlang.whereis/1`,
-    # which only accepts an atom and raises on a via-tuple. The Registry name
-    # still drives the keyed-by-{id,issuer} `:already_started` resolution above;
-    # we just pass the live pid it returns to `create_redirect_url`/`retrieve_token`.
-    case DynamicSupervisor.start_child(@supervisor, spec) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, {:already_started, pid}} -> {:ok, pid}
+  # Only reached once every endpoint has passed, so the URI here is one we have
+  # already decided we may talk to.
+  defp load_jwks(config, %IdentityProvider{} = provider) do
+    case Oidcc.ProviderConfiguration.load_jwks(config.jwks_uri, configuration_opts(provider)) do
+      {:ok, {jwks, _expiry}} -> {:ok, jwks}
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  # The worker fetches discovery itself, so validating only the "Test connection"
-  # capstone would leave every real sign-in unguarded — the login path never goes
-  # through discover/1. Check what the worker actually loaded, and take it down
-  # rather than leave a supervised process happily refreshing a document that
-  # points at internal infrastructure.
-  defp ensure_worker_endpoints_reachable(pid) do
-    config = Oidcc.ProviderConfiguration.Worker.get_provider_configuration(pid)
-
-    case ensure_endpoints_reachable(config) do
-      :ok ->
-        {:ok, pid}
-
-      {:error, reason} ->
-        _ = DynamicSupervisor.terminate_child(@supervisor, pid)
-        {:error, reason}
     end
   end
 

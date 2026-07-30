@@ -137,6 +137,16 @@ defmodule Emisar.Fixtures.Memberships do
     managed
   end
 
+  @doc "Sets the display name the directory supplied for this member."
+  def sync_display_name(%Membership{} = membership, display_name) do
+    {:ok, named} =
+      membership
+      |> Membership.Changeset.sync_display_name(display_name)
+      |> Repo.update()
+
+    named
+  end
+
   @doc """
   Test inspector: the membership joining `account_id` + `user_id`, or
   `nil`. Lets a test read post-mutation membership state without the

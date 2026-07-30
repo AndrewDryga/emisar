@@ -23,8 +23,6 @@ defmodule Emisar.Application do
       # Per-account OIDC provider-config workers (discovery + JWKS cache)
       # are started lazily under this supervisor, named via the registry by
       # provider id. See `Emisar.SSO.OIDC.Oidcc`.
-      {Registry, keys: :unique, name: Emisar.SSO.OIDC.Registry},
-      {DynamicSupervisor, strategy: :one_for_one, name: Emisar.SSO.OIDC.ProviderSupervisor},
 
       # Do not start database-backed contexts until a new node has stable SQL access.
       Emisar.DatabaseReadiness,
