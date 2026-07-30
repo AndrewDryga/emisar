@@ -92,21 +92,44 @@ defmodule Emisar.SSO.IssuerUrl do
     end
   end
 
-  # IPv4
+  # An ALLOW policy over global unicast, not a denylist. A denylist grew holes —
+  # 100.64.0.0/10 (carrier NAT, and Alibaba's 100.100.100.200 metadata endpoint),
+  # 198.18.0.0/15 benchmarking fabric, multicast and reserved space all fell
+  # through to allowed, which contradicts the boundary this module claims to draw.
+  # Anything not provably a public address is refused.
+  #
+  # IPv4 special-purpose ranges, per the IANA registry.
   defp blocked_ip?({0, _, _, _}), do: true
   defp blocked_ip?({10, _, _, _}), do: true
+  defp blocked_ip?({100, b, _, _}) when b in 64..127, do: true
   defp blocked_ip?({127, _, _, _}), do: true
   defp blocked_ip?({169, 254, _, _}), do: true
   defp blocked_ip?({172, b, _, _}) when b in 16..31, do: true
+  defp blocked_ip?({192, 0, 0, _}), do: true
+  defp blocked_ip?({192, 0, 2, _}), do: true
   defp blocked_ip?({192, 168, _, _}), do: true
-  # IPv6
-  defp blocked_ip?({0, 0, 0, 0, 0, 0, 0, 0}), do: true
-  defp blocked_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
-  # IPv4-mapped (::ffff:a.b.c.d) — re-check the embedded v4 address.
+  defp blocked_ip?({198, b, _, _}) when b in 18..19, do: true
+  defp blocked_ip?({198, 51, 100, _}), do: true
+  defp blocked_ip?({203, 0, 113, _}), do: true
+  # Multicast, and everything from 240/4 up including the broadcast address.
+  defp blocked_ip?({a, _, _, _}) when a >= 224, do: true
+
+  # IPv6. Only global unicast (2000::/3) is allowed, which refuses the unspecified
+  # and loopback addresses, unique-local, link-local, multicast, and the
+  # transition ranges — 6to4 and NAT64 can both encode an internal v4 address.
   defp blocked_ip?({0, 0, 0, 0, 0, 0xFFFF, a, b}),
     do: blocked_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
 
-  defp blocked_ip?({h, _, _, _, _, _, _, _}) when h >= 0xFC00 and h <= 0xFDFF, do: true
-  defp blocked_ip?({h, _, _, _, _, _, _, _}) when h >= 0xFE80 and h <= 0xFEBF, do: true
+  # 64:ff9b::/96 NAT64 — the embedded v4 address decides.
+  defp blocked_ip?({0x64, 0xFF9B, 0, 0, 0, 0, a, b}),
+    do: blocked_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
+
+  # 2002::/16 6to4 — likewise; the v4 address sits in the next two groups.
+  defp blocked_ip?({0x2002, a, b, _, _, _, _, _}),
+    do: blocked_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
+
+  defp blocked_ip?({h, _, _, _, _, _, _, _}) when h >= 0x2000 and h <= 0x3FFF, do: false
+  defp blocked_ip?({_, _, _, _, _, _, _, _}), do: true
+
   defp blocked_ip?(_ip), do: false
 end

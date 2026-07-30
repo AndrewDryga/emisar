@@ -65,7 +65,13 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       # the client-auth method to the secret-based ones. oidcc otherwise prefers
       # private_key_jwt / client_secret_jwt when the IdP advertises them (Okta,
       # Keycloak, …), which we can't satisfy → the PAR/token request 401s.
-      preferred_auth_methods: @secret_auth_methods
+      preferred_auth_methods: @secret_auth_methods,
+      # PAR is an outbound POST from here, and without this it went out on the
+      # DEFAULT httpc profile — past the guard AND without our TLS verification
+      # options, which is httpc's unverified default. Configuring the profile only
+      # for discovery and JWKS left the two requests that carry the client secret
+      # and the code as the unguarded ones.
+      request_opts: request_opts()
     }
 
     with {:ok, context} <- client_context(provider),
@@ -88,6 +94,8 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       pkce_verifier: stashed.pkce_verifier,
       # Same as begin: secret-based client auth only (see @secret_auth_methods).
       preferred_auth_methods: @secret_auth_methods,
+      # The token exchange, for the same reason PAR needs it above.
+      request_opts: request_opts(),
       # An IdP that rotates signing keys between our JWKS load and its ID token
       # leaves us holding a `kid` we have never seen. The worker used to refetch on
       # that; without one, a rotation would have failed every sign-in until the

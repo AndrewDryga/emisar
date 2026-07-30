@@ -55,4 +55,54 @@ defmodule Emisar.SSO.IssuerUrlTest do
       assert IssuerUrl.validate("https://[::ffff:10.0.0.1]") == {:error, :blocked_issuer}
     end
   end
+
+  describe "address_allowed?/1" do
+    test "refuses every special-purpose range, not just the well-known four" do
+      # This was a denylist and grew holes: a public hostname resolving into
+      # carrier NAT, benchmarking fabric or multicast was judged safe and dialled.
+      # 100.100.100.200 is Alibaba's metadata endpoint, which the old list missed
+      # entirely while blocking AWS's 169.254.169.254.
+      for address <- [
+            {0, 0, 0, 0},
+            {10, 1, 1, 1},
+            {100, 100, 100, 200},
+            {127, 0, 0, 1},
+            {169, 254, 169, 254},
+            {172, 20, 1, 1},
+            {192, 0, 0, 1},
+            {192, 0, 2, 5},
+            {192, 168, 1, 1},
+            {198, 18, 0, 1},
+            {198, 51, 100, 7},
+            {203, 0, 113, 7},
+            {224, 0, 0, 1},
+            {255, 255, 255, 255}
+          ] do
+        refute IssuerUrl.address_allowed?(address), "#{:inet.ntoa(address)} was allowed"
+      end
+    end
+
+    test "refuses IPv6 that is not global unicast, including the transition ranges" do
+      # 6to4 and NAT64 both encode an IPv4 address, so a v6 literal can name
+      # loopback or RFC-1918 without looking like it.
+      for address <- [
+            {0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 1},
+            {0xFD00, 0, 0, 0, 0, 0, 0, 1},
+            {0xFE80, 0, 0, 0, 0, 0, 0, 1},
+            {0xFF02, 0, 0, 0, 0, 0, 0, 1},
+            {0, 0, 0, 0, 0, 0xFFFF, 0x7F00, 1},
+            {0x64, 0xFF9B, 0, 0, 0, 0, 0x0A01, 0x0101},
+            {0x2002, 0x7F00, 0x0001, 0, 0, 0, 0, 0}
+          ] do
+        refute IssuerUrl.address_allowed?(address), "#{:inet.ntoa(address)} was allowed"
+      end
+    end
+
+    test "allows ordinary public addresses" do
+      assert IssuerUrl.address_allowed?({93, 184, 216, 34})
+      assert IssuerUrl.address_allowed?({8, 8, 8, 8})
+      assert IssuerUrl.address_allowed?({0x2606, 0x2800, 0, 0, 0, 0, 0, 1})
+    end
+  end
 end
