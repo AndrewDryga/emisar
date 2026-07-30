@@ -17,15 +17,16 @@ comes before its concurrency bound; a bound appears only for a mode where it
 changes execution. Stable identifiers and infrequently changed limits stay in a
 nearby disclosure after the behavior they refine.
 
-Inside a repeated form card, visual weight follows information weight. Group
-identity, purpose, behavior, and optional constraints in that scan order. Let
-flexible text fields grow only to a readable measure, keep finite choices at a
-content-sized width, and cap the collection on wide canvases. Intentional
+Inside a repeated form card, visual weight and row order follow the decisions an
+operator makes. Pair identity with purpose, put behavior choices next, then show
+conditional values, defaults, and bounds. Field labels carry the hierarchy when
+that order is already clear; do not add a group heading merely to restate it.
+Let flexible text fields grow only to a readable measure, keep finite choices at
+a content-sized width, and cap the collection on wide canvases. Intentional
 negative space is better than stretching controls to fill a uniform grid.
-Routine defaults and constraints remain visible; disclosure is for genuinely
-secondary detail, not a way to reclaim vertical space. Rows in one semantic
-group share one right edge. When disclosure is removed, fold its fields into
-the existing group instead of leaving a replacement heading or divider.
+Related rows share one right edge. Routine defaults and constraints remain
+visible; disclosure is for genuinely secondary detail, not a way to reclaim
+vertical space.
 
 Do not show a control in a mode where it has no effect. If a value still changes
 execution, keep it visible beside the choice it qualifies and explain the
@@ -58,9 +59,8 @@ never a reduced model.
   wider task column; otherwise it follows the workflow.
 - Save and Publish stay together; the existing page navigation remains the one
   way to leave the editor.
-- A run-time input gives its ID room, keeps its type and Yes/No choices compact,
-  aligns identity with purpose, and shows defaults plus paired bounds inside the
-  same Behavior group.
+- A run-time input pairs ID with description; then type, required, and sensitive;
+  then enum values when applicable, default, and paired bounds.
 
 ## Bad
 
@@ -76,6 +76,8 @@ never a reduced model.
   card shorter.
 - Replacing a removed disclosure with a one-off heading and horizontal rule, or
   giving adjacent rows in one group unrelated right edges.
+- Adding a Behavior legend when Type, Required, Sensitive, Default value, and
+  bounds already explain the sequence.
 
 ## Enforced
 
@@ -92,4 +94,5 @@ they have no effect, lifecycle rails that duplicate existing exit navigation,
 breakpoint ordering that puts a secondary rail before the primary task, and
 unbounded collections or uniform grids that make short finite choices as
 visually heavy as primary identity or purpose fields, mismatched group edges,
-and headings or dividers that merely preserve a removed disclosure's shell.
+headings that restate their field labels, and dividers that merely preserve a
+removed disclosure's shell.

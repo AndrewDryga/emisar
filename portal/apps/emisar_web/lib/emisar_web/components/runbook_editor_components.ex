@@ -354,7 +354,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           </div>
 
           <div class="mt-6 max-w-3xl space-y-6">
-            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
+            <div class="grid gap-4 sm:grid-cols-[16rem_minmax(0,1fr)]">
               <.input
                 name={"draft[inputs][#{index}][id]"}
                 value={input["id"]}
@@ -363,6 +363,17 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 disabled={@read_only?}
                 class="font-mono text-xs"
               />
+              <.input
+                name={"draft[inputs][#{index}][description]"}
+                value={input["description"]}
+                label="Description"
+                label_variant={:eyebrow}
+                disabled={@read_only?}
+                placeholder="What the operator or LLM should supply"
+              />
+            </div>
+
+            <div class="grid max-w-[39rem] gap-4 sm:grid-cols-[12rem_9rem_16rem]">
               <.input
                 type="select"
                 name={"draft[inputs][#{index}][type]"}
@@ -378,134 +389,120 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   {"Enum", "enum"}
                 ]}
               />
+              <.input
+                type="select"
+                name={"draft[inputs][#{index}][required]"}
+                value={input["required"]}
+                label="Required"
+                label_variant={:eyebrow}
+                disabled={@read_only?}
+                options={[{"Yes", "true"}, {"No", "false"}]}
+              />
+              <.input
+                type="select"
+                name={"draft[inputs][#{index}][sensitive]"}
+                value={input["sensitive"]}
+                label="Sensitive?"
+                label_variant={:eyebrow}
+                disabled={@read_only?}
+                options={[{"No", "false"}, {"Yes — always redact", "true"}]}
+              />
             </div>
 
-            <.input
-              name={"draft[inputs][#{index}][description]"}
-              value={input["description"]}
-              label="Description"
-              label_variant={:eyebrow}
-              disabled={@read_only?}
-              placeholder="What the operator or LLM should supply"
-            />
-
-            <fieldset class="max-w-[26rem]">
-              <legend class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                Behavior
-              </legend>
-              <div class="mt-3 space-y-4">
-                <div class="grid gap-4 sm:grid-cols-[9rem_minmax(0,1fr)]">
-                  <.input
-                    type="select"
-                    name={"draft[inputs][#{index}][required]"}
-                    value={input["required"]}
-                    label="Required"
-                    label_variant={:eyebrow}
-                    disabled={@read_only?}
-                    options={[{"Yes", "true"}, {"No", "false"}]}
-                  />
-                  <.input
-                    type="select"
-                    name={"draft[inputs][#{index}][sensitive]"}
-                    value={input["sensitive"]}
-                    label="Visibility"
-                    label_variant={:eyebrow}
-                    disabled={@read_only?}
-                    options={[{"Visible", "false"}, {"Sensitive — always redact", "true"}]}
-                  />
-                </div>
-                <.input
-                  name={"draft[inputs][#{index}][default]"}
-                  value={input["default"]}
-                  label="Default value"
-                  label_variant={:eyebrow}
-                  disabled={@read_only? or input["sensitive"] == "true"}
-                  placeholder="No default"
-                />
+            <div :if={input["type"] == "enum"} class="max-w-[39rem]">
+              <.label variant={:eyebrow}>Allowed values</.label>
+              <p :if={input["enum_values"] == []} class="mt-2 text-xs text-zinc-400">
+                Add at least one value.
+              </p>
+              <div class="mt-3 space-y-3">
                 <div
-                  :if={input["type"] in ["integer", "number"]}
-                  class="grid gap-4 sm:grid-cols-2"
+                  :for={{enum_value, value_index} <- Enum.with_index(input["enum_values"])}
+                  id={"runbook-input-#{index}-enum-value-#{value_index}"}
+                  class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
                 >
                   <.input
-                    type="number"
-                    step="any"
-                    name={"draft[inputs][#{index}][minimum]"}
-                    value={input["minimum"]}
-                    label="Minimum"
-                    label_variant={:eyebrow}
+                    name={"draft[inputs][#{index}][enum_values][#{value_index}][value]"}
+                    value={enum_value["value"]}
+                    aria-label={"Allowed value #{value_index + 1}"}
                     disabled={@read_only?}
                   />
-                  <.input
-                    type="number"
-                    step="any"
-                    name={"draft[inputs][#{index}][maximum]"}
-                    value={input["maximum"]}
-                    label="Maximum"
-                    label_variant={:eyebrow}
-                    disabled={@read_only?}
-                  />
-                </div>
-                <div
-                  :if={input["type"] == "string"}
-                  class="grid gap-4 sm:grid-cols-2"
-                >
-                  <.input
-                    type="number"
-                    min="0"
-                    name={"draft[inputs][#{index}][min_length]"}
-                    value={input["min_length"]}
-                    label="Minimum length"
-                    label_variant={:eyebrow}
-                    disabled={@read_only?}
-                  />
-                  <.input
-                    type="number"
-                    min="0"
-                    name={"draft[inputs][#{index}][max_length]"}
-                    value={input["max_length"]}
-                    label="Maximum length"
-                    label_variant={:eyebrow}
-                    disabled={@read_only?}
-                  />
-                </div>
-              </div>
-
-              <div :if={input["type"] == "enum"} class="mt-5">
-                <.label variant={:eyebrow}>Allowed values</.label>
-                <p :if={input["enum_values"] == []} class="mt-2 text-xs text-zinc-400">
-                  Add at least one value.
-                </p>
-                <div class="mt-3 space-y-3">
-                  <div
-                    :for={{enum_value, value_index} <- Enum.with_index(input["enum_values"])}
-                    id={"runbook-input-#{index}-enum-value-#{value_index}"}
-                    class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
-                  >
-                    <.input
-                      name={"draft[inputs][#{index}][enum_values][#{value_index}][value]"}
-                      value={enum_value["value"]}
-                      aria-label={"Allowed value #{value_index + 1}"}
-                      disabled={@read_only?}
-                    />
-                    <.icon_button
-                      :if={not @read_only?}
-                      icon="hero-trash"
-                      label="Remove allowed value"
-                      phx-click="remove_enum_value"
-                      phx-value-input={index}
-                      phx-value-value={value_index}
-                    />
-                  </div>
-                  <.add_row
+                  <.icon_button
                     :if={not @read_only?}
-                    label="Add value"
-                    phx-click="add_enum_value"
-                    phx-value-index={index}
-                    disabled={length(input["enum_values"]) >= 100}
+                    icon="hero-trash"
+                    label="Remove allowed value"
+                    phx-click="remove_enum_value"
+                    phx-value-input={index}
+                    phx-value-value={value_index}
                   />
                 </div>
+                <.add_row
+                  :if={not @read_only?}
+                  label="Add value"
+                  phx-click="add_enum_value"
+                  phx-value-index={index}
+                  disabled={length(input["enum_values"]) >= 100}
+                />
               </div>
-            </fieldset>
+            </div>
+
+            <div class="max-w-[39rem]">
+              <.input
+                name={"draft[inputs][#{index}][default]"}
+                value={input["default"]}
+                label="Default value"
+                label_variant={:eyebrow}
+                disabled={@read_only? or input["sensitive"] == "true"}
+                placeholder="No default"
+              />
+            </div>
+
+            <div
+              :if={input["type"] in ["integer", "number"]}
+              class="grid max-w-[39rem] gap-4 sm:grid-cols-2"
+            >
+              <.input
+                type="number"
+                step="any"
+                name={"draft[inputs][#{index}][minimum]"}
+                value={input["minimum"]}
+                label="Minimum"
+                label_variant={:eyebrow}
+                disabled={@read_only?}
+              />
+              <.input
+                type="number"
+                step="any"
+                name={"draft[inputs][#{index}][maximum]"}
+                value={input["maximum"]}
+                label="Maximum"
+                label_variant={:eyebrow}
+                disabled={@read_only?}
+              />
+            </div>
+
+            <div
+              :if={input["type"] == "string"}
+              class="grid max-w-[39rem] gap-4 sm:grid-cols-2"
+            >
+              <.input
+                type="number"
+                min="0"
+                name={"draft[inputs][#{index}][min_length]"}
+                value={input["min_length"]}
+                label="Minimum length"
+                label_variant={:eyebrow}
+                disabled={@read_only?}
+              />
+              <.input
+                type="number"
+                min="0"
+                name={"draft[inputs][#{index}][max_length]"}
+                value={input["max_length"]}
+                label="Maximum length"
+                label_variant={:eyebrow}
+                disabled={@read_only?}
+              />
+            </div>
           </div>
         </div>
         <.add_row

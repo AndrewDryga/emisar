@@ -188,7 +188,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                :binary.match(html, ~s(name="draft[stages][0][steps][0][action_choice]"))
     end
 
-    test "switching an input to enum opens stable add and remove controls", %{
+    test "switching an input to enum shows stable ordered controls", %{
       conn: conn,
       account: account
     } do
@@ -207,13 +207,26 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         )
 
       assert html =~ "Allowed values"
+      assert html =~ "Sensitive?"
       assert has_element?(lv, "#runbook-input-0 h3", "environment")
       assert has_element?(lv, "#runbook-input-0", "Input 1 · Enum")
-      assert has_element?(lv, "#runbook-input-0 fieldset", "Behavior")
       assert has_element?(lv, ~s(input[name="draft[inputs][0][default]"]))
       refute has_element?(lv, "#runbook-input-0 button", "Default and constraints")
       refute html =~ "Default and constraints"
       refute html =~ "input-constraints-0"
+      refute html =~ "Behavior"
+
+      assert :binary.match(html, ~s(name="draft[inputs][0][type]")) <
+               :binary.match(html, ~s(name="draft[inputs][0][required]"))
+
+      assert :binary.match(html, ~s(name="draft[inputs][0][required]")) <
+               :binary.match(html, ~s(name="draft[inputs][0][sensitive]"))
+
+      assert :binary.match(html, ~s(name="draft[inputs][0][sensitive]")) <
+               :binary.match(html, "Allowed values")
+
+      assert :binary.match(html, "Allowed values") <
+               :binary.match(html, ~s(name="draft[inputs][0][default]"))
 
       render_click(lv, "add_enum_value", %{"index" => "0"})
 
