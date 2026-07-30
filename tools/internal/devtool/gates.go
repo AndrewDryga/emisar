@@ -58,6 +58,7 @@ const (
   packs                      validate packs, hashes, catalog, and focused Portal tests
   infra                      format, initialize, validate, lint, and test templates
   tooling                    gate the shared Go tooling, docs, shell, and agent setup
+  review                     run canonical gates selected from Coop's pinned review base
   all                        run tooling, runner, MCP, packs, infra, and Portal gates
 
 --coverage is supported by runner, mcp, and tooling for CI artifact collection.
@@ -443,6 +444,11 @@ func (a *App) gate(ctx context.Context, args []string) error {
 		return a.infraGate(ctx)
 	case "tooling":
 		return a.toolingGate(ctx, coverage)
+	case "review":
+		if coverage != "" {
+			return usage("usage: ./run gate review")
+		}
+		return a.reviewGate(ctx)
 	case "all":
 		if coverage != "" {
 			return usage("usage: ./run gate all")
@@ -457,4 +463,48 @@ func (a *App) gate(ctx context.Context, args []string) error {
 	default:
 		return usage("%s", gateUsage)
 	}
+}
+
+func (a *App) reviewGate(ctx context.Context) error {
+	base, err := a.output(ctx, a.Root, nil, "git", "rev-parse", "--verify", "refs/coop/session-parent^{commit}")
+	if err != nil {
+		return fmt.Errorf("Coop review base is unavailable: %w", err)
+	}
+	selection, err := ci.Select(ctx, a.Root, "pull_request", strings.TrimSpace(string(base)))
+	if err != nil {
+		return fmt.Errorf("select review gates: %w", err)
+	}
+	for _, target := range reviewGateTargets(selection) {
+		fmt.Fprintf(a.Out, "\n==> review gate %s\n", target)
+		if err := a.gate(ctx, []string{target}); err != nil {
+			return fmt.Errorf("%s review gate failed: %w", target, err)
+		}
+	}
+	return nil
+}
+
+func reviewGateTargets(selection ci.Selection) []string {
+	var targets []string
+	if selection.Tools {
+		targets = append(targets, "tooling")
+	}
+	if selection.Runner {
+		targets = append(targets, "runner")
+	}
+	if selection.MCP {
+		targets = append(targets, "mcp")
+	}
+	if selection.Packs {
+		targets = append(targets, "packs")
+	}
+	if selection.Infra {
+		targets = append(targets, "infra")
+	}
+	if selection.Portal {
+		targets = append(targets, "portal")
+	}
+	if len(targets) == 0 {
+		targets = append(targets, "tooling")
+	}
+	return targets
 }

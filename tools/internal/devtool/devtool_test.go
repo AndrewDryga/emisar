@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andrewdryga/emisar/tools/internal/ci"
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
 
@@ -892,10 +893,26 @@ func TestHelpPrintsFocusedGateCommands(t *testing.T) {
 	if err := app.Run(t.Context(), []string{"help", "gate"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, command := range []string{"gate portal", "gate runner", "gate mcp", "gate packs", "gate infra", "gate tooling", "gate all"} {
+	for _, command := range []string{"gate portal", "gate runner", "gate mcp", "gate packs", "gate infra", "gate tooling", "gate review", "gate all"} {
 		if !strings.Contains(out.String(), strings.TrimPrefix(command, "gate ")) {
 			t.Fatalf("help does not mention %q:\n%s", command, out.String())
 		}
+	}
+}
+
+func TestReviewGateTargetsUseCanonicalOrderAndFallback(t *testing.T) {
+	got := reviewGateTargets(ci.Selection{
+		Portal: true,
+		Runner: true,
+		Tools:  true,
+		Packs:  true,
+	})
+	want := []string{"tooling", "runner", "packs", "portal"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("targets = %v, want %v", got, want)
+	}
+	if got := reviewGateTargets(ci.Selection{}); !slices.Equal(got, []string{"tooling"}) {
+		t.Fatalf("fallback targets = %v, want [tooling]", got)
 	}
 }
 

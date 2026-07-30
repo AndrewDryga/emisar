@@ -1,0 +1,16 @@
+# Minimal dependency stack for Coop's disposable publication-review candidate.
+services:
+  db:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: emisar_test
+    expose: ["5432"]
+    labels:
+      coop.service.scheme: postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d emisar_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
