@@ -116,25 +116,14 @@ defmodule Emisar.SSO.IssuerUrl do
   # Multicast, and everything from 240/4 up including the broadcast address.
   defp blocked_ip?({a, _, _, _}) when a >= 224, do: true
 
-  # IPv6. Only global unicast (2000::/3) is allowed, which refuses the unspecified
-  # and loopback addresses, unique-local, link-local, multicast, and the
-  # transition ranges — 6to4 and NAT64 can both encode an internal v4 address.
-  defp blocked_ip?({0, 0, 0, 0, 0, 0xFFFF, a, b}),
-    do: blocked_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
-
-  # 64:ff9b::/96 NAT64 — the embedded v4 address decides.
-  defp blocked_ip?({0x64, 0xFF9B, 0, 0, 0, 0, a, b}),
-    do: blocked_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
-
-  # 2002::/16 6to4 — likewise; the v4 address sits in the next two groups.
-  defp blocked_ip?({0x2002, a, b, _, _, _, _, _}),
-    do: blocked_ip?({div(a, 256), rem(a, 256), div(b, 256), rem(b, 256)})
-
-  # 2000::/3 is where global unicast lives, but IANA carves special-purpose
-  # prefixes out of it — allowing the whole /3 let benchmarking, documentation and
-  # the 2001::/23 protocol assignments (Teredo among them) through. Those come out
-  # first; only what is left is treated as public.
-  #
+  # IPv6. Only global unicast is allowed, and the transition prefixes are refused
+  # OUTRIGHT rather than judged by the IPv4 address they embed. IANA marks
+  # ::ffff:0:0/96 not globally reachable and 2002::/16 indeterminate, so "the inner
+  # address looks public" is not a reason to dial them — a real IdP has no business
+  # being addressed that way.
+  defp blocked_ip?({0, 0, 0, 0, 0, 0xFFFF, _, _}), do: true
+  defp blocked_ip?({0x64, 0xFF9B, _, _, _, _, _, _}), do: true
+  defp blocked_ip?({0x2002, _, _, _, _, _, _, _}), do: true
   # 2001::/23 — IETF protocol assignments: 2001:2::/48 benchmarking, 2001:20::/28
   # ORCHIDv2 and Teredo all live in here.
   defp blocked_ip?({0x2001, b, _, _, _, _, _, _}) when b <= 0x01FF, do: true

@@ -96,6 +96,13 @@ defmodule Emisar.SSO.IssuerUrlTest do
             {0, 0, 0, 0, 0, 0xFFFF, 0x7F00, 1},
             {0x64, 0xFF9B, 0, 0, 0, 0, 0x0A01, 0x0101},
             {0x2002, 0x7F00, 0x0001, 0, 0, 0, 0, 0},
+            # The transition prefixes are refused OUTRIGHT, not judged by the IPv4
+            # address they embed: IANA marks ::ffff:0:0/96 not globally reachable and
+            # 2002::/16 indeterminate, so a public-looking inner address is not a
+            # reason to dial them.
+            {0, 0, 0, 0, 0, 0xFFFF, 0x0808, 0x0808},
+            {0x2002, 0x0808, 0x0808, 0, 0, 0, 0, 1},
+            {0x64, 0xFF9B, 0, 0, 0, 0, 0x0808, 0x0808},
             # IANA carves special-purpose prefixes out of 2000::/3, so allowing the
             # whole /3 let these through. 2001:db8::/32 sits OUTSIDE 2001::/23,
             # which is how it survived the first attempt.

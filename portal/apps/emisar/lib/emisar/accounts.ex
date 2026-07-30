@@ -1893,6 +1893,11 @@ defmodule Emisar.Accounts do
         runner_access_directory_managed: false,
         directory_provider_id: nil,
         directory_authorization_pending_version: nil,
+        # The name goes with the directory that supplied it. Left set, the person
+        # kept being called whatever the IdP called them in this account forever,
+        # and their own profile name could never take over again — a rename after
+        # the disable made the split permanent.
+        directory_display_name: nil,
         # The suspension STAYS — the directory's last word was that this person is
         # out — but it stops being the directory's to lift, because there is no
         # longer a directory to lift it. Left set, `reinstate_membership` refused
