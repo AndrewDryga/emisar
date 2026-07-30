@@ -602,7 +602,7 @@ defmodule EmisarWeb.CoreComponents do
         id={@id}
         name={@name}
         class={[
-          "block w-full rounded-lg border-0 bg-zinc-900 text-zinc-100",
+          "scrollbar-control block w-full rounded-lg border-0 bg-zinc-900 text-zinc-100",
           input_size(@size),
           "min-h-[6rem] ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",

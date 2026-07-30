@@ -53,6 +53,7 @@ defmodule EmisarWeb.Components.InputTest do
 
       assert html =~ "<textarea"
       assert html =~ "px-2 py-1.5"
+      assert html =~ "scrollbar-control"
     end
   end
 end

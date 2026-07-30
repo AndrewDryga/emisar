@@ -138,6 +138,34 @@ pre::-webkit-scrollbar-track,
   background-color: rgb(82 82 91 / 0.95); /* zinc-600 while grabbing */
 }
 
+/* Form controls own their scrollbar chrome. Native light scrollbar tracks cut
+   a bright seam through dark textareas, especially on Windows and when macOS is
+   configured to always show scrollbars. Keep the track transparent, inset a
+   visible zinc thumb, and retain the native dark resize affordance. */
+.scrollbar-control {
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(82 82 91 / 0.85) transparent; /* Firefox */
+}
+.scrollbar-control::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scrollbar-control::-webkit-scrollbar-track,
+.scrollbar-control::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.scrollbar-control::-webkit-scrollbar-thumb {
+  background-color: rgb(82 82 91 / 0.85); /* zinc-600 */
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+.scrollbar-control::-webkit-scrollbar-thumb:hover,
+.scrollbar-control::-webkit-scrollbar-thumb:active {
+  background-color: rgb(113 113 122 / 0.95); /* zinc-500 while grabbing */
+}
+
 /* Inline code in marketing prose. A monospace face reads optically larger than
    the body sans, so step it down to match — the size should read the same, not
    bigger — then tint it the brand mint and wrap it in a hairline chip so a token
@@ -707,4 +735,3 @@ pre::-webkit-scrollbar-track,
     display: none;
   }
 }
-
