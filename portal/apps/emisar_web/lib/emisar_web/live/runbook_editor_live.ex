@@ -183,8 +183,24 @@ defmodule EmisarWeb.RunbookEditorLive do
     mutate(socket, fn draft ->
       Map.update!(draft, "inputs", fn inputs ->
         List.update_at(inputs, safe_index(index), fn input ->
-          Map.update!(input, "enum_values", &(&1 ++ [%{"value" => ""}]))
+          Map.update!(input, "enum_values", &(&1 ++ [RunbookDraft.enum_value()]))
         end)
+      end)
+    end)
+  end
+
+  def handle_event(
+        "toggle_enum_default",
+        %{"input" => input_index, "value" => value_index},
+        socket
+      ) do
+    mutate(socket, fn draft ->
+      Map.update!(draft, "inputs", fn inputs ->
+        List.update_at(
+          inputs,
+          safe_index(input_index),
+          &toggle_enum_default(&1, safe_index(value_index))
+        )
       end)
     end)
   end
@@ -631,15 +647,49 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp normalize_input(input) do
-    RunbookDraft.input()
-    |> Map.merge(Map.take(input, Map.keys(RunbookDraft.input())))
-    |> Map.put(
-      "enum_values",
-      input["enum_values"]
-      |> indexed()
-      |> Enum.map(&%{"value" => &1["value"] || ""})
-    )
+    normalized =
+      RunbookDraft.input()
+      |> Map.merge(Map.take(input, Map.keys(RunbookDraft.input())))
+      |> Map.put("enum_values", normalize_enum_values(input["enum_values"]))
+
+    if normalized["sensitive"] == "true" do
+      normalized
+      |> Map.put("default", "")
+      |> Map.update!("enum_values", &clear_enum_defaults/1)
+    else
+      normalized
+    end
   end
+
+  defp normalize_enum_values(values) do
+    values
+    |> indexed()
+    |> Enum.map_reduce(false, fn value, selected? ->
+      default? = not selected? and value["default"] == "true"
+      {RunbookDraft.enum_value(value["value"] || "", default?), selected? or default?}
+    end)
+    |> elem(0)
+  end
+
+  defp toggle_enum_default(input, value_index) do
+    selected? =
+      input
+      |> Map.get("enum_values", [])
+      |> Enum.at(value_index, %{})
+      |> Map.get("default") == "true"
+
+    Map.update!(input, "enum_values", fn values ->
+      values
+      |> Enum.with_index()
+      |> Enum.map(fn {value, index} ->
+        default = if not selected? and index == value_index, do: "true", else: "false"
+        Map.put(value, "default", default)
+      end)
+    end)
+  end
+
+  defp clear_enum_defaults(values),
+    do: Enum.map(values, &Map.put(&1, "default", "false"))
 
   defp normalize_stage(stage) do
     RunbookDraft.stage()

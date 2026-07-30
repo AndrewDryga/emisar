@@ -361,7 +361,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 label="Input ID"
                 label_variant={:eyebrow}
                 disabled={@read_only?}
-                class="font-mono text-xs"
+                class="font-mono"
               />
               <.input
                 name={"draft[inputs][#{index}][description]"}
@@ -373,7 +373,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
             </div>
 
-            <div class="grid max-w-[39rem] gap-4 sm:grid-cols-[12rem_9rem_16rem]">
+            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem_9rem]">
               <.input
                 type="select"
                 name={"draft[inputs][#{index}][type]"}
@@ -383,8 +383,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 disabled={@read_only?}
                 options={[
                   {"String", "string"},
-                  {"Integer", "integer"},
-                  {"Number", "number"},
+                  {"Integer — whole numbers", "integer"},
+                  {"Number — decimals allowed", "number"},
                   {"Boolean", "boolean"},
                   {"Enum", "enum"}
                 ]}
@@ -409,7 +409,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
             </div>
 
-            <div :if={input["type"] == "enum"} class="max-w-[39rem]">
+            <div :if={input["type"] == "enum"}>
               <.label variant={:eyebrow}>Allowed values</.label>
               <p :if={input["enum_values"] == []} class="mt-2 text-xs text-zinc-400">
                 Add at least one value.
@@ -418,7 +418,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 <div
                   :for={{enum_value, value_index} <- Enum.with_index(input["enum_values"])}
                   id={"runbook-input-#{index}-enum-value-#{value_index}"}
-                  class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
+                  class="grid grid-cols-[minmax(0,1fr)_6.5rem_2.5rem] items-start gap-2"
                 >
                   <.input
                     name={"draft[inputs][#{index}][enum_values][#{value_index}][value]"}
@@ -426,6 +426,45 @@ defmodule EmisarWeb.RunbookEditorComponents do
                     aria-label={"Allowed value #{value_index + 1}"}
                     disabled={@read_only?}
                   />
+                  <input
+                    type="hidden"
+                    name={"draft[inputs][#{index}][enum_values][#{value_index}][default]"}
+                    value={enum_value["default"]}
+                  />
+                  <button
+                    type="button"
+                    aria-label={enum_default_label(enum_value)}
+                    aria-pressed={to_string(enum_default?(enum_value))}
+                    title={enum_default_label(enum_value)}
+                    phx-click="toggle_enum_default"
+                    phx-value-input={index}
+                    phx-value-value={value_index}
+                    disabled={
+                      @read_only? or input["sensitive"] == "true" or
+                        String.trim(enum_value["value"] || "") == ""
+                    }
+                    class={[
+                      "mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium ring-1 ring-inset transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                      if(enum_default?(enum_value),
+                        do: "bg-brand-500/10 text-brand-200 ring-brand-500/30",
+                        else: "text-zinc-400 ring-zinc-800 hover:bg-white/[0.04] hover:text-zinc-200"
+                      )
+                    ]}
+                  >
+                    <span class={[
+                      "flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-inset",
+                      if(enum_default?(enum_value),
+                        do: "ring-brand-400",
+                        else: "ring-zinc-600"
+                      )
+                    ]}>
+                      <span
+                        :if={enum_default?(enum_value)}
+                        class="h-2 w-2 rounded-full bg-brand-400"
+                      />
+                    </span>
+                    Default
+                  </button>
                   <.icon_button
                     :if={not @read_only?}
                     icon="hero-trash"
@@ -433,6 +472,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                     phx-click="remove_enum_value"
                     phx-value-input={index}
                     phx-value-value={value_index}
+                    class="mt-2"
                   />
                 </div>
                 <.add_row
@@ -445,8 +485,9 @@ defmodule EmisarWeb.RunbookEditorComponents do
               </div>
             </div>
 
-            <div class="max-w-[39rem]">
+            <div :if={input["type"] != "enum"}>
               <.input
+                :if={input["type"] == "string"}
                 name={"draft[inputs][#{index}][default]"}
                 value={input["default"]}
                 label="Default value"
@@ -454,27 +495,59 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 disabled={@read_only? or input["sensitive"] == "true"}
                 placeholder="No default"
               />
+              <.input
+                :if={input["type"] == "integer"}
+                type="number"
+                step="1"
+                name={"draft[inputs][#{index}][default]"}
+                value={input["default"]}
+                label="Default value"
+                label_variant={:eyebrow}
+                disabled={@read_only? or input["sensitive"] == "true"}
+                placeholder="No default"
+              />
+              <.input
+                :if={input["type"] == "number"}
+                type="number"
+                step="any"
+                name={"draft[inputs][#{index}][default]"}
+                value={input["default"]}
+                label="Default value"
+                label_variant={:eyebrow}
+                disabled={@read_only? or input["sensitive"] == "true"}
+                placeholder="No default"
+              />
+              <.input
+                :if={input["type"] == "boolean"}
+                type="select"
+                name={"draft[inputs][#{index}][default]"}
+                value={input["default"]}
+                label="Default value"
+                label_variant={:eyebrow}
+                disabled={@read_only? or input["sensitive"] == "true"}
+                options={[{"No default", ""}, {"True", "true"}, {"False", "false"}]}
+              />
             </div>
 
             <div
               :if={input["type"] in ["integer", "number"]}
-              class="grid max-w-[39rem] gap-4 sm:grid-cols-2"
+              class="grid gap-4 sm:grid-cols-2"
             >
               <.input
                 type="number"
-                step="any"
+                step={if(input["type"] == "integer", do: "1", else: "any")}
                 name={"draft[inputs][#{index}][minimum]"}
                 value={input["minimum"]}
-                label="Minimum"
+                label="Minimum value"
                 label_variant={:eyebrow}
                 disabled={@read_only?}
               />
               <.input
                 type="number"
-                step="any"
+                step={if(input["type"] == "integer", do: "1", else: "any")}
                 name={"draft[inputs][#{index}][maximum]"}
                 value={input["maximum"]}
-                label="Maximum"
+                label="Maximum value"
                 label_variant={:eyebrow}
                 disabled={@read_only?}
               />
@@ -482,7 +555,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
             <div
               :if={input["type"] == "string"}
-              class="grid max-w-[39rem] gap-4 sm:grid-cols-2"
+              class="grid gap-4 sm:grid-cols-2"
             >
               <.input
                 type="number"
@@ -692,6 +765,20 @@ defmodule EmisarWeb.RunbookEditorComponents do
   end
 
   defp input_card_title(_input, index), do: "Input #{index + 1}"
+
+  defp enum_default?(enum_value), do: enum_value["default"] == "true"
+
+  defp enum_default_label(enum_value) do
+    value =
+      case String.trim(enum_value["value"] || "") do
+        "" -> "this allowed value"
+        value -> value
+      end
+
+    if enum_default?(enum_value),
+      do: "Remove default: #{value}",
+      else: "Use as default: #{value}"
+  end
 
   defp input_type_label("string"), do: "String"
   defp input_type_label("integer"), do: "Integer"

@@ -23,10 +23,19 @@ conditional values, defaults, and bounds. Field labels carry the hierarchy when
 that order is already clear; do not add a group heading merely to restate it.
 Let flexible text fields grow only to a readable measure, keep finite choices at
 a content-sized width, and cap the collection on wide canvases. Intentional
-negative space is better than stretching controls to fill a uniform grid.
-Related rows share one right edge. Routine defaults and constraints remain
-visible; disclosure is for genuinely secondary detail, not a way to reclaim
-vertical space.
+negative space is better than stretching controls to fill a uniform grid. Give
+related rows one measure and right edge. Inside a row, equal binary choices use
+the same compact width while the domain-bearing choice takes the remaining
+space. Font treatment must not change peer control heights.
+
+A typed value uses a type-aware editor. Booleans offer no default, true, or
+false; integer and number defaults use numeric controls with whole-number and
+decimal steps respectively; strings use text. An enum's optional single default
+is selected directly from its allowed values, so it cannot drift outside the
+set or be mistyped in a second field. Repeated-row actions align with the input
+surface rather than the field wrapper's label gap. Routine defaults and
+constraints remain visible; disclosure is for genuinely secondary detail, not
+a way to reclaim vertical space.
 
 Do not show a control in a mode where it has no effect. If a value still changes
 execution, keep it visible beside the choice it qualifies and explain the
@@ -61,6 +70,13 @@ never a reduced model.
   way to leave the editor.
 - A run-time input pairs ID with description; then type, required, and sensitive;
   then enum values when applicable, default, and paired bounds.
+- Required and Sensitive use equal compact tracks while Type takes the remaining
+  row width; every input row ends at the same edge.
+- Integer reads as whole numbers and Number as decimals allowed. Their default
+  and bound controls enforce the corresponding numeric step.
+- Every enum value carries one aligned Default toggle; selecting one clears the
+  others, selecting it again clears the default, and removing it removes the
+  default with it.
 
 ## Bad
 
@@ -78,6 +94,10 @@ never a reduced model.
   giving adjacent rows in one group unrelated right edges.
 - Adding a Behavior legend when Type, Required, Sensitive, Default value, and
   bounds already explain the sequence.
+- A generic text field for boolean or numeric defaults.
+- A separate free-text enum default that can differ from every allowed value.
+- Unequal Required and Sensitive widths, a shorter monospace ID control, or a
+  repeated-row action aligned above the control it changes.
 
 ## Enforced
 
@@ -94,5 +114,8 @@ they have no effect, lifecycle rails that duplicate existing exit navigation,
 breakpoint ordering that puts a secondary rail before the primary task, and
 unbounded collections or uniform grids that make short finite choices as
 visually heavy as primary identity or purpose fields, mismatched group edges,
-headings that restate their field labels, and dividers that merely preserve a
-removed disclosure's shell.
+unequal peer toggles, generic default controls that ignore the selected type,
+enum defaults authored outside the allowed-value rows, typography that changes
+peer control heights, repeated-row actions aligned to wrapper space rather than
+the control box, headings that restate their field labels, and dividers that
+merely preserve a removed disclosure's shell.

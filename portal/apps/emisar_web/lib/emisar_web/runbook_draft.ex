@@ -83,6 +83,10 @@ defmodule EmisarWeb.RunbookDraft do
     }
   end
 
+  def enum_value(value \\ "", default? \\ false) do
+    %{"value" => value, "default" => bool_string(default?)}
+  end
+
   def stage do
     %{
       "id" => "stage",
@@ -162,13 +166,25 @@ defmodule EmisarWeb.RunbookDraft do
       "type" => input["type"] || "string",
       "required" => bool_string(input["required"]),
       "sensitive" => bool_string(input["sensitive"]),
-      "default" => typed_value_text(input["default"], input["type"]),
-      "enum_values" => Enum.map(input["enum"] || [], &%{"value" => optional_text(&1)}),
+      "default" => input_default_text(input),
+      "enum_values" => enum_values_from_definition(input),
       "minimum" => optional_text(input["minimum"]),
       "maximum" => optional_text(input["maximum"]),
       "min_length" => optional_text(input["min_length"]),
       "max_length" => optional_text(input["max_length"])
     })
+  end
+
+  defp enum_values_from_definition(input) do
+    input["enum"]
+    |> List.wrap()
+    |> Enum.map_reduce(false, fn value, selected? ->
+      default? =
+        not selected? and Map.has_key?(input, "default") and value == input["default"]
+
+      {enum_value(optional_text(value), default?), selected? or default?}
+    end)
+    |> elem(0)
   end
 
   defp input_to_definition(input) do
@@ -181,7 +197,7 @@ defmodule EmisarWeb.RunbookDraft do
       "required" => input["required"] == "true",
       "sensitive" => input["sensitive"] == "true"
     }
-    |> maybe_put_nonblank("default", input["default"], &parse_typed_value(&1, type))
+    |> maybe_put_input_default(input, type)
     |> maybe_put(
       "enum",
       type == "enum",
@@ -192,6 +208,22 @@ defmodule EmisarWeb.RunbookDraft do
     |> maybe_put_nonblank("min_length", input["min_length"], &parse_integer/1)
     |> maybe_put_nonblank("max_length", input["max_length"], &parse_integer/1)
   end
+
+  defp maybe_put_input_default(definition, %{"sensitive" => "true"}, _type),
+    do: definition
+
+  defp maybe_put_input_default(definition, input, "enum") do
+    case Enum.find(input["enum_values"] || [], &(&1["default"] == "true")) do
+      %{"value" => value} ->
+        maybe_put_nonblank(definition, "default", value, &parse_typed_value(&1, "enum"))
+
+      nil ->
+        definition
+    end
+  end
+
+  defp maybe_put_input_default(definition, input, type),
+    do: maybe_put_nonblank(definition, "default", input["default"], &parse_typed_value(&1, type))
 
   defp stage_from_definition(stage) do
     %{
@@ -430,6 +462,9 @@ defmodule EmisarWeb.RunbookDraft do
   defp typed_value_text(nil, _type), do: ""
   defp typed_value_text(value, "string"), do: value
   defp typed_value_text(value, _type), do: optional_text(value)
+
+  defp input_default_text(%{"type" => "enum"}), do: ""
+  defp input_default_text(input), do: typed_value_text(input["default"], input["type"])
 
   defp json_text(value), do: Jason.encode!(value)
 

@@ -50,7 +50,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
   end
 
   defp form_params(draft) do
-    Map.update!(draft, "inputs", &indexed/1)
+    Map.update!(draft, "inputs", fn inputs ->
+      inputs
+      |> Enum.map(&Map.update!(&1, "enum_values", fn values -> indexed(values) end))
+      |> indexed()
+    end)
     |> Map.update!("stages", fn stages ->
       stages
       |> Enum.map(fn stage ->
@@ -198,6 +202,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         RunbookDraft.input()
         |> Map.put("id", "environment")
         |> Map.put("type", "enum")
+        |> Map.put("enum_values", [
+          RunbookDraft.enum_value("staging"),
+          RunbookDraft.enum_value("production")
+        ])
 
       html =
         change(
@@ -210,11 +218,18 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Sensitive?"
       assert has_element?(lv, "#runbook-input-0 h3", "environment")
       assert has_element?(lv, "#runbook-input-0", "Input 1 · Enum")
-      assert has_element?(lv, ~s(input[name="draft[inputs][0][default]"]))
+      refute has_element?(lv, ~s([name="draft[inputs][0][default]"]))
       refute has_element?(lv, "#runbook-input-0 button", "Default and constraints")
       refute html =~ "Default and constraints"
       refute html =~ "input-constraints-0"
       refute html =~ "Behavior"
+      refute html =~ "max-w-[39rem]"
+      assert html =~ "sm:grid-cols-[minmax(0,1fr)_9rem_9rem]"
+
+      assert has_element?(
+               lv,
+               ~s|input[name="draft[inputs][0][id]"][class~="font-mono"]:not([class~="text-xs"])|
+             )
 
       assert :binary.match(html, ~s(name="draft[inputs][0][type]")) <
                :binary.match(html, ~s(name="draft[inputs][0][required]"))
@@ -225,14 +240,44 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert :binary.match(html, ~s(name="draft[inputs][0][sensitive]")) <
                :binary.match(html, "Allowed values")
 
-      assert :binary.match(html, "Allowed values") <
-               :binary.match(html, ~s(name="draft[inputs][0][default]"))
+      assert has_element?(
+               lv,
+               ~s(button[aria-label="Use as default: staging"][aria-pressed="false"])
+             )
+
+      render_click(lv, "toggle_enum_default", %{"input" => "0", "value" => "1"})
+
+      assert has_element?(
+               lv,
+               ~s(button[aria-label="Remove default: production"][aria-pressed="true"])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(input[name="draft[inputs][0][enum_values][1][default]"][value="true"])
+             )
+
+      render_click(lv, "toggle_enum_default", %{"input" => "0", "value" => "0"})
+
+      assert has_element?(
+               lv,
+               ~s(input[name="draft[inputs][0][enum_values][0][default]"][value="true"])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(input[name="draft[inputs][0][enum_values][1][default]"][value="false"])
+             )
+
+      render_click(lv, "toggle_enum_default", %{"input" => "0", "value" => "0"})
+
+      refute has_element?(lv, ~s(button[aria-pressed="true"]))
 
       render_click(lv, "add_enum_value", %{"index" => "0"})
 
       assert has_element?(
                lv,
-               ~s(input[name="draft[inputs][0][enum_values][0][value]"])
+               ~s(input[name="draft[inputs][0][enum_values][2][value]"])
              )
 
       assert has_element?(lv, ~s(button[aria-label="Remove allowed value"]))
@@ -242,9 +287,60 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert :binary.match(enum_html, ~s(id="runbook-input-0-enum-value-0")) <
                :binary.match(enum_html, ~s(phx-click="add_enum_value"))
 
-      render_click(lv, "remove_enum_value", %{"input" => "0", "value" => "0"})
-      refute has_element?(lv, ~s(input[name="draft[inputs][0][enum_values][0][value]"]))
+      render_click(lv, "remove_enum_value", %{"input" => "0", "value" => "2"})
+      refute has_element?(lv, ~s(input[name="draft[inputs][0][enum_values][2][value]"]))
       assert has_element?(lv, "#runbook-input-0", "Allowed values")
+    end
+
+    test "renders a type-appropriate default control and explains numeric types", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      string_html = change(lv, valid_draft(inputs: [RunbookDraft.input()]))
+
+      assert string_html =~ "Integer — whole numbers"
+      assert string_html =~ "Number — decimals allowed"
+
+      assert has_element?(
+               lv,
+               ~s(input[type="text"][name="draft[inputs][0][default]"])
+             )
+
+      boolean =
+        RunbookDraft.input()
+        |> Map.merge(%{"type" => "boolean", "default" => "false"})
+
+      change(lv, valid_draft(inputs: [boolean]), ["draft", "inputs", "0", "type"])
+
+      assert has_element?(
+               lv,
+               ~s(select[name="draft[inputs][0][default]"] option[value="false"][selected])
+             )
+
+      integer =
+        RunbookDraft.input()
+        |> Map.merge(%{"type" => "integer", "minimum" => "1", "maximum" => "10"})
+
+      integer_html =
+        change(lv, valid_draft(inputs: [integer]), ["draft", "inputs", "0", "type"])
+
+      assert integer_html =~ "Minimum value"
+      assert integer_html =~ "Maximum value"
+
+      assert has_element?(
+               lv,
+               ~s(input[type="number"][step="1"][name="draft[inputs][0][default]"])
+             )
+
+      number = RunbookDraft.input() |> Map.put("type", "number")
+      change(lv, valid_draft(inputs: [number]), ["draft", "inputs", "0", "type"])
+
+      assert has_element?(
+               lv,
+               ~s(input[type="number"][step="any"][name="draft[inputs][0][default]"])
+             )
     end
 
     test "success conditions require an output and start without a quoted empty value", %{

@@ -14,7 +14,8 @@ defmodule EmisarWeb.RunbookDraftTest do
           "type" => "enum",
           "required" => true,
           "sensitive" => false,
-          "enum" => ["staging", "production"]
+          "enum" => ["staging", "production"],
+          "default" => "production"
         },
         %{
           "id" => "threshold",
@@ -126,6 +127,35 @@ defmodule EmisarWeb.RunbookDraftTest do
     assert get_in(definition, ["inputs", Access.at(0), "default"]) == "not-a-number"
     assert {:error, issues} = Definition.validate(definition)
     assert Enum.any?(issues, &(&1.path == "/inputs/0/default"))
+  end
+
+  test "omits every default when an input is sensitive" do
+    draft =
+      RunbookDraft.new()
+      |> Map.put("inputs", [
+        RunbookDraft.input()
+        |> Map.merge(%{
+          "id" => "secret",
+          "type" => "boolean",
+          "sensitive" => "true",
+          "default" => "true"
+        }),
+        RunbookDraft.input()
+        |> Map.merge(%{
+          "id" => "environment",
+          "type" => "enum",
+          "sensitive" => "true",
+          "enum_values" => [
+            RunbookDraft.enum_value("staging"),
+            RunbookDraft.enum_value("production", true)
+          ]
+        })
+      ])
+
+    inputs = RunbookDraft.definition(draft)["inputs"]
+
+    refute Map.has_key?(Enum.at(inputs, 0), "default")
+    refute Map.has_key?(Enum.at(inputs, 1), "default")
   end
 
   test "descriptor-synced arguments produce typed bindings and omit disabled optional values" do
