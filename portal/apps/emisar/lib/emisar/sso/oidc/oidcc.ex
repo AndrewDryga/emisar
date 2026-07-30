@@ -87,7 +87,14 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       nonce: stashed.nonce,
       pkce_verifier: stashed.pkce_verifier,
       # Same as begin: secret-based client auth only (see @secret_auth_methods).
-      preferred_auth_methods: @secret_auth_methods
+      preferred_auth_methods: @secret_auth_methods,
+      # An IdP that rotates signing keys between our JWKS load and its ID token
+      # leaves us holding a `kid` we have never seen. The worker used to refetch on
+      # that; without one, a rotation would have failed every sign-in until the
+      # next attempt happened to land after the rotation. Refetch from the SAME
+      # jwks_uri this document already passed — and through the guard, like every
+      # other request.
+      refresh_jwks: refresh_jwks(provider)
     }
 
     with :ok <- ensure_state_matches(params, stashed),
@@ -240,6 +247,18 @@ defmodule Emisar.SSO.OIDC.Oidcc do
          provider.client_id,
          client_secret(provider)
        )}
+    end
+  end
+
+  # oidcc calls this with the JWKS it has and the unknown `kid`; the reply replaces
+  # its key set for this verification only. A refetch that still lacks the kid is an
+  # error, so a bogus kid cannot make us fetch repeatedly within one sign-in.
+  defp refresh_jwks(%IdentityProvider{} = provider) do
+    fn _jwks, _kid ->
+      with {:ok, config} <- load_configuration(provider),
+           :ok <- ensure_endpoints_reachable(config) do
+        load_jwks(config, provider)
+      end
     end
   end
 
