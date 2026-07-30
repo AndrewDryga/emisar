@@ -716,6 +716,7 @@ defmodule Emisar.SSO do
   defp touch_and_load(provider, %UserIdentity{} = identity) do
     Multi.new()
     |> put_active_account_lock(provider.account_id)
+    |> put_enabled_provider_lock(provider)
     |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
     |> Multi.run(:user, fn _repo, %{identity: identity} ->
       Users.fetch_user_by_id(identity.user_id)
@@ -860,7 +861,7 @@ defmodule Emisar.SSO do
 
     Multi.new()
     |> put_active_account_lock(provider.account_id)
-    |> put_provider_lock(provider)
+    |> put_enabled_provider_lock(provider)
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
     |> Multi.run(:identity, fn _repo, %{user: user} ->
       create_identity(provider, user, identifier, claims, created_by, provisioned_via)
@@ -1710,6 +1711,20 @@ defmodule Emisar.SSO do
   defp put_provider_lock(multi, %IdentityProvider{} = provider) do
     Multi.run(multi, :locked_provider, fn repo, _changes ->
       {:ok, lock_provider_row!(provider, repo)}
+    end)
+  end
+
+  # A sign-in write additionally re-reads whether the connection is still ENABLED.
+  # The provider struct was resolved when the request arrived; disabling it is
+  # exactly how an operator revokes a route in, and a callback already in flight
+  # would otherwise land a session through a door the account had just closed —
+  # `end_sessions_signed_in_through/1` runs in the disable's after_commit, so a
+  # session created after that is never swept. Under the same row lock the disable
+  # takes, one of the two happens first and the other refuses.
+  defp put_enabled_provider_lock(multi, %IdentityProvider{} = provider) do
+    Multi.run(multi, :locked_provider, fn repo, _changes ->
+      locked = lock_provider_row!(provider, repo)
+      if locked.enabled, do: {:ok, locked}, else: {:error, :provider_disabled}
     end)
   end
 

@@ -1497,6 +1497,36 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "complete_auth/3 — a connection disabled mid-flight" do
+    test "a first login cannot land through a door the account just closed" do
+      # Disabling a connection is how an operator revokes a route in, and
+      # end_sessions_signed_in_through runs in that disable's after_commit — so a
+      # callback that completes afterwards is never swept. Under the same row lock
+      # the disable takes, one of the two goes first and the other refuses.
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      {:ok, disabled} = SSO.update_provider(provider, %{enabled: false}, subject)
+
+      claims = %{"sub" => "okta|mid-flight", "email" => "mf@acme.test", "email_verified" => true}
+
+      assert {:error, :provider_disabled} =
+               SSO.complete_auth(disabled, callback(claims), %{})
+    end
+
+    test "a returning member cannot either" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      claims = %{"sub" => "okta|returning", "email" => "ret@acme.test", "email_verified" => true}
+
+      assert {:ok, _} = SSO.complete_auth(provider, callback(claims), %{})
+
+      {:ok, disabled} = SSO.update_provider(provider, %{enabled: false}, subject)
+
+      assert {:error, :provider_disabled} =
+               SSO.complete_auth(disabled, callback(claims), %{})
+    end
+  end
+
   describe "complete_auth/3 — allowed_email_domain gate (H1)" do
     setup do
       {_user, account, _subject} = enterprise_owner()
