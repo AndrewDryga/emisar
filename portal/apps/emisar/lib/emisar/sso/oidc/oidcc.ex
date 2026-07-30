@@ -31,6 +31,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
 
   alias Emisar.Crypto
   alias Emisar.SSO.{IdentityProvider, IssuerUrl}
+  alias Emisar.SSO.OIDC.Guard
 
   @default_scopes ["openid", "email", "profile"]
   # We hold a client secret, not a signing key — restrict client authentication to
@@ -281,6 +282,9 @@ defmodule Emisar.SSO.OIDC.Oidcc do
 
   defp request_opts do
     %{
+      # The guard's profile, not the default one. This is what puts every request
+      # oidcc makes — and every redirect it follows — behind the SSRF policy.
+      httpc_profile: Guard.profile(),
       ssl: [
         verify: :verify_peer,
         cacerts: :public_key.cacerts_get(),

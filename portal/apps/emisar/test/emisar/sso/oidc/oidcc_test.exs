@@ -42,7 +42,13 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     end
   end
 
-  test "clears the pre-network gate and reaches the token exchange for a well-formed callback" do
+  test "a well-formed callback clears the gates and every fetch goes through the guard" do
+    # Two things at once. The state/issuer/code gates let a well-formed callback
+    # through — the failure it gets is a transport refusal, not `:state_mismatch` —
+    # and that refusal comes from `Emisar.SSO.OIDC.Guard`, which proves the httpc
+    # profile is actually wired: an `http://` issuer is a cleartext fetch, and the
+    # guard answers 403 to those. If the profile were not in effect, this stub IdP
+    # would have been reached instead.
     issuer = start_local_idp()
     provider = provider(%{issuer: issuer})
 
@@ -52,45 +58,30 @@ defmodule Emisar.SSO.OIDC.OidccTest do
       "code" => "authorization-code"
     }
 
-    # A well-formed callback must clear the state/issuer/code gate and reach the
-    # token exchange. The stub IdP's token response is not a real signed grant,
-    # so the exchange itself fails (error or a downstream raise); we only prove
-    # the pre-network gate let it through — evidenced by the outbound discovery
-    # and token requests below.
-    try do
-      Oidcc.verify_callback(provider, params, stashed())
-    rescue
-      _ -> :reached_exchange
-    end
+    assert {:error, {:http_error, 403, _}} = Oidcc.verify_callback(provider, params, stashed())
 
-    assert_receive {:oidc_request, "GET", "/.well-known/openid-configuration", _body}
-    assert_receive {:oidc_request, "POST", "/token", body}
-    assert body =~ "code=authorization-code"
+    # Nothing reached the IdP. The guard refused before a connection was made.
+    refute_receive {:oidc_request, _method, _path, _body}, 100
   end
 
   test "a discovery document pointing elsewhere is refused before anything fetches it" do
-    # The SSRF is the JWKS fetch. It is ours to make now, and it is made only
-    # after the document naming it has passed — so the refusal lands before any
-    # connection rather than after one.
     # A real listener stands in for the internal target, so "was it fetched" is
     # observed rather than inferred. It is reachable — only the policy stops us.
+    #
+    # There are now two independent reasons it is never contacted: the endpoint
+    # policy refuses the document between the discovery fetch and the JWKS fetch,
+    # and the guard refuses the connection itself. Loopback is exactly what both
+    # refuse, which is why this cannot be a happy-path test — see
+    # `Emisar.SSO.OIDC.GuardTest` for the boundary's own coverage.
     forbidden_port = start_probe_listener()
     issuer = start_local_idp(jwks_uri: "http://localhost:#{forbidden_port}/jwks")
     provider = provider(%{issuer: issuer})
 
     params = %{"state" => "expected-state", "iss" => issuer, "code" => "authorization-code"}
 
-    assert {:error, :blocked_discovery_endpoint} =
-             Oidcc.verify_callback(provider, params, stashed())
+    assert {:error, _reason} = Oidcc.verify_callback(provider, params, stashed())
 
-    # We read the document…
-    assert_receive {:oidc_request, "GET", "/.well-known/openid-configuration", _body}
-
-    # …and nothing ever connected to what it named.
     refute_receive :forbidden_endpoint_contacted, 200
-
-    # No token exchange either, and nothing is left holding the document — there
-    # is no worker to refresh it or chase that jwks_uri again on a timer.
     refute_receive {:oidc_request, "POST", "/token", _body}, 50
   end
 

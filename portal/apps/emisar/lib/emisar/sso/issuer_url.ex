@@ -62,6 +62,17 @@ defmodule Emisar.SSO.IssuerUrl do
 
   def validate_endpoint(_url), do: {:error, :invalid_issuer}
 
+  @doc """
+  Is this a peer address we may open a connection to?
+
+  The URL policy above deliberately does not resolve hostnames — pre-resolving is
+  TOCTOU-prone. This is the other half, asked at CONNECT time by
+  `Emisar.SSO.OIDC.Guard` about an address it has just resolved and is about to
+  dial. Same address ranges, one definition.
+  """
+  @spec address_allowed?(:inet.ip_address()) :: boolean()
+  def address_allowed?(address) when is_tuple(address), do: not blocked_ip?(address)
+
   defp blocked_host?(host) do
     host = String.downcase(host)
 

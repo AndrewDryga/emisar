@@ -182,6 +182,19 @@ if config_env() == :prod do
   # still complete sign-in.
   config :emisar_web, force_secure_cookies: https_fronted?
 
+  # Hosts this deployment declares as its own identity providers, so the OIDC
+  # guard lets them through the private-address policy. EMPTY unless set: an IdP on
+  # the public internet needs nothing here, and a private address is otherwise
+  # indistinguishable from our own internal infrastructure — which is the SSRF the
+  # guard exists to refuse. The e2e harness sets it to its local Keycloak, because
+  # a test IdP cannot have a public address.
+  config :emisar,
+         :sso_allowed_idp_hosts,
+         "EMISAR_SSO_ALLOWED_IDP_HOSTS"
+         |> System.get_env("")
+         |> String.split(",", trim: true)
+         |> Enum.map(&String.trim/1)
+
   # BEAM clustering on GCP MIGs. When EMISAR_CLUSTER_PROJECT is set (the instance
   # template sets it), libcluster's GCE strategy lists the project's RUNNING portal
   # instances via the Compute API and connects them as `emisar@<internal-ip>`

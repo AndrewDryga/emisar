@@ -166,6 +166,10 @@ services:
       # — and the API-key branch wins over the disable flag. Blank passthrough
       # values (unset host env) are treated as absent by runtime.exs.
       EMISAR_DISABLE_BILLING: "1"
+      # The OIDC guard refuses a private peer address, which is every address a
+      # local Keycloak can have. Declaring it by name is how this stack says "that
+      # one is my IdP"; production leaves this unset.
+      EMISAR_SSO_ALLOWED_IDP_HOSTS: "localhost,keycloak"
       PADDLE_API_KEY: "${PADDLE_API_KEY:-}"
       PADDLE_WEBHOOK_SECRET: "${PADDLE_WEBHOOK_SECRET:-}"
       PADDLE_CLIENT_TOKEN: "${PADDLE_CLIENT_TOKEN:-}"
