@@ -147,7 +147,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
 
       assert has_element?(lv, ~s(#runbook-inputs > button[phx-click="add_input"]), "Add input")
-      assert has_element?(lv, "aside a", "Cancel editing")
+      refute has_element?(lv, "a", "Cancel editing")
 
       render_click(lv, "add_input", %{})
       input_html = render(lv)

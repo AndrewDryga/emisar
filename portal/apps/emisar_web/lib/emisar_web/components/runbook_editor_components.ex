@@ -151,7 +151,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
             publish_ready?={publish_ready?(assigns)}
             save_ready?={draft_save_ready?(assigns)}
             read_only?={@read_only?}
-            current_account={@current_account}
           />
         </div>
 
@@ -205,7 +204,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 publish_ready?={publish_ready?(assigns)}
                 save_ready?={draft_save_ready?(assigns)}
                 read_only?={@read_only?}
-                current_account={@current_account}
               />
             </div>
             <.details_panel draft={@draft} form={@form} read_only?={@read_only?} />
@@ -243,7 +241,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
   attr :publish_ready?, :boolean, required: true
   attr :save_ready?, :boolean, required: true
   attr :read_only?, :boolean, required: true
-  attr :current_account, :map, required: true
 
   defp editor_actions(assigns) do
     ~H"""
@@ -271,14 +268,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
           Save draft
         </.button>
       </div>
-      <.button
-        navigate={~p"/app/#{@current_account}/runbooks"}
-        variant={:secondary}
-        class="mt-3 w-full justify-center"
-        data-confirm={if @dirty?, do: "Discard unsaved changes?"}
-      >
-        Cancel editing
-      </.button>
       <dl :if={@runbook} class="mt-4 space-y-2 text-xs text-zinc-400">
         <.kv label="Current">v{@runbook.version}</.kv>
         <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>

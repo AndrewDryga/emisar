@@ -21,7 +21,9 @@ Do not show a control in a mode where it has no effect. If a value still changes
 execution, keep it visible beside the choice it qualifies and explain the
 interaction. On narrow screens, lifecycle actions may lead, but the primary
 editing workflow renders before details, validation, canonical output, or other
-secondary rails.
+secondary rails. Keep lifecycle rails limited to state transitions such as Save
+and Publish. Do not add a Cancel or Back action there when it only duplicates
+the page header or application navigation.
 
 ## Why
 
@@ -44,6 +46,8 @@ never a reduced model.
 - Parallel stages show a concurrency cap; sequential stages do not.
 - A secondary review rail becomes sticky only when it sits beside a visibly
   wider task column; otherwise it follows the workflow.
+- Save and Publish stay together; the existing page navigation remains the one
+  way to leave the editor.
 
 ## Bad
 
@@ -51,16 +55,18 @@ never a reduced model.
 - An action list that includes behavior unavailable on one selected target.
 - Review and canonical JSON before the editable workflow on a phone.
 - Showing a concurrency value in sequential mode where it does nothing.
+- A Cancel editing link in the lifecycle rail that only navigates back.
 - Removing advanced fields to make the editor look simpler.
 
 ## Enforced
 
 Rendered LiveView tests pin the section and field order and assert that
-runtime-relevant controls remain present only in applicable modes. Catalog tests
-assert that target selection narrows compatible actions. Screenshot review
-covers the desktop split and the narrow stacked layout.
+runtime-relevant controls remain present only in applicable modes and redundant
+Cancel editing navigation is absent. Catalog tests assert that target selection
+narrows compatible actions. Screenshot review covers the desktop split and the
+narrow stacked layout.
 
 Sweep complex editors for ID/version fields before behavior, behavior choices
 that are not derived from earlier scope choices, controls shown in modes where
-they have no effect, and breakpoint ordering that puts a secondary rail before
-the primary task.
+they have no effect, lifecycle rails that duplicate existing exit navigation,
+and breakpoint ordering that puts a secondary rail before the primary task.
