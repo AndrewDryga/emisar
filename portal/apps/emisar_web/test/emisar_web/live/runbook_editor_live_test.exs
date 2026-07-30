@@ -209,9 +209,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Allowed values"
       assert has_element?(lv, "#runbook-input-0 h3", "environment")
       assert has_element?(lv, "#runbook-input-0", "Input 1 · Enum")
-      assert has_element?(lv, "#runbook-input-0 h4", "Default and constraints")
+      assert has_element?(lv, "#runbook-input-0 fieldset", "Behavior")
       assert has_element?(lv, ~s(input[name="draft[inputs][0][default]"]))
       refute has_element?(lv, "#runbook-input-0 button", "Default and constraints")
+      refute html =~ "Default and constraints"
       refute html =~ "input-constraints-0"
 
       render_click(lv, "add_enum_value", %{"index" => "0"})

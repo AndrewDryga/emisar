@@ -23,7 +23,9 @@ flexible text fields grow only to a readable measure, keep finite choices at a
 content-sized width, and cap the collection on wide canvases. Intentional
 negative space is better than stretching controls to fill a uniform grid.
 Routine defaults and constraints remain visible; disclosure is for genuinely
-secondary detail, not a way to reclaim vertical space.
+secondary detail, not a way to reclaim vertical space. Rows in one semantic
+group share one right edge. When disclosure is removed, fold its fields into
+the existing group instead of leaving a replacement heading or divider.
 
 Do not show a control in a mode where it has no effect. If a value still changes
 execution, keep it visible beside the choice it qualifies and explain the
@@ -57,7 +59,8 @@ never a reduced model.
 - Save and Publish stay together; the existing page navigation remains the one
   way to leave the editor.
 - A run-time input gives its ID room, keeps its type and Yes/No choices compact,
-  and shows paired bounds together below the behavior they constrain.
+  aligns identity with purpose, and shows defaults plus paired bounds inside the
+  same Behavior group.
 
 ## Bad
 
@@ -71,6 +74,8 @@ never a reduced model.
   equally weighted boxes merely because the card has room.
 - Hiding a normal default or validation bound behind a disclosure to make the
   card shorter.
+- Replacing a removed disclosure with a one-off heading and horizontal rule, or
+  giving adjacent rows in one group unrelated right edges.
 
 ## Enforced
 
@@ -86,4 +91,5 @@ that are not derived from earlier scope choices, controls shown in modes where
 they have no effect, lifecycle rails that duplicate existing exit navigation,
 breakpoint ordering that puts a secondary rail before the primary task, and
 unbounded collections or uniform grids that make short finite choices as
-visually heavy as primary identity or purpose fields.
+visually heavy as primary identity or purpose fields, mismatched group edges,
+and headings or dividers that merely preserve a removed disclosure's shell.

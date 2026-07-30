@@ -353,8 +353,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
             />
           </div>
 
-          <div class="mt-6 max-w-4xl space-y-6">
-            <div class="grid gap-4 sm:grid-cols-[minmax(20rem,36rem)_12rem]">
+          <div class="mt-6 max-w-3xl space-y-6">
+            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
               <.input
                 name={"draft[inputs][#{index}][id]"}
                 value={input["id"]}
@@ -380,61 +380,51 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
             </div>
 
-            <div class="max-w-3xl">
-              <.input
-                name={"draft[inputs][#{index}][description]"}
-                value={input["description"]}
-                label="Description"
-                label_variant={:eyebrow}
-                disabled={@read_only?}
-                placeholder="What the operator or LLM should supply"
-              />
-            </div>
+            <.input
+              name={"draft[inputs][#{index}][description]"}
+              value={input["description"]}
+              label="Description"
+              label_variant={:eyebrow}
+              disabled={@read_only?}
+              placeholder="What the operator or LLM should supply"
+            />
 
-            <fieldset class="max-w-lg">
+            <fieldset class="max-w-[26rem]">
               <legend class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                 Behavior
               </legend>
-              <div class="mt-3 grid gap-4 sm:grid-cols-[9rem_16rem]">
-                <.input
-                  type="select"
-                  name={"draft[inputs][#{index}][required]"}
-                  value={input["required"]}
-                  label="Required"
-                  label_variant={:eyebrow}
-                  disabled={@read_only?}
-                  options={[{"Yes", "true"}, {"No", "false"}]}
-                />
-                <.input
-                  type="select"
-                  name={"draft[inputs][#{index}][sensitive]"}
-                  value={input["sensitive"]}
-                  label="Visibility"
-                  label_variant={:eyebrow}
-                  disabled={@read_only?}
-                  options={[{"Visible", "false"}, {"Sensitive — always redact", "true"}]}
-                />
-              </div>
-            </fieldset>
-          </div>
-
-          <div class="mt-6 border-t border-zinc-800/70 pt-5">
-            <h4 class="text-xs font-medium text-zinc-300">Default and constraints</h4>
-            <div class="mt-4 max-w-3xl">
-              <div class="space-y-4">
-                <div class="max-w-xl">
+              <div class="mt-3 space-y-4">
+                <div class="grid gap-4 sm:grid-cols-[9rem_minmax(0,1fr)]">
                   <.input
-                    name={"draft[inputs][#{index}][default]"}
-                    value={input["default"]}
-                    label="Default value"
+                    type="select"
+                    name={"draft[inputs][#{index}][required]"}
+                    value={input["required"]}
+                    label="Required"
                     label_variant={:eyebrow}
-                    disabled={@read_only? or input["sensitive"] == "true"}
-                    placeholder="No default"
+                    disabled={@read_only?}
+                    options={[{"Yes", "true"}, {"No", "false"}]}
+                  />
+                  <.input
+                    type="select"
+                    name={"draft[inputs][#{index}][sensitive]"}
+                    value={input["sensitive"]}
+                    label="Visibility"
+                    label_variant={:eyebrow}
+                    disabled={@read_only?}
+                    options={[{"Visible", "false"}, {"Sensitive — always redact", "true"}]}
                   />
                 </div>
+                <.input
+                  name={"draft[inputs][#{index}][default]"}
+                  value={input["default"]}
+                  label="Default value"
+                  label_variant={:eyebrow}
+                  disabled={@read_only? or input["sensitive"] == "true"}
+                  placeholder="No default"
+                />
                 <div
                   :if={input["type"] in ["integer", "number"]}
-                  class="grid max-w-lg gap-4 sm:grid-cols-2"
+                  class="grid gap-4 sm:grid-cols-2"
                 >
                   <.input
                     type="number"
@@ -457,7 +447,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 </div>
                 <div
                   :if={input["type"] == "string"}
-                  class="grid max-w-lg gap-4 sm:grid-cols-2"
+                  class="grid gap-4 sm:grid-cols-2"
                 >
                   <.input
                     type="number"
@@ -480,7 +470,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 </div>
               </div>
 
-              <div :if={input["type"] == "enum"} class="mt-5 max-w-xl">
+              <div :if={input["type"] == "enum"} class="mt-5">
                 <.label variant={:eyebrow}>Allowed values</.label>
                 <p :if={input["enum_values"] == []} class="mt-2 text-xs text-zinc-400">
                   Add at least one value.
@@ -515,7 +505,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   />
                 </div>
               </div>
-            </div>
+            </fieldset>
           </div>
         </div>
         <.add_row
