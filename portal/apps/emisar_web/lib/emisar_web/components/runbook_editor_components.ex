@@ -111,15 +111,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
           title={if(@runbook, do: @runbook.title, else: "New runbook")}
         />
       </:title>
-      <:actions>
-        <.button
-          variant={:secondary}
-          navigate={~p"/app/#{@current_account}/runbooks"}
-          data-confirm={if @dirty?, do: "Discard unsaved changes?"}
-        >
-          {if @read_only?, do: "Back", else: "Cancel"}
-        </.button>
-      </:actions>
 
       <div :if={not @loaded?} class="mt-8">
         <div role="status" class="flex items-center gap-2 text-sm text-zinc-400">
@@ -160,6 +151,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
             publish_ready?={publish_ready?(assigns)}
             save_ready?={draft_save_ready?(assigns)}
             read_only?={@read_only?}
+            current_account={@current_account}
           />
         </div>
 
@@ -213,6 +205,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 publish_ready?={publish_ready?(assigns)}
                 save_ready?={draft_save_ready?(assigns)}
                 read_only?={@read_only?}
+                current_account={@current_account}
               />
             </div>
             <.details_panel draft={@draft} form={@form} read_only?={@read_only?} />
@@ -250,6 +243,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
   attr :publish_ready?, :boolean, required: true
   attr :save_ready?, :boolean, required: true
   attr :read_only?, :boolean, required: true
+  attr :current_account, :map, required: true
 
   defp editor_actions(assigns) do
     ~H"""
@@ -277,6 +271,14 @@ defmodule EmisarWeb.RunbookEditorComponents do
           Save draft
         </.button>
       </div>
+      <.button
+        navigate={~p"/app/#{@current_account}/runbooks"}
+        variant={:secondary}
+        class="mt-3 w-full justify-center"
+        data-confirm={if @dirty?, do: "Discard unsaved changes?"}
+      >
+        Cancel editing
+      </.button>
       <dl :if={@runbook} class="mt-4 space-y-2 text-xs text-zinc-400">
         <.kv label="Current">v{@runbook.version}</.kv>
         <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
@@ -333,31 +335,17 @@ defmodule EmisarWeb.RunbookEditorComponents do
           Typed values supplied when the run starts. Sensitive values are never shown in plans or
           results.
         </:subtitle>
-        <:actions>
-          <.button
-            type="button"
-            variant={:secondary}
-            size={:sm}
-            icon="hero-plus"
-            phx-click="add_input"
-            disabled={@read_only?}
-          >
-            Add input
-          </.button>
-        </:actions>
       </.section_header>
 
-      <div
-        :if={@draft["inputs"] == []}
-        class="rounded-xl border border-dashed border-zinc-800 px-4 py-3 text-xs leading-relaxed text-zinc-400"
-      >
+      <p :if={@draft["inputs"] == []} class="mb-3 text-xs leading-relaxed text-zinc-500">
         No run-time inputs. Add one for a value that should be supplied for each execution.
-      </div>
+      </p>
 
       <div class="space-y-4">
         <div
           :for={{input, index} <- Enum.with_index(@draft["inputs"])}
-          class="rounded-xl border border-zinc-800 p-5"
+          id={"runbook-input-#{index}"}
+          class="rounded-xl bg-zinc-950/40 p-4 ring-1 ring-white/10"
         >
           <div class="flex items-center justify-between gap-3">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -489,26 +477,14 @@ defmodule EmisarWeb.RunbookEditorComponents do
             </div>
 
             <div :if={input["type"] == "enum"} class="mt-4">
-              <div class="flex items-center justify-between gap-3">
-                <.label variant={:eyebrow}>Allowed values</.label>
-                <.button
-                  type="button"
-                  variant={:secondary}
-                  size={:sm}
-                  icon="hero-plus"
-                  phx-click="add_enum_value"
-                  phx-value-index={index}
-                  disabled={@read_only? or length(input["enum_values"]) >= 100}
-                >
-                  Add value
-                </.button>
-              </div>
+              <.label variant={:eyebrow}>Allowed values</.label>
               <p :if={input["enum_values"] == []} class="mt-2 text-xs text-zinc-400">
                 Add at least one value.
               </p>
               <div class="mt-2 space-y-2">
                 <div
                   :for={{enum_value, value_index} <- Enum.with_index(input["enum_values"])}
+                  id={"runbook-input-#{index}-enum-value-#{value_index}"}
                   class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
                 >
                   <.input
@@ -527,10 +503,23 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   />
                 </div>
               </div>
+              <.add_row
+                label="Add value"
+                class="mt-3"
+                phx-click="add_enum_value"
+                phx-value-index={index}
+                disabled={@read_only? or length(input["enum_values"]) >= 100}
+              />
             </div>
           </div>
         </div>
       </div>
+      <.add_row
+        label="Add input"
+        class="mt-4"
+        phx-click="add_input"
+        disabled={@read_only?}
+      />
     </section>
     """
   end

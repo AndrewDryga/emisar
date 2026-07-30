@@ -881,8 +881,7 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   Dashed add-row — the composer-standard affordance at the END of a
-  repeating list ("+ Add step"), so a long list doesn't scroll back to a
-  header button. The header's own Add stays as the secondary access.
+  repeating list ("+ Add step"), so the control stays where the new row appears.
 
       <.add_row label="Add step" phx-click="add_action_step" />
   """
@@ -893,7 +892,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <button
       type="button"
-      class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs font-medium text-zinc-400 transition enabled:hover:border-zinc-700 enabled:hover:bg-white/[0.04] enabled:hover:text-zinc-200 disabled:opacity-40"
+      class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs font-medium text-zinc-400 transition-colors enabled:hover:border-zinc-700 enabled:hover:bg-white/[0.04] enabled:hover:text-zinc-200 disabled:opacity-40"
       {@rest}
     >
       <.icon name="hero-plus" class="h-4 w-4" />{@label}

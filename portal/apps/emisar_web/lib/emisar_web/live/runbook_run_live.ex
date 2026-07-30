@@ -9,7 +9,7 @@ defmodule EmisarWeb.RunbookRunLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Runbooks, Runs}
-  alias EmisarWeb.{Permissions, RunbookMarkdown}
+  alias EmisarWeb.{Permissions, RunbookMarkdown, RunbookWorkflowComponents}
 
   @preflight_delay_ms 300
   @item_page_size 25
@@ -493,6 +493,12 @@ defmodule EmisarWeb.RunbookRunLive do
   defp execution_title(%{status: :halted}), do: "Execution halted"
   defp execution_title(%{status: :cancelled}), do: "Execution cancelled"
 
+  defp execution_icon(%{status: :pending_approval}), do: "hero-clock"
+  defp execution_icon(%{status: :active}), do: "hero-arrow-path"
+  defp execution_icon(%{status: :succeeded}), do: "hero-check-circle"
+  defp execution_icon(%{status: :halted}), do: "hero-exclamation-triangle"
+  defp execution_icon(%{status: :cancelled}), do: "hero-x-circle"
+
   defp execution_tone(%{status: :succeeded}), do: :brand
   defp execution_tone(%{status: :pending_approval}), do: :amber
   defp execution_tone(%{status: :active}), do: :amber
@@ -516,6 +522,25 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   defp output_rows(outputs), do: Enum.sort_by(outputs, &elem(&1, 0))
+
+  defp execution_item_arguments(execution, item) do
+    plan_item =
+      execution.frozen_plan
+      |> Map.get("stages", [])
+      |> Enum.flat_map(&Map.get(&1, "items", []))
+      |> Enum.find(&(&1["step_id"] == item.step_id and &1["runner_ref"] == item.runner_ref))
+
+    case plan_item do
+      nil -> %{}
+      plan_item -> plan_item["args"] || %{}
+    end
+  end
+
+  defp item_detail?(item, attempt) do
+    not is_nil(attempt) or not is_nil(item.terminal_message) or item.outputs != %{} or
+      item.success_evidence != [] or not is_nil(wait_label(item)) or
+      not is_nil(item.next_attempt_at)
+  end
 
   defp evidence_label(%{"kind" => "condition", "output" => output, "operator" => operator}),
     do: "#{output} · #{String.replace(operator, "_", " ")}"
@@ -716,8 +741,8 @@ defmodule EmisarWeb.RunbookRunLive do
       <section>
         <.section_header title="Current plan">
           <:subtitle>
-            Exact runners, packs, hashes, policy decisions, and concurrency resolved from current
-            state.
+            Actions, runners, visible arguments, policy decisions, and concurrency resolved from
+            current state.
           </:subtitle>
         </.section_header>
 
@@ -819,15 +844,16 @@ defmodule EmisarWeb.RunbookRunLive do
               <span class="font-mono text-xs text-zinc-200">{item["action"]}</span>
               <.risk_pill :if={item["risk"]} risk={item["risk"]} />
             </div>
-            <p class="mt-1 flex flex-col gap-0.5 text-xs text-zinc-400 sm:block">
-              <span>{item["runner_ref"]}</span>
-              <span class="hidden sm:inline"> · </span>
-              <span class="break-all font-mono text-[11px]">{item["pack_ref"]}</span>
+            <p class="mt-1 text-xs text-zinc-400">
+              On
+              <span class="font-medium text-zinc-300">
+                {RunbookWorkflowComponents.runner_name(item["runner_ref"])}
+              </span>
             </p>
-            <pre
-              :if={item["args"] != %{}}
-              class="mt-2 max-h-40 overflow-auto rounded-lg bg-black/40 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-300"
-            >{format_json(item["args"])}</pre>
+            <RunbookWorkflowComponents.argument_list
+              arguments={item["args"] || %{}}
+              class="mt-3"
+            />
           </div>
           <span class="font-mono text-[11px] text-zinc-400">{item["step_id"]}</span>
         </li>
@@ -900,11 +926,7 @@ defmodule EmisarWeb.RunbookRunLive do
     ~H"""
     <div class="space-y-12">
       <.event_block
-        icon={
-          if @result.execution.status == :succeeded,
-            do: "hero-check-circle",
-            else: "hero-command-line"
-        }
+        icon={execution_icon(@result.execution)}
         tone={execution_tone(@result.execution)}
         title={execution_title(@result.execution)}
       >
@@ -915,9 +937,6 @@ defmodule EmisarWeb.RunbookRunLive do
             class="mt-1.5 block text-zinc-200"
           >
             {@result.execution.terminal_code}: {@result.execution.terminal_message}
-          </span>
-          <span class="mt-1.5 block font-mono text-[11px] text-zinc-400">
-            {@result.execution.id}
           </span>
           <.link
             :if={@approval_request}
@@ -1009,7 +1028,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp execution_history(assigns) do
     ~H"""
-    <section class="mt-12">
+    <section id="runbook-execution-history" class="mt-12">
       <.section_header title="Recent executions">
         <:subtitle>
           Durable history for this exact published runbook version.
@@ -1029,12 +1048,17 @@ defmodule EmisarWeb.RunbookRunLive do
           <.link
             navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.id}/runs/#{execution.id}"}
             class={[
-              "grid gap-2 py-3 text-sm hover:text-zinc-100 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center",
-              execution.id == @current_execution_id && "text-brand-300",
-              execution.id != @current_execution_id && "text-zinc-300"
+              "-mx-2 grid gap-2 rounded-md px-2 py-3 text-sm hover:bg-white/[0.04] sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center",
+              execution.id == @current_execution_id && "bg-white/[0.04]"
             ]}
+            aria-current={if execution.id == @current_execution_id, do: "page"}
           >
-            <span class="min-w-0 truncate font-mono text-xs">{execution.id}</span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm text-zinc-200">{execution.reason}</span>
+              <span class="mt-0.5 block text-xs text-zinc-500">
+                Started <.local_time value={execution.inserted_at} mode={:forensic} />
+              </span>
+            </span>
             <.status_badge status={execution.status} />
             <.local_time value={execution.inserted_at} mode={:relative} />
           </.link>
@@ -1052,106 +1076,153 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp execution_item(assigns) do
     assigns =
-      assign(
-        assigns,
+      assigns
+      |> assign(
         :projected_status,
         projected_item_status(assigns.item, assigns.stage, assigns.execution)
       )
+      |> assign(:arguments, execution_item_arguments(assigns.execution, assigns.item))
+      |> assign(:has_details?, item_detail?(assigns.item, assigns.attempt))
 
     ~H"""
-    <details id={"execution-item-#{@item.id}"} class="group py-4">
-      <summary class="grid cursor-pointer list-none gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
-            <.risk_pill :if={@item.risk} risk={@item.risk} />
-          </div>
-          <p class="mt-1 text-xs text-zinc-400">
-            {@item.step_id} · {@item.runner_ref}
-          </p>
-        </div>
-        <span class="text-xs tabular-nums text-zinc-400">
-          {@item.attempt_count} {if @item.attempt_count == 1, do: "attempt", else: "attempts"}
-        </span>
-        <div class="flex items-center justify-between gap-3 sm:justify-end">
-          <.status_badge status={@projected_status} />
-          <.icon
-            name="hero-chevron-down"
-            class="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180 motion-reduce:transition-none"
-          />
-        </div>
+    <details :if={@has_details?} id={"execution-item-#{@item.id}"} class="group py-4">
+      <summary class="cursor-pointer list-none">
+        <.execution_item_summary
+          item={@item}
+          projected_status={@projected_status}
+          arguments={@arguments}
+          expandable?
+        />
       </summary>
+      <.execution_item_details
+        item={@item}
+        attempt={@attempt}
+        current_account={@current_account}
+      />
+    </details>
+    <div :if={not @has_details?} id={"execution-item-#{@item.id}"} class="py-4">
+      <.execution_item_summary
+        item={@item}
+        projected_status={@projected_status}
+        arguments={@arguments}
+      />
+    </div>
+    """
+  end
 
-      <div class="mt-5 grid gap-8 pl-0 sm:grid-cols-2 sm:pl-4">
-        <dl class="space-y-3 text-xs">
-          <.kv label="Exact pack"><span class="break-all font-mono">{@item.pack_ref}</span></.kv>
-          <.kv label="Pack hash"><span class="break-all font-mono">{@item.pack_hash}</span></.kv>
-          <.kv :if={@attempt} label="Raw action status">
-            <.status_badge status={@attempt.status} />
-          </.kv>
-          <.kv :if={@attempt} label="Duration">{format_duration(@attempt.duration_ms)}</.kv>
-          <.kv :if={wait_label(@item)} label="Wait">{wait_label(@item)}</.kv>
-          <.kv :if={@item.next_attempt_at} label="Next observation">
-            <.local_time value={@item.next_attempt_at} mode={:relative} />
+  attr :item, :map, required: true
+  attr :projected_status, :atom, required: true
+  attr :arguments, :map, required: true
+  attr :expandable?, :boolean, default: false
+
+  defp execution_item_summary(assigns) do
+    ~H"""
+    <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-start">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
+          <.risk_pill :if={@item.risk} risk={@item.risk} />
+        </div>
+        <p class="mt-1 text-xs text-zinc-400">
+          {@item.step_id} · on
+          <span class="font-medium text-zinc-300">
+            {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
+          </span>
+        </p>
+        <RunbookWorkflowComponents.argument_list arguments={@arguments} class="mt-3" />
+      </div>
+      <span class="text-xs tabular-nums text-zinc-400">
+        {@item.attempt_count} {if @item.attempt_count == 1, do: "attempt", else: "attempts"}
+      </span>
+      <div class="flex items-center justify-between gap-3 sm:justify-end">
+        <.status_badge status={@projected_status} />
+        <.icon
+          :if={@expandable?}
+          name="hero-chevron-down"
+          class="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+        />
+      </div>
+    </div>
+    """
+  end
+
+  attr :item, :map, required: true
+  attr :attempt, :any, default: nil
+  attr :current_account, :map, required: true
+
+  defp execution_item_details(assigns) do
+    ~H"""
+    <div class="mt-5 space-y-5 sm:pl-4">
+      <dl
+        :if={
+          not is_nil(@attempt) or not is_nil(wait_label(@item)) or
+            not is_nil(@item.next_attempt_at)
+        }
+        class="grid gap-3 text-xs sm:grid-cols-2"
+      >
+        <.kv :if={@attempt} label="Raw action status">
+          <.status_badge status={@attempt.status} />
+        </.kv>
+        <.kv :if={@attempt} label="Duration">{format_duration(@attempt.duration_ms)}</.kv>
+        <.kv :if={wait_label(@item)} label="Wait">{wait_label(@item)}</.kv>
+        <.kv :if={@item.next_attempt_at} label="Next observation">
+          <.local_time value={@item.next_attempt_at} mode={:relative} />
+        </.kv>
+      </dl>
+
+      <.event_block
+        :if={@item.terminal_message}
+        icon="hero-exclamation-triangle"
+        tone={:rose}
+        title={@item.terminal_code || "Item failed"}
+      >
+        <:body>{@item.terminal_message}</:body>
+      </.event_block>
+
+      <div :if={@item.outputs != %{}}>
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          Extracted outputs
+        </p>
+        <dl class="mt-2 space-y-2 text-xs">
+          <.kv :for={{name, value} <- output_rows(@item.outputs)} label={name}>
+            <code class="break-all text-[11px] text-zinc-200">{format_json(value)}</code>
           </.kv>
         </dl>
-
-        <div class="space-y-5">
-          <.event_block
-            :if={@item.terminal_message}
-            icon="hero-exclamation-triangle"
-            tone={:rose}
-            title={@item.terminal_code || "Item failed"}
-          >
-            <:body>{@item.terminal_message}</:body>
-          </.event_block>
-
-          <div :if={@item.outputs != %{}}>
-            <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              Extracted outputs
-            </p>
-            <dl class="mt-2 space-y-2 text-xs">
-              <.kv :for={{name, value} <- output_rows(@item.outputs)} label={name}>
-                <code class="break-all text-[11px] text-zinc-200">{format_json(value)}</code>
-              </.kv>
-            </dl>
-          </div>
-
-          <div :if={@item.success_evidence != []}>
-            <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              Success evidence
-            </p>
-            <ul class="mt-2 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
-              <li
-                :for={evidence <- @item.success_evidence}
-                class="flex items-start justify-between gap-4 py-2.5"
-              >
-                <div class="min-w-0">
-                  <p class="break-words font-mono text-[11px] text-zinc-200">
-                    {evidence_label(evidence)}
-                  </p>
-                  <p class="mt-0.5 text-[11px] text-zinc-400">{evidence_kind(evidence)}</p>
-                </div>
-                <% evidence_status = evidence_status(evidence, @item.status) %>
-                <.status_badge
-                  status={evidence_status}
-                  tone={evidence_tone(evidence_status)}
-                  class="shrink-0"
-                />
-              </li>
-            </ul>
-          </div>
-
-          <.link
-            :if={@attempt}
-            navigate={~p"/app/#{@current_account}/runs/#{@attempt.id}"}
-            class="inline-flex items-center gap-1.5 text-xs font-medium text-brand-400 hover:text-brand-300"
-          >
-            View raw action output <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-          </.link>
-        </div>
       </div>
-    </details>
+
+      <div :if={@item.success_evidence != []}>
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          Success evidence
+        </p>
+        <ul class="mt-2 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
+          <li
+            :for={evidence <- @item.success_evidence}
+            class="flex items-start justify-between gap-4 py-2.5"
+          >
+            <div class="min-w-0">
+              <p class="break-words font-mono text-[11px] text-zinc-200">
+                {evidence_label(evidence)}
+              </p>
+              <p class="mt-0.5 text-[11px] text-zinc-400">{evidence_kind(evidence)}</p>
+            </div>
+            <% evidence_status = evidence_status(evidence, @item.status) %>
+            <.status_badge
+              status={evidence_status}
+              tone={evidence_tone(evidence_status)}
+              class="shrink-0"
+            />
+          </li>
+        </ul>
+      </div>
+
+      <.link
+        :if={@attempt}
+        navigate={~p"/app/#{@current_account}/runs/#{@attempt.id}"}
+        class="inline-flex items-center gap-1.5 text-xs font-medium text-brand-400 hover:text-brand-300"
+      >
+        View raw action output <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+      </.link>
+    </div>
     """
   end
 end

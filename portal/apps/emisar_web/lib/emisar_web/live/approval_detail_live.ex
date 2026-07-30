@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Catalog, Runners, Runs, Users}
-  alias EmisarWeb.{CommandPreview, PacksRegistry, Permissions}
+  alias EmisarWeb.{CommandPreview, PacksRegistry, Permissions, RunbookWorkflowComponents}
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.RunnerPresence
 
@@ -806,8 +806,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <section :if={@execution_request?}>
               <.section_header title="Frozen runbook plan">
                 <:subtitle>
-                  Every stage, action, runner, pack, hash, and visible argument covered by this
-                  decision
+                  Review every action, runner, and visible argument. One approval covers the
+                  complete execution.
                 </:subtitle>
               </.section_header>
               <div class="space-y-6">
@@ -823,7 +823,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <ul class="mt-2 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
                     <li
                       :for={item <- stage["items"] || []}
-                      class="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto]"
+                      class="py-4"
                     >
                       <div class="min-w-0">
                         <div class="flex flex-wrap items-center gap-2">
@@ -831,25 +831,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
                           <.risk_pill :if={item["risk"]} risk={item["risk"]} />
                         </div>
                         <p class="mt-1 text-xs text-zinc-400">
-                          Runner <span class="font-mono text-zinc-300">{item["runner_ref"]}</span>
-                        </p>
-                        <p class="mt-1 break-all font-mono text-[11px] text-zinc-400">
-                          {item["pack_ref"]}
+                          On
+                          <span class="font-medium text-zinc-300">
+                            {RunbookWorkflowComponents.runner_name(item["runner_ref"])}
+                          </span>
                         </p>
                       </div>
-                      <details
-                        :if={item["args"] != %{}}
-                        class="group self-start text-xs sm:text-right"
-                      >
-                        <summary class="cursor-pointer text-zinc-400 hover:text-zinc-200">
-                          Arguments
-                        </summary>
-                        <pre
-                          tabindex="0"
-                          aria-label={"Arguments for #{item["action"]} on #{item["runner_ref"]}"}
-                          class="mt-2 max-h-48 max-w-xl overflow-auto whitespace-pre-wrap rounded-lg bg-black/40 px-3 py-2 text-left font-mono text-[11px] leading-relaxed text-zinc-300"
-                        >{format_json(item["args"])}</pre>
-                      </details>
+                      <RunbookWorkflowComponents.argument_list
+                        arguments={item["args"] || %{}}
+                        class="mt-3"
+                      />
                     </li>
                   </ul>
                 </section>
@@ -1258,8 +1249,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   defp decision_intro(true, _self_blocked?, _options) do
-    "Approval releases the complete frozen runbook plan. Each action still passes current " <>
-      "policy, runner access, and pack-trust checks before dispatch. Your decision is logged."
+    "Approve once to release every action shown here. This execution will not ask for another " <>
+      "approval. If policy changes to deny the work, runner access is removed, or a trusted " <>
+      "pack is no longer available before dispatch, Emisar stops the execution."
   end
 
   defp decision_intro(false, self_blocked?, options) do

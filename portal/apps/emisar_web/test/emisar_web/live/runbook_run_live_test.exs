@@ -245,8 +245,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert html =~ "Current plan"
       assert html =~ "Inspect"
-      assert html =~ "linux-core@1.4.2/#{@hash}"
-      assert has_element?(lv, "#preflight-stage-inspect pre", "[REDACTED]")
+      assert html =~ "token"
+      assert html =~ "[REDACTED]"
+      refute html =~ @hash
 
       assert has_element?(
                lv,
@@ -274,21 +275,22 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       )
 
       assert html =~ "Execution in progress"
-      assert html =~ "linux-core@1.4.2/#{@hash}"
+      assert html =~ runner.name
+      refute html =~ @hash
       assert html =~ "1 attempt"
       assert html =~ "View raw action output"
 
       {:ok, _reloaded, reloaded_html} =
         live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
 
-      assert reloaded_html =~ execution().id
+      assert reloaded_html =~ "Investigate incident INC-42"
       assert reloaded_html =~ "Execution in progress"
 
       {:ok, _fresh, fresh_html} =
         live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       assert fresh_html =~ "Start execution"
-      assert fresh_html =~ execution().id
+      assert fresh_html =~ "Investigate incident INC-42"
       refute fresh_html =~ "Execution in progress"
     end
 
@@ -418,6 +420,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       html = render(lv)
       assert html =~ "Execution awaiting approval"
       assert html =~ "Review run approval"
+      assert html =~ runner.name
+      refute has_element?(lv, "details[id^=execution-item-]")
 
       assert Runs.list_runs_for_runbook_execution(account.id, execution().id) == []
 
@@ -449,7 +453,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       html = render_click(lv, "run_again", %{})
       assert html =~ "Start execution"
       assert html =~ "Recent executions"
-      assert html =~ execution().id
+      assert html =~ "Investigate incident INC-42"
       refute html =~ "Execution cancelled"
     end
   end

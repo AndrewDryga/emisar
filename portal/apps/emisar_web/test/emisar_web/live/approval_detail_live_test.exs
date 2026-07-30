@@ -55,20 +55,28 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     Fixtures.Approvals.create_execution_request(account, requested_by)
   end
 
-  test "renders a frozen whole-run plan without ActionRun or grant assumptions", %{conn: conn} do
+  test "renders human decision evidence and states that whole-run approval happens once", %{
+    conn: conn
+  } do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_execution_request(account, user)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "Database maintenance"
     assert html =~ "Frozen runbook plan"
     assert html =~ "Parallel · up to 2"
     assert html =~ "1 stage · 2 actions · 2 runners"
     assert html =~ "postgres.config_validate"
-    assert html =~ "postgres@1.4.2/sha256:"
+    assert html =~ "db-01"
+    assert html =~ "token"
     assert html =~ "[REDACTED]"
+    assert html =~ "This execution will not ask for another approval."
+    assert html =~ "Emisar stops the execution."
     assert html =~ "Approve runbook"
+    refute html =~ "postgres@1.4.2/sha256:"
+    refute html =~ String.duplicate("1", 64)
+    refute has_element?(lv, "details", "Arguments")
     refute html =~ "Allow the LLM to reuse this approval"
     refute html =~ "Approve and send"
   end

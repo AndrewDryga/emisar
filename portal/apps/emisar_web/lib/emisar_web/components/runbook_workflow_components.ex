@@ -4,6 +4,50 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   use EmisarWeb, :html
   alias EmisarWeb.RunbookEditorCatalog
 
+  @doc "Returns the human runner name from a frozen runner reference."
+  def runner_name(ref) when is_binary(ref) do
+    ref
+    |> String.split("~", parts: 2)
+    |> List.first()
+  end
+
+  def runner_name(_ref), do: "Unknown runner"
+
+  attr :arguments, :map, required: true
+  attr :class, :string, default: nil
+  attr :show_empty?, :boolean, default: false
+
+  @doc "Renders visible frozen arguments as a compact decision-ready list."
+  def argument_list(assigns) do
+    assigns = assign(assigns, :rows, Enum.sort_by(assigns.arguments, &elem(&1, 0)))
+
+    ~H"""
+    <div :if={@rows != [] or @show_empty?} class={@class}>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        Arguments
+      </p>
+      <p :if={@rows == []} class="mt-1 text-xs text-zinc-500">None</p>
+      <dl :if={@rows != []} class="mt-1 divide-y divide-zinc-800/60">
+        <div
+          :for={{name, value} <- @rows}
+          class="grid gap-1 py-1.5 text-xs sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3"
+        >
+          <dt class="break-all font-mono text-zinc-400">{name}</dt>
+          <dd class="min-w-0 break-words font-mono text-zinc-200">
+            {argument_value(value)}
+          </dd>
+        </div>
+      </dl>
+    </div>
+    """
+  end
+
+  defp argument_value(%{"from_output" => ref}), do: "From #{ref}"
+  defp argument_value(value) when is_binary(value), do: value
+  defp argument_value(value) when is_boolean(value) or is_number(value), do: to_string(value)
+  defp argument_value(nil), do: "null"
+  defp argument_value(value), do: Jason.encode!(value)
+
   defp available_output_refs(draft, stage_index) do
     draft["stages"]
     |> Enum.take(stage_index)
@@ -552,25 +596,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp outputs_editor(assigns) do
     ~H"""
     <div class="mt-6 border-t border-zinc-800/70 pt-5">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold text-zinc-200">Extracted outputs</p>
-          <p class="mt-0.5 text-[11px] text-zinc-400">
-            Keep only the result fields later conditions or stages need.
-          </p>
-        </div>
-        <.button
-          type="button"
-          variant={:secondary}
-          size={:sm}
-          icon="hero-plus"
-          phx-click="add_output"
-          phx-value-stage={@stage_index}
-          phx-value-step={@step_index}
-          disabled={@read_only?}
-        >
-          Add output
-        </.button>
+      <div>
+        <p class="text-xs font-semibold text-zinc-200">Extracted outputs</p>
+        <p class="mt-0.5 text-[11px] text-zinc-400">
+          Keep only the result fields later conditions or stages need.
+        </p>
       </div>
 
       <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-500">
@@ -580,6 +610,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <div class="mt-3 space-y-3">
         <div
           :for={{output, index} <- Enum.with_index(@step["outputs"])}
+          id={"runbook-stage-#{@stage_index}-step-#{@step_index}-output-#{index}"}
           class="rounded-lg border border-zinc-800/70 p-4"
         >
           <div class="flex items-center justify-between gap-3">
@@ -673,6 +704,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           </div>
         </div>
       </div>
+      <.add_row
+        label="Add output"
+        class="mt-3"
+        phx-click="add_output"
+        phx-value-stage={@stage_index}
+        phx-value-step={@step_index}
+        disabled={@read_only?}
+      />
     </div>
     """
   end
@@ -685,25 +724,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp success_editor(assigns) do
     ~H"""
     <div class="mt-6 border-t border-zinc-800/70 pt-5">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <p class="text-xs font-semibold text-zinc-200">Success conditions</p>
-          <p class="mt-0.5 text-[11px] text-zinc-400">
-            Every condition must pass. Conditions can read only extracted outputs.
-          </p>
-        </div>
-        <.button
-          type="button"
-          variant={:secondary}
-          size={:sm}
-          icon="hero-plus"
-          phx-click="add_success"
-          phx-value-stage={@stage_index}
-          phx-value-step={@step_index}
-          disabled={@read_only? or @step["outputs"] == []}
-        >
-          Add condition
-        </.button>
+      <div>
+        <p class="text-xs font-semibold text-zinc-200">Success conditions</p>
+        <p class="mt-0.5 text-[11px] text-zinc-400">
+          Every condition must pass. Conditions can read only extracted outputs.
+        </p>
       </div>
 
       <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-500">
@@ -716,6 +741,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <div class="mt-3 space-y-3">
         <div
           :for={{condition, index} <- Enum.with_index(@step["success"])}
+          id={"runbook-stage-#{@stage_index}-step-#{@step_index}-condition-#{index}"}
           class="rounded-lg border border-zinc-800/70 p-4"
         >
           <div class="flex items-center justify-between gap-3">
@@ -779,6 +805,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           </div>
         </div>
       </div>
+      <.add_row
+        label="Add condition"
+        class="mt-3"
+        phx-click="add_success"
+        phx-value-stage={@stage_index}
+        phx-value-step={@step_index}
+        disabled={@read_only? or @step["outputs"] == []}
+      />
     </div>
     """
   end

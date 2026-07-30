@@ -146,6 +146,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(select[name="draft[stages][0][steps][0][target_candidate]"])
              )
 
+      assert has_element?(lv, ~s(#runbook-inputs > button[phx-click="add_input"]), "Add input")
+      assert has_element?(lv, "aside a", "Cancel editing")
+
+      render_click(lv, "add_input", %{})
+      input_html = render(lv)
+
+      assert :binary.match(input_html, ~s(id="runbook-input-0")) <
+               :binary.match(input_html, ~s(phx-click="add_input"))
+
       render_click(lv, "add_stage", %{})
       assert has_element?(lv, "#runbook-stage-1")
       assert has_element?(lv, "#runbook-stages button", "Add stage")
@@ -211,6 +220,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(lv, ~s(button[aria-label="Remove allowed value"]))
 
+      enum_html = render(lv)
+
+      assert :binary.match(enum_html, ~s(id="runbook-input-0-enum-value-0")) <
+               :binary.match(enum_html, ~s(phx-click="add_enum_value"))
+
       render_click(lv, "remove_enum_value", %{"input" => "0", "value" => "0"})
       refute has_element?(lv, ~s(input[name="draft[inputs][0][enum_values][0][value]"]))
       assert has_element?(lv, ~s(button[aria-expanded="true"]))
@@ -242,6 +256,18 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                lv,
                ~s(input[aria-label="Condition 1 JSON value"][value="\\"\\""])
              )
+
+      collection_html = render(lv)
+
+      assert :binary.match(
+               collection_html,
+               ~s(id="runbook-stage-0-step-0-output-0")
+             ) < :binary.match(collection_html, ~s(phx-click="add_output"))
+
+      assert :binary.match(
+               collection_html,
+               ~s(id="runbook-stage-0-step-0-condition-0")
+             ) < :binary.match(collection_html, ~s(phx-click="add_success"))
     end
 
     test "target-first action selection derives the pack from current runner support", %{

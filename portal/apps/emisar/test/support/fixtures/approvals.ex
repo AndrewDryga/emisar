@@ -68,14 +68,14 @@ defmodule Emisar.Fixtures.Approvals do
           "items" => [
             %{
               "action" => "postgres.config_validate",
-              "runner_ref" => "db-01",
+              "runner_ref" => "db-01~" <> String.duplicate("1", 64),
               "pack_ref" => "postgres@1.4.2/sha256:" <> String.duplicate("a", 64),
               "risk" => "medium",
               "args" => %{"token" => "[REDACTED]"}
             },
             %{
               "action" => "postgres.config_validate",
-              "runner_ref" => "db-02",
+              "runner_ref" => "db-02~" <> String.duplicate("2", 64),
               "pack_ref" => "postgres@1.4.2/sha256:" <> String.duplicate("a", 64),
               "risk" => "medium",
               "args" => %{}
