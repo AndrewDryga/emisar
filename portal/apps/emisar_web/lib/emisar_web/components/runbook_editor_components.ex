@@ -438,7 +438,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                     title={enum_default_label(enum_value)}
                     phx-click="toggle_enum_default"
                     phx-value-input={index}
-                    phx-value-value={value_index}
+                    phx-value-enum={value_index}
                     disabled={
                       @read_only? or input["sensitive"] == "true" or
                         String.trim(enum_value["value"] || "") == ""
@@ -471,8 +471,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
                     label="Remove allowed value"
                     phx-click="remove_enum_value"
                     phx-value-input={index}
-                    phx-value-value={value_index}
-                    class="mt-2"
+                    phx-value-enum={value_index}
+                    class="mt-2 rounded-lg ring-1 ring-inset ring-zinc-800"
                   />
                 </div>
                 <.add_row

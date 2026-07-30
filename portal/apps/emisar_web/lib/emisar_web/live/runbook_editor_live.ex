@@ -191,7 +191,7 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   def handle_event(
         "toggle_enum_default",
-        %{"input" => input_index, "value" => value_index},
+        %{"input" => input_index, "enum" => enum_index},
         socket
       ) do
     mutate(socket, fn draft ->
@@ -199,7 +199,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         List.update_at(
           inputs,
           safe_index(input_index),
-          &toggle_enum_default(&1, safe_index(value_index))
+          &toggle_enum_default(&1, safe_index(enum_index))
         )
       end)
     end)
@@ -207,13 +207,13 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   def handle_event(
         "remove_enum_value",
-        %{"input" => input_index, "value" => value_index},
+        %{"input" => input_index, "enum" => enum_index},
         socket
       ) do
     mutate(socket, fn draft ->
       Map.update!(draft, "inputs", fn inputs ->
         List.update_at(inputs, safe_index(input_index), fn input ->
-          Map.update!(input, "enum_values", &List.delete_at(&1, safe_index(value_index)))
+          Map.update!(input, "enum_values", &List.delete_at(&1, safe_index(enum_index)))
         end)
       end)
     end)

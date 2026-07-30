@@ -245,7 +245,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(button[aria-label="Use as default: staging"][aria-pressed="false"])
              )
 
-      render_click(lv, "toggle_enum_default", %{"input" => "0", "value" => "1"})
+      lv
+      |> element(~s(button[aria-label="Use as default: production"]))
+      |> render_click()
 
       assert has_element?(
                lv,
@@ -257,7 +259,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(input[name="draft[inputs][0][enum_values][1][default]"][value="true"])
              )
 
-      render_click(lv, "toggle_enum_default", %{"input" => "0", "value" => "0"})
+      lv
+      |> element(~s(button[aria-label="Use as default: staging"]))
+      |> render_click()
 
       assert has_element?(
                lv,
@@ -269,7 +273,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(input[name="draft[inputs][0][enum_values][1][default]"][value="false"])
              )
 
-      render_click(lv, "toggle_enum_default", %{"input" => "0", "value" => "0"})
+      lv
+      |> element(~s(button[aria-label="Remove default: staging"]))
+      |> render_click()
 
       refute has_element?(lv, ~s(button[aria-pressed="true"]))
 
@@ -280,14 +286,20 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(input[name="draft[inputs][0][enum_values][2][value]"])
              )
 
-      assert has_element?(lv, ~s(button[aria-label="Remove allowed value"]))
+      assert has_element?(
+               lv,
+               ~s(button[aria-label="Remove allowed value"][class~="rounded-lg"][class~="ring-1"][class~="ring-zinc-800"])
+             )
 
       enum_html = render(lv)
 
       assert :binary.match(enum_html, ~s(id="runbook-input-0-enum-value-0")) <
                :binary.match(enum_html, ~s(phx-click="add_enum_value"))
 
-      render_click(lv, "remove_enum_value", %{"input" => "0", "value" => "2"})
+      lv
+      |> element(~s(#runbook-input-0-enum-value-2 button[aria-label="Remove allowed value"]))
+      |> render_click()
+
       refute has_element?(lv, ~s(input[name="draft[inputs][0][enum_values][2][value]"]))
       assert has_element?(lv, "#runbook-input-0", "Allowed values")
     end

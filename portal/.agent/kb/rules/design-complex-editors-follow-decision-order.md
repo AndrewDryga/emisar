@@ -33,9 +33,13 @@ false; integer and number defaults use numeric controls with whole-number and
 decimal steps respectively; strings use text. An enum's optional single default
 is selected directly from its allowed values, so it cannot drift outside the
 set or be mistyped in a second field. Repeated-row actions align with the input
-surface rather than the field wrapper's label gap. Routine defaults and
-constraints remain visible; disclosure is for genuinely secondary detail, not
-a way to reclaim vertical space.
+surface rather than the field wrapper's label gap. Peer row actions share one
+enclosure treatment and optical height; a labeled toggle beside a bare icon
+button is not one control family. LiveView click metadata uses domain-specific
+`phx-value-*` names such as `enum`, never `phx-value-value`: the client
+replaces that generic key with the native element's `.value`. Routine defaults
+and constraints remain visible; disclosure is for genuinely secondary detail,
+not a way to reclaim vertical space.
 
 Do not show a control in a mode where it has no effect. If a value still changes
 execution, keep it visible beside the choice it qualifies and explain the
@@ -77,6 +81,8 @@ never a reduced model.
 - Every enum value carries one aligned Default toggle; selecting one clears the
   others, selecting it again clears the default, and removing it removes the
   default with it.
+- Default and delete use matching bordered enclosures and 40px hit areas; their
+  rendered clicks carry explicit input and enum indices.
 
 ## Bad
 
@@ -98,6 +104,8 @@ never a reduced model.
 - A separate free-text enum default that can differ from every allowed value.
 - Unequal Required and Sensitive widths, a shorter monospace ID control, or a
   repeated-row action aligned above the control it changes.
+- A bordered row toggle beside a bare peer icon, or `phx-value-value` on a
+  button whose native empty value silently replaces the intended metadata.
 
 ## Enforced
 
@@ -118,4 +126,5 @@ unequal peer toggles, generic default controls that ignore the selected type,
 enum defaults authored outside the allowed-value rows, typography that changes
 peer control heights, repeated-row actions aligned to wrapper space rather than
 the control box, headings that restate their field labels, and dividers that
-merely preserve a removed disclosure's shell.
+merely preserve a removed disclosure's shell. Sweep button event metadata for
+generic `phx-value-value`, and repeated rows for mismatched peer enclosures.
