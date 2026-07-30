@@ -62,12 +62,22 @@
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Google Cloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Set the OAuth consent screen to Internal.</p>
+            <p class="font-semibold text-zinc-100">Name the app your team will see.</p>
             <p class="mt-1.5">
-              In <strong class="text-zinc-200">Google Cloud Console → APIs &amp; Services → OAuth consent screen</strong>, choose <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own Workspace domain and
-              skips Google's verification review entirely. External would expose the app to any
-              Google account, which is not what you want in front of emisar.
+              Open <strong class="text-zinc-200">Google Auth Platform → Branding</strong>. The
+              <strong class="text-zinc-200">App name</strong>
+              and <strong class="text-zinc-200">User support email</strong>
+              are what your members read on Google's consent screen, so name it something they
+              will recognise as yours. On a project that has never been configured Google walks
+              these same fields through a <strong class="text-zinc-200">Get started</strong>
+              wizard instead; the fields are identical.
             </p>
+            <.docs_screenshot
+              src="/images/docs/sso/google-branding.webp"
+              title="Google Auth Platform · Branding"
+              caption="Both values appear on the consent screen your members see."
+              alt="The Branding page of Google Auth Platform with App name and User support email outlined in green, above App logo and App domain sections."
+            />
           </div>
         </li>
         <li class="flex gap-4">
@@ -76,9 +86,54 @@
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Google Cloud</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Create the OAuth client.</p>
+            <p class="font-semibold text-zinc-100">Keep the audience Internal.</p>
             <p class="mt-1.5">
-              <strong class="text-zinc-200">Credentials → Create credentials → OAuth client ID</strong>, application type <strong class="text-zinc-200">Web application</strong>. Add emisar's callback under <strong class="text-zinc-200">Authorized redirect URIs</strong>:
+              On <strong class="text-zinc-200">Audience</strong>, the user type must be <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own
+              Workspace domain and skips Google's verification review entirely. External exposes the
+              app to any Google account, which is not what you want in front of emisar — and Google
+              enforces it: an outside account is refused with
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">org_internal</code>
+              before the request ever reaches us.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/google-audience.webp"
+              title="Google Auth Platform · Audience"
+              caption="Internal is the whole domain restriction. Google refuses outside accounts itself."
+              alt="The Audience page of Google Auth Platform with the Internal user type outlined in green."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            4
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <.docs_step_venue>Google Cloud</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">Start an OAuth client.</p>
+            <p class="mt-1.5">
+              <strong class="text-zinc-200">Clients → Create client</strong>. Existing clients are
+              listed here too, so this is where you come back to if you need the client ID again.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/google-clients.webp"
+              title="Google Auth Platform · Clients"
+              caption="Also where an existing client's ID is read from later."
+              alt="The Clients page of Google Auth Platform with the Create client button outlined in green above a table of OAuth 2.0 Client IDs."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            5
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <.docs_step_venue>Google Cloud</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">
+              Make it a web application, with emisar's callback.
+            </p>
+            <p class="mt-1.5">
+              Application type <strong class="text-zinc-200">Web application</strong>, and put
+              emisar's callback under <strong class="text-zinc-200">Authorized redirect URIs</strong>:
             </p>
             <.docs_code
               phx-no-format
@@ -86,16 +141,47 @@
               copy_text="https://emisar.dev/sign_in/sso/callback"
             >https://emisar.dev/sign_in/sso/callback</.docs_code>
             <p class="mt-4">
-              Google matches this string exactly — a trailing slash or
+              Mind which list it goes in — <strong class="text-zinc-200">Authorized JavaScript
+              origins</strong>
+              sits directly above it and takes no part in this flow. Google matches the URI
+              exactly, so a trailing slash or
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http</code>
               instead of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https</code>
-              is rejected at sign-in with a redirect_uri_mismatch, not at save time.
+              is rejected at sign-in with a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">redirect_uri_mismatch</code>, not
+              at save time.
             </p>
+            <.docs_screenshot
+              src="/images/docs/sso/google-web-application.webp"
+              title="Google Cloud · Create OAuth client ID"
+              caption="The callback belongs under Authorized redirect URIs, not the JavaScript origins above it."
+              alt="The Create OAuth client ID form with Application type set to Web application and the Authorized redirect URIs heading both outlined in green, and emisar's callback filled into URIs 1."
+            />
           </div>
         </li>
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
-            4
+            6
+          </span>
+          <div class="min-w-0 text-base leading-7 text-zinc-400">
+            <.docs_step_venue>Google Cloud</.docs_step_venue>
+            <p class="font-semibold text-zinc-100">
+              Copy both values before you close the dialog.
+            </p>
+            <p class="mt-1.5">
+              Google shows the client ID and secret once. The secret cannot be read again
+              afterwards — you would have to create another client — so take them now.
+            </p>
+            <.docs_screenshot
+              src="/images/docs/sso/google-client-created.webp"
+              title="Google Cloud · OAuth client created"
+              caption="The secret is shown once. Both values are redacted here; yours are real."
+              alt="The OAuth client created dialog with Client ID and Client secret each outlined in green, both showing redacted placeholder values, above a warning that the secret cannot be viewed again."
+            />
+          </div>
+        </li>
+        <li class="flex gap-4">
+          <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
+            7
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>emisar</.docs_step_venue>
