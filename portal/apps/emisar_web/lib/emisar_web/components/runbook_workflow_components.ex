@@ -147,7 +147,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         class={[
           "mt-4 grid gap-3 sm:grid-cols-2",
           if(@stage["mode"] == "parallel",
-            do: "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_13rem]",
+            do: "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]",
             else: "xl:grid-cols-[9rem_minmax(0,1fr)_10rem]"
           )
         ]}
@@ -183,7 +183,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           max="16"
           name={"draft[stages][#{@stage_index}][max_parallel]"}
           value={@stage["max_parallel"]}
-          label="Maximum concurrent actions"
+          label="Maximum concurrency"
           label_variant={:eyebrow}
           disabled={@read_only?}
         />

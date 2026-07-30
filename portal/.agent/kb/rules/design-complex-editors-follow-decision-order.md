@@ -24,13 +24,14 @@ operator makes. Pair identity with purpose, put behavior choices next, then show
 conditional values, defaults, and bounds. Field labels carry the hierarchy when
 that order is already clear; do not add a group heading merely to restate it.
 Let flexible text fields grow only to a readable measure, keep finite choices at
-a content-sized width, and cap the collection on wide canvases. Intentional
-negative space is better than stretching controls to fill a uniform grid. Give
-related rows one measure and right edge. The collection or card owns that
-measure; do not add a second inner width cap that leaves a dead rail inside the
-card. Inside a row, equal binary choices use the same compact width while the
-domain-bearing choice takes the remaining space. Font treatment must not change
-peer control heights.
+a content-sized width, and use the shortest unambiguous label for a finite choice
+or bound so its track does not steal width from the flexible field. Cap the
+collection on wide canvases. Intentional negative space is better than stretching
+controls to fill a uniform grid. Give related rows one measure and right edge.
+The collection or card owns that measure; do not add a second inner width cap
+that leaves a dead rail inside the card. Inside a row, equal binary choices use
+the same compact width while the domain-bearing choice takes the remaining
+space. Font treatment must not change peer control heights.
 
 A typed value uses a type-aware editor. Booleans offer no default, true, or
 false; integer and number defaults use numeric controls with whole-number and

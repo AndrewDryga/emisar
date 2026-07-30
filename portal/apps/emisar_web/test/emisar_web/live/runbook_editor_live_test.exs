@@ -178,9 +178,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(lv, "#runbook-stage-0-step-1")
 
       html = change(lv, valid_draft())
-      assert html =~ "Maximum concurrent actions"
+      assert html =~ "Maximum concurrency"
       assert has_element?(lv, ~s(input[name="draft[stages][0][max_parallel]"]))
-      assert html =~ "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_13rem]"
+      assert html =~ "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]"
 
       assert has_element?(
                lv,
