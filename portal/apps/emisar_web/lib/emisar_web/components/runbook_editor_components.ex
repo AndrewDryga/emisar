@@ -446,21 +446,22 @@ defmodule EmisarWeb.RunbookEditorComponents do
                     class={[
                       "mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium ring-1 ring-inset transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                       if(enum_default?(enum_value),
-                        do: "bg-brand-500/10 text-brand-200 ring-brand-500/30",
-                        else: "text-zinc-400 ring-zinc-800 hover:bg-white/[0.04] hover:text-zinc-200"
+                        do: "bg-white/[0.04] text-zinc-100 ring-white/25",
+                        else:
+                          "text-zinc-400 ring-zinc-800 hover:bg-white/[0.04] hover:text-zinc-200 hover:ring-zinc-700"
                       )
                     ]}
                   >
                     <span class={[
                       "flex h-4 w-4 items-center justify-center rounded-full ring-1 ring-inset",
                       if(enum_default?(enum_value),
-                        do: "ring-brand-400",
+                        do: "ring-zinc-300",
                         else: "ring-zinc-600"
                       )
                     ]}>
                       <span
                         :if={enum_default?(enum_value)}
-                        class="h-2 w-2 rounded-full bg-brand-400"
+                        class="h-2 w-2 rounded-full bg-zinc-200"
                       />
                     </span>
                     Default

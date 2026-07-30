@@ -256,6 +256,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
+               ~s(button[aria-pressed="true"][class*="bg-white/"][class*="ring-white/25"])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(button[aria-pressed="true"] span[class*="ring-zinc-300"] span[class*="bg-zinc-200"])
+             )
+
+      refute has_element?(lv, ~s(button[aria-pressed="true"][class*="brand-"]))
+      refute has_element?(lv, ~s(button[aria-pressed="true"] [class*="brand-"]))
+
+      assert has_element?(
+               lv,
                ~s(input[name="draft[inputs][0][enum_values][1][default]"][value="true"])
              )
 
