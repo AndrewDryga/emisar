@@ -427,6 +427,32 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       refute joiner.scim_external_id in Enum.flat_map(groups, & &1.member_external_ids)
     end
 
+    test "an unacceptable EARLIER rename fails the batch, rather than being discarded", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      # Only the last rename decides the final name, so judging only that one let an
+      # unacceptable earlier operation through silently — the IdP sent something we
+      # neither applied nor refused.
+      joiner = provision(provider, "okta|earlier-rename")
+
+      conn
+      |> scim_send(token, :patch, ~p"/scim/v2/Groups/grp-earlier", %{
+        "Operations" => [
+          %{"op" => "replace", "path" => "displayName", "value" => String.duplicate("n", 300)},
+          %{"op" => "replace", "path" => "displayName", "value" => "Fine"},
+          %{"op" => "add", "path" => "members", "value" => [%{"value" => "okta|earlier-rename"}]}
+        ]
+      })
+      |> json_response(400)
+
+      groups = SSO.scim_list_groups(provider)
+
+      refute Enum.find(groups, &(&1.external_group_id == "grp-earlier"))
+      refute joiner.scim_external_id in Enum.flat_map(groups, & &1.member_external_ids)
+    end
+
     test "a PATCH with too many operations → 400 invalidValue", %{conn: conn, token: token} do
       operations =
         for _n <- 1..(@max_patch_operations + 1) do

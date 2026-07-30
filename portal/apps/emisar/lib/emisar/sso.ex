@@ -1631,14 +1631,22 @@ defmodule Emisar.SSO do
         %IdentityProvider{} = provider,
         external_group_id,
         add_external_ids,
-        remove_external_ids
+        remove_external_ids,
+        display \\ nil
       ) do
     with :ok <- validate_required_scim_string(external_group_id),
+         :ok <- validate_optional_scim_string(display),
          :ok <- validate_scim_patch_member_ids(add_external_ids, remove_external_ids) do
       with {:ok, {current_provider, added, removed, affected}} <-
              Repo.transaction(fn ->
                {locked_provider, first_push?} = lock_provider!(provider)
-               :ok = upsert_directory_group(locked_provider, external_group_id, nil)
+               # The batch's rename lands HERE, inside the same transaction and
+               # under the same provider lock as the membership change. Applied
+               # afterwards in a transaction of its own, a disable, deletion or
+               # database failure between the two returned an error to the IdP with
+               # the privilege change already committed.
+               :ok = upsert_directory_group(locked_provider, external_group_id, display)
+               _ = refresh_group_display(locked_provider, external_group_id, display)
                add_ids = resolve_member_identity_ids(locked_provider, add_external_ids)
                remove_ids = resolve_member_identity_ids(locked_provider, remove_external_ids)
                added = add_group_members(locked_provider, external_group_id, add_ids)

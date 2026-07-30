@@ -96,7 +96,7 @@ defmodule EmisarWeb.SCIM.GroupController do
     # batch carrying both used to commit the membership and only then reject the
     # rename: the IdP read a 400 as total failure while a privilege change had
     # already landed. An unacceptable name now costs nothing.
-    case SSO.validate_scim_group_display(pending_display(renames)) do
+    case validate_every_rename(renames) do
       :ok -> patch_members(conn, provider, external_id, member_operations, renames)
       {:error, reason} -> render_error(conn, reason)
     end
@@ -108,6 +108,18 @@ defmodule EmisarWeb.SCIM.GroupController do
   def update(conn, _params),
     do: bad_request(conn, "invalidSyntax", "PATCH requires a SCIM PatchOp with `Operations`.")
 
+  # EVERY rename, not only the one that wins. Judging just the last silently
+  # discarded an unacceptable earlier one — the IdP sent an operation we neither
+  # applied nor refused.
+  defp validate_every_rename(renames) do
+    Enum.reduce_while(renames, :ok, fn operation, :ok ->
+      case SSO.validate_scim_group_display(rename_display(operation)) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
   # The name this batch would settle on: wire order decides, so the last rename
   # wins, and a batch with no rename has no name to judge.
   defp pending_display([]), do: nil
@@ -117,8 +129,6 @@ defmodule EmisarWeb.SCIM.GroupController do
   # we issued and the IdP keeps addressing it by that — only the display moves.
   # JumpCloud's activation sends exactly this and treats a 400 as a hard failure.
   # Wire order decides, so the last rename in the batch is the one that sticks.
-  defp apply_renames(_provider, _external_id, []), do: :ok
-
   defp apply_renames(provider, external_id, renames) do
     case SSO.scim_rename_group(provider, external_id, pending_display(renames)) do
       {:ok, _summary} -> :ok
@@ -218,27 +228,28 @@ defmodule EmisarWeb.SCIM.GroupController do
   defp patch_members(conn, provider, external_id, operations, renames) do
     case member_ops(operations) do
       {:replace, member_external_ids} ->
+        # The display travels WITH the member replacement, so one transaction
+        # applies both or neither.
         attrs = %{
           external_id: external_id,
-          display: nil,
+          display: pending_display(renames),
           member_external_ids: member_external_ids
         }
 
-        with {:ok, summary} <- SSO.scim_upsert_group(provider, attrs),
-             :ok <- apply_renames(provider, external_id, renames) do
-          render_group(conn, :ok, renamed(summary, renames), member_external_ids)
-        else
+        case SSO.scim_upsert_group(provider, attrs) do
+          {:ok, summary} -> render_group(conn, :ok, summary, member_external_ids)
           {:error, reason} -> render_error(conn, reason)
         end
 
       {:delta, add_ids, remove_ids} ->
-        with {:ok, _summary} <-
-               SSO.scim_patch_group_members(provider, external_id, add_ids, remove_ids),
-             :ok <- apply_renames(provider, external_id, renames) do
-          summary = renamed(%{external_group_id: external_id}, renames)
-          render_group(conn, :ok, summary, add_ids)
-        else
-          {:error, reason} -> render_error(conn, reason)
+        display = pending_display(renames)
+
+        case SSO.scim_patch_group_members(provider, external_id, add_ids, remove_ids, display) do
+          {:ok, _summary} ->
+            render_group(conn, :ok, renamed(%{external_group_id: external_id}, renames), add_ids)
+
+          {:error, reason} ->
+            render_error(conn, reason)
         end
 
       {:error, reason} ->

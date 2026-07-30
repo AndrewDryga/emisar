@@ -2667,7 +2667,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "scim_patch_group_members/4" do
+  describe "scim_patch_group_members/5" do
     setup do
       scim_provider()
     end
