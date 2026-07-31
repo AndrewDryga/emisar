@@ -45,6 +45,9 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 			if got.binary != "claude" || !reflect.DeepEqual(got.args, want) {
 				t.Fatalf("claude argv = %q %#v", got.binary, got.args)
 			}
+			if !strings.Contains(strings.Join(got.env, "\n"), "ENABLE_TOOL_SEARCH=false") {
+				t.Fatalf("claude environment did not force MCP tools up front: %q", got.env)
+			}
 			config, err := os.ReadFile(configPath)
 			if err != nil {
 				t.Fatal(err)
