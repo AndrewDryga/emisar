@@ -4,6 +4,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
   alias Emisar.{Approvals, Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
   alias Emisar.Approvals.Request
   alias Emisar.Runbooks.{ExecutionItem, RunbookExecution, Scheduler}
+  alias Emisar.Runners.Presence
 
   @hash "sha256:" <> String.duplicate("c", 64)
 
@@ -306,6 +307,53 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert Repo.reload!(request).status == :cancelled
   end
 
+  test "one-runner group selection stays frozen when the chosen runner disconnects", %{
+    account: account,
+    approver: approver,
+    runner: first,
+    subject: subject
+  } do
+    second = trusted_runner(account, subject, group: first.group)
+    Runners.subscribe_runner_transport(second)
+
+    definition =
+      first.group
+      |> required_definition()
+      |> put_in(
+        ["stages", Access.at(0), "steps", Access.at(0), "targets", "selection"],
+        "random_one"
+      )
+
+    runbook = published_runbook(subject, definition)
+
+    assert {:ok, result} =
+             Runbooks.dispatch_runbook(runbook, "freeze one runner", subject,
+               target_selection_seed: "approval-offline-test"
+             )
+
+    item = ExecutionItem.Query.by_execution_id(result.execution_id) |> Repo.one!()
+    other_id = if item.runner_id == first.id, do: second.id, else: first.id
+
+    assert Runners.online?(account.id, item.runner_id)
+    assert Runners.online?(account.id, other_id)
+
+    assert :ok = Presence.untrack(self(), Presence.topic(account.id), item.runner_id)
+    refute Runners.online?(account.id, item.runner_id)
+    assert Runners.online?(account.id, other_id)
+
+    assert {:ok, [request], _metadata} =
+             Approvals.list_pending_approval_requests(approver)
+
+    assert Approvals.approve_request(request, approver, "chosen runner reviewed") ==
+             {:error, :runbook_execution_not_approvable}
+
+    halted = execution(result.execution_id)
+    assert halted.status == :halted
+    assert halted.terminal_code == "approval_preflight_failed"
+    assert Runs.list_runs_for_runbook_execution(account.id, result.execution_id) == []
+    assert Repo.reload!(request).status == :cancelled
+  end
+
   defp approver_subject(account) do
     user = Fixtures.Users.create_user()
 
@@ -410,7 +458,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
               "id" => "inspect",
               "pack" => %{"id" => "linux-core"},
               "action" => "linux.uptime",
-              "targets" => %{"refs" => ["group:" <> group]},
+              "targets" => %{"selection" => "all", "refs" => ["group:" <> group]},
               "args" => %{},
               "outputs" => [],
               "success" => [],

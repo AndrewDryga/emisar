@@ -170,6 +170,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               <span class="font-medium text-zinc-300">
                 {runner_name(item["runner_ref"])}
               </span>
+              <span :if={item["target_group"]} class="text-zinc-500">
+                · selected from {item["target_group"]}
+              </span>
               <span :if={item["step_id"]} class="font-mono text-zinc-500">
                 · {item["step_id"]}
               </span>
@@ -377,7 +380,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     targets_resolved? =
       RunbookEditorCatalog.targets_resolved?(
         assigns.catalog,
-        assigns.step["target_refs"]
+        assigns.step["target_refs"],
+        assigns.step["target_selection"]
       )
 
     action_available? =
@@ -400,7 +404,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       )
       |> assign(
         :target_options,
-        RunbookEditorCatalog.target_options(assigns.catalog, assigns.step["target_refs"])
+        RunbookEditorCatalog.target_options(
+          assigns.catalog,
+          assigns.step["target_refs"],
+          assigns.step["target_selection"]
+        )
       )
       |> assign(:targets_resolved?, targets_resolved?)
       |> assign(
@@ -602,13 +610,15 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp target_picker(assigns) do
     refs = assigns.step["target_refs"] || []
+    selection = assigns.step["target_selection"] || "all"
     unavailable = Enum.count(refs, &(not Map.has_key?(assigns.catalog.target_runner_ids, &1)))
 
     assigns =
       assigns
       |> assign(:refs, refs)
+      |> assign(:selection, selection)
       |> assign(:unavailable, unavailable)
-      |> assign(:label, target_selection_label(assigns.catalog, refs, unavailable))
+      |> assign(:label, target_selection_label(assigns.catalog, refs, selection, unavailable))
       |> assign(
         :disabled?,
         assigns.read_only? or (refs == [] and assigns.catalog.target_options == [])
@@ -617,6 +627,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     ~H"""
     <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-targets"}>
       <.label variant={:eyebrow}>Targets</.label>
+
+      <input
+        type="hidden"
+        name={"draft[stages][#{@stage_index}][steps][#{@step_index}][target_selection]"}
+        value={@selection}
+      />
 
       <input
         :for={ref <- @refs}
@@ -628,6 +644,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <div
         :if={@disabled?}
         id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-trigger"}
+        title={@label}
         aria-disabled="true"
         class={[
           "mt-2 flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-zinc-900 px-3 py-2.5 text-sm ring-1 ring-inset",
@@ -651,6 +668,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         <:trigger>
           <span
             id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-trigger"}
+            title={@label}
             class="flex min-w-0 flex-1 items-center justify-between gap-3"
           >
             <span class="min-w-0 truncate">{@label}</span>
@@ -691,7 +709,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp target_choice(assigns) do
     selected? = assigns.option.selected
     unavailable? = Map.get(assigns.option, :unavailable, false)
-    disabled? = not selected? and (assigns.option.disabled or assigns.at_limit?)
+
+    disabled? =
+      not selected? and
+        (assigns.option.disabled or
+           (assigns.at_limit? and assigns.option.selection == "all"))
 
     assigns =
       assigns
@@ -707,6 +729,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       phx-value-stage={@stage_index}
       phx-value-step={@step_index}
       phx-value-target={@option.value}
+      phx-value-selection={@option.selection}
+      title={@option.label}
       disabled={@disabled?}
       class={[
         "flex min-h-10 w-full items-center gap-2.5 rounded px-3 py-2 text-left transition-colors",
@@ -726,20 +750,21 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     """
   end
 
-  defp target_selection_label(%{target_options: []}, [], _unavailable),
+  defp target_selection_label(%{target_options: []}, [], _selection, _unavailable),
     do: "No online runners available"
 
-  defp target_selection_label(_catalog, [], _unavailable), do: "Choose runners or groups…"
+  defp target_selection_label(_catalog, [], _selection, _unavailable),
+    do: "Choose runners or groups…"
 
-  defp target_selection_label(catalog, [ref], 0),
-    do: RunbookEditorCatalog.target_label(catalog, ref)
+  defp target_selection_label(catalog, [ref], selection, 0),
+    do: RunbookEditorCatalog.target_label(catalog, ref, selection)
 
-  defp target_selection_label(catalog, [ref], _unavailable),
-    do: "Unavailable · #{RunbookEditorCatalog.target_label(catalog, ref)}"
+  defp target_selection_label(catalog, [ref], selection, _unavailable),
+    do: "Unavailable · #{RunbookEditorCatalog.target_label(catalog, ref, selection)}"
 
-  defp target_selection_label(_catalog, refs, 0), do: "#{length(refs)} targets"
+  defp target_selection_label(_catalog, refs, _selection, 0), do: "#{length(refs)} targets"
 
-  defp target_selection_label(_catalog, refs, unavailable),
+  defp target_selection_label(_catalog, refs, _selection, unavailable),
     do: "#{length(refs)} targets · #{unavailable} unavailable"
 
   defp target_summary_class(0) do

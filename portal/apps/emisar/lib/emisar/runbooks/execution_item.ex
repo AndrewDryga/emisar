@@ -7,6 +7,8 @@ defmodule Emisar.Runbooks.ExecutionItem do
     field :step_id, :string
     field :step_position, :integer
     field :runner_ref, :string
+    field :target_selection, :string
+    field :target_group, :string
     field :action_id, :string
     field :pack_ref, :string
     field :pack_hash, :string

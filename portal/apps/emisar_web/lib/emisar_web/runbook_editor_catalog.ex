@@ -25,22 +25,27 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   end
 
   @doc "Return the target picker choices, including unavailable selected refs."
-  def target_options(catalog, selected_refs) do
+  def target_options(catalog, selected_refs, selection) do
     selected = MapSet.new(selected_refs)
 
     options =
       Enum.map(catalog.target_options, fn option ->
-        %{option | selected: option.value in selected_refs}
+        %{option | selected: option.value in selected_refs and option.selection == selection}
       end)
 
     missing =
       selected
-      |> MapSet.difference(MapSet.new(options, & &1.value))
+      |> MapSet.difference(
+        options
+        |> Enum.filter(&(&1.selection == selection))
+        |> MapSet.new(& &1.value)
+      )
       |> Enum.sort()
       |> Enum.map(fn ref ->
         %{
           value: ref,
-          label: target_label(catalog, ref),
+          selection: selection,
+          label: target_label(catalog, ref, selection),
           disabled: false,
           selected: true,
           unavailable: true
@@ -51,11 +56,12 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   end
 
   @doc "Human label for one tagged target reference."
-  def target_label(catalog, ref), do: catalog.target_labels[ref] || fallback_target_label(ref)
+  def target_label(catalog, ref, selection \\ "all"),
+    do: catalog.target_labels[{selection, ref}] || fallback_target_label(ref, selection)
 
   @doc "Action choices available on every runner resolved from the selected targets."
   def action_options(catalog, selected_refs, selected_value) do
-    targets_resolved? = targets_resolved?(catalog, selected_refs)
+    targets_resolved? = targets_resolved?(catalog, selected_refs, "all")
     runner_ids = selected_runner_ids(catalog, selected_refs)
 
     options =
@@ -100,11 +106,16 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   end
 
   @doc "Whether every selected target currently resolves to one or more eligible runners."
-  def targets_resolved?(_catalog, []), do: false
+  def targets_resolved?(_catalog, [], _selection), do: false
 
-  def targets_resolved?(catalog, refs) do
+  def targets_resolved?(catalog, refs, "all") do
     Enum.all?(refs, &Map.has_key?(catalog.target_runner_ids, &1))
   end
+
+  def targets_resolved?(catalog, [ref = "group:" <> _group], "random_one"),
+    do: Map.has_key?(catalog.target_runner_ids, ref)
+
+  def targets_resolved?(_catalog, _refs, _selection), do: false
 
   @doc "Whether the current pack/action choice is available on every selected runner."
   def action_available?(catalog, selected_refs, selected_value) do
@@ -187,7 +198,31 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       Enum.flat_map(groups, fn group ->
         group_ref = "group:" <> group
 
-        group_option = %{value: group_ref, label: group, disabled: false, selected: false}
+        count = Enum.count(runners, &(&1.group == group))
+
+        group_heading = %{
+          value: "",
+          selection: nil,
+          label: group,
+          disabled: true,
+          selected: false
+        }
+
+        all_option = %{
+          value: group_ref,
+          selection: "all",
+          label: "All online runners (#{count})",
+          disabled: false,
+          selected: false
+        }
+
+        random_option = %{
+          value: group_ref,
+          selection: "random_one",
+          label: "One online runner",
+          disabled: false,
+          selected: false
+        }
 
         runner_options =
           runners
@@ -195,7 +230,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
           |> Enum.sort_by(& &1.name)
           |> Enum.map(&runner_option/1)
 
-        [group_option | runner_options]
+        [group_heading, all_option, random_option | runner_options]
       end)
 
     ungrouped =
@@ -210,7 +245,13 @@ defmodule EmisarWeb.RunbookEditorCatalog do
 
         rows ->
           [
-            %{value: "", label: "Ungrouped", disabled: true, selected: false}
+            %{
+              value: "",
+              selection: nil,
+              label: "Ungrouped",
+              disabled: true,
+              selected: false
+            }
             | Enum.map(rows, &runner_option/1)
           ]
       end
@@ -223,8 +264,15 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     runner_ids = Map.new(runners, &{"runner:" <> &1.ref, [&1.id]})
 
     labels =
-      Map.new(groups, &{"group:" <> &1, &1 <> " group"})
-      |> Map.merge(Map.new(runners, &{"runner:" <> &1.ref, &1.name}))
+      Enum.reduce(groups, %{}, fn group, labels ->
+        count = Enum.count(runners, &(&1.group == group))
+        ref = "group:" <> group
+
+        labels
+        |> Map.put({"all", ref}, "#{group} — all online runners (#{count})")
+        |> Map.put({"random_one", ref}, "#{group} — one online runner")
+      end)
+      |> Map.merge(Map.new(runners, &{{"all", "runner:" <> &1.ref}, &1.name}))
 
     %{
       options: grouped_options ++ ungrouped_options,
@@ -236,6 +284,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   defp runner_option(runner) do
     %{
       value: "runner:" <> runner.ref,
+      selection: "all",
       label: @runner_indent <> runner.name,
       disabled: false,
       selected: false
@@ -298,15 +347,18 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     action_id
   end
 
-  defp fallback_target_label("group:" <> group), do: group <> " group"
+  defp fallback_target_label("group:" <> group, "random_one"),
+    do: group <> " — one online runner"
 
-  defp fallback_target_label("runner:" <> ref) do
+  defp fallback_target_label("group:" <> group, _selection), do: group <> " group"
+
+  defp fallback_target_label("runner:" <> ref, _selection) do
     ref
     |> String.split("~", parts: 2)
     |> List.first()
   end
 
-  defp fallback_target_label(ref), do: ref
+  defp fallback_target_label(ref, _selection), do: ref
 
   defp argument_metadata_missing?([]), do: true
 

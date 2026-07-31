@@ -88,6 +88,42 @@ defmodule Emisar.Runbooks.DefinitionTest do
       assert Enum.map(issues, & &1.path) == ["/stages/0/steps/0/pack/requirement"]
     end
 
+    test "requires an explicit target selection mode" do
+      definition =
+        update_in(
+          valid_definition(),
+          ["stages", Access.at(0), "steps", Access.at(0), "targets"],
+          &Map.delete(&1, "selection")
+        )
+
+      assert {:error, issues} = Definition.validate(definition)
+      assert Enum.map(issues, & &1.path) == ["/stages/0/steps/0/targets/selection"]
+    end
+
+    test "one online runner accepts exactly one group and rejects every wider shape" do
+      target_path = ["stages", Access.at(0), "steps", Access.at(0), "targets"]
+
+      assert {:ok, _definition} =
+               valid_definition()
+               |> put_in(target_path, %{
+                 "selection" => "random_one",
+                 "refs" => ["group:edge"]
+               })
+               |> Definition.validate()
+
+      for refs <- [
+            ["runner:edge-1~aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+            ["group:edge", "group:database"]
+          ] do
+        assert {:error, issues} =
+                 valid_definition()
+                 |> put_in(target_path, %{"selection" => "random_one", "refs" => refs})
+                 |> Definition.validate()
+
+        assert Enum.any?(issues, &(&1.path == "/stages/0/steps/0/targets/refs"))
+      end
+    end
+
     test "enforces typed input constraints and forbids sensitive defaults" do
       definition =
         valid_definition()
@@ -243,7 +279,7 @@ defmodule Emisar.Runbooks.DefinitionTest do
               "id" => "observe",
               "pack" => %{"id" => "linux-core"},
               "action" => "linux.uptime",
-              "targets" => %{"refs" => ["group:edge"]},
+              "targets" => %{"selection" => "all", "refs" => ["group:edge"]},
               "args" => %{"host" => %{"source" => "input", "ref" => "host"}},
               "outputs" => [output("ready")],
               "success" => [%{"output" => "ready", "operator" => "equals", "value" => true}],

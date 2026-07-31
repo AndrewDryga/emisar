@@ -153,7 +153,8 @@ its actions from itself:
 | Runbook binds output from the wrong host | Output bindings may name only an earlier stage and must resolve to one unique producer or the same runner across fan-out. Ambiguous correlation fails preflight. |
 | Pack fleet moves after runbook review | Preflight selects a compatible trusted version per exact runner and freezes its full pack ref, hash, and action contract. Every later attempt rechecks those frozen facts. |
 | Partial fleet mutation after target drift | The complete expanded target set must be in caller scope before creation; later authorization or trust loss halts before the next attempt or stage. Already-running peers only settle their real outcome. |
-| Approval hides a wider stage fan-out | A required stage opens one approval over the complete frozen item set before any action run exists; approver runner scope is checked against every item at notification, visibility, and decision. |
+| One-runner group selection hides an incompatible or unauthorized peer | Preflight validates every online member in the subject-visible group before deterministically freezing one exact runner. The plan and approval retain the source group; a later disconnect halts instead of reselecting. |
+| Approval hides a wider execution fan-out | Any item that requires approval opens one approval over the complete frozen execution before any action run exists; approver runner scope is checked against every item at notification, visibility, and decision. |
 | Pack swapped on disk after trust         | Runner recomputes the cloud-pinned trusted hash before execution. |
 | Pack sets `LD_PRELOAD`/`BASH_ENV`        | Hijack-vector env vars rejected at pack validation.           |
 | Action outlives a dying runner           | `Pdeathsig` (Linux) + process-group SIGTERM/SIGKILL on cancel/timeout. |

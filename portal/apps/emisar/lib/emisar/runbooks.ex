@@ -10,7 +10,7 @@ defmodule Emisar.Runbooks do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Approvals, Audit, Auth, MCPOperations, Repo, Runs}
+  alias Emisar.{Accounts, Approvals, Audit, Auth, Crypto, MCPOperations, Repo, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Compiler, Definition, Runbook, RunbookExecution, Scheduler}
   alias Emisar.Runbooks.ExecutionItem
@@ -507,6 +507,7 @@ defmodule Emisar.Runbooks do
     operation_fingerprint = Keyword.get(opts, :operation_fingerprint)
     operation_ref = Keyword.get(opts, :operation_ref)
     input_values = Keyword.get(opts, :input_values, %{})
+    selection_seed = Keyword.get_lazy(opts, :target_selection_seed, &new_target_selection_seed/0)
 
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -525,10 +526,12 @@ defmodule Emisar.Runbooks do
           subject,
           operation_id,
           operation_fingerprint,
-          operation_ref
+          operation_ref,
+          selection_seed
         )
       else
-        with {:ok, compiled} <- Compiler.compile(runbook.definition, input_values, subject) do
+        with {:ok, compiled} <-
+               Compiler.compile(runbook.definition, input_values, selection_seed, subject) do
           Scheduler.create_execution(runbook, compiled, reason, subject)
         end
       end
@@ -542,7 +545,8 @@ defmodule Emisar.Runbooks do
          subject,
          operation_id,
          fingerprint,
-         operation_ref
+         operation_ref,
+         selection_seed
        )
        when is_binary(operation_id) and is_binary(fingerprint) and is_binary(operation_ref) do
     execution_id = MCPOperations.resource_id(operation_id, :execute_runbook, subject)
@@ -566,7 +570,8 @@ defmodule Emisar.Runbooks do
           input_values,
           subject,
           operation_attrs,
-          execution_id
+          execution_id,
+          selection_seed
         )
 
       {:error, error} ->
@@ -581,7 +586,8 @@ defmodule Emisar.Runbooks do
          _subject,
          _operation_id,
          _fingerprint,
-         _operation_ref
+         _operation_ref,
+         _selection_seed
        ),
        do: {:error, :invalid_operation}
 
@@ -591,9 +597,11 @@ defmodule Emisar.Runbooks do
          input_values,
          subject,
          operation_attrs,
-         execution_id
+         execution_id,
+         selection_seed
        ) do
-    with {:ok, compiled} <- Compiler.compile(runbook.definition, input_values, subject),
+    with {:ok, compiled} <-
+           Compiler.compile(runbook.definition, input_values, selection_seed, subject),
          {:ok, multi} <-
            MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
       multi =
@@ -642,13 +650,24 @@ defmodule Emisar.Runbooks do
     do: resolve_plan(runbook, %{}, subject)
 
   def resolve_plan(%Runbook{} = runbook, input_values, %Subject{} = subject) do
+    resolve_plan(runbook, input_values, new_target_selection_seed(), subject)
+  end
+
+  def resolve_plan(
+        %Runbook{} = runbook,
+        input_values,
+        selection_seed,
+        %Subject{} = subject
+      )
+      when is_binary(selection_seed) and selection_seed != "" do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Emisar.Runs.Authorizer.dispatch_run_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
-         {:ok, compiled} <- Compiler.compile(runbook.definition, input_values, subject) do
+         {:ok, compiled} <-
+           Compiler.compile(runbook.definition, input_values, selection_seed, subject) do
       total = compiled.plan["total_items"]
       {:ok, %{plan: compiled.plan, total: total, stages: length(compiled.plan["stages"])}}
     end
@@ -666,7 +685,8 @@ defmodule Emisar.Runbooks do
              subject,
              Emisar.Runs.Authorizer.dispatch_run_permission()
            ),
-         {:ok, compiled} <- Compiler.compile(definition, input_values, subject) do
+         {:ok, compiled} <-
+           Compiler.compile(definition, input_values, new_target_selection_seed(), subject) do
       {:ok,
        %{
          plan: compiled.plan,
@@ -675,6 +695,9 @@ defmodule Emisar.Runbooks do
        }}
     end
   end
+
+  @doc "Returns a fresh server-side seed for one stable preflight and dispatch pair."
+  def new_target_selection_seed, do: Crypto.random_secret()
 
   @doc "Validates one unsaved definition through the context-owned strict contract."
   def validate_definition(definition, %Subject{} = subject) do

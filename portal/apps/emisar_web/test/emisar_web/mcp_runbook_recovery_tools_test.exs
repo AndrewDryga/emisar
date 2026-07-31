@@ -155,14 +155,15 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
              "id" => "check",
              "action" => "operations.health",
              "pack" => %{"id" => "operations"},
-             "targets" => %{"refs" => ["runner:" <> ^runner_ref]}
+             "targets" => %{"selection" => "all", "refs" => ["runner:" <> ^runner_ref]}
            } = get_in(fetched, ["runbook", "definition", "stages", Access.at(0), "steps"]) |> hd()
 
     draft_args = %{
       "title" => "Check database fleet",
       "slug" => nil,
       "description" => nil,
-      "definition" => runbook_definition(%{"refs" => ["runner:" <> runner_ref]})
+      "definition" =>
+        runbook_definition(%{"selection" => "all", "refs" => ["runner:" <> runner_ref]})
     }
 
     draft = call(conn, "create_runbook_draft", draft_args)
@@ -462,7 +463,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     definition =
       runbook_definition(
-        %{"refs" => ["runner:" <> runner_ref(runner)]},
+        %{"selection" => "all", "refs" => ["runner:" <> runner_ref(runner)]},
         args: %{"service" => %{"source" => "input", "ref" => "missing"}}
       )
 
@@ -524,7 +525,11 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "title" => "Revoked pack draft",
         "slug" => nil,
         "description" => nil,
-        "definition" => runbook_definition(%{"refs" => ["runner:" <> runner_ref(runner)]})
+        "definition" =>
+          runbook_definition(%{
+            "selection" => "all",
+            "refs" => ["runner:" <> runner_ref(runner)]
+          })
       })
 
     assert draft["ok"]
@@ -1913,10 +1918,10 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
             |> Enum.filter(&(&1.id in ids))
             |> Enum.map(&("runner:" <> runner_ref(&1)))
 
-          %{"refs" => refs}
+          %{"selection" => "all", "refs" => refs}
 
         %{"group" => groups} ->
-          %{"refs" => Enum.map(groups, &("group:" <> &1))}
+          %{"selection" => "all", "refs" => Enum.map(groups, &("group:" <> &1))}
       end
 
     {:ok, draft} =

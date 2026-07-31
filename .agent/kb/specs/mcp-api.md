@@ -1481,7 +1481,7 @@ definition or `runbook_not_found`:
               "id": "check",
               "pack": {"id": "postgres"},
               "action": "postgres.replication_status",
-              "targets": {"refs": ["group:postgres"]},
+              "targets": {"selection": "all", "refs": ["group:postgres"]},
               "args": {
                 "cluster": {"source": "input", "ref": "cluster"}
               },
@@ -1513,11 +1513,12 @@ definition or `runbook_not_found`:
 
 The `definition` object is the same strict JSON-compatible v1 contract used by
 the console, persistence, validation, compilation, and draft creation. It
-allows no aliases or unknown fields. A target has 1 through 16 tagged `refs`;
-each is `runner:<runner_ref>` or `group:<group_name>`, and one step may mix the
-two forms. Group membership is resolved and frozen only when execution begins;
-publishing a runbook does not claim a future runner set. The complete expanded
-set must be inside the caller's current scope or preflight returns generic
+allows no aliases or unknown fields. A target requires `selection` and 1 through
+16 tagged `refs`. `selection: "all"` accepts distinct `runner:<runner_ref>` and
+`group:<group_name>` refs in one union. `selection: "random_one"` accepts exactly
+one group ref. Group membership is resolved only when execution begins;
+publishing a runbook does not claim a future runner set. The complete online pool
+must be inside the caller's current scope or preflight returns generic
 `not_allowed` without refs or counts; partial-fleet execution is never inferred.
 
 One definition is at most 64 KiB and contains at most 32 inputs, 16 stages, 32
@@ -1538,9 +1539,11 @@ generic signature.
 Before creation, the portal validates the strict definition and typed inputs;
 expands every target to exact current runner refs; validates complete caller
 scope; resolves the current trusted pack behind each declared action; requires a
-common action contract for every fan-out; checks every binding against that
+common action contract for the complete target pool; checks every binding against that
 contract; evaluates current account policy for every item; and enforces the
-signature restriction for the complete plan. Any failure creates no execution.
+signature restriction for the complete plan. For `random_one`, the portal validates
+the whole online group before choosing and freezing one exact runner. Any failure
+creates no execution.
 
 The operation, immutable expanded plan, execution, stages, and logical
 step/runner items commit atomically. If any frozen item requires approval, the
@@ -1549,7 +1552,8 @@ rows. Otherwise the scheduler advances the initial stage after commit. Runner
 delivery starts only after its corresponding action-run row commits. Approval
 and every later stage or wait attempt recheck initiating membership, runner
 scope, policy, exact frozen action contract, pack trust, and runner availability
-before dispatch.
+before dispatch. A disconnected frozen runner halts the execution; the scheduler
+never selects a replacement.
 
 Accepted response:
 
@@ -1697,7 +1701,7 @@ limits. Unknown fields are rejected at every level.
             "id": "check",
             "pack": {"id": "postgres"},
             "action": "postgres.replication_status",
-            "targets": {"refs": ["group:postgres"]},
+            "targets": {"selection": "all", "refs": ["group:postgres"]},
             "args": {},
             "outputs": [],
             "success": [],

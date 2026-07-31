@@ -95,6 +95,8 @@ func openPanel(button, content string) string {
 
 const waitForResolvedRunbookPlan = `(()=>{const el=document.querySelector('#current-runbook-plan-summary');return !!el&&el.textContent.includes('Actions')&&!el.textContent.includes('Checking current state')})()`
 
+const openRunbookTargetPicker = `(()=>{const trigger=document.querySelector('#runbook-stage-1-step-0-target-trigger');if(!trigger)return false;const details=trigger.closest('details');if(!details)return false;if(details.open)return true;trigger.click();return false})()`
+
 // collapseAuditFilters folds the audit facet drawer (it arrives expanded when
 // the URL carries a filter). Self-verifying: reports success only once
 // aria-expanded flips, so a click against the dead pre-connect render (which
@@ -161,6 +163,7 @@ var docsShots = []shot{
 	{Name: "runbook-import", Path: "/app/demo/runbooks/import", Anchor: Anchor{Selector: "#runbook-import"}, Width: docsWidth, Output: "docs/runbooks/import.webp"},
 	{Name: "runbook-inputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-inputs")}, Anchor: Anchor{Selector: "#runbook-inputs"}, Width: 1440, Output: "docs/runbooks/inputs.webp"},
 	{Name: "runbook-stage", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0")}, Anchor: Anchor{Selector: "#runbook-stage-0"}, Width: 1680, TopCSS: 720, Output: "docs/runbooks/stage.webp"},
+	{Name: "runbook-targets", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-0"), openRunbookTargetPicker}, Anchor: Anchor{Selector: "#runbook-stage-1-step-0"}, Width: 1440, TopCSS: 760, Output: "docs/runbooks/targets.webp"},
 	{Name: "runbook-arguments", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0-step-0-arguments")}, Anchor: Anchor{Selector: "#runbook-stage-0-step-0-arguments"}, Width: 1440, Output: "docs/runbooks/arguments.webp"},
 	{Name: "runbook-outputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-outputs")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-outputs"}, Width: 1440, Output: "docs/runbooks/outputs.webp"},
 	{Name: "runbook-conditions", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-success")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-success"}, Width: 1440, Output: "docs/runbooks/conditions.webp"},

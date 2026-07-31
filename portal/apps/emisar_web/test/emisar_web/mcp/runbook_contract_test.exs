@@ -73,7 +73,7 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
               "id" => "observe",
               "pack" => %{"id" => "linux-core"},
               "action" => "linux.uptime",
-              "targets" => %{"refs" => ["group:edge"]},
+              "targets" => %{"selection" => "all", "refs" => ["group:edge"]},
               "args" => %{"host" => %{"source" => "input", "ref" => "host"}},
               "outputs" => [],
               "success" => [],

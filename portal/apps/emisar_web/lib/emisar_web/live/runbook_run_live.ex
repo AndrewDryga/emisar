@@ -36,6 +36,7 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:reason, "")
      |> assign(:input_raw, %{})
      |> assign(:input_errors, %{})
+     |> assign(:target_selection_seed, nil)
      |> assign(:preflight_generation, 0)
      |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
      |> assign(:result, nil)
@@ -67,6 +68,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:reason, "")
           |> assign(:input_raw, initial_input_raw(runbook.definition))
           |> assign(:input_errors, %{})
+          |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
           |> assign(:preflight_generation, 0)
           |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
           |> assign(:result, nil)
@@ -197,7 +199,8 @@ defmodule EmisarWeb.RunbookRunLive do
                socket.assigns.runbook,
                socket.assigns.reason,
                socket.assigns.current_subject,
-               input_values: input_values
+               input_values: input_values,
+               target_selection_seed: socket.assigns.target_selection_seed
              ) do
           {:ok, %{execution_id: execution_id}} ->
             {:noreply,
@@ -279,6 +282,7 @@ defmodule EmisarWeb.RunbookRunLive do
       case Runbooks.resolve_plan(
              socket.assigns.runbook,
              input_values,
+             socket.assigns.target_selection_seed,
              socket.assigns.current_subject
            ) do
         {:ok, %{plan: plan}} ->
@@ -364,6 +368,7 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:events_by_attempt, %{})
     |> assign(:approval_request, nil)
     |> assign(:reason, "")
+    |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
     |> assign(:input_raw, initial_input_raw(socket.assigns.runbook.definition))
     |> schedule_preflight()
   end
@@ -1224,6 +1229,9 @@ defmodule EmisarWeb.RunbookRunLive do
           <span class="text-zinc-500">→</span>
           <span class="font-medium text-zinc-300">
             {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
+          </span>
+          <span :if={@item.target_group} class="text-zinc-500">
+            · selected from {@item.target_group}
           </span>
           <span class="font-mono text-zinc-500"> · {@item.step_id}</span>
           <%!-- One attempt is the norm — only a retry earns a mention. --%>

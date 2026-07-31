@@ -25,6 +25,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
               "id" => "uptime",
               "pack_id" => "linux-core",
               "action" => "linux.uptime",
+              "target_selection" => "all",
               "target_refs" => ["group:" <> (attrs[:group] || "default")],
               "args" => [],
               "outputs" => [],
@@ -274,7 +275,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(#runbook-stage-0-step-0-target-options button[phx-click="remove_target"][phx-value-target="group:default"])
+               ~s(#runbook-stage-0-step-0-target-options button[phx-click="remove_target"][phx-value-target="group:default"][phx-value-selection="all"])
              )
 
       refute has_element?(lv, "#runbook-stage-0-step-0-targets > .mt-2.space-y-2")
@@ -768,10 +769,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
 
       add_target =
-        ~s(#runbook-stage-0-step-0-target-options button[phx-click="add_target"][phx-value-target="group:default"])
+        ~s(#runbook-stage-0-step-0-target-options button[phx-click="add_target"][phx-value-target="group:default"][phx-value-selection="all"])
 
       lv |> element(add_target) |> render_click()
-      assert has_element?(lv, "#runbook-stage-0-step-0-target-trigger", "default group")
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "default — all online runners (1)"
+             )
 
       lv
       |> form("#runbook-editor-form")
@@ -786,11 +792,70 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         }
       })
 
-      assert has_element?(lv, "#runbook-stage-0-step-0-target-trigger", "default group")
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "default — all online runners (1)"
+             )
 
       assert has_element?(
                lv,
                ~s(input[type="hidden"][name="draft[stages][0][steps][0][action_choice]"][value="linux-core|linux.uptime"])
+             )
+    end
+
+    test "a group can target one online runner without exposing another definition shape", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      lv
+      |> element(
+        ~s(#runbook-stage-0-step-0-target-options button[phx-click="add_target"][phx-value-target="group:default"][phx-value-selection="random_one"])
+      )
+      |> render_click()
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "default — one online runner"
+             )
+
+      assert has_element?(
+               lv,
+               ~s(input[type="hidden"][name="draft[stages][0][steps][0][target_selection]"][value="random_one"])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(input[type="hidden"][name="draft[stages][0][steps][0][target_refs][]"][value="group:default"])
+             )
+
+      lv
+      |> form("#runbook-editor-form")
+      |> render_change(%{
+        "_target" => ["draft", "stages", "0", "steps", "0", "action_choice"],
+        "draft" => %{
+          "stages" => %{
+            "0" => %{
+              "steps" => %{"0" => %{"action_choice" => "linux-core|linux.uptime"}}
+            }
+          }
+        }
+      })
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "default — one online runner"
+             )
+
+      assert has_element?(
+               lv,
+               ~s(input[type="hidden"][name="draft[stages][0][steps][0][target_selection]"][value="random_one"])
              )
     end
 
@@ -829,7 +894,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                "This action is not available on every selected runner. Choose another action or update the targets."
              )
 
-      refute has_element?(lv, "#runbook-stage-0-step-0-overview p")
+      refute has_element?(lv, "#runbook-stage-0-step-0-overview > p")
     end
 
     test "target-first action selection renders descriptor-owned typed bindings", %{
@@ -859,7 +924,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
 
       remove_target =
-        ~s(#runbook-stage-0-step-0-target-options button[phx-click="remove_target"][phx-value-target="group:default"])
+        ~s(#runbook-stage-0-step-0-target-options button[phx-click="remove_target"][phx-value-target="group:default"][phx-value-selection="all"])
 
       lv |> element(remove_target) |> render_click()
 
@@ -870,10 +935,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
 
       add_target =
-        ~s(#runbook-stage-0-step-0-target-options button[phx-click="add_target"][phx-value-target="group:default"])
+        ~s(#runbook-stage-0-step-0-target-options button[phx-click="add_target"][phx-value-target="group:default"][phx-value-selection="all"])
 
       lv |> element(add_target) |> render_click()
-      assert has_element?(lv, "#runbook-stage-0-step-0-target-trigger", "default group")
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "default — all online runners (1)"
+             )
 
       assert has_element?(
                lv,

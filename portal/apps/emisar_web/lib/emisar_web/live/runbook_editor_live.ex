@@ -246,16 +246,38 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   def handle_event(
         "add_target",
-        %{"stage" => stage_index, "step" => step_index, "target" => target},
+        %{
+          "stage" => stage_index,
+          "step" => step_index,
+          "target" => target,
+          "selection" => selection
+        },
         socket
       ) do
-    if Map.has_key?(socket.assigns.catalog.target_runner_ids, target) do
+    if Map.has_key?(socket.assigns.catalog.target_runner_ids, target) and
+         valid_target_selection?(target, selection) do
       mutate_step(socket, stage_index, step_index, fn step ->
         refs = step["target_refs"] || []
 
-        if target in refs or length(refs) >= 16,
-          do: step,
-          else: Map.put(step, "target_refs", refs ++ [target])
+        cond do
+          selection == "random_one" ->
+            step
+            |> Map.put("target_selection", "random_one")
+            |> Map.put("target_refs", [target])
+
+          step["target_selection"] == "random_one" ->
+            step
+            |> Map.put("target_selection", "all")
+            |> Map.put("target_refs", [target])
+
+          target in refs or length(refs) >= 16 ->
+            step
+
+          true ->
+            step
+            |> Map.put("target_selection", "all")
+            |> Map.put("target_refs", refs ++ [target])
+        end
       end)
     else
       {:noreply, put_flash(socket, :error, "Choose a current runner or group.")}
@@ -271,7 +293,11 @@ defmodule EmisarWeb.RunbookEditorLive do
       socket,
       stage_index,
       step_index,
-      &Map.update!(&1, "target_refs", fn refs -> List.delete(refs, target) end)
+      fn step ->
+        step
+        |> Map.update!("target_refs", &List.delete(&1, target))
+        |> Map.put("target_selection", "all")
+      end
     )
   end
 
@@ -435,6 +461,10 @@ defmodule EmisarWeb.RunbookEditorLive do
       _ -> 1_000_000_000
     end
   end
+
+  defp valid_target_selection?(_target, "all"), do: true
+  defp valid_target_selection?("group:" <> _group, "random_one"), do: true
+  defp valid_target_selection?(_target, _selection), do: false
 
   defp toggle_panel(panels, key) do
     if MapSet.member?(panels, key), do: MapSet.delete(panels, key), else: MapSet.put(panels, key)
@@ -705,7 +735,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       )
 
     RunbookDraft.step()
-    |> Map.merge(Map.take(step, ~w[id target_refs wait]))
+    |> Map.merge(Map.take(step, ~w[id target_selection target_refs wait]))
     |> Map.put("pack_id", pack_id)
     |> Map.put("action", action_id)
     |> Map.put("target_refs", List.wrap(step["target_refs"]))

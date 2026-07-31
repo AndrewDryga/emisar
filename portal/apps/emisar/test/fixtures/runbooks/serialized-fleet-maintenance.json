@@ -26,6 +26,7 @@
           },
           "action": "fleet.health_report",
           "targets": {
+            "selection": "all",
             "refs": [
               "group:workers"
             ]
@@ -66,6 +67,7 @@
           },
           "action": "fleet.maintain_host",
           "targets": {
+            "selection": "all",
             "refs": [
               "group:workers"
             ]
@@ -111,6 +113,7 @@
           },
           "action": "fleet.readiness",
           "targets": {
+            "selection": "all",
             "refs": [
               "group:workers"
             ]

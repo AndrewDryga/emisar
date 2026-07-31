@@ -102,6 +102,7 @@ defmodule EmisarWeb.RunbookDraft do
       "id" => "step",
       "pack_id" => "",
       "action" => "",
+      "target_selection" => "all",
       "target_refs" => [],
       "args" => [],
       "outputs" => [],
@@ -253,6 +254,7 @@ defmodule EmisarWeb.RunbookDraft do
       "id" => step["id"] || "",
       "pack_id" => get_in(step, ["pack", "id"]) || "",
       "action" => step["action"] || "",
+      "target_selection" => get_in(step, ["targets", "selection"]) || "all",
       "target_refs" => get_in(step, ["targets", "refs"]) || [],
       "args" =>
         step
@@ -270,7 +272,10 @@ defmodule EmisarWeb.RunbookDraft do
       "id" => step["id"] || "",
       "pack" => %{"id" => step["pack_id"] || ""},
       "action" => step["action"] || "",
-      "targets" => %{"refs" => step["target_refs"] || []},
+      "targets" => %{
+        "selection" => step["target_selection"] || "all",
+        "refs" => step["target_refs"] || []
+      },
       "args" => arguments_to_definition(step["args"] || []),
       "outputs" => Enum.map(step["outputs"] || [], &output_to_definition/1),
       "success" => Enum.map(step["success"] || [], &success_to_definition/1),

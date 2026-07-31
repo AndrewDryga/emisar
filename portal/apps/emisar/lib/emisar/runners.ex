@@ -160,9 +160,12 @@ defmodule Emisar.Runners do
   runner scope. Every returned runner is enabled and online; every authored ref
   must resolve, so a partial target never silently shrinks the blast radius.
   """
-  def resolve_runbook_targets(%{"refs" => refs}, %Subject{} = subject)
-      when is_list(refs) do
-    case resolve_runbook_target_sets([%{"refs" => refs}], subject) do
+  def resolve_runbook_targets(
+        %{"selection" => selection, "refs" => refs},
+        %Subject{} = subject
+      )
+      when selection in ["all", "random_one"] and is_list(refs) do
+    case resolve_runbook_target_sets([%{"selection" => selection, "refs" => refs}], subject) do
       {:ok, [selected]} -> {:ok, selected}
       {:error, {:unknown_target, 0}} -> {:error, :unknown_target}
     end
@@ -181,10 +184,21 @@ defmodule Emisar.Runners do
       targets
       |> Enum.with_index()
       |> Enum.reduce_while({:ok, []}, fn
-        {%{"refs" => refs}, index}, {:ok, selected} when is_list(refs) ->
+        {%{"selection" => selection, "refs" => refs}, index}, {:ok, selected}
+        when selection in ["all", "random_one"] and is_list(refs) ->
           case select_runbook_targets(refs, available) do
-            {:ok, target_runners} -> {:cont, {:ok, [target_runners | selected]}}
-            {:error, :unknown_target} -> {:halt, {:error, {:unknown_target, index}}}
+            {:ok, target_runners} ->
+              target_set = %{
+                selection: selection,
+                refs: refs,
+                runners: target_runners,
+                group: selected_group(selection, refs)
+              }
+
+              {:cont, {:ok, [target_set | selected]}}
+
+            {:error, :unknown_target} ->
+              {:halt, {:error, {:unknown_target, index}}}
           end
 
         {_target, index}, _selected ->
@@ -266,6 +280,9 @@ defmodule Emisar.Runners do
         {:ok, selected}
     end
   end
+
+  defp selected_group("random_one", ["group:" <> group]), do: group
+  defp selected_group(_selection, _refs), do: nil
 
   @doc """
   Counts the complete runner fleet visible to the subject without materializing

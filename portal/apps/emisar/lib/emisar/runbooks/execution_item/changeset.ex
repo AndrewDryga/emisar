@@ -4,11 +4,12 @@ defmodule Emisar.Runbooks.ExecutionItem.Changeset do
 
   @create_fields ~w[
     id account_id runbook_execution_id runbook_execution_stage_id stage_position step_id
-    step_position runner_id runner_ref action_id pack_ref pack_hash risk action_contract
+    step_position runner_id runner_ref target_selection target_group action_id pack_ref pack_hash
+    risk action_contract
     policy_id policy_version policy_decision policy_reason matched_rules binding_plan
     output_plan success_plan args_raw args_sha256 sensitive_arg_names wait
   ]a
-  @deferred_fields ~w[wait args_raw args_sha256]a
+  @deferred_fields ~w[target_group wait args_raw args_sha256]a
 
   def create(attrs) do
     %ExecutionItem{}
@@ -16,6 +17,8 @@ defmodule Emisar.Runbooks.ExecutionItem.Changeset do
     |> validate_required(@create_fields -- @deferred_fields)
     |> validate_length(:step_id, min: 1, max: 80)
     |> validate_length(:runner_ref, min: 1, max: 113)
+    |> validate_inclusion(:target_selection, ["all", "random_one"])
+    |> validate_length(:target_group, min: 1, max: 80)
     |> validate_length(:action_id, min: 1, max: 128)
     |> validate_length(:pack_ref, min: 1, max: 255)
     |> validate_length(:pack_hash, is: 71)
@@ -31,6 +34,12 @@ defmodule Emisar.Runbooks.ExecutionItem.Changeset do
     |> check_constraint(:attempt_count, name: :runbook_execution_items_attempt_count_check)
     |> check_constraint(:policy_decision,
       name: :runbook_execution_items_policy_decision_check
+    )
+    |> check_constraint(:target_selection,
+      name: :runbook_execution_items_target_selection_check
+    )
+    |> check_constraint(:target_group,
+      name: :runbook_execution_items_target_selection_group_check
     )
     |> check_constraint(:args_raw, name: :runbook_execution_items_args_identity_check)
   end

@@ -147,12 +147,13 @@ defmodule Emisar.Runbooks.Definition do
 
   defp draft_step?(%{
          "pack" => pack,
-         "targets" => %{"refs" => refs},
+         "targets" => %{"selection" => selection, "refs" => refs},
          "args" => args,
          "outputs" => outputs,
          "success" => success
        })
-       when is_map(pack) and is_list(refs) and is_map(args) and is_list(outputs) and
+       when is_map(pack) and selection in ["all", "random_one"] and is_list(refs) and
+              is_map(args) and is_list(outputs) and
               is_list(success) do
     length(refs) <= limit!(:max_target_refs_per_step) and
       length(outputs) <= limit!(:max_outputs_per_step) and Enum.all?(outputs, &is_map/1) and
@@ -560,18 +561,32 @@ defmodule Emisar.Runbooks.Definition do
       wait_issues(step["wait"], base)
   end
 
-  defp target_issues(%{"refs" => refs}, base) do
-    refs
-    |> Enum.with_index()
-    |> Enum.flat_map(fn {ref, index} ->
-      valid? = valid_target_ref?(ref)
+  defp target_issues(%{"selection" => selection, "refs" => refs}, base) do
+    ref_issues =
+      refs
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {ref, index} ->
+        if valid_target_ref?(ref) do
+          []
+        else
+          [issue("invalid_definition", "#{base}/refs/#{index}", "Target ref is invalid.")]
+        end
+      end)
 
-      if valid? do
-        []
+    selection_issues =
+      if selection == "random_one" and not match?(["group:" <> _group], refs) do
+        [
+          issue(
+            "invalid_definition",
+            "#{base}/refs",
+            "One online runner requires exactly one runner group."
+          )
+        ]
       else
-        [issue("invalid_definition", "#{base}/refs/#{index}", "Target ref is invalid.")]
+        []
       end
-    end)
+
+    ref_issues ++ selection_issues
   end
 
   defp valid_target_ref?("group:" <> ref),
