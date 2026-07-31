@@ -277,17 +277,18 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}"
       )
 
-      assert html =~ "Execution in progress"
+      assert html =~ "Started by"
+      assert html =~ "running"
       assert html =~ runner.name
       refute html =~ @hash
-      assert html =~ "1 attempt"
+      refute html =~ "1 attempt"
       assert html =~ "View raw action output"
 
       {:ok, _reloaded, reloaded_html} =
         live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
 
       assert reloaded_html =~ "Investigate incident INC-42"
-      assert reloaded_html =~ "Execution in progress"
+      assert reloaded_html =~ "Started by"
       refute reloaded_html =~ "A later stage starts only after"
       refute reloaded_html =~ "Recent executions"
 
@@ -296,7 +297,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert fresh_html =~ "Start execution"
       assert fresh_html =~ "Investigate incident INC-42"
-      refute fresh_html =~ "Execution in progress"
+      refute fresh_html =~ "Started by"
     end
 
     test "shows extracted outputs and success evidence after completion", %{
@@ -334,7 +335,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                })
 
       html = render(lv)
-      assert html =~ "Execution succeeded"
+      assert html =~ "1 of 1 succeeded"
       assert html =~ "Extracted outputs"
       assert html =~ "Success evidence"
       assert html =~ "ready"
@@ -380,7 +381,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       html = render(lv)
       assert html =~ "Execution halted"
-      assert html =~ "action_failed"
+      # Machine codes stay out of the page — the halt block carries the message.
+      refute html =~ "action_failed"
       assert html =~ "The action attempt did not succeed"
       assert html =~ "Apply change"
       assert html =~ "halted"
@@ -443,8 +445,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       send(lv.pid, {:runbook_execution_updated, execution().id})
       html = render(lv)
-      assert html =~ "Execution awaiting approval"
-      assert html =~ "Review run approval"
+      assert html =~ "awaiting approval"
+      assert html =~ "Waiting on approval"
       assert html =~ runner.name
       refute has_element?(lv, "details[id^=execution-item-]")
 
@@ -457,7 +459,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert has_element?(
                lv,
                ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]),
-               "Review run approval"
+               "View approval"
              )
     end
 

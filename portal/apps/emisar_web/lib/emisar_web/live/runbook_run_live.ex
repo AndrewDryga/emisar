@@ -497,27 +497,52 @@ defmodule EmisarWeb.RunbookRunLive do
       :pending when stage.status == :halted or execution.status == :halted -> :halted
       :pending when stage.status == :cancelled or execution.status == :cancelled -> :cancelled
       :pending -> :queued
+      # A halt (e.g. a denied approval) marks undispatched items :failed with
+      # zero attempts. Eight rose "failed" rows for actions that never touched
+      # a host drown the one real cause — the operator's question is exactly
+      # "did anything execute?", so say what happened: it did not run.
+      :failed when item.attempt_count == 0 -> :not_run
       status -> status
     end
   end
 
-  defp execution_title(%{status: :pending_approval}), do: "Execution awaiting approval"
-  defp execution_title(%{status: :active}), do: "Execution in progress"
-  defp execution_title(%{status: :succeeded}), do: "Execution succeeded"
-  defp execution_title(%{status: :halted}), do: "Execution halted"
-  defp execution_title(%{status: :cancelled}), do: "Execution cancelled"
+  # Human-first attribution, mirroring the run detail's Dispatched by cell: the
+  # requesting user leads; an API-key dispatch adds the channel as secondary
+  # context. `requested_by` is preloaded by `fetch_execution_result`.
+  defp execution_who_via(execution) do
+    who = user_display_name(execution.requested_by)
+    via = if execution.api_key_id, do: "LLM agent"
+    {who, via}
+  end
 
-  defp execution_icon(%{status: :pending_approval}), do: "hero-clock"
-  defp execution_icon(%{status: :active}), do: "hero-arrow-path"
-  defp execution_icon(%{status: :succeeded}), do: "hero-check-circle"
-  defp execution_icon(%{status: :halted}), do: "hero-exclamation-triangle"
-  defp execution_icon(%{status: :cancelled}), do: "hero-x-circle"
+  defp execution_duration_ms(%{completed_at: %DateTime{} = completed_at} = execution),
+    do: DateTime.diff(completed_at, execution.inserted_at, :millisecond)
 
-  defp execution_tone(%{status: :succeeded}), do: :brand
-  defp execution_tone(%{status: :pending_approval}), do: :amber
-  defp execution_tone(%{status: :active}), do: :amber
-  defp execution_tone(%{status: :halted}), do: :rose
-  defp execution_tone(%{status: :cancelled}), do: :neutral
+  defp execution_duration_ms(_execution), do: nil
+
+  # Before anything ran, the outcome tally would read as eight premature
+  # verdicts — size is the useful fact then; progress takes over once any
+  # action has been attempted.
+  defp stage_progress(items) do
+    total = length(items)
+
+    if Enum.any?(items, &(&1.attempt_count > 0)) do
+      "#{Enum.count(items, &(&1.status == :succeeded))} of #{total} succeeded"
+    else
+      "#{total} #{if total == 1, do: "action", else: "actions"}"
+    end
+  end
+
+  # The raw attempt status earns a row only when it adds a failure mode the
+  # item's own badge doesn't carry (timed_out, refused, error…). "success" and
+  # a same-word repeat are noise.
+  defp attempt_status_differs?(attempt, item),
+    do: to_string(attempt.status) not in ["success", to_string(item.status)]
+
+  defp humanize_terminal_code(nil), do: nil
+
+  defp humanize_terminal_code(code),
+    do: code |> String.replace("_", " ") |> String.capitalize()
 
   defp stage_mode(%{mode: :parallel, max_parallel: max_parallel}),
     do: "parallel · up to #{max_parallel} at once"
@@ -550,9 +575,15 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  defp item_detail?(item, attempt) do
-    not is_nil(attempt) or not is_nil(item.terminal_message) or item.outputs != %{} or
-      item.success_evidence != [] or not is_nil(wait_label(item)) or
+  # An item's terminal message counts as detail only when it says something the
+  # execution-level halt block hasn't already said for the whole run.
+  defp item_terminal_message(item, execution) do
+    if item.terminal_message != execution.terminal_message, do: item.terminal_message
+  end
+
+  defp item_detail?(item, attempt, execution) do
+    not is_nil(attempt) or not is_nil(item_terminal_message(item, execution)) or
+      item.outputs != %{} or item.success_evidence != [] or not is_nil(wait_label(item)) or
       not is_nil(item.next_attempt_at)
   end
 
@@ -974,54 +1005,131 @@ defmodule EmisarWeb.RunbookRunLive do
 
     ~H"""
     <div class="space-y-12">
-      <.event_block
-        icon={execution_icon(@result.execution)}
-        tone={execution_tone(@result.execution)}
-        title={execution_title(@result.execution)}
-      >
-        <:body>
-          <span class="block">{@result.execution.reason}</span>
-          <span
-            :if={@result.execution.terminal_message}
-            class="mt-1.5 block text-zinc-200"
+      <%!-- The STATUS block mirrors the run detail's grammar: the naked meta row
+           carries the facts, the reason renders as the operator's own artifact,
+           and only a held/dead outcome earns an attention event block. --%>
+      <div>
+        <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
+          <.meta_field label="Status">
+            <.status_badge status={@result.execution.status} />
+          </.meta_field>
+          <.meta_field label="Started by">
+            <% {who, via} = execution_who_via(@result.execution) %>
+            <span class="block truncate">
+              <span :if={who} class="text-zinc-200">{who}</span>
+              <span :if={via} class={if who, do: "text-zinc-400", else: "text-zinc-200"}>
+                {if who, do: "via #{via}", else: via}
+              </span>
+              <span :if={!who && !via} class="text-zinc-500">—</span>
+            </span>
+          </.meta_field>
+          <.meta_field label="Duration">
+            <% duration_ms = execution_duration_ms(@result.execution) %>
+            <span :if={duration_ms} class="text-zinc-200">{format_duration(duration_ms)}</span>
+            <span :if={is_nil(duration_ms)} class="text-zinc-500">—</span>
+          </.meta_field>
+          <.meta_field :if={@approval_request} label="Approval">
+            <.link
+              navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+              class="text-zinc-200 hover:text-brand-300"
+            >
+              {String.capitalize(to_string(@approval_request.status))}
+            </.link>
+          </.meta_field>
+          <.meta_field label="Started" wrap>
+            <.local_time
+              value={@result.execution.inserted_at}
+              mode={:forensic}
+              class="tabular-nums text-zinc-200"
+            />
+          </.meta_field>
+        </div>
+
+        <div class="mt-6 max-w-3xl">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            Reason
+          </div>
+          <p class="mt-1.5 text-sm leading-6 text-zinc-300">{@result.execution.reason}</p>
+        </div>
+
+        <div
+          :if={@result.execution.status in [:pending_approval, :halted, :cancelled]}
+          class="mt-8 space-y-8"
+        >
+          <.event_block
+            :if={@result.execution.status == :pending_approval}
+            icon="hero-hand-raised"
+            title="Waiting on approval"
           >
-            {@result.execution.terminal_code}: {@result.execution.terminal_message}
-          </span>
-          <.link
-            :if={@approval_request}
-            navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
-            class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-brand-300 hover:text-brand-200"
+            <:body>
+              This execution is held until an approver decides. One decision covers every
+              listed action.
+            </:body>
+            <div :if={@approval_request} class="mt-4">
+              <.button
+                tone={:amber}
+                size={:md}
+                navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+              >
+                View approval →
+              </.button>
+            </div>
+          </.event_block>
+
+          <.event_block
+            :if={@result.execution.status == :halted}
+            icon="hero-exclamation-triangle"
+            tone={:rose}
+            title="Execution halted"
           >
-            {if @approval_request.status == :pending,
-              do: "Review run approval",
-              else: "View run approval"}
-            <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-          </.link>
-        </:body>
-      </.event_block>
+            <:body>
+              <span class="whitespace-pre-wrap">{@result.execution.terminal_message}</span>
+            </:body>
+          </.event_block>
+
+          <.event_block
+            :if={@result.execution.status == :cancelled}
+            icon="hero-no-symbol"
+            tone={:neutral}
+            title="Execution cancelled"
+          >
+            <:body>
+              <span :if={@result.execution.terminal_message} class="whitespace-pre-wrap">{@result.execution.terminal_message}</span>
+              <span :if={is_nil(@result.execution.terminal_message)}>An operator pulled this execution back.</span>
+            </:body>
+          </.event_block>
+        </div>
+      </div>
 
       <section
         :for={stage <- @result.execution.stages}
         id={"execution-stage-#{stage.id}"}
       >
+        <% stage_items = items_for_stage(@result, stage) %>
         <.section_header title={stage.title}>
           <:subtitle>{stage_mode(stage)}</:subtitle>
           <:actions>
+            <span class="text-xs tabular-nums text-zinc-400">{stage_progress(stage_items)}</span>
             <.status_badge status={stage.status} />
           </:actions>
         </.section_header>
 
+        <%!-- Only a stage-specific cause earns its own block — the execution-level
+             halt above already explains a whole-run stop, and repeating it per
+             stage buries the one real message. --%>
         <.event_block
-          :if={stage.terminal_message}
+          :if={
+            stage.terminal_message &&
+              stage.terminal_message != @result.execution.terminal_message
+          }
           icon="hero-exclamation-triangle"
           tone={:rose}
-          title={stage.terminal_code || "Stage halted"}
+          title="Stage halted"
           class="mb-5"
         >
           <:body>{stage.terminal_message}</:body>
         </.event_block>
 
-        <% stage_items = items_for_stage(@result, stage) %>
         <% expanded? = MapSet.member?(@expanded_stages, stage.id) %>
         <div class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
           <.execution_item
@@ -1070,25 +1178,27 @@ defmodule EmisarWeb.RunbookRunLive do
         projected_item_status(assigns.item, assigns.stage, assigns.execution)
       )
       |> assign(:arguments, execution_item_arguments(assigns.execution, assigns.item))
-      |> assign(:has_details?, item_detail?(assigns.item, assigns.attempt))
+      |> assign(:has_details?, item_detail?(assigns.item, assigns.attempt, assigns.execution))
 
     ~H"""
     <details
       :if={@has_details?}
       id={"execution-item-#{@item.id}"}
       class="group py-4"
-      open={@events != []}
+      open={@projected_status in [:failed, :running, :waiting]}
     >
       <summary class="cursor-pointer list-none">
         <.execution_item_summary
           item={@item}
           projected_status={@projected_status}
           arguments={@arguments}
+          attempt={@attempt}
           expandable?
         />
       </summary>
       <.execution_item_details
         item={@item}
+        execution={@execution}
         attempt={@attempt}
         events={@events}
         current_account={@current_account}
@@ -1099,6 +1209,7 @@ defmodule EmisarWeb.RunbookRunLive do
         item={@item}
         projected_status={@projected_status}
         arguments={@arguments}
+        attempt={@attempt}
       />
     </div>
     """
@@ -1107,11 +1218,12 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :item, :map, required: true
   attr :projected_status, :atom, required: true
   attr :arguments, :map, required: true
+  attr :attempt, :any, default: nil
   attr :expandable?, :boolean, default: false
 
   defp execution_item_summary(assigns) do
     ~H"""
-    <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-start">
+    <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
@@ -1122,25 +1234,31 @@ defmodule EmisarWeb.RunbookRunLive do
           <span class="font-medium text-zinc-300">
             {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
           </span>
+          <%!-- One attempt is the norm — only a retry earns a mention. --%>
+          <span :if={@item.attempt_count > 1}> · {@item.attempt_count} attempts</span>
         </p>
         <RunbookWorkflowComponents.argument_list arguments={@arguments} class="mt-3" />
       </div>
-      <span class="text-xs tabular-nums text-zinc-400">
-        {@item.attempt_count} {if @item.attempt_count == 1, do: "attempt", else: "attempts"}
-      </span>
-      <div class="flex items-center justify-between gap-3 sm:justify-end">
-        <.status_badge status={@projected_status} />
+      <div class="flex items-center gap-3 sm:justify-end">
+        <span :if={@attempt && @attempt.duration_ms} class="text-xs tabular-nums text-zinc-400">
+          {format_duration(@attempt.duration_ms)}
+        </span>
+        <%!-- Fixed track so the status column's left edge aligns down the list
+             despite different label lengths. --%>
+        <.status_badge status={@projected_status} class="w-24" />
         <.icon
           :if={@expandable?}
           name="hero-chevron-down"
-          class="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+          class="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open:rotate-180 motion-reduce:transition-none"
         />
+        <span :if={not @expandable?} class="h-4 w-4 shrink-0" aria-hidden="true"></span>
       </div>
     </div>
     """
   end
 
   attr :item, :map, required: true
+  attr :execution, :map, required: true
   attr :attempt, :any, default: nil
   attr :events, :list, required: true
   attr :current_account, :map, required: true
@@ -1148,30 +1266,34 @@ defmodule EmisarWeb.RunbookRunLive do
   defp execution_item_details(assigns) do
     ~H"""
     <div class="mt-5 space-y-5 sm:pl-4">
+      <%!-- Only rows that ADD a fact: the summary already shows status and
+           duration, so the raw attempt status appears only when it names a
+           different failure mode. Natural-width cells keep each label beside
+           its value instead of flinging values to the far edge. --%>
       <dl
         :if={
-          not is_nil(@attempt) or not is_nil(wait_label(@item)) or
-            not is_nil(@item.next_attempt_at)
+          (@attempt && attempt_status_differs?(@attempt, @item)) or
+            not is_nil(wait_label(@item)) or not is_nil(@item.next_attempt_at)
         }
-        class="grid gap-3 text-xs sm:grid-cols-2"
+        class="flex flex-wrap gap-x-10 gap-y-2 text-xs"
       >
-        <.kv :if={@attempt} label="Raw action status">
+        <.kv :if={@attempt && attempt_status_differs?(@attempt, @item)} label="Action result">
           <.status_badge status={@attempt.status} />
         </.kv>
-        <.kv :if={@attempt} label="Duration">{format_duration(@attempt.duration_ms)}</.kv>
         <.kv :if={wait_label(@item)} label="Wait">{wait_label(@item)}</.kv>
         <.kv :if={@item.next_attempt_at} label="Next observation">
           <.local_time value={@item.next_attempt_at} mode={:relative} />
         </.kv>
       </dl>
 
+      <% terminal_message = item_terminal_message(@item, @execution) %>
       <.event_block
-        :if={@item.terminal_message}
+        :if={terminal_message}
         icon="hero-exclamation-triangle"
         tone={:rose}
-        title={@item.terminal_code || "Item failed"}
+        title={humanize_terminal_code(@item.terminal_code) || "Action failed"}
       >
-        <:body>{@item.terminal_message}</:body>
+        <:body>{terminal_message}</:body>
       </.event_block>
 
       <div :if={@item.outputs != %{}}>

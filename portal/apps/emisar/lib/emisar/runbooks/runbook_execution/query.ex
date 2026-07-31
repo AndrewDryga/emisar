@@ -81,6 +81,9 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
   def with_runbook(queryable \\ all()),
     do: preload(queryable, [runbook_executions: _execution], :runbook)
 
+  def with_requested_by(queryable \\ all()),
+    do: preload(queryable, [runbook_executions: _execution], :requested_by)
+
   def older_than(queryable \\ all(), cutoff),
     do: where(queryable, [runbook_executions: r], r.inserted_at <= ^cutoff)
 

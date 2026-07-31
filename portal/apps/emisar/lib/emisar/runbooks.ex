@@ -734,8 +734,14 @@ defmodule Emisar.Runbooks do
     |> Repo.fetch(RunbookExecution.Query)
   end
 
-  defp maybe_with_execution_result(query, true),
-    do: RunbookExecution.Query.with_stages_and_items(query)
+  # requested_by is part of the result projection's contract: every consumer
+  # attributes the execution to its accountable human (console header, MCP
+  # serialization keeps it cheap to ignore).
+  defp maybe_with_execution_result(query, true) do
+    query
+    |> RunbookExecution.Query.with_stages_and_items()
+    |> RunbookExecution.Query.with_requested_by()
+  end
 
   defp maybe_with_execution_result(query, false), do: query
 

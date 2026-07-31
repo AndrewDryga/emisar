@@ -2659,6 +2659,7 @@ defmodule EmisarWeb.CoreComponents do
   defp format_status("unknown_action"), do: "unknown action"
   defp format_status("timed_out"), do: "timed out"
   defp format_status("dispatch_failed"), do: "dispatch failed"
+  defp format_status("not_run"), do: "not run"
   defp format_status(other), do: other
 
   @doc """
