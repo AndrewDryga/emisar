@@ -239,7 +239,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         random_option = %{
           value: group_ref,
           selection: "random_one",
-          label: "One runner",
+          label: "One random runner",
           kind: :group_one,
           disabled: false,
           selected: false

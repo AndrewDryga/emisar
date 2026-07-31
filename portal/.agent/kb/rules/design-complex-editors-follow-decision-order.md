@@ -67,7 +67,7 @@ summary, and a bounded `+N` appears only after named choices. Its menu owns both
 addition and removal. For large fleets, keep one search field above dense
 single-line choices: scope and selection state remain visible, while every
 interactive row retains at least a 40px hit area. When the label already states
-the complete scope (`Every runner in group`, `One runner`, or a runner name),
+the complete scope (`Every runner in group`, `One random runner`, or a runner name),
 do not append a secondary qualifier that merely restates it. Never stack
 selected-target rows above a second picker in the overview grid. When a saved
 target no longer resolves, name it in operator language,
@@ -164,7 +164,7 @@ never a reduced model.
 - A two-target trigger reads `EDGE-WEB · all, edge-fra-01`; a longer selection
   names the first two choices before `+N`. The menu searches runner names and
   group names, while each scope choice stays on one 40px-or-taller row.
-- A group target menu presents `Every runner in group`, `One runner`, and each
+- A group target menu presents `Every runner in group`, `One random runner`, and each
   runner name as peer rows. Those labels carry the complete choice without
   secondary `Every online runner`, `Frozen at run start`, or `Exact runner`
   qualifiers.
@@ -223,7 +223,7 @@ never a reduced model.
 - A count-only `2 targets` trigger, a fleet menu with no search, 56px-tall
   two-line option cards repeated for every runner, or secondary copy that
   restates an already-complete scope label.
-- An exact runner indented below `One runner`, implying that the named runner is
+- An exact runner indented below `One random runner`, implying that the named runner is
   the member the system will randomly select.
 - An event-backed target picker inside a whole-form `phx-change` flow with no
   hidden selected values, so changing Action or any ordinary input clears the

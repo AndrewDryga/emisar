@@ -828,7 +828,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_one"]),
-               "One runner"
+               "One random runner"
              )
 
       assert has_element?(
