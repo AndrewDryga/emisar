@@ -12,6 +12,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -24,10 +25,14 @@ import (
 
 func main() {
 	var secretsPath, outDir string
-	var headless bool
+	var headless, listApps, cleanupApps bool
 	flag.StringVar(&secretsPath, "secrets", "portal/.agent/secrets/jumpcloud-trial.env", "creds env file")
 	flag.StringVar(&outDir, "out", "", "directory for captured PNGs")
 	flag.BoolVar(&headless, "headless", true, "run Chrome headless")
+	// Every full run creates an application. This lists what is there so a cleanup
+	// can be decided from facts rather than a guess about which rows are mine.
+	flag.BoolVar(&listApps, "list-apps", false, "print the configured applications and exit")
+	flag.BoolVar(&cleanupApps, "cleanup-apps", false, "delete the emisar apps a capture run left behind, and exit")
 	flag.Parse()
 
 	if outDir == "" {
@@ -39,7 +44,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "jumpcloud-capture:", err)
 		os.Exit(1)
 	}
-	if err := run(env, outDir, headless); err != nil {
+	if err := run(env, outDir, headless, listApps, cleanupApps); err != nil {
 		fmt.Fprintln(os.Stderr, "jumpcloud-capture:", err)
 		os.Exit(1)
 	}
@@ -84,10 +89,30 @@ func focusField(ctx context.Context, hint string) error {
     (el.type || '').toLowerCase() === hint ||
     (el.placeholder || '').toLowerCase().includes(hint) ||
     (el.getAttribute('aria-label') || '').toLowerCase().includes(hint));
-  if (!match) return false;
-  match.scrollIntoView({block: 'center'});
-  match.focus();
-  match.select && match.select();
+  // Fall back to the visible CAPTION. Several inputs on these forms carry no
+  // name, id, placeholder or aria-label at all — the words the operator reads are
+  // a sibling node — so an attribute search finds nothing for a field that is
+  // right there. Login URL is one, and missing it made Activate fail validation
+  // silently.
+  const byCaption = () => {
+    const captions = [...document.querySelectorAll('label,span,div')]
+      .filter(el => visible(el) && (el.textContent || '').trim().toLowerCase().replace(/\s*\*$/, '') === hint)
+      .sort((a, b) => a.textContent.length - b.textContent.length);
+    for (const caption of captions) {
+      let node = caption;
+      for (let up = 0; up < 5 && node; up++) {
+        const input = node.querySelector('input:not([type=hidden])');
+        if (input && visible(input)) return input;
+        node = node.parentElement;
+      }
+    }
+    return null;
+  };
+  const target = match || byCaption();
+  if (!target) return false;
+  target.scrollIntoView({block: 'center'});
+  target.focus();
+  target.select && target.select();
   return true;
 })()`, hint)
 	var focused bool
@@ -207,7 +232,7 @@ func screenshot(ctx context.Context, outDir, name string) error {
 	return nil
 }
 
-func run(env map[string]string, outDir string, headless bool) error {
+func run(env map[string]string, outDir string, headless, listApps, cleanupApps bool) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
@@ -298,7 +323,142 @@ func run(env map[string]string, outDir string, headless bool) error {
 	if err := screenshot(ctx, outDir, "jc-01-after-login"); err != nil {
 		return err
 	}
+	if listApps {
+		return printApplications(ctx, env, outDir)
+	}
+	if cleanupApps {
+		return cleanupCaptureApplications(ctx, env["JUMPCLOUD_CONSOLE_URL"], outDir)
+	}
 	return ssoApplicationsFlow(ctx, env, outDir)
+}
+
+// openApplicationList routes straight to the configured applications. Clicking
+// the left nav did not get there — Access opens a section, not that list — and
+// the capture flow already navigates by URL for the same reason.
+func openApplicationList(ctx context.Context, consoleURL string) error {
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(consoleURL+"/#/applications"),
+		chromedp.Sleep(12*time.Second)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// cleanupCaptureApplications removes the applications a capture run leaves in the
+// tenant. Each full run creates one, and chasing a form through several attempts
+// leaves several.
+//
+// The filter is deliberately narrow: a row is only touched when its label is
+// exactly "emisar" AND it advertises neither provisioning nor a certificate —
+// which is what an abandoned half-configured run looks like. The certified app
+// carries both and is never selected.
+func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) error {
+	if err := openApplicationList(ctx, consoleURL); err != nil {
+		return err
+	}
+
+	// By GEOMETRY. The list is a virtualized div grid: the checkboxes are real, but
+	// a row's label is not in their ancestors, so climbing found nothing and the
+	// cleanup reported a clean tenant over visible litter. Pair each checkbox with
+	// the text sitting on its own line instead.
+	const selectAbandoned = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const boxes = [...document.querySelectorAll('input[type=checkbox]')].filter(visible);
+  const leaves = [...document.querySelectorAll('*')].filter(el =>
+    visible(el) && !el.querySelector('*') && (el.textContent || '').trim());
+  const rowText = box => {
+    const r = box.getBoundingClientRect();
+    const mid = r.top + r.height / 2;
+    return leaves
+      .filter(el => { const b = el.getBoundingClientRect(); return b.top <= mid && b.bottom >= mid; })
+      .map(el => (el.textContent || '').trim())
+      .join(' | ');
+  };
+  const picked = [];
+  for (const box of boxes) {
+    if (box.checked) continue;
+    const text = rowText(box);
+    if (!/\bemisar\b/.test(text)) continue;
+    if (/Provisioning/.test(text)) continue;
+    if (/Expires/.test(text)) continue;
+    box.click();
+    picked.push(text.slice(0, 70));
+  }
+  return picked.join('\n');
+})()`
+	var picked string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(selectAbandoned, &picked)); err != nil {
+		return err
+	}
+	if strings.TrimSpace(picked) == "" {
+		// Say WHY nothing matched. "Nothing to clean up" on a tenant that visibly
+		// has litter is the same false all-clear this cleanup already reported once.
+		const probe = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const boxes = [...document.querySelectorAll('input[type=checkbox]')].filter(visible);
+  const rows = [...document.querySelectorAll('[role=row]')].filter(visible);
+  return 'checkboxes=' + boxes.length + ' roleRows=' + rows.length +
+    ' sample=' + rows.slice(0, 3).map(r => (r.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 50)).join(' // ');
+})()`
+		var why string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(probe, &why))
+		fmt.Printf("  nothing selected — %s\n", why)
+		return screenshot(ctx, outDir, "jc-cleanup-nothing-selected")
+	}
+	fmt.Println("--- selected for deletion ---")
+	fmt.Println(picked)
+	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-cleanup-selected"); err != nil {
+		return err
+	}
+	if clicked, err := clickDeep(ctx, "Delete"); err != nil {
+		return err
+	} else if !clicked {
+		return errors.New("no Delete control on the applications list")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(4*time.Second)); err != nil {
+		return err
+	}
+	// Their confirmation asks for the word "delete" before enabling its button.
+	if err := focusField(ctx, "delete"); err == nil {
+		_ = chromedp.Run(ctx, chromedp.KeyEvent("delete"), chromedp.Sleep(2*time.Second))
+	}
+	for _, label := range []string{"Delete Applications", "Delete Application", "Delete"} {
+		if clicked, err := clickDeep(ctx, label); err == nil && clicked {
+			fmt.Printf("  confirmed with %q\n", label)
+			break
+		}
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
+		return err
+	}
+	return screenshot(ctx, outDir, "jc-cleanup-done")
+}
+
+// printApplications walks to the configured-application list and prints each row,
+// so the litter a repeated capture run leaves can be identified before anything
+// is deleted.
+func printApplications(ctx context.Context, env map[string]string, outDir string) error {
+	if err := openApplicationList(ctx, env["JUMPCLOUD_CONSOLE_URL"]); err != nil {
+		return err
+	}
+	const rows = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  return [...document.querySelectorAll('tr')]
+    .filter(visible)
+    .map(tr => [...tr.children].map(td => (td.textContent || '').trim()).filter(Boolean).join(' | '))
+    .filter(Boolean)
+    .join('\n');
+})()`
+	var listing string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(rows, &listing)); err != nil {
+		return err
+	}
+	fmt.Println("--- configured applications ---")
+	fmt.Println(listing)
+	return screenshot(ctx, outDir, "jc-applications")
 }
 
 // ssoApplicationsFlow opens the SSO application catalog and reports what the
@@ -615,7 +775,20 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(12*time.Second)); err != nil {
 		return err
 	}
-	if err := screenshot(ctx, outDir, "jc-09b-sso-activated"); err != nil {
+	// Activation puts up an "Application Activated" dialog carrying the client id
+	// and the client SECRET, which JumpCloud shows once. Dismiss it before doing
+	// anything else: it covers the tabs — every earlier attempt to open
+	// Provisioning was clicking through this — and photographing it would write a
+	// live credential to disk.
+	dismissed, err := clickDeep(ctx, "Got It")
+	if err != nil {
+		return err
+	}
+	if !dismissed {
+		return errors.New("the activation dialog has no Got It to dismiss")
+	}
+	fmt.Println("  dismissed the activation dialog")
+	if err := chromedp.Run(ctx, chromedp.Sleep(4*time.Second)); err != nil {
 		return err
 	}
 
@@ -640,7 +813,10 @@ func provisioningFlow(ctx context.Context, env map[string]string, outDir string)
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
 		return err
 	}
-	if strings.Contains(body, "Provisioning") && strings.Contains(body, "General Info") {
+	// The app's own tab strip is the tell. Requiring "General Info" as well made
+	// this miss once the activation dialog had been dismissed and the page
+	// re-rendered, sending the run back to a list it did not need.
+	if strings.Contains(body, "Provisioning") && strings.Contains(body, "User Groups") {
 		fmt.Println("  already on the saved app")
 		return provisioningTabFlow(ctx, env, outDir)
 	}
@@ -657,12 +833,20 @@ func provisioningFlow(ctx context.Context, env map[string]string, outDir string)
 
 // provisioningTabFlow opens the app's provisioning tab and reports its fields.
 func provisioningTabFlow(ctx context.Context, env map[string]string, outDir string) error {
-	// Their own docs use both names for this tab; try each.
+	// Their own docs use both names for this tab; try each. clickDeep first,
+	// because the tab is not an anchor or a button — clickText missed it and the
+	// run then matched "Identity Management" in the LEFT NAV, which is a different
+	// product area entirely, and reported success for opening the wrong page.
 	opened := false
 	for _, label := range []string{"Provisioning", "Identity Management"} {
-		clicked, err := clickText(ctx, label)
+		clicked, err := clickDeep(ctx, label)
 		if err != nil {
 			return err
+		}
+		if !clicked {
+			if clicked, err = clickText(ctx, label); err != nil {
+				return err
+			}
 		}
 		if clicked {
 			fmt.Printf("  opened %q tab\n", label)
