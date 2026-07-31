@@ -7,6 +7,8 @@ from the implementation that owns it. When two layers provide related
 controls, name the layer and state only what that layer proves.
 
 - MCP tool counts come from the compiled MCP schema registry.
+- Required MCP release clients come from the certification workflow's required
+  lanes; evaluator support alone does not make a provider a release gate.
 - Plan features follow the billing entitlement, not nearby pricing prose.
 - Portal audit records and the runner's host-local journal are separate
   evidence layers. Hash-chain verification proves continuity of the retained
@@ -47,5 +49,5 @@ when the compiled MCP registry exposes twelve.
 Marketing tests pin the pricing row to the billing contract, derive the home
 page count from the MCP schema registry, and require the Trust Center to name
 both audit layers. When one of these contracts changes, sweep public templates,
-structured data, docs, and policy pages for the old count, entitlement, or
-unqualified claim.
+structured data, docs, runbooks, and policy pages for the old count,
+entitlement, required certification lane, or unqualified claim.

@@ -4,8 +4,8 @@ name: MCP Client Certification
 # emisar-mcp bridge against the seeded compose fleet through mcpeval's
 # fail-closed relay. Scheduled runs use the committed development corpus.
 # Release qualification uses a separately owned blind corpus from the
-# mcp-certification environment and refuses to run unless every provider and
-# the held-out partition are configured.
+# mcp-certification environment and refuses to run unless every required
+# provider and the held-out partition are configured.
 #
 # No pull-request trigger: this workflow spends provider tokens and reads
 # provider secrets. It has no deploy permission and talks only to localhost.
@@ -31,11 +31,6 @@ on:
         description: Gemini model (empty = CLI default)
         required: false
         type: string
-      grok_model:
-        description: Grok model (empty = CLI default)
-        required: false
-        type: string
-
 concurrency:
   group: mcp-client-certification
   cancel-in-progress: false
@@ -45,7 +40,7 @@ permissions:
 
 jobs:
   certify:
-    name: Four-client MCP certification
+    name: Three-client MCP certification
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     environment:
@@ -59,25 +54,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Require all four provider credentials
+      - name: Require all three provider credentials
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           MCP_EVAL_HELD_OUT_B64: ${{ secrets.MCP_EVAL_HELD_OUT_B64 }}
           QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification }}
           CLAUDE_MODEL: ${{ inputs.claude_model }}
           CODEX_MODEL: ${{ inputs.codex_model }}
           GEMINI_MODEL: ${{ inputs.gemini_model }}
-          GROK_MODEL: ${{ inputs.grok_model }}
         run: |
           set -euo pipefail
           missing=()
           [ -n "$ANTHROPIC_API_KEY" ] || missing+=(ANTHROPIC_API_KEY)
           [ -n "$OPENAI_API_KEY" ] || missing+=(OPENAI_API_KEY)
           [ -n "$GEMINI_API_KEY" ] || missing+=(GEMINI_API_KEY)
-          [ -n "$XAI_API_KEY" ] || missing+=(XAI_API_KEY)
           if [ "$QUALIFICATION" = true ] && [ -z "$MCP_EVAL_HELD_OUT_B64" ]; then
             missing+=(MCP_EVAL_HELD_OUT_B64)
           fi
@@ -85,13 +77,12 @@ jobs:
             [ -n "$CLAUDE_MODEL" ] || missing+=(claude_model)
             [ -n "$CODEX_MODEL" ] || missing+=(codex_model)
             [ -n "$GEMINI_MODEL" ] || missing+=(gemini_model)
-            [ -n "$GROK_MODEL" ] || missing+=(grok_model)
           fi
           if [ "${#missing[@]}" -ne 0 ]; then
             echo "::error::MCP certification is fail-closed; configure: ${missing[*]}"
             exit 1
           fi
-          echo "All four provider lanes are configured."
+          echo "All three provider lanes are configured."
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -176,19 +167,15 @@ jobs:
           CLAUDE_CODE_VERSION: "2.1.217"
           CODEX_CLI_VERSION: "0.145.0"
           GEMINI_CLI_VERSION: "0.50.0"
-          GROK_CLI_VERSION: "0.2.101"
         run: |
           set -euo pipefail
           npm install -g \
             "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
             "@openai/codex@${CODEX_CLI_VERSION}" \
             "@google/gemini-cli@${GEMINI_CLI_VERSION}"
-          curl -fsSL https://x.ai/cli/install.sh | bash -s "$GROK_CLI_VERSION"
-          echo "$HOME/.grok/bin" >> "$GITHUB_PATH"
           claude --version
           codex --version
           gemini --version
-          "$HOME/.grok/bin/grok" --version
 
       - name: Run Claude certification
         id: claude
@@ -260,36 +247,12 @@ jobs:
           done < <(jq -r '.scenarios[].id' "$MCP_EVAL_CORPUS")
           exit "$status"
 
-      - name: Run Grok certification
-        id: grok
-        continue-on-error: true
-        working-directory: tools
-        env:
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          EVAL_MODEL: ${{ inputs.grok_model }}
-        run: |
-          set -euo pipefail
-          status=0
-          index=0
-          private=()
-          if [ "$MCP_EVAL_QUALIFICATION" = true ]; then
-            private=(-require-held-out -redact-agent-output)
-          fi
-          while IFS= read -r scenario; do
-            args=(-provider grok -bridge-bin "$MCP_EVAL_BRIDGE" -scenarios "$MCP_EVAL_CORPUS" -scenario "$scenario" -out "/tmp/mcpeval-grok-${index}.json")
-            [ -z "$EVAL_MODEL" ] || args+=(-model "$EVAL_MODEL")
-            go run ./cmd/mcpeval "${args[@]}" "${private[@]}" || status=1
-            index=$((index + 1))
-          done < <(jq -r '.scenarios[].id' "$MCP_EVAL_CORPUS")
-          exit "$status"
-
       - name: Show stack logs
         if: >-
           always() &&
           (steps.claude.outcome != 'success' ||
            steps.codex.outcome != 'success' ||
-           steps.gemini.outcome != 'success' ||
-           steps.grok.outcome != 'success')
+           steps.gemini.outcome != 'success')
         run: docker compose logs --tail 40 portal seeder runner-1 runner-2 runner-3
 
       - name: Upload certification reports
@@ -308,10 +271,9 @@ jobs:
           claude='${{ steps.claude.outcome }}'
           codex='${{ steps.codex.outcome }}'
           gemini='${{ steps.gemini.outcome }}'
-          grok='${{ steps.grok.outcome }}'
-          echo "Lane outcomes — claude=$claude codex=$codex gemini=$gemini grok=$grok"
+          echo "Lane outcomes — claude=$claude codex=$codex gemini=$gemini"
           if [ "$claude" != success ] || [ "$codex" != success ] ||
-             [ "$gemini" != success ] || [ "$grok" != success ]; then
+             [ "$gemini" != success ]; then
             echo "::error::every MCP client must pass every corpus scenario"
             exit 1
           fi

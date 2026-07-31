@@ -125,10 +125,12 @@ fixed generally, certify against a fresh blind partition.
 
 Both modes install pinned client versions, build the candidate bridge from the
 workflow commit, boot three fixture runners, and run every case independently
-through all four clients. Release qualification also requires an explicit
-model ID for every client. Missing credentials or models, a missing held-out
-corpus, an invalid corpus, one failed case, or one failed client lane fails the
-job. Success requires Claude, Codex, Gemini, and Grok to pass the same corpus.
+through Claude, Codex, and Gemini. Release qualification also requires an
+explicit model ID for every client. Missing credentials or models, a missing
+held-out corpus, an invalid corpus, one failed case, or one failed client lane
+fails the job. Success requires Claude, Codex, and Gemini to pass the same
+corpus. Grok remains available for optional development runs, but is not a
+release gate.
 
 The qualification artifact names the candidate commit and includes one JSON
 report per client and case. It contains the corpus digest and opaque IDs, but

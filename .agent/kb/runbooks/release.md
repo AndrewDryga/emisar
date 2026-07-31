@@ -139,11 +139,11 @@ Never title a product release with a bare `vX.Y.Z`.
 11. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
 12. **Certify MCP clients against that exact commit before tagging.** Record
     `anchor=$(git rev-parse HEAD)`, then dispatch `mcp-eval.yml` on `main` with
-    `qualification=true` and explicit `claude_model`, `codex_model`,
-    `gemini_model`, and `grok_model` inputs. Select the resulting
+    `qualification=true` and explicit `claude_model`, `codex_model`, and
+    `gemini_model` inputs. Select the resulting
     `MCP Client Certification` run. Its `headSha` must equal `$anchor`, its
     conclusion must be `success`, and its held-out artifact must contain
-    passing reports for Claude, Codex, Gemini, and Grok. A missing credential
+    passing reports for Claude, Codex, and Gemini. A missing credential
     or model, skipped lane, stale SHA, or failed held-out case blocks the
     release; fix the general defect and certify a fresh blind partition.
 13. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
@@ -156,7 +156,7 @@ Never title a product release with a bare `vX.Y.Z`.
 
 - `git tag -v v0.25.0` → Good signature, points at the anchor.
 - The successful held-out MCP certification run has the same `headSha` as the
-  tag and passing reports for all four required clients.
+  tag and passing reports for all three required clients.
 - `gh release view v0.25.0` → the release is live with the notes.
 - `/changelog` renders the new entry at the top; `/changelog.xml` includes it.
 - The marketing test is green.

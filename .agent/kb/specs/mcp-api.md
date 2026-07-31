@@ -1865,8 +1865,7 @@ exact candidate Emisar bridge with:
 
 - Claude CLI;
 - Codex CLI;
-- Gemini CLI; and
-- Grok CLI.
+- Gemini CLI.
 
 The certification job builds the bridge from the candidate commit, pins each
 client version, gives every client only a short-lived loopback credential, and
@@ -1964,7 +1963,7 @@ production actions.
    unsigned-runbook refusal, cancellation races,
    response bounds, and cross-implementation vectors.
 7. **Documentation and certification**: update wire protocol, signed dispatch,
-   help/install examples, operator docs, and run the committed four-client
+   help/install examples, operator docs, and run the committed three-client
    corpus.
 
 Project gates:
