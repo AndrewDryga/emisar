@@ -397,6 +397,35 @@ func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) 
 	if err := chromedp.Run(ctx, chromedp.Evaluate(selectAbandoned, &picked)); err != nil {
 		return err
 	}
+	// EVERY row, with a verdict. The filter matched only apps labelled exactly
+	// "emisar", so a run that failed to set the label left an app named after its
+	// type — invisible to this cleanup, which then reported a clean tenant. A
+	// filter that can silently under-match must show what it looked at.
+	const inventory = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const boxes = [...document.querySelectorAll('input[type=checkbox]')].filter(visible);
+  const leaves = [...document.querySelectorAll('*')].filter(el =>
+    visible(el) && !el.querySelector('*') && (el.textContent || '').trim());
+  const rows = [];
+  for (const box of boxes) {
+    const r = box.getBoundingClientRect();
+    const mid = r.top + r.height / 2;
+    const text = leaves
+      .filter(el => { const b = el.getBoundingClientRect(); return b.top <= mid && b.bottom >= mid; })
+      .map(el => (el.textContent || '').trim())
+      .join(' | ');
+    if (text) rows.push((box.checked ? 'DELETE  ' : 'spare   ') + text.slice(0, 80));
+  }
+  return rows.join('\n');
+})()`
+	var listing string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(inventory, &listing)); err != nil {
+		return err
+	}
+	fmt.Println("--- every application, and what this run will do with it ---")
+	fmt.Println(listing)
+	fmt.Println("--- anything spared that this rig created is a filter gap, not a clean tenant ---")
+
 	if strings.TrimSpace(picked) == "" {
 		// Say WHY nothing matched. "Nothing to clean up" on a tenant that visibly
 		// has litter is the same false all-clear this cleanup already reported once.
@@ -570,38 +599,36 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 			break
 		}
 	}
+	// By URL, not by walking the left nav. The nav walk was flaky at the best of
+	// times and simply does not work on a tenant with no applications, where the
+	// section renders an onboarding page instead of the list. This is the same
+	// route the cleanup uses, and it lands on both shapes.
 	for attempt := 1; attempt <= 3 && !reached; attempt++ {
-		if _, err := clickText(ctx, "Access"); err != nil {
+		if err := openApplicationList(ctx, env["JUMPCLOUD_CONSOLE_URL"]); err != nil {
 			return err
 		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(5*time.Second)); err != nil {
-			return err
-		}
-		for _, label := range []string{"SSO Applications", "Applications"} {
-			clicked, err := clickText(ctx, label)
-			if err != nil {
-				return err
-			}
-			if clicked {
-				fmt.Printf("  clicked %q (attempt %d)\n", label, attempt)
-				break
-			}
-		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
-			return err
-		}
+
 		var body string
 		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
 			return err
 		}
-		reached = strings.Contains(body, "Configured Applications")
+		reached = strings.Contains(body, "Configured Applications") ||
+			strings.Contains(body, "Add your first application")
 	}
+
 	if !reached {
 		_ = screenshot(ctx, outDir, "jc-02-nav-failed")
 		return fmt.Errorf("could not reach SSO Applications after 3 attempts")
 	}
-	if err := highlight(ctx, "Add New Application"); err != nil {
-		return err
+	// Either entry point. A tenant with no applications offers "Get Started"
+	// instead of "Add New Application" — same destination, and the empty tenant is
+	// what a thorough cleanup leaves.
+	entry := "Add New Application"
+	if err := highlight(ctx, entry); err != nil {
+		entry = "Get Started"
+		if err := highlight(ctx, entry); err != nil {
+			return err
+		}
 	}
 	if err := screenshot(ctx, outDir, "jc-02-sso-applications"); err != nil {
 		return err
@@ -620,8 +647,25 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
 		return err
 	}
-	if err := highlight(ctx, "Custom Application"); err != nil {
+	// On a tenant that had no applications, "Get Started" lands on the catalog
+	// without the browse chrome, so give the page a moment and say what it DID
+	// offer if the custom entry is not there — a bare "not found" cost several
+	// runs to interpret.
+	if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
 		return err
+	}
+	if err := highlight(ctx, "Custom Application"); err != nil {
+		var offered string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  return [...document.querySelectorAll('button,a,[role=button],h1,h2,h3')]
+    .filter(el => visible(el) && (el.textContent || '').trim())
+    .map(el => (el.textContent || '').trim())
+    .filter(t => t.length < 40)
+    .slice(0, 25).join(' | ');
+})()`, &offered))
+		_ = screenshot(ctx, outDir, "jc-03-no-custom-application")
+		return fmt.Errorf("no Custom Application entry; page offers: %s", offered)
 	}
 	if err := screenshot(ctx, outDir, "jc-03-add-application"); err != nil {
 		return err
@@ -715,6 +759,22 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	}
 	if err := chromedp.Run(ctx, chromedp.KeyEvent("emisar"), chromedp.Sleep(2*time.Second)); err != nil {
 		return err
+	}
+
+	// Confirm it LANDED. focusField matches loosely, and when it caught a different
+	// input the app was created with JumpCloud's default name instead — which the
+	// cleanup then could not recognise as ours, so leftovers hid in the tenant.
+	const labelled = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  return [...document.querySelectorAll('input')]
+    .some(el => visible(el) && el.value === 'emisar');
+})()`
+	var named bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(labelled, &named)); err != nil {
+		return err
+	}
+	if !named {
+		return errors.New("the Display Label did not take — the app would be created unnamed and cleanup could not find it")
 	}
 	if err := highlight(ctx, "Display Label"); err != nil {
 		return err
@@ -1212,13 +1272,28 @@ func activateProvisioning(ctx context.Context, rounds int) error {
 }
 
 func pressFooterButton(ctx context.Context, label string) (bool, error) {
+	// Walk OPEN SHADOW ROOTS. This console keeps its sticky action bar inside a web
+	// component, so a plain querySelectorAll cannot see Activate at all — the press
+	// silently fell through to Test Connection every time, which saves the form
+	// instead of activating it and leaves the footer with no Activate to return to.
 	script := fmt.Sprintf(`(() => {
   const wanted = %q;
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const button = [...document.querySelectorAll('button')]
-    .find(el => visible(el) && !el.disabled && (el.textContent || '').trim().toLowerCase() === wanted);
-  if (!button) return '';
-  const box = button.getBoundingClientRect();
+  let found = null;
+  const walk = root => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+      if (found) continue;
+      if (el.tagName !== 'BUTTON') continue;
+      if (!visible(el) || el.disabled) continue;
+      if ((el.textContent || '').trim().toLowerCase() !== wanted) continue;
+      found = el;
+    }
+  };
+  walk(document);
+  if (!found) return '';
+  found.scrollIntoView({block: 'center'});
+  const box = found.getBoundingClientRect();
   return JSON.stringify({x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)});
 })()`, label)
 
