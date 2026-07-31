@@ -50,6 +50,14 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp mount_runbook(id, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
+      {:ok, %{status: :draft} = runbook} ->
+        {:ok,
+         socket
+         |> put_flash(:info, "Publish this runbook before running it.")
+         |> push_navigate(
+           to: ~p"/app/#{socket.assigns.current_account}/runbooks/#{runbook.id}/edit"
+         )}
+
       {:ok, runbook} ->
         socket =
           socket
@@ -206,6 +214,15 @@ defmodule EmisarWeb.RunbookRunLive do
                issues: issues,
                checked_at: DateTime.utc_now()
              })}
+
+          {:error, :not_published} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Publish this runbook before running it.")
+             |> push_navigate(
+               to:
+                 ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/edit"
+             )}
 
           {:error, :runbook_capacity_exceeded} ->
             {:noreply,

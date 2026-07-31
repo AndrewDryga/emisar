@@ -639,6 +639,16 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.dispatch_runbook(runbook, "cross account", other_subject) ==
                {:error, :not_found}
     end
+
+    test "refuses to run a draft" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      draft = create_runbook(subject, definition: definition(runner.group))
+
+      assert Runbooks.dispatch_runbook(draft, "inspect the database", subject) ==
+               {:error, :not_published}
+    end
   end
 
   describe "resolve_plan/2" do

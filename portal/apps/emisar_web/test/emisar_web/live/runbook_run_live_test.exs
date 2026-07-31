@@ -213,6 +213,28 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert user.id != viewer.id
     end
 
+    test "a draft sends the operator to the editor instead of the run page", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      attrs = %{
+        "title" => "Half baked",
+        "slug" => "half-baked",
+        "definition" => Fixtures.Runbooks.default_definition()
+      }
+
+      assert {:ok, draft} = Runbooks.create_runbook(attrs, subject)
+      assert draft.status == :draft
+
+      destination = ~p"/app/#{account}/runbooks/#{draft.id}/edit"
+      result = live(conn, ~p"/app/#{account}/runbooks/#{draft.id}/run")
+
+      assert {:error, {:live_redirect, %{to: ^destination}}} = result
+      assert {:ok, _lv, html} = follow_redirect(result, conn)
+      assert html =~ "Publish this runbook before running it."
+    end
+
     test "renders typed inputs and the exact current frozen plan", %{
       conn: conn,
       account: account,

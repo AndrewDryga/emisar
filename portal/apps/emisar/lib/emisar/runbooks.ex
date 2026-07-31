@@ -488,7 +488,9 @@ defmodule Emisar.Runbooks do
   def expand(_), do: []
 
   @doc """
-  Compiles and dispatches a runbook through the durable stage scheduler.
+  Compiles and dispatches a published runbook through the durable stage scheduler.
+
+  A draft stays private and unexecutable — it returns `{:error, :not_published}`.
 
   The compiler resolves typed inputs, runner fan-out, current trusted packs,
   and action contracts before any execution row is created. The resulting plan
@@ -512,6 +514,7 @@ defmodule Emisar.Runbooks do
              Emisar.Runs.Authorizer.dispatch_run_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
+         :ok <- ensure_published(runbook),
          :ok <- ensure_membership(subject),
          :ok <- ensure_reason(reason) do
       if operation_id do
@@ -937,6 +940,9 @@ defmodule Emisar.Runbooks do
   @doc "Whether `subject` may cancel a visible runbook execution."
   def subject_can_cancel_execution?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Emisar.Runs.Authorizer.cancel_run_permission())
+
+  defp ensure_published(%Runbook{status: :published}), do: :ok
+  defp ensure_published(%Runbook{}), do: {:error, :not_published}
 
   defp ensure_membership(%Subject{membership_id: id}) when is_binary(id), do: :ok
   defp ensure_membership(_), do: {:error, :membership_required}
