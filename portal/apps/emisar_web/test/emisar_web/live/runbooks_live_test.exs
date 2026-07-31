@@ -5,7 +5,8 @@ defmodule EmisarWeb.RunbooksLiveTest do
   and live-refreshes on the account's runbook feed.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Runbooks
+  alias Emisar.{Repo, Runbooks}
+  alias Emisar.Runbooks.RunbookExecution
 
   defp create_runbook!(user, account, title, opts \\ []) do
     subject = owner_subject(user, account)
@@ -27,6 +28,24 @@ defmodule EmisarWeb.RunbooksLiveTest do
     else
       runbook
     end
+  end
+
+  defp create_execution!(user, account, runbook, reason) do
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+    RunbookExecution.Changeset.create(%{
+      id: Ecto.UUID.generate(),
+      account_id: account.id,
+      runbook_id: runbook.id,
+      initiating_membership_id: membership.id,
+      requested_by_id: user.id,
+      reason: reason,
+      frozen_plan: %{"schema_version" => 1, "stages" => []},
+      inputs_raw: "{}",
+      inputs_sha256: String.duplicate("0", 64),
+      status: :succeeded
+    })
+    |> Repo.insert!()
   end
 
   test "renders the empty state with the New action for an owner", %{conn: conn} do
@@ -63,6 +82,24 @@ defmodule EmisarWeb.RunbooksLiveTest do
     assert html =~ "Half baked"
     assert html =~ ~p"/app/#{account}/runbooks/#{published.id}/run"
     refute html =~ ~p"/app/#{account}/runbooks/#{draft.id}/run"
+  end
+
+  test "moves guidance and account-scoped recent runs into the reading rail", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    runbook = create_runbook!(user, account, "Deploy check", published?: true)
+    execution = create_execution!(user, account, runbook, "Deploy during change window")
+
+    {other_user, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
+    other_runbook = create_runbook!(other_user, other_account, "Other account")
+    hidden = create_execution!(other_user, other_account, other_runbook, "Must stay hidden")
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
+
+    assert has_element?(lv, "#runbooks-docs-rail a[href='/docs/runbooks']")
+    refute has_element?(lv, "#runbooks-primary a[href='/docs/runbooks']")
+    assert has_element?(lv, "#recent-runbook-runs a[href$='/runs/#{execution.id}']")
+    assert html =~ "Deploy during change window"
+    refute html =~ hidden.reason
   end
 
   test "a viewer gets the list but no New action", %{conn: conn} do

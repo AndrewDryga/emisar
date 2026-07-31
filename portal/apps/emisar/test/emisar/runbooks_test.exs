@@ -279,6 +279,30 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "list_recent_executions/2" do
+    test "returns bounded account history with its runbook and excludes other accounts" do
+      fixture = mcp_execution_fixture()
+
+      assert {:ok, [execution]} =
+               Runbooks.list_recent_executions(fixture.owner, 1)
+
+      assert execution.id == fixture.execution_id
+      assert execution.runbook.id == fixture.runbook.id
+      assert execution.runbook.title == fixture.runbook.title
+
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      assert {:ok, []} = Runbooks.list_recent_executions(other_subject, 5)
+    end
+
+    test "denies a principal without runbook visibility" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.list_recent_executions(Subject.for_runner(runner, account), 5) ==
+               {:error, :unauthorized}
+    end
+  end
+
   describe "fetch_runbook_for_execution/2" do
     test "retains the immutable source after its visible family is deleted" do
       fixture = mcp_execution_fixture()

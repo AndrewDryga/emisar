@@ -416,6 +416,146 @@ defmodule EmisarWeb.CoreComponents do
   defp dropdown_panel_position(:flow_on_narrow), do: "static xl:absolute"
 
   @doc """
+  A searchable single-value picker for bounded catalogs.
+
+  The caller supplies ordered groups of `%{label: ..., options: [...]}`. Each
+  option carries `:value`, `:label`, and `:search`; `:description`, `:disabled`,
+  and `:variant` (`:default`, `:heading`, or `:child`) are optional. The selected
+  face is supplied separately so a compact trigger can omit supporting catalog
+  metadata that remains searchable inside the panel.
+
+  The value-keyed `id` is part of the component contract: the picker uses
+  `phx-update="ignore"` so an open search survives unrelated LiveView renders.
+  Include every server fact that changes the option set in that id.
+  """
+  attr :id, :string, required: true
+  attr :name, :string, required: true
+  attr :value, :string, default: ""
+  attr :selected_label, :string, required: true
+  attr :groups, :list, required: true
+  attr :blank_label, :string, default: nil
+  attr :disabled, :boolean, default: false
+  attr :active?, :boolean, default: false
+  attr :size, :atom, default: :md, values: [:sm, :md]
+  attr :aria_label, :string, required: true
+  attr :class, :string, default: nil
+
+  def searchable_select(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      phx-hook="Combobox"
+      phx-update="ignore"
+      class={["relative", @class]}
+    >
+      <input type="hidden" name={@name} value={@value} data-combobox-value />
+      <button
+        type="button"
+        data-combobox-trigger
+        disabled={@disabled}
+        aria-label={@aria_label}
+        class={[
+          "flex w-full items-center justify-between gap-2 rounded-lg border bg-zinc-950 text-left disabled:cursor-not-allowed disabled:opacity-60",
+          searchable_select_size(@size),
+          if(@value == "", do: "text-zinc-500", else: "text-zinc-200"),
+          if(@active?,
+            do: "border-brand-500/60 focus:border-brand-400 focus:ring-brand-400/20",
+            else: "border-zinc-700 focus:border-zinc-600 focus:ring-zinc-600/20"
+          ),
+          "focus:outline-none focus:ring-2"
+        ]}
+      >
+        <span class="truncate">{@selected_label}</span>
+        <.icon name="hero-chevron-down" class="h-4 w-4 shrink-0 text-zinc-500" />
+      </button>
+
+      <div
+        data-combobox-panel
+        hidden
+        class={[
+          "absolute z-30 w-full overflow-hidden rounded-b-lg rounded-t-none border border-t-0",
+          "bg-zinc-900 shadow-xl shadow-black/60",
+          if(@active?, do: "border-brand-500/60", else: "border-zinc-700")
+        ]}
+      >
+        <input
+          type="text"
+          data-combobox-search
+          placeholder="Search…"
+          autocomplete="off"
+          class={[
+            "w-full border-0 border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-800 focus:ring-0",
+            if(@size == :sm, do: "text-xs", else: "text-sm")
+          ]}
+        />
+        <ul class={["max-h-72 overflow-y-auto py-1", if(@size == :sm, do: "text-xs", else: "text-sm")]}>
+          <li :if={@blank_label}>
+            <button
+              type="button"
+              data-combobox-option
+              data-value=""
+              data-search={String.downcase(@blank_label)}
+              class={searchable_select_option_class(:default)}
+            >
+              {@blank_label}
+            </button>
+          </li>
+          <li :for={group <- @groups} data-combobox-section>
+            <span
+              :if={group[:label]}
+              class="block px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+            >
+              {group.label}
+            </span>
+            <ul>
+              <li :for={option <- group.options}>
+                <button
+                  type="button"
+                  data-combobox-option
+                  data-value={option.value}
+                  data-search={option.search}
+                  data-description={option[:description]}
+                  disabled={option[:disabled] || false}
+                  aria-selected={option.value == @value}
+                  class={[
+                    searchable_select_option_class(option[:variant] || :default),
+                    option.value == @value && "bg-white/[0.06] text-zinc-100",
+                    option[:disabled] && "cursor-not-allowed opacity-50"
+                  ]}
+                >
+                  {option.label}
+                </button>
+              </li>
+            </ul>
+          </li>
+        </ul>
+        <div
+          data-combobox-description
+          hidden
+          class="border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-[11px] leading-relaxed text-zinc-400"
+        >
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp searchable_select_size(:sm), do: "py-1.5 pl-2.5 pr-2 text-xs"
+  defp searchable_select_size(:md), do: "min-h-10 px-3 py-2 text-sm"
+
+  defp searchable_select_option_class(:heading) do
+    "block w-full truncate px-3 py-1.5 text-left font-medium text-zinc-200 transition hover:bg-white/[0.06] data-[hidden]:hidden"
+  end
+
+  defp searchable_select_option_class(:child) do
+    "block w-full truncate py-1.5 pl-6 pr-3 text-left text-zinc-300 transition hover:bg-white/[0.06] data-[hidden]:hidden"
+  end
+
+  defp searchable_select_option_class(_variant) do
+    "block w-full truncate px-3 py-1.5 text-left text-zinc-300 transition hover:bg-white/[0.06] data-[hidden]:hidden"
+  end
+
+  @doc """
   A full-width menu row for a `<.dropdown>` panel — a left-aligned button (or
   link) with an optional leading `icon`. `tone` mirrors `<.button variant={:ghost}>`
   exactly (neutral → zinc, `caution` → amber, `danger` → rose, `success` →
@@ -3180,6 +3320,24 @@ defmodule EmisarWeb.CoreComponents do
         ]}
       ><span :if={@prompt} class="select-none text-zinc-500">$ </span>{@code}</pre>
     </div>
+    """
+  end
+
+  @doc """
+  A quiet frame for a user-authored artifact that must remain visually distinct
+  from the page controls around it, such as runbook operator instructions.
+  """
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def artifact_panel(assigns) do
+    ~H"""
+    <article class={[
+      "min-w-0 overflow-hidden rounded-xl bg-zinc-900/40 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ring-1 ring-white/[0.07]",
+      @class
+    ]}>
+      {render_slot(@inner_block)}
+    </article>
     """
   end
 

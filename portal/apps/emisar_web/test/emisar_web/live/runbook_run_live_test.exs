@@ -234,6 +234,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       assert html =~ "One-time incident token"
       assert html =~ ~s(type="password")
+      assert has_element?(lv, "#runbook-operator-context article")
+      assert has_element?(lv, "#current-runbook-plan")
+      assert has_element?(lv, "#runbook-execution-history")
 
       render_change(lv, "run_form_changed", %{
         "reason" => "Investigate incident INC-42",
@@ -285,6 +288,8 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert reloaded_html =~ "Investigate incident INC-42"
       assert reloaded_html =~ "Execution in progress"
+      refute reloaded_html =~ "A later stage starts only after"
+      refute reloaded_html =~ "Recent executions"
 
       {:ok, _fresh, fresh_html} =
         live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
@@ -306,6 +311,22 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert [run] = Runs.list_runs_for_runbook_execution(account.id, execution().id)
 
+      assert {:ok, _event} =
+               Runs.append_event(run, %{
+                 seq: 1,
+                 kind: "progress",
+                 stream: "stdout",
+                 payload: %{"chunk" => "checking fleet\n"}
+               })
+
+      assert {:ok, _event} =
+               Runs.append_event(run, %{
+                 seq: 2,
+                 kind: "progress",
+                 stream: "stderr",
+                 payload: %{"chunk" => "<host unavailable>\n"}
+               })
+
       assert {:ok, _run} =
                Fixtures.Runs.finish(run, %{
                  "status" => "success",
@@ -320,6 +341,10 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "Output extraction"
       assert html =~ "Success condition"
       assert html =~ "passed"
+      assert html =~ "Output"
+      assert html =~ "checking fleet"
+      assert html =~ "&lt;host unavailable&gt;"
+      assert html =~ "text-rose-300"
       assert html =~ "Run again"
 
       assert {:ok, result} = Runbooks.fetch_execution_result(execution().id, subject)

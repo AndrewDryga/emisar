@@ -705,6 +705,24 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  @doc "Lists a bounded recent execution history across the subject's visible runbooks."
+  def list_recent_executions(%Subject{} = subject, limit \\ 5)
+      when is_integer(limit) and limit >= 1 and limit <= 25 do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      executions =
+        RunbookExecution.Query.all()
+        |> RunbookExecution.Query.by_runner_access(Accounts.runner_access_for_subject(subject))
+        |> RunbookExecution.Query.ordered_by_recent()
+        |> RunbookExecution.Query.limit_to(limit)
+        |> RunbookExecution.Query.with_runbook()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, executions}
+    end
+  end
+
   defp fetch_scoped_execution(execution_id, access, subject, preload?) do
     query =
       RunbookExecution.Query.by_id(execution_id)

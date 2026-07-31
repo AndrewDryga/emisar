@@ -44,6 +44,7 @@ const Combobox = {
     this.search = this.el.querySelector("[data-combobox-search]")
     this.hidden = this.el.querySelector("[data-combobox-value]")
     this.options = Array.from(this.el.querySelectorAll("[data-combobox-option]"))
+    this.sections = Array.from(this.el.querySelectorAll("[data-combobox-section]"))
     this.descriptionPane = this.el.querySelector("[data-combobox-description]")
 
     // The hovered option's description mirrors into the footer pane — a fixed
@@ -58,7 +59,7 @@ const Combobox = {
     this.search.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault()
-        const first = this.options.find((o) => !o.parentElement.hidden)
+        const first = this.options.find((o) => !o.disabled && !o.parentElement.hidden)
         if (first) this.select(first)
       }
       if (e.key === "Escape") this.close()
@@ -100,9 +101,14 @@ const Combobox = {
       const hit = q === "" || (o.dataset.search || "").includes(q)
       o.parentElement.hidden = !hit
     })
+    this.sections.forEach((section) => {
+      const options = Array.from(section.querySelectorAll("[data-combobox-option]"))
+      section.hidden = !options.some((option) => !option.parentElement.hidden)
+    })
   },
 
   select(option) {
+    if (option.disabled) return
     this.hidden.value = option.dataset.value
     this.close()
     // Bubbling input event → the surrounding filter form's phx-change fires;

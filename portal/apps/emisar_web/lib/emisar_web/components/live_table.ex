@@ -433,104 +433,24 @@ defmodule EmisarWeb.LiveTable do
       |> assign(:selected, assigns.value |> List.wrap() |> List.first())
       |> assign(:groups, normalize_groups(assigns.filter.values || []))
       |> assign(:active?, filter_active?(assigns.filter, assigns.value))
+      |> assign(:combobox_groups, filter_combobox_groups(assigns.filter.values || []))
 
     ~H"""
-    <div
-      id={"filter-#{@filter.name}-#{@selected || "all"}"}
-      phx-hook="Combobox"
-      phx-update="ignore"
-      class="relative"
-    >
-      <label class={filter_label_class(@active?)}>
-        <span class="mb-1">{@filter.title}</span>
-        <input type="hidden" name={@filter.name} value={@selected} data-combobox-value />
-        <button
-          type="button"
-          data-combobox-trigger
-          disabled={@disabled}
-          class={[
-            "flex w-full items-center justify-between gap-2 rounded-lg border bg-zinc-950 py-1.5 pl-2.5 pr-2 text-left text-xs disabled:cursor-not-allowed",
-            if(@selected, do: "text-zinc-200", else: "text-zinc-400"),
-            filter_control_class(@active?)
-          ]}
-        >
-          <span class="truncate">{combobox_selected_label(@groups, @selected)}</span>
-          <CoreComponents.icon name="hero-chevron-down" class="h-3 w-3 shrink-0 text-zinc-500" />
-        </button>
-      </label>
-      <%!-- The panel CONTINUES the trigger's border (same 1px, same color —
-           brand when the filter is active) instead of the float ring, whose
-           outside-the-box shadow read as a second, misaligned edge style. No
-           overlap: the trigger's own border-b stays visible as the seam
-           between field and search — overlapping it painted the divider away. --%>
-      <div
-        data-combobox-panel
-        hidden
-        class={[
-          "absolute z-20 w-full overflow-hidden rounded-b-lg rounded-t-none border border-t-0",
-          "bg-zinc-900 shadow-xl shadow-black/60",
-          if(@active?, do: "border-brand-500/60", else: "border-zinc-700")
-        ]}
-      >
-        <input
-          type="text"
-          data-combobox-search
-          placeholder="Search…"
-          autocomplete="off"
-          class="w-full border-0 border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-800 focus:ring-0"
-        />
-        <ul class="max-h-72 overflow-y-auto py-1 text-xs">
-          <li>
-            <button
-              type="button"
-              data-combobox-option
-              data-value=""
-              data-search="all"
-              class={combobox_option_class()}
-            >
-              All
-            </button>
-          </li>
-          <%= for {group_label, [group_option | options]} <- @groups do %>
-            <li>
-              <button
-                type="button"
-                data-combobox-option
-                data-value={option_value(group_option)}
-                data-search={String.downcase("#{group_label} #{option_label(group_option)}")}
-                data-description={option_description(group_option)}
-                class={[combobox_option_class(), "font-medium text-zinc-200"]}
-              >
-                {option_label(group_option)}
-              </button>
-            </li>
-            <li :for={option <- options}>
-              <button
-                type="button"
-                data-combobox-option
-                data-value={option_value(option)}
-                data-search={
-                  String.downcase("#{group_label} #{option_label(option)} #{option_value(option)}")
-                }
-                data-description={option_description(option)}
-                class={[combobox_option_class(), "pl-6 text-zinc-300"]}
-              >
-                {option_label(option)}
-              </button>
-            </li>
-          <% end %>
-        </ul>
-        <%!-- Hover pane: the hook mirrors the hovered option's data-description
-             here — a fixed footer instead of per-option tooltips, which would
-             clip inside the scrolling list. --%>
-        <div
-          data-combobox-description
-          hidden
-          class="border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-[11px] leading-relaxed text-zinc-400"
-        >
-        </div>
-      </div>
-    </div>
+    <label class={filter_label_class(@active?)}>
+      <span class="mb-1">{@filter.title}</span>
+      <CoreComponents.searchable_select
+        id={"filter-#{@filter.name}-#{@selected || "all"}"}
+        name={to_string(@filter.name)}
+        value={@selected || ""}
+        selected_label={combobox_selected_label(@groups, @selected)}
+        groups={@combobox_groups}
+        blank_label="All"
+        disabled={@disabled}
+        active?={@active?}
+        size={:sm}
+        aria_label={@filter.title}
+      />
+    </label>
     """
   end
 
@@ -641,10 +561,6 @@ defmodule EmisarWeb.LiveTable do
     """
   end
 
-  defp combobox_option_class do
-    "block w-full truncate px-3 py-1.5 text-left transition hover:bg-white/[0.06] data-[hidden]:hidden"
-  end
-
   # The trigger's face: a picked event reads "Group · Label" (a bare child
   # label like "Created" says nothing about WHAT was created); a group
   # sentinel's label is already self-describing. "All" when nothing is picked.
@@ -678,6 +594,33 @@ defmodule EmisarWeb.LiveTable do
   # can take one path.
   defp normalize_groups([{_label, list} | _] = values) when is_list(list), do: values
   defp normalize_groups(flat), do: [{nil, flat}]
+
+  defp filter_combobox_groups(values) do
+    values
+    |> normalize_groups()
+    |> Enum.map(fn
+      {nil, options} ->
+        %{label: nil, options: Enum.map(options, &filter_combobox_option(&1, nil, :default))}
+
+      {group_label, [group_option | options]} ->
+        %{
+          label: nil,
+          options:
+            [filter_combobox_option(group_option, group_label, :heading)] ++
+              Enum.map(options, &filter_combobox_option(&1, group_label, :child))
+        }
+    end)
+  end
+
+  defp filter_combobox_option(option, group_label, variant) do
+    %{
+      value: option_value(option),
+      label: option_label(option),
+      description: option_description(option),
+      search: String.downcase("#{group_label} #{option_label(option)} #{option_value(option)}"),
+      variant: variant
+    }
+  end
 
   # A filter is "active" when its value differs from the default (blank / "All"
   # / unchecked). Drives the brand highlight below so an operator sees at a

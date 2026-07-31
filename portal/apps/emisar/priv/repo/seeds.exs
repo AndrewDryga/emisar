@@ -818,6 +818,17 @@ IO.puts(
 # These rows are demo fixtures, so rerunning seeds replaces only this runbook's
 # executions instead of accumulating another story.
 
+previous_execution_ids =
+  RunbookExecution.Query.by_runbook_id(approval_runbook.id)
+  |> Repo.all()
+  |> Enum.map(& &1.id)
+
+Enum.each(previous_execution_ids, fn execution_id ->
+  ActionRun.Query.all()
+  |> ActionRun.Query.by_runbook_execution_id(execution_id)
+  |> Repo.delete_all()
+end)
+
 RunbookExecution.Query.by_runbook_id(approval_runbook.id)
 |> Repo.delete_all()
 
@@ -939,6 +950,10 @@ ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
 |> Enum.each(fn item ->
   item
   |> ExecutionItem.Changeset.succeed(%{}, nil, nil, [], succeeded_finished_at)
+  |> Ecto.Changeset.change(
+    attempt_count: 1,
+    started_at: DateTime.add(succeeded_at, 6, :second)
+  )
   |> Repo.update!()
 end)
 
@@ -1923,6 +1938,90 @@ if existing_runs == [] do
     payload: %{ip: "198.51.100.17"}
   )
 end
+
+# The completed runbook execution carries real-shaped physical attempts and
+# bounded output, so its detail page demonstrates the same action-output review
+# operators get from a live execution. This stays outside the general run seed
+# guard: rerunning seeds replaces the runbook executions above, then recreates
+# exactly one attempt per completed item here.
+succeeded_execution =
+  RunbookExecution.Query.by_id(seeded_execution_ids.succeeded)
+  |> Repo.one!()
+
+ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
+|> Repo.all()
+|> Enum.each(fn item ->
+  args = if is_binary(item.args_raw), do: Jason.decode!(item.args_raw), else: %{}
+
+  {:ok, attempt} =
+    Runs.create_run(%{
+      account_id: account.id,
+      runner_id: item.runner_id,
+      action_id: item.action_id,
+      args: args,
+      reason: succeeded_execution.reason,
+      source: "operator",
+      requested_by_id: user.id,
+      initiating_membership_id: owner_membership.id,
+      pack_ref: item.pack_ref,
+      runner_ref: item.runner_ref,
+      runbook_id: approval_runbook.id,
+      runbook_step_id: item.step_id,
+      runbook_execution_id: seeded_execution_ids.succeeded,
+      runbook_execution_item_id: item.id,
+      attempt_number: 1,
+      expected_pack_hash: item.pack_hash,
+      policy_id: item.policy_id,
+      policy_version: item.policy_version,
+      policy_decision: "allow",
+      policy_reason: "Satisfied by the approved frozen runbook plan",
+      status: "running"
+    })
+
+  chunks =
+    case item.action_id do
+      "caddy.reload_config" ->
+        runner_name = item.runner_ref |> String.split("~") |> hd()
+
+        [
+          {"stdout", "Valid configuration\n"},
+          {"stdout", "Reloaded Caddy configuration on #{runner_name}\n"}
+        ]
+
+      "caddy.version" ->
+        [{"stdout", "v2.8.4 h1:0n6wXAMXxVqI9eD/9KspXHiCmGX95e9FQeawhe2iZHQ=\n"}]
+
+      "caddy.reverse_proxy_upstreams" ->
+        [{"stdout", "{\"healthy\":true,\"upstreams\":2}\n"}]
+
+      _other ->
+        [{"stdout", "Action completed successfully\n"}]
+    end
+
+  Enum.with_index(chunks, 1)
+  |> Enum.each(fn {{stream, chunk}, seq} ->
+    {:ok, _event} =
+      Runs.append_event(attempt, %{
+        seq: seq,
+        kind: "progress",
+        stream: stream,
+        payload: %{"chunk" => chunk}
+      })
+  end)
+
+  attempt
+  |> ActionRun.Changeset.transition(:success, %{
+    started_at: DateTime.add(succeeded_at, 6, :second),
+    finished_at: succeeded_finished_at,
+    exit_code: 0,
+    duration_ms: 12_000,
+    output_complete: true,
+    event_id: "seed-runbook-" <> item.id
+  })
+  |> Repo.update!()
+end)
+
+IO.puts(IO.ANSI.cyan() <> "✓ Seeded runbook action output previews" <> IO.ANSI.reset())
 
 # -- Bootstrap enrollment key (unchanged) ----------------------------------
 

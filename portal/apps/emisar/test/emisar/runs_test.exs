@@ -4398,6 +4398,54 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "list_recent_events_for_runs/3" do
+    setup do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      %{account: account, runner: runner, subject: subject}
+    end
+
+    test "caps each run independently, orders tails, and fails closed for mixed access", %{
+      account: account,
+      runner: runner,
+      subject: subject
+    } do
+      {:ok, first} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, second} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      for run <- [first, second], seq <- 1..4 do
+        {:ok, _event} =
+          Runs.append_event(run, %{
+            seq: seq,
+            kind: "progress",
+            stream: if(seq == 4, do: "stderr", else: "stdout"),
+            payload: %{"chunk" => "#{run.id}:#{seq}\n"}
+          })
+      end
+
+      assert {:ok, events_by_run} =
+               Runs.list_recent_events_for_runs([first.id, second.id], 2, subject)
+
+      assert Enum.map(events_by_run[first.id], & &1.seq) == [3, 4]
+      assert Enum.map(events_by_run[second.id], & &1.seq) == [3, 4]
+      assert List.last(events_by_run[first.id]).stream == "stderr"
+
+      {_other_owner, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
+      other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
+      {:ok, hidden} = Runs.create_run(base_attrs(other_account.id, other_runner.id))
+
+      assert {:error, :not_found} =
+               Runs.list_recent_events_for_runs([first.id, hidden.id], 2, subject)
+    end
+
+    test "denies a principal without run visibility", %{account: account, runner: runner} do
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:error, :unauthorized} =
+               Runs.list_recent_events_for_runs([run.id], 2, no_permissions_subject(account))
+    end
+  end
+
   describe "list_events_for_run_since/4" do
     setup do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()

@@ -53,6 +53,14 @@ must stand on their labels, choices, and validation state. Supporting prose earn
 its place only when it changes the decision rather than narrating behavior already
 enforced by the form.
 
+A large finite catalog uses the shared searchable single-value selector. The
+closed face carries the concise identity an operator can recognize and compare;
+the open panel carries title, pack, group, description, or other metadata needed
+to disambiguate and search. Group options by the domain fact operators scan.
+Unavailable saved values remain named but cannot be selected, and keyboard
+navigation skips disabled choices. Do not concatenate every searchable fact into
+the trigger or build a second local combobox beside the shared Audit Type shape.
+
 A multi-target control keeps one stable-height trigger in the workflow overview.
 The trigger summarizes the current selection; its menu owns both addition and
 removal. Never stack selected-target rows above a second picker in the overview
@@ -133,6 +141,9 @@ never a reduced model.
   stacking.
 - A step overview puts its compact identifier before targets and an action
   compatible with all selected runners. The pack follows the action automatically.
+- The action selector shows `caddy.reload_config` on its closed face, opens a
+  searchable pack-grouped panel, and keeps the action title and pack name in the
+  option description/search text.
 - A multi-target step keeps one aligned Targets trigger. `edge-web group` is
   shown instead of `group:edge-web`; an unavailable saved target is visibly
   invalid and can still be removed from the same menu.
@@ -177,6 +188,9 @@ never a reduced model.
 
 - A step identifier detached in a disclosure after Targets and Action.
 - An action list that includes behavior unavailable on one selected target.
+- A long native action select, a closed label such as
+  `caddy reload --config <file> · caddy.reload_config · caddy`, or a second
+  hand-built searchable dropdown that drifts from the Audit Type control.
 - A later conditional field that resizes an earlier title when toggled.
 - Schema-tuple copy such as `file · json · optional`, an unlabeled pair of binding
   controls, or filler explaining that Omit omits the value.

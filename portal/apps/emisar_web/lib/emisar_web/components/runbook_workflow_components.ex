@@ -13,6 +13,57 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   def runner_name(_ref), do: "Unknown runner"
 
+  attr :executions, :list, required: true
+  attr :current_account, :map, required: true
+  attr :runbook, :map, default: nil
+  attr :show_runbook?, :boolean, default: false
+
+  @doc "Renders a compact recent-run list for a runbook parent surface."
+  def recent_executions(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :visible_executions,
+        Enum.filter(
+          assigns.executions,
+          &(not assigns.show_runbook? or match?(%Emisar.Runbooks.Runbook{}, &1.runbook))
+        )
+      )
+
+    ~H"""
+    <p :if={@visible_executions == []} class="text-sm leading-6 text-zinc-500">
+      No runs yet.
+    </p>
+    <ul :if={@visible_executions != []} class="divide-y divide-zinc-800/70">
+      <li :for={execution <- @visible_executions}>
+        <% runbook = if @show_runbook?, do: execution.runbook, else: @runbook %>
+        <.link
+          navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/runs/#{execution.id}"}
+          class="-mx-2 block rounded-md px-2 py-3 hover:bg-white/[0.04]"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <span class="min-w-0">
+              <span :if={@show_runbook?} class="block truncate text-sm font-medium text-zinc-200">
+                {runbook.title}
+              </span>
+              <span class={[
+                "block truncate text-xs text-zinc-400",
+                @show_runbook? && "mt-0.5"
+              ]}>
+                {execution.reason}
+              </span>
+            </span>
+            <.status_badge status={execution.status} class="shrink-0" />
+          </div>
+          <span class="mt-1 block text-[11px] text-zinc-500">
+            <.local_time value={execution.inserted_at} mode={:relative} />
+          </span>
+        </.link>
+      </li>
+    </ul>
+    """
+  end
+
   attr :name, :string, required: true
   attr :label, :string, required: true
   attr :checked, :boolean, required: true
@@ -304,6 +355,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           assigns.step["action"]
         )
       )
+      |> assign_action_picker()
 
     ~H"""
     <section
@@ -384,14 +436,16 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               <.icon name="hero-exclamation-circle-mini" class="h-4 w-4 text-rose-300" />
             </.tooltip>
           </div>
-          <.select
+          <.searchable_select
+            id={@action_picker_id}
             name={"draft[stages][#{@stage_index}][steps][#{@step_index}][action_choice]"}
-            options={@action_options}
-            prompt={if @step["target_refs"] == [], do: "Choose targets first", else: "Choose action…"}
-            prompt_selected={@action_choice == ""}
+            value={@action_choice}
+            selected_label={@action_selected_label}
+            groups={@action_groups}
+            blank_label={if @step["target_refs"] == [], do: nil, else: "Choose action…"}
             disabled={@read_only? or not @targets_resolved?}
             class="mt-2"
-            aria-label="Action"
+            aria_label="Action"
           />
         </div>
       </div>
@@ -424,6 +478,59 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       />
     </section>
     """
+  end
+
+  defp assign_action_picker(assigns) do
+    groups =
+      assigns.action_options
+      |> Enum.group_by(& &1.pack_id)
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map(fn {pack_id, options} ->
+        %{
+          label: pack_id,
+          options:
+            Enum.map(options, fn option ->
+              %{
+                value: option.value,
+                label: option.label,
+                description: option.description,
+                search: option.search,
+                disabled: option.disabled
+              }
+            end)
+        }
+      end)
+
+    selected =
+      Enum.find(assigns.action_options, &(&1.value == assigns.action_choice))
+
+    selected_label =
+      cond do
+        assigns.action_choice == "" and assigns.step["target_refs"] == [] ->
+          "Choose targets first"
+
+        assigns.action_choice == "" ->
+          "Choose action…"
+
+        selected && selected[:unavailable] ->
+          "Unavailable · #{selected.label}"
+
+        selected ->
+          selected.label
+
+        true ->
+          elem(RunbookEditorCatalog.split_action_value(assigns.action_choice), 1)
+      end
+
+    picker_key = :erlang.phash2({assigns.action_choice, assigns.action_options})
+
+    assigns
+    |> assign(:action_groups, groups)
+    |> assign(:action_selected_label, selected_label)
+    |> assign(
+      :action_picker_id,
+      "runbook-stage-#{assigns.stage_index}-step-#{assigns.step_index}-action-#{picker_key}"
+    )
   end
 
   attr :step, :map, required: true

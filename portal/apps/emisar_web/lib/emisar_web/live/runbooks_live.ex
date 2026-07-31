@@ -6,7 +6,7 @@ defmodule EmisarWeb.RunbooksLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runbooks, Runs}
-  alias EmisarWeb.LiveTable
+  alias EmisarWeb.{LiveTable, RunbookWorkflowComponents}
 
   def mount(_params, _session, socket) do
     if connected?(socket),
@@ -33,30 +33,40 @@ defmodule EmisarWeb.RunbooksLive do
     filters = Runbooks.Runbook.Query.filters()
     opts = LiveTable.params_to_opts(params, filters)
 
-    case Runbooks.list_runbooks(socket.assigns.current_subject, opts) do
-      {:ok, list, meta} ->
-        socket
-        |> assign(:runbooks, list)
-        |> assign(:runbook_risk, resolve_max_risks(list, socket.assigns.current_subject))
-        |> assign(:metadata, meta)
-        |> assign(:filter_params, params)
-        |> assign(:filters, filters)
-        |> assign(:load_error?, false)
+    socket =
+      case Runbooks.list_runbooks(socket.assigns.current_subject, opts) do
+        {:ok, list, meta} ->
+          socket
+          |> assign(:runbooks, list)
+          |> assign(:runbook_risk, resolve_max_risks(list, socket.assigns.current_subject))
+          |> assign(:metadata, meta)
+          |> assign(:filter_params, params)
+          |> assign(:filters, filters)
+          |> assign(:load_error?, false)
 
-      # A clean reload can fail too (e.g. a tightened list permission) — flag it
-      # so the list says "couldn't load" instead of a silent empty list.
-      {:error, _} when map_size(params) == 0 ->
-        socket
-        |> assign(:runbooks, [])
-        |> assign(:runbook_risk, %{})
-        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
-        |> assign(:filter_params, params)
-        |> assign(:filters, filters)
-        |> assign(:load_error?, true)
+        # A clean reload can fail too (e.g. a tightened list permission) — flag it
+        # so the list says "couldn't load" instead of a silent empty list.
+        {:error, _} when map_size(params) == 0 ->
+          socket
+          |> assign(:runbooks, [])
+          |> assign(:runbook_risk, %{})
+          |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+          |> assign(:filter_params, params)
+          |> assign(:filters, filters)
+          |> assign(:load_error?, true)
 
-      # Bad filter/page params from a hand-edited URL — retry once, clean.
-      {:error, _} ->
-        load(socket, %{})
+        # Bad filter/page params from a hand-edited URL — retry once, clean.
+        {:error, _} ->
+          load(socket, %{})
+      end
+
+    load_recent_executions(socket)
+  end
+
+  defp load_recent_executions(socket) do
+    case Runbooks.list_recent_executions(socket.assigns.current_subject, 5) do
+      {:ok, executions} -> assign(socket, :recent_executions, executions)
+      {:error, _reason} -> assign(socket, :recent_executions, [])
     end
   end
 
@@ -119,103 +129,122 @@ defmodule EmisarWeb.RunbooksLive do
         </.button>
       </:actions>
 
-      <.page_intro>
-        Procedures your operators and agents run as one ordered sequence. Every step is checked
-        against current policy; when approval is required, the complete frozen execution waits for
-        one decision.
-        Drafts stay private until you publish.
-        <.doc_link href="/docs/runbooks">Runbook docs</.doc_link>
-      </.page_intro>
-
-      <%!-- Account-empty (create CTA) only when there's genuinely nothing AND no
-           filter is narrowing — otherwise a 0-match filter (e.g. ?status=draft)
-           would hide the filter bar and trap the operator. With a filter active,
-           the live_table renders its own "no matches" + the bar to clear it. --%>
-      <%= cond do %>
-        <% @load_error? -> %>
-          <.empty_state
-            tone={:danger}
-            icon="hero-exclamation-triangle"
-            title="Couldn't load your runbooks"
-          >
-            This is a load error, not an empty list — your runbooks may well exist. Refresh the
-            page; if it persists, your access to this account may have changed.
-          </.empty_state>
-        <% @runbooks == [] && @metadata.count == 0 &&
-             not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
-          <.empty_state icon="hero-book-open" title="No runbooks yet.">
-            Runbooks are cloud-side workflows that expand into ordered action dispatches.
-            Compose multi-step procedures, publish them, and operators or LLMs can run them safely.
-            <:cta
-              :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}
-              navigate={~p"/app/#{@current_account}/runbooks/new"}
-            >
-              Create runbook
-            </:cta>
-          </.empty_state>
-        <% true -> %>
-          <%!-- Standalone live_table (self-framed cards panel) — matches runs/
-             runners. The dashboard_shell already titles the page + holds the
-             "New runbook" action, so no list_section wrapper here (it would
-             double the heading and box the filter against a second border). --%>
-          <LiveTable.live_table
-            layout={:cards}
-            id="runbooks"
-            path={~p"/app/#{@current_account}/runbooks"}
-            rows={@runbooks}
-            metadata={@metadata}
-            filter_params={@filter_params}
-            filters={@filters}
-            wrapper_class="divide-y divide-zinc-800/70"
-          >
-            <%!-- Canvas rows; the per-row icon disc died with the island. --%>
-            <:item :let={runbook}>
-              <.list_row padding="py-4">
-                <%!-- Row 1: every role can inspect the structured definition;
+      <div class="grid min-w-0 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <main id="runbooks-primary" class="min-w-0">
+          <%!-- Account-empty (create CTA) only when there's genuinely nothing AND no
+               filter is narrowing — otherwise a 0-match filter (e.g. ?status=draft)
+               would hide the filter bar and trap the operator. With a filter active,
+               the live_table renders its own "no matches" + the bar to clear it. --%>
+          <%= cond do %>
+            <% @load_error? -> %>
+              <.empty_state
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load your runbooks"
+              >
+                This is a load error, not an empty list — your runbooks may well exist. Refresh the
+                page; if it persists, your access to this account may have changed.
+              </.empty_state>
+            <% @runbooks == [] && @metadata.count == 0 &&
+                 not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
+              <.empty_state icon="hero-book-open" title="No runbooks yet.">
+                Runbooks are cloud-side workflows that expand into ordered action dispatches.
+                Compose multi-step procedures, publish them, and operators or LLMs can run them
+                safely.
+                <:cta
+                  :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}
+                  navigate={~p"/app/#{@current_account}/runbooks/new"}
+                >
+                  Create runbook
+                </:cta>
+              </.empty_state>
+            <% true -> %>
+              <%!-- Standalone live_table (self-framed cards panel) — matches runs/
+                 runners. The dashboard_shell already titles the page + holds the
+                 "New runbook" action, so no list_section wrapper here (it would
+                 double the heading and box the filter against a second border). --%>
+              <LiveTable.live_table
+                layout={:cards}
+                id="runbooks"
+                path={~p"/app/#{@current_account}/runbooks"}
+                rows={@runbooks}
+                metadata={@metadata}
+                filter_params={@filter_params}
+                filters={@filters}
+                wrapper_class="divide-y divide-zinc-800/70"
+              >
+                <%!-- Canvas rows; the per-row icon disc died with the island. --%>
+                <:item :let={runbook}>
+                  <.list_row padding="py-4">
+                    <%!-- Row 1: every role can inspect the structured definition;
                      the editor itself removes mutation controls for viewers. --%>
-                <:title>
-                  <.link
-                    navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/edit"}
-                    class="truncate font-medium text-zinc-100 hover:text-brand-300"
-                  >
-                    {runbook.title}
-                  </.link>
-                  <.status_badge status={runbook.status} />
-                  <span class="font-mono text-[11px] text-zinc-400">v{runbook.version}</span>
-                  <%!-- Headline risk — the most-severe step's risk, so the
+                    <:title>
+                      <.link
+                        navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/edit"}
+                        class="truncate font-medium text-zinc-100 hover:text-brand-300"
+                      >
+                        {runbook.title}
+                      </.link>
+                      <.status_badge status={runbook.status} />
+                      <span class="font-mono text-[11px] text-zinc-400">v{runbook.version}</span>
+                      <%!-- Headline risk — the most-severe step's risk, so the
                        operator sees how dangerous a runbook is before opening
                        it. Hidden when no step's action is in the catalog. --%>
-                  <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
-                </:title>
-                <:meta>
-                  <%!-- Row 2: description preview + slug --%>
-                  <.meta_line>
-                    <:seg :if={runbook.description && runbook.description != ""}>
-                      {preview(runbook.description)}
-                    </:seg>
-                    <:seg><span class="font-mono">{runbook.slug}</span></:seg>
-                  </.meta_line>
-                </:meta>
-                <:actions>
-                  <%!-- Secondary: the page's ONE brand fill is "New runbook" —
+                      <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
+                    </:title>
+                    <:meta>
+                      <%!-- Row 2: description preview + slug --%>
+                      <.meta_line>
+                        <:seg :if={runbook.description && runbook.description != ""}>
+                          {preview(runbook.description)}
+                        </:seg>
+                        <:seg><span class="font-mono">{runbook.slug}</span></:seg>
+                      </.meta_line>
+                    </:meta>
+                    <:actions>
+                      <%!-- Secondary: the page's ONE brand fill is "New runbook" —
                        a green per row turns the fill into wallpaper. --%>
-                  <.button
-                    :if={
-                      runbook.status == :published and
-                        Runs.subject_can_dispatch_run?(@current_subject)
-                    }
-                    navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
-                    variant={:secondary}
-                    size={:sm}
-                  >
-                    Run
-                  </.button>
-                </:actions>
-              </.list_row>
-            </:item>
-            <:empty>No runbooks match these filters.</:empty>
-          </LiveTable.live_table>
-      <% end %>
+                      <.button
+                        :if={
+                          runbook.status == :published and
+                            Runs.subject_can_dispatch_run?(@current_subject)
+                        }
+                        navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
+                        variant={:secondary}
+                        size={:sm}
+                      >
+                        Run
+                      </.button>
+                    </:actions>
+                  </.list_row>
+                </:item>
+                <:empty>No runbooks match these filters.</:empty>
+              </LiveTable.live_table>
+          <% end %>
+        </main>
+
+        <aside class="min-w-0 space-y-9 xl:border-l xl:border-zinc-800/70 xl:pl-8">
+          <section id="runbooks-docs-rail">
+            <.section_header title="How runbooks work" />
+            <p class="text-sm leading-6 text-zinc-400">
+              Runbooks turn an ordered procedure into one frozen, policy-checked execution.
+              Drafts stay private until they are published.
+            </p>
+            <div class="mt-3">
+              <.doc_link href="/docs/runbooks">Read the runbook docs</.doc_link>
+            </div>
+          </section>
+
+          <section id="recent-runbook-runs">
+            <.section_header title="Recent runs" />
+            <RunbookWorkflowComponents.recent_executions
+              executions={@recent_executions}
+              current_account={@current_account}
+              show_runbook?
+            />
+          </section>
+        </aside>
+      </div>
     </.dashboard_shell>
     """
   end

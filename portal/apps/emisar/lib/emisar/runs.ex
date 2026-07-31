@@ -2989,6 +2989,47 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Returns a bounded output tail for each visible run id. The entire id set must
+  be visible to the subject; a mixed visible/hidden request fails closed.
+  """
+  def list_recent_events_for_runs(run_ids, limit, %Subject{} = subject)
+      when is_list(run_ids) and length(run_ids) <= 256 and is_integer(limit) and limit >= 1 and
+             limit <= 20 do
+    run_ids = Enum.uniq(run_ids)
+
+    with :ok <- validate_run_ids(run_ids),
+         :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()),
+         :ok <- ensure_all_runs_visible(run_ids, subject) do
+      events =
+        run_ids
+        |> RunEvent.Query.recent_progress_for_runs(limit)
+        |> Repo.all()
+        |> Enum.group_by(& &1.run_id)
+
+      {:ok, events}
+    end
+  end
+
+  defp validate_run_ids(run_ids) do
+    if Enum.all?(run_ids, &Repo.valid_uuid?/1), do: :ok, else: {:error, :not_found}
+  end
+
+  defp ensure_all_runs_visible([], %Subject{}), do: :ok
+
+  defp ensure_all_runs_visible(run_ids, %Subject{} = subject) do
+    visible_ids =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_ids(run_ids)
+      |> scope_runs_to_membership(subject)
+      |> Authorizer.for_subject(subject)
+      |> ActionRun.Query.select_ids()
+      |> Repo.all()
+
+    if MapSet.new(visible_ids) == MapSet.new(run_ids), do: :ok, else: {:error, :not_found}
+  end
+
+  @doc """
   A forward page of a run's progress chunks — events with `seq` at or after
   `from_seq`, in chronological (`seq`-ASC) order, accumulated until their raw
   chunk bytes reach `byte_budget` (or a per-frame event cap). Drives the MCP

@@ -247,9 +247,16 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(select[name="draft[stages][0][steps][0][action_choice]"][disabled] option[value="linux-core|linux.uptime"][selected]),
+               ~s(input[type="hidden"][name="draft[stages][0][steps][0][action_choice]"][value="linux-core|linux.uptime"])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-step-0-overview button[data-combobox-trigger][disabled]),
                "linux.uptime"
              )
+
+      assert html =~ ~s(data-value="linux-core|linux.uptime")
 
       refute html =~ "Unavailable · linux.uptime"
       refute html =~ "This action is not available on every selected runner."
@@ -737,7 +744,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(select[name="draft[stages][0][steps][0][action_choice]"] option[value="linux-core|linux.uptime"])
+               ~s(input[type="hidden"][name="draft[stages][0][steps][0][action_choice]"][value=""])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(button[data-combobox-option][data-value="linux-core|linux.uptime"]),
+               "linux.uptime"
              )
     end
 
@@ -762,7 +775,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       refute has_element?(
                lv,
-               ~s(select[name="draft[stages][0][steps][0][action_choice]"][disabled])
+               ~s(#runbook-stage-0-step-0-overview button[data-combobox-trigger][disabled])
              )
 
       assert has_element?(
@@ -802,7 +815,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(select[name="draft[stages][0][steps][0][action_choice]"])
+               ~s(input[type="hidden"][name="draft[stages][0][steps][0][action_choice]"])
              )
 
       remove_target =

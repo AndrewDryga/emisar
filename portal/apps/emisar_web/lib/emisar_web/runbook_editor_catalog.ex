@@ -66,7 +66,10 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       |> Enum.map(fn {value, action} ->
         %{
           value: value,
-          label: action_label(action),
+          label: action.action_id,
+          description: action_description(action),
+          search: action_search(action),
+          pack_id: action.pack_id,
           disabled: false,
           selected: value == selected_value
         }
@@ -79,11 +82,15 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       [
         %{
           value: selected_value,
-          label:
+          label: saved_action_label(selected_value),
+          description:
             if(targets_resolved?,
-              do: unavailable_action_label(selected_value),
-              else: saved_action_label(selected_value)
+              do: "Unavailable on one or more selected runners",
+              else: "Saved action"
             ),
+          search: selected_value,
+          pack_id: elem(split_action_value(selected_value), 0),
+          unavailable: targets_resolved?,
           disabled: true,
           selected: true
         }
@@ -280,15 +287,11 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     |> Enum.uniq()
   end
 
-  defp action_label(action) do
-    title = if blank?(action.title), do: action.action_id, else: action.title
-    "#{title} · #{action.action_id} · #{action.pack_id}"
-  end
+  defp action_description(action) when action.title in [nil, ""], do: action.pack_id
+  defp action_description(action), do: "#{action.title} · #{action.pack_id}"
 
-  defp unavailable_action_label(value) do
-    {_pack_id, action_id} = split_action_value(value)
-    "Unavailable · #{action_id}"
-  end
+  defp action_search(action),
+    do: String.downcase("#{action.action_id} #{action.title} #{action.pack_id}")
 
   defp saved_action_label(value) do
     {_pack_id, action_id} = split_action_value(value)
