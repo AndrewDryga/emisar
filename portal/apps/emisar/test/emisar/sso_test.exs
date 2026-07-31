@@ -3908,6 +3908,47 @@ defmodule Emisar.SSOTest do
                )
     end
 
+    test "a request captured under the old issuer does not survive a repoint", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      # Repointing is refused once an identity is bound, so it is allowed exactly
+      # while none is — which is when pending requests exist. Approving one after
+      # the repoint would bind its identifier against an IdP the approver never
+      # vetted: whoever repointed it can then mint that identifier and sign in as
+      # the person the request named.
+      target_user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: target_user.id)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|captured-before-repoint",
+          "email" => target_user.email,
+          "email_verified" => true
+        })
+
+      assert {:ok, _provider} =
+               SSO.update_provider(
+                 provider,
+                 %{
+                   "issuer" => "https://an-idp-the-admin-controls.test",
+                   "client_secret" => "the-admin-supplies-their-own"
+                 },
+                 subject
+               )
+
+      assert {:error, :not_found} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 subject
+               )
+
+      refute Repo.one(SSO.UserIdentity)
+    end
+
     test "an approver demoted while their page sat open is refused", %{
       account: account,
       provider: provider

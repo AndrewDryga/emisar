@@ -20,6 +20,23 @@ defmodule Emisar.Users do
 
   # -- Reads -------------------------------------------------------------
 
+  @doc """
+  Internal — the user row, locked, for a caller composing it into a transaction
+  whose decision depends on which accounts the person belongs to. Takes the
+  transaction's repo. No `%Subject{}` — the caller has already authorized.
+  """
+  def fetch_and_lock_user_by_id(id, repo) do
+    queryable =
+      User.Query.not_deleted()
+      |> User.Query.by_id(id)
+      |> User.Query.lock_for_update()
+
+    case repo.one(queryable) do
+      %User{} = user -> {:ok, user}
+      nil -> {:error, :not_found}
+    end
+  end
+
   @doc "Internal — identity lookup composed by Auth/Accounts internals and the auth boundary; cross-account, no subject."
   def fetch_user_by_id(id) do
     if Repo.valid_uuid?(id) do
@@ -45,7 +62,7 @@ defmodule Emisar.Users do
   reference resolver) already authorized an account-scoped listing and only
   projects labels for ids it trusts.
   """
-  def user_labels_for_ids(ids) when is_list(ids) do
+  def user_labels_for_ids(ids, account_id) when is_list(ids) and is_binary(account_id) do
     ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     case ids do
@@ -53,18 +70,17 @@ defmodule Emisar.Users do
         %{}
 
       ids ->
+        # The name THIS account knows them by. A directory can rename the same
+        # person differently per account and `users.full_name` is cross-account, so
+        # an approval in one workspace was labelled with a name only another uses.
+        # Same query audit resolves its actor labels through, so the two agree.
         User.Query.not_deleted()
-        |> User.Query.by_ids(ids)
+        |> User.Query.members_of_account(account_id)
+        |> User.Query.select_labels(ids, :display_name)
         |> Repo.all()
-        |> Map.new(fn user -> {user.id, user_label(user)} end)
+        |> Map.new()
     end
   end
-
-  defp user_label(%User{full_name: full_name, email: email}) when is_binary(full_name) do
-    if String.trim(full_name) == "", do: email, else: full_name
-  end
-
-  defp user_label(%User{email: email}), do: email
 
   # -- Registration + sign-in (pre-Subject boundary) ----------------------
 

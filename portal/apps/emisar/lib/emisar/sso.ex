@@ -231,6 +231,7 @@ defmodule Emisar.SSO do
                 :client_secret_required
 
               true ->
+                discard_requests_captured_under_the_old_namespace(loaded_provider, changeset)
                 prepare_provider_authorization_change(loaded_provider, changeset)
             end
           else
@@ -375,6 +376,26 @@ defmodule Emisar.SSO do
   end
 
   defp fetch_client_secret(_attrs), do: :error
+
+  # Repointing is refused once an identity is bound, so it is allowed exactly
+  # while none is — which is also when pending link requests exist. Those were
+  # captured under the OLD issuer/client/claim, and approving one afterwards binds
+  # its identifier against the NEW one: an admin who repoints the connection to an
+  # IdP they control can then mint that identifier there and sign in as whoever the
+  # request named. The request outlives the provenance the approval rests on, so it
+  # goes with it, in the same transaction as the change.
+  defp discard_requests_captured_under_the_old_namespace(provider, changeset) do
+    if Enum.any?(@identity_namespace_fields, &Ecto.Changeset.changed?(changeset, &1)) do
+      queryable = LinkRequest.Query.all() |> LinkRequest.Query.by_provider_id(provider.id)
+      {discarded, _} = Repo.delete_all(queryable)
+
+      if discarded > 0 do
+        Logger.info("SSO discarded #{discarded} link request(s) after a namespace change")
+      end
+    end
+
+    :ok
+  end
 
   defp rebinding_identity_namespace?(provider, changeset) do
     Enum.any?(@identity_namespace_fields, &Ecto.Changeset.changed?(changeset, &1)) and

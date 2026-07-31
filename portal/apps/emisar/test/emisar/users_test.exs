@@ -7,6 +7,19 @@ defmodule Emisar.UsersTest do
   alias Emisar.Users
   alias Emisar.Users.User
 
+  describe "fetch_and_lock_user_by_id/2" do
+    test "returns the user, held for the rest of the transaction" do
+      user = Fixtures.Users.create_user()
+
+      assert {:ok, locked} = Users.fetch_and_lock_user_by_id(user.id, Repo)
+      assert locked.id == user.id
+    end
+
+    test "a missing user is not found" do
+      assert Users.fetch_and_lock_user_by_id(Ecto.UUID.generate(), Repo) == {:error, :not_found}
+    end
+  end
+
   describe "fetch_user_by_id/1" do
     test "a malformed id is a clean :not_found" do
       assert {:error, :not_found} = Users.fetch_user_by_id("not-a-uuid")
@@ -26,19 +39,49 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "user_labels_for_ids/1" do
+  describe "user_labels_for_ids/2" do
     test "labels by full name, falls back to email for blank names, skips nils and dedupes" do
+      account = Fixtures.Accounts.create_account()
       named = Fixtures.Users.create_user(full_name: "Ada Lovelace")
       unnamed = Fixtures.Users.create_user(full_name: nil)
       blank = Fixtures.Users.create_user(full_name: "  ")
 
-      labels = Users.user_labels_for_ids([named.id, unnamed.id, blank.id, nil, named.id])
+      for user <- [named, unnamed, blank] do
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      end
+
+      ids = [named.id, unnamed.id, blank.id, nil, named.id]
+      labels = Users.user_labels_for_ids(ids, account.id)
 
       assert labels[named.id] == "Ada Lovelace"
       assert labels[unnamed.id] == unnamed.email
       assert labels[blank.id] == blank.email
       assert map_size(labels) == 3
-      assert Users.user_labels_for_ids([]) == %{}
+      assert Users.user_labels_for_ids([], account.id) == %{}
+    end
+
+    test "the account's own name for a person beats their global one" do
+      # A directory can rename the same person differently in each account, and
+      # users.full_name is cross-account — so an approval in one workspace was
+      # labelled with a name only the other workspace uses.
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user(full_name: "Maya Chen")
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      Fixtures.Memberships.sync_display_name(membership, "Maya C. (Contractor)")
+
+      labels = Users.user_labels_for_ids([user.id], account.id)
+
+      assert labels[user.id] == "Maya C. (Contractor)"
+    end
+
+    test "a person who is not a member of the account gets no label" do
+      account = Fixtures.Accounts.create_account()
+      outsider = Fixtures.Users.create_user(full_name: "Not A Member")
+
+      assert Users.user_labels_for_ids([outsider.id], account.id) == %{}
     end
   end
 

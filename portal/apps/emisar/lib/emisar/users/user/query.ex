@@ -19,16 +19,32 @@ defmodule Emisar.Users.User.Query do
     do: where(queryable, [users: u], u.email == ^email)
 
   @doc """
+  `FOR NO KEY UPDATE` on the user row. A caller whose decision depends on which
+  accounts a person belongs to holds this so membership inserts — which reference
+  the user — serialize behind it rather than appearing mid-decision.
+  """
+  def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
+
+  @doc """
   `Audit.resolve_references/1` helper — narrow to ids, project
   `{id, label_field}` tuples. Plain SQL composition for label lookup
   fan-out; not paginated.
   """
+  # The membership's directory name wins, because a directory can call the same
+  # person something different in each account and `users.full_name` is
+  # cross-account — audit rows in one workspace were labelled with a name only
+  # another workspace uses. `members_of_account/2` has already joined the
+  # membership, which is the only caller of this clause.
   def select_labels(queryable, ids, :display_name) do
     queryable
     |> where([users: u], u.id in ^ids)
     |> select(
-      [users: u],
-      {u.id, coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)}
+      [users: u, memberships: m],
+      {u.id,
+       coalesce(
+         fragment("NULLIF(BTRIM(?), '')", m.directory_display_name),
+         coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)
+       )}
     )
   end
 

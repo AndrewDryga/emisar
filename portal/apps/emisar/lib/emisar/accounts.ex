@@ -722,14 +722,27 @@ defmodule Emisar.Accounts do
   An authority check that reads these rows outside its transaction is only as good
   as the gap: a role raised in that window commits anyway.
   """
-  def fetch_and_lock_active_memberships_for_user(%Users.User{id: user_id}, repo) do
+  def fetch_and_lock_active_memberships_for_user(%Users.User{} = user, repo) do
+    # The USER row first. A row lock protects rows that exist, so locking the
+    # memberships we can see says nothing about one another account inserts while
+    # we decide — and there is no predicate lock under Read Committed. Holding the
+    # user row makes those FK-backed inserts serialize behind us.
+    #
+    # It narrows the window; it does not close it. Nothing in a transaction can
+    # stop an account granting a membership AFTER this one commits — that boundary
+    # belongs elsewhere (see the queued decision on SSO sessions reaching a second
+    # account).
+    {:ok, _locked_user} = Users.fetch_and_lock_user_by_id(user.id, repo)
+
+    # Every LIVE membership, disabled ones included: a disabled membership in
+    # another account can be reinstated concurrently, and excluding it before
+    # locking left exactly that row unheld.
     queryable =
       Membership.Query.not_deleted()
-      |> Membership.Query.by_user_id(user_id)
-      |> Membership.Query.not_disabled()
+      |> Membership.Query.by_user_id(user.id)
       |> Membership.Query.lock_for_update()
 
-    {:ok, repo.all(queryable)}
+    {:ok, Enum.filter(repo.all(queryable), &is_nil(&1.disabled_at))}
   end
 
   @doc """

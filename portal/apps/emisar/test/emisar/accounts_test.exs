@@ -1259,6 +1259,25 @@ defmodule Emisar.AccountsTest do
                Enum.sort([account_a.id, account_b.id])
     end
 
+    test "includes a disabled membership in what it locks" do
+      # It returns only ACTIVE memberships, but it has to LOCK the disabled ones
+      # too: a membership disabled in another account can be reinstated
+      # concurrently, and filtering before the lock left exactly that row unheld.
+      user = Fixtures.Users.create_user()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
+
+      disabled =
+        Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+
+      Fixtures.Memberships.suspend_membership(disabled)
+
+      assert {:ok, memberships} = Accounts.fetch_and_lock_active_memberships_for_user(user, Repo)
+
+      assert Enum.map(memberships, & &1.account_id) == [account_a.id]
+    end
+
     test "takes a row lock, which is the whole reason it exists" do
       # The SSO link approval decides whether an approver outranks the person they
       # are binding a credential to. An unlocked read makes that decision on rows a
