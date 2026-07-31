@@ -62,6 +62,13 @@ func readEnv(path string) (map[string]string, error) {
 			env[strings.TrimSpace(key)] = strings.TrimSpace(value)
 		}
 	}
+	// The process environment wins. The tunnel URL and SCIM token change on every
+	// run — they belong to the moment, not in a credentials file that outlives it.
+	for _, key := range []string{"EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST"} {
+		if value := os.Getenv(key); value != "" {
+			env[key] = value
+		}
+	}
 	return env, scanner.Err()
 }
 
@@ -99,6 +106,39 @@ func clickText(ctx context.Context, label string) (bool, error) {
   const target = [...document.querySelectorAll('a,button,input[type=submit],[role=button]')]
     .find(el => visible(el) && ((el.textContent || el.value || '').trim() === %q));
   if (!target) return false;
+  target.scrollIntoView({block: 'center'});
+  target.click();
+  return true;
+})()`, label)
+	var clicked bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
+	return clicked, err
+}
+
+// clickDeep clicks a control by exact label, walking OPEN SHADOW ROOTS as well as
+// the light DOM. JumpCloud renders the app's sticky action bar — Activate, Test
+// Connection — inside a web component, so a plain querySelectorAll finds nothing
+// while the button sits in plain view on the screenshot.
+func clickDeep(ctx context.Context, label string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  // Case-INSENSITIVE: a control's rendered capitals can come from CSS
+  // text-transform, so the screenshot says "Activate" while the DOM says
+  // "activate" and an exact match finds a button that is plainly on screen.
+  const wanted = %q.toLowerCase();
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const found = [];
+  const walk = root => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+      if (!visible(el)) continue;
+      if ((el.textContent || '').trim().toLowerCase() !== wanted) continue;
+      if (el.querySelector('*') && [...el.children].some(c => (c.textContent || '').trim().toLowerCase() === wanted)) continue;
+      found.push(el);
+    }
+  };
+  walk(document);
+  if (!found.length) return false;
+  const target = found[0].closest ? (found[0].closest('button,a,[role=button]') || found[0]) : found[0];
   target.scrollIntoView({block: 'center'});
   target.click();
   return true;
@@ -509,6 +549,15 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 			chromedp.KeyEvent("https://emisar.dev/sign_in/sso/callback"),
 			chromedp.Sleep(2*time.Second))
 	}
+	// Login URL is required and empty on a fresh OIDC app. Leaving it blank made
+	// Activate look like it worked while the form silently failed validation, so
+	// the SSO config stayed unsaved and the Provisioning tab kept raising the
+	// unsaved-changes dialog over the fields the run needed.
+	if err := focusField(ctx, "Login URL"); err == nil {
+		_ = chromedp.Run(ctx,
+			chromedp.KeyEvent("https://emisar.dev/sign_in"),
+			chromedp.Sleep(2*time.Second))
+	}
 	if err := highlight(ctx, "Redirect URIs"); err != nil {
 		return err
 	}
@@ -516,6 +565,57 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 	if err := describeFields(ctx); err != nil {
+		return err
+	}
+
+	// Activate the SSO config BEFORE leaving this tab. Switching to Provisioning
+	// with the redirect URI unsaved raises JumpCloud's "Unsaved Changes" dialog,
+	// which sits over the tab so its fields never render — the run then failed
+	// looking for Base URL on a page it had never actually reached.
+	clicked, err := clickText(ctx, "Activate")
+	if err != nil {
+		return err
+	}
+	if !clicked {
+		// The footer's Activate is not one of the tags clickText scans, so fall back
+		// to the containing match before giving up on a control that is right there.
+		if clicked, err = clickDeep(ctx, "Activate"); err != nil {
+			return err
+		}
+	}
+	if !clicked {
+		if clicked, err = clickContaining(ctx, "Activate"); err != nil {
+			return err
+		}
+	}
+	if !clicked {
+		_ = screenshot(ctx, outDir, "jc-09-no-activate")
+		// Say what WAS clickable, walking shadow roots — "not found" alone cannot
+		// tell a renamed control from a page that had already moved on.
+		const labels = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const out = [];
+  const walk = root => {
+    for (const el of root.querySelectorAll('button,a,[role=button],input[type=submit]')) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+      if (!visible(el)) continue;
+      const text = (el.textContent || el.value || '').trim();
+      if (text && text.length < 40) out.push(text);
+    }
+    for (const el of root.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot);
+  };
+  walk(document);
+  return [...new Set(out)].slice(0, 40).join(' | ');
+})()`
+		var visible string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(labels, &visible))
+		return fmt.Errorf("no Activate control on the OIDC configuration; clickable: %s", visible)
+	}
+	fmt.Println("  activated the SSO configuration")
+	if err := chromedp.Run(ctx, chromedp.Sleep(12*time.Second)); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-09b-sso-activated"); err != nil {
 		return err
 	}
 
@@ -533,7 +633,17 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 // which is the only way to observe what it really sends as externalId — their
 // docs describe a fallback, not a guarantee.
 func provisioningFlow(ctx context.Context, env map[string]string, outDir string) error {
-	// Open the app we just created.
+	// Saving leaves the browser ON the new app, with its tabs already showing, so
+	// look before navigating: going back to the list to re-find the app by name
+	// failed on a tenant where the list had not caught up with the save yet.
+	var body string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+		return err
+	}
+	if strings.Contains(body, "Provisioning") && strings.Contains(body, "General Info") {
+		fmt.Println("  already on the saved app")
+		return provisioningTabFlow(ctx, env, outDir)
+	}
 	if clicked, err := clickText(ctx, "emisar"); err != nil {
 		return err
 	} else if !clicked {
