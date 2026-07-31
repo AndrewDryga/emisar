@@ -186,6 +186,7 @@ defmodule EmisarWeb.Router do
     get "/docs/pack-registry", MarketingController, :docs_pack_registry
     get "/docs/policies-and-approvals", MarketingController, :docs_policies
     get "/docs/runbooks", MarketingController, :docs_runbooks
+    get "/docs/authentication", MarketingController, :docs_authentication
     get "/docs/teams-and-access", MarketingController, :docs_teams
     get "/docs/sso", MarketingController, :docs_sso
     get "/docs/integrations/okta", MarketingController, :docs_sso_okta
@@ -319,6 +320,7 @@ defmodule EmisarWeb.Router do
     get "/runbooks/new", AccountRedirectController, :new_runbook
     get "/runbooks/import", AccountRedirectController, :import_runbook
     get "/sso/new", AccountRedirectController, :add_sso_provider
+    get "/team", AccountRedirectController, :team
 
     # Paddle's post-payment redirect. The checkout page can't know the account
     # slug at render time, so this resolves the session's current account and

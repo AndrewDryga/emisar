@@ -32,6 +32,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/pack-registry
     /docs/policies-and-approvals
     /docs/runbooks
+    /docs/authentication
     /docs/teams-and-access
     /docs/sso
     /docs/integrations/okta

@@ -112,6 +112,13 @@ defmodule EmisarWeb.DocsNav do
            "The run list and filters, every lifecycle status, live output and byte caps, cancellation, and how one dispatch's runs group."
        },
        %{
+         slug: "authentication",
+         title: "Authentication",
+         path: "/docs/authentication",
+         icon: "hero-lock-closed",
+         desc: "Choose sign-in, enforcement, provisioning, and offboarding for your team."
+       },
+       %{
          slug: "teams-and-access",
          title: "Teams & access",
          path: "/docs/teams-and-access",
@@ -123,14 +130,15 @@ defmodule EmisarWeb.DocsNav do
          title: "Single sign-on (SSO)",
          path: "/docs/sso",
          icon: "hero-identification",
-         desc: "OIDC sign-in with Google Workspace, Okta, Keycloak, or any compliant provider."
+         desc: "OIDC sign-in, provider operations, the generic contract, and troubleshooting."
        },
        %{
          slug: "scim",
          title: "Directory sync (SCIM)",
          path: "/docs/scim",
          icon: "hero-arrow-path",
-         desc: "SCIM 2.0 provisioning and role mapping — offboarding in your IdP revokes access."
+         desc:
+           "SCIM 2.0 provisioning, lifecycle, protocol support, and group-driven authorization."
        },
        %{
          slug: "runners",

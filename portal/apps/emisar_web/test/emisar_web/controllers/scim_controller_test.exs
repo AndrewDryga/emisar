@@ -1590,7 +1590,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert [%{"type" => "oauthbearertoken", "primary" => true}] = body["authenticationSchemes"]
       # documentationUri + meta.location are built from the public base URL.
       base = Emisar.PublicUrl.base()
-      assert body["documentationUri"] == "#{base}/docs/teams-and-access"
+      assert body["documentationUri"] == "#{base}/docs/scim"
       assert body["meta"]["location"] == "#{base}/scim/v2/ServiceProviderConfig"
     end
 

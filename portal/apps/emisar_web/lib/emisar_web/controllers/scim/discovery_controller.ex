@@ -124,7 +124,7 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
   def service_provider_config(conn, _params) do
     json(conn, %{
       "schemas" => ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
-      "documentationUri" => "#{base_url(conn)}/docs/teams-and-access",
+      "documentationUri" => "#{base_url(conn)}/docs/scim",
       "patch" => %{"supported" => true},
       "bulk" => %{"supported" => false, "maxOperations" => 0, "maxPayloadSize" => 0},
       "filter" => %{"supported" => true, "maxResults" => 100},

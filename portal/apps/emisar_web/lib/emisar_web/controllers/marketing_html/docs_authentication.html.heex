@@ -1,0 +1,288 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="authentication"
+      updated="July 31, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_authentication.html.heex"
+      toc={[
+        {"sign-in", "Choose a sign-in method"},
+        {"enforcement", "Enforce account sign-in"},
+        {"provisioning", "Provision and remove members"},
+        {"providers", "Provider support"},
+        {"sessions", "Sessions and offboarding"},
+        {"troubleshooting", "Troubleshooting"}
+      ]}
+    >
+      <.docs_header current="authentication">
+        <:dek>
+          Choose how people sign in, how the account enforces that choice, and whether your
+          directory or an emisar administrator owns the member lifecycle.
+        </:dek>
+      </.docs_header>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Authentication proves who the person is. Their emisar role and runner access decide what
+        they can do and which hosts they can reach. Keep those as separate decisions: changing the
+        sign-in method does not widen a member's infrastructure access.
+      </p>
+
+      <.docs_h2 id="sign-in">Choose a sign-in method</.docs_h2>
+      <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Method</th>
+              <th class="px-4 py-3">How it works</th>
+              <th class="px-4 py-3">Use it when</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Magic link</td>
+              <td class="px-4 py-3">
+                An expiring email code is paired with a nonce held by the browser that started the
+                sign-in. The code is single-use.
+              </td>
+              <td class="px-4 py-3">
+                You do not need organization-managed sign-in, or you are testing account access
+                before enforcing SSO.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">OIDC SSO</td>
+              <td class="px-4 py-3">
+                A confidential OpenID Connect client redirects the member to your identity
+                provider, then binds the returning identity to its stable provider subject.
+              </td>
+              <td class="px-4 py-3">
+                Your identity provider should own authentication and its MFA policy. Available on
+                Team and Enterprise.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Read
+        <.link
+          navigate={~p"/docs/teams-and-access#sessions"}
+          class="text-brand-300 hover:text-brand-200"
+        >Sessions &amp; credentials</.link>
+        for the magic-link and session model. To connect an IdP, continue with <.link
+          navigate={~p"/docs/sso"}
+          class="text-brand-300 hover:text-brand-200"
+        >
+          Single sign-on
+        </.link>.
+      </p>
+
+      <.docs_h2 id="enforcement">Enforce account sign-in</.docs_h2>
+      <ul class="mt-5 space-y-4 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Require MFA</strong>
+            routes members who have not enrolled TOTP to setup before they can use the account. An
+            SSO connection can satisfy the requirement only when you mark that provider as
+            enforcing MFA; otherwise emisar still asks for TOTP.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Require SSO</strong>
+            accepts only an SSO identity issued for this account. Members who arrived through a
+            magic link are sent back through the account's provider on their next navigation.
+            emisar requires an enabled connection before you turn it on and refuses to disable or
+            delete the last enabled connection while it remains required.
+          </span>
+        </li>
+      </ul>
+      <.docs_callout kind={:warn} title="Complete a real SSO sign-in before requiring it">
+        <p>
+          Test connection proves discovery and endpoint reachability; it does not prove your client
+          assignment, redirect URI, claims, or login policy. Keep an owner session open, sign in
+          through the provider in another browser, then turn on Require SSO from <a href={
+            ~p"/app/team"
+          }>Team → Security</a>.
+        </p>
+      </.docs_callout>
+
+      <.docs_h2 id="provisioning">Provision and remove members</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Pick one system to own the lifecycle. The sign-in protocol and the lifecycle protocol are
+        separate: OIDC authenticates a person; SCIM creates, updates, suspends, and groups them.
+      </p>
+      <ul class="mt-5 space-y-4 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Invitations</strong>
+            let an owner or admin create the membership and choose its role before the person signs
+            in. This is the direct emisar-managed path.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">SSO auto-provisioning</strong>
+            creates a member on first successful sign-in at the connection's default role and
+            runner access. Manual approval holds that first sign-in for an administrator instead.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">SCIM directory sync</strong>
+            provisions the membership before first login, applies group mappings, and suspends it
+            when the directory marks the user inactive. SCIM is the path when offboarding in your
+            IdP must revoke emisar access automatically.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <.link navigate={~p"/docs/teams-and-access"} class="text-brand-300 hover:text-brand-200">
+          Teams &amp; access
+        </.link>
+        owns roles, runner scopes, invitations, and manual suspension. The
+        <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200">
+          SCIM guide
+        </.link>
+        owns the directory lifecycle and protocol contract.
+      </p>
+
+      <.docs_h2 id="providers">Provider support</.docs_h2>
+      <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Provider</th>
+              <th class="px-4 py-3">Identity claim</th>
+              <th class="px-4 py-3">Directory sync</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3">
+                <.link
+                  navigate={~p"/docs/integrations/okta"}
+                  class="text-brand-300 hover:text-brand-200"
+                >
+                  Okta
+                </.link>
+              </td>
+              <td class="px-4 py-3"><code>sub</code></td>
+              <td class="px-4 py-3">Separate SCIM application</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">
+                <.link
+                  navigate={~p"/docs/integrations/entra"}
+                  class="text-brand-300 hover:text-brand-200"
+                >
+                  Microsoft Entra
+                </.link>
+              </td>
+              <td class="px-4 py-3"><code>oid</code></td>
+              <td class="px-4 py-3">Separate enterprise application</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">
+                <.link
+                  navigate={~p"/docs/integrations/jumpcloud"}
+                  class="text-brand-300 hover:text-brand-200"
+                >JumpCloud</.link>
+              </td>
+              <td class="px-4 py-3"><code>sub</code></td>
+              <td class="px-4 py-3">Same custom application</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">
+                <.link
+                  navigate={~p"/docs/integrations/google-workspace"}
+                  class="text-brand-300 hover:text-brand-200"
+                >Google Workspace</.link>
+              </td>
+              <td class="px-4 py-3"><code>sub</code></td>
+              <td class="px-4 py-3">No outbound SCIM for a custom app</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">
+                <.link
+                  navigate={~p"/docs/integrations/keycloak"}
+                  class="text-brand-300 hover:text-brand-200"
+                >Keycloak</.link>
+              </td>
+              <td class="px-4 py-3"><code>sub</code></td>
+              <td class="px-4 py-3">Needs a third-party outbound SCIM client</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3">
+                <.link
+                  navigate={~p"/docs/sso#generic-oidc"}
+                  class="text-brand-300 hover:text-brand-200"
+                >
+                  Generic OpenID Connect
+                </.link>
+              </td>
+              <td class="px-4 py-3"><code>sub</code></td>
+              <td class="px-4 py-3">Any client that implements the documented SCIM subset</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <.docs_h2 id="sessions">Sessions and offboarding</.docs_h2>
+      <ul class="mt-5 space-y-4 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            Members can inspect and revoke their active sessions. An administrator can suspend a
+            membership, which ends that account's sessions and revokes API keys minted from it.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            Disabling or deleting an SSO connection blocks new sign-ins and revokes sessions
+            authenticated through identities on that connection. It does not delete the users or
+            their audit history.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            SCIM deprovisioning suspends rather than deletes. Reactivation can restore a directory
+            suspension, while a manual administrator suspension stays under administrator control.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        If sign-in fails, start with the symptom table in <.link
+          navigate={~p"/docs/sso#troubleshooting"}
+          class="text-brand-300 hover:text-brand-200"
+        >
+          SSO troubleshooting
+        </.link>. If provisioning or group access is stale, use
+        <.link
+          navigate={~p"/docs/scim#troubleshooting"}
+          class="text-brand-300 hover:text-brand-200"
+        >
+          SCIM troubleshooting
+        </.link>
+        and check the connection's <strong class="text-zinc-200">Last sync</strong>
+        signal first.
+        For an account lockout with no working owner session, email <a
+          href={EmisarWeb.MailTo.support()}
+          class="text-brand-300 hover:text-brand-200"
+        >support</a>.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

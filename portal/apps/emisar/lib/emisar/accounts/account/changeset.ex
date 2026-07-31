@@ -67,7 +67,7 @@ defmodule Emisar.Accounts.Account.Changeset do
     # The router serves literal /app/<segment> paths at these names (the
     # slugless agents shorthands + checkout/accounts), so an account carrying
     # one could never reach its own pages.
-    |> validate_exclusion(:slug, ~w[accounts agents checkout runbooks sso],
+    |> validate_exclusion(:slug, ~w[accounts agents checkout runbooks sso team],
       message: "is reserved"
     )
     |> unique_constraint(:slug)

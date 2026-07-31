@@ -4,10 +4,15 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="scim"
+      updated="July 31, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_scim.html.heex"
       toc={[
         {"enable", "Enabling directory sync"},
+        {"protocol", "SCIM protocol reference"},
         {"providers", "Provider guides"},
         {"role-mapping", "Mapping groups to roles"},
+        {"runner-access-mapping", "Mapping groups to runners"},
+        {"troubleshooting", "Troubleshooting"},
         {"security-notes", "Security notes"}
       ]}
     >
@@ -183,12 +188,144 @@
         </li>
       </ul>
 
+      <.docs_h3 id="disable-sync">Rotate or disable directory sync</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong class="text-zinc-200">Rotate token</strong>
+        replaces the bearer immediately; the old token stops authenticating, so update the IdP
+        connector with the newly shown value. <strong class="text-zinc-200">Disable</strong>
+        also invalidates the bearer, but it does not suspend or delete existing members. It stops
+        directory ownership of their role and runner access, discards the last group snapshot, and
+        returns those fields to owner/admin control. Re-enabling starts with no trusted group
+        snapshot until the directory pushes groups again.
+      </p>
+
       <.docs_screenshot
         src="/images/docs/sso/scim-synced-users.webp"
         title="emisar console · Synced users"
         caption="Once your IdP is connected, provisioned members appear here with the directory id they came from and the role their groups earned them."
         alt="The Synced users list on a connection: four members provisioned over SCIM, each with a SCIM badge, the directory externalId they were provisioned under, when they last synced, a locked role chip showing the role their group mapping earned them, and a Suspend action."
       />
+
+      <.docs_h2 id="protocol">SCIM protocol reference</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Every endpoint is under the connection's <code>/scim/v2</code> base URL and requires its
+        bearer token. The token selects the account and provider; resources cannot be read or
+        changed across connections.
+      </p>
+
+      <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Resource</th>
+              <th class="px-4 py-3">Supported operations</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3 font-mono text-xs text-zinc-100">
+                /ServiceProviderConfig<br />/ResourceTypes<br />/Schemas
+              </td>
+              <td class="px-4 py-3">
+                Authenticated <code>GET</code> discovery, including individual ResourceType and
+                Schema resources for User and Group.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-mono text-xs text-zinc-100">/Users</td>
+              <td class="px-4 py-3">
+                Collection <code>GET</code>
+                and <code>POST</code>; resource <code>GET</code>, <code>PUT</code>, <code>PATCH</code>, and <code>DELETE</code>.
+                The resource id is the directory's <code>externalId</code>.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-mono text-xs text-zinc-100">/Groups</td>
+              <td class="px-4 py-3">
+                Collection <code>GET</code>
+                and <code>POST</code>; resource <code>GET</code>, <code>PUT</code>, <code>PATCH</code>, and <code>DELETE</code>.
+                Group writes reconcile the pushed membership before mappings are applied.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <.docs_h3 id="user-contract">Users</.docs_h3>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code>POST</code>
+            requires <code>externalId</code>
+            or <code>userName</code>. <code>active</code>
+            defaults to true. emisar accepts a JSON boolean or the case-insensitive strings <code>"True"</code>/<code>"False"</code>
+            that Entra sends. Repeating a create
+            reconciles the existing identity instead of creating a duplicate.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            Collection filters support <code>userName eq "..."</code>
+            and <code>externalId eq "..."</code>. Unsupported filters return <code>invalidFilter</code>; an unfiltered list returns at most 100 users.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code>PATCH</code>
+            accepts <code>add</code>
+            or <code>replace</code>
+            for <code>active</code>, <code>displayName</code>, <code>name.givenName</code>, and <code>name.familyName</code>, including the pathless attribute map Entra sends.
+            <code>PUT</code>
+            requires <code>active</code>
+            in one of those boolean forms and can update the name;
+            email and <code>externalId</code>
+            stay fixed after provisioning.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code>PATCH active:false</code>
+            and <code>DELETE</code>
+            both suspend the membership; <code>active:true</code>
+            restores a directory suspension. A manual administrator
+            suspension is not reversed by the directory.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h3 id="group-contract">Groups</.docs_h3>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code>POST</code>
+            and <code>PUT</code>
+            reconcile the full membership. <code>PATCH</code>
+            supports member <code>add</code>, <code>remove</code>, and whole-set <code>replace</code>, plus
+            <code>displayName</code>
+            replacement.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            Collection filtering supports <code>displayName eq "..."</code>. Deleting a group
+            removes everyone from it, recomputes their mapped authorization, then retires the SCIM
+            group resource.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            One request may carry at most 100 PATCH operations, and a group write may carry at
+            most 5,000 member ids. Bulk, sorting, ETags, and password changes are not supported.
+          </span>
+        </li>
+      </ul>
 
       <.docs_h2 id="providers">Provider guides</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -268,6 +405,98 @@
         caption="Each mapping names a directory group by its externalId and the role its members land at. A synced group you don't map leaves its members at the connection's default role."
         alt="The Role mapping panel on a connection: two mappings — the Platform Engineers directory group (externalId kc-grp-platform) mapped to Admin, and SRE On-call (kc-grp-sre) mapped to Operator — each with Edit and Delete, plus an Add mapping button."
       />
+
+      <.docs_h2 id="runner-access-mapping">Mapping directory groups to runner access</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A role controls what a member may do; runner access controls where they may do it. Map a
+        synced IdP group to either <strong class="text-zinc-200">All runners</strong>
+        or selected runner groups and individual runners. The mapping is applied to current group
+        members immediately and follows later SCIM membership changes.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Group runner access is <strong class="text-zinc-200">additive</strong>. emisar takes the
+        union of the connection's Default runner access and every mapped group the member belongs
+        to; a mapping cannot subtract or deny access granted elsewhere, and any
+        <strong class="text-zinc-200">All runners</strong>
+        grant wins. For example, a connection default of no runners plus
+        <code>database-team → group:database-prod</code>
+        gives members of that directory group only
+        the database runner group. If another mapped group grants all runners, members in both get
+        all runners.
+      </p>
+      <.docs_callout kind={:note} title="Wait for the first group push">
+        <p>
+          emisar does not treat "no groups received yet" as "this member belongs to no groups."
+          Until the directory sends its first group snapshot, members keep the authorization they
+          already had. After that snapshot, removing the last mapped group returns the role to the
+          connection default and removes that group's runner grant.
+        </p>
+      </.docs_callout>
+
+      <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
+      <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Symptom</th>
+              <th class="px-4 py-3">Check</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                The IdP cannot verify credentials
+              </td>
+              <td class="px-4 py-3">
+                Use the connection's exact SCIM base URL and send the token as <code>Authorization: Bearer …</code>. If the token was rotated or sync was
+                disabled, the old value is invalid immediately.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                The connection says Never synced
+              </td>
+              <td class="px-4 py-3">
+                The bearer has not authenticated successfully yet. Run the IdP connector's test,
+                then check that provisioning is enabled and assigned. After the first request,
+                emisar shows <strong class="text-zinc-200">Last sync</strong> with its age.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                SSO login and SCIM provisioning do not converge
+              </td>
+              <td class="px-4 py-3">
+                Compare one user's SCIM <code>externalId</code>
+                with the OIDC identifier claim.
+                They must be the same stable value. For Entra, map <code>externalId</code>
+                to <code>objectId</code>
+                and use <code>oid</code>
+                for OIDC.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                A group mapping has no effect
+              </td>
+              <td class="px-4 py-3">
+                Confirm the group appears under Synced groups, its SCIM <code>externalId</code>
+                exactly matches the mapping, and the IdP pushed members. A display name is not the
+                mapping key.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                Offboarding returns a conflict
+              </td>
+              <td class="px-4 py-3">
+                emisar refuses to suspend or delete the account's last active owner. Promote
+                another owner, then retry the directory operation.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">

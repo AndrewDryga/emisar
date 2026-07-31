@@ -4,7 +4,7 @@ defmodule EmisarWeb.AccountRedirectController do
   account: bare `/app`, plus the deep-link shorthands that installers, the
   bridge's `--help`, and docs print without knowing the account
   (`/app/agents`, `/app/agents/connect`, `/app/runbooks`, `/app/runbooks/new`,
-  `/app/runbooks/import`).
+  `/app/runbooks/import`, `/app/sso/new`, `/app/team`).
 
   `require_authenticated_user` has already run `assign_current_account/1`, which
   resolves the session-hinted (else default) membership — or bounces a
@@ -41,6 +41,12 @@ defmodule EmisarWeb.AccountRedirectController do
   # a docs page cannot know the reader's account slug to link it.
   def add_sso_provider(conn, _params) do
     redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/settings/sso/new")
+  end
+
+  # /team — authentication docs link the account-wide MFA and SSO controls, but
+  # cannot know the reader's account slug.
+  def team(conn, _params) do
+    redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/settings/team")
   end
 
   # /activate — the device-grant approval URL the MCP installer prints,

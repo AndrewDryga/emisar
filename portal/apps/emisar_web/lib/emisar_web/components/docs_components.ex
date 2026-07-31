@@ -18,6 +18,8 @@ defmodule EmisarWeb.DocsComponents do
   """
   attr :current, :string, required: true
   attr :toc, :list, default: []
+  attr :updated, :string, default: nil
+  attr :source_path, :string, default: nil
   slot :inner_block, required: true
 
   def docs_layout(assigns) do
@@ -55,6 +57,11 @@ defmodule EmisarWeb.DocsComponents do
              one cap on the column keeps every block on the same left edge. --%>
         <div class="min-w-0 max-w-2xl [&_p]:leading-7 [&_li]:leading-7">
           {render_slot(@inner_block)}
+          <.docs_maintenance
+            :if={@updated && @source_path}
+            updated={@updated}
+            source_path={@source_path}
+          />
           <.docs_prev_next current={@current} />
         </div>
 
@@ -79,6 +86,25 @@ defmodule EmisarWeb.DocsComponents do
           </ul>
         </nav>
       </div>
+    </div>
+    """
+  end
+
+  attr :updated, :string, required: true
+  attr :source_path, :string, required: true
+
+  defp docs_maintenance(assigns) do
+    ~H"""
+    <div class="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-5 text-sm text-zinc-400">
+      <p>Last reviewed {@updated}</p>
+      <a
+        href={"https://github.com/andrewdryga/emisar/edit/main/" <> @source_path}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="font-medium text-brand-300 hover:text-brand-200"
+      >
+        Suggest a change
+      </a>
     </div>
     """
   end

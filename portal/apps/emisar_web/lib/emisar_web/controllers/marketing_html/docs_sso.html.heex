@@ -4,10 +4,14 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="sso"
+      updated="July 31, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_sso.html.heex"
       toc={[
         {"sso-login", "Setting up SSO login"},
+        {"operations", "Common provider operations"},
         {"providers", "Provider guides"},
         {"generic-oidc", "Any other OIDC provider"},
+        {"troubleshooting", "Troubleshooting"},
         {"security-notes", "Security notes"}
       ]}
     >
@@ -212,6 +216,57 @@
         as usual.
       </p>
 
+      <.docs_h2 id="operations">Common provider operations</.docs_h2>
+      <.docs_h3 id="require-sso">Require SSO for the account</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        First complete a real sign-in through the connection in another browser. The form's
+        <strong class="text-zinc-200">Test connection</strong>
+        checks discovery and endpoint reachability, but it cannot prove the IdP assigned your user,
+        accepted the callback URI, or returned the required claims. Keep an owner session open
+        while you test. Then open
+        <a
+          href={~p"/app/team"}
+          class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+        >Team → Security</a>
+        and turn on <strong class="text-zinc-200">Require single sign-on</strong>.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Once required, a magic-link session cannot enter this account: emisar sends the member
+        through one of this account's enabled providers on their next navigation. The requirement
+        cannot be enabled with no active connection, and emisar refuses to disable or delete the
+        last active connection while the requirement remains on. Turn off Require SSO before
+        retiring that last connection.
+      </p>
+
+      <.docs_h3 id="rotate-secret">Rotate a client secret</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Create the replacement secret at your IdP, paste it into the connection, and save. The
+        secret is write-only, so leaving the field blank keeps the existing value. Do not delete
+        the old IdP secret until a new sign-in succeeds through the saved connection.
+      </p>
+
+      <.docs_h3 id="move-provider">Move to another issuer or client</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        After a connection has signed someone in, its issuer, client ID, and identifier claim are
+        fixed. Those fields define what a stored subject means; repointing them could make an
+        existing identity refer to someone else. To move tenants, issuers, or clients, add a new
+        connection and migrate assignments to it. Client-secret rotation stays available on the
+        original connection.
+      </p>
+
+      <.docs_h3 id="disable-provider">Disable or delete a connection</.docs_h3>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Disabling stops new sign-ins but keeps the configuration so you can enable it again.
+        Deleting retires the connection and dismisses any manual-approval requests still waiting on
+        it. Both actions revoke active sessions authenticated through identities on that connection;
+        they do not delete the users or their audit history.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        An account can have several provider types, but only one enabled connection of each type.
+        An allowed email domain can route to only one enabled emisar connection, so a duplicate
+        domain must be removed or disabled before another connection can claim it.
+      </p>
+
       <.docs_h2 id="providers">Provider guides</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each guide walks one provider end to end — sign-in first, then directory sync — with
@@ -278,9 +333,10 @@
       <.docs_h2 id="generic-oidc">Any other OIDC provider</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The named providers above are presets over one standard flow, not separate integrations.
-        Anything that speaks discovery-based OpenID Connect works through
+        A provider that meets the contract below works through
         <strong class="text-zinc-200">Generic OpenID Connect</strong>
-        — Auth0, Ping, OneLogin, Authentik, an in-house IdP — with no waiting on us to add it.
+        — including Auth0, Ping, OneLogin, Authentik, or an in-house IdP. This connection is OIDC
+        authorization code only; it does not accept SAML.
       </p>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -316,6 +372,63 @@
         </li>
       </ul>
 
+      <.docs_h3 id="oidc-contract">OIDC contract</.docs_h3>
+      <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Part</th>
+              <th class="px-4 py-3">What emisar requires</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Discovery</td>
+              <td class="px-4 py-3">
+                An HTTPS issuer with a valid OpenID Provider Configuration. Its authorization,
+                token, and JWKS endpoints must also be public HTTPS URLs; private, loopback, and
+                cloud-metadata targets are refused.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Authorization</td>
+              <td class="px-4 py-3">
+                Authorization code flow with PKCE. emisar uses S256 when the provider advertises
+                it and accepts plain only when that is the provider's advertised PKCE method.
+                emisar requests <code>openid</code>, <code>email</code>, and <code>profile</code>, plus
+                <code>state</code>
+                and <code>nonce</code>.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Client authentication</td>
+              <td class="px-4 py-3">
+                A confidential client using <code>client_secret_post</code>
+                or <code>client_secret_basic</code>. Public clients and signing-key client
+                authentication are not supported.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">ID-token claims</td>
+              <td class="px-4 py-3">
+                A stable <code>sub</code>, an <code>email</code>
+                marked by <code>email_verified: true</code>, and optionally <code>name</code>. emisar reads
+                these from the ID token; it does not call UserInfo. The Entra preset uses
+                <code>oid</code>
+                instead of <code>sub</code>.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Validation</td>
+              <td class="px-4 py-3">
+                The callback must pass state, nonce, PKCE, ID-token signature, exact issuer,
+                audience, and expiration checks before emisar resolves an identity.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Two settings to leave alone unless your provider forces otherwise: keep
         <strong class="text-zinc-200">DPoP</strong>
@@ -336,6 +449,77 @@
         endpoints it found, so a wrong issuer fails before you save rather than at someone's first
         sign-in.
       </p>
+
+      <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
+      <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Symptom</th>
+              <th class="px-4 py-3">Check</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                Test connection cannot load discovery
+              </td>
+              <td class="px-4 py-3">
+                Use the issuer, not an authorization or token URL. Confirm it serves
+                <code>/.well-known/openid-configuration</code>
+                over public HTTPS and does not
+                publish private or non-HTTPS endpoints.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                The IdP rejects the callback or token exchange
+              </td>
+              <td class="px-4 py-3">
+                Compare the redirect URI byte for byte, confirm the app is a confidential web
+                client, and replace an expired client secret. For a generic provider, confirm a
+                PKCE method and one of the two supported secret-auth methods are advertised.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                Authentication succeeds but emisar refuses the identity
+              </td>
+              <td class="px-4 py-3">
+                Inspect the ID token: it must contain the configured stable identifier and a
+                verified email. UserInfo-only email or profile claims are not read. If an existing
+                emisar user has that email, an admin must link the provider identity deliberately;
+                emisar never merges by email.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                Members loop back to SSO after Require SSO
+              </td>
+              <td class="px-4 py-3">
+                Use the owner session you kept open to turn off Require SSO, then complete a real
+                provider sign-in before enabling it again. If no owner session remains, contact <a
+                  href={EmisarWeb.MailTo.support()}
+                  class="text-brand-300 hover:text-brand-200"
+                >
+                  support
+                </a>.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                SSO and SCIM create different identities
+              </td>
+              <td class="px-4 py-3">
+                Make SCIM <code>externalId</code>
+                equal the OIDC identifier claim. Entra needs <code>objectId</code>
+                on the SCIM side and <code>oid</code>
+                on the OIDC side.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <.docs_h2 id="security-notes">Security notes</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

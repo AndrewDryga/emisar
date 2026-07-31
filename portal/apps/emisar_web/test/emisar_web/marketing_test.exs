@@ -16,6 +16,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/pack-registry
     /docs/policies-and-approvals
     /docs/runbooks
+    /docs/authentication
     /docs/teams-and-access
     /docs/sso
     /docs/integrations/okta
@@ -649,6 +650,7 @@ defmodule EmisarWeb.MarketingTest do
             /docs/connect-a-cli-client
             /docs/policies-and-approvals
             /docs/runbooks
+            /docs/authentication
             /docs/teams-and-access
             /docs/sso
     /docs/integrations/okta
@@ -1230,6 +1232,73 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "runner scope"
     end
 
+    test "the authentication hub separates sign-in, enforcement, and lifecycle", %{conn: conn} do
+      html = conn |> get(~p"/docs/authentication") |> html_response(200)
+
+      assert html =~ "Magic link"
+      assert html =~ "OIDC SSO"
+      assert html =~ "Require MFA"
+      assert html =~ "Require SSO"
+      assert html =~ "SCIM directory sync"
+      assert html =~ "Sessions and offboarding"
+
+      for provider <- ["Okta", "Microsoft Entra", "JumpCloud", "Google Workspace", "Keycloak"] do
+        assert html =~ provider
+      end
+    end
+
+    test "the SSO page publishes the generic OIDC and provider lifecycle contracts", %{conn: conn} do
+      html = conn |> get(~p"/docs/sso") |> html_response(200)
+
+      assert html =~ "OIDC contract"
+      assert html =~ "PKCE"
+      assert html =~ "S256 when"
+      assert html =~ "openid"
+      assert html =~ "email_verified: true"
+      assert html =~ "Require SSO for the account"
+      assert html =~ "Rotate a client secret"
+      assert html =~ "Disable or delete a connection"
+      assert html =~ "Troubleshooting"
+    end
+
+    test "the SCIM page publishes the wire and directory authorization contracts", %{conn: conn} do
+      html = conn |> get(~p"/docs/scim") |> html_response(200)
+
+      assert html =~ "SCIM protocol reference"
+      assert html =~ "/ServiceProviderConfig"
+      assert html =~ "/Users"
+      assert html =~ "/Groups"
+      assert html =~ "userName eq"
+      assert html =~ "displayName eq"
+      assert html =~ "100 PATCH operations"
+      assert html =~ "5,000 member ids"
+      assert html =~ "Group runner access is"
+      assert html =~ "additive"
+      assert html =~ "Last sync"
+    end
+
+    test "authentication docs expose review dates and source feedback", %{conn: conn} do
+      for route <- ~w(
+            /docs/authentication
+            /docs/teams-and-access
+            /docs/sso
+            /docs/scim
+            /docs/integrations/okta
+            /docs/integrations/entra
+            /docs/integrations/jumpcloud
+            /docs/integrations/keycloak
+            /docs/integrations/google-workspace
+          ) do
+        html = conn |> get(route) |> html_response(200)
+
+        assert html =~ "Last reviewed July 31, 2026", "missing review date on #{route}"
+        assert html =~ "Suggest a change", "missing feedback link on #{route}"
+
+        assert html =~ "github.com/andrewdryga/emisar/edit/main/",
+               "wrong feedback link on #{route}"
+      end
+    end
+
     test "the runners page renders the host CLI and uninstall flags", %{conn: conn} do
       html = conn |> get(~p"/docs/runners") |> html_response(200)
 
@@ -1424,6 +1493,7 @@ defmodule EmisarWeb.MarketingTest do
         ~w(/docs/runbooks /docs/audit-and-siem /docs/security-model),
       "/docs/runbooks" =>
         ~w(/docs/policies-and-approvals /docs/connect-an-llm /docs/action-packs),
+      "/docs/authentication" => ~w(/docs/teams-and-access /docs/sso /docs/scim),
       "/docs/teams-and-access" =>
         ~w(/docs/sso /docs/connect-an-llm /docs/policies-and-approvals /docs/audit-and-siem),
       "/use-cases/ingress-502" =>

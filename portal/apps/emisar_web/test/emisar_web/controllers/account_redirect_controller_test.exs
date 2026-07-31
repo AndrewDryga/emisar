@@ -61,4 +61,13 @@ defmodule EmisarWeb.AccountRedirectControllerTest do
              |> redirected_to() == "/app/#{account.slug}/runbooks/import"
     end
   end
+
+  describe "GET /app/team" do
+    test "forwards to the current account's team settings", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      conn = get(conn, ~p"/app/team")
+      assert redirected_to(conn) == "/app/#{account.slug}/settings/team"
+    end
+  end
 end
