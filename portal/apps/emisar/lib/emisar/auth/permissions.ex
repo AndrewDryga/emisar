@@ -53,6 +53,15 @@ defmodule Emisar.Auth.Permissions do
     do: MapSet.subset?(for_role(role), permissions)
 
   @doc """
+  Whether `approver_role` covers `target_role`, judged role-to-role rather than
+  through a `%Subject{}`. For a decision that must use a role read fresh under
+  lock: the subject's permissions are a snapshot from when the session was built,
+  so an approver demoted since then still covers what they used to.
+  """
+  def role_covers_role?(approver_role, target_role),
+    do: MapSet.subset?(for_role(target_role), for_role(approver_role))
+
+  @doc """
   The membership roles whose permission set includes `permission` — e.g.
   the roles that can decide approvals. Derived from `for_role/1`, so an
   eligibility/recipient list built from it can't drift from the

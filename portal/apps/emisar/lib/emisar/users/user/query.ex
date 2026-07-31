@@ -19,11 +19,15 @@ defmodule Emisar.Users.User.Query do
     do: where(queryable, [users: u], u.email == ^email)
 
   @doc """
-  `FOR NO KEY UPDATE` on the user row. A caller whose decision depends on which
-  accounts a person belongs to holds this so membership inserts — which reference
-  the user — serialize behind it rather than appearing mid-decision.
+  `FOR UPDATE` on the user row, for a caller whose decision depends on which
+  accounts a person belongs to.
+
+  `FOR NO KEY UPDATE` is the wrong mode here and was a real defect: PostgreSQL
+  makes it compatible with the `FOR KEY SHARE` an FK check takes, so a membership
+  insert referencing this user proceeds straight past it. Only `FOR UPDATE`
+  conflicts with that check.
   """
-  def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
+  def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
 
   @doc """
   `Audit.resolve_references/1` helper — narrow to ids, project

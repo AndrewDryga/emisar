@@ -3989,6 +3989,83 @@ defmodule Emisar.SSOTest do
       refute Repo.one(SSO.UserIdentity)
     end
 
+    test "a demoted approver cannot provision a brand-new person either", %{
+      account: account,
+      provider: provider
+    } do
+      # The unmatched branch creates a user, an identity, a membership and an audit
+      # row, and it never re-read the approver — so everything above applied to it
+      # only by luck. Nothing else in that transaction touches the approver's row.
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: Fixtures.Users.create_user().id,
+          role: "admin"
+        )
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|nobody-here-yet",
+          "email" => "brand-new@acme.test",
+          "email_verified" => true
+        })
+
+      Fixtures.Memberships.force_role(admin_membership, "viewer")
+
+      assert {:error, :unauthorized} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 admin
+               )
+
+      refute Repo.one(SSO.UserIdentity)
+    end
+
+    test "an owner demoted to admin no longer covers an owner", %{
+      account: account,
+      provider: provider
+    } do
+      # The subtle half. An owner demoted to admin KEEPS manage_sso, so re-checking
+      # that permission passes — but they no longer outrank an owner, and the
+      # target check was still reading the session's cached permissions, which said
+      # they did.
+      owner_user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner_user.id,
+        role: "owner"
+      )
+
+      approver_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: Fixtures.Users.create_user().id,
+          role: "owner"
+        )
+
+      approver = Fixtures.Subjects.membership_subject(approver_membership)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|owner-target",
+          "email" => owner_user.email,
+          "email_verified" => true
+        })
+
+      Fixtures.Memberships.force_role(approver_membership, "admin")
+
+      assert {:error, :link_target_outranks_approver} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 approver
+               )
+    end
+
     test "an approver demoted while their page sat open is refused", %{
       account: account,
       provider: provider

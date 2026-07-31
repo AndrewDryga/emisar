@@ -2756,7 +2756,7 @@ defmodule Emisar.SSO do
     with :ok <- ensure_can_configure_sso(subject),
          {:ok, request} <- fetch_link_request(id, subject),
          {:ok, provider} <- fetch_provider_for_request(request, subject),
-         :ok <- ensure_link_target_within_authority(request, provider, subject, Repo),
+         :ok <- ensure_link_target_within_authority(request, provider, subject.role, Repo),
          :ok <- ensure_approval_runner_access_allowed(request, access, subject) do
       multi = approve_link_request_multi(provider, request, access, subject)
 
@@ -2791,7 +2791,7 @@ defmodule Emisar.SSO do
   defp ensure_link_target_within_authority(
          %LinkRequest{matched_user_id: nil},
          _provider,
-         _subject,
+         _approver_role,
          _repo
        ),
        do: :ok
@@ -2799,7 +2799,7 @@ defmodule Emisar.SSO do
   defp ensure_link_target_within_authority(
          %LinkRequest{} = request,
          %IdentityProvider{} = provider,
-         %Subject{} = subject,
+         approver_role,
          repo
        ) do
     with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
@@ -2815,7 +2815,10 @@ defmodule Emisar.SSO do
         elsewhere != [] ->
           {:error, :link_target_in_other_accounts}
 
-        Enum.any?(here, &(not Auth.Permissions.covers_role?(subject, &1.role))) ->
+        # Against the role read under lock, not the session's. An owner demoted to
+        # admin keeps manage_sso, so the check above still passes — but they no
+        # longer cover an owner, and the cached subject said they did.
+        Enum.any?(here, &(not Auth.Permissions.role_covers_role?(approver_role, &1.role))) ->
           {:error, :link_target_outranks_approver}
 
         true ->
@@ -2885,12 +2888,21 @@ defmodule Emisar.SSO do
          access,
          subject
        ) do
-    provider
-    |> build_provision_multi(request.provider_identifier, request.claims,
-      created_by: :admin,
-      provisioned_via: :manual,
-      runner_access: access,
-      audit: &Audit.Events.sso_link_request_approved(subject, &1, provider)
+    # This branch creates a user, an identity, a membership and an audit row, and
+    # it never re-checked the approver — so an admin demoted, suspended or removed
+    # while the request sat open could still run all of it on a cached subject.
+    # Nothing here reads the approver's row otherwise.
+    Multi.new()
+    |> Multi.run(:approver, fn repo, _changes ->
+      ensure_approver_still_holds_authority(provider, subject, repo)
+    end)
+    |> Multi.append(
+      build_provision_multi(provider, request.provider_identifier, request.claims,
+        created_by: :admin,
+        provisioned_via: :manual,
+        runner_access: access,
+        audit: &Audit.Events.sso_link_request_approved(subject, &1, provider)
+      )
     )
     |> Multi.delete(:link_request, request)
   end
@@ -2937,10 +2949,10 @@ defmodule Emisar.SSO do
          %Subject{} = subject,
          repo
        ) do
-    with :ok <- ensure_approver_still_holds_authority(provider, subject, repo),
+    with {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
          {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
          %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id),
-         :ok <- ensure_link_target_within_authority(request, provider, subject, repo) do
+         :ok <- ensure_link_target_within_authority(request, provider, approver_role, repo) do
       {:ok, user}
     else
       {:error, reason} when is_atom(reason) -> {:error, reason}
@@ -2967,7 +2979,7 @@ defmodule Emisar.SSO do
     case Accounts.fetch_and_lock_membership(provider.account_id, membership_id, repo: repo) do
       {:ok, %Accounts.Membership{role: role}} ->
         if Authorizer.manage_sso_permission() in Authorizer.list_permissions_for_role(role),
-          do: :ok,
+          do: {:ok, role},
           else: {:error, :unauthorized}
 
       {:error, _reason} ->

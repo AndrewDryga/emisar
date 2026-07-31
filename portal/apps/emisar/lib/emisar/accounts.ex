@@ -723,14 +723,16 @@ defmodule Emisar.Accounts do
   as the gap: a role raised in that window commits anyway.
   """
   def fetch_and_lock_active_memberships_for_user(%Users.User{} = user, repo) do
-    # The USER row first. A row lock protects rows that exist, so locking the
-    # memberships we can see says nothing about one another account inserts while
-    # we decide — and there is no predicate lock under Read Committed. Holding the
-    # user row makes those FK-backed inserts serialize behind us.
+    # The USER row first, with `FOR UPDATE`. A row lock protects rows that exist,
+    # so locking the memberships we can see says nothing about one another account
+    # inserts while we decide — there is no predicate lock under Read Committed.
+    # Holding the user row conflicts with the FK check a membership insert takes,
+    # which is what makes those inserts wait. (`FOR NO KEY UPDATE` does NOT: it is
+    # explicitly compatible with that check, so it let them straight through.)
     #
-    # It narrows the window; it does not close it. Nothing in a transaction can
-    # stop an account granting a membership AFTER this one commits — that boundary
-    # belongs elsewhere (see the queued decision on SSO sessions reaching a second
+    # It closes the in-transaction window, not the problem. Nothing here can stop
+    # an account granting a membership AFTER this commits — that boundary belongs
+    # elsewhere (see the queued decision on SSO sessions reaching a second
     # account).
     {:ok, _locked_user} = Users.fetch_and_lock_user_by_id(user.id, repo)
 
