@@ -209,10 +209,14 @@ defmodule EmisarWeb.SCIM.UserController do
   defp apply_operations_active(conn, external_id, {:ok, active}),
     do: apply_active(conn, external_id, active)
 
-  # A name-only PATCH — render the (renamed) current resource state.
+  # A name-only PATCH — render the (renamed) current resource state. It carries the
+  # membership like every other read: this renders the same resource, so it cannot
+  # be the one response that answers `active` from the identity's flag.
   defp apply_operations_active(conn, external_id, :no_active_op) do
-    case SSO.scim_fetch_user(conn.assigns.scim_provider, external_id) do
-      {:ok, identity} -> render_user(conn, :ok, identity)
+    provider = conn.assigns.scim_provider
+
+    case SSO.scim_fetch_user(provider, external_id) do
+      {:ok, identity} -> render_user(conn, :ok, with_membership(provider, identity))
       {:error, :not_found} -> not_found(conn, external_id)
     end
   end
