@@ -86,6 +86,13 @@ func navigateRowLink(selector, contains, destination string) string {
 	return fmt.Sprintf(`(()=>{if(document.querySelector(%q))return true;const a=[...document.querySelectorAll(%q)].find(a=>((a.closest('li,tr')||a).textContent||'').includes(%q));if(a){location.href=a.href;return false}return false})()`, destination, selector, contains)
 }
 
+// openPanel clicks a LiveView disclosure and reports success only after its
+// content exists. Capture waits otherwise race the connected render and leave
+// conditional authoring controls collapsed in the published image.
+func openPanel(button, content string) string {
+	return fmt.Sprintf(`(()=>{if(document.querySelector(%q))return true;const b=document.querySelector(%q);if(!b)return false;b.click();return false})()`, content, button)
+}
+
 const waitForResolvedRunbookPlan = `(()=>{const el=document.querySelector('#current-runbook-plan-summary');return !!el&&el.textContent.includes('Actions')&&!el.textContent.includes('Checking current state')})()`
 
 // collapseAuditFilters folds the audit facet drawer (it arrives expanded when
@@ -153,10 +160,14 @@ var docsShots = []shot{
 	// it instead of publishing another full-page wall of controls.
 	{Name: "runbook-import", Path: "/app/demo/runbooks/import", Anchor: Anchor{Selector: "#runbook-import"}, Width: docsWidth, Output: "docs/runbooks/import.webp"},
 	{Name: "runbook-inputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-inputs")}, Anchor: Anchor{Selector: "#runbook-inputs"}, Width: 1440, Output: "docs/runbooks/inputs.webp"},
-	{Name: "runbook-stage", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0")}, Anchor: Anchor{Selector: "#runbook-stage-0"}, Width: 1680, TopCSS: 1020, Output: "docs/runbooks/stage.webp"},
+	{Name: "runbook-stage", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0")}, Anchor: Anchor{Selector: "#runbook-stage-0"}, Width: 1680, TopCSS: 720, Output: "docs/runbooks/stage.webp"},
+	{Name: "runbook-arguments", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0-step-0-arguments")}, Anchor: Anchor{Selector: "#runbook-stage-0-step-0-arguments"}, Width: 1440, Output: "docs/runbooks/arguments.webp"},
+	{Name: "runbook-outputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-outputs")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-outputs"}, Width: 1440, Output: "docs/runbooks/outputs.webp"},
+	{Name: "runbook-conditions", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-success")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-success"}, Width: 1440, Output: "docs/runbooks/conditions.webp"},
+	{Name: "runbook-wait", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-retry"), openPanel(`#runbook-stage-1-step-1-retry button[phx-click="toggle_panel"]`, "#runbook-stage-1-step-1-retry-controls")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-retry"}, Width: 1680, Output: "docs/runbooks/wait.webp"},
 	{Name: "runbook-start", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1050, Output: "docs/runbooks/start.webp"},
 	{Name: "runbook-approval", Path: "/app/demo/approvals", Clicks: []string{navigateRowLink(`#pending a[href*="/approvals/"]`, "Edge configuration rollout", "#approval-decision-form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1120, Output: "docs/runbooks/approval.webp"},
-	{Name: "runbook-result", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan, navigateRowLink(`a[href*="/runs/"]`, "completed Tuesday", "#runbook-execution-result")}, Anchor: Anchor{Selector: "#runbook-execution-result"}, Width: 1280, TopCSS: 1250, Output: "docs/runbooks/result.webp"},
+	{Name: "runbook-result", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan, navigateRowLink(`a[href*="/runs/"]`, "completed Tuesday", "#runbook-execution-result")}, Anchor: Anchor{Selector: "#runbook-execution-result"}, Width: 1280, TopCSS: 1650, Output: "docs/runbooks/result.webp"},
 	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, openIdPGuide, showProductionHost}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps

@@ -1161,8 +1161,23 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "&quot;pack&quot;: {&quot;id&quot;: &quot;caddy&quot;}"
       assert html =~ "group:edge-web"
       assert html =~ "one approval for the complete frozen execution"
+      assert html =~ "Action arguments"
+      assert html =~ "Extracted outputs"
+      assert html =~ "Success conditions"
+      assert html =~ "Wait policy"
+      assert html =~ "caddy.reverse_proxy_upstreams"
+      assert html =~ "&quot;expression&quot;: &quot;/healthy&quot;"
+      assert html =~ "&quot;operator&quot;: &quot;equals&quot;"
+      assert html =~ "&quot;max_attempts&quot;: 12"
 
-      for image <- ~w(import inputs stage start approval result) do
+      [_, escaped_canonical] =
+        Regex.run(~r/Canonical runbook JSON.*?<pre[^>]*>(.*?)<\/pre>/s, html)
+
+      canonical = String.replace(escaped_canonical, "&quot;", "\"")
+      assert {:ok, _definition} = Emisar.Runbooks.Definition.decode_json(canonical)
+
+      for image <-
+            ~w(import inputs stage arguments outputs conditions wait start approval result) do
         assert html =~ ~s(src="/images/docs/runbooks/#{image}.webp")
       end
 

@@ -22,6 +22,7 @@ alias Emisar.Policies
 alias Emisar.Repo
 alias Emisar.Runbooks
 alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Runbook, RunbookExecution}
+alias Emisar.Runbooks.Extractor
 alias Emisar.Runners
 alias Emisar.Runners.Runner
 alias Emisar.Runs
@@ -496,9 +497,22 @@ approval_definition = %{
           "action" => "caddy.reverse_proxy_upstreams",
           "targets" => %{"refs" => ["group:edge-web"]},
           "args" => %{},
-          "outputs" => [],
-          "success" => [],
-          "wait" => nil
+          "outputs" => [
+            %{
+              "id" => "healthy",
+              "source" => "structured_output",
+              "sensitive" => false,
+              "extract" => %{"type" => "json_pointer", "expression" => "/healthy"}
+            }
+          ],
+          "success" => [
+            %{"output" => "healthy", "operator" => "equals", "value" => true}
+          ],
+          "wait" => %{
+            "interval_seconds" => 10,
+            "timeout_seconds" => 120,
+            "max_attempts" => 12
+          }
         }
       ]
     }
@@ -948,8 +962,34 @@ succeeded_request
 ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
 |> Repo.all()
 |> Enum.each(fn item ->
+  {outputs, outputs_raw, outputs_sha256, evidence} =
+    if item.output_plan == [] and item.success_plan == [] do
+      {%{}, nil, nil, []}
+    else
+      {:ok, result} =
+        Extractor.evaluate_materialized(
+          item.output_plan,
+          item.success_plan,
+          %{
+            "structured_output" => %{"healthy" => true, "upstreams" => 2},
+            "stdout" => "{\"healthy\":true,\"upstreams\":2}\n",
+            "stderr" => ""
+          }
+        )
+
+      raw = Jason.encode!(result.raw)
+      digest = :crypto.hash(:sha256, raw) |> Base.encode16(case: :lower)
+      {result.public, raw, digest, result.evidence}
+    end
+
   item
-  |> ExecutionItem.Changeset.succeed(%{}, nil, nil, [], succeeded_finished_at)
+  |> ExecutionItem.Changeset.succeed(
+    outputs,
+    outputs_raw,
+    outputs_sha256,
+    evidence,
+    succeeded_finished_at
+  )
   |> Ecto.Changeset.change(
     attempt_count: 1,
     started_at: DateTime.add(succeeded_at, 6, :second)

@@ -85,7 +85,7 @@ defmodule EmisarWeb.MarketingController do
      "How emisar decides allow / require-approval / deny per action: risk-tier defaults, ordered per-action overrides, human approvals with a 24-hour TTL, and revocable standing grants scoped to a key, action, runner, and arguments."},
     {"/docs/runbooks", :docs_runbooks, :docs_runbooks,
      "Runbooks — build and run staged infrastructure procedures",
-     "Create or import a runbook, publish a validated version, review its frozen plan, approve the complete execution when policy requires it, and inspect command output by stage."},
+     "Build staged procedures with typed inputs, extracted outputs, success conditions, and bounded waits, then publish one frozen plan through policy and approval."},
     {"/docs/teams-and-access", :docs_teams, :docs_teams, "Teams, roles & access",
      "The emisar access model: owner/admin/operator/viewer roles, invitations, per-member runner scopes that hide out-of-scope hosts, account-wide MFA enforcement, session management, and scoped revocable API keys."},
     {"/docs/sso", :docs_sso, :docs_sso, "Single sign-on (SSO)",

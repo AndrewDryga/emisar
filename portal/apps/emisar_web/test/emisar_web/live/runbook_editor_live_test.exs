@@ -146,6 +146,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]"
 
       assert has_element?(lv, "#runbook-stage-0")
+      assert has_element?(lv, "#runbook-stage-0-step-0-arguments")
+      assert has_element?(lv, "#runbook-stage-0-step-0-outputs")
+      assert has_element?(lv, "#runbook-stage-0-step-0-success")
+      assert has_element?(lv, "#runbook-stage-0-step-0-retry")
 
       assert has_element?(
                lv,

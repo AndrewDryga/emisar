@@ -7,7 +7,7 @@
       toc={[
         {"shortest-path", "The shortest path"},
         {"create", "1. Create or import a draft"},
-        {"author", "2. Define inputs and stages"},
+        {"author", "2. Define the workflow"},
         {"publish", "3. Publish a resolvable version"},
         {"start", "4. Review and start the run"},
         {"approve", "5. Approve the execution"},
@@ -59,7 +59,10 @@
             Runbooks
           </.link>, or import a canonical JSON definition.
         </li>
-        <li>Add operator context, run-time inputs, and stages in execution order.</li>
+        <li>
+          Add operator context and run-time inputs, then define each step's action, arguments,
+          outputs, success conditions, and optional wait.
+        </li>
         <li>Select targets first, then choose an action available on every selected runner.</li>
         <li>Publish after the current definition and live preflight both pass.</li>
         <li>Supply the run-time values and reason, review the resolved plan, and start it.</li>
@@ -96,7 +99,8 @@
         alt="The emisar Import runbook page with a title field, JSON file drop area, canonical JSON text area, and Import as draft button."
       />
 
-      <.docs_h2 id="author">2. Define inputs and stages</.docs_h2>
+      <.docs_h2 id="author">2. Define the workflow</.docs_h2>
+      <.docs_h3 id="run-time-inputs">Run-time inputs</.docs_h3>
       <p class="mt-5 text-base text-zinc-400">
         Declare only the values that change between executions. An input can be a string, integer,
         number, boolean, or enum; make it required, constrain its range or length, or give it a
@@ -112,8 +116,11 @@
         alt="The Edge configuration rollout editor showing the config_path string input, its description, required and sensitive checkboxes, default value, and length bounds."
       />
 
-      <p class="mt-8 text-base text-zinc-400">
-        A runbook executes stages from top to bottom. Each stage contains one or more steps:
+      <.docs_h3 id="stages-and-steps">Stages and steps</.docs_h3>
+      <p class="mt-3 text-base text-zinc-400">
+        A runbook executes stages from top to bottom. A stage groups work behind one barrier. A
+        step declares one action, its runner or group targets, argument bindings, retained outputs,
+        success conditions, and an optional wait policy.
       </p>
       <ul class="mt-4 space-y-3 text-base text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -151,6 +158,63 @@
         title="emisar console · Stage editor"
         caption="The reload stage fans one declared action across the edge group, with at most two attempts active."
         alt="The first stage of the Edge configuration rollout runbook showing its identifier, title, parallel execution, concurrency of two, runner group target, Caddy reload action, and file argument binding."
+      />
+
+      <.docs_h3 id="action-arguments">Action arguments</.docs_h3>
+      <p class="mt-3 text-base text-zinc-400">
+        Each action argument receives one complete JSON value. Omit an optional argument, enter a
+        literal, bind a declared run-time input, or use a named output from an earlier stage. There
+        is no string interpolation. The editor checks the bound value against the trusted action
+        schema before publication and again when it resolves a run.
+      </p>
+      <.docs_screenshot
+        src="/images/docs/runbooks/arguments.webp"
+        title="emisar console · Action arguments"
+        caption="The reload step binds the action's file argument to the config_path run-time input."
+        alt="The Arguments section for the reload_caddy step showing the optional file JSON argument bound to the config_path run-time input."
+      />
+
+      <.docs_h3 id="extracted-outputs">Extracted outputs</.docs_h3>
+      <p class="mt-3 text-base text-zinc-400">
+        Retain only the values that later work or a success condition needs. Read structured output,
+        stdout, or stderr, then extract with JSON Pointer, contains, literal grep, or a bounded
+        regular expression. Give each value a stable output ID. Mark an output sensitive to mask it
+        in results and evidence while still allowing conditions and compatible sensitive arguments
+        in later stages to use the real value.
+      </p>
+      <.docs_screenshot
+        src="/images/docs/runbooks/outputs.webp"
+        title="emisar console · Extracted outputs"
+        caption="The health check retains only the healthy field from structured output."
+        alt="The Extracted outputs section for the check_upstreams step showing the healthy output read from structured output with JSON Pointer expression slash healthy."
+      />
+
+      <.docs_h3 id="success-conditions">Success conditions</.docs_h3>
+      <p class="mt-3 text-base text-zinc-400">
+        An action that exits successfully counts as a successful step unless you add conditions.
+        Conditions read named extracted outputs; every condition must pass. Compare with equality,
+        ordering, containment, membership, or a bounded regular expression. Add the output first so
+        the condition cannot refer to an undefined value.
+      </p>
+      <.docs_screenshot
+        src="/images/docs/runbooks/conditions.webp"
+        title="emisar console · Success conditions"
+        caption="The upstream check succeeds only when its extracted healthy value is true."
+        alt="The Success conditions section for the check_upstreams step showing healthy must equal the JSON value true."
+      />
+
+      <.docs_h3 id="wait-policy">Wait policy</.docs_h3>
+      <p class="mt-3 text-base text-zinc-400">
+        When a successful observation does not yet meet its conditions, a wait can run that same
+        observation again after a fixed interval. Bound it with both a timeout and a maximum number
+        of observations. A wait never retries an action failure, denial, refusal, extraction error,
+        timeout, or cancellation; those halt the execution.
+      </p>
+      <.docs_screenshot
+        src="/images/docs/runbooks/wait.webp"
+        title="emisar console · Wait policy"
+        caption="The health check observes again every 10 seconds, for at most 12 observations or 120 seconds."
+        alt="The expanded Retry policy section for the check_upstreams step showing Observe again, a 10 second interval, a 120 second timeout, and 12 maximum observations."
       />
 
       <.docs_callout kind={:note} title="Identifiers are references, not labels.">
@@ -238,8 +302,8 @@
         src="/images/docs/runbooks/result.webp"
         preview_h="max-h-[32rem]"
         title="emisar console · Runbook result"
-        caption="Executed items keep the exact command and bounded output inline under the stage that produced them."
-        alt="A successful Edge configuration rollout result showing stage progress and Caddy action rows with runner names, commands, durations, and command output."
+        caption="Executed items keep commands and bounded output inline; the upstream check also records its extracted value and condition evidence."
+        alt="A successful Edge configuration rollout result showing Caddy command output followed by the healthy extracted output and passed success condition evidence."
       />
 
       <.docs_h2 id="definition">Definition v1 reference</.docs_h2>
@@ -252,7 +316,7 @@
       </p>
       <.docs_code phx-no-format label="Canonical runbook JSON">{~s({
   "schema_version": 1,
-  "context_markdown": "## Before you run\n\nValidate the candidate Caddyfile.",
+  "context_markdown": "## Before you run\\n\\nValidate the candidate Caddyfile.",
   "inputs": [
     {
       "id": "config_path",
@@ -293,41 +357,39 @@
       "max_parallel": 2,
       "steps": [
         {
-          "id": "check_version",
+          "id": "check_upstreams",
           "pack": {"id": "caddy"},
-          "action": "caddy.version",
+          "action": "caddy.reverse_proxy_upstreams",
           "targets": {"refs": ["group:edge-web"]},
           "args": {},
-          "outputs": [],
-          "success": [],
-          "wait": null
+          "outputs": [
+            {
+              "id": "healthy",
+              "source": "structured_output",
+              "sensitive": false,
+              "extract": {
+                "type": "json_pointer",
+                "expression": "/healthy"
+              }
+            }
+          ],
+          "success": [
+            {
+              "output": "healthy",
+              "operator": "equals",
+              "value": true
+            }
+          ],
+          "wait": {
+            "interval_seconds": 10,
+            "timeout_seconds": 120,
+            "max_attempts": 12
+          }
         }
       ]
     }
   ]
 })}</.docs_code>
-
-      <.docs_h3 id="bindings">Bindings</.docs_h3>
-      <p class="mt-3 text-base text-zinc-400">
-        Every action argument receives one whole JSON value from exactly one source: a literal, a
-        declared run-time input, or a named output from an earlier stage. There is no string
-        interpolation. The compiler checks the value against the trusted action argument schema
-        before creating the execution.
-      </p>
-
-      <.docs_h3 id="outputs-and-waits">Outputs, success, and waits</.docs_h3>
-      <p class="mt-3 text-base text-zinc-400">
-        Retain only what later work or a success condition needs. Extract from structured output
-        with JSON Pointer, or from complete stdout or stderr with contains, literal grep, or a
-        bounded regular-expression capture. A condition can compare a named output with equality,
-        ordering, membership, containment, or a regular expression. Every configured condition
-        must pass.
-      </p>
-      <p class="mt-5 text-base text-zinc-400">
-        A wait repeats the same successful observation when its conditions are not met, at a fixed
-        interval and within a timeout and attempt cap. It does not retry action failure, denial,
-        refusal, invalid extraction, or cancellation.
-      </p>
 
       <.docs_h2 id="failure">Failure and safety</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">

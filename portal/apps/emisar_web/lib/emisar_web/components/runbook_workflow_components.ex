@@ -762,7 +762,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp bindings_editor(assigns) do
     ~H"""
-    <div class="mt-6 border-t border-zinc-800/70 pt-5">
+    <div
+      id={"runbook-stage-#{@stage_index}-step-#{@step_index}-arguments"}
+      class="mt-6 border-t border-zinc-800/70 pt-5"
+    >
       <p class="text-xs font-semibold text-zinc-200">Arguments</p>
 
       <p :if={@step["action"] == ""} class="mt-3 text-xs text-zinc-500">
@@ -930,7 +933,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp outputs_editor(assigns) do
     ~H"""
-    <div class="mt-6 border-t border-zinc-800/70 pt-5">
+    <div
+      id={"runbook-stage-#{@stage_index}-step-#{@step_index}-outputs"}
+      class="mt-6 border-t border-zinc-800/70 pt-5"
+    >
       <div>
         <p class="text-xs font-semibold text-zinc-200">Extracted outputs</p>
         <p class="mt-0.5 text-[11px] text-zinc-400">
@@ -1067,7 +1073,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp success_editor(assigns) do
     ~H"""
-    <div class="mt-6 border-t border-zinc-800/70 pt-5">
+    <div
+      id={"runbook-stage-#{@stage_index}-step-#{@step_index}-success"}
+      class="mt-6 border-t border-zinc-800/70 pt-5"
+    >
       <div>
         <p class="text-xs font-semibold text-zinc-200">Success conditions</p>
         <p class="mt-0.5 text-[11px] text-zinc-400">
@@ -1173,7 +1182,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     assigns = assign(assigns, :panel_key, key)
 
     ~H"""
-    <div class="mt-6 border-t border-zinc-800/70 pt-5">
+    <div
+      id={"runbook-stage-#{@stage_index}-step-#{@step_index}-retry"}
+      class="mt-6 border-t border-zinc-800/70 pt-5"
+    >
       <.panel_toggle
         panel_key={@panel_key}
         open?={MapSet.member?(@open_panels, @panel_key)}
