@@ -51,12 +51,12 @@ func buildInvocation(
 // `--bare` is intentionally absent: repeated API-key certification runs
 // completed normally but offered the model none of the explicit MCP tools.
 //
-// `--strict-mcp-config` limits MCP to our generated bridge config. Claude's
-// API-key `--bare` path drops MCP tools from the model when the built-in set is
-// empty, even though the same argv registers them under keychain auth. Keep
-// only the read-only `Read` built-in as the sentinel that preserves MCP tool
-// registration; the throwaway workspace contains only the generated bridge
-// config, and the relay remains the fail-closed boundary for Emisar calls.
+// `--strict-mcp-config` limits MCP to our generated bridge config. Keep only
+// the read-only `Read` built-in; the throwaway workspace contains only the
+// generated bridge config, and the relay remains the fail-closed boundary for
+// Emisar calls. Claude defers MCP tools behind its built-in ToolSearch by
+// default, so the restricted tool set must pair with ENABLE_TOOL_SEARCH=false,
+// which loads the explicit MCP tools up front.
 // `--dangerously-skip-permissions` is required, not optional: under API-key
 // headless auth, `--allowedTools` did not pre-approve the MCP tools — Claude
 // fetched the relay's tools/list (the handshake reaches the relay) but excluded
@@ -85,7 +85,8 @@ func claudeInvocation(
 		"--no-session-persistence",
 		"--max-budget-usd", cfg.BudgetUSD,
 	)
-	return invocation{binary: cfg.Binary, args: args, env: childEnv("ANTHROPIC_API_KEY"), dir: workspace}, nil
+	env := replaceEnv(childEnv("ANTHROPIC_API_KEY"), "ENABLE_TOOL_SEARCH", "false")
+	return invocation{binary: cfg.Binary, args: args, env: env, dir: workspace}, nil
 }
 
 func writeClaudeMCPConfig(
