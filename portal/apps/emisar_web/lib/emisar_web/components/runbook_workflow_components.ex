@@ -619,6 +619,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       |> assign(:selection, selection)
       |> assign(:unavailable, unavailable)
       |> assign(:label, target_selection_label(assigns.catalog, refs, selection, unavailable))
+      |> assign(:title, target_selection_title(assigns.catalog, refs, selection, unavailable))
+      |> assign(:option_groups, target_option_groups(assigns.options))
+      |> assign(:searchable?, Enum.count(assigns.options, &(&1.kind != :group)) > 8)
       |> assign(
         :disabled?,
         assigns.read_only? or (refs == [] and assigns.catalog.target_options == [])
@@ -644,7 +647,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <div
         :if={@disabled?}
         id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-trigger"}
-        title={@label}
+        title={@title}
         aria-disabled="true"
         class={[
           "mt-2 flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-zinc-900 px-3 py-2.5 text-sm ring-1 ring-inset",
@@ -663,12 +666,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         panel_position={:flow_on_narrow}
         class="mt-2"
         summary_class={target_summary_class(@unavailable)}
-        panel_class="z-40 mt-2 max-h-64 w-full min-w-[18rem] overflow-y-auto overscroll-contain p-1 text-sm"
+        panel_class="z-40 mt-2 w-full min-w-[18rem] overflow-hidden text-sm"
       >
         <:trigger>
           <span
             id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-trigger"}
-            title={@label}
+            title={@title}
             class="flex min-w-0 flex-1 items-center justify-between gap-3"
           >
             <span class="min-w-0 truncate">{@label}</span>
@@ -679,14 +682,54 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           </span>
         </:trigger>
 
-        <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-options"}>
-          <.target_choice
-            :for={option <- @options}
-            option={option}
-            stage_index={@stage_index}
-            step_index={@step_index}
-            at_limit?={length(@refs) >= 16}
-          />
+        <div
+          id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-options"}
+          phx-hook={if @searchable?, do: "FilterableList"}
+        >
+          <div :if={@searchable?} class="relative border-b border-zinc-800 bg-zinc-950">
+            <.icon
+              name="hero-magnifying-glass-micro"
+              class="pointer-events-none absolute left-3 top-3 h-4 w-4 text-zinc-500"
+            />
+            <input
+              type="search"
+              data-filterable-search
+              aria-label="Search targets"
+              placeholder="Search runners or groups…"
+              autocomplete="off"
+              spellcheck="false"
+              class="min-h-10 w-full border-0 bg-transparent py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-500 focus:ring-0"
+            />
+          </div>
+          <div class="scrollbar-control max-h-64 overflow-y-auto overscroll-contain p-1">
+            <section
+              :for={group <- @option_groups}
+              data-filterable-section
+              data-filter-search={String.downcase(group.heading.label)}
+            >
+              <.target_choice
+                option={group.heading}
+                stage_index={@stage_index}
+                step_index={@step_index}
+                at_limit?={length(@refs) >= 16}
+              />
+              <.target_choice
+                :for={option <- group.options}
+                option={option}
+                stage_index={@stage_index}
+                step_index={@step_index}
+                at_limit?={length(@refs) >= 16}
+              />
+            </section>
+            <p
+              :if={@searchable?}
+              data-filterable-empty
+              hidden
+              class="px-3 py-5 text-center text-xs text-zinc-400"
+            >
+              No matching runners or groups.
+            </p>
+          </div>
         </div>
       </.dropdown>
     </div>
@@ -702,12 +745,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     ~H"""
     <div
       data-target-group={@option.label}
-      class="flex items-center justify-between gap-3 px-3 pb-1.5 pt-3"
+      class="flex items-center justify-between gap-3 px-2.5 pb-1 pt-2.5"
     >
       <p class="truncate text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
         {@option.label}
       </p>
-      <p class="shrink-0 text-[11px] tabular-nums text-zinc-400">
+      <p :if={@option[:online_count]} class="shrink-0 text-[11px] tabular-nums text-zinc-400">
         {@option.online_count} online
       </p>
     </div>
@@ -739,21 +782,23 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       phx-value-target={@option.value}
       phx-value-selection={@option.selection}
       data-target-kind={@option.kind}
+      data-filterable-item
+      data-filter-search={String.downcase("#{@option.label} #{@option.description}")}
       title={@option.label}
       disabled={@disabled?}
       class={[
-        "flex min-h-14 w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors",
+        "flex min-h-10 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors",
         @selected? && "bg-white/[0.05] text-zinc-100 hover:bg-white/[0.08]",
         not @selected? && not @disabled? && "text-zinc-300 hover:bg-zinc-800",
         @disabled? && "cursor-not-allowed text-zinc-500 opacity-50"
       ]}
     >
-      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-black/30 ring-1 ring-white/[0.07]">
-        <.icon name={target_choice_icon(@option.kind)} class="h-4 w-4 text-zinc-400" />
+      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-black/30 ring-1 ring-white/[0.07]">
+        <.icon name={target_choice_icon(@option.kind)} class="h-3.5 w-3.5 text-zinc-400" />
       </span>
-      <span class="min-w-0 flex-1">
-        <span class="block truncate text-sm leading-5">{@option.label}</span>
-        <span class="mt-0.5 block truncate text-[11px] leading-4 text-zinc-400">
+      <span class="flex min-w-0 flex-1 items-baseline gap-2">
+        <span class="max-w-[55%] shrink-0 truncate text-sm leading-5">{@option.label}</span>
+        <span class="min-w-0 truncate text-[11px] leading-4 text-zinc-400">
           {@option.description}
         </span>
       </span>
@@ -777,16 +822,44 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp target_selection_label(_catalog, [], _selection, _unavailable),
     do: "Choose runners or groups…"
 
-  defp target_selection_label(catalog, [ref], selection, 0),
+  defp target_selection_label(catalog, refs, selection, unavailable) do
+    labels = Enum.map(refs, &target_preview_label(catalog, &1, selection))
+    overflow = length(labels) - 2
+    summary = labels |> Enum.take(2) |> Enum.join(", ")
+    summary = if overflow > 0, do: "#{summary} +#{overflow}", else: summary
+
+    if unavailable > 0, do: "#{summary} · #{unavailable} unavailable", else: summary
+  end
+
+  defp target_selection_title(catalog, refs, selection, unavailable),
+    do: target_selection_title(catalog.target_options, catalog, refs, selection, unavailable)
+
+  defp target_selection_title([], _catalog, [], _selection, _unavailable),
+    do: "No online runners available"
+
+  defp target_selection_title(_options, _catalog, [], _selection, _unavailable),
+    do: "Choose runners or groups…"
+
+  defp target_selection_title(_options, catalog, refs, selection, unavailable) do
+    summary = Enum.map_join(refs, ", ", &target_preview_label(catalog, &1, selection))
+    if unavailable > 0, do: "#{summary} · #{unavailable} unavailable", else: summary
+  end
+
+  defp target_preview_label(_catalog, "group:" <> group, "random_one"),
+    do: "#{String.upcase(group)} · one"
+
+  defp target_preview_label(_catalog, "group:" <> group, _selection),
+    do: "#{String.upcase(group)} · all"
+
+  defp target_preview_label(catalog, ref, selection),
     do: RunbookEditorCatalog.target_label(catalog, ref, selection)
 
-  defp target_selection_label(catalog, [ref], selection, _unavailable),
-    do: "Unavailable · #{RunbookEditorCatalog.target_label(catalog, ref, selection)}"
+  defp target_option_groups([]), do: []
 
-  defp target_selection_label(_catalog, refs, _selection, 0), do: "#{length(refs)} targets"
-
-  defp target_selection_label(_catalog, refs, _selection, unavailable),
-    do: "#{length(refs)} targets · #{unavailable} unavailable"
+  defp target_option_groups([%{kind: :group} = heading | rest]) do
+    {options, remaining} = Enum.split_while(rest, &(&1.kind != :group))
+    [%{heading: heading, options: options} | target_option_groups(remaining)]
+  end
 
   defp target_summary_class(0) do
     "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-zinc-900 " <>

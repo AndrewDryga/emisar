@@ -31,7 +31,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         %{option | selected: option.value in selected_refs and option.selection == selection}
       end)
 
-    missing =
+    missing_options =
       selected
       |> MapSet.difference(
         options
@@ -51,6 +51,23 @@ defmodule EmisarWeb.RunbookEditorCatalog do
           unavailable: true
         }
       end)
+
+    missing =
+      if missing_options == [] do
+        []
+      else
+        [
+          %{
+            value: "",
+            selection: nil,
+            label: "Unavailable",
+            kind: :group,
+            disabled: true,
+            selected: false
+          }
+          | missing_options
+        ]
+      end
 
     options ++ missing
   end
@@ -215,7 +232,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
           selection: "all",
           label: "All runners",
           kind: :group_all,
-          description: "Every online runner in this group",
+          description: "Every online runner",
           disabled: false,
           selected: false
         }
@@ -225,7 +242,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
           selection: "random_one",
           label: "One runner",
           kind: :group_one,
-          description: "Selected and frozen when the run starts",
+          description: "Frozen at run start",
           disabled: false,
           selected: false
         }
@@ -295,7 +312,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       selection: "all",
       label: runner.name,
       kind: :runner,
-      description: "Only this runner",
+      description: "Exact runner",
       disabled: false,
       selected: false
     }

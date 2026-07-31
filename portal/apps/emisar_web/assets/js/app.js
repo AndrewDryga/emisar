@@ -117,6 +117,50 @@ const Combobox = {
   }
 }
 
+// Client-side filtering for bounded multi-select menus. Selection remains
+// LiveView-owned; this hook only narrows the already-rendered catalog so large
+// runner and scope lists stay usable without duplicating server state.
+const FilterableList = {
+  mounted() { this.bind() },
+  updated() { this.bind() },
+
+  destroyed() {
+    if (this.search && this.onInput) this.search.removeEventListener("input", this.onInput)
+  },
+
+  bind() {
+    if (this.search && this.onInput) this.search.removeEventListener("input", this.onInput)
+
+    this.search = this.el.querySelector("[data-filterable-search]")
+    this.sections = Array.from(this.el.querySelectorAll("[data-filterable-section]"))
+    this.empty = this.el.querySelector("[data-filterable-empty]")
+    this.onInput = () => this.filter()
+    this.search.addEventListener("input", this.onInput)
+    this.filter()
+  },
+
+  filter() {
+    const query = this.search.value.trim().toLowerCase()
+    let anyVisible = false
+
+    this.sections.forEach((section) => {
+      const sectionMatches = (section.dataset.filterSearch || "").includes(query)
+      const items = Array.from(section.querySelectorAll("[data-filterable-item]"))
+
+      items.forEach((item) => {
+        const itemMatches = (item.dataset.filterSearch || "").includes(query)
+        item.hidden = query !== "" && !sectionMatches && !itemMatches
+      })
+
+      const sectionVisible = items.some((item) => !item.hidden)
+      section.hidden = !sectionVisible
+      anyVisible = anyVisible || sectionVisible
+    })
+
+    if (this.empty) this.empty.hidden = anyVisible
+  }
+}
+
 const LocalTime = {
   mounted() { this.format() },
   updated() { this.format() },
@@ -491,7 +535,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
   // neutral recovery notice should still acknowledge the interruption.
   disconnectedTimeout: 100,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, ConfirmDialog }
+  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, ConfirmDialog }
 })
 
 // Show progress bar on live navigation and form submits

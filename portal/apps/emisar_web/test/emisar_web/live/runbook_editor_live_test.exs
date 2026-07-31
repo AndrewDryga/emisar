@@ -270,7 +270,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "Unavailable · default group"
+               "DEFAULT · all · 1 unavailable"
              )
 
       assert has_element?(
@@ -777,7 +777,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "default — all online runners (1)"
+               "DEFAULT · all"
              )
 
       lv
@@ -796,7 +796,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "default — all online runners (1)"
+               "DEFAULT · all"
              )
 
       assert has_element?(
@@ -822,19 +822,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_all"]),
-               "All runners Every online runner in this group"
+               "All runners Every online runner"
              )
 
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_one"]),
-               "One runner Selected and frozen when the run starts"
+               "One runner Frozen at run start"
              )
 
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="runner"]),
-               "#{runner.name} Only this runner"
+               "#{runner.name} Exact runner"
              )
 
       assert {:ok, runner_ref} = Emisar.Runners.public_ref(runner)
@@ -849,7 +849,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                ~s(#{exact_target}[phx-click="remove_target"]),
-               "#{runner.name} Only this runner"
+               "#{runner.name} Exact runner"
              )
 
       lv |> element(~s(#{exact_target}[phx-click="remove_target"])) |> render_click()
@@ -863,7 +863,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "default — one online runner"
+               "DEFAULT · one"
              )
 
       assert has_element?(
@@ -892,12 +892,90 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "default — one online runner"
+               "DEFAULT · one"
              )
 
       assert has_element?(
                lv,
                ~s(input[type="hidden"][name="draft[stages][0][steps][0][target_selection]"][value="random_one"])
+             )
+    end
+
+    test "the target trigger names selections and bounds overflow", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      first = arrange_current_action(account, user)
+      second = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-two")
+      third = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-three")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      for runner <- [first, second] do
+        assert {:ok, ref} = Emisar.Runners.public_ref(runner)
+
+        lv
+        |> element(
+          ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="runner"][phx-value-target="runner:#{ref}"])
+        )
+        |> render_click()
+      end
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "#{first.name}, runner-two"
+             )
+
+      assert {:ok, third_ref} = Emisar.Runners.public_ref(third)
+
+      lv
+      |> element(
+        ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="runner"][phx-value-target="runner:#{third_ref}"])
+      )
+      |> render_click()
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "#{first.name}, runner-two +1"
+             )
+    end
+
+    test "a large target catalog is searchable without inflating option rows", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+
+      for index <- 1..6 do
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "fleet-runner-#{index}"
+        )
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-options[phx-hook=FilterableList] input[data-filterable-search][aria-label='Search targets']"
+             )
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-options [data-filterable-section][data-filter-search=default]"
+             )
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-options button[data-filterable-item][class*='min-h-10']"
+             )
+
+      refute has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-options button[data-filterable-item][class*='min-h-14']"
              )
     end
 
@@ -984,7 +1062,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "default — all online runners (1)"
+               "DEFAULT · all"
              )
 
       assert has_element?(
