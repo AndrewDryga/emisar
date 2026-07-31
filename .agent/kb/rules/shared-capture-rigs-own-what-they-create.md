@@ -76,6 +76,11 @@ inventory with a verdict per row, and creation fails loudly if the display label
 did not land. `google-capture` has `-cleanup` for clients and `-delete-projects`
 for projects.
 
-`okta-capture` and `entra-capture` still have NO inventory or cleanup — they create
-app integrations, users and enterprise applications with no way to find them again.
-That is tracked, and until it is closed, do not claim either tenant is clean.
+`okta-capture -inventory`/`-cleanup` and `entra-capture/entra-inventory.mjs` list
+and remove what they created, both through the provider's own API rather than the
+console DOM — a virtualised list is exactly the surface that under-matches
+silently. Okta needs an `OKTA_API_TOKEN` (SSWS): the console session is answered
+403 by `/api/v1`, and the tool says so rather than reporting an empty tenant.
+
+That last part is the general shape. A rig that cannot enumerate says it cannot
+enumerate; "nothing to clean up" is a claim, and a claim needs a listing behind it.
