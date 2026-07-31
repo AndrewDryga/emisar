@@ -1380,7 +1380,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # The sweep keeps versions a connected runner still advertises — the
       # stale row's sole advertiser (observe_pending_pack!'s runner) must be
       # durably gone for it to be sweepable.
-      runner = Emisar.Repo.one(Emisar.Runners.Runner)
+      runner = Emisar.Repo.get_by!(Emisar.Runners.Runner, account_id: account.id)
       Fixtures.Runners.mark_disconnected_at(runner, forty_days_ago)
       Fixtures.Catalog.backdate_pack_version_last_seen(pack_version, forty_days_ago)
     end
