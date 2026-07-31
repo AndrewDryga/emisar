@@ -41,7 +41,11 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     trust_all!(subject)
 
     _runbook =
-      publish_runbook!(subject, "fleet-health", %{"refs" => ["group:fleet"]})
+      publish_runbook!(
+        subject,
+        "fleet-health",
+        %{"selection" => "all", "refs" => ["group:fleet"]}
+      )
 
     sentinel = "sentinel_DO_NOT_LOG_runbook_reason"
 

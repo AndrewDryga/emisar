@@ -1,0 +1,20 @@
+schema_version: 1
+id: bunny.list_regions
+title: List Bunny regions
+kind: script
+risk: low
+description: List bunny.net regions and codes used by Pull Zone delivery and Origin Shield settings.
+side_effects: [One read-only Core API request.]
+args: []
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [list-regions]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Regions
+    args: {}

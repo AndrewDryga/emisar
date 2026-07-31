@@ -23,7 +23,7 @@ defmodule Emisar.Runbooks.CompilerTest do
         args: %{"token" => %{"source" => "input", "ref" => "token"}}
       )
 
-    assert {:ok, compiled} = Compiler.compile(definition, %{"token" => "secret"}, subject)
+    assert {:ok, compiled} = compile(definition, %{"token" => "secret"}, subject)
     assert Jason.decode!(compiled.inputs_raw) == %{"token" => "secret"}
     assert compiled.sensitive_input_names == ["token"]
 
@@ -56,7 +56,7 @@ defmodule Emisar.Runbooks.CompilerTest do
         args: %{"token" => %{"source" => "literal", "value" => "secret"}}
       )
 
-    assert {:error, issues} = Compiler.compile(definition, %{}, subject)
+    assert {:error, issues} = compile(definition, %{}, subject)
 
     assert Enum.map(issues, &{&1.code, &1.path}) == [
              {"invalid_binding", "/stages/0/steps/0/args/token"}
@@ -76,7 +76,7 @@ defmodule Emisar.Runbooks.CompilerTest do
         args: %{"note" => %{"source" => "input", "ref" => "note"}}
       )
 
-    assert {:ok, compiled} = Compiler.compile(definition, %{}, subject)
+    assert {:ok, compiled} = compile(definition, %{}, subject)
     assert Jason.decode!(compiled.inputs_raw) == %{}
     assert [%{args_raw: raw}] = compiled.items
     assert Jason.decode!(raw) == %{}
@@ -95,7 +95,7 @@ defmodule Emisar.Runbooks.CompilerTest do
         args: %{"note" => %{"source" => "input", "ref" => "note"}}
       )
 
-    assert {:error, issues} = Compiler.compile(definition, %{}, subject)
+    assert {:error, issues} = compile(definition, %{}, subject)
 
     assert Enum.map(issues, &{&1.code, &1.path}) == [
              {"invalid_binding", "/stages/0/steps/0/args/note"}
@@ -105,7 +105,7 @@ defmodule Emisar.Runbooks.CompilerTest do
   test "reports unknown targets at the authoring path", %{subject: subject} do
     definition = definition("missing-group")
 
-    assert {:error, [issue]} = Compiler.compile(definition, %{}, subject)
+    assert {:error, [issue]} = compile(definition, %{}, subject)
     assert issue.code == "unknown_target"
     assert issue.path == "/stages/0/steps/0/targets"
   end
@@ -116,7 +116,7 @@ defmodule Emisar.Runbooks.CompilerTest do
     assert {:error, [issue]} =
              runner.group
              |> definition()
-             |> Compiler.compile(%{}, subject)
+             |> compile(%{}, subject)
 
     assert issue.code == "signed_runbook_unsupported"
     assert issue.path == "/stages/0/steps/0/targets"
@@ -136,7 +136,7 @@ defmodule Emisar.Runbooks.CompilerTest do
         "missing-pack"
       )
 
-    assert {:error, [issue]} = Compiler.compile(definition, %{}, subject)
+    assert {:error, [issue]} = compile(definition, %{}, subject)
     assert issue.code == "pack_unavailable"
     assert issue.path == "/stages/0/steps/0/pack"
   end
@@ -156,7 +156,7 @@ defmodule Emisar.Runbooks.CompilerTest do
     assert {:error, [issue]} =
              runner.group
              |> definition(wait: wait)
-             |> Compiler.compile(%{}, subject)
+             |> compile(%{}, subject)
 
     assert issue.code == "invalid_definition"
     assert issue.path == "/stages/0/steps/0/wait"
@@ -170,7 +170,7 @@ defmodule Emisar.Runbooks.CompilerTest do
     assert {:error, [issue]} =
              runner.group
              |> definition()
-             |> Compiler.compile(%{}, subject)
+             |> compile(%{}, subject)
 
     assert issue.code == "unknown_target"
   end
@@ -186,17 +186,82 @@ defmodule Emisar.Runbooks.CompilerTest do
     assert {:ok, _compiled} =
              selected.group
              |> definition()
-             |> Compiler.compile(%{}, subject)
+             |> compile(%{}, subject)
 
     add_catalog_noise(selected, "selected", 80)
 
     assert {:error, [issue]} =
              selected.group
              |> definition()
-             |> Compiler.compile(%{}, subject)
+             |> compile(%{}, subject)
 
     assert issue.code == "catalog_scope_too_large"
     assert issue.path == "/stages"
+  end
+
+  test "freezes one stable runner from a group and records its source", %{
+    account: account,
+    subject: subject
+  } do
+    first = trusted_runner(account, subject, group: "workers")
+    second = trusted_runner(account, subject, group: "workers")
+
+    definition =
+      definition("workers")
+      |> put_in(
+        ["stages", Access.at(0), "steps", Access.at(0), "targets", "selection"],
+        "random_one"
+      )
+
+    assert {:ok, first_compile} = Compiler.compile(definition, %{}, "stable-seed", subject)
+    assert {:ok, second_compile} = Compiler.compile(definition, %{}, "stable-seed", subject)
+
+    assert first_compile.plan == second_compile.plan
+
+    assert [%{runner_id: selected_id, target_selection: "random_one", target_group: "workers"}] =
+             first_compile.items
+
+    assert selected_id in [first.id, second.id]
+
+    assert %{
+             "total_items" => 1,
+             "stages" => [
+               %{
+                 "items" => [
+                   %{"target_selection" => "random_one", "target_group" => "workers"}
+                 ]
+               }
+             ]
+           } = first_compile.plan
+
+    selected_ids =
+      1..20
+      |> Enum.map(fn seed ->
+        assert {:ok, compiled} = Compiler.compile(definition, %{}, to_string(seed), subject)
+        compiled.items |> hd() |> Map.fetch!(:runner_id)
+      end)
+      |> Enum.uniq()
+
+    assert Enum.sort(selected_ids) == Enum.sort([first.id, second.id])
+  end
+
+  test "validates the complete online group before choosing one runner", %{
+    account: account,
+    subject: subject
+  } do
+    trusted_runner(account, subject, group: "workers")
+    Fixtures.Runners.create_runner(account_id: account.id, group: "workers")
+
+    definition =
+      definition("workers")
+      |> put_in(
+        ["stages", Access.at(0), "steps", Access.at(0), "targets", "selection"],
+        "random_one"
+      )
+
+    assert {:error, [issue]} = Compiler.compile(definition, %{}, "stable-seed", subject)
+    assert issue.code == "pack_unavailable"
+    assert issue.path == "/stages/0/steps/0/pack"
   end
 
   defp trusted_runner(account, subject, opts \\ []) do
@@ -251,6 +316,9 @@ defmodule Emisar.Runbooks.CompilerTest do
     runner
   end
 
+  defp compile(definition, inputs, subject),
+    do: Compiler.compile(definition, inputs, "compiler-test-seed", subject)
+
   defp definition(group, opts \\ []) do
     %{
       "schema_version" => 1,
@@ -267,7 +335,7 @@ defmodule Emisar.Runbooks.CompilerTest do
               "id" => "uptime",
               "pack" => %{"id" => "linux-core"},
               "action" => "linux.uptime",
-              "targets" => %{"refs" => ["group:" <> group]},
+              "targets" => %{"selection" => "all", "refs" => ["group:" <> group]},
               "args" => Keyword.get(opts, :args, %{}),
               "outputs" => [],
               "success" => [],

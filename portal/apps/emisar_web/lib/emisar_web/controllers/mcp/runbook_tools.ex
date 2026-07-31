@@ -359,6 +359,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
       item_id: item.id,
       step_id: item.step_id,
       runner_ref: item.runner_ref,
+      target_selection: item.target_selection,
+      target_group: item.target_group,
       status: to_string(item.status),
       action_id: item.action_id,
       pack_ref: item.pack_ref,

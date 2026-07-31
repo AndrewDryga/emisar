@@ -21,7 +21,7 @@ defmodule Emisar.Fixtures.Runbooks do
             "id" => "inspect",
             "pack" => %{"id" => "linux-core"},
             "action" => "linux.uptime",
-            "targets" => %{"refs" => ["group:default"]},
+            "targets" => %{"selection" => "all", "refs" => ["group:default"]},
             "args" => %{},
             "outputs" => [],
             "success" => [],

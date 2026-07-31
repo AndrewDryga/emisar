@@ -639,6 +639,7 @@ defmodule Emisar.Runs do
          :ok <- require_action(action_id),
          :ok <- require_reason(reason),
          :ok <- runner_in_account(runner_id, account_id),
+         :ok <- runner_online_for_runbook(attrs, runner_id, account_id),
          :ok <- check_attestation(attrs, runner_id, account_id),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, runner_ref} <- public_runner_ref(runner_id),
@@ -1283,6 +1284,7 @@ defmodule Emisar.Runs do
     with :ok <- require_runner(runner_id),
          :ok <- require_action(attrs[:action_id]),
          :ok <- runner_in_account(runner_id, account_id),
+         :ok <- runner_online(runner_id, account_id),
          false <- Emisar.Runners.runner_enforces_signatures?(runner_id, account_id),
          :ok <-
            runner_in_membership_scope(
@@ -1463,6 +1465,18 @@ defmodule Emisar.Runs do
     else
       {:error, :runner_not_found}
     end
+  end
+
+  defp runner_online_for_runbook(%{runbook_execution_id: execution_id}, runner_id, account_id)
+       when is_binary(execution_id),
+       do: runner_online(runner_id, account_id)
+
+  defp runner_online_for_runbook(_attrs, _runner_id, _account_id), do: :ok
+
+  defp runner_online(runner_id, account_id) do
+    if Emisar.Runners.online?(account_id, runner_id),
+      do: :ok,
+      else: {:error, :runner_not_found}
   end
 
   defp public_runner_ref(runner_id) do

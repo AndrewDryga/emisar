@@ -120,9 +120,9 @@ retirement rules.
 
 **What it is.** A published or draft runbook carries one strict JSON-compatible
 DefinitionV1 object. It declares Markdown context, typed inputs, ordered stages,
-stage mode and concurrency, action steps, one `pack: {id}` per step, tagged
-runner and group target refs, whole-value bindings, named output extractors,
-success conditions, and optional bounded waits. Approval is execution state
+stage mode and concurrency, action steps, one `pack: {id}` per step, an explicit
+`all` or `random_one` selection over tagged runner and group refs, whole-value
+bindings, named output extractors, success conditions, and optional bounded waits. Approval is execution state
 derived from account policy, not part of the runbook definition. The console,
 persistence layer, compiler, and MCP tools consume and return this same object;
 there is no alternate YAML or legacy flat-step contract.
@@ -133,7 +133,9 @@ there is no alternate YAML or legacy flat-step contract.
 and the MCP schema references that identity as
 `https://emisar.dev/schemas/runbook-definition-v1.json`. Unknown fields are
 rejected. Execution resolves each pack ID and action against the current trusted
-catalog, then freezes the exact pack ref and hash per runner. An already-frozen
+catalog, then freezes the exact selected runner, pack ref, and hash per item.
+`random_one` accepts exactly one group, validates its complete online pool, and
+records both the chosen runner and source group. An already-frozen
 execution cannot be reinterpreted by a later pack update. A saved runbook whose
 current pack or action contract no longer resolves fails preflight until an
 operator publishes a working revision.

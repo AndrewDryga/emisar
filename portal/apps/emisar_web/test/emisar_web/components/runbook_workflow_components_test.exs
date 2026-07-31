@@ -15,6 +15,8 @@ defmodule EmisarWeb.Components.RunbookWorkflowComponentsTest do
         %{
           "action" => "linux.uptime",
           "runner_ref" => "edge-fra-01~sha256",
+          "target_selection" => "random_one",
+          "target_group" => "edge-web",
           "step_id" => "check_uptime",
           "risk" => "low",
           "args" => %{}
@@ -34,6 +36,7 @@ defmodule EmisarWeb.Components.RunbookWorkflowComponentsTest do
     assert html =~ "parallel · up to 3 at once"
     assert html =~ "8 items"
     assert html =~ "edge-fra-01"
+    assert html =~ "selected from edge-web"
     assert html =~ "check_uptime"
     assert html =~ ~s(data-steps-marker="parallel")
   end

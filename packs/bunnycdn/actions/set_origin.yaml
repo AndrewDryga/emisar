@@ -1,0 +1,48 @@
+schema_version: 1
+id: bunny.set_origin
+title: Change Pull Zone origin
+kind: script
+risk: high
+description: Change where a Pull Zone fetches content; a wrong URL, host header, or TLS choice can redirect traffic, expose requests, or take the zone offline.
+side_effects:
+  - Subsequent cache misses and revalidations use the new origin.
+  - Can change the Host header sent to the origin.
+  - Can disable origin certificate verification when explicitly requested.
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID.
+    validation: {min: 1, max: 9007199254740991}
+  - name: origin_url
+    type: string
+    required: true
+    description: HTTPS origin URL without user-info credentials or a query string.
+    validation:
+      pattern: "^https://[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?(/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$"
+      max_length: 2048
+  - name: origin_host_header
+    type: string
+    required: false
+    default: ""
+    description: Optional Host header sent to the origin; empty leaves it unchanged.
+    validation:
+      pattern: "^(|[A-Za-z0-9][A-Za-z0-9.-]{0,252})$"
+      max_length: 253
+  - name: verify_origin_ssl
+    type: boolean
+    required: false
+    default: true
+    description: Verify the origin TLS certificate. Keep enabled unless a separately approved exception requires otherwise.
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [set-origin, "{{ args.pull_zone_id }}", "{{ args.origin_url }}", "{{ args.origin_host_header }}", "{{ args.verify_origin_ssl }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Move to a verified origin
+    args: {pull_zone_id: 123456, origin_url: "https://new-origin.example.com", origin_host_header: new-origin.example.com}

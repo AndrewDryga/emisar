@@ -331,7 +331,7 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
       "id" => id,
       "pack" => %{"id" => "linux-core"},
       "action" => "linux.uptime",
-      "targets" => %{"refs" => ["group:" <> group]},
+      "targets" => %{"selection" => "all", "refs" => ["group:" <> group]},
       "args" => %{},
       "outputs" => [],
       "success" => [],

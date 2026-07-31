@@ -182,9 +182,10 @@
     },
     "targets": {
       "type": "object",
-      "required": ["refs"],
+      "required": ["selection", "refs"],
       "additionalProperties": false,
       "properties": {
+        "selection": {"enum": ["all", "random_one"]},
         "refs": {
           "type": "array",
           "minItems": 1,

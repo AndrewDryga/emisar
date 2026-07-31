@@ -199,9 +199,14 @@ defmodule Emisar.RunnersTest do
       {account, _user, subject} = account_with_owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
 
-      assert {:ok, [%{id: runner_id, runner_ref: runner_ref}]} =
+      assert {:ok,
+              %{
+                selection: "all",
+                refs: ["group:database"],
+                runners: [%{id: runner_id, runner_ref: runner_ref}]
+              }} =
                Runners.resolve_runbook_targets(
-                 %{"refs" => ["group:database"]},
+                 %{"selection" => "all", "refs" => ["group:database"]},
                  subject
                )
 
@@ -209,7 +214,19 @@ defmodule Emisar.RunnersTest do
       assert is_binary(runner_ref)
 
       assert Runners.resolve_runbook_targets(
-               %{"refs" => ["group:missing"]},
+               %{"selection" => "all", "refs" => ["group:missing"]},
+               subject
+             ) == {:error, :unknown_target}
+
+      _offline =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          group: "offline-only",
+          connected?: false
+        )
+
+      assert Runners.resolve_runbook_targets(
+               %{"selection" => "random_one", "refs" => ["group:offline-only"]},
                subject
              ) == {:error, :unknown_target}
     end
@@ -221,11 +238,15 @@ defmodule Emisar.RunnersTest do
       first = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       second = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
-      assert {:ok, [[%{id: first_id}], [%{id: second_id}]]} =
+      assert {:ok,
+              [
+                %{selection: "all", runners: [%{id: first_id}]},
+                %{selection: "random_one", group: "web", runners: [%{id: second_id}]}
+              ]} =
                Runners.resolve_runbook_target_sets(
                  [
-                   %{"refs" => ["group:database"]},
-                   %{"refs" => ["group:web"]}
+                   %{"selection" => "all", "refs" => ["group:database"]},
+                   %{"selection" => "random_one", "refs" => ["group:web"]}
                  ],
                  subject
                )
@@ -234,8 +255,8 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.resolve_runbook_target_sets(
                [
-                 %{"refs" => ["group:database"]},
-                 %{"refs" => ["runner:missing"]}
+                 %{"selection" => "all", "refs" => ["group:database"]},
+                 %{"selection" => "all", "refs" => ["runner:missing"]}
                ],
                subject
              ) == {:error, {:unknown_target, 1}}

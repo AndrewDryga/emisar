@@ -1,0 +1,20 @@
+schema_version: 1
+id: bunny.billing_usage
+title: Get CDN billing usage
+kind: script
+risk: low
+description: Get a safe account charge and bandwidth projection plus current per-Pull-Zone usage, without payment-method or billing-identity fields.
+side_effects: [Two read-only Core API requests.]
+args: []
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [billing-usage]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Account and Pull Zone usage
+    args: {}

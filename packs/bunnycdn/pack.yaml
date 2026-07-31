@@ -1,0 +1,69 @@
+schema_version: 1
+
+id: bunnycdn
+name: bunny.net CDN operations
+version: 0.1.0
+description: >
+  Governed bunny.net Pull Zone lifecycle, cache, hostname, access-control,
+  statistics, request-log, origin-error, and billing-usage operations. Auth via
+  BUNNY_API_KEY on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+    - jq
+
+# No detect block: bunny.net is reached remotely, so curl and jq on a runner
+# are not evidence that the host operates a Bunny account.
+
+setup:
+  summary: >
+    Calls the bunny.net Core, CDN Logging v2, and Origin Errors APIs over HTTPS.
+    BUNNY_API_KEY is sent in the AccessKey header over curl stdin and is never
+    placed in argv or action output. Allowlist the variable in the runner's
+    execution.inherit_env configuration.
+  env:
+    - name: BUNNY_API_KEY
+      required: true
+      description: bunny.net account API key. Use a scratch or least-privilege account and gate mutation actions with policy.
+  notes:
+    - "Request logs are retained by bunny.net for three days; bunny.logs returns one bounded page and bunny.log_usage_summary aggregates one bounded page."
+    - "Pull Zone credentials, certificate material, log-forwarding tokens, request authorization headers, and URL query strings are removed before output leaves the runner."
+    - "The pack covers Bunny CDN Pull Zones. Bunny Storage, DNS, Stream, Shield/WAF, custom-certificate private keys, token-key reset, and arbitrary edge-rule documents are separate trust surfaces."
+  verify: bunny.list_pull_zones
+
+actions:
+  - actions/list_pull_zones.yaml
+  - actions/get_pull_zone.yaml
+  - actions/list_regions.yaml
+  - actions/statistics.yaml
+  - actions/optimizer_statistics.yaml
+  - actions/origin_shield_statistics.yaml
+  - actions/safehop_statistics.yaml
+  - actions/logs.yaml
+  - actions/log_usage_summary.yaml
+  - actions/origin_errors.yaml
+  - actions/billing_usage.yaml
+  - actions/create_pull_zone.yaml
+  - actions/delete_pull_zone.yaml
+  - actions/set_origin.yaml
+  - actions/set_cache_ttl.yaml
+  - actions/set_cache_behavior.yaml
+  - actions/set_origin_shield.yaml
+  - actions/set_logging.yaml
+  - actions/add_hostname.yaml
+  - actions/remove_hostname.yaml
+  - actions/set_force_ssl.yaml
+  - actions/add_allowed_referrer.yaml
+  - actions/remove_allowed_referrer.yaml
+  - actions/add_blocked_referrer.yaml
+  - actions/remove_blocked_referrer.yaml
+  - actions/add_blocked_ip.yaml
+  - actions/remove_blocked_ip.yaml
+  - actions/purge_url.yaml
+  - actions/purge_tag.yaml
+  - actions/purge_all_cache.yaml

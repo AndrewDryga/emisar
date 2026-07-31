@@ -147,6 +147,8 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
         step_position: item.step_position,
         runner_id: item.runner_id,
         runner_ref: item.runner_ref,
+        target_selection: item.target_selection,
+        target_group: item.target_group,
         action_id: item.action_id,
         pack_ref: item.pack_ref,
         pack_hash: item.pack_hash,

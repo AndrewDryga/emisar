@@ -1,0 +1,27 @@
+schema_version: 1
+id: bunny.delete_pull_zone
+title: Delete Pull Zone
+kind: script
+risk: critical
+description: Delete a Pull Zone permanently; every Bunny hostname and custom hostname on that zone stops serving immediately and the operation cannot be undone.
+side_effects:
+  - Permanently deletes the Pull Zone and its configuration.
+  - Stops CDN delivery for every hostname attached to the zone.
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID to delete.
+    validation: {min: 1, max: 9007199254740991}
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [delete-pull-zone, "{{ args.pull_zone_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Permanently delete a Pull Zone
+    args: {pull_zone_id: 123456}

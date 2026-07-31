@@ -1,0 +1,28 @@
+schema_version: 1
+id: bunny.purge_all_cache
+title: Purge entire Pull Zone cache
+kind: script
+risk: critical
+description: Purge the entire Pull Zone cache; every object becomes cold at once and a busy zone can overwhelm or sharply increase traffic to its origin.
+side_effects:
+  - Removes all cached objects for the Pull Zone.
+  - Sends subsequent requests to the origin until the cache re-warms.
+  - Can cause an immediate origin-load and egress spike.
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID whose complete cache will be purged.
+    validation: {min: 1, max: 9007199254740991}
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [purge-all-cache, "{{ args.pull_zone_id }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Purge everything only after targeted purges are insufficient
+    args: {pull_zone_id: 123456}

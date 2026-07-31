@@ -1,0 +1,42 @@
+schema_version: 1
+id: bunny.purge_url
+title: Purge cached URL
+kind: script
+risk: high
+description: Purge one URL from Bunny's edge cache; the next request for each removed variant reaches the origin and can increase origin load.
+side_effects:
+  - Removes cached variants matching the requested URL.
+  - Causes subsequent requests to miss until the object is cached again.
+args:
+  - name: url
+    type: string
+    required: true
+    sensitive: true
+    description: Absolute HTTPS CDN URL to purge. Query strings are sent to Bunny but removed from action output.
+    validation:
+      pattern: "^https://[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*$"
+      max_length: 2048
+  - name: async
+    type: boolean
+    required: false
+    default: false
+    description: Return after Bunny accepts the purge instead of waiting for completion.
+  - name: exact_path
+    type: boolean
+    required: false
+    default: false
+    description: When a URL ends in slash, purge only that exact path instead of a wildcard suffix.
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [purge-url, "{{ args.async }}", "{{ args.exact_path }}"]
+  env:
+    BUNNY_PURGE_URL: "{{ args.url }}"
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Purge one video
+    args: {url: "https://cdn.example.com/video/intro.mp4"}

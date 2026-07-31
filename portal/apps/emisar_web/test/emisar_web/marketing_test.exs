@@ -1164,6 +1164,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "caddy.reload_config"
       assert html =~ "&quot;pack&quot;: {&quot;id&quot;: &quot;caddy&quot;}"
       assert html =~ "group:edge-web"
+      assert html =~ "One online runner"
+      assert html =~ "random_one"
+      assert html =~ "does not move the work to another member"
       assert html =~ "one approval for the complete frozen execution"
       assert html =~ "Action arguments"
       assert html =~ "Extracted outputs"
@@ -1181,7 +1184,7 @@ defmodule EmisarWeb.MarketingTest do
       assert {:ok, _definition} = Emisar.Runbooks.Definition.decode_json(canonical)
 
       for image <-
-            ~w(import inputs stage arguments outputs conditions wait start approval result) do
+            ~w(import inputs stage targets arguments outputs conditions wait start approval result) do
         assert html =~ ~s(src="/images/docs/runbooks/#{image}.webp")
       end
 

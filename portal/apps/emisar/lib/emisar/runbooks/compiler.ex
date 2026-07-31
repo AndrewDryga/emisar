@@ -13,10 +13,11 @@ defmodule Emisar.Runbooks.Compiler do
 
   @type issue :: Definition.issue()
 
-  @doc "Compile one strict definition and typed input object against current trusted facts."
-  @spec compile(map(), map(), Subject.t()) ::
+  @doc "Compile one strict definition and typed input object against current trusted facts, using one caller-owned target-selection seed."
+  @spec compile(map(), map(), binary(), Subject.t()) ::
           {:ok, map()} | {:error, [issue()]} | {:error, :unauthorized}
-  def compile(definition, supplied_inputs, %Subject{} = subject) do
+  def compile(definition, supplied_inputs, selection_seed, %Subject{} = subject)
+      when is_binary(selection_seed) and selection_seed != "" do
     with {:ok, definition} <- Definition.validate(definition),
          {:ok, inputs} <- compile_inputs(definition, supplied_inputs),
          steps = indexed_steps(definition),
@@ -26,7 +27,7 @@ defmodule Emisar.Runbooks.Compiler do
          requests = candidate_requests(steps, target_sets),
          runners = requests |> Enum.map(& &1.runner) |> Enum.uniq_by(& &1.id),
          {:ok, candidates} <- resolve_candidates(requests, runners, subject),
-         {:ok, selected} <- select_candidates(steps, target_sets, candidates),
+         {:ok, selected} <- select_candidates(steps, target_sets, candidates, selection_seed),
          {:ok, items} <- compile_items(selected, inputs, definition),
          {:ok, items} <- snapshot_policies(items, subject.account.id),
          :ok <- validate_wait_safety(items),
@@ -60,7 +61,7 @@ defmodule Emisar.Runbooks.Compiler do
          requests = candidate_requests(steps, target_sets),
          runners = requests |> Enum.map(& &1.runner) |> Enum.uniq_by(& &1.id),
          {:ok, candidates} <- resolve_candidates(requests, runners, subject),
-         {:ok, _selected} <- select_candidates(steps, target_sets, candidates) do
+         {:ok, _selected} <- select_candidates(steps, target_sets, candidates, "availability") do
       :ok
     end
   end
@@ -264,7 +265,15 @@ defmodule Emisar.Runbooks.Compiler do
   end
 
   defp validate_fan_out(target_sets) do
-    if Enum.sum(Enum.map(target_sets, &length/1)) <= Definition.limit!(:max_execution_items) do
+    item_count =
+      Enum.sum(
+        Enum.map(target_sets, fn
+          %{selection: "random_one"} -> 1
+          %{runners: runners} -> length(runners)
+        end)
+      )
+
+    if item_count <= Definition.limit!(:max_execution_items) do
       :ok
     else
       {:error,
@@ -282,7 +291,9 @@ defmodule Emisar.Runbooks.Compiler do
     issues =
       steps
       |> Enum.zip(target_sets)
-      |> Enum.flat_map(fn {step, runners} ->
+      |> Enum.flat_map(fn {step, target_set} ->
+        runners = target_set.runners
+
         if Enum.any?(runners, & &1.enforce_signatures) do
           [
             issue(
@@ -302,7 +313,9 @@ defmodule Emisar.Runbooks.Compiler do
   defp candidate_requests(steps, target_sets) do
     steps
     |> Enum.zip(target_sets)
-    |> Enum.flat_map(fn {indexed, runners} ->
+    |> Enum.flat_map(fn {indexed, target_set} ->
+      runners = target_set.runners
+
       Enum.map(runners, fn runner ->
         %{
           runner_id: runner.id,
@@ -315,11 +328,11 @@ defmodule Emisar.Runbooks.Compiler do
     end)
   end
 
-  defp select_candidates(steps, target_sets, candidates) do
+  defp select_candidates(steps, target_sets, candidates, selection_seed) do
     steps
     |> Enum.zip(target_sets)
-    |> Enum.reduce_while({:ok, []}, fn {indexed, runners}, {:ok, selected_steps} ->
-      case select_step_candidates(indexed, runners, candidates) do
+    |> Enum.reduce_while({:ok, []}, fn {indexed, target_set}, {:ok, selected_steps} ->
+      case select_step_candidates(indexed, target_set, candidates, selection_seed) do
         {:ok, selected} -> {:cont, {:ok, [selected | selected_steps]}}
         {:error, issues} -> {:halt, {:error, issues}}
       end
@@ -330,7 +343,9 @@ defmodule Emisar.Runbooks.Compiler do
     end
   end
 
-  defp select_step_candidates(indexed, runners, candidates) do
+  defp select_step_candidates(indexed, target_set, candidates, selection_seed) do
+    runners = target_set.runners
+
     {selected, issues} =
       Enum.reduce(runners, {[], []}, fn runner, {selected, issues} ->
         key = {runner.id, indexed.step["pack"]["id"], indexed.step["action"]}
@@ -348,11 +363,27 @@ defmodule Emisar.Runbooks.Compiler do
     with [] <- issues,
          selected <- Enum.reverse(selected),
          :ok <- validate_common_contract(indexed, selected) do
-      {:ok, %{indexed: indexed, candidates: selected}}
+      {:ok,
+       %{
+         indexed: indexed,
+         candidates: select_target_candidates(selected, target_set, indexed, selection_seed),
+         target_selection: target_set.selection,
+         target_group: target_set.group
+       }}
     else
       [_ | _] = issues -> {:error, issues}
       {:error, issues} -> {:error, issues}
     end
+  end
+
+  defp select_target_candidates(candidates, %{selection: "all"}, _indexed, _seed),
+    do: candidates
+
+  defp select_target_candidates(candidates, %{selection: "random_one"}, indexed, seed) do
+    pool_identity = Enum.map_join(candidates, "\0", & &1.runner.runner_ref)
+    digest = Crypto.hash_hex(seed <> "\0" <> indexed.path <> "\0" <> pool_identity)
+    index = digest |> binary_part(0, 16) |> String.to_integer(16) |> rem(length(candidates))
+    [Enum.at(candidates, index)]
   end
 
   defp select_exact_candidate(candidates) do
@@ -465,6 +496,7 @@ defmodule Emisar.Runbooks.Compiler do
         Enum.map(
           selected.candidates,
           &compile_item(
+            selected,
             indexed,
             &1,
             contract,
@@ -555,7 +587,15 @@ defmodule Emisar.Runbooks.Compiler do
 
   defp output_binding_type_compatible?(_binding, _spec, _outputs), do: true
 
-  defp compile_item(indexed, candidate, contract, specs, inputs, _output_declarations) do
+  defp compile_item(
+         selected,
+         indexed,
+         candidate,
+         contract,
+         specs,
+         inputs,
+         _output_declarations
+       ) do
     {resolved, deferred_names} =
       Enum.reduce(indexed.step["args"], {%{}, MapSet.new()}, fn
         {name, binding}, {args, deferred_names} ->
@@ -604,6 +644,8 @@ defmodule Emisar.Runbooks.Compiler do
          runner_id: candidate.runner.id,
          runner_ref: candidate.runner.runner_ref,
          runner_group: candidate.runner.group,
+         target_selection: selected.target_selection,
+         target_group: selected.target_group,
          action_id: indexed.step["action"],
          pack_id: candidate.pack_id,
          pack_version: candidate.version,
@@ -849,6 +891,8 @@ defmodule Emisar.Runbooks.Compiler do
       "step_id" => item.step_id,
       "step_position" => item.step_position,
       "runner_ref" => item.runner_ref,
+      "target_selection" => item.target_selection,
+      "target_group" => item.target_group,
       "action" => item.action_id,
       "pack_ref" => item.pack_ref,
       "pack_hash" => item.pack_hash,

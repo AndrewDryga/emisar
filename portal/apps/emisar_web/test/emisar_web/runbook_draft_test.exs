@@ -39,7 +39,7 @@ defmodule EmisarWeb.RunbookDraftTest do
               "id" => "inspect_replica",
               "pack" => %{"id" => "postgres"},
               "action" => "postgres.replication.inspect",
-              "targets" => %{"refs" => ["group:postgres"]},
+              "targets" => %{"selection" => "all", "refs" => ["group:postgres"]},
               "args" => %{
                 "environment" => %{"source" => "input", "ref" => "environment"},
                 "verbose" => %{"source" => "literal", "value" => true}
@@ -84,6 +84,7 @@ defmodule EmisarWeb.RunbookDraftTest do
               "pack" => %{"id" => "postgres"},
               "action" => "postgres.primary.confirm",
               "targets" => %{
+                "selection" => "all",
                 "refs" => ["runner:db-1~aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
               },
               "args" => %{
@@ -119,6 +120,7 @@ defmodule EmisarWeb.RunbookDraftTest do
         | "id" => "inspect",
           "pack_id" => "linux-core",
           "action" => "linux.uptime",
+          "target_selection" => "all",
           "target_refs" => ["group:default"]
       })
 

@@ -63,7 +63,9 @@
           Add operator context and run-time inputs, then define each step's action, arguments,
           outputs, success conditions, and optional wait.
         </li>
-        <li>Select targets first, then choose an action available on every selected runner.</li>
+        <li>
+          Select the target scope, then choose an action available across that complete scope.
+        </li>
         <li>Publish after the current definition and live preflight both pass.</li>
         <li>Supply the run-time values and reason, review the resolved plan, and start it.</li>
         <li>
@@ -148,10 +150,9 @@
         </li>
       </ul>
       <p class="mt-5 text-base text-zinc-400">
-        Select runners or groups before choosing the action. The action menu contains only work
-        currently available across the complete selection. A group becomes one logical item per
-        matching runner when the plan is resolved. The editor follows the action to its pack; you
-        do not pin a pack version in the definition.
+        Select targets before choosing the action. The action menu contains only work currently
+        available across the complete selection. The editor follows the action to its pack; you do
+        not pin a pack version in the definition.
       </p>
       <.docs_screenshot
         src="/images/docs/runbooks/stage.webp"
@@ -159,6 +160,48 @@
         caption="The reload stage fans one declared action across the edge group, with at most two attempts active."
         alt="The first stage of the Edge configuration rollout runbook showing its identifier, title, parallel execution, concurrency of two, runner group target, Caddy reload action, and file argument binding."
       />
+
+      <.docs_h3 id="target-selection">Target selection</.docs_h3>
+      <p class="mt-3 text-base text-zinc-400">
+        A step can run on one exact runner, every online runner in a group, or one online runner
+        from a group. Use an exact runner for host-specific work, the complete group for fleet
+        changes and checks, and one group member for representative diagnostics or a canary.
+      </p>
+      <ul class="mt-4 space-y-3 text-base text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span><strong class="text-zinc-200">Exact runner</strong> freezes that runner.</span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">All online runners</strong>
+            expands the group to one logical item per online member.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">One online runner</strong>
+            accepts one group and freezes one member during preflight.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base text-zinc-400">
+        One-runner selection still validates the action, trusted pack, and compatible contract on
+        every online member of the group before choosing. The start page and the execution use the
+        same frozen runner. If that runner disconnects before dispatch, the execution stops; it
+        does not move the work to another member.
+      </p>
+      <.docs_screenshot
+        src="/images/docs/runbooks/targets.webp"
+        title="emisar console · Target selection"
+        caption="Choose the complete online group, one online member, or an exact runner from the same picker."
+        alt="The target picker for the check_version step showing the edge-web group with All online runners, One online runner selected, and the exact edge-fra-01 runner."
+      />
+      <.docs_code phx-no-format label="Target forms">{~s({"selection":"all","refs":["runner:nomad-hvn02~0123456789abcdef0123456789abcdef"]}
+{"selection":"all","refs":["group:va1-nomad"]}
+{"selection":"random_one","refs":["group:va1-nomad"]})}</.docs_code>
 
       <.docs_h3 id="action-arguments">Action arguments</.docs_h3>
       <p class="mt-3 text-base text-zinc-400">
@@ -250,7 +293,8 @@
         policy decisions, and stage concurrency.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Read the plan as the dispatch receipt: the run will not silently add a target, reinterpret
+        Read the plan as the dispatch receipt. A one-runner group item names both the selected
+        runner and its source group. The run will not silently add or replace a target, reinterpret
         an argument, or move work between stages after it starts.
       </p>
       <.docs_screenshot
@@ -340,7 +384,7 @@
           "id": "reload_caddy",
           "pack": {"id": "caddy"},
           "action": "caddy.reload_config",
-          "targets": {"refs": ["group:edge-web"]},
+          "targets": {"selection": "all", "refs": ["group:edge-web"]},
           "args": {
             "file": {"source": "input", "ref": "config_path"}
           },
@@ -360,7 +404,7 @@
           "id": "check_upstreams",
           "pack": {"id": "caddy"},
           "action": "caddy.reverse_proxy_upstreams",
-          "targets": {"refs": ["group:edge-web"]},
+          "targets": {"selection": "all", "refs": ["group:edge-web"]},
           "args": {},
           "outputs": [
             {

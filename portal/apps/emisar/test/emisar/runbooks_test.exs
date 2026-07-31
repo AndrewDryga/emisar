@@ -687,6 +687,58 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "resolve_plan/4" do
+    test "uses the same one-group runner for preview and dispatch" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      trusted_runner(account, subject, group: "workers")
+      trusted_runner(account, subject, group: "workers")
+
+      definition =
+        definition("workers")
+        |> put_in(
+          ["stages", Access.at(0), "steps", Access.at(0), "targets", "selection"],
+          "random_one"
+        )
+
+      runbook = create_runbook(subject, definition: definition) |> publish(subject)
+      seed = Runbooks.new_target_selection_seed()
+
+      assert {:ok, preview} = Runbooks.resolve_plan(runbook, %{}, seed, subject)
+
+      assert {:ok, result} =
+               Runbooks.dispatch_runbook(runbook, "inspect one worker", subject,
+                 target_selection_seed: seed
+               )
+
+      preview_runner =
+        get_in(preview.plan, ["stages", Access.at(0), "items", Access.at(0), "runner_ref"])
+
+      assert preview_runner ==
+               get_in(result.plan, [
+                 "stages",
+                 Access.at(0),
+                 "items",
+                 Access.at(0),
+                 "runner_ref"
+               ])
+
+      assert %{target_selection: "random_one", target_group: "workers"} =
+               ExecutionItem.Query.by_execution_id(result.execution_id) |> Repo.one!()
+    end
+  end
+
+  describe "new_target_selection_seed/0" do
+    test "returns independent opaque server seeds" do
+      first = Runbooks.new_target_selection_seed()
+      second = Runbooks.new_target_selection_seed()
+
+      assert is_binary(first)
+      assert byte_size(first) >= 32
+      refute first == second
+    end
+  end
+
   describe "resolve_definition_plan/3" do
     test "compiles an unsaved definition through the caller's current scope" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -996,7 +1048,7 @@ defmodule Emisar.RunbooksTest do
       "id" => id,
       "pack" => %{"id" => "linux-core"},
       "action" => "linux.uptime",
-      "targets" => %{"refs" => ["group:" <> group]},
+      "targets" => %{"selection" => "all", "refs" => ["group:" <> group]},
       "args" => %{},
       "outputs" => [],
       "success" => [],

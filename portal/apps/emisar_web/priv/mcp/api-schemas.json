@@ -757,6 +757,8 @@
         "item_id",
         "step_id",
         "runner_ref",
+        "target_selection",
+        "target_group",
         "status",
         "action_id",
         "pack_ref",
@@ -777,6 +779,13 @@
         "item_id": {"type": "string", "format": "uuid"},
         "step_id": {"$ref": "#/$defs/step_id"},
         "runner_ref": {"$ref": "#/$defs/runner_ref"},
+        "target_selection": {"type": "string", "enum": ["all", "random_one"]},
+        "target_group": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "minLength": 1, "maxLength": 80}
+          ]
+        },
         "status": {
           "type": "string",
           "enum": ["pending", "running", "waiting", "succeeded", "failed", "cancelled"]

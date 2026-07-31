@@ -35,6 +35,7 @@
           },
           "action": "patroni.current_leader",
           "targets": {
+            "selection": "all",
             "refs": [
               "group:patroni-control"
             ]
@@ -73,6 +74,7 @@
           },
           "action": "postgres.replication_status",
           "targets": {
+            "selection": "all",
             "refs": [
               "group:patroni-data"
             ]
@@ -117,6 +119,7 @@
           },
           "action": "patroni.failover",
           "targets": {
+            "selection": "all",
             "refs": [
               "group:patroni-control"
             ]
@@ -178,6 +181,7 @@
           },
           "action": "patroni.cluster_health",
           "targets": {
+            "selection": "all",
             "refs": [
               "group:patroni-control"
             ]
@@ -231,6 +235,7 @@
           },
           "action": "postgres.replication_status",
           "targets": {
+            "selection": "all",
             "refs": [
               "group:patroni-data"
             ]

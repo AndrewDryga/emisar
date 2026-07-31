@@ -377,7 +377,7 @@ morning_definition = %{
           "id" => "uptime",
           "pack" => %{"id" => "linux-core"},
           "action" => "linux.uptime",
-          "targets" => %{"refs" => ["group:edge-web"]},
+          "targets" => %{"selection" => "all", "refs" => ["group:edge-web"]},
           "args" => %{},
           "outputs" => [],
           "success" => [],
@@ -387,7 +387,7 @@ morning_definition = %{
           "id" => "disk",
           "pack" => %{"id" => "linux-core"},
           "action" => "linux.disk_usage",
-          "targets" => %{"refs" => ["group:edge-web"]},
+          "targets" => %{"selection" => "all", "refs" => ["group:edge-web"]},
           "args" => %{},
           "outputs" => [],
           "success" => [],
@@ -397,7 +397,7 @@ morning_definition = %{
           "id" => "memory",
           "pack" => %{"id" => "linux-core"},
           "action" => "linux.memory",
-          "targets" => %{"refs" => ["group:edge-web"]},
+          "targets" => %{"selection" => "all", "refs" => ["group:edge-web"]},
           "args" => %{},
           "outputs" => [],
           "success" => [],
@@ -465,7 +465,7 @@ approval_definition = %{
           "id" => "reload_caddy",
           "pack" => %{"id" => "caddy"},
           "action" => "caddy.reload_config",
-          "targets" => %{"refs" => ["group:edge-web"]},
+          "targets" => %{"selection" => "all", "refs" => ["group:edge-web"]},
           "args" => %{
             "file" => %{"source" => "input", "ref" => "config_path"}
           },
@@ -485,7 +485,7 @@ approval_definition = %{
           "id" => "check_version",
           "pack" => %{"id" => "caddy"},
           "action" => "caddy.version",
-          "targets" => %{"refs" => ["group:edge-web"]},
+          "targets" => %{"selection" => "random_one", "refs" => ["group:edge-web"]},
           "args" => %{},
           "outputs" => [],
           "success" => [],
@@ -495,7 +495,7 @@ approval_definition = %{
           "id" => "check_upstreams",
           "pack" => %{"id" => "caddy"},
           "action" => "caddy.reverse_proxy_upstreams",
-          "targets" => %{"refs" => ["group:edge-web"]},
+          "targets" => %{"selection" => "all", "refs" => ["group:edge-web"]},
           "args" => %{},
           "outputs" => [
             %{
