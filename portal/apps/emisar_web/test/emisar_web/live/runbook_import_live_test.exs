@@ -11,6 +11,8 @@ defmodule EmisarWeb.RunbookImportLiveTest do
 
     assert html =~ "Drop a JSON file here or choose one"
     assert html =~ "or paste JSON"
+    assert has_element?(lv, "#runbook-import.max-w-3xl:not(.mx-auto)")
+    refute has_element?(lv, "#runbook-import.border")
 
     lv
     |> form("#runbook-import-form", %{

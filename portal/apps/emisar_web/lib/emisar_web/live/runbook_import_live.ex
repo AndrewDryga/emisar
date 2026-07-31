@@ -245,17 +245,14 @@ defmodule EmisarWeb.RunbookImportLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runbooks}
-      width={:form}
+      width={:table}
     >
       <:title>
         <.back_link navigate={~p"/app/#{@current_account}/runbooks"}>Runbooks</.back_link>
         Import runbook
       </:title>
 
-      <section
-        id="runbook-import"
-        class="rounded-2xl border border-zinc-800 p-6 sm:p-8"
-      >
+      <div id="runbook-import" class="max-w-3xl">
         <.simple_form
           for={@import_form}
           id="runbook-import-form"
@@ -372,7 +369,7 @@ defmodule EmisarWeb.RunbookImportLive do
             </.button>
           </:actions>
         </.simple_form>
-      </section>
+      </div>
     </.dashboard_shell>
     """
   end
