@@ -1,6 +1,4 @@
 defmodule Emisar.Repo.Migrations.LinkRequestsRecordTheirNamespace do
-  use Ecto.Migration
-
   @moduledoc """
   A link request carries an identifier, but not which namespace it came from —
   the OIDC `sub` or the directory's `externalId`. Approval therefore had one
@@ -16,6 +14,7 @@ defmodule Emisar.Repo.Migrations.LinkRequestsRecordTheirNamespace do
   collides, which no production tenant has reached (no SSO or SCIM connection
   exists in production).
   """
+  use Ecto.Migration
 
   def change do
     alter table(:sso_link_requests) do
