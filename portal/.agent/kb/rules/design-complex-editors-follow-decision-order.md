@@ -66,7 +66,10 @@ The trigger summarizes the current selection; its menu owns both addition and
 removal. Never stack selected-target rows above a second picker in the overview
 grid. When a saved target no longer resolves, name it in operator language,
 mark it unavailable in the trigger, and keep its menu row removable even when
-there are no current targets to add.
+there are no current targets to add. If the control changes state through its
+own LiveView events inside a larger `phx-change` form, render that selected state
+as hidden form inputs too. A later change must serialize the complete current
+form instead of erasing event-owned selections that were absent from the DOM.
 
 A dependent control does not invent a second failure while its prerequisite is
 unresolved. Keep its saved value visible, neutral, and disabled so the operator
@@ -114,10 +117,11 @@ interaction. On narrow screens, lifecycle actions may lead, but the primary
 editing workflow renders before details, validation, canonical output, or other
 secondary rails. Keep lifecycle rails limited to state transitions such as Save
 and Publish. Self-labeling lifecycle controls need no generic `Actions` heading.
-On a desktop rail, put editable details first, then lifecycle metadata and
-controls immediately before the validation panel they govern. Do not add a
-Cancel or Back action there when it only duplicates the page header or
-application navigation.
+On a desktop rail, put stable lifecycle facts such as the current version and
+publication status before editable identity fields, so the operator sees what
+they are editing before changing it. Lifecycle controls stay immediately before
+the validation panel they govern. Do not add a Cancel or Back action there when
+it only duplicates the page header or application navigation.
 
 ## Why
 
@@ -158,9 +162,9 @@ never a reduced model.
   wider task column; otherwise it follows the workflow.
 - Save and Publish stay together; the existing page navigation remains the one
   way to leave the editor.
-- Details lead the desktop rail; lifecycle metadata and the self-labeling Save
-  and Publish controls sit immediately before Publish check without an `Actions`
-  heading.
+- Current version and publication status lead the desktop rail before Details;
+  the self-labeling Save and Publish controls still sit immediately before
+  Publish check without an `Actions` heading.
 - A run-time input pairs ID with description; then type, required, and sensitive;
   then enum values when applicable; otherwise its default and applicable lower
   and upper bounds share one row.
@@ -199,6 +203,9 @@ never a reduced model.
 - Selected-target cards stacked over an add-target dropdown, raw tagged refs in
   the closed trigger, or a stale target that becomes impossible to remove when
   the live catalog is empty.
+- An event-backed target picker inside a whole-form `phx-change` flow with no
+  hidden selected values, so changing Action or any ordinary input clears the
+  target selection.
 - An unresolved target that also turns Action rose, prefixes it with
   `Unavailable`, or claims runner compatibility failed when compatibility could
   not be evaluated.
@@ -236,7 +243,8 @@ never a reduced model.
 
 ## Enforced
 
-Rendered LiveView tests pin the section and field order and assert that
+Rendered LiveView tests pin the section and field order, serialize complete
+forms after event-backed selections, and assert that
 runtime-relevant controls remain present only in applicable modes and redundant
 Cancel editing navigation is absent. Catalog tests assert that target selection
 narrows compatible actions. Screenshot review covers the desktop split and the

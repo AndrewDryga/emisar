@@ -96,6 +96,15 @@ defmodule EmisarWeb.RunbooksLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
     assert has_element?(lv, "#runbooks-docs-rail a[href='/docs/runbooks']")
+    assert has_element?(lv, "#runbooks-reading-rail:not([class*='border-l'])")
+
+    assert has_element?(
+             lv,
+             "#runbooks-docs-rail",
+             "Every action in a stage must succeed before the next stage starts"
+           )
+
+    refute html =~ "Runbooks turn an ordered procedure"
     refute has_element?(lv, "#runbooks-primary a[href='/docs/runbooks']")
     assert has_element?(lv, "#recent-runbook-runs a[href$='/runs/#{execution.id}']")
     assert html =~ "Deploy during change window"

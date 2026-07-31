@@ -787,7 +787,7 @@ defmodule EmisarWeb.RunbookRunLive do
         </section>
       </main>
 
-      <aside class="min-w-0 space-y-9 xl:border-l xl:border-zinc-800/70 xl:pl-8">
+      <aside id="runbook-start-rail" class="min-w-0 space-y-9">
         <.current_plan preflight={@preflight} expanded_stages={@expanded_stages} />
 
         <section>

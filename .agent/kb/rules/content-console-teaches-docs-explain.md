@@ -4,12 +4,20 @@
 
 **And it speaks to the operator, not about our design.** Console help says what to pick, type, or expect. It does not define the term in the label, justify why the options are limited, narrate what emisar does internally, or name the attack a restriction prevents. That reasoning is real and belongs in the docs page that owns it — a field hint is not where we defend a decision. The tell: a hint an engineer would write in a design review, reaching the operator unedited.
 
+A reading rail teaches the one behavior that changes the operator's next
+decision. Prefer a concrete execution rule or next step over a generic product
+summary, lifecycle slogan, or statement that a draft is private. The page title
+already names the product area; rail copy earns its space by preventing a
+mistake or clarifying what happens next.
+
 **Why.** Two surfaces explaining the same mechanism drift apart and double the maintenance. Mid-task the console's job is orientation, not education — the shortest true sentence plus the right link beats an inline manual. Single-sourcing the one-liners in glossary modules consumed by both the console and the docs tables keeps the two surfaces honest, and the tooltip physically enforces "most important information only."
 
 ✅ Good
 
 - Run detail wraps the status badge in `<.tooltip text={EmisarWeb.RunStatuses.meaning(@run.status)}>` — one sentence, the same string the `/docs/runs` status table renders.
 - A page intro ends with its own page's doc: the Runs page links `/docs/runs`, Billing links `/docs/billing` (alongside the `/pricing` compare link, which does a different job).
+- A Runbooks rail says that stages run in order and a stage must succeed before
+  the next starts, then links the runbook docs.
 - The install wizard's Resources rail links each install shape's own docs page (host install, containers, Kubernetes, Nomad, autoscaling) instead of one generic guide.
 - A callout that teaches a state's consequence ends with the doc link that owns the mechanism (the signed-only callouts link `/docs/signed-dispatch`).
 - `Identifier claim` reads "How emisar recognises a returning member. Never their email — people change those." — what it does plus the one consequence, no threat model.
@@ -18,6 +26,8 @@
 ❌ Bad
 
 - A console rail that walks through configuration steps the docs page already owns.
+- A Runbooks rail that says runbooks turn procedures into executions and drafts
+  remain private; neither statement helps the operator build or run one.
 - A page intro linking a generically-related page (Runs → quickstart) instead of the page's own doc.
 - A status meaning typed inline in a LiveView, drifting from the docs table's wording.
 - A "learn more" that opens an in-app manual, modal tour, or second help center instead of the public docs page.

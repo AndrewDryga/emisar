@@ -558,6 +558,13 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-targets"}>
       <.label variant={:eyebrow}>Targets</.label>
 
+      <input
+        :for={ref <- @refs}
+        type="hidden"
+        name={"draft[stages][#{@stage_index}][steps][#{@step_index}][target_refs][]"}
+        value={ref}
+      />
+
       <div
         :if={@disabled?}
         id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-trigger"}

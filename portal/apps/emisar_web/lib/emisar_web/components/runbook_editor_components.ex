@@ -184,15 +184,21 @@ defmodule EmisarWeb.RunbookEditorComponents do
           </:body>
         </.event_block>
 
+        <.lifecycle_facts
+          :if={@runbook}
+          id="runbook-lifecycle-mobile"
+          class="xl:hidden"
+          runbook={@runbook}
+          dirty?={@dirty?}
+          read_only?={@read_only?}
+        />
+
         <.editor_actions
           :if={not @read_only?}
           id="runbook-actions-mobile"
           class="xl:hidden"
-          runbook={@runbook}
-          dirty?={@dirty?}
           publish_blocker={publish_blocker(assigns)}
           save_blocker={draft_save_blocker(assigns)}
-          read_only?={@read_only?}
         />
 
         <form
@@ -237,16 +243,21 @@ defmodule EmisarWeb.RunbookEditorComponents do
           </main>
 
           <aside class="space-y-8 xl:sticky xl:top-6 xl:col-start-2 xl:row-start-1 xl:self-start">
+            <.lifecycle_facts
+              :if={@runbook}
+              id="runbook-lifecycle-desktop"
+              class="hidden xl:block"
+              runbook={@runbook}
+              dirty?={@dirty?}
+              read_only?={@read_only?}
+            />
             <.details_panel draft={@draft} form={@form} read_only?={@read_only?} />
             <.editor_actions
               :if={not @read_only?}
               id="runbook-actions-desktop"
               class="hidden xl:block"
-              runbook={@runbook}
-              dirty?={@dirty?}
               publish_blocker={publish_blocker(assigns)}
               save_blocker={draft_save_blocker(assigns)}
-              read_only?={@read_only?}
             />
             <.publish_panel
               preview={@preview}
@@ -279,20 +290,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
   attr :id, :string, required: true
   attr :class, :string, default: nil
-  attr :runbook, :any, default: nil
-  attr :dirty?, :boolean, required: true
   attr :publish_blocker, :string, default: nil
   attr :save_blocker, :string, default: nil
-  attr :read_only?, :boolean, required: true
 
   defp editor_actions(assigns) do
     ~H"""
     <div id={@id} class={@class}>
-      <dl :if={@runbook} class="mb-4 space-y-2 text-xs text-zinc-400">
-        <.kv label="Current">v{@runbook.version}</.kv>
-        <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
-        <.kv :if={@dirty? and not @read_only?} label="Next">v{@runbook.version + 1}</.kv>
-      </dl>
       <div class="grid grid-cols-2 gap-3">
         <.editor_action_button
           id={"#{@id}-publish"}
@@ -314,6 +317,22 @@ defmodule EmisarWeb.RunbookEditorComponents do
         />
       </div>
     </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :class, :string, default: nil
+  attr :runbook, :any, required: true
+  attr :dirty?, :boolean, required: true
+  attr :read_only?, :boolean, required: true
+
+  defp lifecycle_facts(assigns) do
+    ~H"""
+    <dl id={@id} class={["space-y-2 text-xs text-zinc-400", @class]}>
+      <.kv label="Current">v{@runbook.version}</.kv>
+      <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
+      <.kv :if={@dirty? and not @read_only?} label="Next">v{@runbook.version + 1}</.kv>
+    </dl>
     """
   end
 
@@ -797,7 +816,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           <.kv label="Run approval">
             {if @preview.plan["approval_required"], do: "Required", else: "Not required"}
           </.kv>
-          <.kv label="Checked">
+          <.kv label="Resolved">
             <.local_time value={@preview.checked_at} mode={:relative} />
           </.kv>
         </dl>

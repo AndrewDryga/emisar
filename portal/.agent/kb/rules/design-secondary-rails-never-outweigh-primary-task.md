@@ -9,6 +9,11 @@ Move every rail-dependent behavior at the same breakpoint: grid tracks, sticky
 positioning, ordering, top margins, and visibility. A rail that becomes sticky or visible
 before its grid splits recreates the same imbalance in a different form.
 
+Use the grid gap and content alignment to separate a reading rail from the
+primary task. Do not draw a full-height vertical divider between them; it turns
+help and recent activity into a boxed column and adds a hard edge that carries
+no state or grouping meaning.
+
 ## Why
 
 Console pages already lose viewport width to navigation. Splitting a `22rem` or `340px`
@@ -21,7 +26,7 @@ cramped at ordinary laptop widths.
 ```heex
 <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_22rem]">
   <main>...</main>
-  <aside class="mt-10 xl:mt-0 xl:sticky xl:top-6">...</aside>
+  <aside class="mt-10 space-y-8 xl:mt-0 xl:sticky xl:top-6">...</aside>
 </div>
 ```
 
@@ -34,7 +39,7 @@ overflow or an ordering jump.
 ```heex
 <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem]">
   <main>...</main>
-  <aside class="lg:sticky lg:top-6">...</aside>
+  <aside class="border-l pl-8 lg:sticky lg:top-6">...</aside>
 </div>
 ```
 

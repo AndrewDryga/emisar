@@ -754,6 +754,41 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
     end
 
+    test "choosing an action preserves targets selected through the target picker", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      add_target =
+        ~s(#runbook-stage-0-step-0-target-options button[phx-click="add_target"][phx-value-target="group:default"])
+
+      lv |> element(add_target) |> render_click()
+      assert has_element?(lv, "#runbook-stage-0-step-0-target-trigger", "default group")
+
+      lv
+      |> form("#runbook-editor-form")
+      |> render_change(%{
+        "_target" => ["draft", "stages", "0", "steps", "0", "action_choice"],
+        "draft" => %{
+          "stages" => %{
+            "0" => %{
+              "steps" => %{"0" => %{"action_choice" => "linux-core|linux.uptime"}}
+            }
+          }
+        }
+      })
+
+      assert has_element?(lv, "#runbook-stage-0-step-0-target-trigger", "default group")
+
+      assert has_element?(
+               lv,
+               ~s(input[type="hidden"][name="draft[stages][0][steps][0][action_choice]"][value="linux-core|linux.uptime"])
+             )
+    end
+
     test "a resolved target keeps a genuinely unavailable action actionable", %{
       conn: conn,
       user: user,
@@ -897,6 +932,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       html = render(lv)
 
       assert html =~ "Ready to publish", html |> LazyHTML.from_fragment() |> LazyHTML.text()
+      assert html =~ "Resolved"
+      refute html =~ "Checked"
       assert html =~ "1"
 
       assert has_element?(
@@ -1029,6 +1066,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Read-only runbook"
       assert html =~ "Inspect"
       assert html =~ "linux.uptime"
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "Current")
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "v1")
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "draft")
+
+      assert :binary.match(html, ~s(id="runbook-lifecycle-desktop")) <
+               :binary.match(html, ~s(name="draft[title]"))
+
       assert has_element?(lv, "#runbook-editor-form input[disabled]")
       refute has_element?(lv, "button", "Save draft")
       refute has_element?(lv, "#delete-runbook")

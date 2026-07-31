@@ -223,12 +223,12 @@ defmodule EmisarWeb.RunbooksLive do
           <% end %>
         </main>
 
-        <aside class="min-w-0 space-y-9 xl:border-l xl:border-zinc-800/70 xl:pl-8">
+        <aside id="runbooks-reading-rail" class="min-w-0 space-y-9">
           <section id="runbooks-docs-rail">
             <.section_header title="How runbooks work" />
             <p class="text-sm leading-6 text-zinc-400">
-              Runbooks turn an ordered procedure into one frozen, policy-checked execution.
-              Drafts stay private until they are published.
+              Build stages in execution order. Every action in a stage must succeed before the
+              next stage starts; a denial, timeout, cancellation, or failure stops the run.
             </p>
             <div class="mt-3">
               <.doc_link href="/docs/runbooks">Read the runbook docs</.doc_link>

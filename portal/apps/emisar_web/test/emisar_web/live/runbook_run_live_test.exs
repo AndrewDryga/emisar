@@ -236,6 +236,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ ~s(type="password")
       assert has_element?(lv, "#runbook-operator-context article")
       assert has_element?(lv, "#current-runbook-plan")
+      assert has_element?(lv, "#runbook-start-rail:not([class*='border-l'])")
       assert has_element?(lv, "#runbook-execution-history")
 
       render_change(lv, "run_form_changed", %{
