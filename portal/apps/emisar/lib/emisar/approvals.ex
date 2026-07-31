@@ -24,7 +24,7 @@ defmodule Emisar.Approvals do
   alias Emisar.Accounts
   alias Emisar.ApiKeys
   alias Emisar.Approvals.{Authorizer, Decision, Grant, Request}
-  alias Emisar.{Audit, Auth, Repo, Runbooks, Runners, Runs}
+  alias Emisar.{Audit, Auth, Repo, Runbooks, Runners, Runs, Users}
   alias Emisar.Auth.Subject
   require Logger
 
@@ -1201,6 +1201,7 @@ defmodule Emisar.Approvals do
   defp after_decision(%{outcome: %{action: :dispatch, run: run, request: request}}) do
     broadcast_approval(request)
     count_approval_decision(request)
+    notify_requester_of_decision(request)
     Runs.dispatch_to_runner(run)
   end
 
@@ -1210,19 +1211,62 @@ defmodule Emisar.Approvals do
        when action in [:advance_runbook_execution, :halt_runbook_execution] do
     broadcast_approval(request)
     count_approval_decision(request)
+    notify_requester_of_decision(request)
     Emisar.Runbooks.approval_settled(request.runbook_execution_id)
   end
 
   defp after_decision(%{outcome: %{action: :cancelled, request: request}, run_cancel: run_cancel}) do
     broadcast_approval(request)
     count_approval_decision(request)
+    notify_requester_of_decision(request)
     Runs.broadcast_cancelled_run(run_cancel)
   end
 
   defp after_decision(%{outcome: %{request: request}}) do
     broadcast_approval(request)
     count_approval_decision(request)
+    notify_requester_of_decision(request)
     :ok
+  end
+
+  # The operator who asked hears the outcome once it's terminal — a vote that
+  # leaves the request :pending below the threshold is not news yet. Same
+  # detached-task seam as the created-email so a slow SMTP call never sits in
+  # front of dispatch. `requested_by_id` is already the accountable human
+  # (`effective_requester/2` resolves an API-key run to the key's owner at
+  # creation), so a request with no resolvable person simply gets no email.
+  defp notify_requester_of_decision(%Request{status: status} = request)
+       when status in [:approved, :denied, :expired] do
+    run_notify(fn -> deliver_decision_email(request) end)
+    :ok
+  end
+
+  defp notify_requester_of_decision(%Request{}), do: :ok
+
+  defp deliver_decision_email(%Request{} = request) do
+    with {:ok, requester} <- Users.fetch_user_by_id(request.requested_by_id) do
+      # Preloaded here rather than at the call site: the email builds the
+      # canonical slugged approval link, and a slug-less URL 404s.
+      request = Repo.preload(request, :account)
+
+      case Emisar.Mailers.UserNotifier.deliver_approval_decision(requester, request) do
+        {:ok, _sent} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("approval_decision_email_failed",
+            user_id: requester.id,
+            req_id: request.id,
+            error: inspect(reason)
+          )
+      end
+    end
+  rescue
+    err ->
+      Logger.warning("approval_decision_email_crashed",
+        req_id: request.id,
+        error: inspect(err)
+      )
   end
 
   # Telemetry: count a request only when it reaches a TERMINAL decision. A
@@ -1751,6 +1795,7 @@ defmodule Emisar.Approvals do
       after_commit: fn changes ->
         broadcast_approval(changes.reloaded)
         count_approval_decision(changes.reloaded)
+        notify_requester_of_decision(changes.reloaded)
         Runs.broadcast_cancelled_run(Map.get(changes, :run_cancel))
         maybe_advance_expired_execution(changes.reloaded)
       end

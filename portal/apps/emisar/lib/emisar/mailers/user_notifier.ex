@@ -262,6 +262,56 @@ defmodule Emisar.Mailers.UserNotifier do
     deliver(approver.email, "Approval needed: #{title}", body)
   end
 
+  @doc """
+  Tells the operator who asked for a gated run how it was decided — approved,
+  denied, or expired with nobody deciding.
+
+  Deliberately carries no argument values. The approval page behind the link is
+  the one surface that shows them, redacted and behind a sign-in; an email is
+  forwarded, archived, and indexed, so a copy of the arguments here would put
+  them somewhere the redaction rules can never reach.
+  """
+  def deliver_approval_decision(%Users.User{} = requester, %{} = request) do
+    url = PublicUrl.url("/app/#{request.account.slug}/approvals/#{request.id}")
+    label = approval_decision_label(request)
+    outcome = approval_decision_outcome(request.status)
+
+    body = """
+    Hi #{requester.full_name || requester.email},
+
+    Your approval request for #{label} #{approval_decision_lead(request.status)}.
+
+      Reason you gave: #{request.reason || "(none)"}
+      Decision note:   #{request.decision_reason || "(none)"}
+
+    See who decided and what happened next:
+
+      #{url}
+
+    — emisar
+    """
+
+    deliver(requester.email, "#{outcome}: #{label}", body)
+  end
+
+  defp approval_decision_lead(:approved), do: "was approved"
+  defp approval_decision_lead(:denied), do: "was denied"
+  defp approval_decision_lead(:expired), do: "expired before anyone decided"
+
+  defp approval_decision_outcome(:approved), do: "Approved"
+  defp approval_decision_outcome(:denied), do: "Denied"
+  defp approval_decision_outcome(:expired), do: "Expired"
+
+  defp approval_decision_label(%{context: %{"runbook" => %{"title" => title}}})
+       when is_binary(title),
+       do: title
+
+  defp approval_decision_label(%{context: %{"action_id" => action_id}})
+       when is_binary(action_id),
+       do: action_id
+
+  defp approval_decision_label(_request), do: "a gated run"
+
   defp runner_email_label(%{runner: %{name: name}}) when is_binary(name) and name != "",
     do: name
 

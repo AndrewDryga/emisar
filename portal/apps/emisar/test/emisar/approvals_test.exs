@@ -1175,6 +1175,42 @@ defmodule Emisar.ApprovalsTest do
              )
     end
 
+    test "emails the requester the outcome, without argument values", %{
+      run: run,
+      subject: subject
+    } do
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      # Drop the approval-needed blast so only the decision email is left.
+      _created = notified_emails()
+
+      assert {:ok, {%Request{status: :approved}, _run}} =
+               Approvals.approve_request(request, subject, "lgtm")
+
+      assert [email] = notified_emails()
+      assert Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
+      assert email.subject == "Approved: linux.uptime"
+      assert email.text_body =~ "was approved"
+      assert email.text_body =~ "lgtm"
+      refute email.text_body =~ "Arguments"
+    end
+
+    test "a sub-threshold vote is not an outcome, so the requester hears nothing", %{
+      account: account,
+      run: run,
+      subject: subject
+    } do
+      {:ok, request} =
+        Approvals.create_request(run, subject.actor.id, "needs approve", min_approvals: 2)
+
+      _created = notified_emails()
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, subject, "one of two")
+
+      assert notified_emails() == []
+      assert account.id == request.account_id
+    end
+
     test "a decision emits [:emisar, :approval, :decided] tagged by the decision", %{
       run: run,
       subject: subject
@@ -2142,6 +2178,20 @@ defmodule Emisar.ApprovalsTest do
                |> elem(1),
                &(&1.event_type == "approval.denied")
              )
+    end
+
+    test "emails the requester that it was denied", %{run: run, subject: subject} do
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      _created = notified_emails()
+
+      assert {:ok, {%Request{status: :denied}, _run}} =
+               Approvals.deny_request(request, subject, "not now")
+
+      assert [email] = notified_emails()
+      assert Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
+      assert email.subject == "Denied: linux.uptime"
+      assert email.text_body =~ "was denied"
+      assert email.text_body =~ "not now"
     end
 
     test "cancels the run with the built-in 'approval denied' message when no reason is given", %{

@@ -373,4 +373,94 @@ defmodule Emisar.MailTest do
                UserNotifier.deliver_approval_request(approver, request, run)
     end
   end
+
+  describe "approval-decided email content" do
+    setup do
+      %{requester: Fixtures.Users.create_user()}
+    end
+
+    test "tells the requester an approve landed, with no argument values", %{
+      requester: requester
+    } do
+      request = %{
+        id: "req-decided-1",
+        status: :approved,
+        reason: "rotate the cert",
+        decision_reason: "confirmed with the on-call",
+        account: %{slug: "globex"},
+        context: %{"action_id" => "caddy.reload_config", "args_sha256" => "abc"}
+      }
+
+      UserNotifier.deliver_approval_decision(requester, request)
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Approved: caddy.reload_config"
+        assert email.text_body =~ "was approved"
+        assert email.text_body =~ "rotate the cert"
+        assert email.text_body =~ "confirmed with the on-call"
+        assert email.text_body =~ "/app/globex/approvals/req-decided-1"
+        # The approval page is the only place arguments are shown.
+        refute email.text_body =~ "Arguments"
+        refute email.text_body =~ "abc"
+        true
+      end)
+    end
+
+    test "names the runbook and the denial when a whole execution is refused", %{
+      requester: requester
+    } do
+      request = %{
+        id: "req-decided-2",
+        status: :denied,
+        reason: "apply the reviewed settings",
+        decision_reason: nil,
+        account: %{slug: "acme"},
+        context: %{"runbook" => %{"title" => "Database maintenance"}}
+      }
+
+      UserNotifier.deliver_approval_decision(requester, request)
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Denied: Database maintenance"
+        assert email.text_body =~ "was denied"
+        assert email.text_body =~ "Decision note:   (none)"
+        true
+      end)
+    end
+
+    test "says nobody decided when the request timed out", %{requester: requester} do
+      request = %{
+        id: "req-decided-3",
+        status: :expired,
+        reason: "restart the checkout tier",
+        decision_reason: nil,
+        account: %{slug: "acme"},
+        context: %{"action_id" => "linux.systemctl_restart"}
+      }
+
+      UserNotifier.deliver_approval_decision(requester, request)
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Expired: linux.systemctl_restart"
+        assert email.text_body =~ "expired before anyone decided"
+        true
+      end)
+    end
+
+    test "skips a suppressed requester", %{requester: requester} do
+      {:ok, _} = Mail.suppress(requester.email, :hard_bounce, "bounce")
+
+      request = %{
+        id: "r",
+        status: :approved,
+        reason: "x",
+        decision_reason: nil,
+        account: %{slug: "acme"},
+        context: %{"action_id" => "a"}
+      }
+
+      assert {:ok, %{suppressed: true}} =
+               UserNotifier.deliver_approval_decision(requester, request)
+    end
+  end
 end
