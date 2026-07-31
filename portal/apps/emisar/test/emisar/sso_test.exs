@@ -1807,6 +1807,41 @@ defmodule Emisar.SSOTest do
       refute deactivated.scim_active
     end
 
+    test "adoption is one-way, so a later externalId cannot re-stamp it", %{
+      provider: provider,
+      account: account
+    } do
+      # What keeps an OIDC-first identity from oscillating between identifiers.
+      # Adoption fires only while scim_external_id is null and nothing ever returns
+      # it to null, so the first externalId to claim the identity keeps it; a
+      # different one later is a different resource, not a re-stamp of this one.
+      user = Fixtures.Users.create_user()
+
+      {:ok, oidc_identity} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
+          provider_identifier: "sub-and-external-agree",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+        |> Repo.insert()
+
+      %{identity: adopted} = provision(provider, "sub-and-external-agree")
+      assert adopted.id == oidc_identity.id
+      assert adopted.scim_external_id == "sub-and-external-agree"
+
+      # A push under a different externalId must not move the stamp. The person
+      # already holds this connection's one identity, so it cannot quietly become a
+      # second — the directory is told, rather than the two values alternating.
+      assert {:error, _reason} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "a-different-external-id",
+                 email: user.email
+               })
+
+      assert Repo.reload!(adopted).scim_external_id == "sub-and-external-agree"
+    end
+
     test "creates a user_identity + directory-owned membership at the provider defaults" do
       %{provider: provider, account: account, subject: subject} =
         scim_provider(%{
@@ -3808,6 +3843,59 @@ defmodule Emisar.SSOTest do
                  %RunnerAccess{mode: :none, groups: [], runner_ids: []},
                  admin
                )
+    end
+
+    test "a target promoted between capture and approval is refused", %{
+      account: account,
+      provider: provider
+    } do
+      # The match is recorded at capture; authority is judged at approval. A
+      # promotion in between must therefore be caught by the approval, not by
+      # whatever was true when the request was captured.
+      #
+      # This drives the approval's own re-judgement. It does NOT cover the
+      # transaction-time repeat of that check, which exists for a promotion landing
+      # in the far narrower window between the pre-check and the commit — that needs
+      # two connections racing, and what makes it safe is the row lock on the read
+      # (pinned in accounts_test.exs), not logic this test can reach.
+      target_user = Fixtures.Users.create_user()
+
+      target_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: target_user.id,
+          role: "operator"
+        )
+
+      admin_user = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin_user.id,
+          role: "admin"
+        )
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|late-promotion",
+          "email" => target_user.email,
+          "email_verified" => true
+        })
+
+      Fixtures.Memberships.force_role(target_membership, "owner")
+
+      assert {:error, :link_target_outranks_approver} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 admin
+               )
+
+      # Nothing was bound.
+      refute Repo.one(SSO.UserIdentity)
     end
 
     test "refuses to link someone who also belongs to another workspace", %{

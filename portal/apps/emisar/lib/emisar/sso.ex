@@ -2684,7 +2684,7 @@ defmodule Emisar.SSO do
     with :ok <- ensure_can_configure_sso(subject),
          {:ok, request} <- fetch_link_request(id, subject),
          {:ok, provider} <- fetch_provider_for_request(request, subject),
-         :ok <- ensure_link_target_within_authority(request, provider, subject),
+         :ok <- ensure_link_target_within_authority(request, provider, subject, Repo),
          :ok <- ensure_approval_runner_access_allowed(request, access, subject) do
       multi = approve_link_request_multi(provider, request, access, subject)
 
@@ -2719,17 +2719,24 @@ defmodule Emisar.SSO do
   defp ensure_link_target_within_authority(
          %LinkRequest{matched_user_id: nil},
          _provider,
-         _subject
+         _subject,
+         _repo
        ),
        do: :ok
 
   defp ensure_link_target_within_authority(
          %LinkRequest{} = request,
          %IdentityProvider{} = provider,
-         %Subject{} = subject
+         %Subject{} = subject,
+         repo
        ) do
-    with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id) do
-      memberships = Accounts.list_active_memberships_for_user(user)
+    with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
+         # LOCKED, because this decision has to still be true when the binding
+         # commits. Re-reading inside the transaction was not enough on its own:
+         # nothing stopped a concurrent promotion to owner, or a membership granted
+         # in another account, from committing in the gap — leaving the approver's
+         # IdP credential bound to someone they have no authority over.
+         {:ok, memberships} <- Accounts.fetch_and_lock_active_memberships_for_user(user, repo) do
       {here, elsewhere} = Enum.split_with(memberships, &(&1.account_id == provider.account_id))
 
       cond do
@@ -2829,8 +2836,8 @@ defmodule Emisar.SSO do
        ) do
     Multi.new()
     |> put_provider_lock(provider)
-    |> Multi.run(:user, fn _repo, _changes ->
-      fetch_matched_member(provider, request, subject)
+    |> Multi.run(:user, fn repo, _changes ->
+      fetch_matched_member(provider, request, subject, repo)
     end)
     |> Multi.run(:identity, fn _repo, %{user: user} ->
       link_identity(provider, user, request)
@@ -2855,11 +2862,12 @@ defmodule Emisar.SSO do
   defp fetch_matched_member(
          %IdentityProvider{} = provider,
          %LinkRequest{} = request,
-         %Subject{} = subject
+         %Subject{} = subject,
+         repo
        ) do
     with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
          %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id),
-         :ok <- ensure_link_target_within_authority(request, provider, subject) do
+         :ok <- ensure_link_target_within_authority(request, provider, subject, repo) do
       {:ok, user}
     else
       {:error, reason} when is_atom(reason) -> {:error, reason}

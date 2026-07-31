@@ -1245,6 +1245,43 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "fetch_and_lock_active_memberships_for_user/2" do
+    test "returns the same rows as the unlocked read" do
+      user = Fixtures.Users.create_user()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+
+      assert {:ok, memberships} = Accounts.fetch_and_lock_active_memberships_for_user(user, Repo)
+
+      assert Enum.map(memberships, & &1.account_id) |> Enum.sort() ==
+               Enum.sort([account_a.id, account_b.id])
+    end
+
+    test "takes a row lock, which is the whole reason it exists" do
+      # The SSO link approval decides whether an approver outranks the person they
+      # are binding a credential to. An unlocked read makes that decision on rows a
+      # concurrent promotion can change before the binding commits — so the lock is
+      # the behaviour, and it is asserted where a race cannot be staged reliably.
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      {sql, _params} =
+        Ecto.Adapters.SQL.to_sql(
+          :all,
+          Repo,
+          Membership.Query.not_deleted()
+          |> Membership.Query.by_user_id(user.id)
+          |> Membership.Query.not_disabled()
+          |> Membership.Query.lock_for_update()
+        )
+
+      assert sql =~ "FOR NO KEY UPDATE"
+    end
+  end
+
   describe "provision_sso_membership/5" do
     test "creates a membership at the given role for a JIT-provisioned user" do
       account = Fixtures.Accounts.create_account()

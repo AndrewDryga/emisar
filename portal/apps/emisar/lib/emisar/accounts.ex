@@ -714,6 +714,25 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — the same rows as `list_active_memberships_for_user/1`, locked, for a
+  caller whose decision depends on them still being true at COMMIT. Takes the
+  transaction's repo so it joins the open transaction. No `%Subject{}`: the caller
+  has already authorized, and the lock is the point.
+
+  An authority check that reads these rows outside its transaction is only as good
+  as the gap: a role raised in that window commits anyway.
+  """
+  def fetch_and_lock_active_memberships_for_user(%Users.User{id: user_id}, repo) do
+    queryable =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_user_id(user_id)
+      |> Membership.Query.not_disabled()
+      |> Membership.Query.lock_for_update()
+
+    {:ok, repo.all(queryable)}
+  end
+
+  @doc """
   Internal — SSO: create a membership for a JIT-provisioned user at the
   provider's `default_role`. No `%Subject{}` — the caller is the pre-auth SSO
   callback, scoped to the provider's account; composed into the SSO JIT
