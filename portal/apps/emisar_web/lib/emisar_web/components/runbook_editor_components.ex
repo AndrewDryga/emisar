@@ -184,16 +184,16 @@ defmodule EmisarWeb.RunbookEditorComponents do
           </:body>
         </.event_block>
 
-        <div :if={not @read_only?} class="xl:hidden">
-          <.editor_actions
-            id="runbook-actions-mobile"
-            runbook={@runbook}
-            dirty?={@dirty?}
-            publish_blocker={publish_blocker(assigns)}
-            save_blocker={draft_save_blocker(assigns)}
-            read_only?={@read_only?}
-          />
-        </div>
+        <.editor_actions
+          :if={not @read_only?}
+          id="runbook-actions-mobile"
+          class="xl:hidden"
+          runbook={@runbook}
+          dirty?={@dirty?}
+          publish_blocker={publish_blocker(assigns)}
+          save_blocker={draft_save_blocker(assigns)}
+          read_only?={@read_only?}
+        />
 
         <form
           id="runbook-editor-form"
@@ -237,17 +237,17 @@ defmodule EmisarWeb.RunbookEditorComponents do
           </main>
 
           <aside class="space-y-8 xl:sticky xl:top-6 xl:col-start-2 xl:row-start-1 xl:self-start">
-            <div :if={not @read_only?} class="hidden xl:block">
-              <.editor_actions
-                id="runbook-actions-desktop"
-                runbook={@runbook}
-                dirty?={@dirty?}
-                publish_blocker={publish_blocker(assigns)}
-                save_blocker={draft_save_blocker(assigns)}
-                read_only?={@read_only?}
-              />
-            </div>
             <.details_panel draft={@draft} form={@form} read_only?={@read_only?} />
+            <.editor_actions
+              :if={not @read_only?}
+              id="runbook-actions-desktop"
+              class="hidden xl:block"
+              runbook={@runbook}
+              dirty?={@dirty?}
+              publish_blocker={publish_blocker(assigns)}
+              save_blocker={draft_save_blocker(assigns)}
+              read_only?={@read_only?}
+            />
             <.publish_panel
               preview={@preview}
               definition_issues={@definition_issues}
@@ -278,6 +278,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
   end
 
   attr :id, :string, required: true
+  attr :class, :string, default: nil
   attr :runbook, :any, default: nil
   attr :dirty?, :boolean, required: true
   attr :publish_blocker, :string, default: nil
@@ -286,8 +287,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
   defp editor_actions(assigns) do
     ~H"""
-    <section>
-      <.section_header title="Actions" />
+    <div id={@id} class={@class}>
+      <dl :if={@runbook} class="mb-4 space-y-2 text-xs text-zinc-400">
+        <.kv label="Current">v{@runbook.version}</.kv>
+        <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
+        <.kv :if={@dirty? and not @read_only?} label="Next">v{@runbook.version + 1}</.kv>
+      </dl>
       <div class="grid grid-cols-2 gap-3">
         <.editor_action_button
           id={"#{@id}-publish"}
@@ -308,12 +313,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           align={:right}
         />
       </div>
-      <dl :if={@runbook} class="mt-4 space-y-2 text-xs text-zinc-400">
-        <.kv label="Current">v{@runbook.version}</.kv>
-        <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
-        <.kv :if={@dirty? and not @read_only?} label="Next">v{@runbook.version + 1}</.kv>
-      </dl>
-    </section>
+    </div>
     """
   end
 

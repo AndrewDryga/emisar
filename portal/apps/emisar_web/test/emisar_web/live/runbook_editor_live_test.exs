@@ -206,6 +206,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute has_element?(lv, "button", "Stage identifier")
       refute html =~ "Caps fan-out within this stage."
       assert has_element?(lv, "section", "Details")
+      refute has_element?(lv, "#runbook-actions-desktop h2", "Actions")
+      refute has_element?(lv, "#runbook-actions-mobile h2", "Actions")
+      assert has_element?(lv, "#runbook-actions-desktop + section", "Publish check")
 
       assert :binary.match(html, ~s(name="draft[stages][0][id]")) <
                :binary.match(html, ~s(name="draft[stages][0][title]"))

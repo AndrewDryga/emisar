@@ -73,8 +73,11 @@ execution, keep it visible beside the choice it qualifies and explain the
 interaction. On narrow screens, lifecycle actions may lead, but the primary
 editing workflow renders before details, validation, canonical output, or other
 secondary rails. Keep lifecycle rails limited to state transitions such as Save
-and Publish. Do not add a Cancel or Back action there when it only duplicates
-the page header or application navigation.
+and Publish. Self-labeling lifecycle controls need no generic `Actions` heading.
+On a desktop rail, put editable details first, then lifecycle metadata and
+controls immediately before the validation panel they govern. Do not add a
+Cancel or Back action there when it only duplicates the page header or
+application navigation.
 
 ## Why
 
@@ -105,6 +108,9 @@ never a reduced model.
   wider task column; otherwise it follows the workflow.
 - Save and Publish stay together; the existing page navigation remains the one
   way to leave the editor.
+- Details lead the desktop rail; lifecycle metadata and the self-labeling Save
+  and Publish controls sit immediately before Publish check without an `Actions`
+  heading.
 - A run-time input pairs ID with description; then type, required, and sensitive;
   then enum values when applicable; otherwise its default and applicable lower
   and upper bounds share one row.
@@ -140,6 +146,8 @@ never a reduced model.
 - Review and canonical JSON before the editable workflow on a phone.
 - Showing a concurrency value in sequential mode where it does nothing.
 - A Cancel editing link in the lifecycle rail that only navigates back.
+- A generic `Actions` heading above self-labeling Save and Publish controls, or
+  unrelated panels separating those controls from their publish check.
 - Removing advanced fields to make the editor look simpler.
 - Stretching an ID, type, Yes/No selector, and visibility selector into four
   equally weighted boxes merely because the card has room.
@@ -174,9 +182,11 @@ their spacing remains part of the collection contract.
 Sweep complex editors for ID/version fields detached from the workflow overview,
 behavior choices that are not derived from earlier scope choices, controls shown
 in modes where they have no effect, conditional fields whose presence changes the
-width of fields before their trigger, lifecycle rails that duplicate existing exit
-navigation, breakpoint ordering that puts a secondary rail before the primary task, and
-unbounded collections or uniform grids that make short finite choices as
+width of fields before their trigger, lifecycle rails that duplicate existing
+exit navigation, generic headings above self-labeling controls, controls
+separated from the validation panel they govern, breakpoint ordering that puts
+a secondary rail before the primary task, and unbounded collections or uniform
+grids that make short finite choices as
 visually heavy as primary identity or purpose fields, mismatched group edges,
 unequal peer toggles, generic default controls that ignore the selected type,
 enum defaults authored outside the allowed-value rows, typography that changes
