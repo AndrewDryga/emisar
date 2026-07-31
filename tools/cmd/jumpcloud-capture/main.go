@@ -246,7 +246,10 @@ func run(env map[string]string, outDir string, headless, listApps, cleanupApps b
 	defer cancelAllocator()
 	ctx, cancel := chromedp.NewContext(allocator)
 	defer cancel()
-	ctx, cancelTimeout := context.WithTimeout(ctx, 4*time.Minute)
+	// The whole run: sign in, create the app, activate SSO, configure provisioning,
+	// then WAIT for JumpCloud to report provisioning active. Four minutes covered
+	// the flow before that last wait existed, and then expired inside it.
+	ctx, cancelTimeout := context.WithTimeout(ctx, 12*time.Minute)
 	defer cancelTimeout()
 
 	if err := chromedp.Run(ctx,
@@ -1059,8 +1062,12 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 		{"Base URL", base},
 		{"Token Key", env["EMISAR_SCIM_TOKEN"]},
 		// Their docs are explicit that this address must NOT already exist in the
-		// target app, or activation fails.
-		{"Test User Email", "jumpcloud-probe@northstar.example"},
+		// target app, or activation fails — and JumpCloud only deletes the probe
+		// user when the check passes, so a run that stops midway strands it and
+		// every later run is refused. A fresh address per run makes this
+		// repeatable; the docs shot shows a plain one because the host is
+		// de-identified afterwards anyway.
+		{"Test User Email", probeAddress()},
 	}
 	for _, f := range fields {
 		if err := focusField(ctx, f[0]); err != nil {
@@ -1074,28 +1081,35 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 		return err
 	}
-	// TEST FIRST, rewrite the host after. The comment here used to claim the
-	// connection was "really tested against" these values while the rewrite ran
-	// BEFORE the test — so JumpCloud tested https://emisar.dev, the real product
-	// host, with a development token, and got a 401. The screenshot then showed a
-	// value nothing had exercised.
+	// Configure, TEST, then ACTIVATE — all against the tunnel that is actually
+	// serving. The screenshots come afterwards, from the saved configuration, with
+	// only the hostname swapped.
 	//
-	// Now the test runs against the tunnel that is actually serving, and only the
-	// hostname is swapped afterwards, which is what de-identification is for.
-	for _, label := range []string{"Test Connection"} {
-		clicked, err := clickDeep(ctx, label)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("  clicked %q: %t\n", label, clicked)
-		if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
-			return err
-		}
+	// Doing it the other way round could never work: de-identification rewrites the
+	// Base URL field, Activate persists whatever the field holds, and JumpCloud
+	// then tested https://emisar.dev — the live product host — with a development
+	// token. It refused to activate, correctly.
+	// No separate Test Connection press here. Activate on the freshly filled form
+	// runs the check AND activates — that is the one sequence observed to reach an
+	// active state. Testing first left the form saved-but-inactive, with the footer
+	// offering only Test Connection and no way back to Activate.
+
+	// Test, then activate — and JumpCloud asks for that order again on the SAVED
+	// form. Pressing Activate on the freshly filled form persists the
+	// configuration and leaves the footer offering Test Connection, so a single
+	// press was never going to reach an active state. Drive whichever button the
+	// footer is currently offering until the badge flips.
+	if err := activateProvisioning(ctx, 4); err != nil {
+		_ = screenshot(ctx, outDir, "jc-11-never-activated")
+		return err
+	}
+	fmt.Println("  provisioning is active")
+
+	// Now the pictures, from the configuration JumpCloud actually accepted.
+	if err := expandConfigurationSettings(ctx); err != nil {
+		return err
 	}
 
-	// Swap the capture rig's tunnel hostname for the product one. This is
-	// de-identification (host), never an outcome — the values were really typed
-	// and the connection really tested against them.
 	docsHost := env["EMISAR_DOCS_HOST"]
 	if docsHost == "" {
 		docsHost = "emisar.dev"
@@ -1104,8 +1118,7 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := deidentifyHost(ctx, tunnel, strings.TrimPrefix(docsHost, "https://")); err != nil {
 		return err
 	}
-	// Ring what the step tells the reader to fill. A bare shot of a form is not an
-	// instruction.
+
 	for _, label := range []string{"Base URL", "Token Key"} {
 		if err := highlight(ctx, label); err != nil {
 			return err
@@ -1115,28 +1128,145 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 
-	// Test Connection, then Activate. Their form DISCARDS the config if you press
-	// Save instead — documented, and worth never learning the hard way.
-	for _, label := range []string{"Activate"} {
-		clicked, err := clickDeep(ctx, label)
+	// The outcome IS the evidence for the next step: provisioning flips to Active
+	// once the connection is accepted, so that badge is what it is about.
+	if err := highlight(ctx, "Provisioning Active"); err != nil {
+		return err
+	}
+	if err := screenshot(ctx, outDir, "jc-11-activate"); err != nil {
+		return err
+	}
+
+	return describePage(ctx)
+}
+
+// probeAddress is the throwaway JumpCloud provisions and deletes as its live
+// check. Unique per run: the previous fixed address survives a run that stops
+// before the delete, and JumpCloud then refuses to activate against it forever.
+func probeAddress() string {
+	return fmt.Sprintf("jumpcloud-probe-%d@northstar.example", time.Now().Unix())
+}
+
+// expandConfigurationSettings opens the saved provisioning configuration, which
+// JumpCloud collapses once it is active — the fields the guide points at are
+// inside it.
+func expandConfigurationSettings(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  if (/Base URL/.test(document.body.innerText)) return true;
+  const header = [...document.querySelectorAll('*')]
+    .find(el => visible(el) && !el.querySelector('*') && (el.textContent || '').trim() === 'Configuration Settings');
+  if (!header) return false;
+  (header.closest('button,[role=button],div') || header).click();
+  return true;
+})()`
+	var opened bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &opened)); err != nil {
+		return err
+	}
+	if !opened {
+		return errors.New("could not open the saved Configuration Settings")
+	}
+	return chromedp.Run(ctx, chromedp.Sleep(4*time.Second))
+}
+
+// activateProvisioning presses whichever of Test Connection / Activate the footer
+// offers, until provisioning reports active. A real mouse click at the control's
+// coordinates: a synthetic click on these footer buttons reports success and does
+// nothing.
+func activateProvisioning(ctx context.Context, rounds int) error {
+	for round := 1; round <= rounds; round++ {
+		var body string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+			return err
+		}
+		if strings.Contains(body, "Provisioning Active") {
+			return nil
+		}
+
+		// ACTIVATE when it is offered. On the freshly filled form that one press
+		// both checks the connection and activates — the only sequence observed to
+		// reach an active state. Test Connection is the fallback for a form that has
+		// already been saved.
+		pressed, err := pressFooterButton(ctx, "activate")
 		if err != nil {
 			return err
 		}
-		fmt.Printf("  clicked %q: %t\n", label, clicked)
-		// Activation reloads the tab into its configured shape; wait for that rather
-		// than photographing the form it is replacing.
-		if err := chromedp.Run(ctx, chromedp.Sleep(25*time.Second)); err != nil {
+		if !pressed {
+			if pressed, err = pressFooterButton(ctx, "test connection"); err != nil {
+				return err
+			}
+		}
+		if !pressed {
+			return errors.New("the provisioning footer offers neither Test Connection nor Activate")
+		}
+
+		if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
 			return err
 		}
-		// The outcome IS the evidence here: provisioning flips to Active once the
-		// connection is accepted, so that badge is what the step is about.
-		_ = highlight(ctx, "Provisioning Active")
+		if err := waitForProvisioningActive(ctx, 40*time.Second); err == nil {
+			return nil
+		}
+	}
+	return errors.New("provisioning never reported active")
+}
 
-		if err := screenshot(ctx, outDir, "jc-11-"+strings.ToLower(strings.ReplaceAll(label, " ", "-"))); err != nil {
+func pressFooterButton(ctx context.Context, label string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const wanted = %q;
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const button = [...document.querySelectorAll('button')]
+    .find(el => visible(el) && !el.disabled && (el.textContent || '').trim().toLowerCase() === wanted);
+  if (!button) return '';
+  const box = button.getBoundingClientRect();
+  return JSON.stringify({x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)});
+})()`, label)
+
+	var located string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &located)); err != nil {
+		return false, err
+	}
+	if located == "" {
+		return false, nil
+	}
+
+	var at struct{ X, Y float64 }
+	if err := json.Unmarshal([]byte(located), &at); err != nil {
+		return false, err
+	}
+	if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y)); err != nil {
+		return false, err
+	}
+	fmt.Printf("  pressed %q\n", label)
+	return true, nil
+}
+
+// waitForProvisioningActive polls the app's own status badges until provisioning
+// reports active, which is what activation actually produces.
+func waitForProvisioningActive(ctx context.Context, within time.Duration) error {
+	deadline := time.Now().Add(within)
+
+	for {
+		var body string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+			return err
+		}
+		if strings.Contains(body, "Provisioning Active") {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return errors.New("provisioning never reported active after Activate was pressed")
+		}
+		// RELOAD between polls. The badge lives in a single-page app that does not
+		// re-render it when activation lands, so polling the same DOM watched a
+		// value that was never going to change even after JumpCloud had accepted
+		// the configuration.
+		if err := chromedp.Run(ctx,
+			chromedp.Reload(),
+			chromedp.Sleep(6*time.Second)); err != nil {
 			return err
 		}
 	}
-	return describePage(ctx)
 }
 
 // clickRadio selects a radio by its label text.
