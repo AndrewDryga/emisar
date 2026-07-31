@@ -12,9 +12,13 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/chromedp/cdproto/network"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,6 +51,8 @@ func main() {
 	// A fresh project is the only way to photograph the real step.
 	freshProject := flag.String("fresh-project", "", "create this project first and walk its Get started wizard")
 	project := flag.String("project", "", "capture against this project id instead of the credential's own project")
+	certifyRedirect := flag.String("certify-redirect-uri", "", "create a client for this redirect URI and write its credentials to portal/.agent/secrets/google-cert-client.env")
+	certifyLogin := flag.String("certify-login", "", "drive a real OIDC sign-in through this emisar begin URL and report where it lands")
 	deleteProjects := flag.String("delete-projects", "", "comma-separated project ids to shut down, then exit")
 	listProjects := flag.Bool("list-projects", false, "print the account's projects and whether each has an auth config")
 	// Agreeing to Google Cloud's terms binds the ACCOUNT, not the run, so it is
@@ -70,7 +76,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o755); err != nil {
 		fail(err)
 	}
-	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *listProjects, *acceptCloudTOS, *project, *deleteProjects); err != nil {
+	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *listProjects, *acceptCloudTOS, *project, *deleteProjects, *certifyRedirect, *certifyLogin); err != nil {
 		fail(err)
 	}
 }
@@ -103,7 +109,7 @@ func readEnv(path string) (map[string]string, error) {
 	return env, scanner.Err()
 }
 
-func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, listProjects, acceptCloudTOS bool, project, deleteProjects string) error {
+func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, listProjects, acceptCloudTOS bool, project, deleteProjects, certifyRedirect, certifyLogin string) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("lang", "en-US"),
@@ -175,6 +181,17 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 			return err
 		}
 		return removeCaptureClients(ctx, env, outDir)
+	}
+	if certifyLogin != "" {
+		return certifyLoginFlow(ctx, env, outDir, certifyLogin)
+	}
+	if certifyRedirect != "" {
+		if err := certifyClientFlow(ctx, env, outDir, certifyRedirect); err != nil {
+			_ = screenshot(ctx, outDir, "google-failed")
+			_ = describePage(ctx, env)
+			return err
+		}
+		return nil
 	}
 	if err := authPlatformFlow(ctx, env, outDir); err != nil {
 		_ = screenshot(ctx, outDir, "google-failed")
@@ -621,6 +638,326 @@ func clientFlow(ctx context.Context, env map[string]string, outDir string) error
 
 // countCaptureClients is how many of this tool's own clients the list still
 // shows. Every deletion is judged by this dropping, never by the click landing.
+// certifyLoginFlow drives a real Google Workspace sign-in through emisar and
+// reports where it lands. This is the claim the guide makes — that a Workspace
+// member can sign in to emisar with Google — and console screenshots do not
+// prove it. Only completing the round trip does.
+func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginURL string) error {
+	// Ask emisar for the authorization URL it would send the operator to, then add
+	// a login hint so Google can skip its account chooser. That chooser renders in
+	// a frame this driver cannot read — document text is a spinner while the page
+	// is fully painted — and hinting the account is both simpler and closer to what
+	// a returning operator actually sees.
+	//
+	// Only the hint and the language are added; the state, nonce and PKCE challenge
+	// are emisar's own, so what Google validates is what emisar issued.
+	// Start the sign-in with a client that does NOT follow the redirect, so the
+	// authorization URL can be read before Google turns it into an account-chooser
+	// URL — hinting the chooser does nothing, which is what left this looping.
+	//
+	// The session it creates carries the state, nonce and PKCE verifier, so it has
+	// to end up in the BROWSER: emisar stores it in a cookie, and the callback is
+	// answered by the browser. Copy it across rather than running the two halves in
+	// different cookie jars, which is what made emisar refuse a callback for a
+	// sign-in that browser had never begun.
+	authorizeURL, session, err := beginSignIn(beginURL)
+	if err != nil {
+		return err
+	}
+
+	if err := chromedp.Run(ctx, chromedp.Navigate("http://localhost:4010/sign_in")); err != nil {
+		return err
+	}
+	if err := chromedp.Run(ctx, network.SetCookie(sessionCookieName, session).
+		WithDomain("localhost").WithPath("/")); err != nil {
+		return err
+	}
+
+	// Re-enter the SAME authorization request with the account hinted, so Google
+	// skips its chooser. Only the hint and language are added; the state, nonce and
+	// PKCE challenge are emisar's own.
+	hinted := authorizeURL + "&login_hint=" + url.QueryEscape(env["GOOGLE_TEST_USER"]) + "&hl=en"
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(hinted),
+		chromedp.Sleep(12*time.Second)); err != nil {
+		return err
+	}
+
+	// Google may ask to pick an account or to confirm consent the first time. Wait
+	// for each screen to actually paint — reading it mid-load returned a spinner
+	// ("Загрузка…"; this account's locale is not English), so every click landed on
+	// nothing and the loop spun through its attempts against a loading page.
+	for attempt := 0; attempt < 6; attempt++ {
+		var location string
+		if err := chromedp.Run(ctx, chromedp.Location(&location)); err != nil {
+			return err
+		}
+		if !strings.Contains(location, "accounts.google.com") {
+			break
+		}
+
+		body, err := waitForPaint(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("  at Google: %s\n", firstLine(body))
+
+		// The account first, then whatever advances the screen. Match by position
+		// rather than by label: the buttons are localized.
+		advanced := false
+
+		for _, label := range []string{"Continue", "Allow", "Next", env["GOOGLE_TEST_USER"]} {
+			clicked, err := clickDeepAt(ctx, label)
+			if err != nil {
+				return err
+			}
+			if clicked {
+				fmt.Printf("  clicked %q\n", label)
+				advanced = true
+				break
+			}
+		}
+
+		if !advanced {
+			_ = clickPrimaryButton(ctx)
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
+			return err
+		}
+	}
+
+	var location, body string
+	if err := chromedp.Run(ctx,
+		chromedp.Location(&location),
+		chromedp.Evaluate(deepTextScript, &body)); err != nil {
+		return err
+	}
+	_ = screenshot(ctx, outDir, "google-certify-login")
+	fmt.Printf("  landed on %s\n", location)
+	fmt.Printf("  page says: %s\n", firstLine(body))
+
+	if strings.Contains(location, "/sign_in") {
+		return fmt.Errorf("sign-in did not complete — still on %s", location)
+	}
+	return nil
+}
+
+// deepText collects text across open SHADOW ROOTS. Google's sign-in screens keep
+// their content in web components, so document.body.innerText is just the loading
+// placeholder while the page is fully painted — which made every wait time out
+// and every click land on nothing.
+const deepTextScript = `(() => {
+  const out = [];
+  const walk = root => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+      // Same-origin iframes too: Google renders sign-in inside one, so the top
+      // document is only ever the loading placeholder.
+      if (el.tagName === 'IFRAME') {
+        try { if (el.contentDocument) walk(el.contentDocument); } catch (e) {}
+      }
+    }
+    const text = root.body ? root.body.innerText : (root.textContent || '');
+    if (text) out.push(text);
+  };
+  walk(document);
+  return out.join('\n');
+})()`
+
+// clickDeepAt finds text across open shadow roots and clicks its centre with a
+// real mouse event, because these controls do not respond to a synthetic click on
+// the text node itself.
+func clickDeepAt(ctx context.Context, wanted string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const target = %q;
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const hits = [];
+  const walk = (root, offsetX, offsetY) => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot, offsetX, offsetY);
+      if (el.tagName === 'IFRAME') {
+        try {
+          if (el.contentDocument) {
+            // A rect inside a frame is relative to that frame, so carry its origin.
+            const f = el.getBoundingClientRect();
+            walk(el.contentDocument, offsetX + f.left, offsetY + f.top);
+          }
+        } catch (e) {}
+      }
+      if (!visible(el)) continue;
+      if (el.querySelector('*')) continue;
+      if (!(el.textContent || '').includes(target)) continue;
+      const box = el.getBoundingClientRect();
+      hits.push({x: box.left + box.width / 2 + offsetX, y: box.top + box.height / 2 + offsetY});
+    }
+  };
+  walk(document, 0, 0);
+  if (!hits.length) return '';
+  return JSON.stringify({x: Math.round(hits[0].x), y: Math.round(hits[0].y)});
+})()`, wanted)
+
+	var found string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &found)); err != nil {
+		return false, err
+	}
+	if found == "" {
+		return false, nil
+	}
+
+	var at struct{ X, Y float64 }
+	if err := json.Unmarshal([]byte(found), &at); err != nil {
+		return false, err
+	}
+	return true, chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y))
+}
+
+const sessionCookieName = "_emisar_web_key"
+
+// beginSignIn asks emisar to start a sign-in and returns both where it points the
+// operator and the session cookie holding that request's state, nonce and PKCE
+// verifier.
+func beginSignIn(beginURL string) (string, string, error) {
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+
+	response, err := client.Get(beginURL)
+	if err != nil {
+		return "", "", err
+	}
+	defer response.Body.Close()
+
+	location := response.Header.Get("Location")
+	if !strings.Contains(location, "accounts.google.com") {
+		return "", "", fmt.Errorf("emisar did not start a Google sign-in (status %d, location %q)", response.StatusCode, location)
+	}
+
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == sessionCookieName {
+			return location, cookie.Value, nil
+		}
+	}
+	return "", "", errors.New("emisar's sign-in response carried no session cookie")
+}
+
+// waitForPaint returns the page's text once it stops being a loading placeholder.
+func waitForPaint(ctx context.Context) (string, error) {
+	deadline := time.Now().Add(45 * time.Second)
+
+	for {
+		var body string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(deepTextScript, &body)); err != nil {
+			return "", err
+		}
+		trimmed := strings.TrimSpace(body)
+		loading := trimmed == "" || strings.HasPrefix(trimmed, "Загрузка") || strings.HasPrefix(trimmed, "Loading")
+		if !loading || time.Now().After(deadline) {
+			return body, nil
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+			return "", err
+		}
+	}
+}
+
+// clickPrimaryButton presses the last enabled button on the screen, which on
+// Google's consent and chooser screens is the one that advances. Their labels are
+// localized, so matching text is not reliable here.
+func clickPrimaryButton(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const buttons = [...document.querySelectorAll('button,[role=button]')]
+    .filter(el => visible(el) && !el.disabled && (el.textContent || '').trim());
+  if (!buttons.length) return false;
+  buttons[buttons.length - 1].click();
+  return true;
+})()`
+	var clicked bool
+	return chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
+}
+
+func firstLine(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			if len(trimmed) > 90 {
+				return trimmed[:90]
+			}
+			return trimmed
+		}
+	}
+	return ""
+}
+
+// certifyClientFlow makes an OAuth client pointed at a LOCAL portal, so a real
+// sign-in can be driven end to end. Google exempts http://localhost from its
+// https rule for exactly this, which is why no tunnel is needed.
+//
+// The credentials are written to the secrets directory rather than printed: they
+// are live, and a transcript is not where a client secret should live.
+func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redirectURI string) error {
+	if err := waitForText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
+		return err
+	}
+	if err := acceptTerms(ctx); err != nil {
+		return err
+	}
+	if err := clickExactText(ctx, "Clients"); err != nil {
+		return err
+	}
+	if err := waitForText(ctx, "OAuth 2.0 Client IDs", 45*time.Second); err != nil {
+		return err
+	}
+	if err := clickFirstText(ctx, "Create client", "Create credentials"); err != nil {
+		return err
+	}
+	if err := waitForText(ctx, "Create OAuth client ID", 30*time.Second); err != nil {
+		return err
+	}
+	if err := chooseOption(ctx, "Application type", "Web application"); err != nil {
+		return err
+	}
+	if err := fillField(ctx, "Name", "emisar login certification"); err != nil {
+		return err
+	}
+	if err := addURIUnder(ctx, "Authorized redirect URIs", redirectURI); err != nil {
+		return err
+	}
+	if err := clickFirstText(ctx, "Create"); err != nil {
+		return err
+	}
+	if err := waitForText(ctx, "OAuth client created", 45*time.Second); err != nil {
+		return err
+	}
+
+	const readCredentials = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const inputs = [...document.querySelectorAll('input')].filter(visible).map(el => el.value).filter(Boolean);
+  const text = document.body.innerText;
+  const id = (text.match(/[0-9]{6,}-[a-z0-9]{10,}\.apps\.googleusercontent\.com/) || [])[0] ||
+    inputs.find(v => /\.apps\.googleusercontent\.com$/.test(v)) || '';
+  const secret = (text.match(/GOCSPX-[A-Za-z0-9_-]{6,}/) || [])[0] ||
+    inputs.find(v => /^GOCSPX-/.test(v)) || '';
+  return id + '\n' + secret;
+})()`
+	var credentials string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(readCredentials, &credentials)); err != nil {
+		return err
+	}
+	parts := strings.SplitN(strings.TrimSpace(credentials), "\n", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return errors.New("the created-client dialog did not yield both a client id and secret")
+	}
+
+	path := "portal/.agent/secrets/google-cert-client.env"
+	body := fmt.Sprintf("# emisar OIDC login certification client — redirect %s\nGOOGLE_CERT_CLIENT_ID=%s\nGOOGLE_CERT_CLIENT_SECRET=%s\n", redirectURI, parts[0], parts[1])
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		return err
+	}
+	fmt.Printf("  wrote %s (client %s…)\n", path, parts[0][:12])
+	return nil
+}
+
 func countCaptureClients(ctx context.Context) (int, error) {
 	script := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;

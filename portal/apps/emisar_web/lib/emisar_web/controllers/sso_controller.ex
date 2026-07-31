@@ -96,9 +96,23 @@ defmodule EmisarWeb.SSOController do
         {:error, :account_disabled} -> redirect_to_disabled_account(conn, account)
       end
     else
-      nil -> sso_error(conn, "Your sign-in session expired. Start again.")
-      {:pending, request} -> redirect_to_pending(conn, request)
-      {:error, reason} -> sso_error(conn, callback_error_message(reason))
+      nil ->
+        # No stash: this browser never started the sign-in it is finishing. Worth
+        # saying, because it is also what a cookie dropped between the two
+        # requests looks like.
+        Logger.warning("SSO callback arrived with no sign-in stash in the session")
+        sso_error(conn, "Your sign-in session expired. Start again.")
+
+      {:pending, request} ->
+        redirect_to_pending(conn, request)
+
+      {:error, reason} ->
+        # The operator gets one sentence; the reason belongs in the log. A callback
+        # can fail on state, nonce, PKCE, the token exchange, an email domain or a
+        # disabled provider, and every one of them looked identical from outside —
+        # a bounce to the sign-in page with nothing written down.
+        Logger.warning("SSO callback failed: #{describe_failure({:error, reason})}")
+        sso_error(conn, callback_error_message(reason))
     end
   end
 
