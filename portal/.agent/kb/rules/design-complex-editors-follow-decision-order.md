@@ -34,6 +34,14 @@ that leaves a dead rail inside the card. Inside a row, equal binary choices use
 the same compact width while the domain-bearing choice takes the remaining
 space. Font treatment must not change peer control heights.
 
+Field rows express one relationship at a time. Keep identity beside visibility,
+then put a transformation chain or condition in left-to-right reading order on
+one desktop row. A mode or behavior selector that governs the row gets more
+width than bounded numeric inputs; the compact inputs still share the same
+baseline and enclosure. Reserve tracks for conditional peers, or attach a tail
+control on the next row, so revealing one never resizes the controls before it.
+Stack the same order on narrow screens.
+
 A repeated contract row translates schema metadata into operator language. Lead
 with the stable argument name, summarize requirement and type as a phrase
 (`Optional JSON value`, not `file · json · optional`), then present labeled source
@@ -100,6 +108,12 @@ never a reduced model.
 - A run-time input pairs ID with description; then type, required, and sensitive;
   then enum values when applicable; otherwise its default and applicable lower
   and upper bounds share one row.
+- An extracted output pairs ID with Visibility, then reads Read from, Extract
+  with, Expression across one row. A condition reads Output, Must be, Expected
+  JSON value on one row.
+- Retry policy reads behavior first, then compact interval, timeout, and maximum
+  observation controls on the same row. Conditional numeric tracks remain
+  reserved while retry is off.
 - Required and Sensitive use equal compact tracks while Type takes the remaining
   row width; every input row ends at the same edge.
 - The input collection is capped on the page, while every row inside each input
@@ -129,6 +143,9 @@ never a reduced model.
 - Removing advanced fields to make the editor look simpler.
 - Stretching an ID, type, Yes/No selector, and visibility selector into four
   equally weighted boxes merely because the card has room.
+- Breaking one transformation, condition, or retry relationship across rows when
+  the desktop card has room, or giving short numeric bounds the same width as
+  their governing behavior selector.
 - Hiding a normal default or validation bound behind a disclosure to make the
   card shorter.
 - Replacing a removed disclosure with a one-off heading and horizontal rule, or
@@ -173,4 +190,7 @@ brand classes inside them. Sweep capped form collections for a second inner
 `max-w-*` around card fields; rendered tests pin one page-level cap and reject
 the nested field cap. Sweep repeated contract rows for delimiter-joined schema
 metadata, unlabeled source/value controls, and explanatory placeholders standing
-in for a hidden inapplicable control.
+in for a hidden inapplicable control. Sweep repeated operational cards for
+desktop relationships split across rows, finite controls stretched to equal
+weight, and conditional fields that resize earlier tracks instead of using a
+reserved track or attached continuation.

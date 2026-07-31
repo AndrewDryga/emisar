@@ -492,6 +492,107 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                collection_html,
                ~s(id="runbook-stage-0-step-0-condition-0")
              ) < :binary.match(collection_html, ~s(phx-click="add_success"))
+
+      assert has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-output-0-identity[class~="sm:grid-cols-[minmax(0,1fr)_11rem]"]|
+             )
+
+      assert has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-output-0-extractor[class~="lg:grid-cols-[12rem_12rem_minmax(0,1fr)]"]|
+             )
+
+      assert has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-condition-0-controls[class~="lg:grid-cols-[minmax(0,1fr)_13rem_minmax(0,1.5fr)]"]|
+             )
+
+      assert :binary.match(collection_html, ~s(name="draft[stages][0][steps][0][outputs][0][id]")) <
+               :binary.match(
+                 collection_html,
+                 ~s(name="draft[stages][0][steps][0][outputs][0][sensitive]")
+               )
+
+      assert :binary.match(
+               collection_html,
+               ~s(name="draft[stages][0][steps][0][outputs][0][source]")
+             ) <
+               :binary.match(
+                 collection_html,
+                 ~s(name="draft[stages][0][steps][0][outputs][0][extract_type]")
+               )
+
+      assert :binary.match(
+               collection_html,
+               ~s(name="draft[stages][0][steps][0][outputs][0][extract_type]")
+             ) <
+               :binary.match(
+                 collection_html,
+                 ~s(name="draft[stages][0][steps][0][outputs][0][expression]")
+               )
+
+      assert :binary.match(
+               collection_html,
+               ~s(name="draft[stages][0][steps][0][success][0][output]")
+             ) <
+               :binary.match(
+                 collection_html,
+                 ~s(name="draft[stages][0][steps][0][success][0][operator]")
+               )
+
+      assert :binary.match(
+               collection_html,
+               ~s(name="draft[stages][0][steps][0][success][0][operator]")
+             ) <
+               :binary.match(
+                 collection_html,
+                 ~s(name="draft[stages][0][steps][0][success][0][value]")
+               )
+    end
+
+    test "retry controls share one stable desktop row", %{conn: conn, account: account} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      draft =
+        valid_draft()
+        |> put_in(
+          ["stages", Access.at(0), "steps", Access.at(0), "wait", "enabled"],
+          "true"
+        )
+
+      change(lv, draft)
+      render_click(lv, "toggle_panel", %{"key" => "retry-0-0"})
+      html = render(lv)
+
+      assert has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-retry-controls[class~="lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]"]|
+             )
+
+      assert :binary.match(html, ~s(name="draft[stages][0][steps][0][wait][enabled]")) <
+               :binary.match(
+                 html,
+                 ~s(name="draft[stages][0][steps][0][wait][interval_seconds]")
+               )
+
+      assert :binary.match(
+               html,
+               ~s(name="draft[stages][0][steps][0][wait][interval_seconds]")
+             ) <
+               :binary.match(
+                 html,
+                 ~s(name="draft[stages][0][steps][0][wait][timeout_seconds]")
+               )
+
+      assert :binary.match(
+               html,
+               ~s(name="draft[stages][0][steps][0][wait][timeout_seconds]")
+             ) <
+               :binary.match(
+                 html,
+                 ~s(name="draft[stages][0][steps][0][wait][max_attempts]")
+               )
     end
 
     test "target-first action selection derives the pack from current runner support", %{

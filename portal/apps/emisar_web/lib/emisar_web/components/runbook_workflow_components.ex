@@ -617,79 +617,92 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             />
           </div>
 
-          <div class="mt-3 grid gap-3 sm:grid-cols-2">
-            <.input
-              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][id]"}
-              value={output["id"]}
-              label="Output ID"
-              label_variant={:eyebrow}
-              aria-label={"Output #{index + 1} ID"}
-              placeholder="status"
-              disabled={@read_only?}
-              class="font-mono text-xs"
-            />
-            <.input
-              type="select"
-              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][source]"}
-              value={output["source"]}
-              label="Read from"
-              label_variant={:eyebrow}
-              aria-label={"Output #{index + 1} source"}
-              disabled={@read_only?}
-              options={[
-                {"Structured output", "structured_output"},
-                {"stdout", "stdout"},
-                {"stderr", "stderr"}
-              ]}
-            />
-            <.input
-              type="select"
-              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][extract_type]"}
-              value={output["extract_type"]}
-              label="Extract with"
-              label_variant={:eyebrow}
-              aria-label={"Output #{index + 1} extractor"}
-              disabled={@read_only?}
-              options={[
-                {"JSON Pointer", "json_pointer"},
-                {"Contains", "contains"},
-                {"Grep", "grep"},
-                {"Regex", "regex"}
-              ]}
-            />
-            <.input
-              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][expression]"}
-              value={output["expression"]}
-              label="Expression"
-              label_variant={:eyebrow}
-              aria-label={"Output #{index + 1} expression"}
-              placeholder={
-                if output["extract_type"] == "json_pointer", do: "/status", else: "pattern"
-              }
-              disabled={@read_only?}
-              class="font-mono text-xs"
-            />
-            <.input
-              :if={output["extract_type"] == "regex"}
-              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][capture]"}
-              value={output["capture"]}
-              label="Capture group"
-              label_variant={:eyebrow}
-              aria-label={"Output #{index + 1} regex capture"}
-              placeholder="0"
-              disabled={@read_only?}
-              class="font-mono text-xs"
-            />
-            <.input
-              type="select"
-              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][sensitive]"}
-              value={output["sensitive"]}
-              label="Visibility"
-              label_variant={:eyebrow}
-              aria-label={"Output #{index + 1} sensitivity"}
-              disabled={@read_only?}
-              options={[{"Visible", "false"}, {"Sensitive", "true"}]}
-            />
+          <div class="mt-4 space-y-4">
+            <div
+              id={"runbook-stage-#{@stage_index}-step-#{@step_index}-output-#{index}-identity"}
+              class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]"
+            >
+              <.input
+                name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][id]"}
+                value={output["id"]}
+                label="Output ID"
+                label_variant={:eyebrow}
+                aria-label={"Output #{index + 1} ID"}
+                placeholder="status"
+                disabled={@read_only?}
+                class="font-mono"
+              />
+              <.input
+                type="select"
+                name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][sensitive]"}
+                value={output["sensitive"]}
+                label="Visibility"
+                label_variant={:eyebrow}
+                aria-label={"Output #{index + 1} sensitivity"}
+                disabled={@read_only?}
+                options={[{"Visible", "false"}, {"Sensitive", "true"}]}
+              />
+            </div>
+
+            <div
+              id={"runbook-stage-#{@stage_index}-step-#{@step_index}-output-#{index}-extractor"}
+              class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[12rem_12rem_minmax(0,1fr)]"
+            >
+              <.input
+                type="select"
+                name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][source]"}
+                value={output["source"]}
+                label="Read from"
+                label_variant={:eyebrow}
+                aria-label={"Output #{index + 1} source"}
+                disabled={@read_only?}
+                options={[
+                  {"Structured output", "structured_output"},
+                  {"stdout", "stdout"},
+                  {"stderr", "stderr"}
+                ]}
+              />
+              <.input
+                type="select"
+                name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][extract_type]"}
+                value={output["extract_type"]}
+                label="Extract with"
+                label_variant={:eyebrow}
+                aria-label={"Output #{index + 1} extractor"}
+                disabled={@read_only?}
+                options={[
+                  {"JSON Pointer", "json_pointer"},
+                  {"Contains", "contains"},
+                  {"Grep", "grep"},
+                  {"Regex", "regex"}
+                ]}
+              />
+              <.input
+                name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][expression]"}
+                value={output["expression"]}
+                label="Expression"
+                label_variant={:eyebrow}
+                aria-label={"Output #{index + 1} expression"}
+                placeholder={
+                  if output["extract_type"] == "json_pointer", do: "/status", else: "pattern"
+                }
+                disabled={@read_only?}
+                class="font-mono"
+              />
+            </div>
+
+            <div :if={output["extract_type"] == "regex"} class="max-w-36">
+              <.input
+                name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][capture]"}
+                value={output["capture"]}
+                label="Capture group"
+                label_variant={:eyebrow}
+                aria-label={"Output #{index + 1} regex capture"}
+                placeholder="0"
+                disabled={@read_only?}
+                class="font-mono"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -747,7 +760,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               disabled={@read_only?}
             />
           </div>
-          <div class="mt-3 grid gap-3 sm:grid-cols-2">
+          <div
+            id={"runbook-stage-#{@stage_index}-step-#{@step_index}-condition-#{index}-controls"}
+            class="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_13rem_minmax(0,1.5fr)]"
+          >
             <.input
               type="select"
               name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][output]"}
@@ -779,18 +795,16 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 {"Matches regex", "matches"}
               ]}
             />
-            <div class="sm:col-span-2">
-              <.input
-                name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][value]"}
-                value={condition["value"]}
-                label="Expected JSON value"
-                label_variant={:eyebrow}
-                aria-label={"Condition #{index + 1} JSON value"}
-                placeholder="Enter a JSON value"
-                disabled={@read_only?}
-                class="font-mono text-xs"
-              />
-            </div>
+            <.input
+              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][success][#{index}][value]"}
+              value={condition["value"]}
+              label="Expected JSON value"
+              label_variant={:eyebrow}
+              aria-label={"Condition #{index + 1} JSON value"}
+              placeholder="Enter a JSON value"
+              disabled={@read_only?}
+              class="font-mono"
+            />
           </div>
         </div>
       </div>
@@ -824,7 +838,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         label="Retry policy"
         hint={if @wait["enabled"] == "true", do: "Observe again", else: "No retry · halt on failure"}
       />
-      <div :if={MapSet.member?(@open_panels, @panel_key)} class="mt-4 grid gap-3 sm:grid-cols-3">
+      <div
+        :if={MapSet.member?(@open_panels, @panel_key)}
+        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-retry-controls"}
+        class="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]"
+      >
         <.input
           type="select"
           name={"draft[stages][#{@stage_index}][steps][#{@step_index}][wait][enabled]"}
@@ -833,7 +851,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           label_variant={:eyebrow}
           disabled={@read_only?}
           options={[{"Halt execution", "false"}, {"Observe again", "true"}]}
-          class="sm:col-span-3"
         />
         <.input
           :if={@wait["enabled"] == "true"}
@@ -845,6 +862,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           label="Interval (seconds)"
           label_variant={:eyebrow}
           disabled={@read_only?}
+          class="tabular-nums"
         />
         <.input
           :if={@wait["enabled"] == "true"}
@@ -856,6 +874,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           label="Timeout (seconds)"
           label_variant={:eyebrow}
           disabled={@read_only?}
+          class="tabular-nums"
         />
         <.input
           :if={@wait["enabled"] == "true"}
@@ -867,6 +886,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           label="Maximum observations"
           label_variant={:eyebrow}
           disabled={@read_only?}
+          class="tabular-nums"
         />
       </div>
     </div>
