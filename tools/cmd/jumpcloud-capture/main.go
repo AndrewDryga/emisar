@@ -1393,10 +1393,12 @@ func expandConfigurationSettings(ctx context.Context) error {
 // nothing.
 func activateProvisioning(ctx context.Context, rounds int) error {
 	for round := 1; round <= rounds; round++ {
-		if err := waitForProvisioningActive(ctx, 2*time.Second); err == nil {
-			return nil
-		}
-
+		// Never poll for the active badge before Activate has been pressed: that
+		// poll RELOADS, and a reload discards the unsaved provisioning form. The
+		// round that opened with it threw away the configuration the previous round
+		// had just tested successfully, and came back to an empty form with nothing
+		// left to activate.
+		//
 		// Activate is not on this form until a test has PASSED — the footer offers
 		// Test Connection, Undo Changes and Cancel, and nothing else. Press what is
 		// there, then wait for Activate to APPEAR rather than for a fixed number of
@@ -1411,15 +1413,13 @@ func activateProvisioning(ctx context.Context, rounds int) error {
 			if err != nil {
 				return err
 			}
-			if pressed {
-				if err := waitForFooterButton(ctx, "activate", 150*time.Second); err != nil {
-					fmt.Println("  the test did not produce an Activate button")
-				}
-				continue
+			if !pressed {
+				return errors.New("the provisioning footer offers neither Test Connection nor Activate")
 			}
-		}
-		if !pressed {
-			return errors.New("the provisioning footer offers neither Test Connection nor Activate")
+			if err := waitForFooterButton(ctx, "activate", 150*time.Second); err != nil {
+				fmt.Println("  the test did not produce an Activate button")
+			}
+			continue
 		}
 		if err := waitForProvisioningActive(ctx, 90*time.Second); err == nil {
 			return nil
@@ -1488,8 +1488,13 @@ func pressFooterButton(ctx context.Context, label string) (bool, error) {
   walk(document);
   if (!found) return '';
   found.scrollIntoView({block: 'center'});
+  // Click it HERE, in the page. A coordinate click on this footer registers
+  // visibly — focus moves — but does not run the action, while a DOM click does:
+  // the earlier runs that produced a real connection probe against emisar used
+  // one. Coordinates remain the fallback for controls that ignore .click().
+  found.click();
   const box = found.getBoundingClientRect();
-  return JSON.stringify({x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)});
+  return JSON.stringify({clicked: true, x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)});
 })()`, label)
 
 	var located string
@@ -1500,12 +1505,17 @@ func pressFooterButton(ctx context.Context, label string) (bool, error) {
 		return false, nil
 	}
 
-	var at struct{ X, Y float64 }
+	var at struct {
+		Clicked bool
+		X, Y    float64
+	}
 	if err := json.Unmarshal([]byte(located), &at); err != nil {
 		return false, err
 	}
-	if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y)); err != nil {
-		return false, err
+	if !at.Clicked {
+		if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y)); err != nil {
+			return false, err
+		}
 	}
 	fmt.Printf("  pressed %q\n", label)
 	return true, nil
@@ -1513,6 +1523,10 @@ func pressFooterButton(ctx context.Context, label string) (bool, error) {
 
 // waitForProvisioningActive polls the app's own status badges until provisioning
 // reports active, which is what activation actually produces.
+//
+// It RELOADS between polls, so it is only safe once Activate has been pressed.
+// Called while the provisioning form still holds unsaved configuration, the
+// reload throws that configuration away.
 func waitForProvisioningActive(ctx context.Context, within time.Duration) error {
 	deadline := time.Now().Add(within)
 
