@@ -214,9 +214,10 @@ cases:
   # secret resource attribute and its `sensitive` output must come back in
   # cleartext. The metadata cases above assert the opposite for the projections
   # that are meant to redact; the two sets together are what keep that
-  # distinction honest rather than assumed. Like the plan cases, each stages and
-  # initializes its own copy because /packs is mounted read-only, and `terraform
-  # init` reaches no network here — the fixture uses only the builtin provider.
+  # distinction honest rather than assumed. Like the plan cases, each stages,
+  # initializes, and applies its own copy because /packs is mounted read-only.
+  # `terraform init` and `apply` reach no network here — the fixture uses only
+  # the builtin provider.
   - name: tf.show_json
     action: tf.show_json
     env:
@@ -226,9 +227,11 @@ cases:
         argv:
           - /bin/sh
           - -c
-          - "mkdir -p /tmp/tfdump/workspace && cp /packs/terraform-readonly/test/fixtures/live/main.tf /packs/terraform-readonly/test/fixtures/live/terraform.tfstate /tmp/tfdump/workspace/"
+          - "mkdir -p /tmp/tfdump/workspace && cp /packs/terraform-readonly/test/fixtures/live/main.tf /tmp/tfdump/workspace/"
       - name: initialize workspace
         argv: [/bin/sh, -c, "cd /tmp/tfdump/workspace && terraform init -input=false"]
+      - name: create state
+        argv: [/bin/sh, -c, "cd /tmp/tfdump/workspace && terraform apply -auto-approve -input=false"]
     expect:
       stdout_contains:
         - terraform_data.database
@@ -243,9 +246,11 @@ cases:
         argv:
           - /bin/sh
           - -c
-          - "mkdir -p /tmp/tfdump/workspace && cp /packs/terraform-readonly/test/fixtures/live/main.tf /packs/terraform-readonly/test/fixtures/live/terraform.tfstate /tmp/tfdump/workspace/"
+          - "mkdir -p /tmp/tfdump/workspace && cp /packs/terraform-readonly/test/fixtures/live/main.tf /tmp/tfdump/workspace/"
       - name: initialize workspace
         argv: [/bin/sh, -c, "cd /tmp/tfdump/workspace && terraform init -input=false"]
+      - name: create state
+        argv: [/bin/sh, -c, "cd /tmp/tfdump/workspace && terraform apply -auto-approve -input=false"]
     expect:
       # `output -json` deliberately un-masks a `sensitive` output. That is the
       # whole reason this read is approval-gated rather than free.
@@ -262,9 +267,11 @@ cases:
         argv:
           - /bin/sh
           - -c
-          - "mkdir -p /tmp/tfdump/workspace && cp /packs/terraform-readonly/test/fixtures/live/main.tf /packs/terraform-readonly/test/fixtures/live/terraform.tfstate /tmp/tfdump/workspace/"
+          - "mkdir -p /tmp/tfdump/workspace && cp /packs/terraform-readonly/test/fixtures/live/main.tf /tmp/tfdump/workspace/"
       - name: initialize workspace
         argv: [/bin/sh, -c, "cd /tmp/tfdump/workspace && terraform init -input=false"]
+      - name: create state
+        argv: [/bin/sh, -c, "cd /tmp/tfdump/workspace && terraform apply -auto-approve -input=false"]
     expect:
       stdout_contains:
         - packtest-canary-terraform-resource-secret-e9c4
