@@ -85,28 +85,36 @@ choosing the intended account on the consent screen. Then continue at step 4.
 Download first so failures are unambiguous and `--help` can be inspected:
 
 ```sh
-EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
+export EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
 curl --fail --silent --show-error --location \
   "${EMISAR_URL%/}/install-mcp.sh" -o "$installer"
 bash "$installer" --help
-bash "$installer" --client "$EMISAR_CLIENT"
+sudo EMISAR_URL="$EMISAR_URL" bash "$installer"
 rm -f "$installer"
 trap - EXIT HUP INT TERM
 ```
 
-Adapt only with flags present in the downloaded installer's help. Set the
-client identifier accurately; do not guess. The installer's default flow opens
-a browser approval and writes a per-client key straight into the client's
-config — let it. Keep the client's `emisar/credentials` directory durable and
-owner-only so key rotation survives restarts; containerized clients must
-persist `/config`. Use `sudo` only when installing the binary into a protected
-system directory.
+The installer takes no client argument. It detects the clients already present
+on the machine, asks about each one, then mints that client's key through a
+browser approval and writes it into that client's own config — so run it where
+it can prompt, and let it finish the registration.
 
-When a browser is genuinely unavailable, fall back to the **Agents** page's
-manual per-client snippet, keeping the key out of shell history and command
-arguments.
+Adapt only with flags present in the downloaded installer's help. Drop `sudo`
+and add `--install-dir "$HOME/.local/bin"` to install without root; pin a
+release with `--version mcp-vX.Y.Z`. There is no unattended path to a
+registered client: `--yes` skips every prompt, the client step included, so it
+installs the bridge binary and registers nothing. `EMISAR_URL` has to reach the
+installer's own environment either way — it is written into every client config
+it touches.
+
+Keep the client's `emisar/credentials` directory durable and owner-only so key
+rotation survives restarts; containerized clients must persist `/config`.
+
+When a browser is genuinely unavailable, or the installer ran without its
+prompts, fall back to the **Agents** page's manual per-client snippet, keeping
+the key out of shell history and command arguments.
 
 Restart or reload the actual client afterward.
 
