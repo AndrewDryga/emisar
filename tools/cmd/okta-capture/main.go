@@ -196,13 +196,39 @@ func sessionToken(env map[string]string) (string, error) {
 // Every object is printed with a verdict beside it. A filter that can silently
 // under-match must show what it looked at, which is how six leftovers hid in a
 // neighbouring tenant while a cleanup reported success.
-func auditTenant(ctx context.Context, remove bool) error {
-	// SSWS if we have one. Okta's public API does not accept the console session
-	// cookie — it answers 403 — so an API token is what makes a DOM-free inventory
-	// possible. Without it, say so plainly rather than reporting an empty tenant.
-	token := os.Getenv("OKTA_API_TOKEN")
+func auditTenant(ctx context.Context, env map[string]string, remove bool) error {
+	// SSWS. Okta's API does not accept the console session cookie — it answers 403
+	// — so a token is what makes a DOM-free inventory possible.
+	//
+	// Read the SECRETS FILE first, which is where this rig's credentials live and
+	// where the token already was. Reading only the process environment reported a
+	// tenant that could not be listed and sent the founder off to create a
+	// credential they had already provided.
+	token := env["OKTA_API_TOKEN"]
 	if token == "" {
-		return errors.New("OKTA_API_TOKEN is not set; the console session cannot read /api/v1 (403), and without it this cannot tell you what is in the tenant")
+		token = os.Getenv("OKTA_API_TOKEN")
+	}
+	if token == "" {
+		// Before claiming the session cannot read the API, ask it and report what
+		// it actually said. "403" was my summary of one call; the body names the
+		// reason, and the console reaches this same API constantly.
+		const probe = `(async () => {
+  const out = [];
+  for (const path of ['/api/v1/apps?limit=1', '/api/v1/users?limit=1']) {
+    const r = await fetch(path, {credentials: 'include', headers: {accept: 'application/json'}});
+    out.push(path + ' -> ' + r.status + ' ' + (await r.text()).slice(0, 300));
+  }
+  return out.join('\n');
+})()`
+		var said string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(probe, &said, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		})); err != nil {
+			return err
+		}
+		fmt.Println("--- what the session-only API call actually returns ---")
+		fmt.Println(said)
+		return errors.New("no OKTA_API_TOKEN in the secrets file or environment, and the console session was refused above")
 	}
 
 	script := fmt.Sprintf(`(async () => {
@@ -216,15 +242,33 @@ func auditTenant(ctx context.Context, remove bool) error {
   const apps = await get('/api/v1/apps?limit=200');
   if (apps.error) return JSON.stringify({error: apps.error});
   const users = await get('/api/v1/users?limit=200');
+  const me = await get('/api/v1/users/me');
 
   // Ours by the names this rig uses. Anything else is reported and left alone.
   const oursApp = a => /emisar/i.test(a.label || '') || /emisar/i.test((a.settings && a.settings.app && a.settings.app.label) || '');
-  const oursUser = u => /emisar|scim-probe|capture/i.test((u.profile && u.profile.email) || '');
+
+  // This rig creates APPLICATIONS, not users. Okta is the identity provider
+  // here — it pushes accounts to emisar, so nothing it does adds one back.
+  //
+  // Matching /emisar/ against an email therefore found no leftover of ours; it
+  // found andrew@emisar.dev, the tenant's only account and the one this rig
+  // signs in WITH. A cleanup run would have deactivated and deleted the admin
+  // that owns the tenant. Match only an address this rig demonstrably generates,
+  // and never the signed-in account, whatever it is called.
+  const oursUser = u =>
+    u.id !== (me && me.id) && /scim-probe|okta-capture-probe/i.test((u.profile && u.profile.email) || '');
+
+  // API tokens too, now that -mint-token creates them. A rig owns everything it
+  // creates, and a long-lived credential is the last thing that should go
+  // unlisted in someone's tenant.
+  const apiTokens = await get('/api/v1/api-tokens');
 
   return JSON.stringify({
     apps: apps.map(a => ({id: a.id, label: a.label, status: a.status, ours: oursApp(a)})),
     users: (users.error ? [] : users).map(u => ({id: u.id, email: u.profile && u.profile.email, status: u.status, ours: oursUser(u)})),
     usersError: users.error || null,
+    tokens: (apiTokens.error ? [] : apiTokens).map(t => ({id: t.id, name: t.name})),
+    tokensError: apiTokens.error || null,
   });
 })()`, token)
 
@@ -246,6 +290,10 @@ func auditTenant(ctx context.Context, remove bool) error {
 			Ours              bool
 		}
 		UsersError string `json:"usersError"`
+		Tokens     []struct {
+			ID, Name string
+		}
+		TokensError string `json:"tokensError"`
 	}
 	if err := json.Unmarshal([]byte(raw), &report); err != nil {
 		return fmt.Errorf("could not read the tenant: %w (%s)", err, raw)
@@ -274,6 +322,13 @@ func auditTenant(ctx context.Context, remove bool) error {
 		}
 		fmt.Printf("  %s %-40s %s (%s)\n", verdict, user.Email, user.Status, user.ID)
 	}
+	fmt.Println("--- every API token ---")
+	if report.TokensError != "" {
+		fmt.Printf("  could not list tokens: %s\n", report.TokensError)
+	}
+	for _, apiToken := range report.Tokens {
+		fmt.Printf("  %-40s %s\n", apiToken.Name, apiToken.ID)
+	}
 	fmt.Println("--- anything spared that this rig created is a filter gap, not a clean tenant ---")
 
 	if !remove {
@@ -284,7 +339,7 @@ func auditTenant(ctx context.Context, remove bool) error {
 		if !app.Ours {
 			continue
 		}
-		if err := deleteOktaApp(ctx, app.ID); err != nil {
+		if err := deleteOktaApp(ctx, token, app.ID); err != nil {
 			return err
 		}
 		fmt.Printf("  removed application %s\n", app.Label)
@@ -294,7 +349,7 @@ func auditTenant(ctx context.Context, remove bool) error {
 		if !user.Ours {
 			continue
 		}
-		if err := deleteOktaUser(ctx, user.ID); err != nil {
+		if err := deleteOktaUser(ctx, token, user.ID); err != nil {
 			return err
 		}
 		fmt.Printf("  removed user %s\n", user.Email)
@@ -303,28 +358,28 @@ func auditTenant(ctx context.Context, remove bool) error {
 }
 
 // deleteOktaApp deactivates then deletes; Okta refuses to delete an active app.
-func deleteOktaApp(ctx context.Context, id string) error {
-	return oktaCalls(ctx, []string{
+func deleteOktaApp(ctx context.Context, token, id string) error {
+	return oktaCalls(ctx, token, []string{
 		"POST /api/v1/apps/" + id + "/lifecycle/deactivate",
 		"DELETE /api/v1/apps/" + id,
 	})
 }
 
 // deleteOktaUser deactivates then deletes, for the same reason.
-func deleteOktaUser(ctx context.Context, id string) error {
-	return oktaCalls(ctx, []string{
+func deleteOktaUser(ctx context.Context, token, id string) error {
+	return oktaCalls(ctx, token, []string{
 		"POST /api/v1/users/" + id + "/lifecycle/deactivate",
 		"DELETE /api/v1/users/" + id,
 	})
 }
 
-func oktaCalls(ctx context.Context, calls []string) error {
+func oktaCalls(ctx context.Context, token string, calls []string) error {
 	for _, call := range calls {
 		method, path, _ := strings.Cut(call, " ")
 		script := fmt.Sprintf(`(async () => {
   const r = await fetch(%q, {method: %q, credentials: 'include', headers: {accept: 'application/json', authorization: 'SSWS ' + %q}});
   return r.status;
-})()`, path, method, os.Getenv("OKTA_API_TOKEN"))
+})()`, path, method, token)
 
 		var status int
 		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &status, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
@@ -417,7 +472,7 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 	}
 
 	if inventory || cleanup {
-		return auditTenant(ctx, cleanup)
+		return auditTenant(ctx, env, cleanup)
 	}
 
 	if err := clearMFA(ctx, env); err != nil {

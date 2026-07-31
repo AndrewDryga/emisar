@@ -19,7 +19,7 @@ by hand:
   label (a fuzzy field match had typed the name elsewhere) were invisible to the
   check that then reported "nothing to clean up".
 - **Google** — OAuth clients from every capture run, plus four throwaway projects.
-- **Okta** — app integrations, and USERS, from a rig with no cleanup at all.
+- **Okta** — app integrations, from a rig with no cleanup at all.
 - **Entra** — enterprise applications, from a rig with no cleanup at all.
 
 The JumpCloud case is the instructive one: the tool reported success from a filter
@@ -79,8 +79,34 @@ for projects.
 `okta-capture -inventory`/`-cleanup` and `entra-capture/entra-inventory.mjs` list
 and remove what they created, both through the provider's own API rather than the
 console DOM — a virtualised list is exactly the surface that under-matches
-silently. Okta needs an `OKTA_API_TOKEN` (SSWS): the console session is answered
-403 by `/api/v1`, and the tool says so rather than reporting an empty tenant.
+silently. Okta's inventory covers applications, users AND api-tokens — a
+long-lived credential is the last thing that should sit unlisted in a tenant,
+whoever created it.
 
-That last part is the general shape. A rig that cannot enumerate says it cannot
-enumerate; "nothing to clean up" is a claim, and a claim needs a listing behind it.
+A rig that cannot enumerate says it cannot enumerate; "nothing to clean up" is a
+claim, and a claim needs a listing behind it.
+
+## Read the credential from where the rig keeps its credentials
+
+`okta-capture` looked for its API token in the process environment only, while
+every other secret it uses comes from its secrets file — where that token already
+was. It reported a tenant it could not list, and the founder was asked to create a
+credential they had already provided.
+
+A missing-credential message is a claim like any other. Check every place the tool
+legitimately stores one before making it.
+
+## An over-broad filter is the same bug pointed the other way
+
+The gap that hides leftovers and the filter that deletes something real are one
+mistake: a pattern nobody checked against the actual tenant.
+
+`okta-capture` matched users by `/emisar/` against their email. It created no
+users at all — Okta is the identity provider, it pushes accounts outward — so
+that pattern found no leftover. It found `andrew@emisar.dev`: the tenant's only
+account, and the one the rig signs in WITH. A cleanup run would have deactivated
+and deleted the admin that owns the tenant.
+
+So: match what the rig demonstrably creates, never a domain that is also the
+founder's; exclude the identity the rig authenticates as, whatever it is called;
+and read the verdict column against the real tenant before running the delete.
