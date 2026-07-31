@@ -16,8 +16,8 @@ same product contract.
 
 Before 1.0, a normal product feature is a minor bump and a release hotfix is a
 patch bump. Pre-1.0 releases do not promise long-lived compatibility between
-components. The current release snapshot is product `v0.35.0`, runner
-`0.15.0`, and `emisar-mcp` `0.4.0`. Those component versions are release tips;
+components. The current release snapshot is product `v0.36.0`, runner
+`0.16.0`, and `emisar-mcp` `0.5.0`. Those component versions are release tips;
 unstamped local builds report `dev`.
 
 At 1.0:
@@ -332,7 +332,7 @@ drives the portal's device-authorization pair —
 `POST /api/mcp/device_authorization` and `POST /api/mcp/device_token`, RFC
 8628-shaped fields and poll errors with an emisar-specific success payload
 (per-client API keys) — which freezes at 1.0 alongside the other public API
-surfaces. The current release tags are `runner-v0.15.0` and `mcp-v0.4.0`. The
+surfaces. The current release tags are `runner-v0.16.0` and `mcp-v0.5.0`. The
 bridge installer also requires the selected GitHub release to be marked
 immutable.
 

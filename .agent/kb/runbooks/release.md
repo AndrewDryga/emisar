@@ -20,7 +20,8 @@ top of it.
   publish the hosted MCP Registry listing — but that publication is
   **deploy-gated**: the workflow reconciles against the version the live
   `/healthz` reports, so the public listing follows the founder's
-  Confirm & Apply (within one half-hourly tick), never the tag alone.
+  Confirm & Apply and the immediate manual reconcile after it, never the tag
+  alone. A six-hour schedule is only the safety net when that reconcile is missed.
 - A version's tag points at the **last commit of its window** (the tip — usually
   `HEAD` at release time). Pick the anchor deliberately so the range
   `<previous-tag>..<anchor>` is exactly what the entry describes.
@@ -122,17 +123,21 @@ Never title a product release with a bare `vX.Y.Z`.
    every version display moves in lockstep. **Bump the root `server.json`
    `version` to match** — the MCP registry descriptor rides the product line and
    `EmisarWeb.MCPRegistryTest` fails the gate when the two drift.
-5. **Roll the BUSL Change Date** in `LICENSE.md` to the release date plus three
+5. **Refresh the compatibility snapshot** in
+   `.agent/kb/specs/compatibility.md` with the new product, runner, and MCP
+   release tips. Update both the version-policy snapshot and the installer tag
+   snapshot.
+6. **Roll the BUSL Change Date** in `LICENSE.md` to the release date plus three
    years. Each released version carries its own conversion promise.
-6. **Update the marketing test** newest-entry assertions.
-7. **Reconcile the bundled pack catalog with production.** Fetch `https://registry.emisar.dev/v1/catalog.json`, build the current packs with that file as `packctl catalog build --previous`, and copy the result to `portal/apps/emisar/priv/packs/catalog.json`. This removes unpublished intermediate versions left by canceled releases and makes the later CD byte check deterministic. See `packs/PUBLISHING.md` for the exact commands.
-8. **Gate the complete candidate** from the repository root: `./run gate all`.
+7. **Update the marketing test** newest-entry assertions.
+8. **Reconcile the bundled pack catalog with production.** Fetch `https://registry.emisar.dev/v1/catalog.json`, build the current packs with that file as `packctl catalog build --previous`, and copy the result to `portal/apps/emisar/priv/packs/catalog.json`. This removes unpublished intermediate versions left by canceled releases and makes the later CD byte check deterministic. See `packs/PUBLISHING.md` for the exact commands.
+9. **Gate the complete candidate** from the repository root: `./run gate all`.
    Green before committing. Never pipe the format/compile checks through
    `head`/`tail` (it masks the exit code).
-9. **Commit** the changelog, version, license date, test, and reconciled catalog — one focused commit
+10. **Commit** the changelog, version, license date, test, and reconciled catalog — one focused commit
    (e.g. `release: v0.25.0 — <title>`).
-10. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
-11. **Certify MCP clients against that exact commit before tagging.** Record
+11. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
+12. **Certify MCP clients against that exact commit before tagging.** Record
     `anchor=$(git rev-parse HEAD)`, then dispatch `mcp-eval.yml` on `main` with
     `qualification=true` and explicit `claude_model`, `codex_model`,
     `gemini_model`, and `grok_model` inputs. Select the resulting
@@ -141,11 +146,11 @@ Never title a product release with a bare `vX.Y.Z`.
     passing reports for Claude, Codex, Gemini, and Grok. A missing credential
     or model, skipped lane, stale SHA, or failed held-out case blocks the
     release; fix the general defect and certify a fresh blind partition.
-12. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
-13. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
-14. **Write the release notes** (Markdown, via `/content-director`) and **create the
+13. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
+14. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
+15. **Write the release notes** (Markdown, via `/content-director`) and **create the
     GitHub release**: `gh release create v0.25.0 --verify-tag --title "Portal v0.25.0 — <title>" --notes-file <file>`. *Outward-facing — confirm first.*
-15. **Record** the completed release in `portal/.agent/LOG.md`.
+16. **Record** the completed release in `portal/.agent/LOG.md`.
 
 ## Verify
 

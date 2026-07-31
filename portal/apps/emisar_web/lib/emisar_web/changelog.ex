@@ -17,6 +17,41 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-07-31],
+      slug: "staged-runbooks-and-hardened-enterprise-identity",
+      title: "Staged runbooks and hardened enterprise identity",
+      tag: "v0.36.0",
+      summary:
+        "A runbook can now carry a production operation from declared inputs to a staged result: typed inputs are bound once, stages run sequentially or in parallel against selected runner groups, steps extract named outputs, test success conditions, and wait within explicit bounds. An approval freezes the whole execution plan before any step begins, canonical JSON imports the same definition shape the console and MCP use, and the execution page shows each attempt and extracted value in order. Enterprise identity now gets the same fail-closed treatment: OIDC discovery and JWKS fetches stay behind a connect-time address policy, SCIM changes lock and reconcile the authority they act on, and names shown in runs and approvals are resolved only inside the account where the action happened.",
+      details: [
+        {"Security",
+         [
+           "OIDC discovery, JWKS refresh, and redirects are fetched through one bounded address policy that rechecks the document actually received; changing an issuer also clears credentials that belonged to the old one.",
+           "SCIM bodies are bounded before authentication, group PATCH operations apply atomically in wire order, directory-owned suspensions can be reversed only by their owner, and disabling a connection retires the sessions and pending links it vouched for.",
+           "Run and approval attribution now resolves a person's name through the membership in the action's account, so a profile from another workspace cannot leak into the audit surface."
+         ]},
+        {"MCP",
+         [
+           "The bridge and portal adopt the 2026-07-28 MCP routing headers and dual-era endpoint, including OAuth Client ID Metadata Documents for clients that use them.",
+           "Release qualification names all four client models explicitly and requires Claude, Codex, Gemini, and Grok to pass the same held-out contract at the exact release commit."
+         ]},
+        {"Packs",
+         [
+           "The catalog now carries 91 packs and 1,386 actions, including bounded reads for GCP IAM, Monitoring, and Compute; Pure protection and performance history; Terraform state safety; Nomad job health; OIDC and JWKS; nftables; TCP; and Docker Compose.",
+           "A missing source command or an HTTP 4xx or 5xx now fails the action instead of letting a downstream pipe or successful transport report an empty success, and registry installation preserves a pack script's executable bit."
+         ]},
+        {"Console",
+         [
+           "Runbook authoring uses type-aware inputs, compact target selection, explicit sensitive-output controls, one whole-run approval plan, and canonical JSON import instead of a parallel definition format.",
+           "Execution pages follow the run detail's answer-first structure, with stages, attempts, output rows, waits, and terminal causes presented in execution order."
+         ]},
+        {"Website",
+         [
+           "Authentication and directory documentation now has one operator path across SSO, SCIM, account access, and the Okta, Entra, JumpCloud, Google Workspace, Keycloak, and generic OIDC guides, with one numbered step per provider screen."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-07-27],
       slug: "runner-identity-by-hostname-and-proven-pack-behavior",
       title: "Runner identity by hostname and pack behavior proven on real services",
