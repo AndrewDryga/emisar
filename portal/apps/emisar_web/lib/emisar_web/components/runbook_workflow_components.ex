@@ -247,6 +247,13 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         RunbookEditorCatalog.target_options(assigns.catalog, assigns.step["target_refs"])
       )
       |> assign(
+        :targets_resolved?,
+        RunbookEditorCatalog.targets_resolved?(
+          assigns.catalog,
+          assigns.step["target_refs"]
+        )
+      )
+      |> assign(
         :action_available?,
         RunbookEditorCatalog.action_available?(
           assigns.catalog,
@@ -335,12 +342,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             options={@action_options}
             prompt={if @step["target_refs"] == [], do: "Choose targets first", else: "Choose action…"}
             prompt_selected={@action_choice == ""}
-            disabled={@read_only? or @step["target_refs"] == []}
+            disabled={@read_only? or not @targets_resolved?}
             class="mt-2"
             aria-label="Action"
           />
           <p
-            :if={@action_choice != "" and not @action_available?}
+            :if={@targets_resolved? and @action_choice != "" and not @action_available?}
             class="mt-2 text-xs leading-relaxed text-rose-300"
           >
             This action is not available on every selected runner. Choose another action or update

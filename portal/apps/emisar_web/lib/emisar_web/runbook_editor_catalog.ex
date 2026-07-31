@@ -55,6 +55,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
 
   @doc "Action choices available on every runner resolved from the selected targets."
   def action_options(catalog, selected_refs, selected_value) do
+    targets_resolved? = targets_resolved?(catalog, selected_refs)
     runner_ids = selected_runner_ids(catalog, selected_refs)
 
     options =
@@ -78,13 +79,24 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       [
         %{
           value: selected_value,
-          label: unavailable_action_label(selected_value),
+          label:
+            if(targets_resolved?,
+              do: unavailable_action_label(selected_value),
+              else: saved_action_label(selected_value)
+            ),
           disabled: true,
           selected: true
         }
         | options
       ]
     end
+  end
+
+  @doc "Whether every selected target currently resolves to one or more eligible runners."
+  def targets_resolved?(_catalog, []), do: false
+
+  def targets_resolved?(catalog, refs) do
+    Enum.all?(refs, &Map.has_key?(catalog.target_runner_ids, &1))
   end
 
   @doc "Whether the current pack/action choice is available on every selected runner."
@@ -276,6 +288,11 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   defp unavailable_action_label(value) do
     {_pack_id, action_id} = split_action_value(value)
     "Unavailable · #{action_id}"
+  end
+
+  defp saved_action_label(value) do
+    {_pack_id, action_id} = split_action_value(value)
+    action_id
   end
 
   defp fallback_target_label("group:" <> group), do: group <> " group"

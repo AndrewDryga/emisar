@@ -58,6 +58,13 @@ grid. When a saved target no longer resolves, name it in operator language,
 mark it unavailable in the trigger, and keep its menu row removable even when
 there are no current targets to add.
 
+A dependent control does not invent a second failure while its prerequisite is
+unresolved. Keep its saved value visible, neutral, and disabled so the operator
+can understand what will become editable after fixing the prerequisite. The
+prerequisite owns the actionable error. Only mark the dependent choice
+unavailable or incompatible after its prerequisite resolves and that evaluation
+actually fails.
+
 A typed value uses a type-aware editor. Booleans offer no default, true, or
 false; integer and number defaults use numeric controls with whole-number and
 decimal steps respectively; strings use text. An enum's optional single default
@@ -111,6 +118,9 @@ never a reduced model.
 - A multi-target step keeps one aligned Targets trigger. `edge-web group` is
   shown instead of `group:edge-web`; an unavailable saved target is visibly
   invalid and can still be removed from the same menu.
+- When Targets cannot resolve, Action keeps its saved action name in a neutral
+  disabled control and shows no compatibility error. Once Targets resolve, a
+  genuinely incompatible action owns its unavailable label and remedy.
 - An argument named `file` reads `Optional JSON value`, then shows `Use` and the
   applicable value control. Choosing Omit leaves only the compact source control.
 - Parallel stages show a concurrency cap; sequential stages do not.
@@ -156,6 +166,9 @@ never a reduced model.
 - Selected-target cards stacked over an add-target dropdown, raw tagged refs in
   the closed trigger, or a stale target that becomes impossible to remove when
   the live catalog is empty.
+- An unresolved target that also turns Action rose, prefixes it with
+  `Unavailable`, or claims runner compatibility failed when compatibility could
+  not be evaluated.
 - Review and canonical JSON before the editable workflow on a phone.
 - Showing a concurrency value in sequential mode where it does nothing.
 - A Cancel editing link in the lifecycle rail that only navigates back.
@@ -219,3 +232,7 @@ weight, and conditional fields that resize earlier tracks instead of using a
 reserved track or attached continuation. Sweep workflow overview scope controls
 for selected items stacked outside their picker, raw `group:`/`runner:` refs,
 and stale selections whose remove action is disabled with the add catalog.
+Sweep scope-first forms for a dependent behavior control that repeats the
+prerequisite's error or claims its own compatibility result before the
+prerequisite resolves. Rendered tests pin the neutral disabled dependency state
+and retain a separate true-incompatibility case.

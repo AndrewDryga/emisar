@@ -234,8 +234,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       refute html =~ "file · json · optional"
       refute html =~ "Not sent to the action."
-      assert html =~ "Unavailable · linux.uptime"
-      refute html =~ "Unavailable · linux-core|linux.uptime"
+
+      assert has_element?(
+               lv,
+               ~s(select[name="draft[stages][0][steps][0][action_choice]"][disabled] option[value="linux-core|linux.uptime"][selected]),
+               "linux.uptime"
+             )
+
+      refute html =~ "Unavailable · linux.uptime"
+      refute html =~ "This action is not available on every selected runner."
 
       assert has_element?(
                lv,
@@ -635,6 +642,32 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                ~s(select[name="draft[stages][0][steps][0][action_choice]"] option[value="linux-core|linux.uptime"])
+             )
+    end
+
+    test "a resolved target keeps a genuinely unavailable action actionable", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      draft =
+        valid_draft()
+        |> put_in(
+          ["stages", Access.at(0), "steps", Access.at(0), "action"],
+          "linux.missing"
+        )
+
+      html = change(lv, draft)
+
+      assert html =~ "Unavailable · linux.missing"
+      assert html =~ "This action is not available on every selected runner."
+
+      refute has_element?(
+               lv,
+               ~s(select[name="draft[stages][0][steps][0][action_choice]"][disabled])
              )
     end
 
