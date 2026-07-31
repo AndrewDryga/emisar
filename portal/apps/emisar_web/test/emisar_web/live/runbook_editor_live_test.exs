@@ -217,6 +217,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute has_element?(lv, "button", "Stage identifier")
       refute html =~ "Caps fan-out within this stage."
       assert has_element?(lv, "section", "Details")
+      refute html =~ "The description appears in runbook discovery for operators and LLMs."
       refute has_element?(lv, "#runbook-actions-desktop h2", "Actions")
       refute has_element?(lv, "#runbook-actions-mobile h2", "Actions")
       assert has_element?(lv, "#runbook-actions-desktop + section", "Publish check")

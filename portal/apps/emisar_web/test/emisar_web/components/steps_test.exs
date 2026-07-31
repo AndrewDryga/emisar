@@ -48,5 +48,20 @@ defmodule EmisarWeb.Components.StepsTest do
       assert html =~ "restart nginx"
       assert html =~ ~r{>\s*2\s*</span>}
     end
+
+    test "plan: parallel work replaces sequence numbers with one shared icon" do
+      assigns = %{steps: ["restart node a", "restart node b"]}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.steps variant={:plan} marker={:parallel}>
+          <:step :for={step <- @steps}>{step}</:step>
+        </CoreComponents.steps>
+        """)
+
+      assert html =~ ~s(data-steps-marker="parallel")
+      assert html =~ "hero-arrows-right-left"
+      refute html =~ ~r{>\s*1\s*</span>}
+    end
   end
 end

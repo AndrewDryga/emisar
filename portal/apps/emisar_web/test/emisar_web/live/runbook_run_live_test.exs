@@ -79,7 +79,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
               "Apply change",
               "sequential",
               1,
-              [step("apply", runner.group)]
+              [step("apply", runner.group, opts)]
             )
           ]
         else
@@ -131,7 +131,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     )
   end
 
-  defp step(id, group, opts \\ []) do
+  defp step(id, group, opts) do
     bindings =
       if Keyword.get(opts, :sensitive_input, false),
         do: %{"token" => %{"source" => "input", "ref" => "token"}},
@@ -182,6 +182,10 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
   defp execution, do: Repo.one!(RunbookExecution)
 
+  defp assert_before(html, first, second) do
+    assert :binary.match(html, first) < :binary.match(html, second)
+  end
+
   describe "authorization and current preflight" do
     test "a viewer cannot mount the dispatch surface", %{
       user: user,
@@ -228,16 +232,34 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runbook =
         published_runbook(subject, runner,
           sensitive_input: true,
-          extract_ready: true
+          extract_ready: true,
+          second_stage: true
         )
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       assert html =~ "One-time incident token"
       assert html =~ ~s(type="password")
-      assert has_element?(lv, "#runbook-operator-context article")
+
+      assert has_element?(
+               lv,
+               "#runbook-operator-context article.border:not([class*='bg-zinc'])"
+             )
+
       assert has_element?(lv, "#current-runbook-plan")
+      assert has_element?(lv, "#current-runbook-plan-summary")
       assert has_element?(lv, "#runbook-start-rail:not([class*='border-l'])")
       assert has_element?(lv, "#runbook-execution-history")
+
+      assert_before(html, ~s(id="runbook-operator-context"), ~s(id="runbook-run-form"))
+      assert_before(html, ~s(name="reason"), ~s(id="current-runbook-plan"))
+      assert_before(html, ~s(id="current-runbook-plan"), ~s(id="start-runbook-button"))
+      assert_before(html, ~s(id="runbook-before-starting"), ~s(id="current-runbook-plan-summary"))
+
+      assert_before(
+        html,
+        ~s(id="current-runbook-plan-summary"),
+        ~s(id="runbook-execution-history")
+      )
 
       render_change(lv, "run_form_changed", %{
         "reason" => "Investigate incident INC-42",
@@ -249,9 +271,12 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert html =~ "Current plan"
       assert html =~ "Inspect"
+      assert html =~ "Apply change"
       assert html =~ "token"
       assert html =~ "[REDACTED]"
       refute html =~ @hash
+      assert has_element?(lv, ~s([data-steps-marker="parallel"] .hero-arrows-right-left))
+      assert has_element?(lv, ~s([data-steps-marker="number"]), "1")
 
       assert has_element?(
                lv,
@@ -306,10 +331,22 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       account: account,
       subject: subject
     } do
-      runner = trusted_runner(account, subject)
-      runbook = published_runbook(subject, runner, extract_ready: true)
+      args = [
+        %{
+          "name" => "token",
+          "type" => "string",
+          "required" => true,
+          "sensitive" => true
+        }
+      ]
+
+      runner = trusted_runner(account, subject, args: args)
+
+      runbook =
+        published_runbook(subject, runner, extract_ready: true, sensitive_input: true)
+
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
-      start(lv)
+      start(lv, %{"token" => "secret-token"})
 
       assert [run] = Runs.list_runs_for_runbook_execution(account.id, execution().id)
 
@@ -332,18 +369,35 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert {:ok, _run} =
                Fixtures.Runs.finish(run, %{
                  "status" => "success",
+                 "executed_command" => "uptime --pretty --token [REDACTED]",
+                 "executed_command_truncated" => true,
                  "structured_output" => %{"ready" => true}
                })
 
       html = render(lv)
       assert html =~ "1 of 1 succeeded"
+      assert has_element?(lv, "[id$='-progress']", "1 of 1 succeeded")
+
+      stage_header =
+        lv
+        |> element("#runbook-execution-result section[id^=execution-stage] > header")
+        |> render()
+
+      refute stage_header =~ "rounded-full"
+      refute stage_header =~ "succeeded succeeded"
+      assert html =~ "max-w-6xl"
+      assert has_element?(lv, "[data-role=item-disclosure]", "Collapse")
       assert html =~ "Extracted outputs"
       assert html =~ "Success evidence"
       assert html =~ "ready"
       assert html =~ "Output extraction"
       assert html =~ "Success condition"
       assert html =~ "passed"
-      assert html =~ "Output"
+      assert html =~ "Command and output"
+      assert html =~ "$ "
+      assert html =~ "uptime --pretty --token [REDACTED]"
+      assert html =~ " …"
+      refute html =~ "secret-token"
       assert html =~ "checking fleet"
       assert html =~ "&lt;host unavailable&gt;"
       assert html =~ "text-rose-300"

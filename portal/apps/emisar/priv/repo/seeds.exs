@@ -2009,6 +2009,21 @@ ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
       })
   end)
 
+  executed_command =
+    case item.action_id do
+      "caddy.reload_config" ->
+        "caddy reload --config /etc/caddy/Caddyfile"
+
+      "caddy.version" ->
+        "caddy version"
+
+      "caddy.reverse_proxy_upstreams" ->
+        ~s(/bin/sh -c 'curl -fsS "${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy/upstreams"')
+
+      _other ->
+        nil
+    end
+
   attempt
   |> ActionRun.Changeset.transition(:success, %{
     started_at: DateTime.add(succeeded_at, 6, :second),
@@ -2016,6 +2031,7 @@ ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
     exit_code: 0,
     duration_ms: 12_000,
     output_complete: true,
+    executed_command: executed_command,
     event_id: "seed-runbook-" <> item.id
   })
   |> Repo.update!()

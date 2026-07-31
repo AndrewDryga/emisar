@@ -3017,12 +3017,10 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  The ONE numbered-steps list — a circle-numbered row per step, for any
-  "do these in order" sequence (SSO setup guides, agent connect steps,
-  install troubleshooting checks, the runbook plan). Numbers derive from
-  slot order. `variant={:guide}` is the compact text-xs instructional
-  list; `:plan` is the full-width divide-y data rows the runbook plan
-  uses inside an unpadded card.
+  The ONE ordered-work list for setup guides and runbook plans. Numbers
+  derive from slot order; `marker={:parallel}` replaces them with the shared
+  parallel icon when order does not apply. `variant={:guide}` is the compact
+  instructional list; `:plan` is the full-width divide-y row grammar.
 
       <.steps class="mt-3">
         <:step>Create an OAuth web app in your IdP.</:step>
@@ -3030,6 +3028,7 @@ defmodule EmisarWeb.CoreComponents do
       </.steps>
   """
   attr :variant, :atom, default: :guide, values: [:guide, :plan]
+  attr :marker, :atom, default: :number, values: [:number, :parallel]
   attr :class, :string, default: nil
   slot :step, required: true
 
@@ -3037,8 +3036,13 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <ol class={[steps_list_class(@variant), @class]}>
       <li :for={{step, idx} <- Enum.with_index(@step)} class={steps_row_class(@variant)}>
-        <span class={steps_marker_class(@variant)}>
-          {steps_marker(@variant, idx)}
+        <span class={steps_marker_class(@variant)} data-steps-marker={@marker}>
+          <.icon
+            :if={@marker == :parallel}
+            name="hero-arrows-right-left"
+            class="h-3.5 w-3.5"
+          />
+          <span :if={@marker == :number}>{steps_marker(@variant, idx)}</span>
         </span>
         <div class={steps_content_class(@variant)}>
           {render_slot(step)}
@@ -3334,7 +3338,7 @@ defmodule EmisarWeb.CoreComponents do
   def artifact_panel(assigns) do
     ~H"""
     <article class={[
-      "min-w-0 overflow-hidden rounded-xl bg-zinc-900/40 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ring-1 ring-white/[0.07]",
+      "min-w-0 overflow-hidden rounded-xl border border-zinc-800/70 p-5",
       @class
     ]}>
       {render_slot(@inner_block)}
@@ -5450,31 +5454,66 @@ defmodule EmisarWeb.CoreComponents do
   defp expiry_class(_), do: "text-zinc-400"
 
   @doc """
-  A bounded, static preview of an action run's tail output — the last few
-  progress chunks of a finished run, rendered like the live terminal
-  (stderr in rose). Pass `events` in chronological order (oldest→newest);
-  an empty list renders nothing.
+  A bounded, static preview of the command and tail output for an action run.
+  The optional command must be the runner-reported redacted command; callers
+  never reconstruct it from arguments. Pass events in chronological order
+  (oldest→newest). Earlier output is omitted once `max_chars` is reached.
   """
+  attr :command, :string, default: nil
+  attr :command_truncated?, :boolean, default: false
   attr :events, :list, required: true
+  attr :label, :string, default: "Command and output"
+  attr :max_chars, :integer, default: 32_000
   attr :class, :string, default: nil
 
   def output_preview(assigns) do
+    {rows, output_truncated?} = bounded_output_rows(assigns.events, assigns.max_chars)
+
+    assigns =
+      assigns
+      |> assign(:rows, rows)
+      |> assign(:output_truncated?, output_truncated?)
+
     ~H"""
-    <%!-- Each chunk carries its own trailing newline (the runner streams
-         line-by-line), so chunks concatenate as inline spans inside one
-         <pre> and only the real newlines break lines — block elements or
-         template indentation would double the spacing. --%>
     <pre
-      :if={@events != []}
+      :if={is_binary(@command) or @rows != []}
+      tabindex="0"
+      aria-label={@label}
       class={[
-        "overflow-auto whitespace-pre-wrap break-all rounded-md bg-black p-2 font-mono text-[11px] leading-snug text-zinc-300",
+        "overflow-auto whitespace-pre-wrap break-words rounded-lg border border-zinc-800 bg-zinc-950 p-4 font-mono text-xs leading-relaxed text-zinc-300 [font-variant-ligatures:none]",
         @class
       ]}
-    ><span
-        :for={event <- @events}
-        class={event.stream == "stderr" && "text-rose-300"}
-      >{event_chunk(event)}</span></pre>
+    ><span :if={is_binary(@command)}><span class="select-none text-zinc-500">$ </span>{@command}<span :if={@command_truncated?} class="text-zinc-500"> …</span>
+    </span><span :if={@output_truncated?} class="text-zinc-500">… earlier output omitted …
+    </span><span :for={row <- @rows} class={row.stream == "stderr" && "text-rose-300"}>{row.chunk}</span></pre>
     """
+  end
+
+  defp bounded_output_rows(events, max_chars) do
+    {rows, _remaining, truncated?} =
+      events
+      |> Enum.reverse()
+      |> Enum.reduce({[], max(max_chars, 0), false}, fn event, {rows, remaining, truncated?} ->
+        chunk = event_chunk(event)
+
+        cond do
+          chunk == "" ->
+            {rows, remaining, truncated?}
+
+          remaining == 0 ->
+            {rows, remaining, true}
+
+          String.length(chunk) <= remaining ->
+            row = %{stream: event.stream, chunk: chunk}
+            {[row | rows], remaining - String.length(chunk), truncated?}
+
+          true ->
+            row = %{stream: event.stream, chunk: String.slice(chunk, -remaining, remaining)}
+            {[row | rows], 0, true}
+        end
+      end)
+
+    {rows, truncated?}
   end
 
   @doc """

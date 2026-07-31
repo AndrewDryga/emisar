@@ -720,9 +720,6 @@ defmodule EmisarWeb.RunbookEditorComponents do
           errors={List.wrap(field_error(@form, :description))}
           placeholder="What this runbook changes and when to use it"
         />
-        <p class="text-[11px] leading-relaxed text-zinc-500">
-          The description appears in runbook discovery for operators and LLMs.
-        </p>
       </div>
     </section>
     """

@@ -622,7 +622,7 @@ defmodule EmisarWeb.RunbookRunLive do
       switchable_accounts={@switchable_accounts}
       flash={@flash}
       section={:runbooks}
-      width={:table}
+      width={if @result, do: :detail, else: :table}
     >
       <:title>
         <.detail_header
@@ -710,7 +710,7 @@ defmodule EmisarWeb.RunbookRunLive do
           </.artifact_panel>
         </section>
 
-        <section>
+        <section id="runbook-start-execution">
           <.section_header title="Start execution">
             <:subtitle>
               Supply this execution's values and record why it should run now.
@@ -720,49 +720,54 @@ defmodule EmisarWeb.RunbookRunLive do
             id="runbook-run-form"
             phx-change="run_form_changed"
             phx-submit="start"
-            class="space-y-5"
+            class="space-y-8"
           >
-            <div
-              :if={@runbook.definition["inputs"] != []}
-              class="grid gap-4 sm:grid-cols-2"
-            >
-              <div :for={input <- @runbook.definition["inputs"]}>
+            <div class="space-y-5">
+              <div
+                :if={@runbook.definition["inputs"] != []}
+                class="grid gap-4 sm:grid-cols-2"
+              >
+                <div :for={input <- @runbook.definition["inputs"]}>
+                  <.input
+                    type={input_type(input)}
+                    name={"inputs[#{input["id"]}]"}
+                    value={@input_raw[input["id"]]}
+                    label={input["id"]}
+                    label_variant={:eyebrow}
+                    options={input_options(input)}
+                    step={input_step(input)}
+                    required={input["required"]}
+                    autocomplete={if(input["sensitive"], do: "off")}
+                  />
+                  <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
+                    {input["description"]}
+                    <span :if={input["sensitive"]} class="text-amber-300"> · sensitive</span>
+                  </p>
+                  <p :if={@input_errors[input["id"]]} class="mt-1 text-xs text-rose-300">
+                    {@input_errors[input["id"]]}
+                  </p>
+                </div>
+              </div>
+
+              <div class="max-w-3xl">
                 <.input
-                  type={input_type(input)}
-                  name={"inputs[#{input["id"]}]"}
-                  value={@input_raw[input["id"]]}
-                  label={input["id"]}
+                  type="textarea"
+                  name="reason"
+                  value={@reason}
+                  label="Reason"
                   label_variant={:eyebrow}
-                  options={input_options(input)}
-                  step={input_step(input)}
-                  required={input["required"]}
-                  autocomplete={if(input["sensitive"], do: "off")}
+                  rows="3"
+                  required
+                  placeholder="Why this runbook should run now"
                 />
-                <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-                  {input["description"]}
-                  <span :if={input["sensitive"]} class="text-amber-300"> · sensitive</span>
-                </p>
-                <p :if={@input_errors[input["id"]]} class="mt-1 text-xs text-rose-300">
-                  {@input_errors[input["id"]]}
-                </p>
               </div>
             </div>
 
-            <div class="max-w-3xl">
-              <.input
-                type="textarea"
-                name="reason"
-                value={@reason}
-                label="Reason"
-                label_variant={:eyebrow}
-                rows="3"
-                required
-                placeholder="Why this runbook should run now"
-              />
-            </div>
+            <.plan_details preflight={@preflight} expanded_stages={@expanded_stages} />
 
             <div class="flex flex-wrap items-center gap-4 border-t border-zinc-800/70 pt-4">
               <.button
+                id="start-runbook-button"
                 type="submit"
                 variant={if @can_start?, do: :primary, else: :secondary}
                 phx-disable-with="Starting…"
@@ -775,7 +780,7 @@ defmodule EmisarWeb.RunbookRunLive do
                   <% @preflight.state == :loading -> %>
                     Checking the current plan…
                   <% @preflight.state == :error -> %>
-                    Resolve the preflight issues below before starting.
+                    Resolve the plan issues above before starting.
                   <% String.trim(@reason) == "" -> %>
                     Add a reason to start this execution.
                   <% true -> %>
@@ -788,9 +793,7 @@ defmodule EmisarWeb.RunbookRunLive do
       </main>
 
       <aside id="runbook-start-rail" class="min-w-0 space-y-9">
-        <.current_plan preflight={@preflight} expanded_stages={@expanded_stages} />
-
-        <section>
+        <section id="runbook-before-starting">
           <.section_header title="Before starting" />
           <p class="text-sm leading-6 text-zinc-400">
             Starting freezes this exact plan. If approval is required, one decision covers every
@@ -801,6 +804,8 @@ defmodule EmisarWeb.RunbookRunLive do
             <.doc_link href="/docs/runbooks">Runbook execution guide</.doc_link>
           </div>
         </section>
+
+        <.plan_summary preflight={@preflight} />
 
         <section id="runbook-execution-history">
           <.section_header title="Recent executions" />
@@ -816,11 +821,10 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   attr :preflight, :map, required: true
-  attr :expanded_stages, :any, required: true
 
-  defp current_plan(assigns) do
+  defp plan_summary(assigns) do
     ~H"""
-    <section id="current-runbook-plan">
+    <section id="current-runbook-plan-summary">
       <.section_header title="Current plan" />
 
       <div
@@ -831,25 +835,11 @@ defmodule EmisarWeb.RunbookRunLive do
         Checking current state…
       </div>
 
-      <.event_block
-        :if={@preflight.state == :error}
-        icon="hero-exclamation-triangle"
-        tone={:rose}
-        title="Preflight blocked"
-      >
-        <:body>
-          <ul class="space-y-2">
-            <li :for={issue <- @preflight.issues}>
-              <span class="text-xs font-medium text-zinc-200">
-                {preflight_issue_label(issue.path)}
-              </span>
-              — {issue.message}
-            </li>
-          </ul>
-        </:body>
-      </.event_block>
+      <p :if={@preflight.state == :error} class="text-sm leading-6 text-rose-300">
+        Resolve the plan issues before starting.
+      </p>
 
-      <div :if={@preflight.state == :ready} class="space-y-5">
+      <div :if={@preflight.state == :ready}>
         <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
           <div>
             <dt class="text-zinc-500">Actions</dt>
@@ -876,7 +866,46 @@ defmodule EmisarWeb.RunbookRunLive do
             </dd>
           </div>
         </dl>
+      </div>
+    </section>
+    """
+  end
 
+  attr :preflight, :map, required: true
+  attr :expanded_stages, :any, required: true
+
+  defp plan_details(assigns) do
+    ~H"""
+    <section id="current-runbook-plan">
+      <.section_header title="Plan" />
+
+      <div
+        :if={@preflight.state == :loading}
+        class="flex items-center gap-2 text-sm text-zinc-400"
+      >
+        <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+        Resolving actions and runners…
+      </div>
+
+      <.event_block
+        :if={@preflight.state == :error}
+        icon="hero-exclamation-triangle"
+        tone={:rose}
+        title="Plan blocked"
+      >
+        <:body>
+          <ul class="space-y-2">
+            <li :for={issue <- @preflight.issues}>
+              <span class="text-xs font-medium text-zinc-200">
+                {preflight_issue_label(issue.path)}
+              </span>
+              — {issue.message}
+            </li>
+          </ul>
+        </:body>
+      </.event_block>
+
+      <div :if={@preflight.state == :ready} class="space-y-8">
         <.plan_stage
           :for={stage <- @preflight.plan["stages"]}
           stage={stage}
@@ -916,27 +945,31 @@ defmodule EmisarWeb.RunbookRunLive do
         </span>
       </div>
 
-      <ul class="mt-3 divide-y divide-zinc-800/60">
-        <li :for={item <- @visible_items} class="grid gap-2 py-3 sm:grid-cols-[1fr_auto]">
+      <.steps
+        variant={:plan}
+        marker={if @stage["mode"] == "parallel", do: :parallel, else: :number}
+        class="mt-3"
+      >
+        <:step :for={item <- @visible_items}>
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="font-mono text-xs text-zinc-200">{item["action"]}</span>
+              <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
               <.risk_pill :if={item["risk"]} risk={item["risk"]} />
             </div>
             <p class="mt-1 text-xs text-zinc-400">
-              On
+              <span class="text-zinc-500">→</span>
               <span class="font-medium text-zinc-300">
                 {RunbookWorkflowComponents.runner_name(item["runner_ref"])}
               </span>
+              <span class="font-mono text-zinc-500"> · {item["step_id"]}</span>
             </p>
             <RunbookWorkflowComponents.argument_list
               arguments={item["args"] || %{}}
               class="mt-3"
             />
           </div>
-          <span class="font-mono text-[11px] text-zinc-400">{item["step_id"]}</span>
-        </li>
-      </ul>
+        </:step>
+      </.steps>
       <.button
         :if={@hidden_count > 0 or (@expanded? and length(@stage["items"]) > @page_size)}
         type="button"
@@ -1004,7 +1037,7 @@ defmodule EmisarWeb.RunbookRunLive do
     assigns = assign(assigns, :page_size, @item_page_size)
 
     ~H"""
-    <div class="space-y-12">
+    <div id="runbook-execution-result" class="space-y-12">
       <%!-- The STATUS block mirrors the run detail's grammar: the naked meta row
            carries the facts, the reason renders as the operator's own artifact,
            and only a held/dead outcome earns an attention event block. --%>
@@ -1109,8 +1142,12 @@ defmodule EmisarWeb.RunbookRunLive do
         <.section_header title={stage.title}>
           <:subtitle>{stage_mode(stage)}</:subtitle>
           <:actions>
-            <span class="text-xs tabular-nums text-zinc-400">{stage_progress(stage_items)}</span>
-            <.status_badge status={stage.status} />
+            <span
+              id={"execution-stage-#{stage.id}-progress"}
+              class="text-xs tabular-nums text-zinc-400"
+            >
+              {stage_progress(stage_items)}
+            </span>
           </:actions>
         </.section_header>
 
@@ -1223,36 +1260,50 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp execution_item_summary(assigns) do
     ~H"""
-    <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-      <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
-          <.risk_pill :if={@item.risk} risk={@item.risk} />
+    <div>
+      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
+            <.risk_pill :if={@item.risk} risk={@item.risk} />
+          </div>
+          <p class="mt-1 text-xs text-zinc-400">
+            {@item.step_id} · on
+            <span class="font-medium text-zinc-300">
+              {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
+            </span>
+            <%!-- One attempt is the norm — only a retry earns a mention. --%>
+            <span :if={@item.attempt_count > 1}> · {@item.attempt_count} attempts</span>
+          </p>
         </div>
-        <p class="mt-1 text-xs text-zinc-400">
-          {@item.step_id} · on
-          <span class="font-medium text-zinc-300">
-            {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
+        <div class="flex items-center gap-3 sm:justify-end">
+          <span :if={@attempt && @attempt.duration_ms} class="text-xs tabular-nums text-zinc-400">
+            {format_duration(@attempt.duration_ms)}
           </span>
-          <%!-- One attempt is the norm — only a retry earns a mention. --%>
-          <span :if={@item.attempt_count > 1}> · {@item.attempt_count} attempts</span>
-        </p>
-        <RunbookWorkflowComponents.argument_list arguments={@arguments} class="mt-3" />
+          <%!-- Fixed track so the status column's left edge aligns down the list
+               despite different label lengths. --%>
+          <.status_badge status={@projected_status} class="w-24" />
+        </div>
       </div>
-      <div class="flex items-center gap-3 sm:justify-end">
-        <span :if={@attempt && @attempt.duration_ms} class="text-xs tabular-nums text-zinc-400">
-          {format_duration(@attempt.duration_ms)}
-        </span>
-        <%!-- Fixed track so the status column's left edge aligns down the list
-             despite different label lengths. --%>
-        <.status_badge status={@projected_status} class="w-24" />
+
+      <RunbookWorkflowComponents.argument_list
+        arguments={@arguments}
+        class="mt-3"
+        show_empty?={@expandable?}
+      />
+
+      <span
+        :if={@expandable?}
+        data-role="item-disclosure"
+        class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 group-hover:text-zinc-200"
+      >
         <.icon
-          :if={@expandable?}
           name="hero-chevron-down"
-          class="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+          class="h-4 w-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
         />
-        <span :if={not @expandable?} class="h-4 w-4 shrink-0" aria-hidden="true"></span>
-      </div>
+        <span class="group-open:hidden">Details</span>
+        <span class="hidden group-open:inline">Collapse</span>
+      </span>
     </div>
     """
   end
@@ -1264,6 +1315,14 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :current_account, :map, required: true
 
   defp execution_item_details(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :has_transcript?,
+        assigns.attempt &&
+          (is_binary(assigns.attempt.executed_command) or assigns.events != [])
+      )
+
     ~H"""
     <div class="mt-5 space-y-5 sm:pl-4">
       <%!-- Only rows that ADD a fact: the summary already shows status and
@@ -1295,6 +1354,22 @@ defmodule EmisarWeb.RunbookRunLive do
       >
         <:body>{terminal_message}</:body>
       </.event_block>
+
+      <div :if={@has_transcript?}>
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+          Command and output
+        </p>
+        <.output_preview
+          events={@events}
+          command={@attempt.executed_command}
+          command_truncated?={@attempt.executed_command_truncated}
+          class="mt-2 max-h-64"
+        />
+      </div>
+
+      <p :if={@attempt && not @has_transcript?} class="text-xs text-zinc-500">
+        No command or output captured.
+      </p>
 
       <div :if={@item.outputs != %{}}>
         <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -1330,16 +1405,6 @@ defmodule EmisarWeb.RunbookRunLive do
             />
           </li>
         </ul>
-      </div>
-
-      <div :if={@attempt}>
-        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-          Output
-        </p>
-        <.output_preview events={@events} class="mt-2 max-h-52" />
-        <p :if={@events == []} class="mt-2 text-xs text-zinc-500">
-          No output captured.
-        </p>
       </div>
 
       <.link
