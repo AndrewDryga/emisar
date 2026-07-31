@@ -67,9 +67,10 @@ corpus without starting a client:
   -require-held-out)
 ```
 
-## Blind release corpus
+## Held-out release corpus
 
-Release qualification uses a separately owned, uncommitted version 2 corpus:
+Release qualification uses an uncommitted version 2 corpus created after the
+candidate is locked:
 
 ```json
 {
@@ -113,7 +114,7 @@ Store the base64-encoded corpus only as `MCP_EVAL_HELD_OUT_B64` in the protected
 `mcp-certification` GitHub environment. Keep provider credentials and the
 seeded fixture API key in that environment too. A person who tunes search or
 descriptions must not see the active partition. After a held-out failure is
-fixed generally, certify against a fresh blind partition.
+fixed generally, certify against a fresh held-out partition.
 
 ## Release qualification workflow
 

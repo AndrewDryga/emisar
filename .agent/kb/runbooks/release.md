@@ -145,7 +145,7 @@ Never title a product release with a bare `vX.Y.Z`.
     conclusion must be `success`, and its held-out artifact must contain
     passing reports for Claude, Codex, and Gemini. A missing credential
     or model, skipped lane, stale SHA, or failed held-out case blocks the
-    release; fix the general defect and certify a fresh blind partition.
+    release; fix the general defect and certify a fresh held-out partition.
 13. **Create the signed tag** at the anchor (`git tag -s …`) and `git tag -v` it.
 14. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
 15. **Write the release notes** (Markdown, via `/content-director`) and **create the

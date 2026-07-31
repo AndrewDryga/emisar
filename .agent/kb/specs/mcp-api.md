@@ -1832,16 +1832,16 @@ The committed real-client corpus separately exercises discovery, inspection,
 dispatch, continuation following, redaction, and a request with no applicable
 action against the three-runner fixture stack.
 
-A separately owned held-out corpus is split by intent and pack, not by
-paraphrase row. Its task language is never used to tune weights, search terms,
-descriptions, or the development set. It includes valid no-action requests and
-near-neighbor negatives so a broad overmatching client cannot pass on recall
-alone. Each partition has four through eight cases: at least two positive and
-two no-action cases, with both outcomes spread across at least two intent
-groups. Positive cases bind the allowed action, exact pack ref, and exact
-fixture runner ref. Adding a held-out failure to development does not remove or
-rewrite the original held-out case; after a general fix, certification uses a
-fresh blind partition.
+A release-only held-out corpus is created after the candidate is locked and is
+split by intent and pack, not by paraphrase row. Its task language is never
+used to tune weights, search terms, descriptions, or the development set. It
+includes valid no-action requests and near-neighbor negatives so a broad
+overmatching client cannot pass on recall alone. Each partition has four
+through eight cases: at least two positive and two no-action cases, with both
+outcomes spread across at least two intent groups. Positive cases bind the
+allowed action, exact pack ref, and exact fixture runner ref. Adding a held-out
+failure to development does not remove or rewrite the original held-out case;
+after a general fix, certification uses a fresh held-out partition.
 
 Release thresholds:
 
@@ -1855,12 +1855,12 @@ The deterministic development benchmark remains the gate for exact IDs, packs,
 scope, unchanged-catalog ranking, runner-count invariance, and resistance to
 keyword stuffing. Development failures may improve reviewed pack
 `search_terms`, weights, or the development corpus. Held-out failures block
-release and trigger a fresh blind certification set after the general fix.
+release and trigger a fresh held-out certification set after the general fix.
 They never justify an opaque ranker or test-specific metadata.
 
 ### Client certification
 
-Run every case in the same blind held-out corpus in a fresh session using the
+Run every case in the same held-out corpus in a fresh session using the
 exact candidate Emisar bridge with:
 
 - Claude CLI;

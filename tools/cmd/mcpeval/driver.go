@@ -56,8 +56,12 @@ func buildInvocation(
 //     subscription keychain login while still isolating from the user's global
 //     config (the throwaway workspace has no project/local settings).
 //
-// `--strict-mcp-config` limits MCP to our generated bridge config and
-// `--tools ""` disables every built-in tool, so the only tools are Emisar's.
+// `--strict-mcp-config` limits MCP to our generated bridge config. Claude's
+// API-key `--bare` path drops MCP tools from the model when the built-in set is
+// empty, even though the same argv registers them under keychain auth. Keep
+// only the read-only `Read` built-in as the sentinel that preserves MCP tool
+// registration; the throwaway workspace contains only the generated bridge
+// config, and the relay remains the fail-closed boundary for Emisar calls.
 // `--dangerously-skip-permissions` is required, not optional: under API-key
 // headless auth, `--allowedTools` did not pre-approve the MCP tools — Claude
 // fetched the relay's tools/list (the handshake reaches the relay) but excluded
@@ -85,7 +89,7 @@ func claudeInvocation(
 	args = append(args,
 		"--strict-mcp-config",
 		"--mcp-config", configPath,
-		"--tools", "",
+		"--tools", "Read",
 		"--dangerously-skip-permissions",
 		"--no-session-persistence",
 		"--max-budget-usd", cfg.BudgetUSD,

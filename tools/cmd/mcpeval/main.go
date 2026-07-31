@@ -42,7 +42,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	timeout := flags.Duration("timeout", 10*time.Minute, "agent run timeout")
 	output := flags.String("out", "", "write the JSON report to this path (otherwise printed)")
 	validateOnly := flags.Bool("validate-corpus", false, "validate the corpus and exit without running an agent")
-	requireHeldOut := flags.Bool("require-held-out", false, "require a blind held_out corpus suitable for release qualification")
+	requireHeldOut := flags.Bool("require-held-out", false, "require a held_out corpus suitable for release qualification")
 	redactAgentOutput := flags.Bool(
 		"redact-agent-output",
 		false,

@@ -18,8 +18,9 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 	}
 	// The isolation flag is chosen by ANTHROPIC_API_KEY presence: --bare for the
 	// CI API-key path, --setting-sources project,local for the local keychain
-	// path. Everything else is identical, and --dangerously-skip-permissions is
-	// present in both so headless mode can actually invoke the relay's tools.
+	// path. Everything else is identical. A non-empty, read-only built-in set
+	// keeps MCP registered under --bare, and --dangerously-skip-permissions lets
+	// headless mode actually invoke the relay's tools.
 	for name, isolation := range map[string][]string{
 		"local keychain (no key)": {"--setting-sources", "project,local"},
 		"CI api key":              {"--bare"},
@@ -41,7 +42,7 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 			want = append(want,
 				"--strict-mcp-config",
 				"--mcp-config", configPath,
-				"--tools", "",
+				"--tools", "Read",
 				"--dangerously-skip-permissions",
 				"--no-session-persistence",
 				"--max-budget-usd", "10",
