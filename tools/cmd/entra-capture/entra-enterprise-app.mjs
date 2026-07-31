@@ -35,7 +35,10 @@ const totp = secret => {
 // a glyph — Azure's toolbar renders "+ Add user/group", so an exact trim never
 // equals the label a step names.
 const outline = async (page, label, { exact = true } = {}) => {
-  const marked = await page.evaluate(({ text, exact }) => {
+  // Across every frame, not just the top document. The Azure portal renders a
+  // blade's content in an iframe, so a top-level search finds the surrounding
+  // navigation and none of the toolbar the step actually names.
+  const mark = frame => frame.evaluate(({ text, exact }) => {
     const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0
     const matches = el => {
       const own = (el.textContent || '').trim()
@@ -63,9 +66,25 @@ const outline = async (page, label, { exact = true } = {}) => {
     return true
   }, { text: label, exact }).catch(() => false)
 
+  let marked = false
+  for (const frame of page.frames()) {
+    if (await mark(frame)) { marked = true; break }
+  }
+
   // FAIL, never warn. A screenshot with no outline is a broken instruction, and
-  // that is exactly how bare shots reached the docs before.
-  if (!marked) throw new Error(`nothing labelled "${label}" to outline`)
+  // that is exactly how bare shots reached the docs before. Say what WAS on the
+  // blade, though — "not found" alone cannot tell a renamed control from one whose
+  // blade never loaded.
+  if (!marked) {
+    const frames = page.frames()
+    const target = frames[frames.length - 1]
+    const visible = await target.evaluate(() => [...document.querySelectorAll('button,[role=button],[role=menuitem],a')]
+      .filter(el => (el.offsetWidth > 0 || el.offsetHeight > 0))
+      .map(el => (el.textContent || el.getAttribute('aria-label') || '').trim())
+      .filter(text => text && text.length < 40)
+      .slice(0, 40)).catch(() => [])
+    throw new Error(`nothing labelled "${label}" to outline; visible controls: ${JSON.stringify(visible)}`)
+  }
   await page.waitForTimeout(600)
 }
 
@@ -74,7 +93,10 @@ mkdirSync('/tmp/entra', { recursive: true })
 const browser = await chromium.launch({ headless: true })
 // An EXPLICIT context, because the second capture needs a second page in the same
 // signed-in session and browser.newPage() creates a context that refuses one.
-const context = await browser.newContext({ viewportSize: { width: 1440, height: 1000 } })
+// `viewport`, not `viewportSize` — newContext ignores the latter, so every shot
+// came out at Playwright's 1280x720 default while the guide's other Entra images
+// are 1520x950.
+const context = await browser.newContext({ viewport: { width: 1520, height: 950 } })
 const page = await context.newPage()
 
 await page.goto('https://portal.azure.com/', { waitUntil: 'domcontentloaded' })
