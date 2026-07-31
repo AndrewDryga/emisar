@@ -2,7 +2,7 @@ schema_version: 1
 id: tf.show_json
 title: terraform show -json
 kind: exec
-risk: low
+risk: high
 description: >
   Show the full workspace state as JSON (terraform show -json), for
   programmatic queries. This dumps every resource's attributes,

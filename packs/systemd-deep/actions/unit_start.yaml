@@ -2,12 +2,13 @@ schema_version: 1
 id: systemd.unit_start
 title: systemctl start <unit>
 kind: exec
-risk: medium
+risk: high
 description: >
   Start one unit. If already running, no-op. Use after a stop or
   reset_failed to bring a service back.
 side_effects:
-  - Service started.
+  - Service started, along with any units it requires.
+  - Triggers the unit's ExecStartPre/ExecStartPost hooks.
 args:
   - name: unit
     type: string

@@ -48,7 +48,7 @@ fi
 
 response=$(mktemp)
 trap 'rm -f "$response"' EXIT HUP INT TERM
-if "$script_dir/pureget.sh" "$path" "$@" >"$response"; then
+if sh "$script_dir/pureget.sh" "$path" "$@" >"$response"; then
 	jq -e '{
 		items: (.items // []),
 		more_items_remaining: (.more_items_remaining // false),

@@ -2,7 +2,7 @@ schema_version: 1
 id: tf.output
 title: terraform output -json
 kind: exec
-risk: low
+risk: high
 description: >
   Show the workspace's output values (terraform output -json). The
   -json form deliberately un-masks outputs marked `sensitive`, so the

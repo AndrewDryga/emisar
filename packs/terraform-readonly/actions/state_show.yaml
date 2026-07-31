@@ -2,7 +2,7 @@ schema_version: 1
 id: tf.state_show
 title: terraform state show <address>
 kind: exec
-risk: low
+risk: high
 description: Show attributes of one resource in state. May contain secrets — relies on audit redaction.
 side_effects:
   - Reads state file.

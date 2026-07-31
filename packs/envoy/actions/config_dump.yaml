@@ -2,7 +2,7 @@ schema_version: 1
 id: envoy.config_dump
 title: GET /config_dump
 kind: exec
-risk: low
+risk: high
 description: >
   Dump full xDS config — bootstrap, clusters, routes, listeners. This
   surfaces the entire effective config, which can carry secrets (TLS

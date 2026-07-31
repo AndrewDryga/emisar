@@ -115,7 +115,7 @@ fi
 
 response=$(mktemp)
 trap 'rm -f "$response"' EXIT HUP INT TERM
-if "$script_dir/pureget.sh" "$path" "$@" >"$response"; then
+if sh "$script_dir/pureget.sh" "$path" "$@" >"$response"; then
 	# These endpoints answer a full page without reporting that more remains and
 	# without a continuation token, so a full page is reported as truncated here
 	# rather than passed off as the complete answer.

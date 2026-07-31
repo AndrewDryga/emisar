@@ -2,11 +2,13 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform / OpenTofu read-only ops
-version: 0.6.0
+version: 0.6.1
 description: >
   Read-only Terraform or OpenTofu CLI actions for inspecting a workspace.
   NO apply, NO destroy, NO state mutation — those should happen in CI, not
-  via a runner. Operates in the directory given by TF_DIR env var.
+  via a runner. Operates in the directory given by TF_DIR env var, running
+  whichever CLI TF_BIN names — `terraform` by default, `tofu` on an
+  OpenTofu host, so one of those two must be on PATH.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -14,7 +16,6 @@ requires:
   os:
     - linux
   binaries:
-    - terraform
     - jq
 
 setup:
