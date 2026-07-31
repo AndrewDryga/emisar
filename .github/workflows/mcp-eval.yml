@@ -3,9 +3,9 @@ name: MCP Client Certification
 # Real-client MCP qualification. Every lane drives the exact candidate
 # emisar-mcp bridge against the seeded compose fleet through mcpeval's
 # fail-closed relay. Scheduled runs use the committed development corpus.
-# Release qualification uses a separately owned blind corpus from the
-# mcp-certification environment and refuses to run unless every required
-# provider and the held-out partition are configured.
+# Release qualification uses a held-out corpus from the mcp-certification
+# environment and refuses to run unless every required provider and the
+# held-out partition are configured.
 #
 # No pull-request trigger: this workflow spends provider tokens and reads
 # provider secrets. It has no deploy permission and talks only to localhost.
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       qualification:
-        description: Run the blind held-out release qualification
+        description: Run the held-out release qualification
         required: true
         default: false
         type: boolean
@@ -132,7 +132,7 @@ jobs:
             echo
             echo "- Candidate: \`$GITHUB_SHA\`"
             echo "- Corpus SHA-256: \`$digest\`"
-            echo "- Blind release partition: \`$QUALIFICATION\`"
+            echo "- Held-out release partition: \`$QUALIFICATION\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build stack images
@@ -260,7 +260,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mcp-certification-${{ github.run_id }}
-          path: /tmp/mcpeval-*.json
+          path: |
+            /tmp/mcpeval-claude-*.json
+            /tmp/mcpeval-codex-*.json
+            /tmp/mcpeval-gemini-*.json
           retention-days: ${{ inputs.qualification && 90 || 30 }}
           if-no-files-found: error
 
