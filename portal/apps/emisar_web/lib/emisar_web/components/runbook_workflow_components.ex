@@ -231,6 +231,19 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp step_editor(assigns) do
     choice = RunbookEditorCatalog.action_value(assigns.step["pack_id"], assigns.step["action"])
 
+    targets_resolved? =
+      RunbookEditorCatalog.targets_resolved?(
+        assigns.catalog,
+        assigns.step["target_refs"]
+      )
+
+    action_available? =
+      RunbookEditorCatalog.action_available?(
+        assigns.catalog,
+        assigns.step["target_refs"],
+        choice
+      )
+
     assigns =
       assigns
       |> assign(:action_choice, choice)
@@ -246,20 +259,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         :target_options,
         RunbookEditorCatalog.target_options(assigns.catalog, assigns.step["target_refs"])
       )
+      |> assign(:targets_resolved?, targets_resolved?)
       |> assign(
-        :targets_resolved?,
-        RunbookEditorCatalog.targets_resolved?(
-          assigns.catalog,
-          assigns.step["target_refs"]
-        )
-      )
-      |> assign(
-        :action_available?,
-        RunbookEditorCatalog.action_available?(
-          assigns.catalog,
-          assigns.step["target_refs"],
-          choice
-        )
+        :action_error?,
+        targets_resolved? and choice != "" and not action_available?
       )
       |> assign(
         :risk,
@@ -336,7 +339,19 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         />
 
         <div>
-          <.label variant={:eyebrow}>Action</.label>
+          <div class="flex min-h-5 items-center justify-between gap-2">
+            <.label variant={:eyebrow}>Action</.label>
+            <.tooltip
+              :if={@action_error?}
+              id={"runbook-stage-#{@stage_index}-step-#{@step_index}-action-error"}
+              text="This action is not available on every selected runner. Choose another action or update the targets."
+              placement={:bottom}
+              align={:right}
+              class="shrink-0"
+            >
+              <.icon name="hero-exclamation-circle-mini" class="h-4 w-4 text-rose-300" />
+            </.tooltip>
+          </div>
           <.select
             name={"draft[stages][#{@stage_index}][steps][#{@step_index}][action_choice]"}
             options={@action_options}
@@ -346,13 +361,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             class="mt-2"
             aria-label="Action"
           />
-          <p
-            :if={@targets_resolved? and @action_choice != "" and not @action_available?}
-            class="mt-2 text-xs leading-relaxed text-rose-300"
-          >
-            This action is not available on every selected runner. Choose another action or update
-            the targets.
-          </p>
         </div>
       </div>
 

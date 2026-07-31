@@ -65,6 +65,12 @@ prerequisite owns the actionable error. Only mark the dependent choice
 unavailable or incompatible after its prerequisite resolves and that evaluation
 actually fails.
 
+A compact overview row keeps one geometry as validation changes. When a control
+already carries its invalid state or unavailable label, attach the explanation
+and remedy through the shared accessible tooltip instead of inserting a
+conditional paragraph beneath that column. Keep an inline error only when the
+message itself is the primary, always-visible correction surface.
+
 A secondary boolean qualifier inside a repeated row uses a compact positive-state
 checkbox when unchecked means its normal absence. Label the true state directly
 (`Sensitive`), keep ordinary authoring selection neutral, and post an explicit
@@ -127,7 +133,8 @@ never a reduced model.
   invalid and can still be removed from the same menu.
 - When Targets cannot resolve, Action keeps its saved action name in a neutral
   disabled control and shows no compatibility error. Once Targets resolve, a
-  genuinely incompatible action owns its unavailable label and remedy.
+  genuinely incompatible action owns its unavailable label and accessible
+  tooltip remedy without moving the Arguments section below it.
 - An argument named `file` reads `Optional JSON value`, then shows `Use` and the
   applicable value control. Choosing Omit leaves only the compact source control.
 - Parallel stages show a concurrency cap; sequential stages do not.
@@ -176,6 +183,8 @@ never a reduced model.
 - An unresolved target that also turns Action rose, prefixes it with
   `Unavailable`, or claims runner compatibility failed when compatibility could
   not be evaluated.
+- A conditional validation paragraph beneath one overview control that makes
+  the row and every following section jump when the error appears or clears.
 - A repeated output qualifier stretched into a `Visible/Sensitive` select when
   one neutral Sensitive checkbox expresses the same boolean.
 - Review and canonical JSON before the editable workflow on a phone.
@@ -244,7 +253,10 @@ and stale selections whose remove action is disabled with the add catalog.
 Sweep scope-first forms for a dependent behavior control that repeats the
 prerequisite's error or claims its own compatibility result before the
 prerequisite resolves. Rendered tests pin the neutral disabled dependency state
-and retain a separate true-incompatibility case. Sweep repeated operational rows
-for secondary false/true selects that should be positive-state checkboxes;
-rendered tests pin the hidden false value, checked true value, neutral tone, and
-compact track.
+and retain a separate true-incompatibility case. That case pins the accessible
+tooltip and rejects a flow paragraph inside the overview, while screenshot
+review checks desktop and narrow geometry. Sweep compact overview grids for
+conditional validation paragraphs that change row height. Sweep repeated
+operational rows for secondary false/true selects that should be positive-state
+checkboxes; rendered tests pin the hidden false value, checked true value,
+neutral tone, and compact track.

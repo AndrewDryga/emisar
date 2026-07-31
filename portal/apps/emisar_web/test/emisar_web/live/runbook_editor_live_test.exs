@@ -713,12 +713,24 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       html = change(lv, draft)
 
       assert html =~ "Unavailable · linux.missing"
-      assert html =~ "This action is not available on every selected runner."
 
       refute has_element?(
                lv,
                ~s(select[name="draft[stages][0][steps][0][action_choice]"][disabled])
              )
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-action-error-tt[tabindex=\"0\"][aria-describedby=\"runbook-stage-0-step-0-action-error\"]"
+             )
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-action-error[role=\"tooltip\"]",
+               "This action is not available on every selected runner. Choose another action or update the targets."
+             )
+
+      refute has_element?(lv, "#runbook-stage-0-step-0-overview p")
     end
 
     test "target-first action selection renders descriptor-owned typed bindings", %{
