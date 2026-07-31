@@ -233,7 +233,10 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
   end
 
   defp assert_task_ready(task) do
-    assert_receive {:ready, pid} when pid == task.pid
+    # Sandbox checkout is setup, not the behavior this test measures. Under the
+    # full CI suite a worker can legitimately wait longer than ExUnit's 100 ms
+    # default for a connection; keep the barrier bounded without timing the pool.
+    assert_receive {:ready, pid} when pid == task.pid, 5_000
   end
 
   defp trusted_runner(account, subject, opts \\ []) do
