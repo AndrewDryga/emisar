@@ -1662,7 +1662,8 @@ exact expanded plan that every target runner can independently verify.
 
 `wait_for_run` accepts exactly one of `run_id` or `runbook_execution_id`. For a
 runbook ID it returns the same staged execution result, including newly
-dispatched attempts and another `next` only while active. Complete attempt
+dispatched attempts and another `next` while the execution is still pending
+approval or active. Complete attempt
 history stays behind the paginated `runs_next`. If any frozen target is no
 longer in current scope, it returns `not_allowed` without a partial graph or
 hidden counts. Cancellation stops observation, never the runbook.

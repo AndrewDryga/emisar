@@ -862,7 +862,7 @@
       },
       "allOf": [
         {
-          "if": {"properties": {"status": {"const": "active"}}},
+          "if": {"properties": {"status": {"enum": ["active", "pending_approval"]}}},
           "then": {"required": ["next"]},
           "else": {"not": {"required": ["next"]}}
         }

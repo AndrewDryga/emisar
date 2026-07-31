@@ -1700,6 +1700,58 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     end
   end
 
+  test "an execution waiting on approval publishes its wait continuation", %{
+    conn: conn,
+    account: account,
+    user: user,
+    subject: subject
+  } do
+    rules = %{
+      "schema_version" => 2,
+      "defaults" => %{
+        "low" => "allow",
+        "medium" => "allow",
+        "high" => "require_approval",
+        "critical" => "require_approval"
+      },
+      "overrides" => [],
+      "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
+    }
+
+    Fixtures.Policies.create_policy(
+      account_id: account.id,
+      created_by_id: user.id,
+      rules: rules
+    )
+
+    runner =
+      setup_runner!(account, subject, "approval-node", action: Map.put(action(), "risk", "high"))
+
+    runbook = publish_runbook!(subject, "gated-health", %{"runner_id" => [runner.id]})
+
+    execution =
+      call(conn, "execute_runbook", %{
+        "runbook_ref" => "#{runbook.slug}@#{runbook.version}",
+        "reason" => "Check the gated fleet"
+      })
+
+    execution_id = execution["execution"]["runbook_execution_id"]
+    assert execution["execution"]["status"] == "pending_approval"
+
+    wait_next = %{
+      "tool" => "wait_for_run",
+      "arguments" => %{"runbook_execution_id" => execution_id, "timeout" => "60s"}
+    }
+
+    assert execution["execution"]["next"] == wait_next
+
+    waited =
+      call(conn, "wait_for_run", %{"runbook_execution_id" => execution_id, "timeout" => "0"})
+
+    assert waited["execution"]["status"] == "pending_approval"
+    assert waited["execution"]["next"] == wait_next
+  end
+
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
 
   defp call(conn, name, arguments, operation_id \\ nil) do
