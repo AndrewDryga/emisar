@@ -310,6 +310,11 @@ defmodule Emisar.Accounts do
         runner_access_mode: :all
       })
     end)
+    # Making your own workspace is a second membership like any other: it ends the
+    # single-account assumption an admin-approved binding elsewhere was granted on.
+    |> Multi.run(:retired_bindings, fn repo, _changes ->
+      retire_bindings_that_assumed_one_account(repo, user)
+    end)
     # Workspace gets the v2 conservative default policy on creation.
     # Without this, `Policies.evaluate(nil, ...)` would default-deny
     # every dispatch — which is correct but unhelpful as a first run.
@@ -711,6 +716,25 @@ defmodule Emisar.Accounts do
     |> Membership.Query.by_user_id(user_id)
     |> Membership.Query.not_disabled()
     |> Repo.all()
+  end
+
+  # A membership somewhere new invalidates the reason any admin-approved SSO
+  # binding this person holds was permitted: approval requires that they belong to
+  # no OTHER account, and that has just stopped being true. Retiring the binding
+  # here is what keeps the approval-time rule honest, since the rule itself cannot
+  # see forward.
+  #
+  # Only when they ALREADY had a membership — a person's first is not a second.
+  defp retire_bindings_that_assumed_one_account(repo, %Users.User{} = user) do
+    existing =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_user_id(user.id)
+      |> repo.all()
+
+    case existing do
+      [_only_the_new_one] -> {:ok, 0}
+      _ -> SSO.retire_admin_approved_identities(user, repo)
+    end
   end
 
   @doc """
@@ -2286,6 +2310,9 @@ defmodule Emisar.Accounts do
       end)
       |> Multi.run(:runner_access, fn repo, %{membership: membership} ->
         replace_runner_access_rows(repo, membership.id, access)
+      end)
+      |> Multi.run(:retired_bindings, fn repo, %{user: user} ->
+        retire_bindings_that_assumed_one_account(repo, user)
       end)
       |> Multi.insert(:audit, fn %{user: user} ->
         Audit.Events.user_invited(subject, user, role, access)

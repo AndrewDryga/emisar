@@ -66,6 +66,17 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> where([provider: p], p.scim_enabled == true)
   end
 
+  @doc """
+  Identities an ADMIN approved, rather than ones the directory itself asserted.
+  These are the bindings made through a link approval, which is the only path
+  where a person inside emisar decides that a credential belongs to someone.
+  """
+  def admin_approved(queryable \\ all()),
+    do: where(queryable, [identities: i], i.created_by == :admin)
+
+  @doc "Just the ids, for a caller that needs them before and after a bulk write."
+  def select_ids(queryable), do: select(queryable, [identities: i], i.id)
+
   def by_user_ids(queryable, user_ids),
     do: where(queryable, [identities: i], i.user_id in ^user_ids)
 

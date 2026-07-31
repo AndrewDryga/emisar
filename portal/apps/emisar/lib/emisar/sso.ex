@@ -3042,6 +3042,49 @@ defmodule Emisar.SSO do
     end
   end
 
+  @doc """
+  Internal — retire the admin-approved SSO bindings a person holds, because they
+  have just gained a membership somewhere else. No `%Subject{}`: the caller is
+  Accounts, creating that membership, and this is a consequence of that write
+  rather than an action anyone requested.
+
+  Approving a link binds an IdP credential to an existing person, and is allowed
+  only when that person belongs to no OTHER account — otherwise the approver
+  reaches an account they have no authority over. That check is made at approval
+  and cannot see the future: the moment a second membership exists, the reason the
+  binding was permitted has stopped being true. So the binding goes with it, and
+  the sessions behind it are revoked.
+
+  Directory-asserted identities are untouched. Those were never an emisar-side
+  decision about who a credential belongs to — the IdP said so, and it still does.
+
+  Returns the number retired.
+  """
+  def retire_admin_approved_identities(%Users.User{} = user, repo) do
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_user_id(user.id)
+      |> UserIdentity.Query.admin_approved()
+
+    identity_ids = repo.all(UserIdentity.Query.select_ids(queryable))
+
+    case identity_ids do
+      [] ->
+        {:ok, 0}
+
+      ids ->
+        now = DateTime.utc_now()
+
+        {retired, _} =
+          UserIdentity.Query.not_deleted()
+          |> UserIdentity.Query.by_ids(ids)
+          |> repo.update_all(set: [deleted_at: now, updated_at: now])
+
+        :ok = Auth.revoke_identity_sessions(user, ids)
+        {:ok, retired}
+    end
+  end
+
   # The approver's own standing, re-read under lock. `%Subject{}.permissions` is a
   # snapshot taken when the session was built, so an admin demoted or suspended
   # while their approval page sat open still carried the permissions they had when

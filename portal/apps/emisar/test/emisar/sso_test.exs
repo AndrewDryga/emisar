@@ -4080,6 +4080,71 @@ defmodule Emisar.SSOTest do
       refute Repo.one(SSO.UserIdentity)
     end
 
+    test "a binding stops working once its person joins a second account", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      # Approval is allowed only when the target belongs to no OTHER account —
+      # otherwise the approver reaches an account they have no authority over. That
+      # check is made once and cannot see forward, so the moment a second
+      # membership exists the reason the binding was permitted has stopped being
+      # true. The binding goes with it.
+      target = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: target.id)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|single-account-only",
+          "email" => target.email,
+          "email_verified" => true
+        })
+
+      assert {:ok, %{identity: identity}} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 subject
+               )
+
+      assert identity.created_by == :admin
+      refute Repo.reload!(identity).deleted_at
+
+      # Someone else's account now invites them.
+      elsewhere = Fixtures.Accounts.create_account()
+
+      other_subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(
+            account_id: elsewhere.id,
+            user_id: Fixtures.Users.create_user().id,
+            role: "owner"
+          )
+        )
+
+      assert {:ok, _invite} =
+               Accounts.invite_user_to_account(
+                 target.email,
+                 "operator",
+                 Accounts.RunnerAccess.none(),
+                 other_subject
+               )
+
+      # The credential the first account's admin approved no longer resolves.
+      assert Repo.reload!(identity).deleted_at
+
+      assert {:pending, %LinkRequest{}} =
+               SSO.complete_auth(
+                 provider,
+                 callback(%{
+                   "sub" => "okta|single-account-only",
+                   "email" => target.email,
+                   "email_verified" => true
+                 }),
+                 %{}
+               )
+    end
+
     test "a demoted approver cannot provision a brand-new person either", %{
       account: account,
       provider: provider
@@ -4595,6 +4660,47 @@ defmodule Emisar.SSOTest do
   end
 
   # -- subscribe_link_request/1 ---------------------------------------
+
+  describe "retire_admin_approved_identities/2" do
+    test "retires only the bindings an admin approved, and revokes their sessions" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      {:ok, admin_approved} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
+          provider_identifier: "approved-by-an-admin",
+          created_by: :admin,
+          provisioned_via: :manual
+        })
+        |> Repo.insert()
+
+      assert {:ok, 1} = SSO.retire_admin_approved_identities(user, Repo)
+      assert Repo.reload!(admin_approved).deleted_at
+    end
+
+    test "leaves what the directory itself asserted alone" do
+      # Those were never an emisar-side decision about whose credential this is.
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      {:ok, from_the_directory} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
+          provider_identifier: "asserted-by-the-idp",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+        |> Repo.insert()
+
+      assert {:ok, 0} = SSO.retire_admin_approved_identities(user, Repo)
+      refute Repo.reload!(from_the_directory).deleted_at
+    end
+  end
 
   describe "subscribe_link_request/1" do
     test "the subscriber receives the request's dismiss broadcast" do
