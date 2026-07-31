@@ -1149,18 +1149,25 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "create_runbook_draft"
     end
 
-    test "the runbooks example uses an action from the shipped Postgres pack", %{
+    test "the runbooks walkthrough uses the seeded Caddy procedure and current screenshots", %{
       conn: conn
     } do
       html = conn |> get(~p"/docs/runbooks") |> html_response(200)
       packs_root = Path.expand("../../../../../packs", __DIR__)
-      action = File.read!(Path.join(packs_root, "postgres/actions/replication_lag.yaml"))
+      action = File.read!(Path.join(packs_root, "caddy/actions/reload_config.yaml"))
 
-      assert action =~ "id: postgres.replication_lag"
-      assert html =~ "postgres.replication_lag"
-      assert html =~ "&quot;pack&quot;: {&quot;id&quot;: &quot;postgres&quot;}"
-      assert html =~ "group:data-postgres"
-      refute html =~ "postgres.replication.inspect"
+      assert action =~ "id: caddy.reload_config"
+      assert html =~ "caddy.reload_config"
+      assert html =~ "&quot;pack&quot;: {&quot;id&quot;: &quot;caddy&quot;}"
+      assert html =~ "group:edge-web"
+      assert html =~ "one approval for the complete frozen execution"
+
+      for image <- ~w(import inputs stage start approval result) do
+        assert html =~ ~s(src="/images/docs/runbooks/#{image}.webp")
+      end
+
+      refute html =~ "/images/screenshots/runbooks.webp"
+      refute html =~ "PostgreSQL replication gate"
     end
 
     test "the MCP reference pins the complete tool and transport contract", %{conn: conn} do

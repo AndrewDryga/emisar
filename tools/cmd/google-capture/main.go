@@ -1333,13 +1333,6 @@ func typeRealKeys(ctx context.Context, selector, value string) error {
 	return nil
 }
 
-func chooseEmail(ctx context.Context, label, email string) error {
-	if err := clickFirstText(ctx, label); err != nil {
-		return err
-	}
-	return clickFirstText(ctx, email)
-}
-
 func selectRadio(ctx context.Context, label string) error {
 	script := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;

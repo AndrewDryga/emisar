@@ -101,7 +101,7 @@ defmodule EmisarWeb.DocsNav do
          path: "/docs/runbooks",
          icon: "hero-queue-list",
          desc:
-           "Typed, staged automation with bounded fan-out, exact packs, approvals, output checks, waits, and durable results."
+           "Create, publish, approve, and review a staged procedure built from declared actions."
        },
        %{
          slug: "runs",

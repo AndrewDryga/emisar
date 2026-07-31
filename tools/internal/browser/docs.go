@@ -78,8 +78,15 @@ func clickRowLink(selector, contains string) string {
 	return fmt.Sprintf(`(()=>{const b=[...document.querySelectorAll(%q)].find(a=>((a.closest('li,tr')||a).textContent||'').includes(%q));if(b){b.click();return true}return false})()`, selector, contains)
 }
 
-// clickFirstEditLink opens a runbook's editor from the runbooks list.
-const clickFirstEditLink = `(()=>{const a=document.querySelector('a[href*="/edit"]');if(a){a.click();return true}return false})()`
+// navigateRowLink follows a content-addressed row link and reports success only
+// after the destination selector exists. A bare DOM click reports success while
+// LiveView is still rendering the source page, which used to make doc capture
+// race ahead and crop the runbook list instead of the requested detail.
+func navigateRowLink(selector, contains, destination string) string {
+	return fmt.Sprintf(`(()=>{if(document.querySelector(%q))return true;const a=[...document.querySelectorAll(%q)].find(a=>((a.closest('li,tr')||a).textContent||'').includes(%q));if(a){location.href=a.href;return false}return false})()`, destination, selector, contains)
+}
+
+const waitForResolvedRunbookPlan = `(()=>{const el=document.querySelector('#current-runbook-plan-summary');return !!el&&el.textContent.includes('Actions')&&!el.textContent.includes('Checking current state')})()`
 
 // collapseAuditFilters folds the audit facet drawer (it arrives expanded when
 // the URL carries a filter). Self-verifying: reports success only once
@@ -140,9 +147,16 @@ var docsShots = []shot{
 	{Name: "connect-llm-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude.ai")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-llm-agents.webp"},
 	// Same connect panel with a LOCAL/CLI client selected — the bridge + key setup.
 	{Name: "connect-cli-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude Code")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-cli-agents.webp"},
-	// Runbook editor: open a seeded runbook and crop to its staged action model —
-	// what a runbook IS, not two list rows or the old flat step editor.
-	{Name: "runbooks", Path: "/app/demo/runbooks", Clicks: []string{clickFirstEditLink}, Anchor: Anchor{Selector: "#runbook-stages"}, Width: docsWidth, Output: "screenshots/runbooks.webp"},
+	// Runbooks use one production-shaped seeded procedure across the complete
+	// guide. Content-addressed navigation avoids whichever audit draft happens to
+	// sort first, while the narrow anchors keep each image about the step beside
+	// it instead of publishing another full-page wall of controls.
+	{Name: "runbook-import", Path: "/app/demo/runbooks/import", Anchor: Anchor{Selector: "#runbook-import"}, Width: docsWidth, Output: "docs/runbooks/import.webp"},
+	{Name: "runbook-inputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-inputs")}, Anchor: Anchor{Selector: "#runbook-inputs"}, Width: 1440, Output: "docs/runbooks/inputs.webp"},
+	{Name: "runbook-stage", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-0")}, Anchor: Anchor{Selector: "#runbook-stage-0"}, Width: 1680, TopCSS: 1020, Output: "docs/runbooks/stage.webp"},
+	{Name: "runbook-start", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1050, Output: "docs/runbooks/start.webp"},
+	{Name: "runbook-approval", Path: "/app/demo/approvals", Clicks: []string{navigateRowLink(`#pending a[href*="/approvals/"]`, "Edge configuration rollout", "#approval-decision-form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1120, Output: "docs/runbooks/approval.webp"},
+	{Name: "runbook-result", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan, navigateRowLink(`a[href*="/runs/"]`, "completed Tuesday", "#runbook-execution-result")}, Anchor: Anchor{Selector: "#runbook-execution-result"}, Width: 1280, TopCSS: 1250, Output: "docs/runbooks/result.webp"},
 	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, openIdPGuide, showProductionHost}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps
