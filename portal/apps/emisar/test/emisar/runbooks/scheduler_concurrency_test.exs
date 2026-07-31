@@ -87,10 +87,15 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
         |> Ecto.Changeset.change(next_attempt_at: DateTime.add(DateTime.utc_now(), -1, :second))
         |> Repo.update!()
 
+      # The unboxed parent owns one connection. Keep every contender independent
+      # without asking the readiness barrier to admit more workers than the pool.
+      contender_count = min(12, Keyword.fetch!(Repo.config(), :pool_size) - 1)
+      assert contender_count >= 2
+
       results =
         for _wave <- 1..10,
             outcome <-
-              1..12
+              1..contender_count
               |> Enum.map(fn _position ->
                 fn -> Scheduler.advance_execution(result.execution_id) end
               end)
@@ -98,7 +103,7 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
             do: outcome
 
       assert Enum.all?(results, &(&1 in [:ok, :noop]))
-      assert length(results) == 120
+      assert length(results) == 10 * contender_count
       assert Enum.map(runs(account.id, result.execution_id), & &1.attempt_number) == [1, 2]
 
       reloaded = Repo.reload!(item)
