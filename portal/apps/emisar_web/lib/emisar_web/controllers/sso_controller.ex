@@ -14,6 +14,7 @@ defmodule EmisarWeb.SSOController do
   alias Emisar.SSO
   alias EmisarWeb.RecentAccounts
   alias EmisarWeb.UserAuth
+  require Logger
 
   # The login transaction secrets the callback needs, kept server-side in the
   # session (signed, bound to this browser) for the duration of the round-trip.
@@ -34,9 +35,36 @@ defmodule EmisarWeb.SSOController do
       })
       |> redirect(external: begun.authorize_url)
     else
-      _ -> sso_error(conn, "That single sign-on link is no longer available.")
+      other ->
+        # The operator gets one sentence; the reason belongs in the log. Discarding
+        # it left a misconfigured issuer, a blocked address and an IdP that is
+        # simply down all looking identical from the outside — a bounce back to the
+        # sign-in page with nothing written down anywhere.
+        Logger.warning("SSO begin failed for provider #{provider_id}: #{describe_failure(other)}")
+        sso_error(conn, "That single sign-on link is no longer available.")
     end
   end
+
+  # httpc reports a connect failure as `{protocol, options, reason}`, and for TLS
+  # those options carry the whole CA store — so a plain inspect truncates on the
+  # certificates and drops the reason, which is the only part worth logging.
+  defp describe_failure({:error, {:failed_connect, details}}) do
+    address =
+      case List.keyfind(details, :to_address, 0) do
+        {:to_address, {host, port}} -> "#{host}:#{port}"
+        _ -> "unknown address"
+      end
+
+    reason =
+      Enum.find_value(details, "no reason reported", fn
+        {protocol, _options, reason} -> "#{protocol}: #{inspect(reason)}"
+        _ -> nil
+      end)
+
+    "could not connect to #{address} — #{reason}"
+  end
+
+  defp describe_failure(other), do: inspect(other)
 
   def callback(conn, params) do
     with %{provider_id: provider_id} = stash <- get_session(conn, @stash_key),

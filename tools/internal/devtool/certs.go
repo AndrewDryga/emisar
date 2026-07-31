@@ -190,10 +190,16 @@ func (a *App) generateCertificates(rotate bool) error {
 			return err
 		}
 	}
-	if err := os.MkdirAll(a.Certs, 0o700); err != nil {
+	// 0755, not 0700. This directory is bind mounted into Keycloak, which runs as a
+	// non-root user: with the directory unreadable it cannot TRAVERSE to the certs,
+	// even though the leaf and its key are world-readable. Keycloak does not fail on
+	// that — it starts HTTP-only, so the OIDC leg of `./run e2e sso` connects to a
+	// port with no TLS listener and reports a TLS-trust failure that is really a
+	// permission one. The private keys keep their own 0600.
+	if err := os.MkdirAll(a.Certs, 0o755); err != nil {
 		return err
 	}
-	if err := os.Chmod(a.Certs, 0o700); err != nil {
+	if err := os.Chmod(a.Certs, 0o755); err != nil {
 		return err
 	}
 
@@ -286,7 +292,8 @@ func (a *App) makeCABundle(ctx context.Context) error {
 	system = append(system, '\n')
 	system = append(system, ca...)
 	bundle := a.caBundle()
-	if err := os.MkdirAll(filepath.Dir(bundle), 0o700); err != nil {
+	// Same directory, same reason as above: a non-root container has to traverse it.
+	if err := os.MkdirAll(filepath.Dir(bundle), 0o755); err != nil {
 		return err
 	}
 	return atomicWrite(bundle, system, 0o644)

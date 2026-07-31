@@ -46,6 +46,7 @@ defmodule Emisar.SSO.OIDC.Guard do
   @relay_idle_timeout :timer.minutes(2)
   @max_tunnels 64
   @connect_timeout 10_000
+  @max_request_headers 64
 
   @doc "The httpc profile every OIDC request must use."
   def profile, do: @profile
@@ -92,8 +93,14 @@ defmodule Emisar.SSO.OIDC.Guard do
           Logger.warning("OIDC guard refused a tunnel: #{@max_tunnels} already open")
           :gen_tcp.close(socket)
         else
-          {:ok, pid} = Task.Supervisor.start_child(@tasks, fn -> serve(socket) end)
+          # The child WAITS to be handed the socket. Starting it on `serve/1`
+          # directly raced `controlling_process/2`: the task could reach `recv`
+          # while the acceptor still owned the socket, get `{:error, :not_owner}`,
+          # and close without answering — an empty reply where a 403 belonged.
+          # It only showed under load, which is what made it look like a flake.
+          {:ok, pid} = Task.Supervisor.start_child(@tasks, fn -> await_socket(socket) end)
           :ok = :gen_tcp.controlling_process(socket, pid)
+          send(pid, {:owned, socket})
         end
 
         accept_loop(listener)
@@ -118,6 +125,14 @@ defmodule Emisar.SSO.OIDC.Guard do
       ],
       @profile
     )
+  end
+
+  defp await_socket(socket) do
+    receive do
+      {:owned, ^socket} -> serve(socket)
+    after
+      @connect_timeout -> :gen_tcp.close(socket)
+    end
   end
 
   defp serve(socket) do
@@ -303,8 +318,33 @@ defmodule Emisar.SSO.OIDC.Guard do
 
     case :gen_tcp.recv(socket, 0, @connect_timeout) do
       {:ok, line} ->
-        :ok = :inet.setopts(socket, packet: :raw)
-        {:ok, String.trim(line)}
+        with :ok <- drain_headers(socket, @max_request_headers) do
+          :ok = :inet.setopts(socket, packet: :raw)
+          {:ok, String.trim(line)}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # A CONNECT is a whole request: the line, then its headers, then a blank line.
+  # Reading only the line left `Host: …\r\n\r\n` sitting in the socket, and the
+  # relay then forwarded it to the IdP as the opening bytes of the TLS
+  # ClientHello — which the IdP answers by hanging up. Every unit test here sends
+  # a header-less CONNECT and asserts a refusal, so the bytes never reached a
+  # relay and nothing caught it; `./run e2e sso` did, as a TLS-trust failure that
+  # was really a framing one.
+  defp drain_headers(_socket, 0), do: {:error, :too_many_headers}
+
+  defp drain_headers(socket, remaining) do
+    case :gen_tcp.recv(socket, 0, @connect_timeout) do
+      {:ok, line} ->
+        if String.trim(line) == "" do
+          :ok
+        else
+          drain_headers(socket, remaining - 1)
+        end
 
       {:error, reason} ->
         {:error, reason}

@@ -103,7 +103,15 @@ func (a *App) e2eSSO(ctx context.Context) error {
 	env["PORTAL_RPC"] = strings.Join([]string{
 		"docker", "compose", "exec", "-T", "portal", "bin/emisar", "rpc",
 	}, " ")
-	return a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/sso-e2e")
+	if err := a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/sso-e2e"); err != nil {
+		// A scenario failure needs the portal's own log as much as a startup failure
+		// does — the harness only sees the browser's last URL, which says a redirect
+		// did not happen but never why. The deferred teardown removes the containers
+		// moments later, so capture it here or lose it.
+		a.capturePackTestEvidence(ctx, []string{"compose"}, env, []string{"portal", "keycloak"})
+		return err
+	}
+	return nil
 }
 
 func availableTCPPort() (int, error) {

@@ -14,6 +14,11 @@ defmodule Emisar.SSO.OIDC.GuardTest do
   alias Emisar.SSO.IssuerUrl
   alias Emisar.SSO.OIDC.Guard
 
+  # Generous timeouts on purpose. Two seconds was enough in isolation and flaked
+  # under the full suite, where connect + accept + resolve + reply competes with a
+  # few hundred other tests.
+  @wait 15_000
+
   setup do
     port = Guard.port()
     %{port: port}
@@ -65,6 +70,28 @@ defmodule Emisar.SSO.OIDC.GuardTest do
     assert speak(port, "CONNECT localhost:9200 HTTP/1.1\r\n\r\n") =~ "403"
   end
 
+  test "reads the whole CONNECT request, not just its line", %{port: port} do
+    # A CONNECT carries headers. Answering after the request LINE left them in the
+    # socket, and the relay then sent `Host: …` to the IdP as the first bytes of the
+    # TLS ClientHello, which the IdP answers by hanging up — SSO login failed with a
+    # TLS error that was really a framing one. Every other test here sends a
+    # header-less CONNECT, so nothing exercised it.
+    #
+    # Proven without a tunnel: the guard must stay silent until the blank line that
+    # ends the headers, then answer.
+    {:ok, socket} =
+      :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false, packet: :raw], @wait)
+
+    :ok = :gen_tcp.send(socket, "CONNECT 127.0.0.1:9200 HTTP/1.1\r\nHost: 127.0.0.1:9200\r\n")
+    assert {:error, :timeout} = :gen_tcp.recv(socket, 0, 750), "answered mid-request"
+
+    :ok = :gen_tcp.send(socket, "\r\n")
+    assert {:ok, response} = :gen_tcp.recv(socket, 0, @wait)
+    assert response =~ "403"
+
+    :gen_tcp.close(socket)
+  end
+
   test "refuses a malformed authority", %{port: port} do
     assert speak(port, "CONNECT not-an-authority HTTP/1.1\r\n\r\n") =~ "50"
   end
@@ -107,11 +134,6 @@ defmodule Emisar.SSO.OIDC.GuardTest do
     refute IssuerUrl.address_allowed?({127, 0, 0, 1})
     refute IssuerUrl.address_allowed?({169, 254, 169, 254})
   end
-
-  # Generous timeouts on purpose. Two seconds was enough in isolation and flaked
-  # under the full suite, where connect + accept + resolve + reply competes with a
-  # few hundred other tests.
-  @wait 15_000
 
   defp speak(port, request) do
     {:ok, socket} =
