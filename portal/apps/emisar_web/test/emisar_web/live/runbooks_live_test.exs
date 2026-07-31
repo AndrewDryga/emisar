@@ -48,13 +48,19 @@ defmodule EmisarWeb.RunbooksLiveTest do
     |> Repo.insert!()
   end
 
-  test "renders the empty state with the New action for an owner", %{conn: conn} do
+  test "renders the empty state with new and import actions for an owner", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
     assert html =~ "Runbooks"
-    assert html =~ ~p"/app/#{account}/runbooks/new"
+    assert has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks/new"}']", "New runbook")
+
+    assert has_element?(
+             lv,
+             "a[href='#{~p"/app/#{account}/runbooks/import"}']",
+             "Import runbook"
+           )
   end
 
   test "an empty *filtered* result keeps the filter bar, not the create-CTA", %{conn: conn} do
@@ -132,6 +138,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     assert html =~ "Visible to all"
     assert html =~ ~p"/app/#{account}/runbooks/#{runbook.id}/edit"
     refute html =~ ~p"/app/#{account}/runbooks/new"
+    refute html =~ ~p"/app/#{account}/runbooks/import"
   end
 
   test "a runbook row shows its most-severe step risk so it's visible before opening", %{

@@ -38,6 +38,38 @@ defmodule Emisar.Runbooks.Definition do
   @spec limit!(atom()) :: pos_integer()
   def limit!(name) when is_atom(name), do: Map.fetch!(@limits, Atom.to_string(name))
 
+  @doc """
+  Decodes and strictly validates one canonical v1 JSON definition.
+
+  The raw document is bounded before decoding. Returns
+  `{:ok, definition} | {:error, issues}`.
+  """
+  @spec decode_json(term()) :: {:ok, map()} | {:error, [issue()]}
+  def decode_json(encoded) when is_binary(encoded) do
+    if byte_size(encoded) <= limit!(:max_definition_bytes) do
+      case Jason.decode(encoded) do
+        {:ok, definition} ->
+          validate(definition)
+
+        {:error, _reason} ->
+          {:error, [issue("invalid_json", "", "Enter a valid JSON object.")]}
+      end
+    else
+      {:error,
+       [
+         issue(
+           "invalid_definition",
+           "",
+           "JSON exceeds the #{limit!(:max_definition_bytes)} byte limit."
+         )
+       ]}
+    end
+  end
+
+  def decode_json(_encoded) do
+    {:error, [issue("invalid_json", "", "Enter a valid JSON object.")]}
+  end
+
   @doc "Validate one already-decoded definition without resolving dynamic infrastructure."
   @spec validate(term()) :: {:ok, map()} | {:error, [issue()]}
   def validate(%{} = definition) do

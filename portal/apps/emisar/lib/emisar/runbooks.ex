@@ -12,7 +12,7 @@ defmodule Emisar.Runbooks do
   alias Ecto.Multi
   alias Emisar.{Accounts, Approvals, Audit, Auth, MCPOperations, Repo, Runs}
   alias Emisar.Auth.Subject
-  alias Emisar.Runbooks.{Authorizer, Compiler, Runbook, RunbookExecution, Scheduler}
+  alias Emisar.Runbooks.{Authorizer, Compiler, Definition, Runbook, RunbookExecution, Scheduler}
   alias Emisar.Runbooks.ExecutionItem
 
   def start_link(opts) do
@@ -228,6 +228,33 @@ defmodule Emisar.Runbooks do
              {:one_of,
               [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
            ) do
+      account.id
+      |> Runbook.Changeset.create(Subject.user_id(subject), attrs)
+      |> insert_runbook(subject)
+    end
+  end
+
+  @doc """
+  Imports one strictly valid canonical v1 JSON definition as a draft in the
+  subject's account. Requires manage or draft permission; returns
+  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :unauthorized}`.
+  """
+  def import_runbook(title, encoded_definition, %Subject{account: account} = subject)
+      when is_binary(title) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             {:one_of,
+              [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
+           ),
+         {:ok, definition} <- Definition.decode_json(encoded_definition) do
+      attrs = %{
+        "title" => title,
+        "slug" => "",
+        "description" => "",
+        "definition" => definition
+      }
+
       account.id
       |> Runbook.Changeset.create(Subject.user_id(subject), attrs)
       |> insert_runbook(subject)

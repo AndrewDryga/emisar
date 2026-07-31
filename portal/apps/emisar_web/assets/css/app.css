@@ -2,6 +2,11 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
+.runbook-import-dropzone.phx-drop-target-active {
+  border-color: rgb(54 230 165 / 0.65);
+  background-color: rgb(20 207 141 / 0.06);
+}
+
 /* ---------------------------------------------------------------------------
    Slim, theme-matched scrollbars on code insets + scroll regions. The OS
    default — a fat light-grey bar — read as a foreign widget inside the black

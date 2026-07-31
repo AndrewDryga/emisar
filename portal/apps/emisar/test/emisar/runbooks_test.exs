@@ -390,6 +390,51 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "import_runbook/3" do
+    test "strictly imports canonical JSON as an account-scoped draft" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      definition = definition()
+
+      assert {:ok, runbook} =
+               Runbooks.import_runbook("Imported maintenance", Jason.encode!(definition), subject)
+
+      assert runbook.account_id == account.id
+      assert runbook.title == "Imported maintenance"
+      assert runbook.slug == "imported-maintenance"
+      assert runbook.status == :draft
+      assert runbook.definition == definition
+
+      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      assert Runbooks.fetch_runbook_by_id(runbook.id, other_subject) == {:error, :not_found}
+    end
+
+    test "rejects invalid definitions before persistence" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, [%{path: "/stages"}]} =
+               Runbooks.import_runbook(
+                 "Incomplete import",
+                 Jason.encode!(%{
+                   "schema_version" => 1,
+                   "context_markdown" => "",
+                   "inputs" => []
+                 }),
+                 subject
+               )
+    end
+
+    test "denies a principal without draft permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.import_runbook(
+               "Denied import",
+               Jason.encode!(definition()),
+               Subject.for_runner(runner, account)
+             ) == {:error, :unauthorized}
+    end
+  end
+
   describe "create_published_runbook/2" do
     test "creates a published row only through the named transition" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()

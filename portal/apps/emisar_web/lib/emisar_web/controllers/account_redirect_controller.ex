@@ -3,7 +3,8 @@ defmodule EmisarWeb.AccountRedirectController do
   Slugless `/app` URLs → the canonical slugged URL for the user's current
   account: bare `/app`, plus the deep-link shorthands that installers, the
   bridge's `--help`, and docs print without knowing the account
-  (`/app/agents`, `/app/agents/connect`, `/app/runbooks`, `/app/runbooks/new`).
+  (`/app/agents`, `/app/agents/connect`, `/app/runbooks`, `/app/runbooks/new`,
+  `/app/runbooks/import`).
 
   `require_authenticated_user` has already run `assign_current_account/1`, which
   resolves the session-hinted (else default) membership — or bounces a
@@ -30,6 +31,10 @@ defmodule EmisarWeb.AccountRedirectController do
 
   def new_runbook(conn, _params) do
     redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/runbooks/new")
+  end
+
+  def import_runbook(conn, _params) do
+    redirect(conn, to: ~p"/app/#{conn.assigns.current_account}/runbooks/import")
   end
 
   # /sso/new — the provider guides open with "add the connection in emisar", and

@@ -317,6 +317,7 @@ defmodule EmisarWeb.Router do
     get "/agents/connect", AccountRedirectController, :connect_agent
     get "/runbooks", AccountRedirectController, :runbooks
     get "/runbooks/new", AccountRedirectController, :new_runbook
+    get "/runbooks/import", AccountRedirectController, :import_runbook
     get "/sso/new", AccountRedirectController, :add_sso_provider
 
     # Paddle's post-payment redirect. The checkout page can't know the account
@@ -378,6 +379,7 @@ defmodule EmisarWeb.Router do
 
         live "/runbooks", RunbooksLive, :index
         live "/runbooks/new", RunbookEditorLive, :new
+        live "/runbooks/import", RunbookImportLive, :new
         live "/runbooks/:id/edit", RunbookEditorLive, :edit
         live "/runbooks/:id/runs/:execution_id", RunbookRunLive, :show
         live "/runbooks/:id/run", RunbookRunLive, :new

@@ -2,6 +2,28 @@ defmodule Emisar.Runbooks.DefinitionTest do
   use ExUnit.Case, async: true
   alias Emisar.Runbooks.Definition
 
+  describe "decode_json/1" do
+    test "accepts one bounded canonical JSON document" do
+      definition = valid_definition()
+
+      assert {:ok, ^definition} = definition |> Jason.encode!() |> Definition.decode_json()
+    end
+
+    test "rejects malformed, oversized, and structurally invalid JSON" do
+      assert {:error, [%{code: "invalid_json"}]} = Definition.decode_json("{")
+
+      oversized = String.duplicate(" ", Definition.limit!(:max_definition_bytes) + 1)
+
+      assert {:error, [%{message: message}]} = Definition.decode_json(oversized)
+      assert message =~ "byte limit"
+
+      assert {:error, [%{path: "/stages"}]} =
+               %{"schema_version" => 1, "context_markdown" => "", "inputs" => []}
+               |> Jason.encode!()
+               |> Definition.decode_json()
+    end
+  end
+
   describe "validate/1" do
     test "accepts the one explicit v1 shape" do
       assert {:ok, definition} = Definition.validate(valid_definition())

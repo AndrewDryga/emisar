@@ -54,6 +54,11 @@ defmodule EmisarWeb.AccountRedirectControllerTest do
              |> recycle()
              |> get(~p"/app/runbooks/new")
              |> redirected_to() == "/app/#{account.slug}/runbooks/new"
+
+      assert list_conn
+             |> recycle()
+             |> get(~p"/app/runbooks/import")
+             |> redirected_to() == "/app/#{account.slug}/runbooks/import"
     end
   end
 end

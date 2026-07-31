@@ -117,13 +117,15 @@ defmodule EmisarWeb.RunbooksLive do
       width={:table}
     >
       <:title>Runbooks</:title>
-      <%!-- Hidden while the account-empty pitch carries its own Create CTA —
-           two identical affordances on one screen. --%>
-      <:actions :if={
-        Runbooks.subject_can_manage_runbooks?(@current_subject) and
-          not (@runbooks == [] and @metadata.count == 0 and
-                 not LiveTable.has_active_filters?(@filter_params, @filters))
-      }>
+      <:actions :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}>
+        <.button
+          navigate={~p"/app/#{@current_account}/runbooks/import"}
+          variant={:secondary}
+          size={:md}
+          icon="hero-arrow-up-tray"
+        >
+          Import runbook
+        </.button>
         <.button navigate={~p"/app/#{@current_account}/runbooks/new"} size={:md} icon="hero-plus">
           New runbook
         </.button>
@@ -151,12 +153,6 @@ defmodule EmisarWeb.RunbooksLive do
                 Runbooks are cloud-side workflows that expand into ordered action dispatches.
                 Compose multi-step procedures, publish them, and operators or LLMs can run them
                 safely.
-                <:cta
-                  :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}
-                  navigate={~p"/app/#{@current_account}/runbooks/new"}
-                >
-                  Create runbook
-                </:cta>
               </.empty_state>
             <% true -> %>
               <%!-- Standalone live_table (self-framed cards panel) — matches runs/
