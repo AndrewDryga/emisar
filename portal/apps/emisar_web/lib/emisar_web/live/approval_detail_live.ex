@@ -810,40 +810,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   complete execution.
                 </:subtitle>
               </.section_header>
-              <div class="space-y-6">
-                <section :for={stage <- @execution_plan["stages"] || []}>
-                  <div class="flex flex-wrap items-center justify-between gap-3">
-                    <h3 class="text-sm font-semibold text-zinc-100">{stage["title"]}</h3>
-                    <span class="text-xs text-zinc-400">
-                      {if stage["mode"] == "parallel",
-                        do: "Parallel · up to #{stage["max_parallel"]}",
-                        else: "Sequential"}
-                    </span>
-                  </div>
-                  <ul class="mt-2 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
-                    <li
-                      :for={item <- stage["items"] || []}
-                      class="py-4"
-                    >
-                      <div class="min-w-0">
-                        <div class="flex flex-wrap items-center gap-2">
-                          <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
-                          <.risk_pill :if={item["risk"]} risk={item["risk"]} />
-                        </div>
-                        <p class="mt-1 text-xs text-zinc-400">
-                          On
-                          <span class="font-medium text-zinc-300">
-                            {RunbookWorkflowComponents.runner_name(item["runner_ref"])}
-                          </span>
-                        </p>
-                      </div>
-                      <RunbookWorkflowComponents.argument_list
-                        arguments={item["args"] || %{}}
-                        class="mt-3"
-                      />
-                    </li>
-                  </ul>
-                </section>
+              <div class="space-y-8">
+                <RunbookWorkflowComponents.plan_stage
+                  :for={stage <- @execution_plan["stages"] || []}
+                  id={"approval-plan-stage-#{stage["id"]}"}
+                  stage={stage}
+                  items={stage["items"] || []}
+                />
               </div>
             </section>
 

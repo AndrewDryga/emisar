@@ -125,6 +125,66 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     """
   end
 
+  attr :stage, :map, required: true
+  attr :items, :list, required: true
+  attr :item_count, :integer, default: nil
+  attr :id, :string, default: nil
+  attr :class, :string, default: nil
+
+  @doc "Renders one frozen runbook stage with the shared plan-row grammar."
+  def plan_stage(assigns) do
+    assigns = assign(assigns, :visible_item_count, assigns.item_count || length(assigns.items))
+
+    ~H"""
+    <section
+      id={@id}
+      class={["border-t border-zinc-800/70 pt-5", @class]}
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-100">{@stage["title"]}</h3>
+          <p class="mt-1 text-xs text-zinc-400">
+            {if @stage["mode"] == "parallel",
+              do: "parallel · up to #{@stage["max_parallel"]} at once",
+              else: "sequential"}
+          </p>
+        </div>
+        <span class="text-xs tabular-nums text-zinc-400">
+          {@visible_item_count} {if @visible_item_count == 1, do: "item", else: "items"}
+        </span>
+      </div>
+
+      <.steps
+        variant={:plan}
+        marker={if @stage["mode"] == "parallel", do: :parallel, else: :number}
+        class="mt-3"
+      >
+        <:step :for={item <- @items}>
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
+              <.risk_pill :if={item["risk"]} risk={item["risk"]} />
+            </div>
+            <p class="mt-1 text-xs text-zinc-400">
+              <span class="text-zinc-500">→</span>
+              <span class="font-medium text-zinc-300">
+                {runner_name(item["runner_ref"])}
+              </span>
+              <span :if={item["step_id"]} class="font-mono text-zinc-500">
+                · {item["step_id"]}
+              </span>
+            </p>
+            <.argument_list
+              arguments={item["args"] || %{}}
+              class="mt-3"
+            />
+          </div>
+        </:step>
+      </.steps>
+    </section>
+    """
+  end
+
   defp argument_value(%{"from_output" => ref}), do: "From #{ref}"
   defp argument_value(value) when is_binary(value), do: value
   defp argument_value(value) when is_boolean(value) or is_number(value), do: to_string(value)

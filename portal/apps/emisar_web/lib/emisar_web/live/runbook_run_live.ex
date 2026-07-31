@@ -914,49 +914,12 @@ defmodule EmisarWeb.RunbookRunLive do
       |> assign(:page_size, @item_page_size)
 
     ~H"""
-    <section
-      id={"preflight-stage-#{@stage["id"]}"}
-      class="border-t border-zinc-800/70 pt-5"
-    >
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 class="text-sm font-semibold text-zinc-100">{@stage["title"]}</h3>
-          <p class="mt-1 text-xs text-zinc-400">
-            {if @stage["mode"] == "parallel",
-              do: "parallel · up to #{@stage["max_parallel"]} at once",
-              else: "sequential"}
-          </p>
-        </div>
-        <span class="text-xs tabular-nums text-zinc-400">
-          {length(@stage["items"])} {if length(@stage["items"]) == 1, do: "item", else: "items"}
-        </span>
-      </div>
-
-      <.steps
-        variant={:plan}
-        marker={if @stage["mode"] == "parallel", do: :parallel, else: :number}
-        class="mt-3"
-      >
-        <:step :for={item <- @visible_items}>
-          <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
-              <.risk_pill :if={item["risk"]} risk={item["risk"]} />
-            </div>
-            <p class="mt-1 text-xs text-zinc-400">
-              <span class="text-zinc-500">→</span>
-              <span class="font-medium text-zinc-300">
-                {RunbookWorkflowComponents.runner_name(item["runner_ref"])}
-              </span>
-              <span class="font-mono text-zinc-500"> · {item["step_id"]}</span>
-            </p>
-            <RunbookWorkflowComponents.argument_list
-              arguments={item["args"] || %{}}
-              class="mt-3"
-            />
-          </div>
-        </:step>
-      </.steps>
+    <div id={"preflight-stage-#{@stage["id"]}"}>
+      <RunbookWorkflowComponents.plan_stage
+        stage={@stage}
+        items={@visible_items}
+        item_count={length(@stage["items"])}
+      />
       <.button
         :if={@hidden_count > 0 or (@expanded? and length(@stage["items"]) > @page_size)}
         type="button"
@@ -968,7 +931,7 @@ defmodule EmisarWeb.RunbookRunLive do
       >
         {if @expanded?, do: "Show first #{@page_size}", else: "Show #{@hidden_count} more"}
       </.button>
-    </section>
+    </div>
     """
   end
 

@@ -65,12 +65,15 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     assert html =~ "Database maintenance"
     assert html =~ "Frozen runbook plan"
-    assert html =~ "Parallel · up to 2"
+    assert html =~ "parallel · up to 2 at once"
     assert html =~ "1 stage · 2 actions · 2 runners"
     assert html =~ "postgres.config_validate"
     assert html =~ "db-01"
+    assert html =~ "validate-primary"
     assert html =~ "token"
     assert html =~ "[REDACTED]"
+    assert has_element?(lv, ~s(#approval-plan-stage-apply [data-steps-marker="parallel"]))
+    refute has_element?(lv, "#approval-plan-stage-apply [data-steps-marker=number]")
     assert html =~ "This execution will not ask for another approval."
     assert html =~ "Emisar stops the execution."
     assert html =~ "Approve runbook"
