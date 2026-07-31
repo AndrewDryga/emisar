@@ -1807,6 +1807,46 @@ defmodule Emisar.SSOTest do
       refute deactivated.scim_active
     end
 
+    test "a re-capture from the other namespace takes that namespace with it", %{
+      account: account,
+      provider: provider
+    } do
+      # The upsert keys on (provider, identifier). When the SAME identifier arrives
+      # from the other namespace it describes a different person — email, claims
+      # and matched user are all replaced — so the source has to be replaced too.
+      # Leaving the original behind made the approval stamp the column the request
+      # no longer belonged to.
+      first = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: first.id)
+
+      second = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: second.id)
+
+      # OIDC captures the identifier first.
+      capture_request(provider, %{
+        "sub" => "shared-identifier",
+        "email" => first.email,
+        "email_verified" => true
+      })
+
+      # The directory then presents the SAME identifier for someone else.
+      assert {:error, :email_taken} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "shared-identifier",
+                 email: second.email
+               })
+
+      request =
+        SSO.LinkRequest.Query.all()
+        |> SSO.LinkRequest.Query.by_provider_id(provider.id)
+        |> Repo.one()
+
+      # One row, describing the second person, and carrying the namespace that
+      # last described them.
+      assert request.email == second.email
+      assert request.source == :scim
+    end
+
     test "a directory externalId does not overwrite the OIDC sub it disagrees with", %{
       provider: provider,
       account: account

@@ -863,8 +863,13 @@ defmodule Emisar.SSO do
 
     Multi.new()
     |> put_active_account_lock(provider.account_id)
+    # `source` is replaced with the rest. A re-capture of the same identifier from
+    # the OTHER namespace describes a different person — it replaces the email,
+    # claims and matched user — so leaving the original source behind made the
+    # approval stamp the column the request no longer belongs to.
     |> Multi.insert(:request, changeset,
-      on_conflict: {:replace, [:email, :full_name, :claims, :matched_user_id, :updated_at]},
+      on_conflict:
+        {:replace, [:email, :full_name, :claims, :matched_user_id, :source, :updated_at]},
       conflict_target: [:provider_id, :provider_identifier]
     )
     |> Repo.commit_multi()
@@ -2951,21 +2956,21 @@ defmodule Emisar.SSO do
   # else would have noticed.
   defp ensure_approver_still_holds_authority(
          %IdentityProvider{} = provider,
-         %Subject{actor: %Users.User{id: actor_id}},
+         %Subject{membership_id: membership_id},
          repo
-       ) do
-    queryable =
-      Accounts.Membership.Query.not_deleted()
-      |> Accounts.Membership.Query.by_account_and_user(provider.account_id, actor_id)
-      |> Accounts.Membership.Query.lock_for_update()
-
-    case repo.one(queryable) do
-      %Accounts.Membership{disabled_at: nil, role: role} ->
+       )
+       when is_binary(membership_id) do
+    # The same locked read OAuth takes at its consent mint, for the same reason:
+    # a stale session subject must not act after access was suspended, removed or
+    # demoted. It rejects a disabled or deleted membership itself, so what remains
+    # to judge is the CURRENT role.
+    case Accounts.fetch_and_lock_membership(provider.account_id, membership_id, repo: repo) do
+      {:ok, %Accounts.Membership{role: role}} ->
         if Authorizer.manage_sso_permission() in Authorizer.list_permissions_for_role(role),
           do: :ok,
           else: {:error, :unauthorized}
 
-      _ ->
+      {:error, _reason} ->
         {:error, :unauthorized}
     end
   end
