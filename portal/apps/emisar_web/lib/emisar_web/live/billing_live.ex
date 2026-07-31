@@ -82,11 +82,6 @@ defmodule EmisarWeb.BillingLive do
     )
   end
 
-  def handle_event("contact_sales", _params, socket) do
-    {:noreply,
-     put_flash(socket, :info, "We'll be in touch — email sales@emisar.dev to chat sooner.")}
-  end
-
   def handle_event("manage_billing", _params, socket) do
     Permissions.gated(
       socket,
@@ -249,6 +244,15 @@ defmodule EmisarWeb.BillingLive do
 
     MailTo.support(
       subject: "Billing question - #{account.name}",
+      context: context
+    )
+  end
+
+  defp enterprise_sales_mailto(account, user) do
+    context = MailTo.context(%{current_account: account, current_user: user})
+
+    MailTo.sales(
+      subject: "Enterprise plan - #{account.name}",
       context: context
     )
   end
@@ -531,7 +535,7 @@ defmodule EmisarWeb.BillingLive do
                           variant={:secondary}
                           size={:md}
                           class="w-full"
-                          phx-click="contact_sales"
+                          href={enterprise_sales_mailto(@current_account, @current_user)}
                         >
                           Contact sales
                         </.button>

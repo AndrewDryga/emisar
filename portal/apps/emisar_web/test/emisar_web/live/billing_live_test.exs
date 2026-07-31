@@ -98,20 +98,15 @@ defmodule EmisarWeb.BillingLiveTest do
       assert url =~ "stub.paddle.test/checkout"
     end
 
-    test "the enterprise card surfaces contact-sales, not checkout", %{
+    test "the enterprise card mails sales with account context, not checkout", %{
       conn: conn,
       account: account
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      html =
-        lv
-        |> element("button", "Contact sales")
-        |> render_click()
-
-      assert html =~ "We&#39;ll be in touch" or html =~ "We'll be in touch"
-      # Still on the page — no external redirect for the sales-led tier.
-      assert html =~ "Current plan"
+      assert has_element?(lv, ~s|a[href^="mailto:sales@emisar.dev"]|, "Contact sales")
+      assert html =~ "subject=Enterprise%20plan%20-%20Test%20Co"
+      assert html =~ "Account%20ID%3A%20#{account.id}"
     end
 
     test "an enterprise account can't self-downgrade — it surfaces contact-support", %{
