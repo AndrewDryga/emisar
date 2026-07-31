@@ -51,6 +51,24 @@ was refused activation.
 - A fixed name for a resource the third party requires to be unused (JumpCloud's
   Test User Email); one interrupted run then blocks every later one.
 
+## Debugging a rig is not an exception
+
+The worst instance of this was created while fixing it. Debugging a console flow
+means running the rig over and over, and each run creates an object — six
+applications accumulated in the founder's tenant during the very session that
+introduced this rule, because cleanup was skipped "just while iterating".
+
+So the guard belongs in the tool, not in the operator's intentions: a rig REFUSES
+to create another object while earlier ones are still there, and says how many it
+found. Iterating then forces a deliberate cleanup between runs instead of relying
+on remembering.
+
+Where a flow needs many attempts to learn, drive it with a step-through mode that
+navigates and screenshots WITHOUT creating anything (`jumpcloud-capture -explore`),
+and read the screen. Encoding a selector, running the whole pipeline and reading
+the failure is a three-minute loop per click that also leaves an object behind;
+looking at the page is thirty seconds and leaves nothing.
+
 ## How it is enforced
 
 Review, and the tools themselves: `jumpcloud-capture -cleanup-apps` prints its full

@@ -35,6 +35,10 @@ func main() {
 	// can be decided from facts rather than a guess about which rows are mine.
 	flag.BoolVar(&listApps, "list-apps", false, "print the configured applications and exit")
 	flag.BoolVar(&cleanupApps, "cleanup-apps", false, "delete the emisar apps a capture run left behind, and exit")
+	// Step through the console and LOOK. Encoding a selector, running the whole
+	// pipeline and reading the failure is a three-minute loop for one click; this
+	// is thirty seconds, and it shows the screen rather than guessing at it.
+	explore := flag.String("explore", "", "semicolon-separated steps: click:TEXT | xy:X,Y | goto:ROUTE | wait:SECONDS | shot:NAME")
 	flag.Parse()
 
 	if outDir == "" {
@@ -46,7 +50,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "jumpcloud-capture:", err)
 		os.Exit(1)
 	}
-	if err := run(env, outDir, headless, listApps, cleanupApps); err != nil {
+	if err := run(env, outDir, headless, listApps, cleanupApps, *explore); err != nil {
 		fmt.Fprintln(os.Stderr, "jumpcloud-capture:", err)
 		os.Exit(1)
 	}
@@ -234,7 +238,7 @@ func screenshot(ctx context.Context, outDir, name string) error {
 	return nil
 }
 
-func run(env map[string]string, outDir string, headless, listApps, cleanupApps bool) error {
+func run(env map[string]string, outDir string, headless, listApps, cleanupApps bool, explore string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
@@ -330,6 +334,9 @@ func run(env map[string]string, outDir string, headless, listApps, cleanupApps b
 	}
 	if listApps {
 		return printApplications(ctx, env, outDir)
+	}
+	if explore != "" {
+		return exploreConsole(ctx, env, outDir, explore)
 	}
 	if cleanupApps {
 		return cleanupCaptureApplications(ctx, env["JUMPCLOUD_CONSOLE_URL"], outDir)
@@ -518,6 +525,82 @@ func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) 
 	return screenshot(ctx, outDir, "jc-cleanup-done")
 }
 
+// exploreConsole steps through the console one instruction at a time, taking a
+// screenshot after each, so an unfamiliar flow can be READ rather than guessed at.
+func exploreConsole(ctx context.Context, env map[string]string, outDir, script string) error {
+	if err := openApplicationList(ctx, env["JUMPCLOUD_CONSOLE_URL"]); err != nil {
+		return err
+	}
+
+	for index, step := range strings.Split(script, ";") {
+		step = strings.TrimSpace(step)
+		if step == "" {
+			continue
+		}
+		verb, argument, _ := strings.Cut(step, ":")
+
+		switch verb {
+		case "click":
+			clicked, err := clickDeep(ctx, argument)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("  [%d] click %q: %t\n", index, argument, clicked)
+
+		case "xy":
+			var x, y float64
+			if _, err := fmt.Sscanf(argument, "%f,%f", &x, &y); err != nil {
+				return err
+			}
+			if err := chromedp.Run(ctx, chromedp.MouseClickXY(x, y)); err != nil {
+				return err
+			}
+			fmt.Printf("  [%d] clicked at %v,%v\n", index, x, y)
+
+		case "goto":
+			if err := chromedp.Run(ctx, chromedp.Navigate(env["JUMPCLOUD_CONSOLE_URL"]+"/"+argument)); err != nil {
+				return err
+			}
+			fmt.Printf("  [%d] went to %s\n", index, argument)
+
+		case "wait":
+			seconds, err := strconv.Atoi(argument)
+			if err != nil {
+				return err
+			}
+			if err := chromedp.Run(ctx, chromedp.Sleep(time.Duration(seconds)*time.Second)); err != nil {
+				return err
+			}
+
+		case "shot":
+			if err := screenshot(ctx, outDir, "explore-"+argument); err != nil {
+				return err
+			}
+			var body string
+			_ = chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  let out = [];
+  const walk = root => {
+    for (const el of root.querySelectorAll('button,a,[role=button],h1,h2,h3')) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+      if (!visible(el)) continue;
+      const t = (el.textContent || '').trim();
+      if (t && t.length < 44) out.push(t);
+    }
+    for (const el of root.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot);
+  };
+  walk(document);
+  return [...new Set(out)].slice(0, 30).join(' | ');
+})()`, &body))
+			fmt.Printf("  [%d] %s → %s\n", index, argument, body)
+
+		default:
+			return fmt.Errorf("unknown explore step %q", step)
+		}
+	}
+	return nil
+}
+
 // printApplications walks to the configured-application list and prints each row,
 // so the litter a repeated capture run leaves can be identified before anything
 // is deleted.
@@ -547,7 +630,36 @@ func printApplications(ctx context.Context, env map[string]string, outDir string
 // whether JumpCloud lets one app carry both OIDC sign-in and SCIM provisioning —
 // their docs omit OIDC from the custom-SCIM bases, and our shipped copy was
 // corrected on that basis alone.
+// A capture run creates an application. Refuse to create a SECOND one while
+// earlier ones are still here: debugging this flow meant running it repeatedly,
+// and six applications accumulated in the founder's tenant while the fix for
+// exactly that was being written. Clean up first, deliberately.
+func refuseIfTenantAlreadyLittered(ctx context.Context, env map[string]string) error {
+	if err := openApplicationList(ctx, env["JUMPCLOUD_CONSOLE_URL"]); err != nil {
+		return err
+	}
+
+	const countOurs = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const leaves = [...document.querySelectorAll('*')].filter(el =>
+    visible(el) && !el.querySelector('*') && (el.textContent || '').trim() === 'emisar');
+  return leaves.length;
+})()`
+	var existing int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(countOurs, &existing)); err != nil {
+		return err
+	}
+	if existing > 0 {
+		return fmt.Errorf("%d application(s) from earlier runs are still in the tenant — run -cleanup-apps first", existing)
+	}
+	return nil
+}
+
 func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir string) error {
+	if err := refuseIfTenantAlreadyLittered(ctx, env); err != nil {
+		return err
+	}
+
 	// Hash deep-links don't route this SPA (#/sso/applications leaves you on the
 	// onboarding page), so walk the left nav: Access → SSO Applications.
 	// The nav is intermittent (JumpCloud had an incident banner up throughout), so
@@ -638,66 +750,24 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	// clicking the nav one lands on Identity Management onboarding instead of the
 	// application catalog.
 	if entry == "Get Started" {
-		// By POSITION: the left nav has a Get Started of its own, and it goes to
-		// Identity Management onboarding. The one that starts an application sits in
-		// the content area, right of the nav. Ancestry did not separate them — the
-		// heading and the button are in different subtrees — but their x does.
-		const locateEmptyStateStart = `(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const button = [...document.querySelectorAll('button,a,[role=button]')]
-    .filter(el => visible(el) && (el.textContent || '').trim() === 'Get Started')
-    .find(el => el.getBoundingClientRect().left > 400);
-  if (!button) return '';
-  const box = button.getBoundingClientRect();
-  return JSON.stringify({x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)});
-})()`
-		var located string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(locateEmptyStateStart, &located)); err != nil {
+		// The card's own button, matched case-INSENSITIVELY. Its DOM text is
+		// "get started" in lowercase — the capital is CSS — while the left nav has a
+		// "Get Started" that goes to Identity Management onboarding instead. An
+		// exact match therefore picked the wrong one, and position did not separate
+		// them either.
+		//
+		// From here the empty tenant joins the same Create New Application
+		// Integration wizard a populated one uses, Custom Application card included.
+		started, err := clickDeep(ctx, "get started")
+		if err != nil {
 			return err
 		}
-
-		started := located != ""
-		if started {
-			var at struct{ X, Y float64 }
-			if err := json.Unmarshal([]byte(located), &at); err != nil {
-				return err
-			}
-			if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y)); err != nil {
-				return err
-			}
+		if !started {
+			return errors.New("the empty applications page has no get started button")
 		}
-		if started {
-			fmt.Println("  clicked the empty state's Get Started")
-			if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
-				return err
-			}
-		} else {
-			// Straight to the catalog by route. The empty state's own button is not
-			// reachable from its heading, and the left nav has a Get Started of its
-			// own that goes somewhere else entirely.
-			reached := false
-
-			for _, route := range []string{"#/applications/add", "#/sso/applications/add", "#/applications/catalog"} {
-				if err := chromedp.Run(ctx,
-					chromedp.Navigate(env["JUMPCLOUD_CONSOLE_URL"]+"/"+route),
-					chromedp.Sleep(10*time.Second)); err != nil {
-					return err
-				}
-
-				var body string
-				if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-					return err
-				}
-				if strings.Contains(body, "Custom Application") {
-					fmt.Printf("  reached the catalog at %s\n", route)
-					reached = true
-					break
-				}
-			}
-
-			if !reached {
-				return errors.New("could not reach the application catalog from an empty tenant")
-			}
+		fmt.Println("  started from the empty applications page")
+		if err := chromedp.Run(ctx, chromedp.Sleep(12*time.Second)); err != nil {
+			return err
 		}
 	}
 
@@ -1226,6 +1296,26 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	// configuration and leaves the footer offering Test Connection, so a single
 	// press was never going to reach an active state. Drive whichever button the
 	// footer is currently offering until the badge flips.
+	// Look at the footer before driving it. Guessing which control is there cost
+	// many runs; one screenshot and a list of every clickable answers it.
+	_ = screenshot(ctx, outDir, "jc-10-before-activate")
+
+	var footer string
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const out = [];
+  const walk = root => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+      if (el.tagName !== 'BUTTON' || !visible(el)) continue;
+      out.push((el.textContent || '').trim() + (el.disabled ? ' [disabled]' : ''));
+    }
+  };
+  walk(document);
+  return out.join(' | ');
+})()`, &footer))
+	fmt.Printf("  buttons on the provisioning form: %s\n", footer)
+
 	if err := activateProvisioning(ctx, 4); err != nil {
 		_ = screenshot(ctx, outDir, "jc-11-never-activated")
 		return err
@@ -1303,39 +1393,77 @@ func expandConfigurationSettings(ctx context.Context) error {
 // nothing.
 func activateProvisioning(ctx context.Context, rounds int) error {
 	for round := 1; round <= rounds; round++ {
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-			return err
-		}
-		if strings.Contains(body, "Provisioning Active") {
+		if err := waitForProvisioningActive(ctx, 2*time.Second); err == nil {
 			return nil
 		}
 
-		// ACTIVATE when it is offered. On the freshly filled form that one press
-		// both checks the connection and activates — the only sequence observed to
-		// reach an active state. Test Connection is the fallback for a form that has
-		// already been saved.
+		// Activate is not on this form until a test has PASSED — the footer offers
+		// Test Connection, Undo Changes and Cancel, and nothing else. Press what is
+		// there, then wait for Activate to APPEAR rather than for a fixed number of
+		// seconds: the test provisions and deletes a probe user against emisar, which
+		// takes a while.
 		pressed, err := pressFooterButton(ctx, "activate")
 		if err != nil {
 			return err
 		}
 		if !pressed {
-			if pressed, err = pressFooterButton(ctx, "test connection"); err != nil {
+			pressed, err = pressFooterButton(ctx, "test connection")
+			if err != nil {
 				return err
+			}
+			if pressed {
+				if err := waitForFooterButton(ctx, "activate", 150*time.Second); err != nil {
+					fmt.Println("  the test did not produce an Activate button")
+				}
+				continue
 			}
 		}
 		if !pressed {
 			return errors.New("the provisioning footer offers neither Test Connection nor Activate")
 		}
-
-		if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
-			return err
-		}
-		if err := waitForProvisioningActive(ctx, 40*time.Second); err == nil {
+		if err := waitForProvisioningActive(ctx, 90*time.Second); err == nil {
 			return nil
 		}
 	}
 	return errors.New("provisioning never reported active")
+}
+
+// waitForFooterButton waits for a control to APPEAR, which is how this form
+// signals that the connection test passed.
+func waitForFooterButton(ctx context.Context, label string, within time.Duration) error {
+	deadline := time.Now().Add(within)
+
+	for {
+		script := fmt.Sprintf(`(() => {
+  const wanted = %q;
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  let found = false;
+  const walk = root => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+      if (el.tagName !== 'BUTTON' || !visible(el) || el.disabled) continue;
+      if ((el.textContent || '').trim().toLowerCase() === wanted) found = true;
+    }
+  };
+  walk(document);
+  return found;
+})()`, label)
+
+		var present bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &present)); err != nil {
+			return err
+		}
+		if present {
+			fmt.Printf("  %q appeared\n", label)
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%q never appeared", label)
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(5*time.Second)); err != nil {
+			return err
+		}
+	}
 }
 
 func pressFooterButton(ctx context.Context, label string) (bool, error) {
@@ -1388,9 +1516,26 @@ func pressFooterButton(ctx context.Context, label string) (bool, error) {
 func waitForProvisioningActive(ctx context.Context, within time.Duration) error {
 	deadline := time.Now().Add(within)
 
+	// Read the badge through SHADOW ROOTS. document.body.innerText does not
+	// include shadow content, and this console puts its status badges there — so
+	// this waited on a string that was never going to appear, even after
+	// activation had plainly succeeded on screen.
+	const badgeText = `(() => {
+  const parts = [];
+  const walk = root => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+    if (root.body) parts.push(root.body.innerText);
+    else if (root.textContent) parts.push(root.textContent);
+  };
+  walk(document);
+  return parts.join('\n');
+})()`
+
 	for {
 		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(badgeText, &body)); err != nil {
 			return err
 		}
 		if strings.Contains(body, "Provisioning Active") {
