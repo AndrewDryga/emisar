@@ -562,19 +562,6 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp output_rows(outputs), do: Enum.sort_by(outputs, &elem(&1, 0))
 
-  defp execution_item_arguments(execution, item) do
-    plan_item =
-      execution.frozen_plan
-      |> Map.get("stages", [])
-      |> Enum.flat_map(&Map.get(&1, "items", []))
-      |> Enum.find(&(&1["step_id"] == item.step_id and &1["runner_ref"] == item.runner_ref))
-
-    case plan_item do
-      nil -> %{}
-      plan_item -> plan_item["args"] || %{}
-    end
-  end
-
   # An item's terminal message counts as detail only when it says something the
   # execution-level halt block hasn't already said for the whole run.
   defp item_terminal_message(item, execution) do
@@ -1168,21 +1155,26 @@ defmodule EmisarWeb.RunbookRunLive do
         </.event_block>
 
         <% expanded? = MapSet.member?(@expanded_stages, stage.id) %>
-        <div class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
-          <.execution_item
-            :for={item <- visible_items(stage_items, expanded?)}
-            item={item}
-            stage={stage}
-            execution={@result.execution}
-            attempt={@attempts_by_item[item.id]}
-            events={
-              if @attempts_by_item[item.id],
-                do: Map.get(@events_by_attempt, @attempts_by_item[item.id].id, []),
-                else: []
-            }
-            current_account={@current_account}
-          />
-        </div>
+        <.steps
+          variant={:plan}
+          marker={if stage.mode == :parallel, do: :parallel, else: :number}
+          class="mt-3"
+        >
+          <:step :for={item <- visible_items(stage_items, expanded?)}>
+            <.execution_item
+              item={item}
+              stage={stage}
+              execution={@result.execution}
+              attempt={@attempts_by_item[item.id]}
+              events={
+                if @attempts_by_item[item.id],
+                  do: Map.get(@events_by_attempt, @attempts_by_item[item.id].id, []),
+                  else: []
+              }
+              current_account={@current_account}
+            />
+          </:step>
+        </.steps>
         <% hidden_count = hidden_item_count(stage_items, expanded?) %>
         <.button
           :if={hidden_count > 0 or (expanded? and length(stage_items) > @page_size)}
@@ -1214,39 +1206,22 @@ defmodule EmisarWeb.RunbookRunLive do
         :projected_status,
         projected_item_status(assigns.item, assigns.stage, assigns.execution)
       )
-      |> assign(:arguments, execution_item_arguments(assigns.execution, assigns.item))
       |> assign(:has_details?, item_detail?(assigns.item, assigns.attempt, assigns.execution))
 
     ~H"""
-    <details
-      :if={@has_details?}
-      id={"execution-item-#{@item.id}"}
-      class="group py-4"
-      open={@projected_status in [:failed, :running, :waiting]}
-    >
-      <summary class="cursor-pointer list-none">
-        <.execution_item_summary
-          item={@item}
-          projected_status={@projected_status}
-          arguments={@arguments}
-          attempt={@attempt}
-          expandable?
-        />
-      </summary>
+    <div id={"execution-item-#{@item.id}"} class="min-w-0">
+      <.execution_item_summary
+        item={@item}
+        projected_status={@projected_status}
+        attempt={@attempt}
+        current_account={@current_account}
+      />
       <.execution_item_details
+        :if={@has_details?}
         item={@item}
         execution={@execution}
         attempt={@attempt}
         events={@events}
-        current_account={@current_account}
-      />
-    </details>
-    <div :if={not @has_details?} id={"execution-item-#{@item.id}"} class="py-4">
-      <.execution_item_summary
-        item={@item}
-        projected_status={@projected_status}
-        arguments={@arguments}
-        attempt={@attempt}
       />
     </div>
     """
@@ -1254,56 +1229,40 @@ defmodule EmisarWeb.RunbookRunLive do
 
   attr :item, :map, required: true
   attr :projected_status, :atom, required: true
-  attr :arguments, :map, required: true
   attr :attempt, :any, default: nil
-  attr :expandable?, :boolean, default: false
+  attr :current_account, :map, required: true
 
   defp execution_item_summary(assigns) do
     ~H"""
-    <div>
-      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
-            <.risk_pill :if={@item.risk} risk={@item.risk} />
-          </div>
-          <p class="mt-1 text-xs text-zinc-400">
-            {@item.step_id} · on
-            <span class="font-medium text-zinc-300">
-              {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
-            </span>
-            <%!-- One attempt is the norm — only a retry earns a mention. --%>
-            <span :if={@item.attempt_count > 1}> · {@item.attempt_count} attempts</span>
-          </p>
+    <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
+          <.risk_pill :if={@item.risk} risk={@item.risk} />
         </div>
-        <div class="flex items-center gap-3 sm:justify-end">
-          <span :if={@attempt && @attempt.duration_ms} class="text-xs tabular-nums text-zinc-400">
-            {format_duration(@attempt.duration_ms)}
+        <p class="mt-1 text-xs text-zinc-400">
+          <span class="text-zinc-500">→</span>
+          <span class="font-medium text-zinc-300">
+            {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
           </span>
-          <%!-- Fixed track so the status column's left edge aligns down the list
-               despite different label lengths. --%>
-          <.status_badge status={@projected_status} class="w-24" />
-        </div>
+          <span class="font-mono text-zinc-500"> · {@item.step_id}</span>
+          <%!-- One attempt is the norm — only a retry earns a mention. --%>
+          <span :if={@item.attempt_count > 1}> · {@item.attempt_count} attempts</span>
+        </p>
       </div>
-
-      <RunbookWorkflowComponents.argument_list
-        arguments={@arguments}
-        class="mt-3"
-        show_empty?={@expandable?}
-      />
-
-      <span
-        :if={@expandable?}
-        data-role="item-disclosure"
-        class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 group-hover:text-zinc-200"
-      >
-        <.icon
-          name="hero-chevron-down"
-          class="h-4 w-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
-        />
-        <span class="group-open:hidden">Details</span>
-        <span class="hidden group-open:inline">Collapse</span>
-      </span>
+      <div class="flex items-center gap-3 sm:justify-end">
+        <.status_badge status={@projected_status} />
+        <span :if={@attempt && @attempt.duration_ms} class="text-xs tabular-nums text-zinc-400">
+          {format_duration(@attempt.duration_ms)}
+        </span>
+        <.link
+          :if={@attempt}
+          navigate={~p"/app/#{@current_account}/runs/#{@attempt.id}"}
+          class="text-xs font-medium text-brand-400 hover:text-brand-300"
+        >
+          View
+        </.link>
+      </div>
     </div>
     """
   end
@@ -1312,7 +1271,6 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :execution, :map, required: true
   attr :attempt, :any, default: nil
   attr :events, :list, required: true
-  attr :current_account, :map, required: true
 
   defp execution_item_details(assigns) do
     assigns =
@@ -1324,7 +1282,7 @@ defmodule EmisarWeb.RunbookRunLive do
       )
 
     ~H"""
-    <div class="mt-5 space-y-5 sm:pl-4">
+    <div class="mt-4 space-y-4">
       <%!-- Only rows that ADD a fact: the summary already shows status and
            duration, so the raw attempt status appears only when it names a
            different failure mode. Natural-width cells keep each label beside
@@ -1355,17 +1313,13 @@ defmodule EmisarWeb.RunbookRunLive do
         <:body>{terminal_message}</:body>
       </.event_block>
 
-      <div :if={@has_transcript?}>
-        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-          Command and output
-        </p>
-        <.output_preview
-          events={@events}
-          command={@attempt.executed_command}
-          command_truncated?={@attempt.executed_command_truncated}
-          class="mt-2 max-h-64"
-        />
-      </div>
+      <.output_preview
+        :if={@has_transcript?}
+        events={@events}
+        command={@attempt.executed_command}
+        command_truncated?={@attempt.executed_command_truncated}
+        class="max-h-64"
+      />
 
       <p :if={@attempt && not @has_transcript?} class="text-xs text-zinc-500">
         No command or output captured.
@@ -1406,14 +1360,6 @@ defmodule EmisarWeb.RunbookRunLive do
           </li>
         </ul>
       </div>
-
-      <.link
-        :if={@attempt}
-        navigate={~p"/app/#{@current_account}/runs/#{@attempt.id}"}
-        class="inline-flex items-center gap-1.5 text-xs font-medium text-brand-400 hover:text-brand-300"
-      >
-        View raw action output <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-      </.link>
     </div>
     """
   end

@@ -10,13 +10,17 @@ Render each ordered workflow unit once. Its heading carries status and mode; its
 body carries items, evidence, attempts, and results. Do not precede the same
 stages with a second stage strip that repeats their titles and states.
 
-For executable work, show one bounded escaped terminal per action attempt: the
-runner-reported redacted command followed by the newest output tail. Never
-reconstruct a command from arguments. Keep the complete raw run behind a link
-for deeper inspection. Fetch tails in one authorized bounded read, cap each
-action independently, and fail closed if any requested run is outside the
-subject's account or runner scope. Never weaken output retention, redaction, or
-sensitive-value masking to populate the preview.
+For executable work, extend the plan's existing action-row grammar rather than
+inventing a second result layout: keep its sequential/parallel marker, action and
+risk, then `→ runner · step`, and add status, duration, the raw-run link, and one
+bounded escaped terminal. The terminal shows the runner-reported redacted command
+followed by the newest output tail. It is the execution artifact, so do not
+repeat the frozen-plan arguments above it, frame it as a separate card, put it
+behind a disclosure, or add a visible heading that restates what it already
+shows. Never reconstruct a command from arguments. Fetch tails in one authorized
+bounded read, cap each action independently, and fail closed if any requested
+run is outside the subject's account or runner scope. Never weaken output
+retention, redaction, or sensitive-value masking to populate the preview.
 
 User-authored operational instructions are an artifact, not page chrome. Render
 them through the shared artifact panel so Markdown cannot blend into headings,
@@ -44,8 +48,8 @@ alone hides the evidence operators opened the execution to review.
   immediately before `Start runbook`; the rail keeps only guidance, four plan
   facts, and recent executions.
 - An execution shows its result banner, then each stage once with stage status,
-  action status, visible arguments, the runner-reported redacted command,
-  bounded output, and the full-run link.
+  action status, the runner-reported redacted command, bounded output, and the
+  full-run link.
 - Progress chunks are escaped, stderr is distinguished, and one noisy action
   cannot crowd another action out of the batch preview.
 - Operator Markdown sits in a border-only `<.artifact_panel>`.
@@ -55,6 +59,10 @@ alone hides the evidence operators opened the execution to review.
 - `Stages` summary cards followed by sections with the same stage titles.
 - `Recent executions` below an individual execution.
 - An action row that says only `View raw action output`.
+- An action row that repeats plan arguments, then hides its command and output
+  behind `Details`.
+- An execution result that abandons the plan row for a second action identity
+  layout or frames each transcript as a separate terminal card.
 - A start form whose exact plan lives in the rail, away from its submit button.
 - A command rebuilt from visible or sensitive argument bindings.
 - One unbounded event query per action, or a batch read that silently drops a
@@ -66,7 +74,9 @@ alone hides the evidence operators opened the execution to review.
 
 LiveView tests pin primary-flow and rail order, the absence of history and
 duplicate stage copy on execution routes, runner-reported command evidence,
-escaped inline output, and cross-account exclusion. Component tests pin the
-terminal display cap. Context tests pin per-run caps, chronological order,
-permission denial, and fail-closed mixed-access reads. Review sweeps execution
-detail pages for sibling history and repeated workflow-unit headings.
+escaped inline output, reuse of the plan marker and identity row, the absence of
+repeated arguments/disclosure chrome, and cross-account exclusion. Component
+tests pin the terminal display cap and flat presentation. Context tests pin
+per-run caps, chronological order, permission denial, and fail-closed
+mixed-access reads. Review sweeps execution detail pages for sibling history,
+repeated workflow-unit headings, and terminals hidden behind details.

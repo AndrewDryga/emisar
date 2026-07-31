@@ -35,6 +35,10 @@ defmodule EmisarWeb.Components.OutputPreviewTest do
     assert html =~ "text-rose-300"
     assert html =~ ~s(tabindex="0")
     assert html =~ ~s(aria-label="Command and output")
+    assert html =~ "overflow-auto whitespace-pre"
+    refute html =~ "rounded-lg"
+    refute html =~ "border-zinc-800"
+    refute html =~ "bg-zinc-950"
   end
 
   test "keeps only the newest bounded output and says what was omitted" do

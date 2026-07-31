@@ -5480,7 +5480,7 @@ defmodule EmisarWeb.CoreComponents do
       tabindex="0"
       aria-label={@label}
       class={[
-        "overflow-auto whitespace-pre-wrap break-words rounded-lg border border-zinc-800 bg-zinc-950 p-4 font-mono text-xs leading-relaxed text-zinc-300 [font-variant-ligatures:none]",
+        "overflow-auto whitespace-pre font-mono text-xs leading-relaxed text-zinc-300 [font-variant-ligatures:none]",
         @class
       ]}
     ><span :if={is_binary(@command)}><span class="select-none text-zinc-500">$ </span>{@command}<span :if={@command_truncated?} class="text-zinc-500"> …</span>

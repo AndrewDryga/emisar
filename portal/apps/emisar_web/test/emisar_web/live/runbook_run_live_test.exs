@@ -308,7 +308,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ runner.name
       refute html =~ @hash
       refute html =~ "1 attempt"
-      assert html =~ "View raw action output"
+      assert has_element?(lv, "[id^=execution-item-] a", "View")
 
       {:ok, _reloaded, reloaded_html} =
         live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
@@ -386,14 +386,25 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute stage_header =~ "rounded-full"
       refute stage_header =~ "succeeded succeeded"
       assert html =~ "max-w-6xl"
-      assert has_element?(lv, "[data-role=item-disclosure]", "Collapse")
+      refute has_element?(lv, "details[id^=execution-item-]")
+      refute has_element?(lv, "[data-role=item-disclosure]")
+      refute has_element?(lv, "#runbook-execution-result", "Arguments")
+      refute has_element?(lv, "#runbook-execution-result", "Command and output")
+      assert has_element?(lv, "[id^=execution-item-] pre[aria-label='Command and output']")
+
+      assert has_element?(
+               lv,
+               "#runbook-execution-result [data-steps-marker='parallel'] .hero-arrows-right-left"
+             )
+
+      assert has_element?(lv, "[id^=execution-item-] a", "View")
+      refute html =~ "View raw action output"
       assert html =~ "Extracted outputs"
       assert html =~ "Success evidence"
       assert html =~ "ready"
       assert html =~ "Output extraction"
       assert html =~ "Success condition"
       assert html =~ "passed"
-      assert html =~ "Command and output"
       assert html =~ "$ "
       assert html =~ "uptime --pretty --token [REDACTED]"
       assert html =~ " …"
