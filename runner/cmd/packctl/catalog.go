@@ -37,6 +37,12 @@ suggest.json, and the JSON schemas — all hashed with the same loader the
 runner uses, so the published content hash matches 'emisar pack validate'
 byte-for-byte. 'publish' uploads that tree to GCS, never overwriting an
 immutable object.`,
+		// A group command with no RunE is "not runnable", so cobra answers a
+		// MISTYPED subcommand ('catalog buld') with help on stdout and exit 0 —
+		// a typo in CI reads as success. NoArgs turns an unrecognized argument
+		// into an error (exit 1); bare 'catalog' still prints help.
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(packCatalogBuildCmd())
 	cmd.AddCommand(packCatalogPublishCmd())
@@ -161,6 +167,13 @@ Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 			}
 			if flagJSONOut {
 				return printJSON(res)
+			}
+			// A dry run contacts nothing, so it reports what WOULD be uploaded:
+			// "published N objects" after talking to no bucket is a lie an
+			// operator acts on.
+			if dryRun {
+				banner("dry run: %d objects would be uploaded", len(res.Uploaded))
+				return nil
 			}
 			banner("published %d objects (%d skipped, already present)", len(res.Uploaded), len(res.Skipped))
 			return nil
