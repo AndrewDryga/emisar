@@ -65,6 +65,13 @@ prerequisite owns the actionable error. Only mark the dependent choice
 unavailable or incompatible after its prerequisite resolves and that evaluation
 actually fails.
 
+A secondary boolean qualifier inside a repeated row uses a compact positive-state
+checkbox when unchecked means its normal absence. Label the true state directly
+(`Sensitive`), keep ordinary authoring selection neutral, and post an explicit
+false value when unchecked. Do not spend a select and field heading on
+`Visible/Sensitive` when the row only needs one sensitivity flag. Primary
+decisions where both alternatives need names may keep their existing control.
+
 A typed value uses a type-aware editor. Booleans offer no default, true, or
 false; integer and number defaults use numeric controls with whole-number and
 decimal steps respectively; strings use text. An enum's optional single default
@@ -134,9 +141,9 @@ never a reduced model.
 - A run-time input pairs ID with description; then type, required, and sensitive;
   then enum values when applicable; otherwise its default and applicable lower
   and upper bounds share one row.
-- An extracted output pairs ID with Visibility, then reads Read from, Extract
-  with, Expression across one row. A condition reads Output, Must be, Expected
-  JSON value on one row.
+- An extracted output pairs its flexible ID with a compact neutral Sensitive
+  checkbox, then reads Read from, Extract with, Expression across one row. A
+  condition reads Output, Must be, Expected JSON value on one row.
 - Retry policy reads behavior first, then compact interval, timeout, and maximum
   observation controls on the same row. Conditional numeric tracks remain
   reserved while retry is off.
@@ -169,6 +176,8 @@ never a reduced model.
 - An unresolved target that also turns Action rose, prefixes it with
   `Unavailable`, or claims runner compatibility failed when compatibility could
   not be evaluated.
+- A repeated output qualifier stretched into a `Visible/Sensitive` select when
+  one neutral Sensitive checkbox expresses the same boolean.
 - Review and canonical JSON before the editable workflow on a phone.
 - Showing a concurrency value in sequential mode where it does nothing.
 - A Cancel editing link in the lifecycle rail that only navigates back.
@@ -235,4 +244,7 @@ and stale selections whose remove action is disabled with the add catalog.
 Sweep scope-first forms for a dependent behavior control that repeats the
 prerequisite's error or claims its own compatibility result before the
 prerequisite resolves. Rendered tests pin the neutral disabled dependency state
-and retain a separate true-incompatibility case.
+and retain a separate true-incompatibility case. Sweep repeated operational rows
+for secondary false/true selects that should be positive-state checkboxes;
+rendered tests pin the hidden false value, checked true value, neutral tone, and
+compact track.

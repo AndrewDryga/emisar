@@ -795,6 +795,8 @@ defmodule EmisarWeb.CoreComponents do
   see the unchecked value passes `unchecked_value` (e.g. `"false"`) to emit the
   companion hidden input — omit it for `phx-click` toggles and `name="x[]"`
   array boxes, where a hidden value would be meaningless or corrupt the array.
+  Use `tone={:neutral}` for ordinary authoring state that is not a semantic
+  pass/allow verdict.
 
       <.checkbox name="agree" checked={@agreed?} phx-click="toggle" label="I agree" />
       <.checkbox name="x[]" value={id} checked={id in @selected}>
@@ -803,6 +805,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :checked, :boolean, default: false
   attr :label, :string, default: nil
+  attr :tone, :atom, default: :brand, values: [:brand, :neutral]
 
   attr :unchecked_value, :string,
     default: nil,
@@ -828,7 +831,10 @@ defmodule EmisarWeb.CoreComponents do
       <input
         type="checkbox"
         checked={@checked}
-        class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0 disabled:opacity-50"
+        class={[
+          "h-4 w-4 rounded border-zinc-700 bg-zinc-900 focus:ring-2 focus:ring-offset-0 disabled:opacity-50",
+          checkbox_tone(@tone)
+        ]}
         {@rest}
       />
       <%= if @inner_block != [] do %>
@@ -839,6 +845,9 @@ defmodule EmisarWeb.CoreComponents do
     </label>
     """
   end
+
+  defp checkbox_tone(:brand), do: "text-brand-500 focus:ring-brand-500/40"
+  defp checkbox_tone(:neutral), do: "text-zinc-200 focus:ring-zinc-500/40"
 
   @doc """
   Flat multi-pick as a visible checkbox list in a bordered scroll box —

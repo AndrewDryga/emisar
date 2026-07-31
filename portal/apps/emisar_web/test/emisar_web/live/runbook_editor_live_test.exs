@@ -516,8 +516,29 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s|#runbook-stage-0-step-0-output-0-identity[class~="sm:grid-cols-[minmax(0,1fr)_11rem]"]|
+               ~s|#runbook-stage-0-step-0-output-0-identity[class~="sm:grid-cols-[minmax(0,1fr)_9rem]"][class~="sm:items-end"]|
              )
+
+      sensitive_name = "draft[stages][0][steps][0][outputs][0][sensitive]"
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-output-0-identity label",
+               "Sensitive"
+             )
+
+      assert has_element?(
+               lv,
+               ~s|input[type="hidden"][name="#{sensitive_name}"][value="false"]|
+             )
+
+      assert has_element?(
+               lv,
+               ~s|input[type="checkbox"][name="#{sensitive_name}"][value="true"]:not([checked])|
+             )
+
+      refute has_element?(lv, ~s|select[name="#{sensitive_name}"]|)
+      refute has_element?(lv, "#runbook-stage-0-step-0-output-0-identity", "Visibility")
 
       assert has_element?(
                lv,
@@ -570,6 +591,35 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                  collection_html,
                  ~s(name="draft[stages][0][steps][0][success][0][value]")
                )
+
+      sensitive_output = RunbookDraft.output() |> Map.put("sensitive", "true")
+
+      sensitive_draft =
+        valid_draft()
+        |> put_in(
+          ["stages", Access.at(0), "steps", Access.at(0), "outputs"],
+          [sensitive_output]
+        )
+
+      change(lv, sensitive_draft)
+
+      assert has_element?(
+               lv,
+               ~s|input[type="checkbox"][name="#{sensitive_name}"][value="true"][checked]|
+             )
+
+      assert get_in(
+               RunbookDraft.definition(sensitive_draft),
+               [
+                 "stages",
+                 Access.at(0),
+                 "steps",
+                 Access.at(0),
+                 "outputs",
+                 Access.at(0),
+                 "sensitive"
+               ]
+             )
     end
 
     test "retry controls share one stable desktop row", %{conn: conn, account: account} do

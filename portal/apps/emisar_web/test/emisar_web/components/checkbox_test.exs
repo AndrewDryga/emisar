@@ -1,11 +1,11 @@
 defmodule EmisarWeb.Components.CheckboxTest do
   @moduledoc """
   Renders `EmisarWeb.CoreComponents.checkbox/1` — the standalone (non-form-field)
-  checkbox. Asserts the contract: the label text + the standard indigo accent
-  and `focus:ring-2` ring, the `checked` flag, name/value + event bindings +
-  `disabled` riding the global `:rest`, the opt-in `unchecked_value` companion
-  hidden input, a rich inner-block label, and that the label is HTML-escaped
-  (it carries account data — IL-16).
+  checkbox. Asserts the contract: label text, standard and neutral tones, the
+  `checked` flag, name/value + event bindings + `disabled` riding the global
+  `:rest`, the opt-in `unchecked_value` companion hidden input, a rich
+  inner-block label, and that the label is HTML-escaped (it carries account
+  data — IL-16).
   """
   use ExUnit.Case, async: true
   import Phoenix.Component
@@ -37,6 +37,14 @@ defmodule EmisarWeb.Components.CheckboxTest do
       assert html =~ "I agree"
       assert html =~ "text-brand-500"
       assert html =~ "focus:ring-2"
+    end
+
+    test "supports a neutral authoring tone" do
+      html = render_checkbox(%{name: "sensitive", label: "Sensitive", tone: :neutral})
+
+      assert html =~ "text-zinc-200"
+      assert html =~ "focus:ring-zinc-500/40"
+      refute html =~ "text-brand-500"
     end
 
     test "reflects the checked flag" do

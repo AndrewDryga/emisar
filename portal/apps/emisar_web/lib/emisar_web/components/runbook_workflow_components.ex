@@ -752,7 +752,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           <div class="mt-4 space-y-4">
             <div
               id={"runbook-stage-#{@stage_index}-step-#{@step_index}-output-#{index}-identity"}
-              class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]"
+              class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-end"
             >
               <.input
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][id]"}
@@ -764,15 +764,15 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 disabled={@read_only?}
                 class="font-mono"
               />
-              <.input
-                type="select"
+              <.checkbox
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][sensitive]"}
-                value={output["sensitive"]}
-                label="Visibility"
-                label_variant={:eyebrow}
-                aria-label={"Output #{index + 1} sensitivity"}
+                value="true"
+                unchecked_value="false"
+                checked={output["sensitive"] == "true"}
+                label="Sensitive"
+                tone={:neutral}
                 disabled={@read_only?}
-                options={[{"Visible", "false"}, {"Sensitive", "true"}]}
+                class="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-300 ring-1 ring-inset ring-zinc-800"
               />
             </div>
 
