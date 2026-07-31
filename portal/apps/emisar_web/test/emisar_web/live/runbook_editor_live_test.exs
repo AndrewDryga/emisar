@@ -315,11 +315,21 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "sm:grid-cols-[minmax(0,1fr)_9rem_9rem]"
       assert html =~ "sm:items-end"
 
+      required_name = "draft[inputs][0][required]"
       sensitive_name = "draft[inputs][0][sensitive]"
+
+      for qualifier_name <- [required_name, sensitive_name] do
+        assert has_element?(
+                 lv,
+                 ~s|input[type="hidden"][name="#{qualifier_name}"][value="false"]|
+               )
+
+        refute has_element?(lv, ~s|select[name="#{qualifier_name}"]|)
+      end
 
       assert has_element?(
                lv,
-               ~s|input[type="hidden"][name="#{sensitive_name}"][value="false"]|
+               ~s|input[type="checkbox"][name="#{required_name}"][value="true"][checked]|
              )
 
       assert has_element?(
@@ -327,7 +337,17 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s|input[type="checkbox"][name="#{sensitive_name}"][value="true"]:not([checked])|
              )
 
-      refute has_element?(lv, ~s|select[name="#{sensitive_name}"]|)
+      assert has_element?(
+               lv,
+               "#runbook-input-0 label",
+               "Required"
+             )
+
+      assert has_element?(
+               lv,
+               "#runbook-input-0 label",
+               "Sensitive"
+             )
 
       assert has_element?(
                lv,

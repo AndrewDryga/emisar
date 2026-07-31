@@ -75,12 +75,13 @@ message itself is the primary, always-visible correction surface.
 
 A secondary boolean qualifier inside an editor uses the same compact
 positive-state checkbox wherever it appears when unchecked means its normal
-absence. Label the true state directly (`Sensitive`), keep ordinary authoring
-selection neutral, and post an explicit false value when unchecked. Its checked
-state uses a mid-tone neutral fill with a high-contrast mark, not a near-white
-tile. Do not spend a select and field heading on `Visible/Sensitive` or `No/Yes`
-when the row only needs one sensitivity flag. Primary decisions where both
-alternatives need names may keep their existing control.
+absence. Label the true state directly (`Required`, `Sensitive`), keep ordinary
+authoring selection neutral, and post an explicit false value when unchecked.
+Its checked state uses a mid-tone neutral fill with a high-contrast mark, not a
+near-white tile. Do not spend a select and field heading on
+`Required/Optional`, `Visible/Sensitive`, or `No/Yes` when the row only needs
+one qualifier. Primary decisions where both alternatives need names may keep
+their existing control.
 
 A typed value uses a type-aware editor. Booleans offer no default, true, or
 false; integer and number defaults use numeric controls with whole-number and
@@ -189,8 +190,9 @@ never a reduced model.
   not be evaluated.
 - A conditional validation paragraph beneath one overview control that makes
   the row and every following section jump when the error appears or clears.
-- A repeated output qualifier stretched into a `Visible/Sensitive` select when
-  one neutral Sensitive checkbox expresses the same boolean.
+- A run-time input Required flag or repeated output qualifier stretched into a
+  two-option select when one neutral positive-state checkbox expresses the same
+  boolean.
 - Review and canonical JSON before the editable workflow on a phone.
 - Showing a concurrency value in sequential mode where it does nothing.
 - A Cancel editing link in the lifecycle rail that only navigates back.

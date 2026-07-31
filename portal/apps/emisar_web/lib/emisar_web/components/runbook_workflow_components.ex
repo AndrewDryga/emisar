@@ -14,12 +14,13 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   def runner_name(_ref), do: "Unknown runner"
 
   attr :name, :string, required: true
+  attr :label, :string, required: true
   attr :checked, :boolean, required: true
   attr :disabled, :boolean, default: false
   attr :class, :string, default: nil
 
-  @doc "Renders the shared Sensitive authoring control."
-  def sensitive_checkbox(assigns) do
+  @doc "Renders a compact positive-state authoring checkbox."
+  def qualifier_checkbox(assigns) do
     class =
       [
         "flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-300 ring-1 ring-inset ring-zinc-800",
@@ -36,7 +37,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       value="true"
       unchecked_value="false"
       checked={@checked}
-      label="Sensitive"
+      label={@label}
       tone={:neutral}
       disabled={@disabled}
       class={@class}
@@ -803,8 +804,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 disabled={@read_only?}
                 class="font-mono"
               />
-              <.sensitive_checkbox
+              <.qualifier_checkbox
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][sensitive]"}
+                label="Sensitive"
                 checked={output["sensitive"] == "true"}
                 disabled={@read_only?}
               />

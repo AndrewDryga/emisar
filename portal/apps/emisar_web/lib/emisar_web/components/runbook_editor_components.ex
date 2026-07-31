@@ -471,17 +471,15 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   {"Enum", "enum"}
                 ]}
               />
-              <.input
-                type="select"
+              <RunbookWorkflowComponents.qualifier_checkbox
                 name={"draft[inputs][#{index}][required]"}
-                value={input["required"]}
                 label="Required"
-                label_variant={:eyebrow}
+                checked={input["required"] == "true"}
                 disabled={@read_only?}
-                options={[{"Yes", "true"}, {"No", "false"}]}
               />
-              <RunbookWorkflowComponents.sensitive_checkbox
+              <RunbookWorkflowComponents.qualifier_checkbox
                 name={"draft[inputs][#{index}][sensitive]"}
+                label="Sensitive"
                 checked={input["sensitive"] == "true"}
                 disabled={@read_only?}
               />
