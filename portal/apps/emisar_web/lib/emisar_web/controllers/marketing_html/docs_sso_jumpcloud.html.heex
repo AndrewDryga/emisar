@@ -256,15 +256,22 @@
             <p class="font-semibold text-zinc-100">Point its Provisioning tab at emisar.</p>
             <p class="mt-1.5">
               Open the saved app's <strong class="text-zinc-200">Provisioning</strong>
-              tab (JumpCloud's own docs also call it <em>Identity Management</em>). Choose
-              <strong class="text-zinc-200">SCIM API</strong>
-              and <strong class="text-zinc-200">Bearer token</strong>, then fill
+              tab (JumpCloud's own docs also call it <em>Identity Management</em>). The SCIM
+              version is fixed at 2.0; set
+              <strong class="text-zinc-200">Authentication method</strong>
+              to <strong class="text-zinc-200">Bearer token</strong>, then fill
               <strong class="text-zinc-200">Base URL</strong>
               with emisar's SCIM base URL and <strong class="text-zinc-200">Token Key</strong>
               with the bearer. <strong class="text-zinc-200">Test User Email</strong>
               must be an address that doesn't exist in emisar yet — JumpCloud provisions and then
               deletes it as a live check, so an existing member would fail activation.
             </p>
+            <.docs_screenshot
+              src="/images/docs/sso/jumpcloud-scim-connection.webp"
+              title="JumpCloud · Provisioning"
+              caption="Test Connection is a live check: JumpCloud calls emisar before it will activate."
+              alt="The Provisioning tab of a JumpCloud OIDC application with Authentication method set to Bearer token, and Base URL and Token Key outlined in green."
+            />
           </div>
         </li>
         <li class="flex gap-4">

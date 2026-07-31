@@ -12,11 +12,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -379,7 +381,9 @@ func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) 
     if (box.checked) continue;
     const text = rowText(box);
     if (!/\bemisar\b/.test(text)) continue;
-    if (/Provisioning/.test(text)) continue;
+    // The CERTIFICATE marks a keeper, not the provisioning badge. Sparing anything
+    // that advertised provisioning left every run's ACTIVATED app behind, which is
+    // why the count kept climbing however often this was run.
     if (/Expires/.test(text)) continue;
     box.click();
     picked.push(text.slice(0, 70));
@@ -421,16 +425,61 @@ func cleanupCaptureApplications(ctx context.Context, consoleURL, outDir string) 
 	if err := chromedp.Run(ctx, chromedp.Sleep(4*time.Second)); err != nil {
 		return err
 	}
-	// Their confirmation asks for the word "delete" before enabling its button.
-	if err := focusField(ctx, "delete"); err == nil {
-		_ = chromedp.Run(ctx, chromedp.KeyEvent("delete"), chromedp.Sleep(2*time.Second))
+	// Their confirmation asks for the COUNT, not the word "delete": "Enter the
+	// number of applications to be deleted", and its button stays disabled until
+	// the number matches. Typing a word left it disabled and the run reported a
+	// deletion that never happened.
+	count := len(strings.Split(strings.TrimSpace(picked), "\n"))
+
+	typed := fmt.Sprintf(`(() => {
+  const wanted = %q;
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  // Inside the DIALOG. Taking the last input on the page grabbed a control behind
+  // it, so the confirmation field stayed empty and its button stayed disabled —
+  // the run then reported a deletion the UI had refused.
+  const prompt = [...document.querySelectorAll('*')].find(el =>
+    visible(el) && /Enter the number of applications/.test(el.textContent || '') && !el.querySelector('*'));
+  const dialog = prompt ? prompt.closest('div[role=dialog]') || prompt.parentElement.parentElement : null;
+  const input = dialog
+    ? [...dialog.querySelectorAll('input')].find(el => visible(el))
+    : null;
+  if (!input) return false;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(input, wanted);
+  input.dispatchEvent(new Event('input', {bubbles: true}));
+  input.dispatchEvent(new Event('change', {bubbles: true}));
+  return true;
+})()`, strconv.Itoa(count))
+
+	var confirmed bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(typed, &confirmed)); err != nil {
+		return err
 	}
-	for _, label := range []string{"Delete Applications", "Delete Application", "Delete"} {
-		if clicked, err := clickDeep(ctx, label); err == nil && clicked {
-			fmt.Printf("  confirmed with %q\n", label)
-			break
-		}
+	if !confirmed {
+		return errors.New("the delete dialog has no field to confirm the count in")
 	}
+	fmt.Printf("  confirming deletion of %d\n", count)
+	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	// The dialog's BUTTON, not its heading — both read "Delete Applications", and
+	// clicking the heading did nothing while the run reported it confirmed.
+	const confirmButton = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const button = [...document.querySelectorAll('button')]
+    .find(el => visible(el) && !el.disabled && /^Delete Applications?$/.test((el.textContent || '').trim()));
+  if (!button) return false;
+  button.click();
+  return true;
+})()`
+	var pressed bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(confirmButton, &pressed)); err != nil {
+		return err
+	}
+	if !pressed {
+		return errors.New("the delete dialog's confirm button is absent or still disabled")
+	}
+	fmt.Println("  confirmed")
 	if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
 		return err
 	}
@@ -732,6 +781,14 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	// with the redirect URI unsaved raises JumpCloud's "Unsaved Changes" dialog,
 	// which sits over the tab so its fields never render — the run then failed
 	// looking for Base URL on a page it had never actually reached.
+	// Remember where the app lives BEFORE activating. Activation ends on the
+	// applications LIST, not the app, and the run used to assume it was still on
+	// the app — then hunted for a Provisioning tab on a table of rows.
+	var appURL string
+	if err := chromedp.Run(ctx, chromedp.Location(&appURL)); err != nil {
+		return err
+	}
+
 	clicked, err := clickText(ctx, "Activate")
 	if err != nil {
 		return err
@@ -791,6 +848,16 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(4*time.Second)); err != nil {
 		return err
 	}
+	// One implementation of "get back to the app we just made", shared with the
+	// retry below — there were briefly two, reopening in sequence and undoing each
+	// other. Activation ends on the applications list, and this run's app is the
+	// only "emisar" there without a certificate. (Run -cleanup-apps first;
+	// leftovers from earlier attempts look identical.)
+	_ = appURL
+
+	if err := reopenSavedApp(ctx, env, outDir); err != nil {
+		return err
+	}
 
 	// Provisioning wiring needs emisar reachable from JumpCloud's servers, which a
 	// screenshot run has no tunnel for.
@@ -831,30 +898,111 @@ func provisioningFlow(ctx context.Context, env map[string]string, outDir string)
 	return provisioningTabFlow(ctx, env, outDir)
 }
 
+// reopenSavedApp returns to the app this run created and opens its Provisioning
+// tab. Split out because it is needed twice: once after activation drops us on
+// the applications list, and again whenever the provisioning form has not
+// painted yet.
+func reopenSavedApp(ctx context.Context, env map[string]string, outDir string) error {
+	if err := openApplicationList(ctx, env["JUMPCLOUD_CONSOLE_URL"]); err != nil {
+		return err
+	}
+
+	const openFreshApp = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const boxes = [...document.querySelectorAll('input[type=checkbox]')].filter(visible);
+  const leaves = [...document.querySelectorAll('*')].filter(el =>
+    visible(el) && !el.querySelector('*') && (el.textContent || '').trim());
+  for (const box of boxes) {
+    const r = box.getBoundingClientRect();
+    const mid = r.top + r.height / 2;
+    const row = leaves.filter(el => {
+      const b = el.getBoundingClientRect();
+      return b.top <= mid && b.bottom >= mid;
+    });
+    const text = row.map(el => (el.textContent || '').trim()).join(' | ');
+    if (!/\bemisar\b/.test(text)) continue;
+    if (/Expires/.test(text)) continue;
+    const label = row.find(el => (el.textContent || '').trim() === 'emisar');
+    if (!label) continue;
+    const labelBox = label.getBoundingClientRect();
+    return JSON.stringify({x: Math.round(labelBox.left + labelBox.width / 2), y: Math.round(labelBox.top + labelBox.height / 2), text: text.slice(0, 60)});
+  }
+  return '';
+})()`
+	var found string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(openFreshApp, &found)); err != nil {
+		return err
+	}
+	if found == "" {
+		_ = screenshot(ctx, outDir, "jc-09-cannot-find-fresh-app")
+		return errors.New("the app just created is not identifiable in the list — run -cleanup-apps first")
+	}
+
+	var at struct {
+		X, Y float64
+		Text string
+	}
+	if err := json.Unmarshal([]byte(found), &at); err != nil {
+		return err
+	}
+	if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y), chromedp.Sleep(14*time.Second)); err != nil {
+		return err
+	}
+	fmt.Printf("  reopened the saved app (%s)\n", at.Text)
+
+	return openProvisioningTab(ctx)
+}
+
+// openProvisioningTab clicks the app's own Provisioning tab, scoped to the tab
+// strip — "Provisioning" also names a badge in the applications list, and
+// matching that navigated back to the list while reporting success.
+func openProvisioningTab(ctx context.Context) error {
+	const openTab = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  // Already there? Clicking the tab again toggles it back off, which is exactly
+  // what happened when two callers each opened it.
+  if (/Authentication method|SCIM Version|Custom Provisioning/.test(document.body.innerText)) {
+    return 'already open';
+  }
+  const wanted = ['Provisioning', 'Identity Management'];
+  for (const el of document.querySelectorAll('*')) {
+    if (!visible(el)) continue;
+    const text = (el.textContent || '').trim();
+    if (!wanted.includes(text)) continue;
+    if (el.querySelector('*')) continue;
+    const strip = el.closest('ul,nav,div');
+    if (!strip) continue;
+    const siblings = (strip.parentElement || strip).textContent || '';
+    if (!/General Info/.test(siblings) || !/User Groups/.test(siblings)) continue;
+    el.click();
+    return text;
+  }
+  return '';
+})()`
+	var opened string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(openTab, &opened)); err != nil {
+		return err
+	}
+	if opened != "" {
+		fmt.Printf("  opened %q tab\n", opened)
+	}
+
+	return chromedp.Run(ctx, chromedp.Sleep(8*time.Second))
+}
+
 // provisioningTabFlow opens the app's provisioning tab and reports its fields.
 func provisioningTabFlow(ctx context.Context, env map[string]string, outDir string) error {
 	// Their own docs use both names for this tab; try each. clickDeep first,
 	// because the tab is not an anchor or a button — clickText missed it and the
 	// run then matched "Identity Management" in the LEFT NAV, which is a different
 	// product area entirely, and reported success for opening the wrong page.
-	opened := false
-	for _, label := range []string{"Provisioning", "Identity Management"} {
-		clicked, err := clickDeep(ctx, label)
-		if err != nil {
-			return err
-		}
-		if !clicked {
-			if clicked, err = clickText(ctx, label); err != nil {
-				return err
-			}
-		}
-		if clicked {
-			fmt.Printf("  opened %q tab\n", label)
-			opened = true
-			break
-		}
+	// The tab is opened by reopenSavedApp, which is also what the retry below
+	// calls — opening it a second time here toggled back off.
+	if err := openProvisioningTab(ctx); err != nil {
+		return err
 	}
-	if !opened {
+	opened := "Provisioning"
+	if opened == "" {
 		_ = screenshot(ctx, outDir, "jc-09-no-provisioning-tab")
 		_ = describePage(ctx)
 		return fmt.Errorf("no Provisioning / Identity Management tab on the saved app")
@@ -866,14 +1014,42 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 
-	// SCIM API + Bearer token is emisar's shape; the alternatives are a custom
-	// import and an API-key header.
-	for _, radio := range []string{"SCIM API", "Bearer token"} {
-		picked, err := clickRadio(ctx, radio)
+	// Bearer token is emisar's shape; the alternative is an API-key header. It is a
+	// TOGGLE PAIR, not a radio group — clickRadio found nothing for it, and there
+	// is no "SCIM API" control at all (the SCIM version is fixed text). Both were
+	// reported as a benign false and the run carried on into a form it had not
+	// configured.
+	// Retry, because reopening the app in a virtualised list is genuinely
+	// intermittent: the same run succeeds and fails on identical input depending
+	// on whether the list has painted. Give it a few goes before calling it a
+	// failure rather than throwing away a whole capture.
+	chosen := false
+
+	for attempt := 1; attempt <= 4 && !chosen; attempt++ {
+		clicked, err := clickDeep(ctx, "Bearer token")
 		if err != nil {
 			return err
 		}
-		fmt.Printf("  radio %q: %t\n", radio, picked)
+		if clicked {
+			chosen = true
+			break
+		}
+		fmt.Printf("  provisioning form not up yet (attempt %d); reopening\n", attempt)
+		if err := chromedp.Run(ctx, chromedp.Sleep(8*time.Second)); err != nil {
+			return err
+		}
+		if err := reopenSavedApp(ctx, env, outDir); err != nil {
+			return err
+		}
+	}
+
+	if !chosen {
+		return errors.New("no Bearer token option on the provisioning tab")
+	}
+	fmt.Println("  chose Bearer token")
+
+	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
+		return err
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
 		return err
@@ -898,6 +1074,25 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 		return err
 	}
+	// TEST FIRST, rewrite the host after. The comment here used to claim the
+	// connection was "really tested against" these values while the rewrite ran
+	// BEFORE the test — so JumpCloud tested https://emisar.dev, the real product
+	// host, with a development token, and got a 401. The screenshot then showed a
+	// value nothing had exercised.
+	//
+	// Now the test runs against the tunnel that is actually serving, and only the
+	// hostname is swapped afterwards, which is what de-identification is for.
+	for _, label := range []string{"Test Connection"} {
+		clicked, err := clickDeep(ctx, label)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("  clicked %q: %t\n", label, clicked)
+		if err := chromedp.Run(ctx, chromedp.Sleep(20*time.Second)); err != nil {
+			return err
+		}
+	}
+
 	// Swap the capture rig's tunnel hostname for the product one. This is
 	// de-identification (host), never an outcome — the values were really typed
 	// and the connection really tested against them.
@@ -909,20 +1104,34 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := deidentifyHost(ctx, tunnel, strings.TrimPrefix(docsHost, "https://")); err != nil {
 		return err
 	}
+	// Ring what the step tells the reader to fill. A bare shot of a form is not an
+	// instruction.
+	for _, label := range []string{"Base URL", "Token Key"} {
+		if err := highlight(ctx, label); err != nil {
+			return err
+		}
+	}
 	if err := screenshot(ctx, outDir, "jc-10-scim-filled"); err != nil {
 		return err
 	}
+
 	// Test Connection, then Activate. Their form DISCARDS the config if you press
 	// Save instead — documented, and worth never learning the hard way.
-	for _, label := range []string{"Test Connection", "Activate"} {
-		clicked, err := clickText(ctx, label)
+	for _, label := range []string{"Activate"} {
+		clicked, err := clickDeep(ctx, label)
 		if err != nil {
 			return err
 		}
 		fmt.Printf("  clicked %q: %t\n", label, clicked)
-		if err := chromedp.Run(ctx, chromedp.Sleep(12*time.Second)); err != nil {
+		// Activation reloads the tab into its configured shape; wait for that rather
+		// than photographing the form it is replacing.
+		if err := chromedp.Run(ctx, chromedp.Sleep(25*time.Second)); err != nil {
 			return err
 		}
+		// The outcome IS the evidence here: provisioning flips to Active once the
+		// connection is accepted, so that badge is what the step is about.
+		_ = highlight(ctx, "Provisioning Active")
+
 		if err := screenshot(ctx, outDir, "jc-11-"+strings.ToLower(strings.ReplaceAll(label, " ", "-"))); err != nil {
 			return err
 		}
