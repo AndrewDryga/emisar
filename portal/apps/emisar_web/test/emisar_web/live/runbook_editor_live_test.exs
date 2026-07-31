@@ -158,6 +158,16 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(#runbook-stage-0-step-0-overview input[name="draft[stages][0][steps][0][id]"])
              )
 
+      assert has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-overview[class~="xl:items-end"]|
+             )
+
+      refute has_element?(
+               lv,
+               ~s|#runbook-stage-0-step-0-overview[class~="xl:items-start"]|
+             )
+
       refute has_element?(lv, "button", "Step identifier")
 
       assert has_element?(lv, ~s(#runbook-inputs button[phx-click="add_input"]), "Add input")
@@ -292,7 +302,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         )
 
       assert html =~ "Allowed values"
-      assert html =~ "Sensitive?"
+      assert html =~ "Sensitive"
+      refute html =~ "Sensitive?"
       assert has_element?(lv, "#runbook-input-0 h3", "environment")
       assert has_element?(lv, "#runbook-input-0", "Input 1 · Enum")
       refute has_element?(lv, ~s([name="draft[inputs][0][default]"]))
@@ -302,6 +313,21 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute html =~ "Behavior"
       refute html =~ "max-w-[39rem]"
       assert html =~ "sm:grid-cols-[minmax(0,1fr)_9rem_9rem]"
+      assert html =~ "sm:items-end"
+
+      sensitive_name = "draft[inputs][0][sensitive]"
+
+      assert has_element?(
+               lv,
+               ~s|input[type="hidden"][name="#{sensitive_name}"][value="false"]|
+             )
+
+      assert has_element?(
+               lv,
+               ~s|input[type="checkbox"][name="#{sensitive_name}"][value="true"]:not([checked])|
+             )
+
+      refute has_element?(lv, ~s|select[name="#{sensitive_name}"]|)
 
       assert has_element?(
                lv,
@@ -605,7 +631,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s|input[type="checkbox"][name="#{sensitive_name}"][value="true"][checked]|
+               ~s|input[type="checkbox"][name="#{sensitive_name}"][value="true"][checked][class~="text-zinc-500"]|
              )
 
       assert get_in(

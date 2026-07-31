@@ -847,7 +847,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp checkbox_tone(:brand), do: "text-brand-500 focus:ring-brand-500/40"
-  defp checkbox_tone(:neutral), do: "text-zinc-200 focus:ring-zinc-500/40"
+  defp checkbox_tone(:neutral), do: "text-zinc-500 focus:ring-zinc-500/40"
 
   @doc """
   Flat multi-pick as a visible checkbox list in a bordered scroll box —

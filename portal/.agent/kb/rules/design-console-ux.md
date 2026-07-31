@@ -55,9 +55,11 @@ with meaning assigned at the call site:
   (`status_tone/1`, `state_chip`, LiveTable `card_accent`) — it names a verdict, not a hue.
 - **Ordinary authoring selection stays neutral.** A selected default, radio card,
   or option is not a pass/allowed verdict: distinguish it with a check or filled
-  radio plus neutral surface/ring contrast. Semantic color is earned only when
-  the selected fact itself means pass, pending, or deny; keyboard focus may
-  still use the brand focus ring.
+  radio plus neutral surface/ring contrast. A neutral checked checkbox uses a
+  mid-tone zinc fill with a high-contrast check; a near-white fill that erases
+  the checkmark is not a legible selected state. Semantic color is earned only
+  when the selected fact itself means pass, pending, or deny; keyboard focus
+  may still use the brand focus ring.
 - Enums are **atoms**, never strings (`variant={:primary}`, not `"primary"`); every enum
   attr carries `values:` so a stray atom is a compile error (no catch-all clauses).
 - No dead aliases: one class ramp per meaning. (`button "success"` ≡ `"primary"` and

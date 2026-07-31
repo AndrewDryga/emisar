@@ -13,6 +13,37 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   def runner_name(_ref), do: "Unknown runner"
 
+  attr :name, :string, required: true
+  attr :checked, :boolean, required: true
+  attr :disabled, :boolean, default: false
+  attr :class, :string, default: nil
+
+  @doc "Renders the shared Sensitive authoring control."
+  def sensitive_checkbox(assigns) do
+    class =
+      [
+        "flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-300 ring-1 ring-inset ring-zinc-800",
+        assigns.class
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+
+    assigns = assign(assigns, :class, class)
+
+    ~H"""
+    <.checkbox
+      name={@name}
+      value="true"
+      unchecked_value="false"
+      checked={@checked}
+      label="Sensitive"
+      tone={:neutral}
+      disabled={@disabled}
+      class={@class}
+    />
+    """
+  end
+
   attr :arguments, :map, required: true
   attr :class, :string, default: nil
   attr :show_empty?, :boolean, default: false
@@ -318,7 +349,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
       <div
         id={"runbook-stage-#{@stage_index}-step-#{@step_index}-overview"}
-        class="mt-5 grid gap-4 xl:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)] xl:items-start"
+        class="mt-5 grid gap-4 xl:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)] xl:items-end"
       >
         <.input
           name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
@@ -772,15 +803,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 disabled={@read_only?}
                 class="font-mono"
               />
-              <.checkbox
+              <.sensitive_checkbox
                 name={"draft[stages][#{@stage_index}][steps][#{@step_index}][outputs][#{index}][sensitive]"}
-                value="true"
-                unchecked_value="false"
                 checked={output["sensitive"] == "true"}
-                label="Sensitive"
-                tone={:neutral}
                 disabled={@read_only?}
-                class="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-300 ring-1 ring-inset ring-zinc-800"
               />
             </div>
 

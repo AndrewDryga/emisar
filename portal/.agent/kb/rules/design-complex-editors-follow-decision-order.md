@@ -38,9 +38,11 @@ Field rows express one relationship at a time. Keep identity beside visibility,
 then put a transformation chain or condition in left-to-right reading order on
 one desktop row. A mode or behavior selector that governs the row gets more
 width than bounded numeric inputs; the compact inputs still share the same
-baseline and enclosure. Reserve tracks for conditional peers, or attach a tail
-control on the next row, so revealing one never resizes the controls before it.
-Stack the same order on narrow screens.
+baseline and enclosure. Align the control boxes at the row end rather than the
+tops of unlike wrappers; a composed label carrying state or a tooltip must not
+leave its control above or below a standard input beside it. Reserve tracks for
+conditional peers, or attach a tail control on the next row, so revealing one
+never resizes the controls before it. Stack the same order on narrow screens.
 
 A repeated contract row translates schema metadata into operator language. Lead
 with the stable argument name, summarize requirement and type as a phrase
@@ -71,12 +73,14 @@ and remedy through the shared accessible tooltip instead of inserting a
 conditional paragraph beneath that column. Keep an inline error only when the
 message itself is the primary, always-visible correction surface.
 
-A secondary boolean qualifier inside a repeated row uses a compact positive-state
-checkbox when unchecked means its normal absence. Label the true state directly
-(`Sensitive`), keep ordinary authoring selection neutral, and post an explicit
-false value when unchecked. Do not spend a select and field heading on
-`Visible/Sensitive` when the row only needs one sensitivity flag. Primary
-decisions where both alternatives need names may keep their existing control.
+A secondary boolean qualifier inside an editor uses the same compact
+positive-state checkbox wherever it appears when unchecked means its normal
+absence. Label the true state directly (`Sensitive`), keep ordinary authoring
+selection neutral, and post an explicit false value when unchecked. Its checked
+state uses a mid-tone neutral fill with a high-contrast mark, not a near-white
+tile. Do not spend a select and field heading on `Visible/Sensitive` or `No/Yes`
+when the row only needs one sensitivity flag. Primary decisions where both
+alternatives need names may keep their existing control.
 
 A typed value uses a type-aware editor. Booleans offer no default, true, or
 false; integer and number defaults use numeric controls with whole-number and

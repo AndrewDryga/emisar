@@ -29,7 +29,7 @@ defmodule EmisarWeb.Components.CheckboxTest do
   end
 
   describe "checkbox/1" do
-    test "renders the label and the standard indigo accent + focus ring" do
+    test "renders the label and the standard brand accent + focus ring" do
       html = render_checkbox(%{name: "agree", label: "I agree"})
 
       assert html =~ ~s(type="checkbox")
@@ -42,8 +42,9 @@ defmodule EmisarWeb.Components.CheckboxTest do
     test "supports a neutral authoring tone" do
       html = render_checkbox(%{name: "sensitive", label: "Sensitive", tone: :neutral})
 
-      assert html =~ "text-zinc-200"
+      assert html =~ "text-zinc-500"
       assert html =~ "focus:ring-zinc-500/40"
+      refute html =~ "text-zinc-200"
       refute html =~ "text-brand-500"
     end
 

@@ -455,7 +455,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               />
             </div>
 
-            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem_9rem]">
+            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem_9rem] sm:items-end">
               <.input
                 type="select"
                 name={"draft[inputs][#{index}][type]"}
@@ -480,14 +480,10 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 disabled={@read_only?}
                 options={[{"Yes", "true"}, {"No", "false"}]}
               />
-              <.input
-                type="select"
+              <RunbookWorkflowComponents.sensitive_checkbox
                 name={"draft[inputs][#{index}][sensitive]"}
-                value={input["sensitive"]}
-                label="Sensitive?"
-                label_variant={:eyebrow}
+                checked={input["sensitive"] == "true"}
                 disabled={@read_only?}
-                options={[{"No", "false"}, {"Yes", "true"}]}
               />
             </div>
 
