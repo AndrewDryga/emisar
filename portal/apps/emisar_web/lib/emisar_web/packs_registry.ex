@@ -47,7 +47,7 @@ defmodule EmisarWeb.PacksRegistry do
      ~w(prometheus grafana victoriametrics victorialogs vector)},
     {"Web, proxies & ingress", "web", ~w(nginx apache-httpd caddy haproxy traefik envoy php-fpm)},
     {"Cloud & IaC", "cloud",
-     ~w(aws-ec2 aws-s3 aws-rds aws-iam aws-cloudwatch aws-cost cloudflare terraform-readonly)},
+     ~w(aws-ec2 aws-s3 aws-rds aws-iam aws-cloudwatch aws-cost gcp-compute gcp-cloudsql gcp-storage gcp-networking gcp-load-balancing gcp-dns gcp-iam gcp-certificates gcp-monitoring cloudflare terraform-readonly hcp-terraform)},
     {"Networking, DNS & VPN", "networking",
      ~w(bind frr firewall pfsense wireguard tailscale snmp dell-idrac dell-ipmi nic bonding network-tls iperf3 ssl-local time-sync)},
     {"Storage & filesystems", "storage",

@@ -212,7 +212,7 @@
             <span>
               <strong class="text-zinc-300">Policy:</strong>
               the defaults already fit — log tails and status reads are <code class="font-mono">low</code>/<code class="font-mono">medium</code>
-              (allow); <code class="font-mono">nginx.restart</code>
+              (allow); <code class="font-mono">linux.systemctl_restart</code>
               is <code class="font-mono">high</code>
               (require approval). No override to write.
             </span>
@@ -229,8 +229,8 @@
         </ul>
         <p class="mt-5 text-base leading-7 text-zinc-400">
           <strong class="text-zinc-300">Result:</strong>
-          the agent calls <code class="font-mono">nginx.error_log_tail</code>
-          and it runs; it calls <code class="font-mono">nginx.restart</code>
+          the agent calls <code class="font-mono">nginx.error_tail</code>
+          and it runs; it calls <code class="font-mono">linux.systemctl_restart</code>
           and the run holds for the on-call, who sees the host, the exact arguments, and the agent's
           reason before approving. Every call lands in the audit with its client, key, and reason.
         </p>
@@ -238,11 +238,11 @@
 
       <div class="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/60 p-5">
         <h3 class="text-base font-semibold text-zinc-100">
-          A destructive action on prod-db, done safely
+          A destructive action on db-prod, done safely
         </h3>
         <p class="mt-2 text-base leading-7 text-zinc-400">
           <strong class="text-zinc-300">Goal:</strong>
-          a Postgres failover on <code class="font-mono">db-prod</code>
+          killing a stuck Postgres backend on <code class="font-mono">db-prod</code>
           should be possible — but only when two people approve.
         </p>
         <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
@@ -267,11 +267,11 @@
         </ul>
         <p class="mt-5 text-base leading-7 text-zinc-400">
           <strong class="text-zinc-300">The flow:</strong>
-          a DBA's agent calls <code class="font-mono">postgres.promote_replica</code>
+          a DBA's agent calls <code class="font-mono">postgres.terminate_backend</code>
           with a reason. Policy holds the run for approval; two other operators approve —
           self-approval is off, so the person who asked can't be one of them. The twice-approved run
           dispatches and the runner executes it. The audit shows the requester, both approvers, and
-          the redacted command. Nobody promotes a replica on
+          the redacted command. Nobody drops a connection on
           <code class="font-mono">db-prod</code>
           alone, and every step is on the record.
         </p>

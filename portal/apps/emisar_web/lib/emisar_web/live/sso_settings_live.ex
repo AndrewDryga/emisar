@@ -2066,8 +2066,8 @@ defmodule EmisarWeb.SSOSettingsLive do
       >
         <:body>
           Permanently removes the <span class="font-medium text-rose-100">{@provider.name}</span>
-          connection. Members who sign in only through it lose access. Existing sessions aren't
-          ended. This can't be undone.
+          connection. Members who sign in only through it lose access, and the sessions they
+          signed in with are ended. This can't be undone.
         </:body>
       </.confirm_dialog>
     </section>

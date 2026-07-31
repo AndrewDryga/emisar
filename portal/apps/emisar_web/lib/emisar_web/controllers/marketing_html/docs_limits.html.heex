@@ -59,19 +59,33 @@
               <td class="px-4 py-3 align-top font-medium text-zinc-200">MCP long-poll wait</td>
               <td class="px-4 py-3 align-top leading-6">Up to 60 seconds per call</td>
               <td class="px-4 py-3 align-top leading-6">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>, and
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">recent_runs</code>
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>
+                and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
                 return the current state at the deadline; one credential may hold 8 concurrent waits
-                per node.
+                per node. Every other tool answers immediately.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                MCP structured output
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                8 KiB per run, shared down when one response carries several
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                A run whose parsed output is larger is dropped from the response and replaced with a
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+                continuation that fetches it on its own.
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">MCP response size</td>
               <td class="px-4 py-3 align-top leading-6">512 KiB per tool result</td>
               <td class="px-4 py-3 align-top leading-6">
-                Oversized structured output is dropped and replaced with a
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
-                continuation that fetches it.
+                Tools shrink themselves first — fewer rows, shorter output tails. A result that
+                still does not fit returns a transport error carrying a
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_operation</code>
+                continuation.
               </td>
             </tr>
             <tr>
