@@ -1,0 +1,33 @@
+schema_version: 1
+id: bunny.set_force_ssl
+title: Change hostname Force SSL
+kind: script
+risk: high
+description: Enable or disable HTTP-to-HTTPS enforcement for one Pull Zone hostname; disabling permits unencrypted client requests where Bunny accepts them.
+side_effects:
+  - Changes redirect and transport enforcement for one hostname.
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID.
+    validation: {min: 1, max: 9007199254740991}
+  - name: hostname
+    type: string
+    required: true
+    description: Attached Pull Zone hostname.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$"
+      max_length: 253
+  - name: enabled
+    type: boolean
+    required: true
+    description: New Force SSL state.
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [set-force-ssl, "{{ args.pull_zone_id }}", "{{ args.hostname }}", "{{ args.enabled }}"]
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 1048576, max_stderr_bytes: 8192}
+examples:
+  - title: Force HTTPS
+    args: {pull_zone_id: 123456, hostname: cdn.example.com, enabled: true}

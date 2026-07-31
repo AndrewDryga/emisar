@@ -1,0 +1,40 @@
+schema_version: 1
+id: bunny.set_origin_shield
+title: Change Pull Zone Origin Shield
+kind: script
+risk: high
+description: Enable, disable, or relocate Origin Shield; this changes the origin request path, latency, and billable shield traffic for the Pull Zone.
+side_effects:
+  - Changes whether cache misses pass through Origin Shield.
+  - A supplied zone code changes the shield location.
+  - Origin Shield pricing and latency may change.
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID.
+    validation: {min: 1, max: 9007199254740991}
+  - name: enabled
+    type: boolean
+    required: true
+    description: New Origin Shield state.
+  - name: zone_code
+    type: string
+    required: false
+    default: ""
+    description: Optional Bunny region code from bunny.list_regions; empty leaves the location unchanged.
+    validation:
+      pattern: "^(|[A-Za-z0-9-]{1,32})$"
+      max_length: 32
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [set-origin-shield, "{{ args.pull_zone_id }}", "{{ args.enabled }}", "{{ args.zone_code }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Enable Origin Shield in one region
+    args: {pull_zone_id: 123456, enabled: true, zone_code: DE}

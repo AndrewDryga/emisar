@@ -1,0 +1,28 @@
+schema_version: 1
+id: bunny.add_allowed_referrer
+title: Add allowed referrer
+kind: script
+risk: high
+description: Add a hostname to a Pull Zone's allowlist; once an allowlist is active, unmatched referrers can be denied and legitimate embeds may stop working.
+side_effects: [Changes hotlink-access policy for the Pull Zone.]
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID.
+    validation: {min: 1, max: 9007199254740991}
+  - name: hostname
+    type: string
+    required: true
+    description: Referrer hostname or wildcard pattern accepted by Bunny.
+    validation:
+      pattern: "^[A-Za-z0-9*][A-Za-z0-9.*-]{0,252}$"
+      max_length: 253
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [add-allowed-referrer, "{{ args.pull_zone_id }}", "{{ args.hostname }}"]
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 1048576, max_stderr_bytes: 8192}
+examples:
+  - title: Allow one site
+    args: {pull_zone_id: 123456, hostname: www.example.com}

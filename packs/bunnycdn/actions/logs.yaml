@@ -1,0 +1,104 @@
+schema_version: 1
+id: bunny.logs
+title: Fetch CDN request logs
+kind: script
+risk: medium
+description: >
+  Fetch one bounded, filterable page from CDN Logging API v2. The result can
+  contain client IP, user-agent, and referrer metadata, so policy should limit
+  who may retrieve it; authorization fields and URL query strings are removed.
+side_effects:
+  - One CDN Logging API request.
+  - Returns request-level client metadata into the governed run result and audit trail.
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID with logging enabled.
+    validation: {min: 1, max: 9007199254740991}
+  - name: from
+    type: string
+    required: false
+    default: ""
+    description: Optional inclusive UTC start in RFC3339 seconds; must be within Bunny's three-day retention window.
+    validation:
+      pattern: "^(|20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$"
+      max_length: 20
+  - name: to
+    type: string
+    required: false
+    default: ""
+    description: Optional exclusive UTC end in RFC3339 seconds.
+    validation:
+      pattern: "^(|20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$"
+      max_length: 20
+  - name: status
+    type: string
+    required: false
+    default: ""
+    description: Optional comma-separated HTTP codes or classes, such as 404,5xx.
+    validation:
+      pattern: "^(|[1-5]([0-9]{2}|xx)(,[1-5]([0-9]{2}|xx)){0,8})$"
+      max_length: 35
+  - name: cache_status
+    type: string
+    required: false
+    default: ""
+    description: Optional comma-separated cache statuses, such as HIT,MISS,STALE.
+    validation:
+      pattern: "^(|[A-Z-]{1,16}(,[A-Z-]{1,16}){0,8})$"
+      max_length: 80
+  - name: url_contains
+    type: string
+    required: false
+    default: ""
+    description: Optional case-insensitive substring filter over host and path.
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 256
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum log entries in this page.
+    validation: {min: 1, max: 1000}
+  - name: offset
+    type: integer
+    required: false
+    default: 0
+    description: Entries to skip for pagination.
+    validation: {min: 0, max: 1000000}
+  - name: order
+    type: string
+    required: false
+    default: desc
+    description: Timestamp order.
+    validation: {enum: [asc, desc]}
+  - name: include_origin_shield
+    type: boolean
+    required: false
+    default: false
+    description: Include edge-to-shield requests.
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv:
+    - logs
+    - "{{ args.pull_zone_id }}"
+    - "{{ args.from }}"
+    - "{{ args.to }}"
+    - "{{ args.status }}"
+    - "{{ args.cache_status }}"
+    - "{{ args.url_contains }}"
+    - "{{ args.limit }}"
+    - "{{ args.offset }}"
+    - "{{ args.order }}"
+    - "{{ args.include_origin_shield }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8388608
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent cache misses for video paths
+    args: {pull_zone_id: 123456, cache_status: MISS, url_contains: /video/, limit: 100}

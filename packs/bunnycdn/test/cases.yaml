@@ -1,0 +1,382 @@
+services: [bunny-api]
+versions:
+  - version: "3.14.0-alpine3.22"
+    digest: "@sha256:8373231e1e906ddfb457748bfc032c4c06ada8c759b7b62d9c73ec2a3c56e710"
+    default: true
+risk_accountability:
+  mode: complete
+secret_env: [BUNNY_API_KEY, BUNNY_PURGE_URL]
+env:
+  BUNNY_API_KEY: packtest-canary-bunny-key-c8e41
+  BUNNY_PURGE_URL: https://cdn.example.test/video/intro.mp4?token=packtest-canary-bunny-purge-token-6a21
+  BUNNY_PACKTEST: "1"
+  BUNNY_CORE_API_BASE: http://bunny-api:8080/core
+  BUNNY_LOGGING_API_BASE: http://bunny-api:8080/logging
+  BUNNY_ORIGIN_ERRORS_API_BASE: http://bunny-api:8080/origin
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+      - packtest-canary-bunny-key-c8e41
+      - packtest-canary-origin-password
+      - packtest-canary-zone-security-key-2a9c
+      - packtest-canary-aws-key-51fd
+      - packtest-canary-aws-secret-775e
+      - packtest-canary-forward-token-9bc2
+      - packtest-canary-certificate-3cd1
+      - packtest-canary-private-key-88ef
+      - packtest-canary-query-token-6a21
+      - packtest-canary-referrer-9b71
+      - packtest-canary-request-auth-0ee3
+      - packtest-canary-origin-query-4c31
+      - packtest-canary-origin-log-extra-372a
+      - packtest-canary-payment-id-a810
+      - packtest-canary-payment-token-883a
+cases:
+  - action: bunny.list_pull_zones
+    expect:
+      json:
+        /Items/0/Id: 123456
+        /Items/0/Name: fixture-cdn
+        /Items/0/OriginUrl: https://origin.example.test/assets
+        /TotalItems: 1
+
+  - action: bunny.get_pull_zone
+    args: {pull_zone_id: 123456}
+    expect:
+      json:
+        /Id: 123456
+        /Name: fixture-cdn
+        /OriginUrl: https://origin.example.test/assets
+        /MonthlyBandwidthUsed: 987654321
+
+  - action: bunny.list_regions
+    expect:
+      json:
+        /0/Name: Frankfurt
+        /0/ZoneCode: DE
+
+  - action: bunny.statistics
+    args: {pull_zone_id: 123456, hourly: true}
+    expect:
+      json:
+        /TotalBandwidthUsed: 400000000000
+        /TotalRequestsServed: 53000000
+        /CacheHitRate: 91.2
+
+  - action: bunny.optimizer_statistics
+    args: {pull_zone_id: 123456}
+    expect:
+      json:
+        /TotalRequestsOptimized: 1200
+        /TotalTrafficSaved: 4096000
+
+  - action: bunny.origin_shield_statistics
+    args: {pull_zone_id: 123456}
+    expect:
+      json:
+        /ConcurrentRequestsChart/2026-07-31T12:00:00Z: 7
+        /QueuedRequestsChart/2026-07-31T12:00:00Z: 2
+
+  - action: bunny.safehop_statistics
+    args: {pull_zone_id: 123456}
+    expect:
+      json:
+        /TotalRequestsRetried: 12
+        /TotalRequestsSaved: 9
+
+  - action: bunny.logs
+    args: {pull_zone_id: 123456, cache_status: STALE, url_contains: /video/, limit: 100}
+    expect:
+      json:
+        /data/0/cacheStatus: STALE
+        /data/0/statusCode: 206
+        /data/0/path: /video/intro.mp4
+        /data/0/url: https://cdn.example.test/video/intro.mp4
+        /data/0/referer: https://app.example.test/champions
+        /pagination/returned: 3
+    probes:
+      - name: the Logging v2 endpoint was queried
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: [logging_v2]
+
+  - action: bunny.log_usage_summary
+    args: {pull_zone_id: 123456, url_contains: /video/}
+    expect:
+      json:
+        /groups/0/path: /video/intro.mp4
+        /groups/0/cache_status: STALE
+        /groups/0/status_code: 206
+        /groups/0/requests: 2
+        /groups/0/bytes_sent: 10000
+        /groups/1/path: /images/logo.webp
+        /groups/1/bytes_sent: 1000
+
+  - action: bunny.origin_errors
+    args: {pull_zone_id: 123456, date: 07-31-2026}
+    expect:
+      json:
+        /logs/0/request_url: /apikey
+        /logs/0/error_code: dns_lookup
+        /logs/0/status_code: 502
+        /logs/0/server_zone: DE
+    probes:
+      - name: the Origin Errors endpoint was queried
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: [origin_errors]
+
+  - action: bunny.billing_usage
+    expect:
+      json:
+        /account/this_month_charges: 44.75
+        /account/monthly_bandwidth_used: 400000000000
+        /pull_zones/0/pull_zone_id: 123456
+        /pull_zones/0/monthly_usage: 12.34
+
+  - action: bunny.create_pull_zone
+    args: {name: created-zone, origin_url: https://created-origin.example.test, tier: volume, enable_logging: true, enable_cache_slice: true}
+    expect:
+      json:
+        /Id: 654321
+        /Name: created-zone
+        /OriginUrl: https://created-origin.example.test
+        /Type: 1
+        /EnableCacheSlice: true
+    probes:
+      - name: the Pull Zone exists in provider state
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/654321]
+        expect:
+          stdout_contains: [created-zone]
+
+  - action: bunny.delete_pull_zone
+    args: {pull_zone_id: 123456}
+    expect:
+      json:
+        /deleted: true
+        /pull_zone_id: 123456
+    probes:
+      - name: the Pull Zone no longer exists
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          json: {/deleted: true}
+
+  - action: bunny.set_origin
+    args: {pull_zone_id: 123456, origin_url: https://new-origin.example.test/assets, origin_host_header: new-origin.example.test, verify_origin_ssl: true}
+    expect:
+      json:
+        /OriginUrl: https://new-origin.example.test/assets
+        /OriginHostHeader: new-origin.example.test
+        /VerifyOriginSSL: true
+    probes:
+      - name: the provider retained the new origin
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: [new-origin.example.test]
+
+  - action: bunny.set_cache_ttl
+    args: {pull_zone_id: 123456, edge_seconds: "86400", browser_seconds: "3600"}
+    expect:
+      json:
+        /CacheControlMaxAgeOverride: 86400
+        /CacheControlPublicMaxAgeOverride: 3600
+    probes:
+      - name: the provider retained both TTLs
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: ['"CacheControlMaxAgeOverride":86400', '"CacheControlPublicMaxAgeOverride":3600']
+
+  - action: bunny.set_cache_behavior
+    args: {pull_zone_id: 123456, setting: stale_while_offline, enabled: true}
+    expect:
+      json: {/UseStaleWhileOffline: true}
+    probes:
+      - name: the provider retained the cache behavior
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: ['"UseStaleWhileOffline":true']
+
+  - action: bunny.set_origin_shield
+    args: {pull_zone_id: 123456, enabled: true, zone_code: WA}
+    expect:
+      json:
+        /EnableOriginShield: true
+        /OriginShieldZoneCode: WA
+    probes:
+      - name: the provider retained the shield location
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: ['"OriginShieldZoneCode":"WA"']
+
+  - action: bunny.set_logging
+    args: {pull_zone_id: 123456, enabled: true, anonymization: drop_all, format: json}
+    expect:
+      json:
+        /EnableLogging: true
+        /LoggingIPAnonymizationEnabled: true
+        /LogAnonymizationType: 1
+        /LogFormat: 1
+    probes:
+      - name: the provider retained anonymized logging
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: ['"LoggingIPAnonymizationEnabled":true', '"LogAnonymizationType":1']
+
+  - action: bunny.add_hostname
+    args: {pull_zone_id: 123456, hostname: added.example.test}
+    expect:
+      stdout_contains: [added.example.test]
+    probes:
+      - name: the hostname is attached
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: [added.example.test]
+
+  - action: bunny.remove_hostname
+    args: {pull_zone_id: 123456, hostname: cdn.example.test}
+    expect:
+      stdout_not_contains: [cdn.example.test]
+    probes:
+      - name: the hostname is detached
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: [removed_hostname:cdn.example.test]
+
+  - action: bunny.set_force_ssl
+    args: {pull_zone_id: 123456, hostname: cdn.example.test, enabled: true}
+    expect:
+      json: {/Hostnames/1/ForceSSL: true}
+    probes:
+      - name: the provider retained Force SSL
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: ['"Value":"cdn.example.test","ForceSSL":true']
+
+  - action: bunny.add_allowed_referrer
+    args: {pull_zone_id: 123456, hostname: allowed.example.test}
+    expect:
+      stdout_contains: [allowed.example.test]
+    probes:
+      - name: the referrer is allowed
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: [allowed.example.test]
+
+  - action: bunny.remove_allowed_referrer
+    args: {pull_zone_id: 123456, hostname: old.example.com}
+    expect:
+      stdout_not_contains: [old.example.com]
+    probes:
+      - name: the referrer is no longer allowed
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: [removed_allowed_referrer:old.example.com]
+
+  - action: bunny.add_blocked_referrer
+    args: {pull_zone_id: 123456, hostname: scraper.example.test}
+    expect:
+      stdout_contains: [scraper.example.test]
+    probes:
+      - name: the referrer is blocked
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: [scraper.example.test]
+
+  - action: bunny.remove_blocked_referrer
+    args: {pull_zone_id: 123456, hostname: blocked.example.com}
+    expect:
+      stdout_not_contains: [blocked.example.com]
+    probes:
+      - name: the referrer is no longer blocked
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: [removed_blocked_referrer:blocked.example.com]
+
+  - action: bunny.add_blocked_ip
+    args: {pull_zone_id: 123456, address: 198.51.100.25}
+    expect:
+      stdout_contains: [198.51.100.25]
+    probes:
+      - name: the address is blocked
+        argv: [curl, -fsS, http://bunny-api:8080/probe/zones/123456]
+        expect:
+          stdout_contains: [198.51.100.25]
+
+  - action: bunny.remove_blocked_ip
+    args: {pull_zone_id: 123456, address: 192.0.2.10}
+    expect:
+      stdout_not_contains: [192.0.2.10]
+    probes:
+      - name: the address is no longer blocked
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: [removed_blocked_ip:192.0.2.10]
+
+  - action: bunny.purge_url
+    args: {exact_path: true}
+    resolve_args:
+      url:
+        argv: [/bin/sh, -c, 'printf "%s\n" "$BUNNY_PURGE_URL"']
+    expect:
+      json:
+        /purged: true
+        /scope: url
+        /url: https://cdn.example.test/video/intro.mp4
+    probes:
+      - name: Bunny accepted the exact URL purge
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"scope":"url"', intro.mp4]
+
+  - action: bunny.purge_tag
+    args: {pull_zone_id: 123456, cache_tag: release-2026-07-31}
+    expect:
+      json:
+        /purged: true
+        /scope: tag
+        /cache_tag: release-2026-07-31
+    probes:
+      - name: Bunny accepted the tag purge
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: [release-2026-07-31]
+
+  - action: bunny.purge_all_cache
+    args: {pull_zone_id: 123456}
+    expect:
+      json:
+        /purged: true
+        /scope: pull_zone
+        /pull_zone_id: 123456
+    probes:
+      - name: Bunny accepted the full-zone purge
+        argv: [curl, -fsS, http://bunny-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"scope":"pull_zone"']
+
+  - name: bunny.list_pull_zones-invalid-api-key
+    action: bunny.list_pull_zones
+    env:
+      BUNNY_API_KEY: packtest-canary-bunny-invalid-1337
+    expect:
+      status: failure
+      exit: [4]
+      reason_contains: [process exited with code 4]
+      stderr_contains: ["curl: (22)", "bunny.net API request failed"]
+
+  - name: bunny.create_pull_zone-rejects-origin-userinfo
+    action: bunny.create_pull_zone
+    args: {name: rejected-zone, origin_url: "https://user:password@origin.example.test"}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
+
+  - name: bunny.set_cache_ttl-requires-a-change
+    action: bunny.set_cache_ttl
+    args: {pull_zone_id: 123456}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [at least one cache TTL must change]

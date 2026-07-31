@@ -1,0 +1,46 @@
+schema_version: 1
+id: bunny.optimizer_statistics
+title: Get Optimizer statistics
+kind: script
+risk: low
+description: Get optimized request, traffic-saved, compression, and processing-time statistics for one Pull Zone.
+side_effects: [One read-only Core API request.]
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID.
+    validation: {min: 1, max: 9007199254740991}
+  - name: date_from
+    type: string
+    required: false
+    default: ""
+    description: Optional inclusive UTC start in RFC3339 seconds.
+    validation:
+      pattern: "^(|20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$"
+      max_length: 20
+  - name: date_to
+    type: string
+    required: false
+    default: ""
+    description: Optional exclusive UTC end in RFC3339 seconds.
+    validation:
+      pattern: "^(|20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$"
+      max_length: 20
+  - name: hourly
+    type: boolean
+    required: false
+    default: false
+    description: Return hourly chart buckets.
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [optimizer-statistics, "{{ args.pull_zone_id }}", "{{ args.date_from }}", "{{ args.date_to }}", "{{ args.hourly }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Optimizer metrics
+    args: {pull_zone_id: 123456}

@@ -1,0 +1,46 @@
+schema_version: 1
+id: bunny.set_cache_behavior
+title: Change one Pull Zone cache behavior
+kind: script
+risk: high
+description: Enable or disable one declared cache behavior; the choice can change cache keys, freshness, origin load, or the traffic served while an origin is unhealthy.
+side_effects:
+  - Changes one Pull Zone caching behavior immediately.
+  - Can increase misses, serve stale objects, or alter query-string cache keys depending on the selected setting.
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID.
+    validation: {min: 1, max: 9007199254740991}
+  - name: setting
+    type: string
+    required: true
+    description: Declared cache behavior to change.
+    validation:
+      enum:
+        - ignore_query_strings
+        - cache_slice
+        - smart_cache
+        - cache_error_responses
+        - background_update
+        - stale_while_offline
+        - stale_while_updating
+        - request_coalescing
+        - query_string_ordering
+  - name: enabled
+    type: boolean
+    required: true
+    description: New setting value.
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [set-cache-behavior, "{{ args.pull_zone_id }}", "{{ args.setting }}", "{{ args.enabled }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Serve stale cache while the origin is offline
+    args: {pull_zone_id: 123456, setting: stale_while_offline, enabled: true}

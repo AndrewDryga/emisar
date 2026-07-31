@@ -1,0 +1,28 @@
+schema_version: 1
+id: bunny.remove_blocked_ip
+title: Remove blocked IP address
+kind: script
+risk: high
+description: Remove one IPv4 or IPv6 address from a Pull Zone blocklist; requests from that address can resume consuming CDN bandwidth.
+side_effects: [Changes Pull Zone access policy and allows matching traffic again.]
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID.
+    validation: {min: 1, max: 9007199254740991}
+  - name: address
+    type: string
+    required: true
+    description: IPv4 or IPv6 address for Bunny to validate and unblock.
+    validation:
+      pattern: "^[0-9A-Fa-f:.]{2,45}$"
+      max_length: 45
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [remove-blocked-ip, "{{ args.pull_zone_id }}", "{{ args.address }}"]
+  timeout: 60s
+output: {parser: json, parser_required: true, max_stdout_bytes: 1048576, max_stderr_bytes: 8192}
+examples:
+  - title: Unblock one address
+    args: {pull_zone_id: 123456, address: 192.0.2.10}

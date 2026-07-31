@@ -1,0 +1,53 @@
+schema_version: 1
+id: bunny.create_pull_zone
+title: Create Pull Zone
+kind: script
+risk: high
+description: Create a billed Bunny CDN Pull Zone pointing at one HTTPS origin; traffic served through it begins consuming account bandwidth and balance.
+side_effects:
+  - Creates a persistent, billable Pull Zone.
+  - Makes a new Bunny system hostname available for CDN traffic.
+  - Enables anonymized logging when requested.
+args:
+  - name: name
+    type: string
+    required: true
+    description: Account-unique Pull Zone name.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+      max_length: 64
+  - name: origin_url
+    type: string
+    required: true
+    description: HTTPS origin URL without user-info credentials or a query string.
+    validation:
+      pattern: "^https://[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?(/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$"
+      max_length: 2048
+  - name: tier
+    type: string
+    required: false
+    default: premium
+    description: Bunny Pull Zone traffic tier.
+    validation: {enum: [premium, volume]}
+  - name: enable_logging
+    type: boolean
+    required: false
+    default: true
+    description: Enable anonymized CDN request logging.
+  - name: enable_cache_slice
+    type: boolean
+    required: false
+    default: false
+    description: Enable cache slicing for large files and video.
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [create-pull-zone, "{{ args.name }}", "{{ args.origin_url }}", "{{ args.tier }}", "{{ args.enable_logging }}", "{{ args.enable_cache_slice }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Create a logged video Pull Zone
+    args: {name: example-videos, origin_url: "https://origin.example.com/videos", enable_cache_slice: true}

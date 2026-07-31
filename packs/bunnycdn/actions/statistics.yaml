@@ -1,0 +1,47 @@
+schema_version: 1
+id: bunny.statistics
+title: Get CDN statistics
+kind: script
+risk: low
+description: Get bandwidth, requests, cache hit rate, origin traffic, response-time, error, and geographic statistics for the account or one Pull Zone.
+side_effects: [One read-only Core API request.]
+args:
+  - name: date_from
+    type: string
+    required: false
+    default: ""
+    description: Optional inclusive UTC start in RFC3339 seconds; empty uses Bunny's default window.
+    validation:
+      pattern: "^(|20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$"
+      max_length: 20
+  - name: date_to
+    type: string
+    required: false
+    default: ""
+    description: Optional exclusive UTC end in RFC3339 seconds.
+    validation:
+      pattern: "^(|20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$"
+      max_length: 20
+  - name: pull_zone_id
+    type: integer
+    required: false
+    default: 0
+    description: Pull Zone ID, or 0 for account-wide statistics.
+    validation: {min: 0, max: 9007199254740991}
+  - name: hourly
+    type: boolean
+    required: false
+    default: false
+    description: Return hourly chart buckets and preserve exact hours.
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [statistics, "{{ args.date_from }}", "{{ args.date_to }}", "{{ args.pull_zone_id }}", "{{ args.hourly }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: One Pull Zone over Bunny's default window
+    args: {pull_zone_id: 123456}

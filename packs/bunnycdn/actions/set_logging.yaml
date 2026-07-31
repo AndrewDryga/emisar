@@ -1,0 +1,43 @@
+schema_version: 1
+id: bunny.set_logging
+title: Change Pull Zone logging
+kind: script
+risk: medium
+description: Enable or disable request logging with enforced IP anonymization; enabling stores request metadata for Bunny's retention window and disabling removes incident visibility.
+side_effects:
+  - Changes whether Bunny records CDN requests for this Pull Zone.
+  - Enforces IP anonymization and selects plain or JSON storage format.
+args:
+  - name: pull_zone_id
+    type: integer
+    required: true
+    description: Pull Zone ID.
+    validation: {min: 1, max: 9007199254740991}
+  - name: enabled
+    type: boolean
+    required: true
+    description: New request-logging state.
+  - name: anonymization
+    type: string
+    required: false
+    default: last_octet
+    description: IP anonymization strength.
+    validation: {enum: [last_octet, drop_all]}
+  - name: format
+    type: string
+    required: false
+    default: json
+    description: Log storage format.
+    validation: {enum: [plain, json]}
+execution:
+  script: {path: scripts/bunny_api.sh, interpreter: /bin/bash}
+  argv: [set-logging, "{{ args.pull_zone_id }}", "{{ args.enabled }}", "{{ args.anonymization }}", "{{ args.format }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Enable anonymized JSON logs
+    args: {pull_zone_id: 123456, enabled: true}
