@@ -22,6 +22,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   end
 
   test "?sent=1 shows the check-inbox panel + the 6-character code form", %{conn: conn} do
+    conn = Plug.Test.init_test_session(conn, %{"magic_link_email" => "operator@example.test"})
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
     assert html =~ "Check your inbox."
@@ -34,6 +35,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   end
 
   test "the sent panel links back to a fresh email form", %{conn: conn} do
+    conn = Plug.Test.init_test_session(conn, %{"magic_link_email" => "operator@example.test"})
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
     assert html =~ "Use a different email"
@@ -81,25 +83,36 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     assert html =~ ~s(phx-hook="ResendCooldown")
   end
 
-  test "?sent=1 with no stashed address shows neither the address nor Resend", %{conn: conn} do
+  test "?sent=1 with no stashed address falls back to the email form", %{conn: conn} do
+    # A bookmark, a reload after the session lapsed, or a malformed POST: without
+    # the stashed address there is no code to verify and no Resend to offer, so a
+    # code form here could only ever fail.
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
-    assert html =~ "6-character code. Enter"
-    refute html =~ ~s(id="resend-code")
+    assert html =~ ~s(action="/sign_in/magic/start")
+    refute html =~ "Check your inbox."
+    refute html =~ ~s(phx-hook="CodeInput")
   end
 
   test "?sent=1 with a stashed expiry renders the code countdown wired to the submit", %{
     conn: conn
   } do
     expires = DateTime.utc_now() |> DateTime.add(900, :second) |> DateTime.to_iso8601()
-    conn = Plug.Test.init_test_session(conn, %{"magic_link_expires_at" => expires})
+
+    session = %{
+      "magic_link_email" => "operator@example.test",
+      "magic_link_expires_at" => expires
+    }
+
+    conn = Plug.Test.init_test_session(conn, session)
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
-    # The countdown element carries the hook + the expiry, and targets the code
-    # submit it disables on lapse.
+    # The countdown element carries the hook + the expiry, and targets both the
+    # code submit and the boxes it disables on lapse.
     assert html =~ ~s(id="code-expiry")
     assert html =~ ~s(phx-hook="MagicCodeExpiry")
     assert html =~ ~s(data-disable="code-submit")
+    assert html =~ ~s(data-disable-inputs="magic-code")
     assert html =~ ~s(id="code-submit")
   end
 
@@ -124,6 +137,14 @@ defmodule EmisarWeb.MagicLinkLiveTest do
       html = render_hook(lv, "verify_code", %{"code" => "000000"})
 
       assert html =~ "match or has expired"
+    end
+
+    test "a rejected code clears the boxes so a correction can't resubmit itself", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sign_in/magic?sent=1")
+
+      render_hook(lv, "verify_code", %{"code" => "000000"})
+
+      assert_push_event(lv, "code:reset", %{id: "magic-code"})
     end
 
     test "the correct code redirects to the cookie-bound sign-in completion", %{

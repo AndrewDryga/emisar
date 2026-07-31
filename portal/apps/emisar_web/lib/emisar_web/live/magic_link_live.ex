@@ -15,7 +15,12 @@ defmodule EmisarWeb.MagicLinkLive do
     {:ok,
      socket
      |> assign(:page_title, "Sign in via email")
-     |> assign(:sent?, params["sent"] == "1")
+     # `?sent=1` alone isn't enough: a bookmark, a reload, or a lapsed session
+     # would render a code form that can never verify — and hide Resend, which
+     # only shows with an address. magic_link_start stashes the address for every
+     # submitted email alike (known, unknown, or throttled), so gating on it falls
+     # back to the email form without leaking whether an account exists.
+     |> assign(:sent?, params["sent"] == "1" and is_binary(email))
      # Branded pages pass ?return_to=/app/<slug>; threaded into the POST as a
      # hidden field so the emailed link + the code path both land on that team.
      |> assign(:return_to, ReturnTo.app_path(params["return_to"]))
@@ -36,6 +41,9 @@ defmodule EmisarWeb.MagicLinkLive do
      |> assign(:correction_email_error, correction_email_error(session))
      |> assign(:request_context, RequestContext.from_socket(socket))
      |> assign(:code_error, nil)
+     # The boxes are client-owned (`phx-update="ignore"`), so the reject path
+     # clears them by pushing to this element rather than re-rendering it.
+     |> assign(:code_input_id, "magic-code")
      |> assign(:email_form, to_form(%{"email" => correction_email || ""}, as: "user"))
      |> assign(:code_form, to_form(%{"code" => ""}))}
   end
@@ -55,12 +63,16 @@ defmodule EmisarWeb.MagicLinkLive do
       {:noreply, redirect(socket, to: ~p"/sign_in/magic/complete?#{[handoff: handoff]}")}
     else
       _ ->
+        # Empty the boxes and refocus: a rejected code left in place meant fixing
+        # one character refilled all six, which auto-submits and spends another of
+        # the five attempts on a code the operator was still correcting.
         {:noreply,
-         assign(
-           socket,
+         socket
+         |> assign(
            :code_error,
            "That code didn't match or has expired. Check it and try again, or resend below."
-         )}
+         )
+         |> push_event("code:reset", %{id: socket.assigns.code_input_id})}
     end
   end
 
@@ -110,13 +122,19 @@ defmodule EmisarWeb.MagicLinkLive do
             phx-hook="MagicCodeExpiry"
             data-expires-at={@expires_at}
             data-disable="code-submit"
+            data-disable-inputs={@code_input_id}
             class="mt-3 text-xs font-medium text-brand-300/80"
           >
           </p>
         </.callout>
 
         <.simple_form for={@code_form} phx-submit="verify_code" class="mt-5">
-          <.code_input id="magic-code" name="code" label="Sign-in code" error={@code_error} />
+          <.code_input
+            id={@code_input_id}
+            name="code"
+            label="Sign-in code"
+            error={@code_error}
+          />
           <:actions>
             <.button id="code-submit" class="w-full">
               Sign in <span aria-hidden="true">→</span>

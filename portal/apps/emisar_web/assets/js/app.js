@@ -314,6 +314,10 @@ const MagicCodeExpiry = {
       this.el.classList.add("text-amber-400")
       const target = this.el.dataset.disable && document.getElementById(this.el.dataset.disable)
       if (target) target.disabled = true
+      // Disable the boxes too — a dead code can't verify, so leaving them typeable
+      // just invites six keystrokes that auto-submit into a guaranteed rejection.
+      const group = this.el.dataset.disableInputs && document.getElementById(this.el.dataset.disableInputs)
+      if (group) { group.querySelectorAll("[data-box]").forEach(b => { b.disabled = true; b.blur() }) }
       clearInterval(this.timer)
       return
     }
@@ -396,6 +400,18 @@ const CodeInput = {
         }
       })
     }
+
+    // The server can't clear the boxes by re-rendering (phx-update="ignore"), so a
+    // rejected attempt arrives as an event addressed to this group's id. Emptying
+    // them is what keeps a correction from being an instant resubmit: with the code
+    // left in place, fixing one character refills all six and auto-submits, burning
+    // another of the five attempts. Pages that never push it are unaffected.
+    this.handleEvent("code:reset", ({id}) => {
+      if (id !== this.el.id) return
+      this.boxes.forEach(b => { b.value = "" })
+      sync()
+      focusBox(0)
+    })
 
     sync()
     focusBox(0)
