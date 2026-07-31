@@ -230,9 +230,8 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         all_option = %{
           value: group_ref,
           selection: "all",
-          label: "All runners",
+          label: "Every runner in group",
           kind: :group_all,
-          description: "Every online runner",
           disabled: false,
           selected: false
         }
@@ -242,7 +241,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
           selection: "random_one",
           label: "One runner",
           kind: :group_one,
-          description: "Frozen at run start",
           disabled: false,
           selected: false
         }
@@ -312,7 +310,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       selection: "all",
       label: runner.name,
       kind: :runner,
-      description: "Exact runner",
       disabled: false,
       selected: false
     }

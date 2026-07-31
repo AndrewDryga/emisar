@@ -65,8 +65,10 @@ A multi-target control keeps one stable-height trigger in the workflow overview.
 The trigger names recognizable selected identities; a count alone is not a
 summary, and a bounded `+N` appears only after named choices. Its menu owns both
 addition and removal. For large fleets, keep one search field above dense
-single-line choices: scope, consequence, and selection state remain visible,
-while every interactive row retains at least a 40px hit area. Never stack
+single-line choices: scope and selection state remain visible, while every
+interactive row retains at least a 40px hit area. When the label already states
+the complete scope (`Every runner in group`, `One runner`, or a runner name),
+do not append a secondary qualifier that merely restates it. Never stack
 selected-target rows above a second picker in the overview grid. When a saved
 target no longer resolves, name it in operator language,
 mark it unavailable in the trigger, and keep its menu row removable even when
@@ -162,11 +164,10 @@ never a reduced model.
 - A two-target trigger reads `EDGE-WEB · all, edge-fra-01`; a longer selection
   names the first two choices before `+N`. The menu searches runner names and
   group names, while each scope choice stays on one 40px-or-taller row.
-- A group target menu presents `All runners`, `One runner`, and each exact
-  runner as peer rows. Their secondary lines say `Every online runner in this
-  group`, `Selected and frozen when the run starts`, and `Only this runner` when
-  stacked; dense single-line menus shorten those to `Every online runner`,
-  `Frozen at run start`, and `Exact runner` without changing the consequence.
+- A group target menu presents `Every runner in group`, `One runner`, and each
+  runner name as peer rows. Those labels carry the complete choice without
+  secondary `Every online runner`, `Frozen at run start`, or `Exact runner`
+  qualifiers.
 - When Targets cannot resolve, Action keeps its saved action name in a neutral
   disabled control and shows no compatibility error. Once Targets resolve, a
   genuinely incompatible action owns its unavailable label and accessible
@@ -219,8 +220,9 @@ never a reduced model.
 - Selected-target cards stacked over an add-target dropdown, raw tagged refs in
   the closed trigger, or a stale target that becomes impossible to remove when
   the live catalog is empty.
-- A count-only `2 targets` trigger, a fleet menu with no search, or 56px-tall
-  two-line option cards repeated for every runner.
+- A count-only `2 targets` trigger, a fleet menu with no search, 56px-tall
+  two-line option cards repeated for every runner, or secondary copy that
+  restates an already-complete scope label.
 - An exact runner indented below `One runner`, implying that the named runner is
   the member the system will randomly select.
 - An event-backed target picker inside a whole-form `phx-change` flow with no
@@ -297,7 +299,7 @@ desktop relationships split across rows, finite controls stretched to equal
 weight, and conditional fields that resize earlier tracks instead of using a
 reserved track or attached continuation. Sweep workflow overview scope controls
 for count-only summaries, unsearchable large catalogs, tall multi-line fleet
-rows, selected items stacked outside their picker, raw `group:`/`runner:` refs,
+rows, redundant scope qualifiers, selected items stacked outside their picker, raw `group:`/`runner:` refs,
 and stale selections whose remove action is disabled with the add catalog.
 Sweep scope-first forms for a dependent behavior control that repeats the
 prerequisite's error or claims its own compatibility result before the

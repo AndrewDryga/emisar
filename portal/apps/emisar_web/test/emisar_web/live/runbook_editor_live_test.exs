@@ -822,20 +822,24 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_all"]),
-               "All runners Every online runner"
+               "Every runner in group"
              )
 
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_one"]),
-               "One runner Frozen at run start"
+               "One runner"
              )
 
       assert has_element?(
                lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="runner"]),
-               "#{runner.name} Exact runner"
+               runner.name
              )
+
+      refute render(lv) =~ "Every online runner"
+      refute render(lv) =~ "Frozen at run start"
+      refute render(lv) =~ "Exact runner"
 
       assert {:ok, runner_ref} = Emisar.Runners.public_ref(runner)
 
@@ -849,7 +853,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                ~s(#{exact_target}[phx-click="remove_target"]),
-               "#{runner.name} Exact runner"
+               runner.name
              )
 
       lv |> element(~s(#{exact_target}[phx-click="remove_target"])) |> render_click()

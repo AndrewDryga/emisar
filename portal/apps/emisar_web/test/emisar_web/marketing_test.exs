@@ -1164,6 +1164,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "caddy.reload_config"
       assert html =~ "&quot;pack&quot;: {&quot;id&quot;: &quot;caddy&quot;}"
       assert html =~ "group:edge-web"
+      assert html =~ "Every runner in group"
       assert html =~ "One runner"
       assert html =~ "random_one"
       assert html =~ "does not move the work to another member"
@@ -1189,6 +1190,7 @@ defmodule EmisarWeb.MarketingTest do
       end
 
       refute html =~ "/images/screenshots/runbooks.webp"
+      refute html =~ "Exact runner"
       refute html =~ "PostgreSQL replication gate"
     end
 

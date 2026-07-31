@@ -163,19 +163,19 @@
 
       <.docs_h3 id="target-selection">Target selection</.docs_h3>
       <p class="mt-3 text-base text-zinc-400">
-        A step can run on one exact runner, every online runner in a group, or one online runner
-        from a group. Use an exact runner for host-specific work, the complete group for fleet
+        A step can run on one named runner, every online runner in a group, or one online runner
+        from a group. Use a runner name for host-specific work, the complete group for fleet
         changes and checks, and one group member for representative diagnostics or a canary.
       </p>
       <ul class="mt-4 space-y-3 text-base text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
-          <span><strong class="text-zinc-200">Exact runner</strong> freezes that runner.</span>
+          <span><strong class="text-zinc-200">Runner name</strong> freezes that runner.</span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">All runners</strong>
+            <strong class="text-zinc-200">Every runner in group</strong>
             expands the group to one logical item per online member.
           </span>
         </li>
@@ -196,8 +196,8 @@
       <.docs_screenshot
         src="/images/docs/runbooks/targets.webp"
         title="emisar console · Target selection"
-        caption="Choose the complete online group, one online member, or an exact runner from the same picker."
-        alt="The target picker showing the app-api group with All runners, One runner, and the exact api-iad-02 runner as peer choices."
+        caption="Choose every online runner in a group, one online member, or a named runner from the same picker."
+        alt="The target picker showing the app-api group with Every runner in group, One runner, and api-iad-02 as peer choices."
       />
       <.docs_code phx-no-format label="Target forms">{~s({"selection":"all","refs":["runner:nomad-hvn02~0123456789abcdef0123456789abcdef"]}
 {"selection":"all","refs":["group:va1-nomad"]}

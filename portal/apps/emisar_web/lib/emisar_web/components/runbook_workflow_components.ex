@@ -783,7 +783,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       phx-value-selection={@option.selection}
       data-target-kind={@option.kind}
       data-filterable-item
-      data-filter-search={String.downcase("#{@option.label} #{@option.description}")}
+      data-filter-search={String.downcase("#{@option.label} #{@option[:description]}")}
       title={@option.label}
       disabled={@disabled?}
       class={[
@@ -797,8 +797,17 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         <.icon name={target_choice_icon(@option.kind)} class="h-3.5 w-3.5 text-zinc-400" />
       </span>
       <span class="flex min-w-0 flex-1 items-baseline gap-2">
-        <span class="max-w-[55%] shrink-0 truncate text-sm leading-5">{@option.label}</span>
-        <span class="min-w-0 truncate text-[11px] leading-4 text-zinc-400">
+        <span class={[
+          "truncate text-sm leading-5",
+          @option[:description] in [nil, ""] && "min-w-0 flex-1",
+          @option[:description] not in [nil, ""] && "max-w-[55%] shrink-0"
+        ]}>
+          {@option.label}
+        </span>
+        <span
+          :if={@option[:description] not in [nil, ""]}
+          class="min-w-0 truncate text-[11px] leading-4 text-zinc-400"
+        >
           {@option.description}
         </span>
       </span>
