@@ -634,7 +634,74 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 
-	for _, label := range []string{"Add New Application", "+ Add New Application", "Get Started"} {
+	// The empty state's Get Started, NOT the left nav's — they share a label, and
+	// clicking the nav one lands on Identity Management onboarding instead of the
+	// application catalog.
+	if entry == "Get Started" {
+		// By POSITION: the left nav has a Get Started of its own, and it goes to
+		// Identity Management onboarding. The one that starts an application sits in
+		// the content area, right of the nav. Ancestry did not separate them — the
+		// heading and the button are in different subtrees — but their x does.
+		const locateEmptyStateStart = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const button = [...document.querySelectorAll('button,a,[role=button]')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === 'Get Started')
+    .find(el => el.getBoundingClientRect().left > 400);
+  if (!button) return '';
+  const box = button.getBoundingClientRect();
+  return JSON.stringify({x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)});
+})()`
+		var located string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(locateEmptyStateStart, &located)); err != nil {
+			return err
+		}
+
+		started := located != ""
+		if started {
+			var at struct{ X, Y float64 }
+			if err := json.Unmarshal([]byte(located), &at); err != nil {
+				return err
+			}
+			if err := chromedp.Run(ctx, chromedp.MouseClickXY(at.X, at.Y)); err != nil {
+				return err
+			}
+		}
+		if started {
+			fmt.Println("  clicked the empty state's Get Started")
+			if err := chromedp.Run(ctx, chromedp.Sleep(10*time.Second)); err != nil {
+				return err
+			}
+		} else {
+			// Straight to the catalog by route. The empty state's own button is not
+			// reachable from its heading, and the left nav has a Get Started of its
+			// own that goes somewhere else entirely.
+			reached := false
+
+			for _, route := range []string{"#/applications/add", "#/sso/applications/add", "#/applications/catalog"} {
+				if err := chromedp.Run(ctx,
+					chromedp.Navigate(env["JUMPCLOUD_CONSOLE_URL"]+"/"+route),
+					chromedp.Sleep(10*time.Second)); err != nil {
+					return err
+				}
+
+				var body string
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+					return err
+				}
+				if strings.Contains(body, "Custom Application") {
+					fmt.Printf("  reached the catalog at %s\n", route)
+					reached = true
+					break
+				}
+			}
+
+			if !reached {
+				return errors.New("could not reach the application catalog from an empty tenant")
+			}
+		}
+	}
+
+	for _, label := range []string{"Add New Application", "+ Add New Application"} {
 		clicked, err := clickText(ctx, label)
 		if err != nil {
 			return err
