@@ -163,9 +163,22 @@ func TestCredentialStore_RejectsUnknownFieldsAndWrongBootstrap(t *testing.T) {
 	}
 }
 
+// Each rejection must fail closed AND name the offending path: the bridge
+// chose that location, so an operator reading the message alone has nothing to
+// go fix otherwise.
 func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix mode and symlink checks do not apply on Windows")
+	}
+
+	mustNamePath := func(t *testing.T, err error, path string) {
+		t.Helper()
+		if err == nil {
+			t.Fatal("unsafe credential state must fail closed")
+		}
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("error %q does not name %s", err, path)
+		}
 	}
 
 	t.Run("broad file permissions", func(t *testing.T) {
@@ -177,9 +190,8 @@ func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 		if err := os.Chmod(store.path, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.load(current); err == nil {
-			t.Fatal("broadly readable credential state must fail closed")
-		}
+		_, err := store.load(current)
+		mustNamePath(t, err, store.path)
 	})
 
 	t.Run("broad directory permissions", func(t *testing.T) {
@@ -191,9 +203,8 @@ func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 		if err := os.Chmod(filepath.Dir(store.path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.load(current); err == nil {
-			t.Fatal("credential state in a broadly accessible directory must fail closed")
-		}
+		_, err := store.load(current)
+		mustNamePath(t, err, filepath.Dir(store.path))
 	})
 
 	t.Run("symlinked state file", func(t *testing.T) {
@@ -210,9 +221,8 @@ func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 		if err := os.Symlink(target, store.path); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.load(current); err == nil {
-			t.Fatal("symlinked credential state must fail closed")
-		}
+		_, err := store.load(current)
+		mustNamePath(t, err, store.path)
 	})
 
 	t.Run("oversized state file", func(t *testing.T) {
@@ -224,9 +234,8 @@ func TestCredentialStore_RejectsUnsafePaths(t *testing.T) {
 		if err := os.WriteFile(store.path, bytes.Repeat([]byte{'x'}, maxCredentialStateBytes+1), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.load(current); err == nil {
-			t.Fatal("oversized credential state must fail closed")
-		}
+		_, err := store.load(current)
+		mustNamePath(t, err, store.path)
 	})
 }
 

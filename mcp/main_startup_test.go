@@ -212,16 +212,23 @@ func TestMain_UnknownFlagExitsTwo(t *testing.T) {
 }
 
 // A missing EMISAR_URL or EMISAR_API_KEY (or both) is fatal: fatalln to
-// stderr, exit 1. The check is
-// "both must be set", so url-only and key-only both fail the same way.
+// stderr, exit 1. The message names the variable that is actually missing, so
+// an operator with one of the two already set is not sent hunting. A key that
+// is only whitespace is a missing key, not a key the portal will reject.
 func TestMain_MissingRequiredEnvIsFatal(t *testing.T) {
 	cases := []struct {
 		name string
 		env  map[string]string
+		want string
 	}{
-		{"neither set", nil},
-		{"url only", map[string]string{"EMISAR_URL": "https://emisar.dev"}},
-		{"key only", map[string]string{"EMISAR_API_KEY": "emk-x"}},
+		{"neither set", nil, "EMISAR_URL and EMISAR_API_KEY must both be set"},
+		{"url only", map[string]string{"EMISAR_URL": "https://emisar.dev"}, "EMISAR_API_KEY must be set"},
+		{"key only", map[string]string{"EMISAR_API_KEY": "emk-x"}, "EMISAR_URL must be set"},
+		{
+			"key is only whitespace",
+			map[string]string{"EMISAR_URL": "https://emisar.dev", "EMISAR_API_KEY": " \n"},
+			"EMISAR_API_KEY must be set",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -229,13 +236,44 @@ func TestMain_MissingRequiredEnvIsFatal(t *testing.T) {
 			if code != 1 {
 				t.Errorf("exit code = %d, want 1 (fatalln)", code)
 			}
-			if !strings.Contains(stderr, "EMISAR_URL and EMISAR_API_KEY must both be set") {
-				t.Errorf("stderr should explain the missing env, got %q", stderr)
+			if !strings.Contains(stderr, c.want) {
+				t.Errorf("stderr = %q, want it to name the missing env (%q)", stderr, c.want)
 			}
 			if stdout != "" {
 				t.Errorf("a fatal startup should write nothing to stdout, got %q", stdout)
 			}
 		})
+	}
+}
+
+// A key pasted into a client config with a trailing newline is trimmed before
+// it reaches the Authorization header. Untrimmed, Go's HTTP client refuses the
+// header value outright, so every single request fails with nothing that points
+// at the stray byte.
+func TestMain_APIKeySurroundingWhitespaceIsTrimmed(t *testing.T) {
+	var mu sync.Mutex
+	var authorization string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		authorization = r.Header.Get("Authorization")
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+	}))
+	defer srv.Close()
+
+	frame := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
+	_, stderr, code := runMain(t, frame, nil, map[string]string{
+		"EMISAR_URL":     srv.URL,
+		"EMISAR_API_KEY": " emk-pasted-with-a-newline\n",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d (stderr=%q), want 0", code, stderr)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if authorization != "Bearer emk-pasted-with-a-newline" {
+		t.Errorf("Authorization = %q, want the trimmed key", authorization)
 	}
 }
 
@@ -491,12 +529,14 @@ func TestMain_SecretsNotAcceptedAsFlags(t *testing.T) {
 
 // On a transport failure
 // (connection refused), the client-facing JSON-RPC frame on STDOUT is the
-// generic `-32603 upstream transport error`. Untrusted transport details are
-// omitted from both streams, and the API key never appears on either stream. The
-// loop survives (clean exit on the subsequent EOF). This
-// is the transport-path twin of the in-process 5xx test
+// generic `-32603 upstream transport error`. The failure of THIS process's own
+// dial is diagnosed on stderr — otherwise a bare -32603 is all anyone ever
+// sees — while stdout stays the clean protocol transcript and the API key
+// never appears on either stream. The loop survives (clean exit on the
+// subsequent EOF). This is the transport-path twin of the in-process 5xx test
 // (TestServe_5xxBodyAndKeyNeverReachClientFrame), exercised end-to-end through
-// main()'s real os.Stdout / os.Stderr split.
+// main()'s real os.Stdout / os.Stderr split. What a PORTAL response may never
+// echo is pinned by TestMain_5xxBodyAndCredentialNeverReachEitherStream.
 func TestMain_TransportErrorDetailOnStderrNotClientFrame(t *testing.T) {
 	// A server we start then immediately close, so the bridge's connect is
 	// refused — a loopback host, so it passes the scheme check and reaches the
@@ -519,10 +559,15 @@ func TestMain_TransportErrorDetailOnStderrNotClientFrame(t *testing.T) {
 	if !strings.Contains(stdout, "-32603") || !strings.Contains(stdout, "upstream transport error") {
 		t.Errorf("client frame should be the generic -32603, got %q", stdout)
 	}
-	// The resolved endpoint is not exposed to the protocol transcript or stderr.
+	// STDERR: the local dial failure, named so an operator can act on it.
+	if !strings.Contains(stderr, "emisar-mcp: ") {
+		t.Errorf("the transport failure should be diagnosed on stderr, got %q", stderr)
+	}
+	// The resolved endpoint stays out of the protocol transcript; stderr may
+	// name it, since that is the diagnostic's whole point.
 	host := strings.TrimPrefix(closedURL, "http://")
-	if strings.Contains(stdout, host) || strings.Contains(stderr, host) {
-		t.Errorf("the resolved host leaked (stdout=%q stderr=%q)", stdout, stderr)
+	if strings.Contains(stdout, host) {
+		t.Errorf("the resolved host leaked into the transcript (stdout=%q)", stdout)
 	}
 	// The API key must not appear on EITHER stream.
 	if strings.Contains(stdout, secretKey) || strings.Contains(stderr, secretKey) {

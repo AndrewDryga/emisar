@@ -290,10 +290,20 @@ func main() {
 	}
 
 	rawBase := os.Getenv("EMISAR_URL")
-	apiKey := os.Getenv("EMISAR_API_KEY")
+	// A key pasted into a client config often carries a trailing newline or
+	// space. Untrimmed it rides into the Authorization header, which the portal
+	// rejects on every request — a permanent failure with no clue why.
+	apiKey := strings.TrimSpace(os.Getenv("EMISAR_API_KEY"))
 
-	if rawBase == "" || apiKey == "" {
+	// Name the variable that is actually missing: "both must be set" sends an
+	// operator hunting through a config where one of the two is already right.
+	switch {
+	case rawBase == "" && apiKey == "":
 		fatalln("EMISAR_URL and EMISAR_API_KEY must both be set (try --help)")
+	case rawBase == "":
+		fatalln("EMISAR_URL must be set (try --help)")
+	case apiKey == "":
+		fatalln("EMISAR_API_KEY must be set (try --help)")
 	}
 
 	// Fail closed on a cleartext URL to a non-loopback host: an http:// base
@@ -343,6 +353,7 @@ func main() {
 		signer:          sign,
 		clientMetadata:  clientMetadata,
 		credentialStore: credentialStore,
+		diagnostics:     os.Stderr,
 	}
 	readOnlyCredentials, err := b.initializeCredentialState()
 	if err != nil {
@@ -383,6 +394,23 @@ type bridge struct {
 	credentialStore    *credentialStore
 	credentialReadOnly bool
 	pendingKey         string
+	// diagnostics receives operator-facing lines that stdout cannot carry —
+	// stdout is the JSON-RPC transcript, and a synthetic error frame is
+	// deliberately opaque. main() points it at stderr; nil keeps a bridge quiet.
+	diagnostics io.Writer
+	// authFailureOnce keeps the rejected-key hint to a single line: the
+	// condition is permanent for the life of the process (the key comes from the
+	// environment), so repeating it per request would bury the client's log.
+	authFailureOnce sync.Once
+}
+
+// diagnose writes one operator-facing line to stderr. It never carries a
+// response body, a credential, or anything else the portal supplied.
+func (b *bridge) diagnose(format string, args ...any) {
+	if b.diagnostics == nil {
+		return
+	}
+	fmt.Fprintf(b.diagnostics, "emisar-mcp: "+format+"\n", args...)
 }
 
 // serve has one scheduling goroutine and one stdout owner. HTTP work may finish
@@ -426,7 +454,7 @@ func (b *bridge) serve(r io.Reader, w io.Writer) error {
 			if request.cancelled {
 				continue
 			}
-			if err := writeForwardResult(
+			if err := b.writeForwardResult(
 				w,
 				request.meta,
 				request.operationID,
@@ -686,7 +714,7 @@ func cancellationTargetKey(frame []byte) string {
 	return requestIDKey(requestMeta{id: id, idKind: jsonRPCIDKind(id), hasID: true, valid: true})
 }
 
-func writeForwardResult(
+func (b *bridge) writeForwardResult(
 	w io.Writer,
 	meta requestMeta,
 	operationID string,
@@ -694,6 +722,13 @@ func writeForwardResult(
 	err error,
 ) error {
 	if err != nil {
+		// The client frame stays opaque, so without this the operator sees a
+		// bare -32603 and nothing anywhere explains it — and a failed
+		// notification produces no frame at all. Only a locally generated
+		// transport error is echoed; a portal response never is.
+		if localTransportError(err) {
+			b.diagnose("%v", err)
+		}
 		if meta.notification() {
 			return nil
 		}
@@ -703,6 +738,18 @@ func writeForwardResult(
 		return nil
 	}
 	return writeFrame(w, response)
+}
+
+// localTransportError reports whether err was produced by this process's own
+// HTTP stack — a refused dial, a DNS failure, a timeout, a rejected header
+// value, or a TLS handshake failure, all of which http.Client returns wrapped
+// in *url.Error. Those are safe to print: they describe the local attempt, not
+// the portal's answer. Everything else — a response the bridge refused to
+// forward — stays unprinted, so no upstream body can reach a stream.
+func localTransportError(err error) bool {
+	var urlErr *url.Error
+	var opErr *net.OpError
+	return errors.As(err, &urlErr) || errors.As(err, &opErr)
 }
 
 func cancelInflight(inflight map[string]*inflightRequest) {
@@ -1048,6 +1095,15 @@ func (b *bridge) forwardRequestContext(
 				}
 			}
 		}
+	}
+	// Still refused after any rotation successor was tried: the configured key
+	// is the problem, and the client frame stays opaque on purpose. Say so once
+	// on stderr, where an operator can act on it. The wire answer is unchanged.
+	if result.status == http.StatusUnauthorized {
+		b.authFailureOnce.Do(func() {
+			b.diagnose("the control plane rejected this API key — "+
+				"check EMISAR_API_KEY or mint a new one at %s/app/agents", b.portalOrigin)
+		})
 	}
 	if err != nil {
 		return nil, err

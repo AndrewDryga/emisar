@@ -206,7 +206,7 @@ func (store *credentialStore) secureDirectory(dir string) error {
 		return fmt.Errorf("create credential directory: %w", err)
 	}
 	if err := rejectUnsafeCredentialDirectory(dir); err != nil {
-		return fmt.Errorf("secure credential directory: %w", err)
+		return fmt.Errorf("secure credential directory %s: %w", dir, err)
 	}
 	if err := store.ops.chmod(dir, 0o700); err != nil {
 		return fmt.Errorf("secure credential directory: %w", err)
@@ -222,27 +222,30 @@ func (store *credentialStore) validateExistingPath() error {
 	if err != nil {
 		return fmt.Errorf("inspect credential state: %w", err)
 	}
+	// Every failure here names the offending path: the operator has to go fix a
+	// file whose location they never chose, and the message is all they get.
 	if !info.Mode().IsRegular() {
-		return errors.New("credential state is not a regular file")
+		return fmt.Errorf("credential state %s is not a regular file", store.path)
 	}
 	if info.Size() > maxCredentialStateBytes {
-		return fmt.Errorf("credential state is %d bytes, limit is %d", info.Size(), maxCredentialStateBytes)
+		return fmt.Errorf("credential state %s is %d bytes, limit is %d", store.path, info.Size(), maxCredentialStateBytes)
 	}
 	if runtime.GOOS == "windows" {
 		return nil
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("credential state permissions are %04o, want owner-only", info.Mode().Perm())
+		return fmt.Errorf("credential state %s permissions are %04o, want owner-only", store.path, info.Mode().Perm())
 	}
-	if err := rejectUnsafeCredentialDirectory(filepath.Dir(store.path)); err != nil {
-		return fmt.Errorf("credential directory is unsafe: %w", err)
+	dir := filepath.Dir(store.path)
+	if err := rejectUnsafeCredentialDirectory(dir); err != nil {
+		return fmt.Errorf("credential directory %s is unsafe: %w", dir, err)
 	}
-	dirInfo, err := os.Lstat(filepath.Dir(store.path))
+	dirInfo, err := os.Lstat(dir)
 	if err != nil {
-		return fmt.Errorf("inspect credential directory: %w", err)
+		return fmt.Errorf("inspect credential directory %s: %w", dir, err)
 	}
 	if dirInfo.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("credential directory permissions are %04o, want owner-only", dirInfo.Mode().Perm())
+		return fmt.Errorf("credential directory %s permissions are %04o, want owner-only", dir, dirInfo.Mode().Perm())
 	}
 	return nil
 }

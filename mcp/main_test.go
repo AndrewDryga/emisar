@@ -1271,6 +1271,104 @@ func TestServe_5xxBodyAndKeyNeverReachClientFrame(t *testing.T) {
 	}
 }
 
+// The synthetic -32603 is deliberately opaque, so stderr is the only place an
+// operator can learn WHY. The split is by origin, not by severity: a failure of
+// this process's own dial is printed; a portal response the bridge refused to
+// forward is not, so no upstream body can ride out on a stream.
+func TestServe_DiagnosesLocalTransportFailureNeverThePortalResponse(t *testing.T) {
+	t.Run("refused dial is diagnosed", func(t *testing.T) {
+		refused := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		closedURL := refused.URL
+		refused.Close()
+
+		var diagnostics bytes.Buffer
+		b := &bridge{
+			endpoint:     closedURL,
+			portalOrigin: closedURL,
+			apiKey:       "emk-super-secret-key",
+			userAgent:    "ua",
+			client:       newHTTPClient(),
+			processNonce: "sess",
+			diagnostics:  &diagnostics,
+		}
+
+		var out bytes.Buffer
+		_ = b.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n"), &out)
+
+		if !strings.Contains(diagnostics.String(), "emisar-mcp: ") {
+			t.Errorf("a refused dial should be diagnosed, got %q", diagnostics.String())
+		}
+		if strings.Contains(diagnostics.String(), b.apiKey) {
+			t.Errorf("the API key leaked into the diagnostic: %q", diagnostics.String())
+		}
+		if !strings.Contains(out.String(), "upstream transport error") {
+			t.Errorf("client frame should stay the generic -32603, got %q", out.String())
+		}
+	})
+
+	t.Run("portal response is never echoed", func(t *testing.T) {
+		const secretBody = "stacktrace: postgres://user:hunter2@db/internal"
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(secretBody))
+		}))
+		defer srv.Close()
+
+		var diagnostics bytes.Buffer
+		b := newTestBridge(srv)
+		b.diagnostics = &diagnostics
+
+		var out bytes.Buffer
+		_ = b.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n"), &out)
+
+		if diagnostics.Len() != 0 {
+			t.Errorf("a rejected portal response must not be echoed, got %q", diagnostics.String())
+		}
+	})
+}
+
+// A key the control plane refuses is a permanent, silent failure: the wire
+// answer is opaque by design and the key comes from the environment, so the
+// bridge says it once on stderr and points at where to mint a new one.
+func TestServe_RejectedKeyIsExplainedOnceWithTheConsoleLink(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var frame struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(body, &frame)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":"unauthorized"}}`, frame.ID)
+	}))
+	defer srv.Close()
+
+	var diagnostics bytes.Buffer
+	b := newTestBridge(srv)
+	b.apiKey = "emk-rejected-secret-key"
+	b.diagnostics = &diagnostics
+
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call"}` + "\n")
+	var out bytes.Buffer
+	_ = b.serve(in, &out)
+
+	got := diagnostics.String()
+	if count := strings.Count(got, "rejected this API key"); count != 1 {
+		t.Errorf("the hint should appear exactly once across both requests, got %d in %q", count, got)
+	}
+	if !strings.Contains(got, "EMISAR_API_KEY") || !strings.Contains(got, srv.URL+"/app/agents") {
+		t.Errorf("the hint should name the variable and where to mint a key, got %q", got)
+	}
+	if strings.Contains(got, b.apiKey) {
+		t.Errorf("the API key leaked into the diagnostic: %q", got)
+	}
+	// The wire answer stays exactly what the portal said.
+	if !strings.Contains(out.String(), "unauthorized") {
+		t.Errorf("the portal's own error should still reach the client, got %q", out.String())
+	}
+}
+
 func TestServe_TransportErrorCarriesOnlyRequestOperationID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
