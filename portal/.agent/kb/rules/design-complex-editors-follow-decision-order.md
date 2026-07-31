@@ -51,6 +51,13 @@ must stand on their labels, choices, and validation state. Supporting prose earn
 its place only when it changes the decision rather than narrating behavior already
 enforced by the form.
 
+A multi-target control keeps one stable-height trigger in the workflow overview.
+The trigger summarizes the current selection; its menu owns both addition and
+removal. Never stack selected-target rows above a second picker in the overview
+grid. When a saved target no longer resolves, name it in operator language,
+mark it unavailable in the trigger, and keep its menu row removable even when
+there are no current targets to add.
+
 A typed value uses a type-aware editor. Booleans offer no default, true, or
 false; integer and number defaults use numeric controls with whole-number and
 decimal steps respectively; strings use text. An enum's optional single default
@@ -101,6 +108,9 @@ never a reduced model.
   stacking.
 - A step overview puts its compact identifier before targets and an action
   compatible with all selected runners. The pack follows the action automatically.
+- A multi-target step keeps one aligned Targets trigger. `edge-web group` is
+  shown instead of `group:edge-web`; an unavailable saved target is visibly
+  invalid and can still be removed from the same menu.
 - An argument named `file` reads `Optional JSON value`, then shows `Use` and the
   applicable value control. Choosing Omit leaves only the compact source control.
 - Parallel stages show a concurrency cap; sequential stages do not.
@@ -143,6 +153,9 @@ never a reduced model.
   controls, or filler explaining that Omit omits the value.
 - Help text under Targets or Action that only restates ordering, compatibility, or
   pack resolution already enforced by those controls.
+- Selected-target cards stacked over an add-target dropdown, raw tagged refs in
+  the closed trigger, or a stale target that becomes impossible to remove when
+  the live catalog is empty.
 - Review and canonical JSON before the editable workflow on a phone.
 - Showing a concurrency value in sequential mode where it does nothing.
 - A Cancel editing link in the lifecycle rail that only navigates back.
@@ -203,4 +216,6 @@ metadata, unlabeled source/value controls, and explanatory placeholders standing
 in for a hidden inapplicable control. Sweep repeated operational cards for
 desktop relationships split across rows, finite controls stretched to equal
 weight, and conditional fields that resize earlier tracks instead of using a
-reserved track or attached continuation.
+reserved track or attached continuation. Sweep workflow overview scope controls
+for selected items stacked outside their picker, raw `group:`/`runner:` refs,
+and stale selections whose remove action is disabled with the add catalog.

@@ -24,13 +24,13 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     }
   end
 
-  @doc "Return the add-target picker options, disabling targets already selected."
+  @doc "Return the target picker choices, including unavailable selected refs."
   def target_options(catalog, selected_refs) do
     selected = MapSet.new(selected_refs)
 
     options =
       Enum.map(catalog.target_options, fn option ->
-        %{option | disabled: option.value in selected_refs, selected: false}
+        %{option | selected: option.value in selected_refs}
       end)
 
     missing =
@@ -38,14 +38,20 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       |> MapSet.difference(MapSet.new(options, & &1.value))
       |> Enum.sort()
       |> Enum.map(fn ref ->
-        %{value: ref, label: "Unavailable · #{ref}", disabled: true, selected: false}
+        %{
+          value: ref,
+          label: target_label(catalog, ref),
+          disabled: false,
+          selected: true,
+          unavailable: true
+        }
       end)
 
     options ++ missing
   end
 
   @doc "Human label for one tagged target reference."
-  def target_label(catalog, ref), do: catalog.target_labels[ref] || ref
+  def target_label(catalog, ref), do: catalog.target_labels[ref] || fallback_target_label(ref)
 
   @doc "Action choices available on every runner resolved from the selected targets."
   def action_options(catalog, selected_refs, selected_value) do
@@ -90,7 +96,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
 
   @doc "Align descriptor-backed argument rows after an action choice changes or loads."
   def sync_step(step, previous, catalog) do
-    step = sync_target_candidate(step, catalog)
     choice = action_value(step["pack_id"], step["action"])
     previous_choice = action_value(previous["pack_id"], previous["action"])
     action = catalog.actions[choice]
@@ -263,22 +268,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     |> Enum.uniq()
   end
 
-  defp sync_target_candidate(step, catalog) do
-    candidate = step["target_candidate"]
-    refs = step["target_refs"] || []
-
-    refs =
-      if is_binary(candidate) and candidate != "" and
-           Map.has_key?(catalog.target_runner_ids, candidate) and candidate not in refs and
-           length(refs) < 16,
-         do: refs ++ [candidate],
-         else: refs
-
-    step
-    |> Map.put("target_refs", refs)
-    |> Map.delete("target_candidate")
-  end
-
   defp action_label(action) do
     title = if blank?(action.title), do: action.action_id, else: action.title
     "#{title} · #{action.action_id} · #{action.pack_id}"
@@ -288,6 +277,16 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     {_pack_id, action_id} = split_action_value(value)
     "Unavailable · #{action_id}"
   end
+
+  defp fallback_target_label("group:" <> group), do: group <> " group"
+
+  defp fallback_target_label("runner:" <> ref) do
+    ref
+    |> String.split("~", parts: 2)
+    |> List.first()
+  end
+
+  defp fallback_target_label(ref), do: ref
 
   defp argument_metadata_missing?([]), do: true
 

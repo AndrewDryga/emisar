@@ -705,7 +705,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       )
 
     RunbookDraft.step()
-    |> Map.merge(Map.take(step, ~w[id target_refs target_candidate wait]))
+    |> Map.merge(Map.take(step, ~w[id target_refs wait]))
     |> Map.put("pack_id", pack_id)
     |> Map.put("action", action_id)
     |> Map.put("target_refs", List.wrap(step["target_refs"]))

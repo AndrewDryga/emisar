@@ -362,7 +362,8 @@ defmodule EmisarWeb.CoreComponents do
   `summary_class` (the trigger's own pill/row styling) and `panel_class` (width,
   padding, text size, and the z-index / offset / shadow each site needs — these
   are deliberately NOT baked in, so a site that must stack above more chrome
-  isn't fighting Tailwind utility precedence).
+  isn't fighting Tailwind utility precedence). `panel_position={:flow_on_narrow}`
+  keeps a form menu in document flow until the `xl` layout has room to float it.
 
   ## Example
 
@@ -373,6 +374,7 @@ defmodule EmisarWeb.CoreComponents do
       </.dropdown>
   """
   attr :align, :atom, default: :right, values: [:left, :right, :stretch]
+  attr :panel_position, :atom, default: :floating, values: [:floating, :flow_on_narrow]
   attr :summary_class, :string, default: nil, doc: "trigger (summary) skin — pill/row styling"
 
   attr :panel_class, :string,
@@ -395,7 +397,8 @@ defmodule EmisarWeb.CoreComponents do
         {render_slot(@trigger)}
       </summary>
       <div class={[
-        "absolute rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
+        "rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
+        dropdown_panel_position(@panel_position),
         dropdown_align(@align),
         @panel_class
       ]}>
@@ -408,6 +411,9 @@ defmodule EmisarWeb.CoreComponents do
   defp dropdown_align(:right), do: "right-0"
   defp dropdown_align(:left), do: "left-0"
   defp dropdown_align(:stretch), do: "left-2 right-2 top-full lg:left-4 lg:right-4"
+
+  defp dropdown_panel_position(:floating), do: "absolute"
+  defp dropdown_panel_position(:flow_on_narrow), do: "static xl:absolute"
 
   @doc """
   A full-width menu row for a `<.dropdown>` panel — a left-aligned button (or

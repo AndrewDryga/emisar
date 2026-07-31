@@ -319,43 +319,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           class="font-mono"
         />
 
-        <div>
-          <.label variant={:eyebrow}>Targets</.label>
-
-          <div :if={@step["target_refs"] != []} class="mt-2 space-y-2">
-            <div
-              :for={target <- @step["target_refs"]}
-              class="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 px-3 py-2"
-            >
-              <span class="min-w-0 truncate text-sm text-zinc-200">
-                {RunbookEditorCatalog.target_label(@catalog, target)}
-              </span>
-              <.icon_button
-                icon="hero-x-mark"
-                label="Remove target"
-                phx-click="remove_target"
-                phx-value-stage={@stage_index}
-                phx-value-step={@step_index}
-                phx-value-target={target}
-                disabled={@read_only?}
-              />
-            </div>
-          </div>
-
-          <.select
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][target_candidate]"}
-            options={@target_options}
-            prompt={
-              if @catalog.target_options == [],
-                do: "No online runners available",
-                else: "Add a runner or group…"
-            }
-            prompt_selected
-            disabled={@read_only? or @catalog.target_options == []}
-            class="mt-2"
-            aria-label="Add target"
-          />
-        </div>
+        <.target_picker
+          step={@step}
+          stage_index={@stage_index}
+          step_index={@step_index}
+          catalog={@catalog}
+          options={@target_options}
+          read_only?={@read_only?}
+        />
 
         <div>
           <.label variant={:eyebrow}>Action</.label>
@@ -406,6 +377,160 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       />
     </section>
     """
+  end
+
+  attr :step, :map, required: true
+  attr :stage_index, :integer, required: true
+  attr :step_index, :integer, required: true
+  attr :catalog, :map, required: true
+  attr :options, :list, required: true
+  attr :read_only?, :boolean, required: true
+
+  defp target_picker(assigns) do
+    refs = assigns.step["target_refs"] || []
+    unavailable = Enum.count(refs, &(not Map.has_key?(assigns.catalog.target_runner_ids, &1)))
+
+    assigns =
+      assigns
+      |> assign(:refs, refs)
+      |> assign(:unavailable, unavailable)
+      |> assign(:label, target_selection_label(assigns.catalog, refs, unavailable))
+      |> assign(
+        :disabled?,
+        assigns.read_only? or (refs == [] and assigns.catalog.target_options == [])
+      )
+
+    ~H"""
+    <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-targets"}>
+      <.label variant={:eyebrow}>Targets</.label>
+
+      <div
+        :if={@disabled?}
+        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-trigger"}
+        aria-disabled="true"
+        class={[
+          "mt-2 flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-zinc-900 px-3 py-2.5 text-sm ring-1 ring-inset",
+          @unavailable == 0 && "text-zinc-500 ring-zinc-800",
+          @unavailable > 0 && "text-rose-300 ring-rose-500/50"
+        ]}
+      >
+        <span class="min-w-0 truncate">{@label}</span>
+        <.icon name="hero-chevron-down-micro" class="h-5 w-5 shrink-0 text-zinc-500" />
+      </div>
+
+      <.dropdown
+        :if={not @disabled?}
+        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-picker"}
+        align={:left}
+        panel_position={:flow_on_narrow}
+        class="mt-2"
+        summary_class={target_summary_class(@unavailable)}
+        panel_class="z-40 mt-2 max-h-64 w-full min-w-[18rem] overflow-y-auto overscroll-contain p-1 text-sm"
+      >
+        <:trigger>
+          <span
+            id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-trigger"}
+            class="flex min-w-0 flex-1 items-center justify-between gap-3"
+          >
+            <span class="min-w-0 truncate">{@label}</span>
+            <.icon
+              name="hero-chevron-down-micro"
+              class="h-5 w-5 shrink-0 text-zinc-500 transition-transform group-open:rotate-180"
+            />
+          </span>
+        </:trigger>
+
+        <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-target-options"}>
+          <.target_choice
+            :for={option <- @options}
+            option={option}
+            stage_index={@stage_index}
+            step_index={@step_index}
+            at_limit?={length(@refs) >= 16}
+          />
+        </div>
+      </.dropdown>
+    </div>
+    """
+  end
+
+  attr :option, :map, required: true
+  attr :stage_index, :integer, required: true
+  attr :step_index, :integer, required: true
+  attr :at_limit?, :boolean, required: true
+
+  defp target_choice(%{option: %{value: ""}} = assigns) do
+    ~H"""
+    <p class="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+      {@option.label}
+    </p>
+    """
+  end
+
+  defp target_choice(assigns) do
+    selected? = assigns.option.selected
+    unavailable? = Map.get(assigns.option, :unavailable, false)
+    disabled? = not selected? and (assigns.option.disabled or assigns.at_limit?)
+
+    assigns =
+      assigns
+      |> assign(:selected?, selected?)
+      |> assign(:unavailable?, unavailable?)
+      |> assign(:disabled?, disabled?)
+      |> assign(:event, if(selected?, do: "remove_target", else: "add_target"))
+
+    ~H"""
+    <button
+      type="button"
+      phx-click={@event}
+      phx-value-stage={@stage_index}
+      phx-value-step={@step_index}
+      phx-value-target={@option.value}
+      disabled={@disabled?}
+      class={[
+        "flex min-h-10 w-full items-center gap-2.5 rounded px-3 py-2 text-left transition-colors",
+        @selected? && "bg-white/[0.05] text-zinc-100 hover:bg-white/[0.08]",
+        not @selected? && not @disabled? && "text-zinc-300 hover:bg-zinc-800",
+        @disabled? && "cursor-not-allowed text-zinc-500 opacity-50"
+      ]}
+    >
+      <span class="flex h-4 w-4 shrink-0 items-center justify-center">
+        <.icon :if={@selected?} name="hero-check-micro" class="h-4 w-4 text-zinc-300" />
+      </span>
+      <span class="min-w-0 flex-1 truncate">{@option.label}</span>
+      <span :if={@unavailable?} class="shrink-0 text-[10px] font-medium text-rose-300">
+        Unavailable
+      </span>
+    </button>
+    """
+  end
+
+  defp target_selection_label(%{target_options: []}, [], _unavailable),
+    do: "No online runners available"
+
+  defp target_selection_label(_catalog, [], _unavailable), do: "Choose runners or groups…"
+
+  defp target_selection_label(catalog, [ref], 0),
+    do: RunbookEditorCatalog.target_label(catalog, ref)
+
+  defp target_selection_label(catalog, [ref], _unavailable),
+    do: "Unavailable · #{RunbookEditorCatalog.target_label(catalog, ref)}"
+
+  defp target_selection_label(_catalog, refs, 0), do: "#{length(refs)} targets"
+
+  defp target_selection_label(_catalog, refs, unavailable),
+    do: "#{length(refs)} targets · #{unavailable} unavailable"
+
+  defp target_summary_class(0) do
+    "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-zinc-900 " <>
+      "px-3 py-2.5 text-left text-sm text-zinc-100 ring-1 ring-inset ring-zinc-800 " <>
+      "hover:ring-zinc-700 focus:ring-brand-500"
+  end
+
+  defp target_summary_class(_unavailable) do
+    "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-zinc-900 " <>
+      "px-3 py-2.5 text-left text-sm text-rose-300 ring-1 ring-inset ring-rose-500/50 " <>
+      "focus:ring-rose-500"
   end
 
   attr :step, :map, required: true

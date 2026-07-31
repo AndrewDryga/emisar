@@ -149,7 +149,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(select[name="draft[stages][0][steps][0][target_candidate]"])
+               "#runbook-stage-0-step-0-target-trigger[aria-disabled=\"true\"]",
+               "No online runners available"
              )
 
       assert has_element?(
@@ -220,14 +221,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                :binary.match(html, ~s(name="draft[stages][0][max_parallel]"))
 
       assert :binary.match(html, ~s(name="draft[stages][0][steps][0][id]")) <
-               :binary.match(
-                 html,
-                 ~s(name="draft[stages][0][steps][0][target_candidate]")
-               )
+               :binary.match(html, ~s(id="runbook-stage-0-step-0-targets"))
 
       assert :binary.match(
                html,
-               ~s(name="draft[stages][0][steps][0][target_candidate]")
+               ~s(id="runbook-stage-0-step-0-targets")
              ) <
                :binary.match(
                  html,
@@ -239,6 +237,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Unavailable · linux.uptime"
       refute html =~ "Unavailable · linux-core|linux.uptime"
 
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "Unavailable · default group"
+             )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-step-0-target-options button[phx-click="remove_target"][phx-value-target="group:default"])
+             )
+
+      refute has_element?(lv, "#runbook-stage-0-step-0-targets > .mt-2.space-y-2")
+
       assert :binary.match(html, "Operator context") <
                :binary.match(html, ~s(id="runbook-inputs"))
 
@@ -247,7 +258,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert :binary.match(html, ~s(id="runbook-stages")) < :binary.match(html, "Details")
 
-      assert :binary.match(html, ~s(name="draft[stages][0][steps][0][target_candidate]")) <
+      assert :binary.match(html, ~s(id="runbook-stage-0-step-0-targets")) <
                :binary.match(html, ~s(name="draft[stages][0][steps][0][action_choice]"))
     end
 
@@ -652,6 +663,23 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                lv,
                ~s(select[name="draft[stages][0][steps][0][action_choice]"])
              )
+
+      remove_target =
+        ~s(#runbook-stage-0-step-0-target-options button[phx-click="remove_target"][phx-value-target="group:default"])
+
+      lv |> element(remove_target) |> render_click()
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-target-trigger",
+               "Choose runners or groups…"
+             )
+
+      add_target =
+        ~s(#runbook-stage-0-step-0-target-options button[phx-click="add_target"][phx-value-target="group:default"])
+
+      lv |> element(add_target) |> render_click()
+      assert has_element?(lv, "#runbook-stage-0-step-0-target-trigger", "default group")
 
       assert has_element?(
                lv,

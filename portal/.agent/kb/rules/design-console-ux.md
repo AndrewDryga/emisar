@@ -89,6 +89,11 @@ Structural rules that ride along:
   review rail follows the primary workflow when stacked. Preserve the complete
   model through local disclosures instead of deleting features. See
   `design-complex-editors-follow-decision-order.md`.
+- **Multi-target scope stays one control in an overview row.** Its stable-height
+  trigger summarizes selection and its menu owns both adding and removing.
+  Never stack selected target cards above a second picker. An unresolved saved
+  target stays human-readable, visibly unavailable, and removable even when the
+  current catalog is empty.
 - **The attention spine owns remedies.** Page-level actionable notices sit together between
   the intro and the summary/list, never on opposite sides of counters or filters. If a
   notice tells the operator to run a command, copy a secret, or take another concrete

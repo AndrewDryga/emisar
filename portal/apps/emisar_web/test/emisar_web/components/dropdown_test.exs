@@ -62,6 +62,12 @@ defmodule EmisarWeb.Components.DropdownTest do
       assert render_dropdown(%{align: :stretch}, "t", "p") =~ "top-full"
     end
 
+    test "a form menu can flow on narrow screens and float in a wide layout" do
+      html = render_dropdown(%{panel_position: :flow_on_narrow}, "t", "p")
+
+      assert html =~ "static xl:absolute"
+    end
+
     test "summary_class and panel_class skin the trigger and panel per site" do
       html =
         render_dropdown(
