@@ -2,7 +2,7 @@ defmodule Emisar.SSO.LinkRequest.Changeset do
   use Emisar, :changeset
   alias Emisar.SSO.LinkRequest
 
-  @fields ~w[provider_identifier source email full_name claims matched_user_id]a
+  @fields ~w[provider_identifier source namespace_fingerprint email full_name claims matched_user_id]a
 
   @doc "Capture (or refresh) a pending link request for `(provider, sub)` — upserted on the unique index."
   def create(account_id, provider_id, attrs) do

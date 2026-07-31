@@ -518,6 +518,42 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert read["active"] == false
     end
 
+    test "a member removed locally reads inactive and deprovisions cleanly", %{
+      conn: conn,
+      token: token,
+      account: account,
+      provider: provider
+    } do
+      # Removing someone from the account soft-deletes the membership and leaves
+      # the identity. The directory was then told two different things: a read said
+      # active, a deprovision said no such user. So it either retried forever or
+      # concluded they were gone and re-created them — undoing the removal.
+      {:ok, %{user: user, membership: membership}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|removed",
+          email: "removed@acme.test"
+        })
+
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+      refute Accounts.peek_sync_membership(account.id, user.id)
+
+      read =
+        conn
+        |> scim_get(token, ~p"/scim/v2/Users/okta|removed")
+        |> json_response(200)
+
+      assert read["active"] == false
+
+      # ...and the deprovision the directory sends next succeeds, with nothing left
+      # to do, rather than 404ing.
+      body =
+        conn
+        |> scim_patch(token, ~p"/scim/v2/Users/okta|removed", active_patch(false))
+        |> json_response(200)
+
+      assert body["active"] == false
+    end
+
     test "a PATCH whose ops never touch `active` → 400 invalidPath", %{
       conn: conn,
       token: token,

@@ -1807,6 +1807,54 @@ defmodule Emisar.SSOTest do
       refute deactivated.scim_active
     end
 
+    test "a sign-in cannot land on a directory-created identity for someone else", %{
+      account: account,
+      provider: provider
+    } do
+      # SCIM provisioning writes its externalId into the OIDC column too, so a
+      # later login by `sub` converges on the same person. Sound while both
+      # namespaces belong to one directory — but wire SCIM to a different system
+      # and the id spaces are unrelated, and then one person's sub can equal
+      # another's externalId. Before this guard, the second person's login resolved
+      # the first person's identity and signed them in AS them.
+      {:ok, %{user: alice}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "shared-value",
+          email: "alice@acme.test"
+        })
+
+      # Pin the precondition this whole test rests on: SCIM wrote its externalId
+      # into the OIDC column too.
+      alice_identity = Repo.one(SSO.UserIdentity)
+      assert alice_identity.provider_identifier == "shared-value"
+      assert alice_identity.scim_external_id == "shared-value"
+      assert alice_identity.provisioned_via == :scim
+
+      # Bob presents the same value as his sub, with his own email.
+      bob_claims = %{
+        "sub" => "shared-value",
+        "email" => "bob@acme.test",
+        "email_verified" => true,
+        "name" => "Bob"
+      }
+
+      # He gets an admin decision, not Alice's account.
+      assert {:pending, %LinkRequest{}} = SSO.complete_auth(provider, callback(bob_claims), %{})
+
+      # Alice herself still converges — same value, and the claims agree on who.
+      alice_claims = %{
+        "sub" => "shared-value",
+        "email" => "alice@acme.test",
+        "email_verified" => true
+      }
+
+      assert {:ok, %{user: signed_in}} =
+               SSO.complete_auth(provider, callback(alice_claims), %{})
+
+      assert signed_in.id == alice.id
+      assert account.id
+    end
+
     test "a re-capture from the other namespace takes that namespace with it", %{
       account: account,
       provider: provider
@@ -3946,6 +3994,49 @@ defmodule Emisar.SSOTest do
                  %RunnerAccess{mode: :none, groups: [], runner_ids: []},
                  admin
                )
+    end
+
+    test "a request inserted after the sweep is still refused", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      # The half deleting requests alongside the change cannot reach: a callback
+      # that verified under the OLD issuer, paused, and inserted its request AFTER
+      # the sweep ran. The row exists and looks legitimate; what gives it away is
+      # the namespace it was made under.
+      target_user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: target_user.id)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|inserted-after-the-sweep",
+          "email" => target_user.email,
+          "email_verified" => true
+        })
+
+      assert {:ok, _provider} =
+               SSO.update_provider(
+                 provider,
+                 %{
+                   "issuer" => "https://an-idp-the-admin-controls.test",
+                   "client_secret" => "the-admin-supplies-their-own"
+                 },
+                 subject
+               )
+
+      # Stand the row back up exactly as a late insert would leave it — same
+      # fingerprint, taken under the issuer that has since been replaced.
+      {:ok, late} = Repo.insert(Map.put(request, :id, Ecto.UUID.generate()))
+
+      assert {:error, :identity_namespace_changed} =
+               SSO.approve_link_request(
+                 late,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 subject
+               )
+
+      refute Repo.one(SSO.UserIdentity)
     end
 
     test "a request captured under the old issuer does not survive a repoint", %{

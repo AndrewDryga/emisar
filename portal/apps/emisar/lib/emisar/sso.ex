@@ -730,8 +730,43 @@ defmodule Emisar.SSO do
       |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
 
     case Repo.peek(queryable) do
-      %UserIdentity{} = identity -> touch_and_load(provider, identity)
+      %UserIdentity{} = identity -> resolve_existing_identity(provider, identity, claims)
       nil -> provision_for(provider, identifier, claims)
+    end
+  end
+
+  # An identity the DIRECTORY created holds an OIDC identifier nobody ever
+  # asserted over OIDC: SCIM provisioning writes its `externalId` into both
+  # columns so a later login by `sub` converges on the same person. That
+  # convergence is only sound while the two namespaces belong to one directory.
+  # Wire SCIM to a different system than OIDC and the id spaces are unrelated —
+  # then one person's `sub` can equal another's `externalId`, and this lookup
+  # hands the second person the first one's account.
+  #
+  # So the first login against a synthesized identifier has to agree on WHO, not
+  # only on the identifier. When it does not, nothing is authenticated: it becomes
+  # a link request for an admin, which is what an unrecognized person gets anyway.
+  defp resolve_existing_identity(%IdentityProvider{} = provider, identity, claims) do
+    if synthesized_oidc_identifier?(identity) and
+         not claims_name_the_same_person?(identity, claims) do
+      park_link_request(provider, identity.provider_identifier, claims)
+    else
+      touch_and_load(provider, identity)
+    end
+  end
+
+  defp synthesized_oidc_identifier?(%UserIdentity{provisioned_via: :scim} = identity),
+    do: identity.provider_identifier == identity.scim_external_id
+
+  defp synthesized_oidc_identifier?(%UserIdentity{}), do: false
+
+  defp claims_name_the_same_person?(%UserIdentity{} = identity, claims) do
+    with {:ok, user} <- Users.fetch_user_by_id(identity.user_id),
+         email when is_binary(email) <- claims["email"] do
+      # citext compares case-insensitively; trim only what the wire added.
+      String.trim(email) == user.email
+    else
+      _ -> false
     end
   end
 
@@ -853,6 +888,7 @@ defmodule Emisar.SSO do
     attrs = %{
       provider_identifier: identifier,
       source: source,
+      namespace_fingerprint: namespace_fingerprint(provider),
       email: email,
       full_name: full_name,
       claims: claims,
@@ -869,7 +905,16 @@ defmodule Emisar.SSO do
     # approval stamp the column the request no longer belongs to.
     |> Multi.insert(:request, changeset,
       on_conflict:
-        {:replace, [:email, :full_name, :claims, :matched_user_id, :source, :updated_at]},
+        {:replace,
+         [
+           :email,
+           :full_name,
+           :claims,
+           :matched_user_id,
+           :source,
+           :namespace_fingerprint,
+           :updated_at
+         ]},
       conflict_target: [:provider_id, :provider_identifier]
     )
     |> Repo.commit_multi()
@@ -1336,9 +1381,21 @@ defmodule Emisar.SSO do
   """
   def scim_deactivate_user(%IdentityProvider{} = provider, external_id) do
     with {:ok, identity} <- fetch_scim_identity(provider, external_id),
-         {:ok, membership} <- sync_membership(provider, identity.user_id, :deactivate),
+         {:ok, membership} <- deactivate_membership(provider, identity),
          {:ok, identity} <- Repo.update(UserIdentity.Changeset.set_scim_active(identity, false)) do
       {:ok, %{identity: identity, membership: membership}}
+    end
+  end
+
+  # An identity whose membership an operator removed locally is ALREADY as
+  # deprovisioned as this account can make it, so a deprovision succeeds with
+  # nothing to do. Answering `:not_found` told the directory the person does not
+  # exist while a read still described them — so it either retried the deactivate
+  # forever or concluded they were gone and re-created them, undoing the removal.
+  defp deactivate_membership(%IdentityProvider{} = provider, %UserIdentity{} = identity) do
+    case sync_membership(provider, identity.user_id, :deactivate) do
+      {:error, :not_found} -> {:ok, nil}
+      other -> other
     end
   end
 
@@ -1351,13 +1408,17 @@ defmodule Emisar.SSO do
   the directory its whole operation was rejected when half of it landed.
   """
   def scim_can_deactivate_user(%IdentityProvider{} = provider, external_id) do
-    with {:ok, identity} <- fetch_scim_identity(provider, external_id),
-         %Accounts.Membership{} = membership <-
-           Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
-      Accounts.ensure_sync_suspend_allowed(membership, provider)
-    else
-      nil -> {:error, :not_found}
-      {:error, reason} -> {:error, reason}
+    with {:ok, identity} <- fetch_scim_identity(provider, external_id) do
+      case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
+        %Accounts.Membership{} = membership ->
+          Accounts.ensure_sync_suspend_allowed(membership, provider)
+
+        # No membership to suspend — an operator already removed them. Nothing can
+        # refuse a deprovision that has nothing left to do, and answering
+        # `:not_found` here made the boundary 404 a person its own reads describe.
+        nil ->
+          :ok
+      end
     end
   end
 
@@ -2949,7 +3010,8 @@ defmodule Emisar.SSO do
          %Subject{} = subject,
          repo
        ) do
-    with {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
+    with :ok <- ensure_request_matches_current_namespace(provider, request),
+         {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
          {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
          %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id),
          :ok <- ensure_link_target_within_authority(request, provider, approver_role, repo) do
@@ -2957,6 +3019,26 @@ defmodule Emisar.SSO do
     else
       {:error, reason} when is_atom(reason) -> {:error, reason}
       _ -> {:error, :matched_user_unavailable}
+    end
+  end
+
+  # The connection's identity namespace, as one comparable value. Approval checks
+  # it under the provider lock, so a request made under a different issuer, client
+  # or identifier claim cannot be approved against this one — including a request
+  # inserted by a callback that was already in flight when the change committed,
+  # which the delete alongside that change cannot reach.
+  defp namespace_fingerprint(%IdentityProvider{} = provider) do
+    Crypto.hash_hex("#{provider.issuer}\n#{provider.client_id}\n#{provider.identifier_claim}")
+  end
+
+  defp ensure_request_matches_current_namespace(
+         %IdentityProvider{} = provider,
+         %LinkRequest{} = request
+       ) do
+    if request.namespace_fingerprint == namespace_fingerprint(provider) do
+      :ok
+    else
+      {:error, :identity_namespace_changed}
     end
   end
 

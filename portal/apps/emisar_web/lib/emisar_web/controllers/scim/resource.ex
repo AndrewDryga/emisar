@@ -48,7 +48,11 @@ defmodule EmisarWeb.SCIM.Resource do
   # The IdP acts on that — it stops flagging them — and nobody finds out.
   defp active?(%SSO.UserIdentity{} = identity, %{disabled_at: nil}), do: identity.scim_active
   defp active?(%SSO.UserIdentity{}, %{disabled_at: _}), do: false
-  defp active?(%SSO.UserIdentity{} = identity, _membership), do: identity.scim_active
+
+  # No membership at all — an operator removed them from the account while the
+  # identity survived. They are not active here, and saying otherwise left the
+  # directory told "active" by a read and "no such user" by a deprovision.
+  defp active?(%SSO.UserIdentity{}, nil), do: false
 
   defp loaded_user(%SSO.UserIdentity{user: %{} = user}), do: user
   defp loaded_user(_identity), do: nil

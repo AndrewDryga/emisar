@@ -15,6 +15,9 @@ defmodule Emisar.SSO.LinkRequest do
     # Which namespace `provider_identifier` belongs to. Approval stamps the OIDC
     # binding or the directory's, never one with the other's value.
     field :source, Ecto.Enum, values: [:oidc, :scim], default: :oidc
+    # The issuer/client/claim this request was produced under. Approval refuses a
+    # request the current connection did not make.
+    field :namespace_fingerprint, :string
     field :email, :string
     field :full_name, :string
     field :claims, :map, default: %{}
