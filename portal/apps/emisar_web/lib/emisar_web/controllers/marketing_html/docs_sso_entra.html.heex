@@ -285,10 +285,14 @@
             <.docs_step_venue>Entra</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
             <p class="mt-1.5">
-              Under <strong class="text-zinc-200">Users and groups</strong>, assign whoever should exist in emisar, then
-              turn <strong class="text-zinc-200">Provisioning Status</strong>
-              on. Entra syncs on its own schedule — roughly every 40 minutes — so the first members
-              appear under <strong class="text-zinc-200">Synced users</strong>
+              Under <strong class="text-zinc-200">Users and groups</strong>, assign whoever should exist in emisar. Then, on <strong class="text-zinc-200">Provisioning → Settings</strong>, set
+              <strong class="text-zinc-200">Scope</strong>
+              to <strong class="text-zinc-200">Sync only assigned users and groups</strong>
+              and turn <strong class="text-zinc-200">Provisioning Status</strong>
+              on. Scope is a separate choice from the assignment, and it defaults to syncing
+              everyone — leave it there and Entra pushes your whole directory into emisar no matter
+              who you assigned. Entra syncs on its own schedule — roughly every 40 minutes — so the
+              first members appear under <strong class="text-zinc-200">Synced users</strong>
               on the emisar connection after that cycle, not instantly. Their Entra groups become
               mappable to roles below.
             </p>
