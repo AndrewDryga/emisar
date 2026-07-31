@@ -794,7 +794,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       ]}
     >
       <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-black/30 ring-1 ring-white/[0.07]">
-        <.icon name={target_choice_icon(@option.kind)} class="h-3.5 w-3.5 text-zinc-400" />
+        <.target_scope_icon kind={@option.kind} />
       </span>
       <span class="flex min-w-0 flex-1 items-baseline gap-2">
         <span class={[
@@ -821,9 +821,47 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     """
   end
 
-  defp target_choice_icon(:group_all), do: "hero-rectangle-stack"
-  defp target_choice_icon(:group_one), do: "hero-cube"
-  defp target_choice_icon(:runner), do: "hero-server"
+  attr :kind, :atom, required: true, values: [:group_all, :group_one, :runner]
+
+  defp target_scope_icon(assigns) do
+    {accent_dots, neutral_dots} =
+      case assigns.kind do
+        :group_all -> {4, 0}
+        :group_one -> {1, 3}
+        :runner -> {1, 0}
+      end
+
+    dots = List.duplicate(:accent, accent_dots) ++ List.duplicate(:neutral, neutral_dots)
+
+    assigns =
+      assigns
+      |> assign(:accent_dots, accent_dots)
+      |> assign(:neutral_dots, neutral_dots)
+      |> assign(:dots, dots)
+
+    ~H"""
+    <span
+      aria-hidden="true"
+      data-target-scope-icon={@kind}
+      data-accent-dots={@accent_dots}
+      data-neutral-dots={@neutral_dots}
+      class={[
+        "h-4 w-4",
+        @kind == :runner && "flex items-center justify-center",
+        @kind != :runner && "grid grid-cols-2 place-content-center gap-1"
+      ]}
+    >
+      <span
+        :for={tone <- @dots}
+        class={[
+          "h-1.5 w-1.5 rounded-full",
+          tone == :accent && "bg-brand-400",
+          tone == :neutral && "bg-zinc-600"
+        ]}
+      ></span>
+    </span>
+    """
+  end
 
   defp target_selection_label(%{target_options: []}, [], _selection, _unavailable),
     do: "No online runners available"

@@ -76,10 +76,14 @@ there are no current targets to add. If the control changes state through its
 own LiveView events inside a larger `phx-change` form, render that selected state
 as hidden form inputs too. A later change must serialize the complete current
 form instead of erasing event-owned selections that were absent from the DOM.
-When one group offers group-wide, one-selected-member, and exact-member scopes,
+When one group offers group-wide, one-random-member, and exact-member scopes,
 render those as peer rows with equal geometry. Each row names the scope and its
 consequence; indentation must not imply that an exact member belongs to the
-one-selected-member mode.
+one-random-member mode. Use one cardinality icon grammar across those peer
+choices: four accent dots for every runner, one accent dot among three neutral
+peers for one random runner, and one accent dot for a named runner. The dot
+count and arrangement carry the meaning without color, while the adjacent text
+remains the accessible label.
 
 A dependent control does not invent a second failure while its prerequisite is
 unresolved. Keep its saved value visible, neutral, and disabled so the operator
@@ -167,7 +171,8 @@ never a reduced model.
 - A group target menu presents `Every runner in group`, `One random runner`, and each
   runner name as peer rows. Those labels carry the complete choice without
   secondary `Every online runner`, `Frozen at run start`, or `Exact runner`
-  qualifiers.
+  qualifiers. Their icons are respectively four accent dots, one accent dot
+  among three neutral dots, and one accent dot.
 - When Targets cannot resolve, Action keeps its saved action name in a neutral
   disabled control and shows no compatibility error. Once Targets resolve, a
   genuinely incompatible action owns its unavailable label and accessible
@@ -225,6 +230,8 @@ never a reduced model.
   restates an already-complete scope label.
 - An exact runner indented below `One random runner`, implying that the named runner is
   the member the system will randomly select.
+- Server, cube, stack, or other object icons that name the resource but do not
+  distinguish all-members, random-one, and exact-one cardinality.
 - An event-backed target picker inside a whole-form `phx-change` flow with no
   hidden selected values, so changing Action or any ordinary input clears the
   target selection.

@@ -827,14 +827,29 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
+               ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_all"] [data-target-scope-icon="group_all"][data-accent-dots="4"][data-neutral-dots="0"])
+             )
+
+      assert has_element?(
+               lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_one"]),
                "One random runner"
              )
 
       assert has_element?(
                lv,
+               ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_one"] [data-target-scope-icon="group_one"][data-accent-dots="1"][data-neutral-dots="3"])
+             )
+
+      assert has_element?(
+               lv,
                ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="runner"]),
                runner.name
+             )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="runner"] [data-target-scope-icon="runner"][data-accent-dots="1"][data-neutral-dots="0"])
              )
 
       refute render(lv) =~ "Every online runner"
