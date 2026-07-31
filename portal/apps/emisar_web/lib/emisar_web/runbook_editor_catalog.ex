@@ -10,8 +10,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   alias Emisar.Runners
   alias EmisarWeb.RunbookDraft
 
-  @runner_indent "\u00A0\u00A0\u00A0\u00A0"
-
   @doc "Build the editor projection from the two complete, account-scoped reads."
   def build(runner_actions, runners) when is_list(runner_actions) and is_list(runners) do
     targets = eligible_targets(runners)
@@ -46,6 +44,8 @@ defmodule EmisarWeb.RunbookEditorCatalog do
           value: ref,
           selection: selection,
           label: target_label(catalog, ref, selection),
+          kind: target_kind(ref, selection),
+          description: unavailable_target_description(ref),
           disabled: false,
           selected: true,
           unavailable: true
@@ -204,6 +204,8 @@ defmodule EmisarWeb.RunbookEditorCatalog do
           value: "",
           selection: nil,
           label: group,
+          kind: :group,
+          online_count: count,
           disabled: true,
           selected: false
         }
@@ -211,7 +213,9 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         all_option = %{
           value: group_ref,
           selection: "all",
-          label: "All online runners (#{count})",
+          label: "All runners",
+          kind: :group_all,
+          description: "Every online runner in this group",
           disabled: false,
           selected: false
         }
@@ -219,7 +223,9 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         random_option = %{
           value: group_ref,
           selection: "random_one",
-          label: "One online runner",
+          label: "One runner",
+          kind: :group_one,
+          description: "Selected and frozen when the run starts",
           disabled: false,
           selected: false
         }
@@ -249,6 +255,8 @@ defmodule EmisarWeb.RunbookEditorCatalog do
               value: "",
               selection: nil,
               label: "Ungrouped",
+              kind: :group,
+              online_count: length(rows),
               disabled: true,
               selected: false
             }
@@ -285,11 +293,23 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     %{
       value: "runner:" <> runner.ref,
       selection: "all",
-      label: @runner_indent <> runner.name,
+      label: runner.name,
+      kind: :runner,
+      description: "Only this runner",
       disabled: false,
       selected: false
     }
   end
+
+  defp target_kind("group:" <> _group, "random_one"), do: :group_one
+  defp target_kind("group:" <> _group, _selection), do: :group_all
+  defp target_kind("runner:" <> _ref, _selection), do: :runner
+  defp target_kind(_ref, _selection), do: :runner
+
+  defp unavailable_target_description("group:" <> _group),
+    do: "Saved group is no longer available"
+
+  defp unavailable_target_description(_ref), do: "Saved runner is no longer available"
 
   defp action_index(runner_actions, target_runner_ids) do
     eligible_runner_ids =

@@ -1164,7 +1164,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "caddy.reload_config"
       assert html =~ "&quot;pack&quot;: {&quot;id&quot;: &quot;caddy&quot;}"
       assert html =~ "group:edge-web"
-      assert html =~ "One online runner"
+      assert html =~ "One runner"
       assert html =~ "random_one"
       assert html =~ "does not move the work to another member"
       assert html =~ "one approval for the complete frozen execution"

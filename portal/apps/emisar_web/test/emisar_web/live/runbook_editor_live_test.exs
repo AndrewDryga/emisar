@@ -275,7 +275,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s(#runbook-stage-0-step-0-target-options button[phx-click="remove_target"][phx-value-target="group:default"][phx-value-selection="all"])
+               ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_all"][phx-click="remove_target"][phx-value-target="group:default"][phx-value-selection="all"]),
+               "default group Saved group is no longer available Unavailable"
              )
 
       refute has_element?(lv, "#runbook-stage-0-step-0-targets > .mt-2.space-y-2")
@@ -809,8 +810,49 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       user: user,
       account: account
     } do
-      arrange_current_action(account, user)
+      runner = arrange_current_action(account, user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-step-0-target-options [data-target-group="default"]),
+               "1 online"
+             )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_all"]),
+               "All runners Every online runner in this group"
+             )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="group_one"]),
+               "One runner Selected and frozen when the run starts"
+             )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="runner"]),
+               "#{runner.name} Only this runner"
+             )
+
+      assert {:ok, runner_ref} = Emisar.Runners.public_ref(runner)
+
+      exact_target =
+        ~s(#runbook-stage-0-step-0-target-options button[data-target-kind="runner"][phx-value-target="runner:#{runner_ref}"])
+
+      lv |> element(exact_target) |> render_click()
+
+      assert has_element?(lv, "#runbook-stage-0-step-0-target-trigger", runner.name)
+
+      assert has_element?(
+               lv,
+               ~s(#{exact_target}[phx-click="remove_target"]),
+               "#{runner.name} Only this runner"
+             )
+
+      lv |> element(~s(#{exact_target}[phx-click="remove_target"])) |> render_click()
 
       lv
       |> element(

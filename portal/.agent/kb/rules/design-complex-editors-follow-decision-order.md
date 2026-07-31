@@ -70,6 +70,10 @@ there are no current targets to add. If the control changes state through its
 own LiveView events inside a larger `phx-change` form, render that selected state
 as hidden form inputs too. A later change must serialize the complete current
 form instead of erasing event-owned selections that were absent from the DOM.
+When one group offers group-wide, one-selected-member, and exact-member scopes,
+render those as peer rows with equal geometry. Each row names the scope and its
+consequence; indentation must not imply that an exact member belongs to the
+one-selected-member mode.
 
 A dependent control does not invent a second failure while its prerequisite is
 unresolved. Keep its saved value visible, neutral, and disabled so the operator
@@ -151,6 +155,9 @@ never a reduced model.
 - A multi-target step keeps one aligned Targets trigger. `edge-web group` is
   shown instead of `group:edge-web`; an unavailable saved target is visibly
   invalid and can still be removed from the same menu.
+- A group target menu presents `All runners`, `One runner`, and each exact
+  runner as peer rows. Their secondary lines say `Every online runner in this
+  group`, `Selected and frozen when the run starts`, and `Only this runner`.
 - When Targets cannot resolve, Action keeps its saved action name in a neutral
   disabled control and shows no compatibility error. Once Targets resolve, a
   genuinely incompatible action owns its unavailable label and accessible
@@ -203,6 +210,8 @@ never a reduced model.
 - Selected-target cards stacked over an add-target dropdown, raw tagged refs in
   the closed trigger, or a stale target that becomes impossible to remove when
   the live catalog is empty.
+- An exact runner indented below `One runner`, implying that the named runner is
+  the member the system will randomly select.
 - An event-backed target picker inside a whole-form `phx-change` flow with no
   hidden selected values, so changing Action or any ordinary input clears the
   target selection.

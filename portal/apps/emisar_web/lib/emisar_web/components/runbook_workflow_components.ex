@@ -698,11 +698,19 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :step_index, :integer, required: true
   attr :at_limit?, :boolean, required: true
 
-  defp target_choice(%{option: %{value: ""}} = assigns) do
+  defp target_choice(%{option: %{kind: :group}} = assigns) do
     ~H"""
-    <p class="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-      {@option.label}
-    </p>
+    <div
+      data-target-group={@option.label}
+      class="flex items-center justify-between gap-3 px-3 pb-1.5 pt-3"
+    >
+      <p class="truncate text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+        {@option.label}
+      </p>
+      <p class="shrink-0 text-[11px] tabular-nums text-zinc-400">
+        {@option.online_count} online
+      </p>
+    </div>
     """
   end
 
@@ -730,25 +738,38 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       phx-value-step={@step_index}
       phx-value-target={@option.value}
       phx-value-selection={@option.selection}
+      data-target-kind={@option.kind}
       title={@option.label}
       disabled={@disabled?}
       class={[
-        "flex min-h-10 w-full items-center gap-2.5 rounded px-3 py-2 text-left transition-colors",
+        "flex min-h-14 w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors",
         @selected? && "bg-white/[0.05] text-zinc-100 hover:bg-white/[0.08]",
         not @selected? && not @disabled? && "text-zinc-300 hover:bg-zinc-800",
         @disabled? && "cursor-not-allowed text-zinc-500 opacity-50"
       ]}
     >
-      <span class="flex h-4 w-4 shrink-0 items-center justify-center">
-        <.icon :if={@selected?} name="hero-check-micro" class="h-4 w-4 text-zinc-300" />
+      <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-black/30 ring-1 ring-white/[0.07]">
+        <.icon name={target_choice_icon(@option.kind)} class="h-4 w-4 text-zinc-400" />
       </span>
-      <span class="min-w-0 flex-1 truncate">{@option.label}</span>
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-sm leading-5">{@option.label}</span>
+        <span class="mt-0.5 block truncate text-[11px] leading-4 text-zinc-400">
+          {@option.description}
+        </span>
+      </span>
       <span :if={@unavailable?} class="shrink-0 text-[10px] font-medium text-rose-300">
         Unavailable
+      </span>
+      <span :if={@selected?} class="flex h-5 w-5 shrink-0 items-center justify-center">
+        <.icon name="hero-check-micro" class="h-4 w-4 text-zinc-300" />
       </span>
     </button>
     """
   end
+
+  defp target_choice_icon(:group_all), do: "hero-rectangle-stack"
+  defp target_choice_icon(:group_one), do: "hero-cube"
+  defp target_choice_icon(:runner), do: "hero-server"
 
   defp target_selection_label(%{target_options: []}, [], _selection, _unavailable),
     do: "No online runners available"
