@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 )
 
@@ -40,6 +41,18 @@ func main() {
 	// deadline with no output at all. Default it off.
 	headless := flag.Bool("headless", false, "run Chrome headless (Google sign-in refuses it)")
 	cleanupOnly := flag.Bool("cleanup", false, "only delete the OAuth clients past runs created")
+	// The Get started wizard is the ONLY place Audience is a choice. On a project
+	// that already has it, the console shows the settings page it wrote — which is
+	// what shipped, and it does not show the reader the decision they have to make.
+	// A fresh project is the only way to photograph the real step.
+	freshProject := flag.String("fresh-project", "", "create this project first and walk its Get started wizard")
+	project := flag.String("project", "", "capture against this project id instead of the credential's own project")
+	deleteProjects := flag.String("delete-projects", "", "comma-separated project ids to shut down, then exit")
+	listProjects := flag.Bool("list-projects", false, "print the account's projects and whether each has an auth config")
+	// Agreeing to Google Cloud's terms binds the ACCOUNT, not the run, so it is
+	// never implied by asking for screenshots. The account owner asks for it here,
+	// explicitly, or the capture stops at the wall.
+	acceptCloudTOS := flag.Bool("accept-cloud-tos", false, "agree to the Google Cloud Terms of Service on this account")
 	flag.Parse()
 
 	if *outDir == "" {
@@ -57,7 +70,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o755); err != nil {
 		fail(err)
 	}
-	if err := run(env, *outDir, *headless, *cleanupOnly); err != nil {
+	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *listProjects, *acceptCloudTOS, *project, *deleteProjects); err != nil {
 		fail(err)
 	}
 }
@@ -90,7 +103,7 @@ func readEnv(path string) (map[string]string, error) {
 	return env, scanner.Err()
 }
 
-func run(env map[string]string, outDir string, headless, cleanupOnly bool) error {
+func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, listProjects, acceptCloudTOS bool, project, deleteProjects string) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("lang", "en-US"),
@@ -104,15 +117,52 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool) error
 	ctx, cancelTimeout := context.WithTimeout(ctx, 12*time.Minute)
 	defer cancelTimeout()
 
+	// Pin the console to its light theme. It follows prefers-color-scheme, so a run
+	// started while the machine is in dark mode produces shots that match nothing
+	// else in the guide.
+	if err := chromedp.Run(ctx, emulation.SetEmulatedMedia().WithFeatures([]*emulation.MediaFeature{
+		{Name: "prefers-color-scheme", Value: "light"},
+	})); err != nil {
+		return err
+	}
+
 	projectNumber := strings.SplitN(env["GOOGLE_CLIENT_ID"], "-", 2)[0]
+	if project != "" {
+		projectNumber = project
+	}
 	entry := consoleURL + "?project=" + projectNumber + "&hl=en"
+	if freshProject != "" {
+		entry = "https://console.cloud.google.com/projectcreate?hl=en"
+	}
 	if err := chromedp.Run(ctx, chromedp.Navigate(entry), chromedp.Sleep(3*time.Second)); err != nil {
 		return err
 	}
-	if err := signIn(ctx, env); err != nil {
+	if err := signIn(ctx, env, acceptCloudTOS); err != nil {
 		_ = screenshot(ctx, outDir, "google-failed")
 		_ = describePage(ctx, env)
 		return err
+	}
+	if listProjects {
+		return printProjects(ctx)
+	}
+	if deleteProjects != "" {
+		for _, id := range strings.Split(deleteProjects, ",") {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if err := shutDownProject(ctx, id); err != nil {
+				return fmt.Errorf("%s: %w", id, err)
+			}
+		}
+		return nil
+	}
+	if freshProject != "" {
+		if err := createProject(ctx, freshProject, outDir); err != nil {
+			_ = screenshot(ctx, outDir, "google-failed")
+			_ = describePage(ctx, env)
+			return err
+		}
 	}
 	if cleanupOnly {
 		// Wait for the console to paint before reaching for its nav — the full flow
@@ -134,7 +184,185 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool) error
 	return nil
 }
 
-func signIn(ctx context.Context, env map[string]string) error {
+// createProject makes the throwaway project whose Get started wizard the capture
+// walks, then enters the Auth Platform on it. The project id Google derives from
+// the name is what the platform URL needs, and it is not the name — so it is read
+// back off the console rather than guessed.
+// printProjects lists what the account can reach, so a capture that needs an
+// unconfigured project can be pointed at one that already exists instead of
+// creating another.
+// agreeToCloudTerms clears the free-trial signup wall an account that has never
+// used Google Cloud lands on. Only reachable behind -accept-cloud-tos.
+//
+// This is the FULL-PAGE wall, not the in-console dialog acceptTerms handles: its
+// button carries an ampersand ("Agree & continue") and it sits behind a country
+// selector that must already hold a value.
+func agreeToCloudTerms(ctx context.Context) error {
+	const tick = `(() => {
+  let ticked = 0;
+  for (const box of document.querySelectorAll('input[type=checkbox]')) {
+    let node = box, wanted = false;
+    for (let up = 0; up < 6 && node; up++) {
+      const text = node.textContent || '';
+      if (/Terms of Service|I agree/i.test(text)) { wanted = true; break; }
+      node = node.parentElement;
+    }
+    // Never the marketing opt-in.
+    if (!wanted) continue;
+    if ((node.textContent || '').match(/updates|announcements|offers|newsletter/i)) continue;
+    if (!box.checked) { box.click(); }
+    if (box.checked) ticked++;
+  }
+  return ticked;
+})()`
+	var ticked int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(tick, &ticked)); err != nil {
+		return err
+	}
+	fmt.Printf("  ticked %d terms checkbox(es)\n", ticked)
+	if err := clickFirstText(ctx, "Agree & continue", "Agree and continue", "AGREE & CONTINUE"); err != nil {
+		return err
+	}
+	fmt.Println("  agreed to the Google Cloud terms")
+	return chromedp.Run(ctx, chromedp.Sleep(10*time.Second))
+}
+
+// shutDownProject retires a project this tool created. The wizard capture needs a
+// project with nothing configured, and a project can only be walked through it
+// once, so each run leaves one behind.
+//
+// Google gates the shutdown behind typing the project id back, which is also the
+// check that this deletes the intended project and not whichever one the console
+// happened to have open.
+func shutDownProject(ctx context.Context, id string) error {
+	settings := "https://console.cloud.google.com/iam-admin/settings?project=" + id + "&hl=en"
+	if err := chromedp.Run(ctx, chromedp.Navigate(settings), chromedp.Sleep(12*time.Second)); err != nil {
+		return err
+	}
+	if err := dismissOverlays(ctx); err != nil {
+		return err
+	}
+	if err := clickFirstText(ctx, "Shut down", "SHUT DOWN"); err != nil {
+		return fmt.Errorf("no shut down control: %w", err)
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(5*time.Second)); err != nil {
+		return err
+	}
+	// Type the id into the confirmation field the dialog puts up.
+	confirm := fmt.Sprintf(`(() => {
+  const wanted = %q;
+  const inputs = [...document.querySelectorAll('input')]
+    .filter(el => (el.offsetWidth > 0 || el.offsetHeight > 0) && el.type === 'text');
+  if (!inputs.length) return '';
+  const input = inputs[inputs.length - 1];
+  if (!input.id) input.id = 'emisar-confirm-shutdown';
+  return '#' + input.id + '|' + wanted;
+})()`, id)
+	var handle string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(confirm, &handle)); err != nil {
+		return err
+	}
+	if handle == "" {
+		return errors.New("the shutdown dialog has no confirmation field")
+	}
+	selector := strings.SplitN(handle, "|", 2)[0]
+	if err := typeRealKeys(ctx, selector, id); err != nil {
+		return err
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
+		return err
+	}
+	if err := clickFirstText(ctx, "Shut down anyway", "SHUT DOWN ANYWAY", "Shut down"); err != nil {
+		return err
+	}
+	fmt.Printf("  shut down %s\n", id)
+	return chromedp.Run(ctx, chromedp.Sleep(8*time.Second))
+}
+
+func printProjects(ctx context.Context) error {
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate("https://console.cloud.google.com/cloud-resource-manager?hl=en"),
+		chromedp.Sleep(15*time.Second)); err != nil {
+		return err
+	}
+	var body string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+		return err
+	}
+	fmt.Println("--- resource manager ---")
+	fmt.Println(body)
+	return nil
+}
+
+func createProject(ctx context.Context, name, outDir string) error {
+	if err := waitForText(ctx, "Project name", 90*time.Second); err != nil {
+		return fmt.Errorf("the project-create form never appeared: %w", err)
+	}
+	// By position, not by label: the create form's name input has no label,
+	// placeholder or aria-label of its own — the visible "Project name" text is a
+	// sibling node — so the label-driven filler finds nothing to type into.
+	const nameSelector = `(() => {
+  // el.type, not the [type=text] selector: these inputs carry no type ATTRIBUTE,
+  // so the attribute selector matches none of them while the DOM property still
+  // reports "text".
+  const inputs = [...document.querySelectorAll('input')]
+    .filter(el => (el.offsetWidth > 0 || el.offsetHeight > 0) && el.type === 'text');
+  if (!inputs.length) return '';
+  const input = inputs[0];
+  if (!input.id) input.id = 'emisar-project-name';
+  return '#' + input.id;
+})()`
+	var selector string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(nameSelector, &selector)); err != nil {
+		return err
+	}
+	if selector == "" {
+		return errors.New("the project-create form has no name input")
+	}
+	if err := typeRealKeys(ctx, selector, name); err != nil {
+		return err
+	}
+	// Google shows the derived id under the field as "Project ID: <id>". Read it
+	// before submitting; afterwards the form is gone.
+	const idScript = `(() => {
+  const match = document.body.innerText.match(/Project ID:\s*([a-z0-9-]+)/);
+  return match ? match[1] : '';
+})()`
+	var projectID string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(idScript, &projectID)); err != nil {
+		return err
+	}
+	if projectID == "" {
+		return errors.New("the create form never showed the derived project id")
+	}
+	fmt.Printf("  creating project %s\n", projectID)
+	if err := clickFirstText(ctx, "Create"); err != nil {
+		return err
+	}
+	// Creation is asynchronous and the console does not block on it. Poll the
+	// platform URL until it answers with the wizard rather than a permission error.
+	platform := consoleURL + "?project=" + projectID + "&hl=en"
+	deadline := time.Now().Add(4 * time.Minute)
+	for {
+		if time.Now().After(deadline) {
+			_ = screenshot(ctx, outDir, "google-project-never-ready")
+			return fmt.Errorf("project %s never became usable", projectID)
+		}
+		if err := chromedp.Run(ctx, chromedp.Navigate(platform), chromedp.Sleep(8*time.Second)); err != nil {
+			return err
+		}
+		var body string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
+			return err
+		}
+		if strings.Contains(body, "Google Auth Platform") && !strings.Contains(body, "do not have permission") {
+			fmt.Printf("  project %s is ready\n", projectID)
+			return nil
+		}
+	}
+}
+
+func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) error {
 	deadline := time.Now().Add(4 * time.Minute)
 	submittedUser, submittedPassword, submittedTOTP := false, false, false
 
@@ -207,10 +435,16 @@ func signIn(ctx context.Context, env map[string]string) error {
 
 		case strings.Contains(location, "console.cloud.google.com"):
 			if strings.Contains(body, "Terms of Service") && strings.Contains(body, "Agree") {
-				return errors.New("accepting the Google Cloud Terms of Service is a human account-level decision")
+				if !acceptCloudTOS {
+					return errors.New("accepting the Google Cloud Terms of Service is a human account-level decision; re-run with -accept-cloud-tos if it is yours to give")
+				}
+				if err := agreeToCloudTerms(ctx); err != nil {
+					return err
+				}
+				continue
 			}
 			if strings.Contains(body, "Google Auth Platform") || strings.Contains(body, "Welcome") ||
-				strings.Contains(body, "Select a project") {
+				strings.Contains(body, "Select a project") || strings.Contains(body, "New Project") {
 				fmt.Println("  signed in to Google Cloud")
 				return nil
 			}
@@ -238,24 +472,33 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	// Get started wizard; one that is already set up opens straight onto the
 	// left-nav pages the wizard writes into. Photograph whichever we are given —
 	// the wizard is a one-time skin over Branding and Audience.
-	if err := waitForText(ctx, "Get started", 20*time.Second); err != nil {
-		fmt.Println("  already configured — capturing Branding and Audience directly")
-		return configuredFlow(ctx, env, outDir)
-	}
-	if err := capture(ctx, env, outDir, "google-01-get-started", textHighlight("Get started")); err != nil {
-		return err
-	}
-	if err := clickExactText(ctx, "Get started"); err != nil {
-		return err
-	}
-
-	if err := waitForText(ctx, "App information", 30*time.Second); err != nil {
-		return err
+	// Three shapes, not two. A project with the platform configured opens on the
+	// settings pages; an unconfigured one opens either on a Get started button or
+	// straight onto the numbered stepper, depending on how the console routed in.
+	// Capitalization is Google's: the step is "App Information".
+	inWizard := waitForText(ctx, "App Information", 20*time.Second) == nil
+	if !inWizard {
+		if err := waitForText(ctx, "Get started", 20*time.Second); err != nil {
+			fmt.Println("  already configured — capturing Branding and Audience directly")
+			return configuredFlow(ctx, env, outDir)
+		}
+		if err := capture(ctx, env, outDir, "google-01-get-started", textHighlight("Get started")); err != nil {
+			return err
+		}
+		if err := clickExactText(ctx, "Get started"); err != nil {
+			return err
+		}
+		if err := waitForText(ctx, "App Information", 30*time.Second); err != nil {
+			return err
+		}
 	}
 	if err := fillField(ctx, "App name", "emisar"); err != nil {
 		return err
 	}
-	if err := chooseEmail(ctx, "User support email", env["GOOGLE_TEST_USER"]); err != nil {
+	// A Material select, not a text field and not a plain link: the support email is
+	// picked from the accounts Google already knows, so it is driven the same way as
+	// the other dropdowns in this console.
+	if err := chooseOption(ctx, "User support email", env["GOOGLE_TEST_USER"]); err != nil {
 		return err
 	}
 	if err := capture(ctx, env, outDir, "google-02-app-information", fieldHighlight("App name", "User support email")); err != nil {
@@ -294,10 +537,16 @@ func authPlatformFlow(ctx context.Context, env map[string]string, outDir string)
 	if err := waitForText(ctx, "Finish", 30*time.Second); err != nil {
 		return err
 	}
-	if err := selectCheckbox(ctx); err != nil {
-		return err
+	// The agreement checkbox is not in every version of this wizard — the current
+	// one ends on Create alone. Highlight whichever control the reader actually has
+	// to act on rather than failing on the one that is missing.
+	marker := textHighlight("Create")
+	if err := selectCheckbox(ctx); err == nil {
+		marker = textHighlight("I agree")
+	} else {
+		fmt.Println("  the Finish step has no agreement checkbox; highlighting Create")
 	}
-	if err := capture(ctx, env, outDir, "google-05-finish", textHighlight("I agree")); err != nil {
+	if err := capture(ctx, env, outDir, "google-05-finish", marker); err != nil {
 		return err
 	}
 	if err := clickFirstText(ctx, "Continue", "Create"); err != nil {
@@ -590,11 +839,62 @@ func addURIUnder(ctx context.Context, section, value string) error {
 // dismissOverlays clears the console's own promotional tooltips. One of them
 // ("Is this a production environment?") sat over the left nav and the page
 // heading in the first captured shot.
+// expandNav opens the Google Auth Platform's left navigation when the console
+// has it collapsed. The console decides that from the window width and its own
+// stored preference, and when it collapses, the nav's column stays in the layout
+// — so a shot came out with a blank 285px gutter down the left and no way for a
+// reader to see where in the product the step happens.
+func expandNav(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  // Already open: the nav lists the platform's own pages.
+  const open = [...document.querySelectorAll('a,[role=link],[role=treeitem]')]
+    .some(el => visible(el) && ['Clients', 'Audience', 'Branding'].includes((el.textContent || '').trim()));
+  if (open) return 0;
+  const toggle = [...document.querySelectorAll('button,[role=button]')]
+    .find(el => {
+      if (!visible(el)) return false;
+      const name = (el.getAttribute('aria-label') || el.title || '').trim().toLowerCase();
+      return name.includes('expand nav') || name.includes('show nav') || name === 'expand';
+    });
+  if (!toggle) return -1;
+  toggle.click();
+  return 1;
+})()`
+	var result int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &result)); err != nil {
+		return err
+	}
+	if result == -1 {
+		return errors.New("the left nav is collapsed and has no expand control")
+	}
+	if result == 1 {
+		fmt.Println("  expanded the left nav")
+		return chromedp.Run(ctx, chromedp.Sleep(1500*time.Millisecond))
+	}
+	return nil
+}
+
 func dismissOverlays(ctx context.Context) error {
 	const script = `(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   let closed = 0;
-  for (const button of document.querySelectorAll('button,[role=button]')) {
+  // The free-trial promo strip does not go away when its Dismiss is clicked — the
+  // console re-renders it — so it is removed outright. It is transient sales chrome
+  // over the console, not part of any step, and it sat across the top of every shot.
+  for (const node of document.querySelectorAll('div,section,aside')) {
+    if (!visible(node)) continue;
+    const text = (node.textContent || '').trim();
+    if (!text.startsWith('Start your Free Trial with $300 in credit')) continue;
+    if (text.length > 200) continue;
+    node.remove();
+    closed++;
+    break;
+  }
+  // Anchors too: the free-trial promo banner's Dismiss is a link, so a
+  // button-only sweep left it across the top of every shot. Match on the EXACT
+  // name — "Start free" sits beside it and starts a billing signup.
+  for (const button of document.querySelectorAll('button,[role=button],a')) {
     if (!visible(button)) continue;
     const name = (button.getAttribute('aria-label') || button.textContent || '').trim().toLowerCase();
     if (name === 'close' || name === 'dismiss' || name === 'got it' || name === 'no thanks') {
@@ -729,7 +1029,23 @@ func textHighlight(labels ...string) highlightScript {
 		script: fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const labels = [%s];
+  const targets = [];
   let marked = 0;
+  // Frame every ringed control, not just the last one. Centering each in turn left
+  // the reader looking at a form whose first outlined field was cut off the top of
+  // the shot, which is the one they act on first.
+  const frame = found => {
+    if (!found.length) return;
+    const tops = found.map(el => el.getBoundingClientRect().top + window.scrollY);
+    const bottoms = found.map(el => el.getBoundingClientRect().bottom + window.scrollY);
+    const top = Math.min(...tops), bottom = Math.max(...bottoms);
+    const margin = 140;
+    if (bottom - top + margin * 2 <= window.innerHeight) {
+      window.scrollTo({top: Math.max(0, (top + bottom) / 2 - window.innerHeight / 2)});
+    } else {
+      window.scrollTo({top: Math.max(0, top - margin)});
+    }
+  };
   for (const label of labels) {
     const matches = [...document.querySelectorAll('a,button,label,span,div,li,td,[role=button],[role=radio]')]
       .filter(el => visible(el) && (el.textContent || '').includes(label));
@@ -739,9 +1055,10 @@ func textHighlight(labels ...string) highlightScript {
     target.style.outline = '3px solid #10b981';
     target.style.outlineOffset = '3px';
     target.style.borderRadius = '6px';
-    target.scrollIntoView({block: 'center'});
+    targets.push(target);
     marked++;
   }
+  frame(targets);
   return marked;
 })()`, strings.Join(quoted, ",")),
 	}
@@ -757,7 +1074,23 @@ func fieldHighlight(labels ...string) highlightScript {
 		script: fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const labels = [%s];
+  const targets = [];
   let marked = 0;
+  // Frame every ringed control, not just the last one. Centering each in turn left
+  // the reader looking at a form whose first outlined field was cut off the top of
+  // the shot, which is the one they act on first.
+  const frame = found => {
+    if (!found.length) return;
+    const tops = found.map(el => el.getBoundingClientRect().top + window.scrollY);
+    const bottoms = found.map(el => el.getBoundingClientRect().bottom + window.scrollY);
+    const top = Math.min(...tops), bottom = Math.max(...bottoms);
+    const margin = 140;
+    if (bottom - top + margin * 2 <= window.innerHeight) {
+      window.scrollTo({top: Math.max(0, (top + bottom) / 2 - window.innerHeight / 2)});
+    } else {
+      window.scrollTo({top: Math.max(0, top - margin)});
+    }
+  };
   for (const wanted of labels) {
     const controls = [...document.querySelectorAll('input,textarea,select,[role=combobox]')].filter(visible);
     const control = controls.find(el => {
@@ -767,14 +1100,30 @@ func fieldHighlight(labels ...string) highlightScript {
       ].join(' ').toLowerCase();
       return text.includes(wanted);
     });
-    if (!control) continue;
-    const target = control.closest('label,fieldset,[role=group],div') || control;
+    // A Material select carries no aria-label, placeholder, name or <label> of its
+    // own — the visible caption is a SIBLING node — so the metadata search above
+    // finds nothing. Fall back to the caption and climb to the block that actually
+    // holds a control, which is the thing the reader has to click.
+    let target = control ? (control.closest('label,fieldset,[role=group],div') || control) : null;
+    if (!target) {
+      const caption = [...document.querySelectorAll('label,span,div')]
+        .filter(el => visible(el) && (el.textContent || '').trim().toLowerCase() === wanted)
+        .sort((a, b) => a.textContent.length - b.textContent.length)[0];
+      if (!caption) continue;
+      let node = caption;
+      for (let up = 0; up < 5 && node; up++) {
+        if (node.querySelector('input,select,textarea,[role=combobox],[role=listbox],button')) { target = node; break; }
+        node = node.parentElement;
+      }
+      if (!target) continue;
+    }
     target.style.outline = '3px solid #10b981';
     target.style.outlineOffset = '3px';
     target.style.borderRadius = '6px';
-    target.scrollIntoView({block: 'center'});
+    targets.push(target);
     marked++;
   }
+  frame(targets);
   return marked;
 })()`, strings.Join(quoted, ",")),
 	}
@@ -789,6 +1138,9 @@ func capture(ctx context.Context, env map[string]string, outDir, name string, ma
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	if err := dismissOverlays(ctx); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	if err := expandNav(ctx); err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	if err := deidentify(ctx, env); err != nil {
