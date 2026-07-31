@@ -111,6 +111,13 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> preload([identities: i, user: user], user: user)
   end
 
+  @doc """
+  Identities the directory has not stamped yet. Lets adoption write under the
+  same condition it decided on, so two pushes cannot both claim one row.
+  """
+  def without_scim_external_id(queryable \\ all()),
+    do: where(queryable, [identities: i], is_nil(i.scim_external_id))
+
   def by_ids(queryable, ids),
     do: where(queryable, [identities: i], i.id in ^ids)
 

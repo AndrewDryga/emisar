@@ -1807,6 +1807,69 @@ defmodule Emisar.SSOTest do
       refute deactivated.scim_active
     end
 
+    test "a directory externalId does not overwrite the OIDC sub it disagrees with", %{
+      provider: provider,
+      account: account
+    } do
+      # The oscillation. With sub=S and externalId=E, approval used to stamp
+      # whichever value the request carried into `provider_identifier`: approving a
+      # SCIM request overwrote S, the next OIDC login then could not find the person
+      # and parked its own request, and approving that overwrote E. Back and forth,
+      # with whichever side was not current unable to see them at all.
+      #
+      # The request now records which namespace it came from, so each stamps its own
+      # column and the row ends up holding both.
+      user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      {:ok, identity} =
+        account.id
+        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
+          provider_identifier: "oidc-sub-S",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+        |> Repo.insert()
+
+      # The directory pushes a DIFFERENT identifier for the same person; the email
+      # collides, so it parks a link request rather than creating a second identity.
+      assert {:error, :email_taken} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "directory-external-E",
+                 email: user.email
+               })
+
+      request =
+        SSO.LinkRequest.Query.all()
+        |> SSO.LinkRequest.Query.by_provider_id(provider.id)
+        |> Repo.one()
+
+      assert request.source == :scim
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: Fixtures.Users.create_user().id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
+
+      assert {:ok, _} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 subject
+               )
+
+      # Both identifiers live on the one row: the login still resolves by its sub,
+      # and the directory can now find the person by its externalId.
+      linked = Repo.reload!(identity)
+      assert linked.provider_identifier == "oidc-sub-S"
+      assert linked.scim_external_id == "directory-external-E"
+    end
+
     test "adoption is one-way, so a later externalId cannot re-stamp it", %{
       provider: provider,
       account: account

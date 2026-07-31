@@ -760,7 +760,14 @@ defmodule Emisar.SSO do
         # The email matches an existing user. If they're a member, park a link
         # request for an admin to approve (never auto-merge, C1); otherwise it's
         # a genuine collision (a non-member owns that email) — fail closed.
-        case capture_member_link(provider, identifier, claims["email"], claims["name"], claims) do
+        case capture_member_link(
+               provider,
+               identifier,
+               claims["email"],
+               claims["name"],
+               claims,
+               :oidc
+             ) do
           {:captured, request} -> {:pending, request}
           :no_match -> {:error, :email_taken}
         end
@@ -779,7 +786,14 @@ defmodule Emisar.SSO do
   # never pile up. When the email matches an existing member the request records
   # them, so approving REBINDS that member's identity rather than adding a person.
   defp park_link_request(%IdentityProvider{} = provider, identifier, claims) do
-    case capture_link_request(provider, identifier, claims["email"], claims["name"], claims) do
+    case capture_link_request(
+           provider,
+           identifier,
+           claims["email"],
+           claims["name"],
+           claims,
+           :oidc
+         ) do
       {:ok, request} -> {:pending, request}
       # An upsert failure (rare) has no request to park them on — fall back to the
       # generic pending error so the callback still explains the wait.
@@ -797,12 +811,27 @@ defmodule Emisar.SSO do
   # park a request against a provider that no longer exists — unapprovable the
   # moment it is written, and a browser waiting on a page that never resolves.
   # The delete sweeps the queue; this stops a straggler refilling it.
-  defp capture_link_request(%IdentityProvider{deleted_at: %DateTime{}}, _id, _e, _n, _claims),
-    do: {:error, :provider_unavailable}
+  defp capture_link_request(
+         %IdentityProvider{deleted_at: %DateTime{}},
+         _id,
+         _e,
+         _n,
+         _claims,
+         _source
+       ),
+       do: {:error, :provider_unavailable}
 
-  defp capture_link_request(%IdentityProvider{} = provider, identifier, email, full_name, claims) do
+  defp capture_link_request(
+         %IdentityProvider{} = provider,
+         identifier,
+         email,
+         full_name,
+         claims,
+         source
+       ) do
     attrs = %{
       provider_identifier: identifier,
+      source: source,
       email: email,
       full_name: full_name,
       claims: claims,
@@ -828,9 +857,16 @@ defmodule Emisar.SSO do
   # matches an existing member, so an admin has someone to link to. A non-member
   # collision has no link target — the caller keeps the genuine `:email_taken`
   # (C1). Returns `:captured | :no_match`.
-  defp capture_member_link(%IdentityProvider{} = provider, identifier, email, full_name, claims) do
+  defp capture_member_link(
+         %IdentityProvider{} = provider,
+         identifier,
+         email,
+         full_name,
+         claims,
+         source
+       ) do
     if matched_member_id(provider, email) do
-      case capture_link_request(provider, identifier, email, full_name, claims) do
+      case capture_link_request(provider, identifier, email, full_name, claims, source) do
         {:ok, request} -> {:captured, request}
         {:error, _} -> :no_match
       end
@@ -1066,9 +1102,19 @@ defmodule Emisar.SSO do
 
   defp adopt_scim_identity(%UserIdentity{scim_external_id: nil} = identity, external_id)
        when is_binary(external_id) do
-    identity
-    |> UserIdentity.Changeset.adopt_scim_external_id(external_id)
-    |> Repo.update()
+    # Guarded on the column still being null AT THE WRITE, not just when we read
+    # it. Two pushes that both loaded the unstamped row would otherwise each
+    # claim it, and the later one would silently win.
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_id(identity.id)
+      |> UserIdentity.Query.without_scim_external_id()
+
+    {_stamped, _} = Repo.update_all(queryable, set: [scim_external_id: external_id])
+
+    # Read back whoever won. If another push stamped it first, the write above
+    # matched nothing and theirs is what stands.
+    {:ok, Repo.reload!(identity)}
   end
 
   defp adopt_scim_identity(%UserIdentity{} = identity, _external_id), do: {:ok, identity}
@@ -1183,7 +1229,7 @@ defmodule Emisar.SSO do
         # linked); a non-member is a genuine collision. Always 409; never merge (C1).
         email = attrs[:email] || attrs["email"]
         full_name = attrs[:full_name] || attrs["full_name"]
-        _ = capture_member_link(provider, external_id, email, full_name, %{})
+        _ = capture_member_link(provider, external_id, email, full_name, %{}, :scim)
         {:error, :email_taken}
 
       {:error, reason} ->
@@ -2911,17 +2957,23 @@ defmodule Emisar.SSO do
   # made authorization nondeterministic — role and runner access are computed per
   # identity onto the one membership, so the last iteration won — and made the
   # reconcile job's single-row read raise.
+  #
+  # The request's SOURCE decides which identifier it is. Stamping both from one
+  # value let the two namespaces fight over the row: with an OIDC `sub` and a
+  # directory `externalId` that differ, approving a SCIM request overwrote the
+  # sub, the next OIDC login then failed to find the person and parked its own
+  # request, and approving THAT overwrote the externalId — back and forth, one
+  # approval at a time, with whichever side was not current unable to see them.
   defp link_identity(%IdentityProvider{} = provider, user, %LinkRequest{} = request) do
     case peek_identity(provider, user.id) do
       %UserIdentity{} = identity ->
         identity
-        |> UserIdentity.Changeset.rebind_provider_identifier(
-          request.provider_identifier,
-          request.claims
-        )
+        |> rebind_changeset(request)
         |> Repo.update()
 
       nil ->
+        # A first identity holds the identifier in both roles: the directory and
+        # the login agree on it until one of them says otherwise.
         attrs = %{
           provider_identifier: request.provider_identifier,
           scim_external_id: request.provider_identifier,
@@ -2934,6 +2986,18 @@ defmodule Emisar.SSO do
         |> UserIdentity.Changeset.create(provider.id, user.id, attrs)
         |> Repo.insert()
     end
+  end
+
+  defp rebind_changeset(%UserIdentity{} = identity, %LinkRequest{source: :scim} = request) do
+    UserIdentity.Changeset.adopt_scim_external_id(identity, request.provider_identifier)
+  end
+
+  defp rebind_changeset(%UserIdentity{} = identity, %LinkRequest{} = request) do
+    UserIdentity.Changeset.rebind_provider_identifier(
+      identity,
+      request.provider_identifier,
+      request.claims
+    )
   end
 
   defp peek_identity(%IdentityProvider{} = provider, user_id) do
