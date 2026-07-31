@@ -29,12 +29,20 @@ defmodule EmisarWeb.RateLimiterTest do
   test "the counter resets when the window rolls over" do
     k = key("window")
 
-    # window_ms = 1 → each wall-clock millisecond is its own window.
-    assert RateLimiter.check(k, 1, 1) == :ok
-    assert RateLimiter.check(k, 1, 1) == {:error, :rate_limited}
+    # A window wide enough that two calls cannot straddle its edge. At
+    # window_ms = 1 they had to land in the SAME wall-clock millisecond: under
+    # parallel gate load the clock ticked between them, they fell in different
+    # windows, and the second was allowed — the test failed having proved the
+    # opposite of a bug.
+    window_ms = 50
+    ensure_room_in_window(window_ms)
 
-    spin_past(System.system_time(:millisecond))
-    assert RateLimiter.check(k, 1, 1) == :ok
+    assert RateLimiter.check(k, 1, window_ms) == :ok
+    assert RateLimiter.check(k, 1, window_ms) == {:error, :rate_limited}
+
+    # Cross the edge deliberately rather than waiting and hoping.
+    spin_until(next_window_start(window_ms))
+    assert RateLimiter.check(k, 1, window_ms) == :ok
   end
 
   test "the periodic sweep reclaims expired windows so the table stays bounded" do
@@ -60,5 +68,25 @@ defmodule EmisarWeb.RateLimiterTest do
   # millisecond — no Process.sleep). Time is the synchronization here.
   defp spin_past(ms) do
     if System.system_time(:millisecond) <= ms, do: spin_past(ms), else: :ok
+  end
+
+  defp spin_until(ms) do
+    if System.system_time(:millisecond) < ms, do: spin_until(ms), else: :ok
+  end
+
+  defp next_window_start(window_ms) do
+    (div(System.system_time(:millisecond), window_ms) + 1) * window_ms
+  end
+
+  # Only spins when the current window is nearly over, so the common run costs
+  # nothing and the assertions still get the whole window to themselves.
+  defp ensure_room_in_window(window_ms) do
+    edge = next_window_start(window_ms)
+
+    if edge - System.system_time(:millisecond) < div(window_ms, 2) do
+      spin_until(edge)
+    else
+      :ok
+    end
   end
 end

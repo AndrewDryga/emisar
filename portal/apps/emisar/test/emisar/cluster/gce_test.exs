@@ -4,6 +4,13 @@ defmodule Emisar.Cluster.GCETest do
   alias Cluster.Strategy.State
   alias Emisar.Cluster.GCE
 
+  # A generous ceiling, not a guess at how long this takes. The assertion is that
+  # the poll connects to every peer AT ALL; one second was enough in isolation and
+  # flaked under full-gate parallel load, where a freshly started GenServer waits
+  # its turn behind a few hundred other tests. A tight bound here measures the
+  # scheduler, not the code under test.
+  @connect_timeout 10_000
+
   defp instance(ip), do: %{"networkInterfaces" => [%{"networkIP" => ip}]}
 
   describe "nodes_from_instances/2" do
@@ -52,8 +59,8 @@ defmodule Emisar.Cluster.GCETest do
       }
 
       {:ok, pid} = GCE.start_link([state])
-      assert_receive {:connect, :"emisar@10.0.0.1"}, 1_000
-      assert_receive {:connect, :"emisar@10.0.0.2"}, 1_000
+      assert_receive {:connect, :"emisar@10.0.0.1"}, @connect_timeout
+      assert_receive {:connect, :"emisar@10.0.0.2"}, @connect_timeout
       GenServer.stop(pid)
     end
 
