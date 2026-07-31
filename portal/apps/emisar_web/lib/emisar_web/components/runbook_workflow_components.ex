@@ -67,10 +67,21 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp reference_options(_source, _draft, _stage_index), do: []
 
-  defp argument_label(argument) do
-    suffix = if argument["required"] == "true", do: "required", else: "optional"
-    "#{argument["name"]} · #{argument["type"]} · #{suffix}"
+  defp argument_summary(argument) do
+    requirement = if argument["required"] == "true", do: "Required", else: "Optional"
+    "#{requirement} #{argument_type_label(argument["type"])}"
   end
+
+  defp argument_type_label("boolean"), do: "true or false value"
+  defp argument_type_label("duration"), do: "duration"
+  defp argument_type_label("integer"), do: "whole number"
+  defp argument_type_label("integer_array"), do: "list of whole numbers"
+  defp argument_type_label("json"), do: "JSON value"
+  defp argument_type_label("number"), do: "number"
+  defp argument_type_label("path"), do: "file path"
+  defp argument_type_label("string"), do: "text value"
+  defp argument_type_label("string_array"), do: "list of text values"
+  defp argument_type_label(_type), do: "value"
 
   defp argument_source_options(%{"required" => "true", "sensitive" => "true"}),
     do: [{"Run-time input", "input"}, {"Prior output", "output"}]
@@ -144,13 +155,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
       <div
         id={"runbook-stage-#{@stage_index}-overview"}
-        class={[
-          "mt-4 grid gap-3 sm:grid-cols-2",
-          if(@stage["mode"] == "parallel",
-            do: "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]",
-            else: "xl:grid-cols-[9rem_minmax(0,1fr)_10rem]"
-          )
-        ]}
+        class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]"
       >
         <.input
           name={"draft[stages][#{@stage_index}][id]"}
@@ -301,14 +306,23 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         </div>
       </div>
 
-      <div class="mt-5 grid gap-6 lg:grid-cols-2">
+      <div
+        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-overview"}
+        class="mt-5 grid gap-4 xl:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)] xl:items-start"
+      >
+        <.input
+          name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
+          value={@step["id"]}
+          label="Identifier"
+          label_variant={:eyebrow}
+          disabled={@read_only?}
+          class="font-mono"
+        />
+
         <div>
           <.label variant={:eyebrow}>Targets</.label>
-          <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-            Choose runners first. The action list is limited to work available everywhere selected.
-          </p>
 
-          <div :if={@step["target_refs"] != []} class="mt-3 space-y-2">
+          <div :if={@step["target_refs"] != []} class="mt-2 space-y-2">
             <div
               :for={target <- @step["target_refs"]}
               class="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 px-3 py-2"
@@ -338,24 +352,20 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             }
             prompt_selected
             disabled={@read_only? or @catalog.target_options == []}
-            class="mt-3"
+            class="mt-2"
             aria-label="Add target"
           />
         </div>
 
         <div>
           <.label variant={:eyebrow}>Action</.label>
-          <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-            Pack selection follows the action automatically. Current pack drift blocks publication
-            and execution until this step is fixed.
-          </p>
           <.select
             name={"draft[stages][#{@stage_index}][steps][#{@step_index}][action_choice]"}
             options={@action_options}
             prompt={if @step["target_refs"] == [], do: "Choose targets first", else: "Choose action…"}
             prompt_selected={@action_choice == ""}
             disabled={@read_only? or @step["target_refs"] == []}
-            class="mt-3"
+            class="mt-2"
             aria-label="Action"
           />
           <p
@@ -366,25 +376,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             the targets.
           </p>
         </div>
-      </div>
-
-      <.panel_toggle
-        panel_key={"step-id-#{@stage_index}-#{@step_index}"}
-        open?={MapSet.member?(@open_panels, "step-id-#{@stage_index}-#{@step_index}")}
-        label="Step identifier"
-      />
-      <div
-        :if={MapSet.member?(@open_panels, "step-id-#{@stage_index}-#{@step_index}")}
-        class="mt-3 max-w-sm"
-      >
-        <.input
-          name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
-          value={@step["id"]}
-          label="Step ID"
-          label_variant={:eyebrow}
-          disabled={@read_only?}
-          class="font-mono text-xs"
-        />
       </div>
 
       <.bindings_editor
@@ -426,12 +417,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp bindings_editor(assigns) do
     ~H"""
     <div class="mt-6 border-t border-zinc-800/70 pt-5">
-      <div>
-        <p class="text-xs font-semibold text-zinc-200">Arguments</p>
-        <p class="mt-0.5 text-[11px] text-zinc-400">
-          Omit an optional argument or bind it from a literal, run-time input, or earlier output.
-        </p>
-      </div>
+      <p class="text-xs font-semibold text-zinc-200">Arguments</p>
 
       <p :if={@step["action"] == ""} class="mt-3 text-xs text-zinc-500">
         Choose an action to configure its arguments.
@@ -444,11 +430,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <div class="mt-3 space-y-3">
         <div
           :for={{argument, index} <- Enum.with_index(@step["args"])}
-          class="rounded-lg border border-zinc-800/70 p-3"
+          class="rounded-xl bg-zinc-950/40 p-4 ring-1 ring-white/10"
         >
-          <p class="font-mono text-xs font-medium text-zinc-200">
-            {argument_label(argument)}
-          </p>
+          <div>
+            <h4 class="font-mono text-sm font-medium text-zinc-200">{argument["name"]}</h4>
+            <p class="mt-1 text-xs text-zinc-500">{argument_summary(argument)}</p>
+          </div>
 
           <input
             type="hidden"
@@ -471,12 +458,19 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             value={argument["sensitive"]}
           />
 
-          <div class="mt-3 grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
+          <div class={[
+            "mt-4 grid gap-3",
+            if(argument["source"] == "omit",
+              do: "max-w-48",
+              else: "sm:grid-cols-[11rem_minmax(0,1fr)]"
+            )
+          ]}>
             <.input
               type="select"
-              size={:compact}
               name={"draft[stages][#{@stage_index}][steps][#{@step_index}][args][#{index}][source]"}
               value={argument["source"]}
+              label="Use"
+              label_variant={:eyebrow}
               aria-label={"#{argument["name"]} binding source"}
               disabled={@read_only?}
               options={argument_source_options(argument)}
@@ -511,7 +505,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     assigns = assign(assigns, :name, name)
 
     ~H"""
-    <div>
+    <div class={@argument["source"] == "omit" && "hidden"}>
       <input
         :if={@argument["source"] != "literal"}
         type="hidden"
@@ -525,15 +519,13 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         value={@argument["ref"]}
       />
 
-      <p :if={@argument["source"] == "omit"} class="px-1 py-2 text-xs text-zinc-500">
-        Not sent to the action.
-      </p>
       <.input
         :if={@argument["source"] == "literal" and @argument["type"] == "boolean"}
         type="select"
-        size={:compact}
         name={"#{@name}[value]"}
         value={@argument["value"]}
+        label="Value"
+        label_variant={:eyebrow}
         aria-label={"#{@argument["name"]} literal value"}
         disabled={@read_only?}
         prompt="Choose value"
@@ -542,10 +534,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <.input
         :if={@argument["source"] == "literal" and @argument["type"] in ["integer", "number"]}
         type="number"
-        size={:compact}
         step={if @argument["type"] == "number", do: "any", else: "1"}
         name={"#{@name}[value]"}
         value={@argument["value"]}
+        label="Value"
+        label_variant={:eyebrow}
         aria-label={"#{@argument["name"]} literal value"}
         disabled={@read_only?}
         placeholder="Value"
@@ -555,9 +548,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           @argument["source"] == "literal" and
             @argument["type"] not in ["boolean", "integer", "number"]
         }
-        size={:compact}
         name={"#{@name}[value]"}
         value={@argument["value"]}
+        label="Value"
+        label_variant={:eyebrow}
         aria-label={"#{@argument["name"]} literal value"}
         placeholder={
           if @argument["type"] in ["string_array", "integer_array"],
@@ -570,9 +564,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       <.input
         :if={@argument["source"] in ["input", "output"]}
         type="select"
-        size={:compact}
         name={"#{@name}[ref]"}
         value={@argument["ref"]}
+        label={if @argument["source"] == "input", do: "Run-time input", else: "Prior output"}
+        label_variant={:eyebrow}
         aria-label={"#{@argument["name"]} reference"}
         disabled={@read_only?}
         options={reference_options(@argument["source"], @draft, @stage_index)}

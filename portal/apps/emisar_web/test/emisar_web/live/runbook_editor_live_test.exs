@@ -137,12 +137,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Success conditions"
       assert html =~ "Retry policy"
       assert html =~ "Build the first stage"
-      assert html =~ "Choose runners first"
+      refute html =~ "Choose runners first"
+      refute html =~ "Pack selection follows the action automatically"
       refute html =~ "definition issues"
       refute html =~ "steps_json"
       refute html =~ "definition_json"
       refute has_element?(lv, ~s(input[name="draft[stages][0][max_parallel]"]))
-      assert html =~ "xl:grid-cols-[9rem_minmax(0,1fr)_10rem]"
+      assert html =~ "xl:grid-cols-[9rem_minmax(0,1fr)_10rem_11rem]"
 
       assert has_element?(lv, "#runbook-stage-0")
 
@@ -150,6 +151,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                lv,
                ~s(select[name="draft[stages][0][steps][0][target_candidate]"])
              )
+
+      assert has_element?(
+               lv,
+               ~s(#runbook-stage-0-step-0-overview input[name="draft[stages][0][steps][0][id]"])
+             )
+
+      refute has_element?(lv, "button", "Step identifier")
 
       assert has_element?(lv, ~s(#runbook-inputs button[phx-click="add_input"]), "Add input")
       refute has_element?(lv, "a", "Cancel editing")
@@ -184,6 +192,14 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
+               "#runbook-inputs",
+               "Yes - masked in plans, approvals, and results."
+             )
+
+      refute html =~ "Sensitive values are never shown"
+
+      assert has_element?(
+               lv,
                ~s(#runbook-stage-0-overview input[name="draft[stages][0][id]"])
              )
 
@@ -199,6 +215,26 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert :binary.match(html, ~s(name="draft[stages][0][mode]")) <
                :binary.match(html, ~s(name="draft[stages][0][max_parallel]"))
+
+      assert :binary.match(html, ~s(name="draft[stages][0][steps][0][id]")) <
+               :binary.match(
+                 html,
+                 ~s(name="draft[stages][0][steps][0][target_candidate]")
+               )
+
+      assert :binary.match(
+               html,
+               ~s(name="draft[stages][0][steps][0][target_candidate]")
+             ) <
+               :binary.match(
+                 html,
+                 ~s(name="draft[stages][0][steps][0][action_choice]")
+               )
+
+      refute html =~ "file · json · optional"
+      refute html =~ "Not sent to the action."
+      assert html =~ "Unavailable · linux.uptime"
+      refute html =~ "Unavailable · linux-core|linux.uptime"
 
       assert :binary.match(html, "Operator context") <
                :binary.match(html, ~s(id="runbook-inputs"))
@@ -503,9 +539,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
       html = change(lv, valid_draft())
 
-      assert html =~ "path · path"
-      assert html =~ "retries · integer · optional"
-      assert html =~ "token · string"
+      assert html =~ "Required file path"
+      assert html =~ "Optional whole number"
+      assert html =~ "Required text value"
       refute has_element?(lv, "datalist#runbook-actions")
 
       assert has_element?(

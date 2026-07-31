@@ -14,10 +14,11 @@ what behavior is available. Select targets first, then offer only actions
 supported by every selected target. Resolve implementation facts such as the
 current pack version rather than asking the operator to pin them. Execution mode
 comes before its concurrency bound; a bound appears only for a mode where it
-changes execution. Put a workflow unit's identifier beside its title when that
-identity belongs to the unit's overview. Keep lower-level binding identifiers
-and infrequently changed limits in a nearby disclosure after the behavior they
-refine.
+changes execution. Reserve the conditional bound's grid track so hiding it never
+resizes fields that precede its trigger. Put a workflow unit's identifier in its
+overview: a stage pairs it with its title, while a step leads with its compact
+identifier before targets and action. Keep infrequently changed limits in a
+nearby disclosure after the behavior they refine.
 
 Inside a repeated form card, visual weight and row order follow the decisions an
 operator makes. Pair identity with purpose, put behavior choices next, then show
@@ -32,6 +33,15 @@ The collection or card owns that measure; do not add a second inner width cap
 that leaves a dead rail inside the card. Inside a row, equal binary choices use
 the same compact width while the domain-bearing choice takes the remaining
 space. Font treatment must not change peer control heights.
+
+A repeated contract row translates schema metadata into operator language. Lead
+with the stable argument name, summarize requirement and type as a phrase
+(`Optional JSON value`, not `file · json · optional`), then present labeled source
+and value controls. Hide the value control when the operator omits an optional
+argument; do not replace it with explanatory filler. Scope and action controls
+must stand on their labels, choices, and validation state. Supporting prose earns
+its place only when it changes the decision rather than narrating behavior already
+enforced by the form.
 
 A typed value uses a type-aware editor. Booleans offer no default, true, or
 false; integer and number defaults use numeric controls with whole-number and
@@ -75,10 +85,13 @@ never a reduced model.
 
 - Context, inputs, ordered stages, then the details and publish review rail.
 - A stage overview puts its compact identifier, expanding title, execution mode,
-  and applicable concurrency bound on one wide row; narrow screens preserve the
-  same order while stacking.
-- Targets first; then an action compatible with all selected runners. The pack
-  follows the action automatically and the step ID lives in a disclosure.
+  and applicable concurrency bound on one wide row; hiding the bound leaves the
+  earlier tracks unchanged, and narrow screens preserve the same order while
+  stacking.
+- A step overview puts its compact identifier before targets and an action
+  compatible with all selected runners. The pack follows the action automatically.
+- An argument named `file` reads `Optional JSON value`, then shows `Use` and the
+  applicable value control. Choosing Omit leaves only the compact source control.
 - Parallel stages show a concurrency cap; sequential stages do not.
 - A secondary review rail becomes sticky only when it sits beside a visibly
   wider task column; otherwise it follows the workflow.
@@ -103,8 +116,13 @@ never a reduced model.
 
 ## Bad
 
-- Step ID and semver syntax before the action selector.
+- A step identifier detached in a disclosure after Targets and Action.
 - An action list that includes behavior unavailable on one selected target.
+- A later conditional field that resizes an earlier title when toggled.
+- Schema-tuple copy such as `file · json · optional`, an unlabeled pair of binding
+  controls, or filler explaining that Omit omits the value.
+- Help text under Targets or Action that only restates ordering, compatibility, or
+  pack resolution already enforced by those controls.
 - Review and canonical JSON before the editable workflow on a phone.
 - Showing a concurrency value in sequential mode where it does nothing.
 - A Cancel editing link in the lifecycle rail that only navigates back.
@@ -136,10 +154,11 @@ narrows compatible actions. Screenshot review covers the desktop split and the
 narrow stacked layout. Shared repeating-list controls merge caller classes so
 their spacing remains part of the collection contract.
 
-Sweep complex editors for ID/version fields before behavior, behavior choices
-that are not derived from earlier scope choices, controls shown in modes where
-they have no effect, lifecycle rails that duplicate existing exit navigation,
-breakpoint ordering that puts a secondary rail before the primary task, and
+Sweep complex editors for ID/version fields detached from the workflow overview,
+behavior choices that are not derived from earlier scope choices, controls shown
+in modes where they have no effect, conditional fields whose presence changes the
+width of fields before their trigger, lifecycle rails that duplicate existing exit
+navigation, breakpoint ordering that puts a secondary rail before the primary task, and
 unbounded collections or uniform grids that make short finite choices as
 visually heavy as primary identity or purpose fields, mismatched group edges,
 unequal peer toggles, generic default controls that ignore the selected type,
@@ -152,4 +171,6 @@ preserve a removed disclosure's shell. Sweep button event metadata for generic
 tests pin selected authoring controls to neutral classes and reject semantic
 brand classes inside them. Sweep capped form collections for a second inner
 `max-w-*` around card fields; rendered tests pin one page-level cap and reject
-the nested field cap.
+the nested field cap. Sweep repeated contract rows for delimiter-joined schema
+metadata, unlabeled source/value controls, and explanatory placeholders standing
+in for a hidden inapplicable control.

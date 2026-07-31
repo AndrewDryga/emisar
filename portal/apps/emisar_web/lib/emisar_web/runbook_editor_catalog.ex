@@ -72,7 +72,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       [
         %{
           value: selected_value,
-          label: "Unavailable · #{selected_value}",
+          label: unavailable_action_label(selected_value),
           disabled: true,
           selected: true
         }
@@ -282,6 +282,11 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   defp action_label(action) do
     title = if blank?(action.title), do: action.action_id, else: action.title
     "#{title} · #{action.action_id} · #{action.pack_id}"
+  end
+
+  defp unavailable_action_label(value) do
+    {_pack_id, action_id} = split_action_value(value)
+    "Unavailable · #{action_id}"
   end
 
   defp argument_metadata_missing?([]), do: true
