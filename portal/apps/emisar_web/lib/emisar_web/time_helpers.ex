@@ -231,9 +231,32 @@ defmodule EmisarWeb.TimeHelpers do
 
   # Match on :email presence, not a bare %{} — %Ecto.Association.NotLoaded{} is
   # a struct (so a map) and would match %{}, swallowing the api_key fallback.
-  defp run_who(%{requested_by: %{email: _} = user}), do: user_display_name(user)
-  defp run_who(%{api_key: %{created_by: %{email: _} = user}}), do: user_display_name(user)
+  # The name THIS account knows them by. `users.full_name` is cross-account, so a
+  # person in two synced workspaces was attributed under whichever name the other
+  # one uses. The query joins the requester's membership for the run's account.
+  defp run_who(%{requested_by: %{email: _} = user}), do: account_local_name(user)
+
+  defp run_who(%{api_key: %{created_by: %{email: _} = user} = api_key}),
+    do: api_key_owner_name(api_key, user)
+
   defp run_who(_run), do: nil
+
+  # One membership is preloaded when the read scoped it to an account; anything
+  # else (an unscoped read, a key owner we did not join) falls back to the
+  # person's own name.
+  defp account_local_name(%{memberships: [membership | _]} = user),
+    do: member_display_name(membership, user)
+
+  defp account_local_name(user), do: user_display_name(user)
+
+  defp api_key_owner_name(%{created_by_membership: membership}, user)
+       when is_struct(membership, Emisar.Accounts.Membership),
+       do: member_display_name(membership, user)
+
+  # A historical or revoked membership must not make a cross-account global
+  # name visible. The email belongs to the key owner, so it remains safe audit
+  # attribution when no current membership was preloaded.
+  defp api_key_owner_name(_api_key, user), do: user.email
 
   defp run_via(%{source: :mcp, api_key: %{name: name}}) when is_binary(name) and name != "",
     do: name

@@ -61,6 +61,29 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "reboot for kernel patch"
   end
 
+  test "labels a requester with this account's directory name", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    other_account = Fixtures.Accounts.create_account()
+
+    local_membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    _local = Fixtures.Memberships.sync_display_name(local_membership, "Local Contractor")
+
+    other_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: user.id,
+        role: "operator"
+      )
+
+    _other = Fixtures.Memberships.sync_display_name(other_membership, "Other Employee")
+    _ = pending_request!(account, user.id, "account-local requester")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert html =~ "Local Contractor"
+    refute html =~ "Other Employee"
+  end
+
   test "lists a whole runbook execution by title and frozen blast radius", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     _request = Fixtures.Approvals.create_execution_request(account, user)

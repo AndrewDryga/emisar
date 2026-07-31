@@ -96,6 +96,80 @@ defmodule Emisar.RunsTest do
       assert listed.runner.id == runner.id
     end
 
+    test "preloads only the requester's membership in the run account" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      requester = Fixtures.Users.create_user(full_name: "Maya Chen")
+
+      local_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: requester.id,
+          role: "operator"
+        )
+
+      other_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: requester.id,
+          role: "operator"
+        )
+
+      local_membership =
+        Fixtures.Memberships.sync_display_name(local_membership, "Maya C. (Contractor)")
+
+      _other_membership =
+        Fixtures.Memberships.sync_display_name(other_membership, "Maya Chen (Employee)")
+
+      attrs = %{
+        requested_by_id: requester.id,
+        initiating_membership_id: local_membership.id
+      }
+
+      {:ok, _run} = Runs.create_run(base_attrs(account.id, runner.id, attrs))
+
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject, preload: [:requested_by])
+      assert Enum.map(listed.requested_by.memberships, & &1.id) == [local_membership.id]
+    end
+
+    test "preloads the API key owner's membership in the run account" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      key_owner = Fixtures.Users.create_user(full_name: "Maya Chen")
+
+      local_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: key_owner.id,
+          role: "owner"
+        )
+
+      other_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: key_owner.id,
+          role: "operator"
+        )
+
+      local_membership =
+        Fixtures.Memberships.sync_display_name(local_membership, "Maya C. (Contractor)")
+
+      _other_membership =
+        Fixtures.Memberships.sync_display_name(other_membership, "Maya Chen (Employee)")
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: key_owner.id)
+
+      {:ok, _run} =
+        Runs.create_run(base_attrs(account.id, runner.id, %{source: "mcp", api_key_id: key.id}))
+
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject, preload: [:api_key])
+      assert listed.api_key.created_by.id == key_owner.id
+      assert listed.api_key.created_by_membership.id == local_membership.id
+    end
+
     test "a viewer can list runs (view_runs is enough for a read)" do
       {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -268,12 +342,15 @@ defmodule Emisar.RunsTest do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      _membership = Fixtures.Memberships.sync_display_name(membership, "Local Operator")
+
       {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
       {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
       # A run with no requesting user (an engine path) contributes no option.
       {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: nil}))
 
-      assert Runs.list_run_operator_options(subject) == {:ok, [{user.id, user.full_name}]}
+      assert Runs.list_run_operator_options(subject) == {:ok, [{user.id, "Local Operator"}]}
     end
 
     test "a subject without view_runs permission is refused" do

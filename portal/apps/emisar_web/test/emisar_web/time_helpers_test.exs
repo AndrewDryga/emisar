@@ -95,6 +95,31 @@ defmodule EmisarWeb.TimeHelpersTest do
                {"m@x.co", nil}
     end
 
+    test "the account's own name for the person wins over their global one" do
+      # A directory can call the same person something different in each account,
+      # and users.full_name is cross-account — so a run in THIS workspace was
+      # attributed under the name only the other workspace uses. The query joins
+      # the requester's membership for the run's account; this is what reads it.
+      assert run_who_via(%{
+               source: :operator,
+               requested_by: %{
+                 full_name: "Maya Chen",
+                 email: "m@x.co",
+                 memberships: [%{directory_display_name: "Maya C. (Contractor)"}]
+               }
+             }) == {"Maya C. (Contractor)", nil}
+
+      # No directory name on the membership: their own name stands.
+      assert run_who_via(%{
+               source: :operator,
+               requested_by: %{
+                 full_name: "Maya Chen",
+                 email: "m@x.co",
+                 memberships: [%{directory_display_name: nil}]
+               }
+             }) == {"Maya Chen", nil}
+    end
+
     test "an MCP run names the accountable human (the key owner) + the key as via" do
       # A human requested it: they lead, the API key is the channel.
       assert run_who_via(%{
@@ -112,6 +137,29 @@ defmodule EmisarWeb.TimeHelpersTest do
                requested_by: nil,
                api_key: %{name: "Claude Code", created_by: %{full_name: nil, email: "owner@x.co"}}
              }) == {"owner@x.co", "Claude Code"}
+    end
+
+    test "an MCP run uses the key owner's account-local name" do
+      assert run_who_via(%{
+               source: :mcp,
+               requested_by: nil,
+               api_key: %{
+                 name: "Claude Code",
+                 created_by: %{full_name: "Maya Chen", email: "m@x.co"},
+                 created_by_membership: %Emisar.Accounts.Membership{
+                   directory_display_name: "Maya C. (Contractor)"
+                 }
+               }
+             }) == {"Maya C. (Contractor)", "Claude Code"}
+
+      assert run_who_via(%{
+               source: :mcp,
+               requested_by: nil,
+               api_key: %{
+                 name: "Claude Code",
+                 created_by: %{full_name: "Maya Chen", email: "m@x.co"}
+               }
+             }) == {"m@x.co", "Claude Code"}
     end
 
     test "an MCP run with no resolvable human shows only its channel" do

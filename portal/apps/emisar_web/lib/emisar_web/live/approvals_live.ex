@@ -132,7 +132,7 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:decided_metadata, decided_meta)
     |> assign(:filter_params, params)
     |> assign(:runner_labels, runner_labels_for(pending ++ decided))
-    |> assign(:user_labels, user_labels_for(pending ++ decided))
+    |> assign(:user_labels, user_labels_for(pending ++ decided, subject.account.id))
     # Risk tier per pending request so the queue is triageable at a glance — an
     # approver shouldn't have to open each card to see if it's a scary one.
     |> assign(:risk_labels, risk_labels_for(pending, subject))
@@ -155,13 +155,13 @@ defmodule EmisarWeb.ApprovalsLive do
     |> Runners.runner_labels_for_ids()
   end
 
-  defp user_labels_for(requests) do
+  defp user_labels_for(requests, account_id) do
     ids =
       Enum.flat_map(requests, fn r ->
         [r.requested_by_id, r.decided_by_id]
       end)
 
-    Users.user_labels_for_ids(ids)
+    Users.user_labels_for_ids(ids, account_id)
   end
 
   defp runner_id_from(%{context: %{"runner_id" => id}}) when is_binary(id), do: id

@@ -1,6 +1,6 @@
 defmodule Emisar.Runs.ActionRun.Query do
   use Emisar, :query
-  alias Emisar.{ApiKeys, Runners, Users}
+  alias Emisar.{Accounts, ApiKeys, Runners, Users}
   alias Emisar.Repo.{Filter, Like}
 
   def all,
@@ -218,7 +218,39 @@ defmodule Emisar.Runs.ActionRun.Query do
         as: ^binding
       )
     end)
-    |> preload([api_key: api_key], api_key: {api_key, :created_by})
+    |> with_named_binding(:api_key_created_by, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [api_key: api_key],
+        created_by in ^Users.User.Query.not_deleted(),
+        on: api_key.created_by_id == created_by.id,
+        as: ^binding
+      )
+    end)
+    |> with_named_binding(:api_key_created_by_membership, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [runs: r, api_key: api_key, api_key_created_by: created_by],
+        membership in ^Accounts.Membership.Query.not_deleted(),
+        on:
+          membership.id == api_key.created_by_membership_id and
+            membership.user_id == created_by.id and membership.account_id == r.account_id,
+        as: ^binding
+      )
+    end)
+    |> preload(
+      [
+        api_key: api_key,
+        api_key_created_by: created_by,
+        api_key_created_by_membership: membership
+      ],
+      api_key: {
+        api_key,
+        created_by: created_by, created_by_membership: membership
+      }
+    )
   end
 
   @doc "Left-join + preload the run's (non-deleted) requesting user, idempotently."
@@ -234,7 +266,24 @@ defmodule Emisar.Runs.ActionRun.Query do
         as: ^binding
       )
     end)
-    |> preload([requested_by: requested_by], requested_by: requested_by)
+    # The requester's membership IN THIS RUN'S ACCOUNT rides along, because a
+    # directory can call the same person something different in each account and
+    # `users.full_name` is cross-account. Runs reads are account-scoped, so one
+    # join answers it for the whole page rather than a lookup per row.
+    |> with_named_binding(:requested_by_membership, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [runs: r, requested_by: requested_by],
+        membership in ^Accounts.Membership.Query.not_deleted(),
+        on: membership.user_id == requested_by.id and membership.account_id == r.account_id,
+        as: ^binding
+      )
+    end)
+    |> preload(
+      [requested_by: requested_by, requested_by_membership: membership],
+      requested_by: {requested_by, memberships: membership}
+    )
   end
 
   @doc """
@@ -393,10 +442,21 @@ defmodule Emisar.Runs.ActionRun.Query do
   def operator_options(queryable \\ all()) do
     queryable
     |> join(:inner, [runs: r], u in assoc(r, :requested_by), as: :requested_by)
+    |> join(
+      :inner,
+      [runs: r, requested_by: u],
+      membership in ^Accounts.Membership.Query.not_deleted(),
+      on: membership.user_id == u.id and membership.account_id == r.account_id,
+      as: :requested_by_membership
+    )
     |> distinct(true)
     |> select(
-      [requested_by: u],
-      {u.id, coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)}
+      [requested_by: u, requested_by_membership: membership],
+      {u.id,
+       coalesce(
+         fragment("NULLIF(BTRIM(?), '')", membership.directory_display_name),
+         coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)
+       )}
     )
   end
 

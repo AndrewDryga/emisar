@@ -84,6 +84,29 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Approve and send"
   end
 
+  test "labels a requester with this account's directory name", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    other_account = Fixtures.Accounts.create_account()
+
+    local_membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    _local = Fixtures.Memberships.sync_display_name(local_membership, "Local Contractor")
+
+    other_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: user.id,
+        role: "operator"
+      )
+
+    _other = Fixtures.Memberships.sync_display_name(other_membership, "Other Employee")
+    request = pending_request(account, user)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Local Contractor"
+    refute html =~ "Other Employee"
+  end
+
   test "approving a runbook follows the explicit non-ActionRun result branch", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_execution_request(account, user)
@@ -796,13 +819,11 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ String.slice(runner_id, 0, 12) <> "…"
   end
 
-  test "a removed requester falls back to a short UUID label, still renders", %{conn: conn} do
+  test "a removed requester is labelled as a former member and still renders", %{conn: conn} do
     # the requester user is soft-deleted, so `lookup_user/1`
     # (which scopes to not_deleted) returns nil while `requested_by_id` stays set.
-    # The "Requested by" field falls back to the short-UUID slice of the recorded
-    # id (then em-dash), and the page still renders. (A HARD delete instead nilifies
-    # requested_by_id via the FK, which is the em-dash branch — the soft-delete is
-    # what exercises the short-UUID fallback this row documents.)
+    # The "Requested by" field names the missing account relationship without
+    # exposing an opaque UUID. A hard delete instead nilifies requested_by_id.
     {conn, _owner, account} = register_and_log_in(conn)
 
     # A separate requester we then soft-delete (keeping the request's requested_by_id).
@@ -828,7 +849,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     refute html =~ requester.email
-    assert html =~ String.slice(requester.id, 0, 8) <> "…"
+    assert html =~ "Former member"
     # Sanity: the decision panel still rendered (the owner can decide).
     assert html =~ "Decide"
   end

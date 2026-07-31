@@ -34,8 +34,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:action_description, nil)
      |> assign(:executed_command, nil)
      |> assign(:runner_connection, :unknown)
-     |> assign(:requested_by, nil)
-     |> assign(:decided_by, nil)
+     |> assign(:user_labels, %{})
      |> assign(:decisions, [])
      |> assign(:approved_count, 0)
      |> assign(:already_decided?, false)
@@ -68,9 +67,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
         title = "Approval · " <> request_title(request)
 
-        requested_by = lookup_user(request.requested_by_id)
-        decided_by = lookup_user(request.decided_by_id)
-
         # Risk + the plain-English "what this does" are the approver's headline
         # signals but aren't on the request — look the action up from the catalog
         # (display-only, connected pass; nil if it's no longer advertised).
@@ -92,8 +88,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
          # the runner's (its pinned hash, or advertised version when unpinned).
          |> assign(:executed_command, build_command_preview(action, run))
          |> assign(:runner_connection, runner_connection(run))
-         |> assign(:requested_by, requested_by)
-         |> assign(:decided_by, decided_by)
          |> assign_decisions(request)
          # Every operator-entered decision field is tracked server-side. A
          # co-approver's broadcast, the expiry countdown, or a refused decision
@@ -220,6 +214,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
     socket
     |> assign(:decisions, decisions)
+    |> assign(:user_labels, user_labels_for(request, decisions, subject.account.id))
     |> assign(:approved_count, approved_count)
     |> assign(:already_decided?, Enum.any?(decisions, &(&1.decider_id == actor_id)))
     |> assign(
@@ -228,16 +223,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
     )
   end
 
-  # Resolves a user_id → email for the request/decision labels. Tolerates
-  # missing rows (a since-removed user) by returning `nil` so the
-  # template can fall back to a placeholder.
-  defp lookup_user(nil), do: nil
+  defp user_labels_for(request, decisions, account_id) do
+    decision_ids = Enum.map(decisions, & &1.decider_id)
 
-  defp lookup_user(id) when is_binary(id) do
-    case Users.fetch_user_by_id(id) do
-      {:ok, user} -> user
-      _ -> nil
-    end
+    [request.requested_by_id, request.decided_by_id | decision_ids]
+    |> Users.user_labels_for_ids(account_id)
   end
 
   defp fetch_action_for(%{"action_id" => action_id, "runner_id" => runner_id}, subject)
@@ -306,7 +296,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
     {:noreply,
      socket
      |> assign(:request, updated)
-     |> assign(:decided_by, lookup_user(updated.decided_by_id))
      |> assign_decisions(updated)}
   end
 
@@ -468,7 +457,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
       {:ok, request} ->
         socket
         |> assign(:request, request)
-        |> assign(:decided_by, lookup_user(request.decided_by_id))
         |> assign_decisions(request)
 
       {:error, _} ->
@@ -551,16 +539,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp blank_or(""), do: nil
   defp blank_or(value), do: value
 
-  # Rendering helper for "Requested by" / "Decided by". Prefers the
-  # user's full name, falls back to email, then to a short UUID slice
-  # if the user record is gone (deleted account), then to em-dash.
-  defp user_label(%Emisar.Users.User{full_name: name}, _id)
-       when is_binary(name) and name != "",
-       do: name
-
-  defp user_label(%Emisar.Users.User{email: email}, _id), do: email
-  defp user_label(_, id) when is_binary(id), do: String.slice(id, 0, 8) <> "…"
-  defp user_label(_, _), do: "—"
+  defp user_label(labels, id) when is_binary(id), do: Map.get(labels, id, "Former member")
+  defp user_label(_labels, _id), do: "—"
 
   # Hover context for the source qualifier. `:operator` (a human from the
   # console) carries no qualifier at all — the requester name says it; `:mcp`
@@ -718,7 +698,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <.meta_field label="Requested by">
               <span class="block truncate">
                 <span class="text-zinc-200">
-                  {user_label(@requested_by, @request.requested_by_id)}
+                  {user_label(@user_labels, @request.requested_by_id)}
                 </span>
                 <%!-- The source qualifier is quiet TYPE after the name (the
                      run-detail "Dispatched by" grammar), never a filled chip —
@@ -778,7 +758,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   )} did not run.
                 <% _ -> %>
                   <span :if={@request.decided_at}>
-                    by {user_label(@decided_by, @request.decided_by_id)} ·
+                    by {user_label(@user_labels, @request.decided_by_id)} ·
                     <.local_time value={@request.decided_at} mode={:forensic} class="tabular-nums" />
                   </span>
                   <span
@@ -946,7 +926,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     class={"h-4 w-4 flex-none " <> decision_icon_class(decision.decision)}
                   />
                   <span class="min-w-0 flex-1 truncate text-zinc-200">
-                    {user_label(decision.decider, decision.decider_id)}
+                    {user_label(@user_labels, decision.decider_id)}
                   </span>
                   <span class="text-xs text-zinc-400">{decision_verb(decision.decision)}</span>
                   <.local_time
