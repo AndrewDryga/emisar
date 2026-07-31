@@ -45,16 +45,11 @@ func buildInvocation(
 // claudeInvocation runs Claude Code headless. Flags verified against the
 // installed `claude --help` (2.1.217).
 //
-// The auth mode picks the isolation flag, and the two are mutually exclusive:
-//   - CI (ANTHROPIC_API_KEY set) uses `--bare` — it forces clean API-key auth
-//     and skips hooks, plugins, auto-memory, CLAUDE.md discovery, AND keychain
-//     reads, while still honoring `--mcp-config`. This is the documented
-//     headless path; without it the fuller startup left MCP unregistered under
-//     API-key auth and the model role-played tool calls as text (calls=0).
-//   - Local dev (no key) uses `--setting-sources project,local` — `--bare`
-//     would force API-key auth and fail with no key, so instead we keep the
-//     subscription keychain login while still isolating from the user's global
-//     config (the throwaway workspace has no project/local settings).
+// Both auth modes use `--setting-sources project,local`. The throwaway
+// workspace has neither source, so CI still starts clean and authenticates
+// from ANTHROPIC_API_KEY while local development can use the keychain.
+// `--bare` is intentionally absent: repeated API-key certification runs
+// completed normally but offered the model none of the explicit MCP tools.
 //
 // `--strict-mcp-config` limits MCP to our generated bridge config. Claude's
 // API-key `--bare` path drops MCP tools from the model when the built-in set is
@@ -80,13 +75,9 @@ func claudeInvocation(
 	if err != nil {
 		return invocation{}, err
 	}
-	isolation := []string{"--setting-sources", "project,local"}
-	if os.Getenv("ANTHROPIC_API_KEY") != "" {
-		isolation = []string{"--bare"}
-	}
 	args := []string{"-p", item.Prompt, "--output-format", "json", "--model", cfg.Model}
-	args = append(args, isolation...)
 	args = append(args,
+		"--setting-sources", "project,local",
 		"--strict-mcp-config",
 		"--mcp-config", configPath,
 		"--tools", "Read",

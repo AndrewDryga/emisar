@@ -16,17 +16,12 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 		Provider: "claude", Binary: "claude", BridgeBinary: "/tmp/emisar-mcp",
 		Model: "claude-sonnet-4-5", BudgetUSD: "10",
 	}
-	// The isolation flag is chosen by ANTHROPIC_API_KEY presence: --bare for the
-	// CI API-key path, --setting-sources project,local for the local keychain
-	// path. Everything else is identical. A non-empty, read-only built-in set
-	// keeps MCP registered under --bare, and --dangerously-skip-permissions lets
-	// headless mode actually invoke the relay's tools.
-	for name, isolation := range map[string][]string{
-		"local keychain (no key)": {"--setting-sources", "project,local"},
-		"CI api key":              {"--bare"},
-	} {
+	// API-key CI and local keychain auth use the same isolated startup. The
+	// throwaway workspace has no project/local settings, and bypassing the
+	// interactive permission prompt lets headless mode invoke the relay tools.
+	for _, name := range []string{"local keychain (no key)", "CI api key"} {
 		t.Run(name, func(t *testing.T) {
-			if isolation[0] == "--bare" {
+			if name == "CI api key" {
 				t.Setenv("ANTHROPIC_API_KEY", "sk-ant-present")
 			} else {
 				t.Setenv("ANTHROPIC_API_KEY", "")
@@ -38,8 +33,8 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 			}
 			configPath := filepath.Join(workspace, "mcp-eval.json")
 			want := []string{"-p", "inspect the fleet", "--output-format", "json", "--model", "claude-sonnet-4-5"}
-			want = append(want, isolation...)
 			want = append(want,
+				"--setting-sources", "project,local",
 				"--strict-mcp-config",
 				"--mcp-config", configPath,
 				"--tools", "Read",
