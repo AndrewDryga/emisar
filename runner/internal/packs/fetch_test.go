@@ -85,6 +85,67 @@ func TestExtractTarGz_RejectsSymlink(t *testing.T) {
 	}
 }
 
+// A registry tarball carries pack scripts executable (catalog.Tarball marks
+// every .sh 0755). Extraction must honor that bit — an action whose binary IS
+// the script fails EACCES otherwise — while never adopting the archive's raw
+// mode, so setuid/setgid bits cannot ride in from a hostile tarball.
+func TestExtractTarGz_HonorsExecutableBitOnly(t *testing.T) {
+	entries := []struct {
+		name string
+		mode int64
+		exec bool
+	}{
+		{name: "scripts/pureget.sh", mode: 0o755, exec: true},
+		{name: "pack.yaml", mode: 0o644, exec: false},
+		{name: "scripts/setuid.sh", mode: 0o4755, exec: true},
+	}
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for _, entry := range entries {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     entry.name,
+			Mode:     entry.mode,
+			Size:     1,
+			Typeflag: tar.TypeReg,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	dest := t.TempDir()
+	if err := extractTarGz(bytes.NewReader(buf.Bytes()), dest); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+
+	for _, entry := range entries {
+		t.Run(entry.name, func(t *testing.T) {
+			info, err := os.Stat(filepath.Join(dest, filepath.FromSlash(entry.name)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The umask can only clear bits, so test the property (owner may
+			// execute) rather than an exact mode.
+			if executable := info.Mode().Perm()&0o100 != 0; executable != entry.exec {
+				t.Errorf("mode %v: executable = %v, want %v", info.Mode(), executable, entry.exec)
+			}
+			if info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+				t.Errorf("mode %v carries a setuid/setgid bit from the archive", info.Mode())
+			}
+		})
+	}
+}
+
 func TestFetch_DownloadsAndExtracts(t *testing.T) {
 	data := makeTarGz(t, map[string]string{"pack.yaml": "id: redis\n"})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -141,7 +141,16 @@ func extractTarGz(r io.Reader, dest string) error {
 			if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 				return err
 			}
-			f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+			// Honor the archive's exec bit so a pack script published 0755
+			// (catalog.Tarball marks every .sh executable) stays runnable as a
+			// program — extracting it 0644 makes the action fail EACCES. Never
+			// copy hdr.Mode itself: a hostile archive could carry setuid/setgid
+			// or group-write bits, so it maps to exactly one of two fixed modes.
+			mode := os.FileMode(0o644)
+			if hdr.Mode&0o111 != 0 {
+				mode = 0o755
+			}
+			f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 			if err != nil {
 				return err
 			}
