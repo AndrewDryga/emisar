@@ -13,6 +13,7 @@ defmodule EmisarWeb.SCIM.UserController do
   `scim_deactivate_user`, `active:true` to `scim_reactivate_user` (R8).
   """
   use EmisarWeb, :controller
+  alias Emisar.Accounts
   alias Emisar.SSO
   alias EmisarWeb.SCIM.Resource
 
@@ -43,7 +44,7 @@ defmodule EmisarWeb.SCIM.UserController do
     provider = conn.assigns.scim_provider
 
     case SSO.scim_fetch_user(provider, external_id) do
-      {:ok, identity} -> render_user(conn, :ok, identity)
+      {:ok, identity} -> render_user(conn, :ok, with_membership(provider, identity))
       {:error, :not_found} -> not_found(conn, external_id)
     end
   end
@@ -69,7 +70,7 @@ defmodule EmisarWeb.SCIM.UserController do
       scim_filter ->
         case SSO.scim_list_users(provider, scim_filter: scim_filter, page: [limit: 100]) do
           {:ok, identities, _meta} ->
-            json(conn, Resource.list_response(Enum.map(identities, &Resource.to_user/1)))
+            json(conn, Resource.list_response(with_memberships(provider, identities)))
 
           {:error, _reason} ->
             json(conn, Resource.list_response([]))
@@ -380,6 +381,28 @@ defmodule EmisarWeb.SCIM.UserController do
   defp filter_for(_attr, _value), do: :unsupported
 
   # -- rendering ------------------------------------------------------
+
+  # A read has to answer what a mutation answers. `active` is derived from the
+  # member when one is in hand, and mutations always have one — so a read that
+  # served the bare identity reported `true` for someone a manual hold keeps
+  # signed out, moments after the PATCH had correctly said `false`.
+  defp with_membership(provider, identity) do
+    %{
+      identity: identity,
+      membership: Accounts.peek_sync_membership(provider.account_id, identity.user_id)
+    }
+  end
+
+  defp with_memberships(provider, identities) do
+    memberships =
+      provider.account_id
+      |> Accounts.list_sync_memberships(Enum.map(identities, & &1.user_id))
+      |> Map.new(&{&1.user_id, &1})
+
+    Enum.map(identities, fn identity ->
+      Resource.to_user(%{identity: identity, membership: memberships[identity.user_id]})
+    end)
+  end
 
   defp render_user(conn, status, identity_or_result) do
     conn

@@ -94,6 +94,12 @@ defmodule EmisarWeb.SCIMControllerTest do
     |> post(path, body)
   end
 
+  defp scim_get(conn, token, path) do
+    conn
+    |> auth(token)
+    |> get(path)
+  end
+
   defp scim_put(conn, token, path, body) do
     conn
     |> auth(token)
@@ -500,6 +506,16 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       # ...and the IdP is told so, rather than being told the reactivation worked.
       assert body["active"] == false
+
+      # A READ has to say the same thing. Deriving `active` only where a mutation
+      # happened to carry a membership meant a GET immediately afterwards answered
+      # `true` again — the same lie, one request later.
+      read =
+        conn
+        |> scim_get(token, ~p"/scim/v2/Users/okta|held")
+        |> json_response(200)
+
+      assert read["active"] == false
     end
 
     test "a PATCH whose ops never touch `active` → 400 invalidPath", %{

@@ -2865,7 +2865,8 @@ defmodule Emisar.SSO do
          %Subject{} = subject,
          repo
        ) do
-    with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
+    with :ok <- ensure_approver_still_holds_authority(provider, subject, repo),
+         {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
          %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id),
          :ok <- ensure_link_target_within_authority(request, provider, subject, repo) do
       {:ok, user}
@@ -2874,6 +2875,36 @@ defmodule Emisar.SSO do
       _ -> {:error, :matched_user_unavailable}
     end
   end
+
+  # The approver's own standing, re-read under lock. `%Subject{}.permissions` is a
+  # snapshot taken when the session was built, so an admin demoted or suspended
+  # while their approval page sat open still carried the permissions they had when
+  # it loaded — one last credential binding after the authority for it was taken
+  # away. Nothing else in this transaction touches the approver's row, so nothing
+  # else would have noticed.
+  defp ensure_approver_still_holds_authority(
+         %IdentityProvider{} = provider,
+         %Subject{actor: %Users.User{id: actor_id}},
+         repo
+       ) do
+    queryable =
+      Accounts.Membership.Query.not_deleted()
+      |> Accounts.Membership.Query.by_account_and_user(provider.account_id, actor_id)
+      |> Accounts.Membership.Query.lock_for_update()
+
+    case repo.one(queryable) do
+      %Accounts.Membership{disabled_at: nil, role: role} ->
+        if Authorizer.manage_sso_permission() in Authorizer.list_permissions_for_role(role),
+          do: :ok,
+          else: {:error, :unauthorized}
+
+      _ ->
+        {:error, :unauthorized}
+    end
+  end
+
+  defp ensure_approver_still_holds_authority(_provider, %Subject{}, _repo),
+    do: {:error, :unauthorized}
 
   # A person holds ONE identity per connection, so a member who already has one
   # is REBOUND to the approved identifier rather than given a second. A second

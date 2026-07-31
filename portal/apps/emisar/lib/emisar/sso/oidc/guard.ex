@@ -47,6 +47,10 @@ defmodule Emisar.SSO.OIDC.Guard do
   @max_tunnels 64
   @connect_timeout 10_000
   @max_request_headers 64
+  # One CONNECT's whole envelope: a line cap OTP enforces in the packet decoder,
+  # and one deadline covering the request rather than each line separately.
+  @max_header_bytes 4_096
+  @request_timeout 10_000
 
   @doc "The httpc profile every OIDC request must use."
   def profile, do: @profile
@@ -314,11 +318,16 @@ defmodule Emisar.SSO.OIDC.Guard do
   end
 
   defp read_request_line(socket) do
-    :ok = :inet.setopts(socket, packet: :line)
+    # A cap per line AND one deadline for the whole request. Counting lines alone
+    # bounded nothing that matters: an unset packet_size lets a single line grow
+    # without limit, and a fresh timeout per line let one client hold a task for
+    # minutes by trickling headers.
+    :ok = :inet.setopts(socket, packet: :line, packet_size: @max_header_bytes)
+    deadline = System.monotonic_time(:millisecond) + @request_timeout
 
-    case :gen_tcp.recv(socket, 0, @connect_timeout) do
+    case :gen_tcp.recv(socket, 0, remaining(deadline)) do
       {:ok, line} ->
-        with :ok <- drain_headers(socket, @max_request_headers) do
+        with :ok <- drain_headers(socket, @max_request_headers, deadline) do
           :ok = :inet.setopts(socket, packet: :raw)
           {:ok, String.trim(line)}
         end
@@ -328,6 +337,8 @@ defmodule Emisar.SSO.OIDC.Guard do
     end
   end
 
+  defp remaining(deadline), do: max(deadline - System.monotonic_time(:millisecond), 1)
+
   # A CONNECT is a whole request: the line, then its headers, then a blank line.
   # Reading only the line left `Host: …\r\n\r\n` sitting in the socket, and the
   # relay then forwarded it to the IdP as the opening bytes of the TLS
@@ -335,15 +346,15 @@ defmodule Emisar.SSO.OIDC.Guard do
   # a header-less CONNECT and asserts a refusal, so the bytes never reached a
   # relay and nothing caught it; `./run e2e sso` did, as a TLS-trust failure that
   # was really a framing one.
-  defp drain_headers(_socket, 0), do: {:error, :too_many_headers}
+  defp drain_headers(_socket, 0, _deadline), do: {:error, :too_many_headers}
 
-  defp drain_headers(socket, remaining) do
-    case :gen_tcp.recv(socket, 0, @connect_timeout) do
+  defp drain_headers(socket, headers_left, deadline) do
+    case :gen_tcp.recv(socket, 0, remaining(deadline)) do
       {:ok, line} ->
         if String.trim(line) == "" do
           :ok
         else
-          drain_headers(socket, remaining - 1)
+          drain_headers(socket, headers_left - 1, deadline)
         end
 
       {:error, reason} ->

@@ -3845,6 +3845,53 @@ defmodule Emisar.SSOTest do
                )
     end
 
+    test "an approver demoted while their page sat open is refused", %{
+      account: account,
+      provider: provider
+    } do
+      # %Subject{}.permissions is a snapshot taken when the session was built. An
+      # admin demoted (or suspended) while the approval page sat open still carried
+      # the permissions it loaded with — one last credential binding after the
+      # authority for it was taken away.
+      target_user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: target_user.id,
+        role: "operator"
+      )
+
+      admin_user = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin_user.id,
+          role: "admin"
+        )
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|stale-approver",
+          "email" => target_user.email,
+          "email_verified" => true
+        })
+
+      # The subject in hand still says admin; the row no longer does.
+      Fixtures.Memberships.force_role(admin_membership, "viewer")
+
+      assert {:error, :unauthorized} =
+               SSO.approve_link_request(
+                 request,
+                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 admin
+               )
+
+      refute Repo.one(SSO.UserIdentity)
+    end
+
     test "a target promoted between capture and approval is refused", %{
       account: account,
       provider: provider
