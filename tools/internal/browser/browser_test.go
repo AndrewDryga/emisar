@@ -208,15 +208,22 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Deferred as well as closed explicitly below: t.Fatal runs deferred calls and then Goexits, so
+	// a bare Close() after it is never reached and the browser is orphaned onto the container's
+	// init, where it holds a coop box open for the whole descendant drain. Close is idempotent.
+	defer persistent.Close()
 	if err := persistent.Navigate("/set"); err != nil {
 		t.Fatal(err)
 	}
+	// Closed here, before the isolated session opens, so the cookie assertion below still tests a
+	// profile the persistent session has finished writing.
 	persistent.Close()
 
 	session, err := manager.Session(context.Background(), server.URL, true)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer session.Close()
 	if err := session.Navigate("/"); err != nil {
 		t.Fatal(err)
 	}

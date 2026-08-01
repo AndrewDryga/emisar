@@ -107,6 +107,10 @@ func CaptureConsole(ctx context.Context, manager *Manager, config ConsoleConfig)
 	if err != nil {
 		return err
 	}
+	// Safety net for the early returns below: an isolated session owns a real Chrome, and leaking
+	// one onto the container's init holds a coop box open for its whole descendant drain. Close is
+	// idempotent, so the explicit close after the auth pages still sequences it.
+	defer auth.Close()
 	fmt.Fprintln(manager.Out, "auth pages (signed out):")
 	for _, item := range authPages {
 		entry, shotErr := navigateAndShoot(auth, config, item.Name, item.Path, "")
