@@ -8,6 +8,10 @@ services:
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-apache-httpd-tools:latest
     network_mode: service:apache-httpd
+    # apachectl graceful/graceful-stop signal the master via the pid file in
+    # the shared logs volume, so the runner must live in the SUT's pid
+    # namespace for the kill to reach it.
+    pid: service:apache-httpd
     volumes:
       - apache_logs:/usr/local/apache2/logs
       - ${EMISAR_ROOT}/packs/apache-httpd/test/fixtures/packtest.conf:/usr/local/apache2/conf/extra/packtest.conf:ro
@@ -17,7 +21,13 @@ services:
     command:
       - /bin/sh
       - -c
-      - printf '\nInclude conf/extra/packtest.conf\n' >> /usr/local/apache2/conf/httpd.conf && exec httpd-foreground
+      # The shell stays PID 1: if httpd were PID 1, graceful_stop's exit would
+      # tear down the shared pid namespace and SIGKILL the probing runner
+      # before it can observe the stopped state.
+      - printf '\nInclude conf/extra/packtest.conf\n' >> /usr/local/apache2/conf/httpd.conf && httpd-foreground; tail -f /dev/null
+    # PID 1 is a shell that ignores SIGTERM; skip the 10s stop timeout on this
+    # disposable fixture.
+    stop_grace_period: 2s
     volumes:
       - apache_logs:/usr/local/apache2/logs
       - ${EMISAR_ROOT}/packs/apache-httpd/test/fixtures/packtest.conf:/usr/local/apache2/conf/extra/packtest.conf:ro

@@ -51,3 +51,39 @@ cases:
       - argv: [curl, -sS, -o, /dev/null, http://127.0.0.1/packtest]
     expect:
       stdout_contains: [/packtest]
+  - action: httpd.graceful_reload
+    runner_user: root
+    runner_reason: apachectl signals the root-owned httpd master; the kernel rejects SIGUSR1 from the non-root runner.
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+    probes:
+      - name: master logged the graceful restart
+        argv: [grep, Graceful restart requested, /usr/local/apache2/logs/error_log]
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: ["Graceful restart requested"]
+      - name: workers respawned and still serve
+        argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: ["It works!"]
+  # Terminal case: the drained master does not come back, but this case owns
+  # its disposable Compose project, so nothing after it shares the fixture.
+  - action: httpd.graceful_stop
+    runner_user: root
+    runner_reason: apachectl signals the root-owned httpd master; the kernel rejects SIGWINCH from the non-root runner.
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+    probes:
+      - name: httpd stopped serving
+        argv: [/bin/sh, -c, "curl -fsS -m 2 http://127.0.0.1/ >/dev/null 2>&1 || echo stopped"]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [stopped]
