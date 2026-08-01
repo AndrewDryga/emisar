@@ -23,11 +23,12 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     structured_output
   ]a
 
-  # Generous caps — well above any real action's args (the largest, the shell
-  # pack's `script`, is 64 KB) — but they bound a hostile MCP client that would
-  # otherwise write a multi-MB row and fan it onto the runner's PubSub topic.
-  # The runner re-validates args per-spec at execution, but the cloud-side cost
-  # is paid before that rejection.
+  # Generous caps — every schema-legal args object fits (the largest declared
+  # arg, the shell pack's 5459-byte `script`, encodes within the args envelope
+  # even at worst-case 6x JSON escaping) — but they bound a hostile MCP client
+  # that would otherwise write a multi-MB row and fan it onto the runner's
+  # PubSub topic. The runner re-validates args per-spec at execution, but the
+  # cloud-side cost is paid before that rejection.
   @max_reason_length 2_000
   # The optional justification chain (evidence: what was observed; expected: the
   # outcome that confirms success). Caps mirror the published input schema so a

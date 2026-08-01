@@ -1,5 +1,8 @@
 defmodule EmisarWeb.PacksTest do
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.ActionContract
+  alias Emisar.Runbooks
+  alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.PacksRegistry
 
   describe "GET /packs" do
@@ -440,6 +443,56 @@ defmodule EmisarWeb.PacksTest do
     end
   end
 
+  describe "shell break-glass argument envelope" do
+    # The shell pack's `script` is the largest declared arg in the catalog,
+    # and its bound is derived from the shared 32 KB action-args envelope
+    # (persistence changeset, MCP raw span, runbook materialization): a
+    # control byte escapes to six JSON bytes worst-case, and the
+    # {"script":""} wrapper adds the rest. If either side moves, this pins
+    # the published pack schema to the envelope so a schema-legal script can
+    # never be rejected by the control plane before dispatch.
+    test "the script bound is the largest that always fits the encoded envelope" do
+      envelope = Runbooks.Definition.limit!(:max_action_args_bytes)
+      overhead = byte_size(~s({"script":""}))
+
+      assert shell_script_spec()["validation"]["max_length"] == div(envelope - overhead, 6)
+    end
+
+    test "the exact maximum passes the pack contract and always fits; one byte beyond fails" do
+      spec = shell_script_spec()
+      max_length = spec["validation"]["max_length"]
+      descriptor = %{"args_schema" => %{"args" => [spec]}}
+
+      # A script of control bytes is the escaping worst case — Jason encodes
+      # each 0x01 byte as a six-byte backslash-u0001 escape.
+      worst_case = String.duplicate(<<1>>, max_length)
+
+      assert ActionContract.validate(%{"script" => worst_case}, descriptor) == :ok
+
+      assert byte_size(Jason.encode!(%{"script" => worst_case})) <=
+               Runbooks.Definition.limit!(:max_action_args_bytes)
+
+      over = String.duplicate(<<1>>, max_length + 1)
+
+      assert {:error, %{arg: "script", code: "max_length"}} =
+               ActionContract.validate(%{"script" => over}, descriptor)
+    end
+
+    test "the MCP raw-args cap carries a fully escaped maximum script" do
+      max_length = shell_script_spec()["validation"]["max_length"]
+
+      # A client is free to spell every byte as a six-byte backslash-u0001 escape; the raw args
+      # span of a maximum script must still clear the MCP boundary's cap.
+      assert {:ok, %{action_args: args}} =
+               max_length |> escaped_tool_call() |> RawJSON.tool_call()
+
+      assert byte_size(args) == max_length * 6 + byte_size(~s({"script":""}))
+
+      assert (max_length + 1) |> escaped_tool_call() |> RawJSON.tool_call() ==
+               {:error, :action_args_too_large}
+    end
+  end
+
   describe "registry endpoints" do
     test "GET /packs.json lists every pack with hash + tarball url", %{conn: conn} do
       body = conn |> get(~p"/packs.json") |> json_response(200)
@@ -591,5 +644,30 @@ defmodule EmisarWeb.PacksTest do
     ~r{<a\s[^>]*href="https?://[^>]*>}
     |> Regex.scan(html)
     |> Enum.map(&hd/1)
+  end
+
+  # The shell.run_script `script` arg spec straight from the bundled catalog
+  # artifact — the same bytes the registry serves and PackBaseline pins.
+  defp shell_script_spec do
+    catalog =
+      :emisar
+      |> Application.app_dir("priv/packs/catalog.json")
+      |> File.read!()
+      |> Jason.decode!()
+
+    pack = Enum.find(catalog["packs"], &(&1["id"] == "shell"))
+    action = Enum.find(pack["actions"], &(&1["id"] == "shell.run_script"))
+    [spec] = action["args"]
+    spec
+  end
+
+  # A run_action tools/call body whose script is `length` control bytes, each
+  # spelled as the six-byte backslash-u0001 escape — the widest raw span a schema-legal
+  # script of that length can occupy.
+  defp escaped_tool_call(length) do
+    script = String.duplicate("\\u0001", length)
+
+    ~s({"method":"tools/call","params":{"name":"run_action","arguments":{"args":{"script":") <>
+      script <> ~s("}}}})
   end
 end

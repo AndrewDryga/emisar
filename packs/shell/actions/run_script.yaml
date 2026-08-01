@@ -23,7 +23,10 @@ args:
       Shell script passed to `/bin/sh -c` as a single program. Prefer a few
       reviewable lines — this verifies a fix, it is not a deploy tool.
     validation:
-      max_length: 65536
+      # The largest script that always fits the control plane's 32768-byte
+      # action-argument envelope: worst-case JSON escaping expands one script
+      # byte to six, and the {"script":""} wrapper adds 13, so 5459*6+13 = 32767.
+      max_length: 5459
 execution:
   command:
     binary: /bin/sh

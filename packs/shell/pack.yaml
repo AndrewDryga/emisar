@@ -2,7 +2,7 @@ schema_version: 1
 
 id: shell
 name: Arbitrary shell (staging break-glass)
-version: 0.1.0
+version: 0.2.0
 description: >
   STAGING-ONLY BREAK-GLASS. Runs an arbitrary operator-supplied shell
   script on the runner host via `/bin/sh -c`. This is the one capability
