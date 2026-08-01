@@ -26,9 +26,15 @@ before editing inside it — each has non-negotiable, per-language rules.
   format, pack manifest semantics, billing/entitlements. State the plan, the
   constraints, and ask what breaks. Another vendor's blind spots are not yours —
   when you overrule it, say why in the task log.
-- **fast** — table-driven test scaffolding, mechanical renames, docs sweeps, repo
-  surveys. Hand it an exact spec and review its diff like a stranger's PR; it never
-  commits — you run the touched project's gate and you commit.
+- **fast** — the default implementer. Once YOU have decided the approach, write the
+  spec (files to touch, the exact behavior, the acceptance checks) and hand the
+  code-writing to fast — you orchestrate, you don't type the diff. Keep for yourself
+  only what delegation would make worse: the investigation that produces the spec,
+  a fix whose spec IS the diff (a few lines), and anything where mid-edit judgment
+  calls are the actual work (a live incident, an API you're still probing). Review
+  its handback like a stranger's PR; it never commits — you run the touched
+  project's gate and you commit. If its diff is off-spec, tighten the spec and
+  re-delegate once; past that, take it over and note why in the task log.
 
 ## Consult like a research lead
 
