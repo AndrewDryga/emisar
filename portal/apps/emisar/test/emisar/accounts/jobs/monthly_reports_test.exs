@@ -50,11 +50,13 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       assert email.to == [{"", owner.email}]
       assert email.subject == "Your emisar report for #{account.name} — #{period}"
       assert email.reply_to == {"", "support@emisar.dev"}
-      assert email.text_body =~ "Total:     3"
-      assert email.text_body =~ "Succeeded: 3"
-      assert email.text_body =~ "Active runners:"
+      assert email.text_body =~ "3 runs, dispatched"
+      assert email.text_body =~ ~r/Succeeded\s+3$/m
+      assert email.text_body =~ "Active runners"
       assert email.text_body =~ "/app/#{account.slug}"
       assert email.text_body =~ "Unsubscribe: "
+      assert email.html_body =~ "Open your dashboard"
+      assert email.html_body =~ "/app/#{account.slug}"
       assert email.headers["List-Unsubscribe"] =~ "/unsubscribe/monthly-report/"
       assert email.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
 
@@ -151,9 +153,9 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
 
       by_address = Map.new(emails, fn email -> {email.to |> hd() |> elem(1), email} end)
 
-      assert by_address[owner_a.email].text_body =~ "Total:     2"
+      assert by_address[owner_a.email].text_body =~ "2 runs, dispatched"
       assert by_address[owner_a.email].text_body =~ "/app/#{account_a.slug}"
-      assert by_address[owner_b.email].text_body =~ "Total:     5"
+      assert by_address[owner_b.email].text_body =~ "5 runs, dispatched"
       assert by_address[owner_b.email].text_body =~ "/app/#{account_b.slug}"
     end
   end

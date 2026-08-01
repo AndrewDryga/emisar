@@ -2,13 +2,16 @@ defmodule Emisar.Mailers.UserNotifier do
   @moduledoc """
   Transactional emails for account lifecycle, sign-in, profile security,
   invitations, and approvals. Templates are plain-text first; the magic-link
-  message also carries a minimal HTML alternative so its primary action is a
-  real link in mail clients and the development mailbox.
+  message carries a minimal HTML alternative so its primary action is a real
+  link in mail clients, and the monthly report ships the designed HTML body
+  rendered by `Emisar.Mailers.MonthlyReport`.
   """
   import Swoosh.Email
   alias Emisar.Crypto
   alias Emisar.Mail
   alias Emisar.Mailer
+  alias Emisar.Mailers.HTML
+  alias Emisar.Mailers.MonthlyReport
   alias Emisar.PublicUrl
   alias Emisar.RequestContext
   alias Emisar.Users
@@ -85,23 +88,13 @@ defmodule Emisar.Mailers.UserNotifier do
   defp magic_link_html(secret, url, context) do
     """
     <p>Your emisar sign-in code is:</p>
-    <p><strong>#{html_escape(secret)}</strong></p>
-    <p><a href="#{html_escape(url)}" target="_top">Sign in to emisar</a></p>
+    <p><strong>#{HTML.escape(secret)}</strong></p>
+    <p><a href="#{HTML.escape(url)}" target="_top">Sign in to emisar</a></p>
     <p>This link only works in the browser where you requested it, works once, and expires in 15 minutes.</p>
     <p>This sign-in was requested:</p>
-    <pre>#{html_escape(request_details(context))}</pre>
+    <pre>#{HTML.escape(request_details(context))}</pre>
     <p>Didn't ask to sign in? You can ignore this email.</p>
     """
-  end
-
-  defp html_escape(value) do
-    value
-    |> to_string()
-    |> String.replace("&", "&amp;")
-    |> String.replace("<", "&lt;")
-    |> String.replace(">", "&gt;")
-    |> String.replace("\"", "&quot;")
-    |> String.replace("'", "&#39;")
   end
 
   # A small, human "who/when/where" block so the recipient can tell their own
@@ -396,51 +389,18 @@ defmodule Emisar.Mailers.UserNotifier do
   calendar month: runs executed, approvals that gated risky work, and current
   posture, with deep links back into the console. The report job only calls this
   for accounts with real usage in the window, so there's no empty "you did
-  nothing" copy to write.
+  nothing" copy to write. `Emisar.Mailers.MonthlyReport` renders both bodies.
   """
   def deliver_monthly_account_report(%Users.User{} = recipient, account, report) do
-    dashboard_url = PublicUrl.url("/app/#{account.slug}")
-
     unsubscribe_url =
       PublicUrl.url(
         "/unsubscribe/monthly-report/#{Crypto.monthly_report_unsubscribe_token(account.id)}"
       )
 
-    period = Calendar.strftime(report.period_start, "%B %Y")
-    runs = report.runs
-    approvals = report.approvals
+    rendered = MonthlyReport.render(recipient, account, report, unsubscribe_url)
 
-    body = """
-    Hi #{recipient.full_name || recipient.email},
-
-    Here's what emisar did for #{account.name} in #{period}.
-
-    Runs
-      Total:     #{runs.total}
-      Succeeded: #{runs.success}
-      Failed:    #{runs.failed}
-      Denied by policy: #{runs.denied}
-      Runners used:     #{runs.distinct_runners}
-
-    Approvals
-      Requested: #{approvals.requested}
-      Approved:  #{approvals.approved}
-      Denied:    #{approvals.denied}
-
-    Right now
-      Active runners:    #{report.runners}
-      Team members:      #{report.team_size}
-      Approvals waiting: #{approvals.pending}
-
-    Open your dashboard:
-      #{dashboard_url}
-
-    —
-    You're receiving this monthly report as an owner of #{account.name}.
-    Unsubscribe: #{unsubscribe_url}
-    """
-
-    deliver(recipient.email, "Your emisar report for #{account.name} — #{period}", body,
+    deliver(recipient.email, rendered.subject, rendered.text,
+      html_body: rendered.html,
       reply_to: "support@emisar.dev",
       headers: [
         {"List-Unsubscribe", "<#{unsubscribe_url}>"},

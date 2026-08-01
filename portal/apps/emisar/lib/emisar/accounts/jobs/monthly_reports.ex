@@ -1,9 +1,9 @@
 defmodule Emisar.Accounts.Jobs.MonthlyReports do
   @moduledoc """
   Monthly account-health value report. Once per calendar month it emails each
-  active account's stable owner a plain-text summary of the value emisar
-  delivered in the prior month — runs executed, approvals that gated risky work,
-  and current posture.
+  active account's stable owner a summary of the value emisar delivered in the
+  prior month — runs executed, approvals that gated risky work, and current
+  posture — rendered by `Emisar.Mailers.MonthlyReport` as text plus HTML.
 
   Restraint is the product line: inactive accounts, and accounts with no
   meaningful usage in the window, get nothing — an empty "you did nothing"
