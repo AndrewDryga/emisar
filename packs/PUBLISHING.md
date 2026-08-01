@@ -55,10 +55,17 @@ and byte-identical tarballs, so re-running it is safe.
 
 The downloaded live catalog is the only valid history source once the registry
 exists. Do not substitute the repository's bundled catalog: a canceled release
-can leave that file containing a pack version that was never published. After
-the build, copy `dist/packs/v1/catalog.json` to
-`portal/apps/emisar/priv/packs/catalog.json` so the portal's compiled trust
-baseline and the next CD publication use the same bytes.
+can leave that file containing a pack version that was never published. The one
+exception is pointer repair: when the live `v1/catalog.json` is missing or
+unparseable there is no live history to download, so CD's `packs-publish` falls
+back to the committed catalog — the only record still readable without listing
+access — and its verify step HEAD-checks every tarball URL, history included,
+so a carried-forward version whose tarball never published fails the run
+loudly. To restore the exact prior history instead, recover the pointer from a
+bucket generation first (see Rollback). After the build, copy
+`dist/packs/v1/catalog.json` to `portal/apps/emisar/priv/packs/catalog.json`
+so the portal's compiled trust baseline and the next CD publication use the
+same bytes.
 
 ## Publish
 
@@ -216,14 +223,21 @@ endpoint, not a customer-facing catalog base. `packctl catalog publish` writes
 through the authenticated GCS API endpoint (`DefaultGCSEndpoint`).
 
 **Availability gate.** Do not publish unless the authoritative DNS records,
-managed certificate, load-balancer host rule, and bucket are healthy. A publish
-bakes the canonical base into immutable tarball URLs, so verify first:
+managed certificate, and load-balancer host rule are healthy. A publish bakes
+the canonical base into immutable tarball URLs, so verify the DOMAIN serves
+first — the catalog OBJECT is not the gate: a missing or malformed pointer is
+exactly what a publish repairs, and CD's `packs-publish` preflight enforces
+the same split.
 
 ```bash
 dig registry.emisar.dev A +short
 dig registry.emisar.dev AAAA +short
-curl -fsSL https://registry.emisar.dev/v1/catalog.json | jq .schema_version
+curl -sS -o /dev/null -w '%{http_code}\n' https://registry.emisar.dev/v1/catalog.json
 ```
+
+A `200` (healthy catalog) or `404` (missing pointer — publishing restores it)
+both prove the serving path; a transport failure or any other status means the
+domain itself needs repair before publication.
 
 The A/AAAA and Certificate Manager authorization records live in `infra/dns.tf`.
 The certificate must be ACTIVE before publication. Carried `previous_versions`

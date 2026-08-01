@@ -230,8 +230,10 @@ var publishedCatalogURL = "https://registry.emisar.dev/v1/catalog.json"
 // committed one — which the packs gate keeps byte-equal to a fresh build —
 // makes publication level-triggered on registry state instead. An empty
 // reason means the registry already serves the committed bytes. An unreadable
-// registry is a reason to publish, so the publish job's own preflight reports
-// the outage explicitly rather than CD silently skipping. A repository
+// registry is a reason to publish: a missing or malformed catalog pointer is
+// repaired by the publication itself, while a broken serving domain (DNS,
+// TLS, load balancer) still fails the publish job's own preflight explicitly
+// rather than CD silently skipping. A repository
 // without the committed catalog (test fixtures) has no registry to reconcile.
 func packsReleaseDrift(ctx context.Context, root string) (string, error) {
 	committed, err := os.ReadFile(filepath.Join(root, "portal", "apps", "emisar", "priv", "packs", "catalog.json"))

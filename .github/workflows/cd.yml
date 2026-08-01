@@ -192,15 +192,37 @@ jobs:
         run: cd runner && go build -trimpath -o /tmp/packctl ./cmd/packctl
 
       - name: Require live registry domain
+        # Preflight proves the DOMAIN serves (DNS, TLS, load balancer) — a
+        # publish must never bake tarball URLs into a registry that cannot
+        # serve them. The catalog OBJECT is deliberately not preflight: a
+        # missing or malformed pointer is exactly the state this publication
+        # repairs, and the drift probe (tools/internal/ci/select.go) forces
+        # packs_release on it — refusing here would loop that repair run red
+        # forever.
         run: |
           set -euo pipefail
           getent ahosts registry.emisar.dev >/dev/null || {
             echo "::error::registry.emisar.dev does not resolve; restore the registry serving domain (infra/load_balancer.tf, infra/dns.tf) before publishing packs"
             exit 1
           }
-          curl -fsS --retry 5 --retry-delay 2 \
-            "https://registry.emisar.dev/v1/catalog.json" -o /tmp/domain-catalog.json
-          jq -e '.schema_version == 1 and (.packs | length > 0)' /tmp/domain-catalog.json >/dev/null
+          status=$(curl -sS --retry 5 --retry-delay 2 -w '%{http_code}' \
+            "https://registry.emisar.dev/v1/catalog.json" -o /tmp/domain-catalog.json) || {
+            echo "::error::registry.emisar.dev is not serving HTTPS; restore the registry serving domain (infra/load_balancer.tf, infra/dns.tf) before publishing packs"
+            exit 1
+          }
+          case "$status" in
+            200)
+              jq -e '.schema_version == 1 and (.packs | length > 0)' /tmp/domain-catalog.json >/dev/null ||
+                echo "::warning::live catalog at registry.emisar.dev is malformed; this publication repairs it"
+              ;;
+            404)
+              echo "::warning::live catalog pointer is missing at registry.emisar.dev; this publication restores it"
+              ;;
+            *)
+              echo "::error::registry.emisar.dev returned HTTP ${status} for v1/catalog.json; restore the registry serving path (infra/load_balancer.tf) before publishing packs"
+              exit 1
+              ;;
+          esac
 
       - name: Fetch published catalog
         run: |
@@ -211,7 +233,18 @@ jobs:
             200)
               media_url=$(jq -er .mediaLink /tmp/catalog-metadata.json)
               curl -fsS "$media_url" -o /tmp/previous.json
-              echo "using published catalog history from generation $(jq -r .generation /tmp/catalog-metadata.json)"
+              # packctl refuses an unparseable --previous, so a malformed
+              # published catalog would strand publication in the same red loop
+              # the domain preflight avoids. Its history is unusable; repair
+              # from the committed catalog exactly like the empty-registry
+              # bootstrap below (immutable content-addressed objects stay
+              # protected by publish's if-generation-match:0 either way).
+              if jq -e '.schema_version == 1 and (.packs | length > 0)' /tmp/previous.json >/dev/null; then
+                echo "using published catalog history from generation $(jq -r .generation /tmp/catalog-metadata.json)"
+              else
+                echo "::warning::published catalog is malformed; repairing its history from the committed catalog"
+                cp portal/apps/emisar/priv/packs/catalog.json /tmp/previous.json
+              fi
               ;;
             404)
               echo "registry is empty; bootstrapping from the committed catalog"
