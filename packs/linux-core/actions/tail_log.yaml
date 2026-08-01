@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reads the last N lines of a log file under /var/log. Read-only. Use
+  Read the last N lines of a log file under /var/log. Read-only. Use
   to glance at the most recent activity for a service when triaging
   an alert, before deciding whether to grep deeper or pull more
   context. Output is run through the runner's redactor before it leaves

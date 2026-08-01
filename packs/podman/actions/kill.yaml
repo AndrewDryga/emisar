@@ -3,7 +3,7 @@ id: podman.kill
 title: podman kill <id>
 kind: exec
 risk: high
-description: 'Sends SIGKILL: instant termination. In-flight requests are dropped.'
+description: 'Send SIGKILL: instant termination. In-flight requests are dropped.'
 side_effects:
   - SIGKILL — no graceful shutdown.
   - In-flight requests lost.

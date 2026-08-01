@@ -3,7 +3,7 @@ id: ch.reload_config
 title: SYSTEM RELOAD CONFIG
 kind: exec
 risk: high
-description: Re-reads config.xml + users.xml without restarting.
+description: Re-read config.xml + users.xml without restarting.
 side_effects:
   - Config + user definitions reloaded.
   - Open sessions unaffected.

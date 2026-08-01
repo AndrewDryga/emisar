@@ -3,7 +3,7 @@ id: nomad.job_promote
 title: nomad job promote <id>
 kind: exec
 risk: high
-description: Promotes a canary deployment — replaces the rest of the allocations with the new version.
+description: Promote a canary deployment — replaces the rest of the allocations with the new version.
 side_effects:
   - Old allocations are gradually replaced per the update stanza.
   - In-flight requests on replaced allocs may drop (subject to shutdown_delay).

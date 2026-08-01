@@ -3,7 +3,7 @@ id: es.index_mapping
 title: GET /<index>/_mapping
 kind: exec
 risk: low
-description: Returns the field mappings for one index.
+description: Return the field mappings for one index.
 side_effects:
   - One GET request.
   - Read-only.

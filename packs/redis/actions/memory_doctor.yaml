@@ -4,7 +4,7 @@ title: MEMORY DOCTOR
 kind: exec
 risk: low
 description: >
-  Runs the built-in memory advisor. Returns a human-readable
+  Run the built-in memory advisor. Returns a human-readable
   summary of suspected issues (fragmentation, oversized clients,
   large peak vs current).
 side_effects:

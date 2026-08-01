@@ -4,7 +4,7 @@ title: ACME certificate domains (from acme.json)
 kind: exec
 risk: low
 description: >
-  Lists the domains (CN + SANs) Traefik holds ACME/Let's Encrypt certificates
+  List the domains (CN + SANs) Traefik holds ACME/Let's Encrypt certificates
   for, read from the on-disk acme.json storage (no API exposes cert state).
   Reads only the domain fields — never the certificate or private-key
   material. Use to confirm a hostname actually has an issued cert.

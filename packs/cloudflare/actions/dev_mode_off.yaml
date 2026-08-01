@@ -3,7 +3,7 @@ id: cf.dev_mode_off
 title: PATCH /zones/<id>/settings/development_mode (off)
 kind: exec
 risk: medium
-description: Ends development mode early. Cache resumes normal behavior immediately.
+description: End development mode early. Cache resumes normal behavior immediately.
 side_effects:
   - Cache resumes serving from edge — origin load drops back to normal.
 args:

@@ -3,7 +3,7 @@ id: kafka.delete_consumer_group
 title: Delete consumer group
 kind: exec
 risk: high
-description: Removes a consumer group from the coordinator. The group must be empty (no active members).
+description: Remove a consumer group from the coordinator. The group must be empty (no active members).
 side_effects:
   - Group must have no active members; command fails otherwise.
   - Committed offsets for the group are dropped.

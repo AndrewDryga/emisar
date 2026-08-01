@@ -3,7 +3,7 @@ id: zfs.start_scrub
 title: zpool scrub <pool>
 kind: exec
 risk: high
-description: Starts a scrub on one pool. Re-reads every block and verifies checksums.
+description: Start a scrub on one pool. Re-reads every block and verifies checksums.
 side_effects:
   - Heavy disk read load for hours-to-days.
   - Pool stays online; IO latency increases.

@@ -3,7 +3,7 @@ id: podman.system_prune
 title: podman system prune -f
 kind: exec
 risk: high
-description: Removes stopped containers, dangling images, unused networks.
+description: Remove stopped containers, dangling images, unused networks.
 side_effects:
   - Stopped containers are deleted permanently.
   - Dangling images + unused networks removed.

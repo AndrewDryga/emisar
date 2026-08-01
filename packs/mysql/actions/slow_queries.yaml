@@ -4,7 +4,7 @@ title: Top slow query digests
 kind: exec
 risk: low
 description: >
-  Reads performance_schema.events_statements_summary_by_digest — top N statement fingerprints by mean execution time. Requires performance_schema enabled.
+  Read performance_schema.events_statements_summary_by_digest — top N statement fingerprints by mean execution time. Requires performance_schema enabled.
 side_effects:
   - One SELECT against performance_schema.
   - Read-only.

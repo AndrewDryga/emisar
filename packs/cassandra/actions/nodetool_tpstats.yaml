@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `nodetool tpstats` for active/pending/blocked counts per pool.
+  Run `nodetool tpstats` for active/pending/blocked counts per pool.
   High pending or blocked counts on MutationStage, CompactionExecutor, or
   ReadStage usually indicate ongoing pressure — investigate the cause
   before recommending operations that add load (repair, large reads,

@@ -3,7 +3,7 @@ id: postgres.terminate_backend
 title: pg_terminate_backend(pid)
 kind: exec
 risk: high
-description: Hard-disconnects one backend (SIGTERM). Use when pg_cancel_backend isn't enough (e.g., idle in transaction with a long held lock).
+description: Hard-disconnect one backend (SIGTERM). Use when pg_cancel_backend isn't enough (e.g., idle in transaction with a long held lock).
 side_effects:
   - Targeted backend's connection is severed.
   - Open transactions roll back.

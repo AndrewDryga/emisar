@@ -3,7 +3,7 @@ id: postgres.reindex_concurrent
 title: REINDEX INDEX CONCURRENTLY <schema>.<index>
 kind: exec
 risk: high
-description: 'Rebuilds one index without blocking writes. Slower than plain REINDEX but no AccessExclusiveLock.'
+description: 'Rebuild one index without blocking writes. Slower than plain REINDEX but no AccessExclusiveLock.'
 side_effects:
   - New copy of the index is built alongside.
   - Old index dropped at end; brief lock at swap.

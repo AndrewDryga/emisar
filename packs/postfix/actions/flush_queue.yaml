@@ -3,7 +3,7 @@ id: postfix.flush_queue
 title: postqueue -f (retry all deferred)
 kind: exec
 risk: high
-description: Forces retry of every deferred message. Can cause a thundering-herd toward downstream SMTP.
+description: Force retry of every deferred message. Can cause a thundering-herd toward downstream SMTP.
 side_effects:
   - Every deferred message is re-attempted immediately.
   - Downstream MTAs see a burst of connection attempts.

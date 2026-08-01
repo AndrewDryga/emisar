@@ -4,7 +4,7 @@ title: REPLICAOF
 kind: exec
 risk: critical
 description: >
-  Reconfigures replication. REPLICAOF NO ONE promotes this node to
+  Reconfigure replication. REPLICAOF NO ONE promotes this node to
   master (used in unmanaged failover). REPLICAOF host port reassigns
   this node as a replica of host:port and triggers a full sync —
   the local dataset is REPLACED. Misuse can wipe live data.

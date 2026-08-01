@@ -3,7 +3,7 @@ id: consul.force_check_pass
 title: PUT /v1/agent/check/pass/<check_id>
 kind: exec
 risk: high
-description: Forces one TTL check into the PASSING state. The check stays passing until the next TTL expires.
+description: Force one TTL check into the PASSING state. The check stays passing until the next TTL expires.
 side_effects:
   - Targeted check transitions to PASSING.
   - Services watching this check may resume routing traffic.

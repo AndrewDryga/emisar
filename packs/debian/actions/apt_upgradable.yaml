@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Lists packages that have an upgrade available based on the current
+  List packages that have an upgrade available based on the current
   apt index. Read-only — does NOT refresh the index. Pair with
   `apt_update` if you suspect the cache is stale.
 

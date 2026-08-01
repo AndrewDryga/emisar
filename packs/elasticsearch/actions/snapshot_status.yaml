@@ -3,7 +3,7 @@ id: es.snapshot_status
 title: GET /_snapshot/<repo>/<snap>/_status
 kind: exec
 risk: low
-description: Returns the in-progress (or completed) status of one snapshot.
+description: Return the in-progress (or completed) status of one snapshot.
 side_effects:
   - One GET request.
   - Read-only.

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns the last N kernel log lines. Surfaces OOM kills, hardware
+  Return the last N kernel log lines. Surfaces OOM kills, hardware
   errors, network link flaps, and dropped packets. Reads the kernel ring
   buffer via dmesg; when that is not permitted (modern kernels gate it
   behind CAP_SYSLOG) it falls back to `journalctl -k`, which works when

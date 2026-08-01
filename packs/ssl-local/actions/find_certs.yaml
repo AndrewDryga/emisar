@@ -3,7 +3,7 @@ id: ssl.find_certs
 title: find *.pem *.crt *.cer under <path>
 kind: exec
 risk: low
-description: Lists certificate-like files under one path.
+description: List certificate-like files under one path.
 side_effects:
   - One file-system traversal.
   - Read-only.

@@ -4,7 +4,7 @@ title: Full loaded config (nginx -T)
 kind: exec
 risk: high
 description: >
-  Dumps the loaded config — main + all includes — via `nginx -T`. Config
+  Dump the loaded config — main + all includes — via `nginx -T`. Config
   text can carry secrets (authorization headers set via proxy_set_header,
   credentials embedded in proxy_pass URLs or map/return directives). The
   runner's redaction is a fail-closed backstop, not a guarantee — it is

@@ -3,7 +3,7 @@ id: mc.flush_all
 title: flush_all
 kind: exec
 risk: critical
-description: Invalidates every key. Cold cache → origin load spike.
+description: Invalidate every key. Cold cache → origin load spike.
 side_effects:
   - Every key becomes invalid immediately.
   - First miss hits origin for every cached value.

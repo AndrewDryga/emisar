@@ -3,7 +3,7 @@ id: consul.service_maintenance
 title: consul maint -enable -service <svc>
 kind: exec
 risk: high
-description: Puts one local-agent service into maintenance mode. Its checks report critical until disabled.
+description: Put one local-agent service into maintenance mode. Its checks report critical until disabled.
 side_effects:
   - Service checks report critical.
   - Service discovery routes traffic away.

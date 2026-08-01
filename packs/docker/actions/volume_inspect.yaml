@@ -3,7 +3,7 @@ id: docker.volume_inspect
 title: docker volume inspect
 kind: exec
 risk: low
-description: Returns the JSON inspect document for one volume — driver, mountpoint, labels. Read-only.
+description: Return the JSON inspect document for one volume — driver, mountpoint, labels. Read-only.
 side_effects:
   - One docker volume inspect invocation.
   - Read-only.

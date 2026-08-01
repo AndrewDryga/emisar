@@ -3,7 +3,7 @@ id: es.index_count
 title: GET /<index>/_count
 kind: exec
 risk: low
-description: Returns the document count for one index.
+description: Return the document count for one index.
 side_effects:
   - One GET request.
   - Read-only.

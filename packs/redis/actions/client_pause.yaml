@@ -4,7 +4,7 @@ title: CLIENT PAUSE
 kind: exec
 risk: high
 description: >
-  Pauses all clients for N milliseconds. Used during safe failover
+  Pause all clients for N milliseconds. Used during safe failover
   windows to drain in-flight writes before flipping a master.
   Long pauses block all traffic — anything over 1s is a real outage.
   Replicas keep streaming during the pause.

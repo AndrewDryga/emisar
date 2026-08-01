@@ -4,7 +4,7 @@ title: docker stop (one container)
 kind: exec
 risk: high
 description: >
-  Stops one container — SIGTERM, then SIGKILL after the configured timeout. Container stays around (for inspection/restart). Use `docker.kill` for immediate SIGKILL.
+  Stop one container — SIGTERM, then SIGKILL after the configured timeout. Container stays around (for inspection/restart). Use `docker.kill` for immediate SIGKILL.
 side_effects:
   - SIGTERM the container; SIGKILL on timeout.
   - In-flight requests dropped unless the app handles graceful drain.

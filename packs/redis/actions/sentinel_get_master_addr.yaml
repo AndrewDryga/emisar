@@ -4,7 +4,7 @@ title: SENTINEL GET-MASTER-ADDR-BY-NAME
 kind: exec
 risk: low
 description: >
-  Returns the ip and port Sentinel currently believes is the master
+  Return the ip and port Sentinel currently believes is the master
   for the named set. During or just after a failover this returns the
   PROMOTED replica's address — so it is the authoritative answer to
   "who is the master right now?" Compare against ROLE on each node to

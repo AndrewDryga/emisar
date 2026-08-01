@@ -3,7 +3,7 @@ id: jvm.thread_count
 title: OS thread count for a JVM
 kind: exec
 risk: low
-description: Counts /proc/<pid>/task entries — fastest way to spot "do we have an unbounded thread pool?"
+description: Count /proc/<pid>/task entries — fastest way to spot "do we have an unbounded thread pool?"
 side_effects:
   - One /proc read.
   - Read-only.

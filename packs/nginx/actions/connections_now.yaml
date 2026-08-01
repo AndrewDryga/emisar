@@ -4,7 +4,7 @@ title: Active connections (stub_status)
 kind: exec
 risk: low
 description: >
-  Hits the stub_status endpoint to get active/reading/writing/waiting counts. Cheaper than `nginx.status` (less parsing). Requires `stub_status on;` enabled. Loopback-only — the host is pinned to 127.0.0.1/localhost/[::1]; only the port and path vary.
+  Hit the stub_status endpoint to get active/reading/writing/waiting counts. Cheaper than `nginx.status` (less parsing). Requires `stub_status on;` enabled. Loopback-only — the host is pinned to 127.0.0.1/localhost/[::1]; only the port and path vary.
 side_effects:
   - One curl to the local nginx over loopback.
   - Read-only.

@@ -3,7 +3,7 @@ id: nginx.upstream_list
 title: List configured upstream blocks
 kind: exec
 risk: low
-description: Greps `nginx -T` for `upstream` + `server` directives inside upstream blocks. Read-only.
+description: Grep `nginx -T` for `upstream` + `server` directives inside upstream blocks. Read-only.
 side_effects:
   - One nginx -T invocation.
   - Read-only.

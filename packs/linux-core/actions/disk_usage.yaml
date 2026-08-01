@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reports filesystem usage for the supplied paths using df. Read-only. Use
+  Report filesystem usage for the supplied paths using df. Read-only. Use
   this to assess disk pressure before recommending cleanup, repair,
   compaction tuning, or adding disk. If a filesystem is >85% full, surface
   it but do not silently delete or truncate data — that's a separate,

@@ -3,7 +3,7 @@ id: bind.named_checkconf
 title: named-checkconf
 kind: exec
 risk: low
-description: Validates named.conf syntax. Run before any rndc reload.
+description: Validate named.conf syntax. Run before any rndc reload.
 side_effects: ["Reads named.conf.", "Read-only."]
 args: []
 execution:

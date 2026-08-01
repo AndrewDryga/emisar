@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `nginx -V` and returns the version + compile-time flags. Use to
+  Run `nginx -V` and return the version + compile-time flags. Use to
   confirm which modules are compiled in (e.g. ngx_http_v2,
   ngx_http_realip) before recommending a config that depends on one.
   Read-only.

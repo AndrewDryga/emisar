@@ -4,7 +4,7 @@ title: docker kill (signal)
 kind: exec
 risk: high
 description: >
-  Sends a Unix signal to one container's main process. Default is SIGKILL — immediate, no graceful drain. Specify `signal:` for SIGTERM (graceful) or SIGHUP (reload).
+  Send a Unix signal to one container's main process. Default is SIGKILL — immediate, no graceful drain. Specify `signal:` for SIGTERM (graceful) or SIGHUP (reload).
 side_effects:
   - Sends the chosen signal directly to the container's PID 1.
   - "SIGKILL: instant termination; in-flight requests dropped."

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns `df -hT` output. Filesystem type, size, used, avail, and
+  Return `df -hT` output. Filesystem type, size, used, avail, and
   mountpoint for every mounted filesystem. Use as the first check
   when a write fails with ENOSPC or when /var/log has gone dark.
 

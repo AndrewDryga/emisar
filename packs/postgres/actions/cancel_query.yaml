@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Sends SIGINT to one backend via `pg_cancel_backend(pid)`. The query
+  Send SIGINT to one backend via `pg_cancel_backend(pid)`. The query
   aborts but the connection survives. Use to clear a stuck SELECT or a
   blocker surfaced by `postgres.locks`. If cancel doesn't take effect
   within seconds the backend is likely stuck in a kernel call — escalate

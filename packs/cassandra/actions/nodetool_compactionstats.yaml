@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `nodetool compactionstats`. Pending compactions in the
+  Run `nodetool compactionstats`. Pending compactions in the
   dozens-to-hundreds indicate the node is behind. Triggering repair on a
   node already behind on compactions usually makes things worse — wait for
   the queue to drain before recommending repair.

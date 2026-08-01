@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reads /proc/mdstat plus `mdadm --detail` for every active array.
+  Read /proc/mdstat plus `mdadm --detail` for every active array.
   Surfaces array state, devices, sync progress, faults. Read-only.
   Returns "no arrays" cleanly when there's no mdadm RAID configured.
 

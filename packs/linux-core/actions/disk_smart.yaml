@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `smartctl -H -A` against a block device. Returns the overall
+  Run `smartctl -H -A` against a block device. Returns the overall
   PASS/FAIL plus the attribute table (reallocated sectors, pending,
   uncorrectable, temperature). Read-only on the disk; needs the
   `smartmontools` package and CAP_SYS_RAWIO (root) to access device

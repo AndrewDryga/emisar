@@ -4,7 +4,7 @@ title: kubectl rollout undo (rollback)
 kind: exec
 risk: high
 description: >
-  Rolls back to the previous revision. Bring `rollout_history` first to confirm what "previous" means in this case.
+  Roll back to the previous revision. Bring `rollout_history` first to confirm what "previous" means in this case.
 side_effects:
   - Triggers a fresh rollout to the previous revision.
   - Pods replaced one-by-one; previous container image becomes current.

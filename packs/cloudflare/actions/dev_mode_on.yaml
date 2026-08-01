@@ -3,7 +3,7 @@ id: cf.dev_mode_on
 title: PATCH /zones/<id>/settings/development_mode
 kind: exec
 risk: high
-description: Enables development mode for 3 hours — bypasses caching for this zone.
+description: Enable development mode for 3 hours — bypasses caching for this zone.
 side_effects:
   - Cache is bypassed for 3 hours (auto-expires).
   - Origin gets every request.

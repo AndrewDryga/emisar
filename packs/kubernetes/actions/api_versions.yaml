@@ -3,7 +3,7 @@ id: kubernetes.api_versions
 title: kubectl api-versions
 kind: exec
 risk: low
-description: Lists API versions available on the cluster — useful for "does this k8s version support …?" checks.
+description: List API versions available on the cluster — useful for "does this k8s version support …?" checks.
 side_effects:
   - One kubectl api-versions invocation.
   - Read-only.

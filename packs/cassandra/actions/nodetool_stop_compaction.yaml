@@ -3,7 +3,7 @@ id: cassandra.nodetool_stop_compaction
 title: nodetool stop <operation>
 kind: exec
 risk: high
-description: 'Stops in-flight operations of one type (COMPACTION, CLEANUP, VERIFY, etc).'
+description: 'Stop in-flight operations of one type (COMPACTION, CLEANUP, VERIFY, etc).'
 side_effects:
   - In-flight ops of the named type are aborted.
   - SSTables in progress are abandoned (no partial result).

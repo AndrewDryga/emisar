@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `iostat -xz 1 N` to capture N one-second samples of extended
+  Run `iostat -xz 1 N` to capture N one-second samples of extended
   per-device statistics. Surfaces await, %util, queue depth. Use to
   prove or disprove "the disk is slow" before chasing application
   code.

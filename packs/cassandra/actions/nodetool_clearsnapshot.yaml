@@ -3,7 +3,7 @@ id: cassandra.nodetool_clearsnapshot
 title: nodetool clearsnapshot -t <name>
 kind: exec
 risk: high
-description: Deletes one snapshot tag from all keyspaces. Frees disk that was pinned by the snapshot.
+description: Delete one snapshot tag from all keyspaces. Frees disk that was pinned by the snapshot.
 side_effects:
   - Snapshot hard links removed.
   - Disk space reclaims as the underlying SSTables become orphaned.

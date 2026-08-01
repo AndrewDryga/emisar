@@ -3,7 +3,7 @@ id: mongo.kill_op
 title: db.killOp(opid)
 kind: exec
 risk: high
-description: Kills one in-flight operation by opid.
+description: Kill one in-flight operation by opid.
 side_effects:
   - The targeted operation is interrupted.
   - Connection holding the op may receive an error.

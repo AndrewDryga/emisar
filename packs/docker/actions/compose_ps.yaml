@@ -4,7 +4,7 @@ title: docker compose ps -a
 kind: exec
 risk: low
 description: >
-  Lists services in a compose project (running + stopped). The compose-file path is required and pattern-restricted. Read-only.
+  List services in a compose project (running + stopped). The compose-file path is required and pattern-restricted. Read-only.
 side_effects:
   - One docker compose ps invocation.
   - Read-only.

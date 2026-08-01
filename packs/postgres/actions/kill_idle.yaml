@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Calls `pg_terminate_backend(pid)` on every backend that has been in
+  Call `pg_terminate_backend(pid)` on every backend that has been in
   `idle in transaction` state longer than `older_than_seconds`. Frees up
   the locks they're holding. Application code on the killed connections
   will see "server closed the connection unexpectedly" and reconnect —

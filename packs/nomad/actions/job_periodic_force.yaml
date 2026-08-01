@@ -3,7 +3,7 @@ id: nomad.job_periodic_force
 title: nomad job periodic force <id>
 kind: exec
 risk: medium
-description: Force-runs one periodic job NOW, ignoring schedule.
+description: Force-run one periodic job NOW, ignoring schedule.
 side_effects:
   - A new periodic child job is created and dispatched.
   - Counts toward normal job history.

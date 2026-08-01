@@ -3,7 +3,7 @@ id: cassandra.nodetool_decommission
 title: nodetool decommission
 kind: exec
 risk: critical
-description: Streams this node's data to other replicas, then leaves the ring. NOT reversible without re-bootstrapping.
+description: Stream this node's data to other replicas, then leave the ring. NOT reversible without re-bootstrapping.
 side_effects:
   - All data streams to remaining replicas.
   - Heavy network + disk on this and peer nodes.

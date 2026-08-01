@@ -3,7 +3,7 @@ id: mysql.flush_logs
 title: FLUSH LOGS
 kind: exec
 risk: medium
-description: Closes and reopens all log files (general, slow, error, binary). Use after rotating with logrotate.
+description: Close and reopen all log files (general, slow, error, binary). Use after rotating with logrotate.
 side_effects:
   - Log files closed and reopened.
   - Binlog rolls forward.

@@ -3,7 +3,7 @@ id: nomad.system_gc
 title: nomad system gc
 kind: exec
 risk: medium
-description: Forces a system-wide GC of jobs, allocations, evaluations, and deployments past their GC threshold.
+description: Force a system-wide GC of jobs, allocations, evaluations, and deployments past their GC threshold.
 side_effects:
   - Old dead jobs/evals/allocs/deployments are removed from the catalog.
   - Frees Raft / state-store space.

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Sends N ICMP echo requests to a target. Use to confirm L3
+  Send N ICMP echo requests to a target. Use to confirm L3
   reachability when a higher-layer probe (TCP/HTTP) fails. Target is
   pattern-restricted to safe hostname/IPv4 characters to prevent
   argument injection.

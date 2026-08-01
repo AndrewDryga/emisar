@@ -4,7 +4,7 @@ title: terraform plan
 kind: exec
 risk: medium
 description: >
-  Computes a plan but does NOT save it (no -out). Cannot be applied from this run. May call out to providers (read API quotas).
+  Compute a plan but does NOT save it (no -out). Cannot be applied from this run. May call out to providers (read API quotas).
 side_effects:
   - Calls every provider's read API — quota usage applies.
   - Read-only — does not modify state or save a plan file.

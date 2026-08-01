@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Disconnects one client by addr or by id. Use to evict a stuck client
+  Disconnect one client by addr or by id. Use to evict a stuck client
   with a runaway output buffer, an abandoned subscriber, or a client
   exceeding the slowlog. Confirm the target via `client_list` first —
   killing the wrong client can disrupt a critical caller.

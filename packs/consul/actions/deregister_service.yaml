@@ -3,7 +3,7 @@ id: consul.deregister_service
 title: consul services deregister
 kind: exec
 risk: high
-description: Removes one service registration from this agent.
+description: Remove one service registration from this agent.
 side_effects:
   - Service immediately disappears from discovery on this node.
   - Other nodes' registrations are unaffected.

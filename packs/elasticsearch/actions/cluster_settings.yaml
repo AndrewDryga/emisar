@@ -3,7 +3,7 @@ id: es.cluster_settings
 title: GET /_cluster/settings
 kind: exec
 risk: low
-description: Returns persistent + transient cluster-level settings.
+description: Return persistent + transient cluster-level settings.
 side_effects:
   - One GET request.
   - Read-only.

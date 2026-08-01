@@ -4,7 +4,7 @@ title: Reset group offsets to earliest
 kind: exec
 risk: critical
 description: >
-  Rewinds a consumer group's offsets to the start of every partition. Causes a full replay — can be hours to days of duplicate processing.
+  Rewind a consumer group's offsets to the start of every partition. Causes a full replay — can be hours to days of duplicate processing.
 side_effects:
   - Consumer group must be stopped first; this command fails if still active.
   - Group will re-process every message in the topic from the beginning.

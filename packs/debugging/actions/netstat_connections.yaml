@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns counts of TCP connections grouped by remote peer + state.
+  Return counts of TCP connections grouped by remote peer + state.
   Useful for spotting connection storms (single host) or TIME_WAIT
   pressure. Read-only.
 

@@ -4,7 +4,7 @@ title: SHOW REPLICA STATUS
 kind: exec
 risk: low
 description: >
-  Reads SHOW REPLICA STATUS (or SHOW SLAVE STATUS on old versions). Surfaces lag, last error, IO and SQL thread state, and binlog position. Returns 'not a replica' cleanly when this is a primary.
+  Read SHOW REPLICA STATUS (or SHOW SLAVE STATUS on old versions). Surfaces lag, last error, IO and SQL thread state, and binlog position. Returns 'not a replica' cleanly when this is a primary.
 side_effects:
   - One SHOW REPLICA STATUS.
   - Read-only.

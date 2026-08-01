@@ -4,7 +4,7 @@ title: SENTINEL RESET
 kind: exec
 risk: high
 description: >
-  Resets every monitored master whose name matches the glob pattern.
+  Reset every monitored master whose name matches the glob pattern.
   The reset CLEARS any state for the master — including a failover in
   progress — and DROPS every discovered replica and peer Sentinel, so
   they are re-learned over the next ~10s from the current master's

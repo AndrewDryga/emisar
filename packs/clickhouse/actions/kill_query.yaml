@@ -3,7 +3,7 @@ id: ch.kill_query
 title: KILL QUERY WHERE query_id = '<id>'
 kind: exec
 risk: high
-description: Cancels one running query by ID.
+description: Cancel one running query by ID.
 side_effects:
   - Targeted query is terminated.
   - Client receives a cancellation error.

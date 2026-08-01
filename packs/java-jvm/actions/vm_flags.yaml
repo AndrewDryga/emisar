@@ -3,7 +3,7 @@ id: jvm.vm_flags
 title: jcmd VM.flags
 kind: exec
 risk: low
-description: Returns the JVM command-line and tuning flags. Use to confirm "is -Xmx set to what we expect?"
+description: Return the JVM command-line and tuning flags. Use to confirm "is -Xmx set to what we expect?"
 side_effects:
   - One jcmd call.
   - Read-only.

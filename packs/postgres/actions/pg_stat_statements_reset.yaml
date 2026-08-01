@@ -3,7 +3,7 @@ id: postgres.pg_stat_statements_reset
 title: pg_stat_statements_reset()
 kind: exec
 risk: medium
-description: Clears accumulated pg_stat_statements counters. Use to start a clean measurement window.
+description: Clear accumulated pg_stat_statements counters. Use to start a clean measurement window.
 side_effects:
   - All accumulated counters are reset to 0.
   - Future queries start from a clean baseline.

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns the last N slowlog entries (commands that exceeded the
+  Return the last N slowlog entries (commands that exceeded the
   slowlog threshold). Each entry shows id, timestamp, duration (µs),
   command + args, client addr, and client name. Read-only.
 

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Greps an extended regex (POSIX -E) against a log file under /var/log.
+  Grep an extended regex (POSIX -E) against a log file under /var/log.
   Read-only. Returns matching lines with line numbers (-n) up to
   max_lines. Use to find recent occurrences of a specific identifier
   (request ID, user ID, IP) or to spot error patterns without dumping

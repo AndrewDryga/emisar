@@ -3,7 +3,7 @@ id: systemd.analyze_security
 title: systemd-analyze security
 kind: exec
 risk: low
-description: 'Scores one unit by its sandboxing posture — NoNewPrivileges, ProtectSystem, CapabilityBoundingSet, etc. Use to audit "how locked down is this service?"'
+description: 'Score one unit by its sandboxing posture — NoNewPrivileges, ProtectSystem, CapabilityBoundingSet, etc. Use to audit "how locked down is this service?"'
 side_effects:
   - One systemd-analyze invocation.
   - Read-only.

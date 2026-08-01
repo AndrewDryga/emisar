@@ -3,7 +3,7 @@ id: postgres.analyze_table
 title: ANALYZE <schema>.<table>
 kind: exec
 risk: medium
-description: Refreshes planner statistics for one table.
+description: Refresh planner statistics for one table.
 side_effects:
   - Reads sample rows from the table.
   - Updates pg_class/pg_statistic.

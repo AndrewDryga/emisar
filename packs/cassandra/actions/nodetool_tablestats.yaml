@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `nodetool tablestats`, optionally scoped to a single keyspace.
+  Run `nodetool tablestats`, optionally scoped to a single keyspace.
   Read-only. Output can be large for clusters with many tables. Use to
   identify tables with large sstable counts or large on-disk size — repairs
   on very large or tombstone-heavy tables are risky and worth surfacing

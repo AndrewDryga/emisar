@@ -3,7 +3,7 @@ id: jvm.jfr_dump
 title: Dump active JFR recording
 kind: exec
 risk: medium
-description: Dumps the active "emisar" recording to its current file. Use mid-flight to grab a snapshot without stopping the recording.
+description: Dump the active "emisar" recording to its current file. Use mid-flight to grab a snapshot without stopping the recording.
 side_effects:
   - Writes JFR data to /tmp/<pid>-emisar.jfr.
   - Recording continues.

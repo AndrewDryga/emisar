@@ -4,7 +4,7 @@ title: FLUSHALL
 kind: exec
 risk: critical
 description: >
-  Deletes EVERY key from EVERY database. Irreversible. Replicas
+  Delete EVERY key from EVERY database. Irreversible. Replicas
   FLUSHALL in turn. Only use on caches that can be cold-rebuilt.
 side_effects:
   - All databases emptied.

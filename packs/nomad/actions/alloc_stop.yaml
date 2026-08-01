@@ -3,7 +3,7 @@ id: nomad.alloc_stop
 title: nomad alloc stop <id>
 kind: exec
 risk: high
-description: Stops one allocation. The scheduler reschedules it (per the job's reschedule stanza).
+description: Stop one allocation. The scheduler reschedules it (per the job's reschedule stanza).
 side_effects:
   - Allocation is stopped + replaced.
   - Brief unavailability for the running container.

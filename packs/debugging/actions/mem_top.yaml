@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns the top N processes sorted by resident-set size (RSS). Use
+  Return the top N processes sorted by resident-set size (RSS). Use
   when /proc/meminfo or `free` shows pressure and you need the
   offender. RSS does not double-count shared pages, so a "leak"
   candidate showing high RSS is worth investigating.

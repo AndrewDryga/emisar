@@ -4,7 +4,7 @@ title: SENTINEL CKQUORUM
 kind: exec
 risk: low
 description: >
-  Checks whether enough Sentinels are reachable to BOTH reach the
+  Check whether enough Sentinels are reachable to BOTH reach the
   failover quorum AND form the majority needed to authorize a failover
   for the named master. The canonical pre-failover health check —
   returns OK with the counts, or an error if a failover could not

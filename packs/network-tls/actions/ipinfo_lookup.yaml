@@ -3,7 +3,7 @@ id: net.ipinfo_lookup
 title: ipinfo (geo + ASN for an IP)
 kind: exec
 risk: low
-description: Looks up an IP at ipinfo.io. Returns city/region/country/org/asn. Outbound HTTP to ipinfo.io required.
+description: Look up an IP at ipinfo.io. Returns city/region/country/org/asn. Outbound HTTP to ipinfo.io required.
 side_effects:
   - One HTTPS query to ipinfo.io.
   - Read-only.

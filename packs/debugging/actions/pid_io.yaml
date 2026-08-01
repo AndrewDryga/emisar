@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reads /proc/<pid>/io — bytes read/written (logical + physical),
+  Read /proc/<pid>/io — bytes read/written (logical + physical),
   syscall counts, cancelled writes. Use to find which process is
   driving disk I/O. Pair with `debugging.iostat` for the disk side.
 

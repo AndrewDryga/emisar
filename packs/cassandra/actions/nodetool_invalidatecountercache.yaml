@@ -3,7 +3,7 @@ id: cassandra.nodetool_invalidatecountercache
 title: nodetool invalidatecountercache
 kind: exec
 risk: medium
-description: Drops the counter cache.
+description: Drop the counter cache.
 side_effects: ["Counter cache cleared.", "Counter reads pay cold-cache cost."]
 args: []
 execution:

@@ -4,7 +4,7 @@ title: GET /keys
 kind: script
 risk: low
 description: >
-  Lists API key metadata — the key prefix, description, scoped actions, and
+  List API key metadata — the key prefix, description, scoped actions, and
   collections each key may access. The secret value is never returned; only
   which keys exist and what they are allowed to do. Sensitive: it discloses
   the set of credentials configured on the node. Requires the admin API key.

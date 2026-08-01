@@ -3,7 +3,7 @@ id: minio.user_enable
 title: mc admin user enable
 kind: exec
 risk: high
-description: Re-enables one IAM user.
+description: Re-enable one IAM user.
 side_effects:
   - User can authenticate again.
 args:

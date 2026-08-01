@@ -3,7 +3,7 @@ id: caddy.adapt_caddyfile
 title: caddy adapt --config <file>
 kind: exec
 risk: low
-description: Converts a Caddyfile to JSON config without loading it.
+description: Convert a Caddyfile to JSON config without loading it.
 side_effects: ["One forked process.", "Read-only."]
 args:
   - name: file

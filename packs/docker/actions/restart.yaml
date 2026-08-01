@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Restarts one container. Sends SIGTERM, waits for the configured
+  Restart one container. Sends SIGTERM, waits for the configured
   stop-timeout, then SIGKILL, then re-starts. In-flight requests are
   dropped; the container's restart policy still applies after this
   call. Container name is pattern-restricted.

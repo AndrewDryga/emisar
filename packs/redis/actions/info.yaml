@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `INFO <section>` and returns the raw text. Sections: server,
+  Run `INFO <section>` and return the raw text. Sections: server,
   clients, memory, persistence, stats, replication, cpu, commandstats,
   latencystats, cluster, keyspace, errorstats, all. Read-only.
 

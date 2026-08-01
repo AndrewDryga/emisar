@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `MEMORY STATS`. Returns the detailed memory accounting
+  Run `MEMORY STATS`. Returns the detailed memory accounting
   (allocator stats, fragmentation, peak, overheads, replication
   backlog, client and AOF buffers). Read-only. Use to diagnose OOM
   warnings before resizing.

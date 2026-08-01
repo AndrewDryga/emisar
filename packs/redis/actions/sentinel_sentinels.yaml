@@ -4,7 +4,7 @@ title: SENTINEL SENTINELS
 kind: exec
 risk: low
 description: >
-  Lists the OTHER Sentinel instances this Sentinel knows about for a
+  List the OTHER Sentinel instances this Sentinel knows about for a
   given master — each with ip:port, runid, flags, and last-ok-ping.
   Use to confirm the Sentinel set is fully meshed and agrees on
   membership when diagnosing why a failover quorum is not reached.

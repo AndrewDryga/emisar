@@ -4,7 +4,7 @@ title: Recent 5xx responses from access log
 kind: exec
 risk: low
 description: >
-  Greps the Traefik access log for 5xx responses and tails the most recent —
+  Grep the Traefik access log for 5xx responses and tail the most recent —
   the front-door view of backend failures. Matches both the JSON format
   (DownstreamStatus field) and the default CLF format. Needs an access log on
   disk, which Traefik writes only when accessLog.filePath is set; when it logs

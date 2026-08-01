@@ -6,7 +6,7 @@ kind: exec
 risk: medium
 
 description: >
-  Dumps /etc/sudoers and the index of /etc/sudoers.d/. Use for an
+  Dump /etc/sudoers and the index of /etc/sudoers.d/. Use for an
   audit pass — "who can sudo to what?". Sensitive content; output
   goes through redaction. Read-only.
 

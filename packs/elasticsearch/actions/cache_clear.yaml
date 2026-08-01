@@ -3,7 +3,7 @@ id: es.cache_clear
 title: POST /<index>/_cache/clear
 kind: exec
 risk: high
-description: Clears caches (request, query, fielddata) on one index. Next queries pay the cold-cache cost.
+description: Clear caches (request, query, fielddata) on one index. Next queries pay the cold-cache cost.
 side_effects:
   - Drops cached data for the index.
   - Subsequent queries slow until caches re-warm.

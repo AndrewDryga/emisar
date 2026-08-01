@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reports disk usage by docker (images, containers, volumes, build
+  Report disk usage by docker (images, containers, volumes, build
   cache). Use to plan a prune. Read-only.
 
 side_effects:

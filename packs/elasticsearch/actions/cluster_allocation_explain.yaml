@@ -3,7 +3,7 @@ id: es.cluster_allocation_explain
 title: POST /_cluster/allocation/explain
 kind: exec
 risk: low
-description: 'Explains why an unassigned shard hasn''t been placed. The canonical "why is my cluster yellow?" answer.'
+description: 'Explain why an unassigned shard hasn''t been placed. The canonical "why is my cluster yellow?" answer.'
 side_effects:
   - One POST request.
   - Read-only.

@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Restarts a named systemd unit. Clients will see an outage of
+  Restart a named systemd unit. Clients will see an outage of
   seconds-to-minutes depending on the unit. Treat as a last-resort action:
   prefer diagnosis (logs, status, disk, memory) first. Never restart a
   database under load without confirming there is no in-flight repair,

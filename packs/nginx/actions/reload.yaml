@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Sends SIGHUP to the master process. Master parses the new config,
+  Send SIGHUP to the master process. Master parses the new config,
   spawns new workers, gracefully drains old workers. If the new config
   is invalid the master logs the error and keeps the old workers —
   the request is non-fatal. ALWAYS run `nginx.test_config` first.

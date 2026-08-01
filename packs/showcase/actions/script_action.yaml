@@ -10,7 +10,7 @@ kind: script
 risk: low
 
 description: >
-  Calls a packaged shell script. The interpreter is explicit (/bin/bash),
+  Call a packaged shell script. The interpreter is explicit (/bin/bash),
   the script path is resolved relative to the pack root, and the script's
   SHA-256 is journaled with every invocation so tampering is detectable
   after the fact.

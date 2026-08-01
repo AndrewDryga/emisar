@@ -4,7 +4,7 @@ title: SENTINEL FAILOVER
 kind: exec
 risk: high
 description: >
-  Forces a failover for the named master as if it were unreachable,
+  Force a failover for the named master as if it were unreachable,
   WITHOUT asking the other Sentinels for agreement (a new
   configuration is still published so the peers update). Promotes a
   replica to master and reconfigures the rest to follow it. This is a

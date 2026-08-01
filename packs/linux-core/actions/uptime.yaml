@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reports system uptime and 1/5/15-minute load averages. Load averages
+  Report system uptime and 1/5/15-minute load averages. Load averages
   are dimensionless and machine-dependent; compare against CPU count
   before interpreting them as "high".
 

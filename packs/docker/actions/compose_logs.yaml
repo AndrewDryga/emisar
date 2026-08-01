@@ -3,7 +3,7 @@ id: docker.compose_logs
 title: docker compose logs (last N lines)
 kind: exec
 risk: low
-description: Returns the last N lines of logs for one service in a compose project. Read-only.
+description: Return the last N lines of logs for one service in a compose project. Read-only.
 side_effects:
   - One docker compose logs invocation.
   - Read-only.

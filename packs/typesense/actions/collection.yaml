@@ -4,7 +4,7 @@ title: GET /collections/{name}
 kind: script
 risk: low
 description: >
-  Returns the schema and document count for a single collection by name. Use
+  Return the schema and document count for a single collection by name. Use
   when you already know the collection and want just its definition. Requires
   the admin API key.
 side_effects:

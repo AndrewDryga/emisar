@@ -3,7 +3,7 @@ id: ec2.start_instance
 title: aws ec2 start-instances
 kind: exec
 risk: high
-description: Starts one stopped instance.
+description: Start one stopped instance.
 side_effects:
   - Instance begins booting; billing resumes.
   - New public IPv4 unless Elastic IP attached.

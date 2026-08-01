@@ -3,7 +3,7 @@ id: consul.force_check_warn
 title: PUT /v1/agent/check/warn/<check_id>
 kind: exec
 risk: high
-description: Forces one check into WARNING state.
+description: Force one check into WARNING state.
 side_effects:
   - Targeted check transitions to WARNING.
   - Strict service discovery (passing-only) routes away from it.

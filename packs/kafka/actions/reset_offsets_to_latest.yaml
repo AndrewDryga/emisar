@@ -4,7 +4,7 @@ title: Reset group offsets to latest (skip all)
 kind: exec
 risk: critical
 description: >
-  Fast-forwards a consumer group past every existing message — they will NOT be processed. Data loss for that consumer.
+  Fast-forward a consumer group past every existing message — they will NOT be processed. Data loss for that consumer.
 side_effects:
   - Consumer group must be stopped first; this command fails if still active.
   - All unconsumed messages will be skipped.

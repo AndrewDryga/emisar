@@ -4,7 +4,7 @@ title: docker compose restart (one service)
 kind: exec
 risk: high
 description: >
-  Restarts ONE service in a compose project. SIGTERM with the configured stop_grace_period, then SIGKILL, then start. In-flight requests are dropped.
+  Restart ONE service in a compose project. SIGTERM with the configured stop_grace_period, then SIGKILL, then start. In-flight requests are dropped.
 side_effects:
   - SIGTERM (then SIGKILL) the service's containers.
   - Containers restart and re-run their entrypoint.

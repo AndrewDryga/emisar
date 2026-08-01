@@ -3,7 +3,7 @@ id: nginx.worker_count
 title: Live worker process count
 kind: exec
 risk: low
-description: Counts the workers spawned by the master via pgrep. Read-only.
+description: Count the workers spawned by the master via pgrep. Read-only.
 side_effects:
   - One pgrep invocation.
   - Read-only.

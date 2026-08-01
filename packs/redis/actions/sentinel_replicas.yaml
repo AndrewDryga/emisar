@@ -4,7 +4,7 @@ title: SENTINEL REPLICAS
 kind: exec
 risk: low
 description: >
-  Lists the replicas Sentinel has discovered for one master, each
+  List the replicas Sentinel has discovered for one master, each
   with ip:port, flags (slave/s_down/disconnected), master-link-status,
   slave-repl-offset, and slave-priority. Use to see which replicas are
   up, their replication offset (lag vs the master), and which are

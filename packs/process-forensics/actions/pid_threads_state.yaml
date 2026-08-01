@@ -3,7 +3,7 @@ id: forensics.pid_threads_state
 title: Per-thread state for one PID
 kind: exec
 risk: low
-description: Tabulates each thread's state (R/S/D/Z) from /proc/PID/task/*/status.
+description: Tabulate each thread's state (R/S/D/Z) from /proc/PID/task/*/status.
 side_effects:
   - Reads /proc/PID/task/.
   - Read-only.

@@ -3,7 +3,7 @@ id: pm2.restart
 title: pm2 restart <name>
 kind: exec
 risk: high
-description: Hard-restarts one process (kill + spawn). Drops in-flight requests.
+description: Hard-restart one process (kill + spawn). Drops in-flight requests.
 side_effects:
   - Process is killed and respawned.
   - Open sockets close; in-flight requests drop.

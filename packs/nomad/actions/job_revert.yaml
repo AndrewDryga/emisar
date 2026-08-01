@@ -3,7 +3,7 @@ id: nomad.job_revert
 title: nomad job revert <id> <version>
 kind: exec
 risk: high
-description: Reverts a job to a prior version. Equivalent to re-submitting that version.
+description: Revert a job to a prior version. Equivalent to re-submitting that version.
 side_effects:
   - Job spec replaced with the prior version.
   - Triggers a rolling update (per the new/old spec's update stanza).

@@ -3,7 +3,7 @@ id: rpm.dnf_install
 title: dnf install -y <pkg>
 kind: exec
 risk: high
-description: Installs one package + its dependencies.
+description: Install one package + its dependencies.
 side_effects:
   - Resolves + installs dependency tree.
   - May restart services declared by the package's scriptlets.

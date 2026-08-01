@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns the dpkg status (installed version, architecture, depends,
+  Return the dpkg status (installed version, architecture, depends,
   maintainer) for one named package. Read-only. The package name is
   pattern-restricted to safe Debian package syntax.
 

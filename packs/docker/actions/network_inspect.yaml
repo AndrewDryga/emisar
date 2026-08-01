@@ -4,7 +4,7 @@ title: docker network inspect
 kind: exec
 risk: low
 description: >
-  Returns the JSON inspect document for one network — subnet, gateway, containers attached, driver options. Read-only.
+  Return the JSON inspect document for one network — subnet, gateway, containers attached, driver options. Read-only.
 side_effects:
   - One docker network inspect invocation.
   - Read-only.

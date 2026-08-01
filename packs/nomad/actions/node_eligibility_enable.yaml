@@ -3,7 +3,7 @@ id: nomad.node_eligibility_enable
 title: nomad node eligibility -enable
 kind: exec
 risk: medium
-description: Re-enables a node for new allocations.
+description: Re-enable a node for new allocations.
 side_effects:
   - Node may immediately receive new allocations.
 search_terms:

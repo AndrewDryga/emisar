@@ -3,7 +3,7 @@ id: consul.node_maintenance
 title: consul maint -enable
 kind: exec
 risk: high
-description: Enables maintenance mode on this agent's node. Health checks fail until disabled.
+description: Enable maintenance mode on this agent's node. Health checks fail until disabled.
 side_effects:
   - All node service health checks report critical.
   - Service discovery routes traffic away from this node.

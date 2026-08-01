@@ -3,7 +3,7 @@ id: jvm.jfr_stop
 title: Stop active JFR recording
 kind: exec
 risk: medium
-description: Stops the "emisar" recording and finalizes the .jfr file.
+description: Stop the "emisar" recording and finalize the .jfr file.
 side_effects:
   - Stops the recording.
   - Finalizes /tmp/<pid>-emisar.jfr.

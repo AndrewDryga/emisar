@@ -3,7 +3,7 @@ id: pm2.stop
 title: pm2 stop <name>
 kind: exec
 risk: high
-description: Stops one process (PM2 won't auto-restart until you `start`/`restart`).
+description: Stop one process (PM2 won't auto-restart until you `start`/`restart`).
 side_effects:
   - Process is stopped.
   - PM2 marks it `stopped`; it will not auto-respawn.

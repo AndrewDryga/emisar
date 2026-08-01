@@ -6,7 +6,7 @@ kind: exec
 risk: medium
 
 description: >
-  Refreshes the apt package index from configured sources. Does not
+  Refresh the apt package index from configured sources. Does not
   upgrade anything. Network-bound, may fail on a host behind a
   restrictive egress filter. Counts as medium-risk because it touches
   /var/lib/apt and a stale index can confuse later patching.

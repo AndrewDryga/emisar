@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Lists all containers (running + stopped). Returns id, image, status,
+  List all containers (running + stopped). Returns id, image, status,
   ports, names. Always includes stopped containers — for triage you
   almost always want to see the dead ones too. Read-only.
 

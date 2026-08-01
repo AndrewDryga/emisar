@@ -3,7 +3,7 @@ id: cw.log_tail
 title: aws logs tail
 kind: exec
 risk: low
-description: Tails recent log events for one log group (no follow).
+description: Tail recent log events for one log group (no follow).
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: log_group

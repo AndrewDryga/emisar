@@ -3,7 +3,7 @@ id: nomad.job_stop
 title: nomad job stop <id>
 kind: exec
 risk: high
-description: 'Stops one job. All its allocations are stopped + GC''d. Use -purge to also remove from history.'
+description: 'Stop one job. All its allocations are stopped + GC''d. Use -purge to also remove from history.'
 side_effects:
   - All allocations of the job receive a shutdown signal.
   - Job marked dead in catalog.

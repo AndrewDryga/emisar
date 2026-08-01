@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Drops packages that were installed as dependencies and are no longer
+  Drop packages that were installed as dependencies and are no longer
   required. Run after a series of removes. Considered high-risk
   because old kernels and headers are exactly the things autoremove
   cleans up — verify the running kernel is not on the removal list

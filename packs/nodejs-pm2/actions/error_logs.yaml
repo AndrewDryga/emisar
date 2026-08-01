@@ -3,7 +3,7 @@ id: pm2.error_logs
 title: pm2 logs <name> --err --lines N --nostream
 kind: exec
 risk: low
-description: Tails the last N stderr-only lines for one process.
+description: Tail the last N stderr-only lines for one process.
 side_effects:
   - Reads PM2 log files.
   - Read-only.

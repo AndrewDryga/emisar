@@ -3,7 +3,7 @@ id: nomad.node_eligibility_disable
 title: nomad node eligibility -disable
 kind: exec
 risk: high
-description: Marks one node ineligible for new allocations. Existing allocations are not migrated.
+description: Mark one node ineligible for new allocations. Existing allocations are not migrated.
 side_effects:
   - Node refuses new allocations.
   - Existing allocations stay running.

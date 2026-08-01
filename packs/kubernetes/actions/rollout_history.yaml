@@ -3,7 +3,7 @@ id: kubernetes.rollout_history
 title: kubectl rollout history
 kind: exec
 risk: low
-description: Returns the revision history for a deployment / statefulset / daemonset.
+description: Return the revision history for a deployment / statefulset / daemonset.
 side_effects:
   - One kubectl rollout history invocation.
   - Read-only.

@@ -4,7 +4,7 @@ title: gdb -ex "thread apply all bt"
 kind: exec
 risk: high
 description: >
-  Attaches gdb to one PID and dumps native stack for every thread, then detaches. The target is briefly stopped during the dump.
+  Attach gdb to one PID and dump native stack for every thread, then detach. The target is briefly stopped during the dump.
 side_effects:
   - Target process is paused for the duration of the gdb session (typically 0.5-3 seconds).
   - Requires CAP_SYS_PTRACE or matching uid.

@@ -4,7 +4,7 @@ title: POST /zones/<id>/purge_cache (everything)
 kind: exec
 risk: critical
 description: >
-  Purges ALL cached content for one zone. Cold-cache origin spike — every URL becomes a miss until it warms again. Avoid on busy zones.
+  Purge ALL cached content for one zone. Cold-cache origin spike — every URL becomes a miss until it warms again. Avoid on busy zones.
 side_effects:
   - Origin sees a 100% miss rate until cache re-warms.
   - Rate-limited by Cloudflare to once per minute per zone.

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns every connected client with id, addr, name, age, idle, db,
+  Return every connected client with id, addr, name, age, idle, db,
   sub, psub, multi, qbuf, obl, oll, omem, cmd, fd. Use to find the
   client holding a long subscription, a runaway pipeline (large omem),
   or to identify candidate connections for CLIENT KILL.

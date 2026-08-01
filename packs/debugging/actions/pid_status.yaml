@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Dumps /proc/<pid>/status — capabilities, uid/gid, signal masks,
+  Dump /proc/<pid>/status — capabilities, uid/gid, signal masks,
   RSS, peak RSS, voluntary/involuntary context switches, OOM score.
   More detail than `ps` for one PID. Read-only.
 

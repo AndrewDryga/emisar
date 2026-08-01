@@ -4,7 +4,7 @@ title: TLS cert expiry probe
 kind: exec
 risk: low
 description: >
-  Connects to host:port with SNI and dumps cert subject, issuer, notBefore, notAfter. Use for "when does this cert expire?" alerts.
+  Connect to host:port with SNI and dump cert subject, issuer, notBefore, notAfter. Use for "when does this cert expire?" alerts.
 side_effects:
   - One openssl s_client connection.
   - Read-only.

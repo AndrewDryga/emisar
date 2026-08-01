@@ -3,7 +3,7 @@ id: pm2.scale
 title: pm2 scale <name> <N>
 kind: exec
 risk: high
-description: Sets the number of cluster-mode workers for one app. No-op for fork mode.
+description: Set the number of cluster-mode workers for one app. No-op for fork mode.
 side_effects:
   - PM2 adds or removes worker processes.
   - Scale-down causes graceful worker shutdown.

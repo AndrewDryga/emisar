@@ -3,7 +3,7 @@ id: jvm.jstack_blocked
 title: jstack filtered to BLOCKED threads
 kind: exec
 risk: low
-description: Runs jstack and filters output to threads in BLOCKED state plus their lock owners. Use to find deadlocks fast.
+description: Run jstack and filter output to threads in BLOCKED state plus their lock owners. Use to find deadlocks fast.
 side_effects:
   - One jstack invocation.
   - Read-only.

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Lists every thread of one PID with CPU%, policy, priority, comm
+  List every thread of one PID with CPU%, policy, priority, comm
   name. Use when one PID's CPU is high but it's unclear which
   thread inside it is hot. Read-only.
 

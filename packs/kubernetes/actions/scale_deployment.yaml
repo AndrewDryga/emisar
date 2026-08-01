@@ -4,7 +4,7 @@ title: Scale a deployment
 kind: exec
 risk: high
 description: >
-  Sets deployment replica count. Use to scale up before a traffic event or scale down to drain.
+  Set deployment replica count. Use to scale up before a traffic event or scale down to drain.
 side_effects:
   - Triggers scale up/down.
   - Pods created or terminated to reach the target replica count.

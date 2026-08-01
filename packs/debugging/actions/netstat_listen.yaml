@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns TCP and UDP listening sockets with the owning process
+  Return TCP and UDP listening sockets with the owning process
   (`ss -tulnp`). Use to confirm whether an expected daemon is actually
   bound and on which interfaces. Read-only.
 

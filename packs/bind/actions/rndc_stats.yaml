@@ -3,7 +3,7 @@ id: bind.rndc_stats
 title: rndc stats + read dump
 kind: exec
 risk: low
-description: Forces a stats dump and reads it. Includes query counts, cache stats, NSID.
+description: Force a stats dump and read it. Includes query counts, cache stats, NSID.
 side_effects: ["Writes /var/named/data/named_stats.txt.", "Read-only-ish — file rewrite, no service impact."]
 args: []
 execution:

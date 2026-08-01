@@ -6,7 +6,7 @@ kind: exec
 risk: critical
 
 description: >
-  Schedules a reboot via `shutdown -r +1` — one-minute warning to
+  Schedule a reboot via `shutdown -r +1` — one-minute warning to
   give in-flight connections a chance to drain. Sends a wall message
   with the operator-supplied reason. Cannot be undone except by
   `shutdown -c` BEFORE the minute elapses; once the kernel begins

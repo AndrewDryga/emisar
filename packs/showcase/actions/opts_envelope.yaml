@@ -12,7 +12,7 @@ kind: exec
 risk: low
 
 description: >
-  Sleeps briefly and emits a fixed payload. The interesting bit is the
+  Sleep briefly and emit a fixed payload. The interesting bit is the
   execution/output envelope: cloud-supplied opts.timeout is clamped to
   [2s, 30s] regardless of what the LLM asked for, and stdout caps are
   bounded between 1 KiB and 64 KiB.

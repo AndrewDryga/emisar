@@ -3,7 +3,7 @@ id: mysql.flush_status
 title: FLUSH STATUS
 kind: exec
 risk: medium
-description: Resets the GLOBAL STATUS counters to zero. Use before a workload to get a clean rate measurement window.
+description: Reset the GLOBAL STATUS counters to zero. Use before a workload to get a clean rate measurement window.
 side_effects:
   - Most GLOBAL STATUS counters reset to 0.
   - Some session-level counters also affected.

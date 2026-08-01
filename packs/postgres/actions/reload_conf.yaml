@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Calls `pg_reload_conf()`. Re-reads the server config without
+  Call `pg_reload_conf()`. Re-reads the server config without
   restarting. Picks up changes to settings whose context is `sighup`
   (logging, autovacuum, work_mem, etc.); does NOT pick up settings
   marked `postmaster` (shared_buffers, listen_addresses) — those still

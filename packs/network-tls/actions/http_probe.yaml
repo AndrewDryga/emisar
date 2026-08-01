@@ -4,7 +4,7 @@ title: HTTP probe with timing
 kind: exec
 risk: low
 description: >
-  Probes a URL with curl, returning HTTP status, DNS / TCP / TLS / total
+  Probe a URL with curl, returning HTTP status, DNS / TCP / TLS / total
   timings, and bytes transferred. Use as a synthetic check. Set
   insecure=true to skip TLS verification when the endpoint serves an
   internal or self-signed certificate (otherwise such a probe reports

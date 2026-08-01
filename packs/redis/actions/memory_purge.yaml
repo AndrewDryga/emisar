@@ -4,7 +4,7 @@ title: MEMORY PURGE
 kind: exec
 risk: medium
 description: >
-  Asks jemalloc to release unused memory back to the OS. Use after
+  Ask jemalloc to release unused memory back to the OS. Use after
   a large eviction or DEL spike when RSS hasn't dropped despite
   used_memory falling. Brief allocator pause possible.
 side_effects:

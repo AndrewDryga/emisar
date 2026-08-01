@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `LATENCY LATEST` to summarize per-event latency spikes (fork,
+  Run `LATENCY LATEST` to summarize per-event latency spikes (fork,
   AOF write, expire, eviction, command, etc.). Requires
   `latency-monitor-threshold` to be set non-zero in redis.conf; if it
   isn't, the output is empty and that is a configuration finding worth

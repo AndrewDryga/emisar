@@ -3,7 +3,7 @@ id: docker.version
 title: docker version
 kind: exec
 risk: low
-description: Returns client + server version, API version, build info. Read-only.
+description: Return client + server version, API version, build info. Read-only.
 side_effects:
   - One docker version invocation.
   - Read-only.

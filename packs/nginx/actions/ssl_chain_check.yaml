@@ -3,7 +3,7 @@ id: nginx.ssl_chain_check
 title: TLS chain dump for one vhost
 kind: exec
 risk: low
-description: Probes localhost:443 with SNI and dumps the certificate chain. Use to confirm the intermediate cert is being served.
+description: Probe localhost:443 with SNI and dump the certificate chain. Use to confirm the intermediate cert is being served.
 side_effects:
   - One openssl s_client to localhost.
   - Read-only.

@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reads /proc/sys/kernel/tainted. A non-zero value means a binary
+  Read /proc/sys/kernel/tainted. A non-zero value means a binary
   module, a proprietary driver, or a kernel crash has compromised
   the integrity of the running kernel. The number is a bitmask;
   this action returns both the raw value and the decoded flags.

@@ -3,7 +3,7 @@ id: rmq.purge_queue
 title: rabbitmqctl purge_queue
 kind: exec
 risk: critical
-description: Drops every message in one queue. Unprocessed messages are lost.
+description: Drop every message in one queue. Unprocessed messages are lost.
 side_effects:
   - All messages in the queue (including unacked-in-flight) are deleted.
 args:

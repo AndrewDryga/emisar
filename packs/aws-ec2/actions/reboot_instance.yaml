@@ -3,7 +3,7 @@ id: ec2.reboot_instance
 title: aws ec2 reboot-instances
 kind: exec
 risk: high
-description: Reboots one instance. Instance keeps its IPs + ephemeral storage.
+description: Reboot one instance. Instance keeps its IPs + ephemeral storage.
 side_effects:
   - Instance reboots; ephemeral storage and IPs persist.
   - Brief downtime — services on host go down with it.

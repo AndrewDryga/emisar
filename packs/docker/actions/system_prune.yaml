@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Removes stopped containers, dangling images, and unused networks.
+  Remove stopped containers, dangling images, and unused networks.
   Does NOT remove unused volumes (intentional — volume data is the
   riskiest thing to delete). Run `docker.system_df` first to scope
   what will be freed. Irreversible.

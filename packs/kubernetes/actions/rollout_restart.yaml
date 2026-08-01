@@ -4,7 +4,7 @@ title: kubectl rollout restart (rolling)
 kind: exec
 risk: high
 description: >
-  Triggers a rolling restart — pods are replaced one-by-one respecting maxSurge/maxUnavailable. In-flight requests on terminated pods are gracefully drained per pod terminationGracePeriodSeconds.
+  Trigger a rolling restart — pods are replaced one-by-one respecting maxSurge/maxUnavailable. In-flight requests on terminated pods are gracefully drained per pod terminationGracePeriodSeconds.
 side_effects:
   - Triggers a fresh rollout of the resource.
   - Pods are replaced one-by-one; in-flight requests are drained per pod.

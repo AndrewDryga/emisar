@@ -3,7 +3,7 @@ id: cassandra.nodetool_setlogginglevel
 title: nodetool setlogginglevel <logger> <level>
 kind: exec
 risk: medium
-description: 'Sets one logger''s level. Use empty logger to reset all to the configured defaults.'
+description: 'Set one logger''s level. Use empty logger to reset all to the configured defaults.'
 side_effects:
   - Logger level changes immediately.
   - DEBUG/TRACE levels can dramatically increase log volume.

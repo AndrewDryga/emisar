@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Reports the current systemd unit status for a named service. Read-only.
+  Report the current systemd unit status for a named service. Read-only.
   Use to confirm whether a service is active before recommending diagnostic
   or remediation actions.
 

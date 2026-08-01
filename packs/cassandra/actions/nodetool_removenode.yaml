@@ -3,7 +3,7 @@ id: cassandra.nodetool_removenode
 title: nodetool removenode <host-id>
 kind: exec
 risk: critical
-description: Removes a down node from the cluster and streams its data from other replicas. Preferred over assassinate when there's quorum.
+description: Remove a down node from the cluster and stream its data from other replicas. Preferred over assassinate when there's quorum.
 side_effects:
   - Other replicas stream the dead node's data to their successors.
   - Heavy network + disk during stream.

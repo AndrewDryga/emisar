@@ -3,7 +3,7 @@ id: consul.snapshot_save
 title: consul snapshot save <path>
 kind: exec
 risk: medium
-description: Writes a Raft snapshot to a local file. Use before risky operations + as a backup.
+description: Write a Raft snapshot to a local file. Use before risky operations + as a backup.
 side_effects:
   - One read of the entire state store.
   - File written at the configured path on the runner host.

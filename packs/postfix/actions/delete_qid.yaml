@@ -3,7 +3,7 @@ id: postfix.delete_qid
 title: postsuper -d <queue-id>
 kind: exec
 risk: critical
-description: Deletes one queued message. Permanent — message is lost.
+description: Delete one queued message. Permanent — message is lost.
 side_effects:
   - Message is removed from the queue.
   - Sender is NOT notified.

@@ -3,7 +3,7 @@ id: net.ping_extended
 title: ping (with count + timeout)
 kind: exec
 risk: low
-description: Sends N ICMP echo requests with explicit per-probe timeout.
+description: Send N ICMP echo requests with explicit per-probe timeout.
 side_effects:
   - Outbound ICMP.
   - Read-only.

@@ -3,7 +3,7 @@ id: systemd.analyze_critical_chain
 title: systemd-analyze critical-chain
 kind: exec
 risk: low
-description: 'Shows the boot-time critical path leading to one unit — useful for understanding "why did multi-user.target take so long?"'
+description: 'Show the boot-time critical path leading to one unit — useful for understanding "why did multi-user.target take so long?"'
 side_effects:
   - One systemd-analyze invocation.
   - Read-only.

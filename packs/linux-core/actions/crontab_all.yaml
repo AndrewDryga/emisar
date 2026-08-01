@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Dumps every per-user crontab AND the system cron dirs (/etc/crontab,
+  Dump every per-user crontab AND the system cron dirs (/etc/crontab,
   /etc/cron.d/, /etc/cron.{hourly,daily,weekly,monthly}/). Use to
   answer "what's scheduled on this host?" Read-only. Cron command lines
   routinely carry inline credentials (a `curl` bearer token, a `mysql

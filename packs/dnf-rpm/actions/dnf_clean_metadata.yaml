@@ -3,7 +3,7 @@ id: rpm.dnf_clean_metadata
 title: dnf clean metadata
 kind: exec
 risk: medium
-description: Wipes cached repo metadata. Next dnf call refetches.
+description: Wipe cached repo metadata. Next dnf call refetches.
 side_effects:
   - Local metadata cache removed.
   - Next operation downloads fresh metadata (one-time slowdown).

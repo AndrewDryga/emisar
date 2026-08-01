@@ -3,7 +3,7 @@ id: cassandra.nodetool_rebuild
 title: nodetool rebuild [source_dc]
 kind: exec
 risk: high
-description: 'Re-bootstraps a node by streaming from another DC (or any DC if unspecified). Use after expanding into a new DC.'
+description: 'Re-bootstrap a node by streaming from another DC (or any DC if unspecified). Use after expanding into a new DC.'
 side_effects:
   - Heavy streaming workload.
   - Existing data on this node is NOT removed first.

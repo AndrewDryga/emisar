@@ -4,7 +4,7 @@ title: kubectl drain node (cordon + evict)
 kind: exec
 risk: critical
 description: >
-  Cordons the node and evicts every pod that has a controller (Deployment/StatefulSet/etc). DaemonSets are ignored and emptyDir data is deleted with --delete-emptydir-data. Use before scheduled maintenance.
+  Cordon the node and evict every pod that has a controller (Deployment/StatefulSet/etc). DaemonSets are ignored and emptyDir data is deleted with --delete-emptydir-data. Use before scheduled maintenance.
 side_effects:
   - Node marked unschedulable.
   - Every controller-managed pod evicted; recreated elsewhere.

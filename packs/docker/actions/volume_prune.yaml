@@ -4,7 +4,7 @@ title: docker volume prune (DESTRUCTIVE)
 kind: exec
 risk: critical
 description: >
-  Removes every volume not attached to a container. **Permanently deletes the data on them.** Use only on caches and dev hosts. Pair with `docker.volume_ls` first to confirm what's loose.
+  Remove every volume not attached to a container. **Permanently deletes the data on them.** Use only on caches and dev hosts. Pair with `docker.volume_ls` first to confirm what's loose.
 side_effects:
   - Deletes every unattached volume.
   - Irreversible — there is no recycle bin for docker volumes.

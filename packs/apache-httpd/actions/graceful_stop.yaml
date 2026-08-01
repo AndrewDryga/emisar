@@ -3,7 +3,7 @@ id: httpd.graceful_stop
 title: apachectl graceful-stop
 kind: exec
 risk: critical
-description: Drains in-flight requests then shuts down. Apache will NOT come back automatically; use systemd to restart.
+description: Drain in-flight requests then shut down. Apache will NOT come back automatically; use systemd to restart.
 side_effects:
   - Apache stops accepting new connections.
   - In-flight requests are allowed to complete.

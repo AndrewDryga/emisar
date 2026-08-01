@@ -4,7 +4,7 @@ title: jmap -dump:live (heap dump)
 kind: exec
 risk: critical
 description: >
-  Triggers a full GC, then dumps the live heap to /tmp/<pid>-heap.hprof. Can be many GB. Causes a long STW pause (seconds). Use only when you have analyst capacity to load the .hprof and disk space to hold it.
+  Trigger a full GC, then dump the live heap to /tmp/<pid>-heap.hprof. Can be many GB. Causes a long STW pause (seconds). Use only when you have analyst capacity to load the .hprof and disk space to hold it.
 side_effects:
   - Triggers full GC.
   - JVM pause for the duration of the dump (seconds to minutes).

@@ -3,7 +3,7 @@ id: ch.optimize_table
 title: OPTIMIZE TABLE FINAL
 kind: exec
 risk: high
-description: Forces merge of all parts into one. Heavy disk + CPU.
+description: Force merge of all parts into one. Heavy disk + CPU.
 side_effects:
   - Background merge runs synchronously; can take minutes-to-hours on large tables.
   - Temporary doubling of disk space during the merge.

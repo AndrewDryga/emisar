@@ -4,7 +4,7 @@ title: Delete one pod (force-restart-by-killing)
 kind: exec
 risk: high
 description: >
-  Deletes one pod by name. Use to force-restart a single pod (the controller will recreate it). Faster than rollout_restart for a one-off bad pod. Namespace required to prevent wildcard mistakes.
+  Delete one pod by name. Use to force-restart a single pod (the controller will recreate it). Faster than rollout_restart for a one-off bad pod. Namespace required to prevent wildcard mistakes.
 side_effects:
   - Pod sent SIGTERM, then SIGKILL after terminationGracePeriodSeconds.
   - Controller recreates the pod unless it was a standalone Pod.

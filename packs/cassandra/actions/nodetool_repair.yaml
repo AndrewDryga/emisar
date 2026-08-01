@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Wraps `nodetool repair`. The most dangerous "normal" operation — repair
+  Wrap `nodetool repair`. The most dangerous "normal" operation — repair
   reconciles data between replicas, can take hours, produces significant
   cluster-wide load, may interact poorly with TTL/tombstone-heavy tables,
   and can worsen latency on every replica it touches. Always inspect ring

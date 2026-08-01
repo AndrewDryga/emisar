@@ -3,7 +3,7 @@ id: cassandra.nodetool_verify
 title: nodetool verify [ks] [table]
 kind: exec
 risk: medium
-description: Verifies SSTable checksums for one (or all) tables. Detects on-disk corruption.
+description: Verify SSTable checksums for one (or all) tables. Detects on-disk corruption.
 side_effects:
   - Reads every SSTable for the targeted scope.
   - IO-heavy; CPU light.

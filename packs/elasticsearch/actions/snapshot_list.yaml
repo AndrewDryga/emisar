@@ -3,7 +3,7 @@ id: es.snapshot_list
 title: GET /_snapshot/<repo>/_all
 kind: exec
 risk: low
-description: Lists snapshots in one repository.
+description: List snapshots in one repository.
 side_effects:
   - One GET request.
   - Read-only.

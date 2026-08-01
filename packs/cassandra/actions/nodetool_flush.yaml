@@ -3,7 +3,7 @@ id: cassandra.nodetool_flush
 title: nodetool flush [ks] [table]
 kind: exec
 risk: high
-description: 'Forces memtable → SSTable flush. Without args: all keyspaces. Brief IO spike + writeahead replay simplification.'
+description: 'Force memtable → SSTable flush. Without args: all keyspaces. Brief IO spike + writeahead replay simplification.'
 side_effects:
   - Memtables for the targeted scope are flushed to disk.
   - Brief IO spike.

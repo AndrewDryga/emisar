@@ -3,7 +3,7 @@ id: mysql.kill_query
 title: KILL QUERY (cancel statement)
 kind: exec
 risk: high
-description: Cancels the currently-executing query on one connection. Connection survives — pair with `kill_connection` to terminate the session entirely.
+description: Cancel the currently-executing query on one connection. Connection survives — pair with `kill_connection` to terminate the session entirely.
 side_effects:
   - Target connection's current query is aborted.
   - Connection stays open; subsequent queries can be issued.

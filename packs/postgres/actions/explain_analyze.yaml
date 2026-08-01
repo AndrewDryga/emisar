@@ -4,7 +4,7 @@ title: EXPLAIN ANALYZE (FORMAT JSON) <query>
 kind: exec
 risk: high
 description: >
-  Runs EXPLAIN ANALYZE — the query IS executed (with timing). Forced into a read-only transaction (default_transaction_read_only=on) so data-modifying CTEs and volatile writes are rejected by the server, but the read still runs and can be expensive. High-risk because it executes an arbitrary operator-supplied query on the live database; use explain_query for a plan without execution.
+  Run EXPLAIN ANALYZE — the query IS executed (with timing). Forced into a read-only transaction (default_transaction_read_only=on) so data-modifying CTEs and volatile writes are rejected by the server, but the read still runs and can be expensive. High-risk because it executes an arbitrary operator-supplied query on the live database; use explain_query for a plan without execution.
 side_effects:
   - Query is executed with timing instrumentation, inside a read-only transaction.
   - Slower than EXPLAIN-only; a heavy query loads the server for up to the timeout.

@@ -4,7 +4,7 @@ title: Purge a dead node (PUT /v1/node/<id>/purge)
 kind: exec
 risk: critical
 description: >
-  Removes a dead (down) node from the catalog; allocations on it are GC'd. There
+  Remove a dead (down) node from the catalog; allocations on it are GC'd. There
   is no `nomad node purge` CLI subcommand — this is the HTTP API
   (PUT /v1/node/<id>/purge). Only valid for nodes that are down.
 side_effects:

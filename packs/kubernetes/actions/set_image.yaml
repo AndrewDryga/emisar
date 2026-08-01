@@ -4,7 +4,7 @@ title: Set deployment container image
 kind: exec
 risk: high
 description: >
-  Updates one container's image in a deployment — triggers a rolling update. Container name and image ref are pattern-restricted.
+  Update one container's image in a deployment — triggers a rolling update. Container name and image ref are pattern-restricted.
 side_effects:
   - Updates the deployment spec.
   - Triggers a rolling update; pods replaced one-by-one.

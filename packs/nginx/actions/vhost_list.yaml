@@ -4,7 +4,7 @@ title: List configured server_name + listen blocks
 kind: exec
 risk: low
 description: >
-  Greps `nginx -T` output for `server_name` and `listen` directives — a compact view of every virtual host this nginx serves. Read-only.
+  Grep `nginx -T` output for `server_name` and `listen` directives — a compact view of every virtual host this nginx serves. Read-only.
 side_effects:
   - One nginx -T invocation (config validation).
   - Read-only.

@@ -4,7 +4,7 @@ title: nomad job eval <id> (force re-evaluation)
 kind: exec
 risk: medium
 description: >
-  Forces a fresh evaluation of one job — the scheduler re-checks placement
+  Force a fresh evaluation of one job — the scheduler re-checks placement
   and constraints and may reschedule allocations. NOT read-only: the CLI
   `nomad job eval` creates a new evaluation, it does not just list them.
 side_effects:

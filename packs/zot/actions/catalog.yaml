@@ -4,7 +4,7 @@ title: GET /v2/_catalog
 kind: script
 risk: low
 description: >
-  Lists the repositories in the registry. Large registries paginate via the
+  List the repositories in the registry. Large registries paginate via the
   ?n=<count>&last=<repo> query parameters; this returns the first page. Use to
   inventory what is stored. Read-only.
 side_effects:

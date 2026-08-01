@@ -3,7 +3,7 @@ id: consul.destroy_session
 title: PUT /v1/session/destroy/<id>
 kind: exec
 risk: high
-description: Destroys one session. Any locks held are released; KV entries with release behavior are unlocked.
+description: Destroy one session. Any locks held are released; KV entries with release behavior are unlocked.
 side_effects:
   - Session is destroyed immediately.
   - Held KV locks released (or keys deleted, if behavior=delete).

@@ -3,7 +3,7 @@ id: kubernetes.uncordon
 title: kubectl uncordon node
 kind: exec
 risk: medium
-description: Marks a node schedulable again. Reverse of cordon.
+description: Mark a node schedulable again. Reverse of cordon.
 side_effects:
   - Node marked schedulable.
   - New pods may schedule onto it.

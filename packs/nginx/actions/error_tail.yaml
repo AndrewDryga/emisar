@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns the last N lines from /var/log/nginx/error.log. Use to spot
+  Return the last N lines from /var/log/nginx/error.log. Use to spot
   upstream connect failures, SSL handshake errors, or worker crashes
   immediately after a reload. Read-only.
 

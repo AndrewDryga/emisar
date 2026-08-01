@@ -3,7 +3,7 @@ id: es.index_settings
 title: GET /<index>/_settings
 kind: exec
 risk: low
-description: Returns one index's settings.
+description: Return one index's settings.
 side_effects:
   - One GET request.
   - Read-only.

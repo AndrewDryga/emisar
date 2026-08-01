@@ -3,7 +3,7 @@ id: mysql.analyze_table
 title: ANALYZE TABLE
 kind: exec
 risk: medium
-description: Refreshes the optimizer statistics for one table. Per-table only; cannot wildcard.
+description: Refresh the optimizer statistics for one table. Per-table only; cannot wildcard.
 side_effects:
   - Briefly holds a read lock on the table.
   - Refreshes index cardinality stats.

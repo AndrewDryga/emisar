@@ -4,7 +4,7 @@ title: GET /collections
 kind: script
 risk: low
 description: >
-  Lists all collections on the node with their full schemas and document
+  List all collections on the node with their full schemas and document
   counts. Use to inventory what is indexed and how big each collection is.
   Requires the admin API key.
 side_effects:

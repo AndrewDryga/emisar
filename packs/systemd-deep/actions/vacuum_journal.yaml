@@ -4,7 +4,7 @@ title: Vacuum the systemd journal
 kind: exec
 risk: high
 description: >
-  Drops journal records older than the cutoff time. Frees disk but loses forensic history. Provide cutoff as a journalctl --vacuum-time value (e.g. "7d", "30d").
+  Drop journal records older than the cutoff time. Frees disk but loses forensic history. Provide cutoff as a journalctl --vacuum-time value (e.g. "7d", "30d").
 side_effects:
   - Deletes journal records older than the cutoff.
   - Frees disk under /var/log/journal.

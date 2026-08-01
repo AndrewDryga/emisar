@@ -3,7 +3,7 @@ id: mysql.kill_connection
 title: KILL (terminate connection)
 kind: exec
 risk: high
-description: Terminates one connection. Use to clean up a stuck/idle session. Client sees "lost connection" and must reconnect.
+description: Terminate one connection. Use to clean up a stuck/idle session. Client sees "lost connection" and must reconnect.
 side_effects:
   - Target connection closed.
   - In-flight transaction on it rolls back.

@@ -3,7 +3,7 @@ id: net.dig_dnssec
 title: dig +dnssec (DNSSEC validation)
 kind: exec
 risk: low
-description: Issues a DNSSEC-validating query. Returns RRSIG records and the AD (authenticated-data) flag if validation succeeded.
+description: Issue a DNSSEC-validating query. Returns RRSIG records and the AD (authenticated-data) flag if validation succeeded.
 side_effects:
   - One DNS query with DO bit set.
   - Read-only.

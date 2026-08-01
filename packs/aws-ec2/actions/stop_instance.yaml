@@ -3,7 +3,7 @@ id: ec2.stop_instance
 title: aws ec2 stop-instances
 kind: exec
 risk: high
-description: Stops one instance. Public IP is released (use Elastic IP to retain).
+description: Stop one instance. Public IP is released (use Elastic IP to retain).
 side_effects:
   - Instance powers off; not billed for compute hours while stopped.
   - Public IPv4 address is lost unless Elastic IP attached.

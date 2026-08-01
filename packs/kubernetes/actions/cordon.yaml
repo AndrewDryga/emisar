@@ -3,7 +3,7 @@ id: kubernetes.cordon
 title: kubectl cordon node
 kind: exec
 risk: high
-description: Marks a node unschedulable. Existing pods stay; new pods won't be scheduled there. First step before draining.
+description: Mark a node unschedulable. Existing pods stay; new pods won't be scheduled there. First step before draining.
 side_effects:
   - Node marked unschedulable.
   - Existing pods unaffected; new pods routed elsewhere.

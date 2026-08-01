@@ -3,7 +3,7 @@ id: vault.cubbyhole_list
 title: vault list cubbyhole
 kind: exec
 risk: low
-description: Lists the runner token's own cubbyhole (each token sees only its own).
+description: List the runner token's own cubbyhole (each token sees only its own).
 side_effects:
   - One cubbyhole/ request.
   - Read-only — values not returned, only keys.

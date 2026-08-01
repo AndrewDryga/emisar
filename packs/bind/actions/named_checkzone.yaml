@@ -3,7 +3,7 @@ id: bind.named_checkzone
 title: named-checkzone <zone> <file>
 kind: exec
 risk: low
-description: Validates one zone file.
+description: Validate one zone file.
 side_effects: ["One file read.", "Read-only."]
 args:
   - name: zone

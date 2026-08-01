@@ -3,7 +3,7 @@ id: cassandra.nodetool_cleanup
 title: nodetool cleanup [ks]
 kind: exec
 risk: high
-description: Removes data no longer owned by this node (after a topology change). IO-heavy.
+description: Remove data no longer owned by this node (after a topology change). IO-heavy.
 side_effects:
   - SSTables rewritten without data that moved off this node.
   - Heavy IO + CPU; may take hours on large tables.

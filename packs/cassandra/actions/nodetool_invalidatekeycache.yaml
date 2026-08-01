@@ -3,7 +3,7 @@ id: cassandra.nodetool_invalidatekeycache
 title: nodetool invalidatekeycache
 kind: exec
 risk: medium
-description: Drops the key cache. Reads pay cold-cache cost until it warms.
+description: Drop the key cache. Reads pay cold-cache cost until it warms.
 side_effects:
   - Key cache cleared.
   - Next reads must do bloom-filter + summary + index lookups.

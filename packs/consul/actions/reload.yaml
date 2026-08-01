@@ -3,7 +3,7 @@ id: consul.reload
 title: consul reload
 kind: exec
 risk: high
-description: Reloads the local agent's config (re-reads HCL files). Some settings can't be reloaded — see consul docs.
+description: Reload the local agent's config (re-reads HCL files). Some settings can't be reloaded — see consul docs.
 side_effects:
   - Local agent re-parses config.
   - Service + check + watch definitions reload.

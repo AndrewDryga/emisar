@@ -3,7 +3,7 @@ id: caddy.validate_config
 title: caddy validate --config <file>
 kind: exec
 risk: low
-description: Validates a Caddyfile or JSON config without loading it.
+description: Validate a Caddyfile or JSON config without loading it.
 side_effects: ["One forked process.", "Read-only."]
 search_terms:
   - syntax errors

@@ -6,7 +6,7 @@ kind: exec
 risk: high
 
 description: >
-  Removes ONE named package non-interactively. Config files are kept
+  Remove ONE named package non-interactively. Config files are kept
   (apt remove, not purge). For data-bearing packages this still drops
   the binaries — confirm via `dpkg_status` first that you are not
   removing a service still in use. Holds the apt lock.

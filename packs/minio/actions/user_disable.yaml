@@ -3,7 +3,7 @@ id: minio.user_disable
 title: mc admin user disable
 kind: exec
 risk: high
-description: Disables one IAM user. They can't authenticate until re-enabled.
+description: Disable one IAM user. They can't authenticate until re-enabled.
 side_effects:
   - User can no longer authenticate.
   - In-flight requests by them complete.

@@ -3,7 +3,7 @@ id: mysql.engines
 title: SHOW ENGINES
 kind: exec
 risk: low
-description: Lists available storage engines and which is default. Read-only.
+description: List available storage engines and which is default. Read-only.
 side_effects:
   - One SHOW ENGINES.
   - Read-only.

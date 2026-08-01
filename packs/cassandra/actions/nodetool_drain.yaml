@@ -3,7 +3,7 @@ id: cassandra.nodetool_drain
 title: nodetool drain
 kind: exec
 risk: critical
-description: Stops accepting writes, flushes memtables, persists commit log positions. Node is unusable until restart.
+description: Stop accepting writes, flush memtables, persist commit log positions. Node is unusable until restart.
 side_effects:
   - Node stops accepting writes immediately.
   - All memtables flushed.

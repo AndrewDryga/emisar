@@ -3,7 +3,7 @@ id: kafka.alter_topic_retention
 title: Set topic retention.ms
 kind: exec
 risk: high
-description: Sets `retention.ms` on a topic. Lower values cause old data to be deleted in the next log roll.
+description: Set `retention.ms` on a topic. Lower values cause old data to be deleted in the next log roll.
 side_effects:
   - Old segments past retention will be deleted on next log roll.
   - Replication lag may briefly spike during cleanup.

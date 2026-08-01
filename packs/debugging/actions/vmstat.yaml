@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `vmstat 1 N` to capture N one-second samples. Shows run/block
+  Run `vmstat 1 N` to capture N one-second samples. Shows run/block
   queues, free memory, swap pressure, context switches, and per-CPU
   user/system/iowait. Use to spot a CPU-bound vs IO-bound vs
   context-switch-storm problem.

@@ -4,7 +4,7 @@ title: docker pull
 kind: exec
 risk: medium
 description: >
-  Pulls one image from its configured registry. Network + disk intensive; image-ref restricted to safe characters. Idempotent — re-pulling an existing tag re-checks the digest.
+  Pull one image from its configured registry. Network + disk intensive; image-ref restricted to safe characters. Idempotent — re-pulling an existing tag re-checks the digest.
 side_effects:
   - Outbound HTTPS to the registry.
   - Writes layers to /var/lib/docker.

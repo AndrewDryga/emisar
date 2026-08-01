@@ -3,7 +3,7 @@ id: haproxy.disable_server
 title: disable server <backend>/<server>
 kind: exec
 risk: high
-description: Stops sending new traffic to one backend server (in-flight requests continue).
+description: Stop sending new traffic to one backend server (in-flight requests continue).
 side_effects:
   - Server is marked MAINT — no new traffic.
   - Existing requests finish.

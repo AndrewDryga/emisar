@@ -3,7 +3,7 @@ id: nginx.master_pid
 title: nginx master PID
 kind: exec
 risk: low
-description: Reads /run/nginx.pid (or the configured pid path). Read-only.
+description: Read /run/nginx.pid (or the configured pid path). Read-only.
 side_effects:
   - One file read.
   - Read-only.

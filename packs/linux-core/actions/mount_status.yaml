@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Lists every mounted filesystem with type, source device, mountpoint,
+  List every mounted filesystem with type, source device, mountpoint,
   and mount options. Read-only. Use to confirm a service has the
   right disk attached or to find a stuck/duplicate mount.
 

@@ -4,7 +4,7 @@ title: GET /v2/{repo}/tags/list
 kind: script
 risk: low
 description: >
-  Lists the tags available for a single repository. Use after the catalog to
+  List the tags available for a single repository. Use after the catalog to
   see which versions of an image are published. Read-only.
 side_effects:
   - One read-only HTTP GET to the zot /v2/{repo}/tags/list endpoint.

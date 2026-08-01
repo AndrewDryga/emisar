@@ -4,7 +4,7 @@ title: Lock-wait graph
 kind: exec
 risk: low
 description: >
-  Joins performance_schema.data_lock_waits with data_locks to show who is blocking whom. Use before a kill_query — you want the blocker, not the victim.
+  Join performance_schema.data_lock_waits with data_locks to show who is blocking whom. Use before a kill_query — you want the blocker, not the victim.
 side_effects:
   - One SELECT against performance_schema.
   - Read-only.

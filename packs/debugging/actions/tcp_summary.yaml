@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns the count of TCP sockets in each state (ESTAB, TIME-WAIT,
+  Return the count of TCP sockets in each state (ESTAB, TIME-WAIT,
   CLOSE-WAIT, FIN-WAIT-*, SYN-*). High CLOSE-WAIT usually means the
   application isn't close()ing; high TIME-WAIT means short-lived
   client connections. Read-only.

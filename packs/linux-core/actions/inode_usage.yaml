@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Shows inode usage per filesystem (`df -i`). A "disk full" report
+  Show inode usage per filesystem (`df -i`). A "disk full" report
   that doesn't match `df -h` is almost always inode exhaustion —
   this surfaces it directly. Read-only.
 

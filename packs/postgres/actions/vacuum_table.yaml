@@ -3,7 +3,7 @@ id: postgres.vacuum_table
 title: VACUUM <schema>.<table>
 kind: exec
 risk: high
-description: 'Reclaims dead-tuple space in one table. Non-blocking (ShareUpdateExclusiveLock). Use VACUUM ANALYZE if planner stats are also stale.'
+description: 'Reclaim dead-tuple space in one table. Non-blocking (ShareUpdateExclusiveLock). Use VACUUM ANALYZE if planner stats are also stale.'
 side_effects:
   - IO-heavy proportional to table size.
   - DML continues during the vacuum.

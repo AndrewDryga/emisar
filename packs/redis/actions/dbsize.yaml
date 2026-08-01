@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Returns the number of keys in the currently selected database. O(1).
+  Return the number of keys in the currently selected database. O(1).
   Read-only. Use as a sanity check before running operations that scan
   the keyspace.
 

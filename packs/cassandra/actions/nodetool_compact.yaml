@@ -3,7 +3,7 @@ id: cassandra.nodetool_compact
 title: nodetool compact <ks> [table]
 kind: exec
 risk: high
-description: 'Forces major compaction. For STCS this merges everything into one big SSTable — almost always a mistake. Prefer per-token-range compaction or letting the strategy run.'
+description: 'Force major compaction. For STCS this merges everything into one big SSTable — almost always a mistake. Prefer per-token-range compaction or letting the strategy run.'
 side_effects:
   - Heavy disk + CPU for the duration.
   - For STCS, creates one giant SSTable that is hard to compact later.

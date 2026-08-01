@@ -3,7 +3,7 @@ id: minio.heal_summary
 title: mc admin heal --recursive (cluster-wide)
 kind: exec
 risk: high
-description: Triggers a cluster-wide healing scan that repairs objects (not a dry-run). Does NOT use --remove. May be IO-heavy.
+description: Trigger a cluster-wide healing scan that repairs objects (not a dry-run). Does NOT use --remove. May be IO-heavy.
 side_effects:
   - Heavy disk + CPU during scan on each node.
   - May actually heal objects (not just dry-run).

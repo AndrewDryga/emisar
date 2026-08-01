@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Runs `nginx -t`. Validates the loaded config without applying. Use
+  Run `nginx -t`. Validates the loaded config without applying. Use
   before every `nginx.reload`. A failing config returns non-zero exit
   and the error lines go to stderr.
 

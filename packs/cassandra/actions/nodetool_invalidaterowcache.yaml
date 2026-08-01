@@ -3,7 +3,7 @@ id: cassandra.nodetool_invalidaterowcache
 title: nodetool invalidaterowcache
 kind: exec
 risk: medium
-description: Drops the row cache.
+description: Drop the row cache.
 side_effects: ["Row cache cleared.", "Next reads pay cold-cache cost."]
 args: []
 execution:

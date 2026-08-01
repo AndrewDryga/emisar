@@ -6,7 +6,7 @@ kind: script
 risk: low
 
 description: >
-  Runs a packaged shell script that inspects filesystem usage of the
+  Run a packaged shell script that inspects filesystem usage of the
   Cassandra data and commitlog directories. Read-only. Use as a first
   step when disk pressure is suspected. Output is human-readable; do not
   parse it.

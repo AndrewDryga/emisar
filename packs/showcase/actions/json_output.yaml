@@ -12,7 +12,7 @@ kind: exec
 risk: low
 
 description: >
-  Demonstrates `parser: json` plus an extra regex redaction rule scoped
+  Demonstrate `parser: json` plus an extra regex redaction rule scoped
   to this action. The rule sits *in front of* the global rules — useful
   when an action emits a known secret shape that the global rules don't
   cover.

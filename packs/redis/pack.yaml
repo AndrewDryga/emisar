@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.7
+version: 0.3.8
 retired_below: 0.3.6
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event

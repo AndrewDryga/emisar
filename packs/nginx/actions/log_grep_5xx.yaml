@@ -4,7 +4,7 @@ title: Recent 5xx responses from access log
 kind: exec
 risk: low
 description: >
-  Greps the access log for 5xx status codes (assumes combined log format).
+  Grep the access log for 5xx status codes (assumes combined log format).
   Needs the log on disk — the official container image symlinks it to stdout,
   where the host's log collector owns it instead. Read-only.
 side_effects:

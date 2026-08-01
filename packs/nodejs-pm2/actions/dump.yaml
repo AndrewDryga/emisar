@@ -3,7 +3,7 @@ id: pm2.dump
 title: pm2 dump
 kind: exec
 risk: medium
-description: Persists the current process list so PM2 resurrects it on boot.
+description: Persist the current process list so PM2 resurrects it on boot.
 side_effects:
   - Writes ~/.pm2/dump.pm2.
   - Future PM2 resurrects will use this snapshot.

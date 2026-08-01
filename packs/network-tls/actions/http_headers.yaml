@@ -4,7 +4,7 @@ title: HTTP response headers (curl -I)
 kind: exec
 risk: low
 description: >
-  Dumps response headers from a URL, following redirects. Use to confirm
+  Dump response headers from a URL, following redirects. Use to confirm
   cache-control / hsts / set-cookie / cors setup. Set insecure=true to
   skip TLS verification for an internal or self-signed certificate.
 side_effects:

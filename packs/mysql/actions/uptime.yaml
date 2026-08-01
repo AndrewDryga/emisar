@@ -3,7 +3,7 @@ id: mysql.uptime
 title: Uptime + version
 kind: exec
 risk: low
-description: Returns SELECT VERSION() and uptime from SHOW STATUS. Read-only.
+description: Return SELECT VERSION() and uptime from SHOW STATUS. Read-only.
 side_effects:
   - Two SELECTs.
   - Read-only.

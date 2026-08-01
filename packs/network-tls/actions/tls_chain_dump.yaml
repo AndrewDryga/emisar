@@ -3,7 +3,7 @@ id: net.tls_chain_dump
 title: TLS chain dump
 kind: exec
 risk: low
-description: Dumps the full certificate chain a server returns. Use to debug "browsers see incomplete chain" errors.
+description: Dump the full certificate chain a server returns. Use to debug "browsers see incomplete chain" errors.
 side_effects:
   - One openssl s_client connection.
   - Read-only.

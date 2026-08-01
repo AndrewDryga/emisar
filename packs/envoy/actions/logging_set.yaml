@@ -3,7 +3,7 @@ id: envoy.logging_set
 title: POST /logging?level=<level>
 kind: exec
 risk: medium
-description: Sets all components to one log level. Use "debug" for triage, then revert to "info".
+description: Set all components to one log level. Use "debug" for triage, then revert to "info".
 side_effects:
   - All components switch to the new level.
   - Log volume can spike at debug/trace.

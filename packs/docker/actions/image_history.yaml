@@ -4,7 +4,7 @@ title: docker history
 kind: exec
 risk: low
 description: >
-  Returns the layer-by-layer build history of one image — useful for tracing "where did this 2 GB layer come from?" Read-only.
+  Return the layer-by-layer build history of one image — useful for tracing "where did this 2 GB layer come from?" Read-only.
 side_effects:
   - One docker history invocation.
   - Read-only.

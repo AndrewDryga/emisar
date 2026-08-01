@@ -3,7 +3,7 @@ id: tf.validate
 title: terraform validate
 kind: exec
 risk: low
-description: Validates the workspace's HCL files. No state read or write.
+description: Validate the workspace's HCL files. No state read or write.
 side_effects:
   - Forks the configured CLI.
   - Read-only.

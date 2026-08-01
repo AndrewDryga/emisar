@@ -3,7 +3,7 @@ id: kafka.preferred_leader_election
 title: Trigger preferred-leader election
 kind: exec
 risk: high
-description: Forces preferred-leader election cluster-wide. Use after a broker restart leaves leaders skewed.
+description: Force preferred-leader election cluster-wide. Use after a broker restart leaves leaders skewed.
 side_effects:
   - Brief leadership transitions; in-flight produce/consume may retry.
   - May cause a temporary spike in metadata churn.

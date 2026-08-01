@@ -3,7 +3,7 @@ id: cf.purge_url
 title: POST /zones/<id>/purge_cache (single URL)
 kind: exec
 risk: high
-description: Purges cache for one URL. Safe — only affects that URL's cached variants.
+description: Purge cache for one URL. Safe — only affects that URL's cached variants.
 side_effects:
   - Next request for that URL is a cache miss; hits origin.
 args:

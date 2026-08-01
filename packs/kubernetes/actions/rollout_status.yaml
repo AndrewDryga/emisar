@@ -3,7 +3,7 @@ id: kubernetes.rollout_status
 title: kubectl rollout status
 kind: exec
 risk: low
-description: Reports the rollout progress of a deployment / statefulset / daemonset. Bounded with --watch=false so it returns immediately.
+description: Report the rollout progress of a deployment / statefulset / daemonset. Bounded with --watch=false so it returns immediately.
 side_effects:
   - One kubectl rollout status invocation.
   - Read-only.

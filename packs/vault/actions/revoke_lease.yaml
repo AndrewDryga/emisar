@@ -3,7 +3,7 @@ id: vault.revoke_lease
 title: vault lease revoke <id>
 kind: exec
 risk: high
-description: 'Revokes one lease — the credential becomes invalid immediately. Anyone using it gets a 403 from the downstream system.'
+description: 'Revoke one lease — the credential becomes invalid immediately. Anyone using it gets a 403 from the downstream system.'
 side_effects:
   - Lease is revoked; underlying credential disabled.
   - In-flight requests using the credential will fail.

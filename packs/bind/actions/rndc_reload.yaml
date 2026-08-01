@@ -3,7 +3,7 @@ id: bind.rndc_reload
 title: rndc reload [zone]
 kind: exec
 risk: high
-description: Reloads named config (or one zone). Validates first if zone specified.
+description: Reload named config (or one zone). Validates first if zone specified.
 side_effects:
   - Brief lock on the zone(s) being reloaded.
   - Invalid config aborts the reload; old data stays in place.

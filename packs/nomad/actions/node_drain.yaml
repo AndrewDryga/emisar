@@ -3,7 +3,7 @@ id: nomad.node_drain
 title: nomad node drain -enable
 kind: exec
 risk: high
-description: Enables drain mode on one node. Allocations migrate; new ones are blocked.
+description: Enable drain mode on one node. Allocations migrate; new ones are blocked.
 side_effects:
   - Node stops accepting new allocations.
   - Existing allocations are migrated according to job spec (Migrate stanza).

@@ -4,8 +4,8 @@ title: Sentinel INFO
 kind: exec
 risk: low
 description: >
-  Runs INFO against the Sentinel process itself (port 26379) and
-  returns the raw text, including the `sentinel` section:
+  Run INFO against the Sentinel process itself (port 26379) and
+  return the raw text, including the `sentinel` section:
   sentinel_masters, sentinel_running_scripts, sentinel_tilt, and a
   master0..N line per monitored master (name, status, address,
   slaves, sentinels). Use to read the Sentinel's own health — e.g.

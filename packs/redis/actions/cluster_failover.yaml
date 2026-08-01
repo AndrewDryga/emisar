@@ -4,7 +4,7 @@ title: CLUSTER FAILOVER
 kind: exec
 risk: critical
 description: >
-  Promotes the connected REPLICA to master. Default mode (empty)
+  Promote the connected REPLICA to master. Default mode (empty)
   waits for replication parity — the only safe choice during a
   planned failover. FORCE skips parity (use only when master is
   suspected dead). TAKEOVER bypasses cluster consensus entirely

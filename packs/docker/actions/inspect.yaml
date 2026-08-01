@@ -6,7 +6,7 @@ kind: exec
 risk: medium
 
 description: >
-  Returns the full JSON inspect document for one container — state, exit
+  Return the full JSON inspect document for one container — state, exit
   code, restart count, mounts, network config, labels, and the
   container's env. The env commonly carries injected secrets (DB URLs,
   API keys, values passed with -e), so this is approval-gated; the

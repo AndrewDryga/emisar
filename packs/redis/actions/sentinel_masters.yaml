@@ -4,7 +4,7 @@ title: SENTINEL MASTERS
 kind: exec
 risk: low
 description: >
-  Lists every master this Sentinel monitors with full state — name,
+  List every master this Sentinel monitors with full state — name,
   ip:port, quorum, flags (master/o_down/s_down), num-slaves,
   num-other-sentinels. Connects to the Sentinel on port 26379. The
   first stop when mapping a replicas+Sentinel topology. Read-only.

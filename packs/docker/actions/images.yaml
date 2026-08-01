@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Lists images on the host. Use to verify expected tags are present
+  List images on the host. Use to verify expected tags are present
   before a deploy or to find old images consuming disk. Read-only.
 
 side_effects:

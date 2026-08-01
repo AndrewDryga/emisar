@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Fetches the nginx stub_status endpoint over loopback. Returns
+  Fetch the nginx stub_status endpoint over loopback. Returns
   active connections, total requests, reading/writing/waiting counts.
   Requires `stub_status on;` in a location block reachable from
   127.0.0.1. Loopback-only — the host is pinned to 127.0.0.1/localhost/[::1];

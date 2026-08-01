@@ -4,7 +4,7 @@ title: ROLE
 kind: exec
 risk: low
 description: >
-  Reports whether this Redis is master, replica, or sentinel.
+  Report whether this Redis is master, replica, or sentinel.
   Master shows replication offset and connected replicas; replica
   shows master addr + sync state. Use before any write-path
   troubleshooting.

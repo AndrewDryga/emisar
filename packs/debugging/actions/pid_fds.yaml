@@ -6,7 +6,7 @@ kind: exec
 risk: low
 
 description: >
-  Lists what each FD in /proc/<pid>/fd points at. Sockets show up as
+  List what each FD in /proc/<pid>/fd points at. Sockets show up as
   `socket:[N]`, files as their path. Use to spot FD-leak candidates or
   confirm a daemon has the log file you expect.
 
