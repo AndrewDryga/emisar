@@ -1,6 +1,6 @@
 locals {
   cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c"
-  admin_runner_version  = "0.14.0"
+  admin_runner_version  = "0.16.0"
   # The release image, instance firewall, MIG named port, and load-balancer
   # probes share this contract. Changing it requires a staged successor fleet;
   # it is not a routine workspace input.

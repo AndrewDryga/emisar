@@ -36,7 +36,7 @@ locals {
 
   admin_runner_start = templatefile("${path.module}/../../runtime/admin-runner/start.sh", {
     project_id                = local.common.project_id
-    runner_version            = "0.14.0"
+    runner_version            = "0.16.0"
     enrollment_secret_version = "1"
   })
 
