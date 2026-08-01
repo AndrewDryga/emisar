@@ -3,6 +3,8 @@ versions:
   - version: 577.0.0-slim
     digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
     default: true
+risk_accountability:
+  mode: complete
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
   CLOUDSDK_API_ENDPOINT_OVERRIDES_MONITORING: https://gcp-api:8443/
@@ -54,6 +56,39 @@ cases:
     args: {project: example-prod, limit: 10}
     expect:
       stdout_contains: [Harness CPU alert, '"enabled": true', harness-channel]
+  - name: gcp.alert_policy_enable-is-idempotent-on-enabled-policy
+    action: gcp.alert_policy_enable
+    args: {project: example-prod, policy: "8675309001234"}
+    expect:
+      stdout_contains: [Harness CPU alert, '"enabled": true']
+    probes:
+      - name: the provider received the enable patch
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains: ["patch:8675309001234:enabled=true"]
+  - action: gcp.alert_policy_disable
+    args: {project: example-prod, policy: "8675309001234"}
+    expect:
+      stdout_contains: [Harness CPU alert, '"enabled": false']
+    probes:
+      - name: the provider received the disable patch
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains: ["patch:8675309001234:enabled=false"]
+  - name: gcp.alert_policy_disable-fails-on-missing-policy
+    action: gcp.alert_policy_disable
+    args: {project: example-prod, policy: "4040404"}
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
+  - name: gcp.alert_policy_enable-rejects-non-numeric-policy
+    action: gcp.alert_policy_enable
+    args: {project: example-prod, policy: harness-policy}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
   - name: gcp.metric-query-rejects-http-endpoint
     action: gcp.metric_query
     env:

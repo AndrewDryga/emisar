@@ -5,6 +5,10 @@ from urllib.parse import parse_qs, urlparse
 
 ACCESS_TOKEN = "packtest-canary-gcp-monitoring-access-token-281b"
 SAMPLE_TIME = "2026-07-27T22:00:00Z"
+POLICY_ID = "8675309001234"
+
+MUTATIONS = []
+POLICY_ENABLED = {"value": True}
 
 
 def point(value):
@@ -31,11 +35,36 @@ def metric_series(metric_type, value, resource_type):
     }
 
 
+def alert_policy():
+    return {
+        "name": f"projects/example-prod/alertPolicies/{POLICY_ID}",
+        "displayName": "Harness CPU alert",
+        "enabled": POLICY_ENABLED["value"],
+        "combiner": "OR",
+        "notificationChannels": [
+            "projects/example-prod/notificationChannels/harness-channel"
+        ],
+        "conditions": [{
+            "displayName": "CPU high",
+            "conditionThreshold": {
+                "filter": (
+                    'metric.type="compute.googleapis.com/instance/'
+                    'cpu/utilization"'
+                ),
+                "comparison": "COMPARISON_GT",
+                "thresholdValue": 0.9,
+            },
+        }],
+    }
+
+
 def response(raw_path):
     request = urlparse(raw_path)
     query = parse_qs(request.query, keep_blank_values=True)
     if request.path == "/health":
         return {"ok": True}
+    if request.path == "/probe/state":
+        return {"mutations": MUTATIONS}
     if request.path.endswith("/metricDescriptors"):
         return {
             "metricDescriptors": [{
@@ -86,41 +115,29 @@ def response(raw_path):
                 )]
             }
     if request.path.endswith("/alertPolicies"):
-        return {
-            "alertPolicies": [{
-                "name": "projects/example-prod/alertPolicies/harness-policy",
-                "displayName": "Harness CPU alert",
-                "enabled": True,
-                "combiner": "OR",
-                "notificationChannels": [
-                    "projects/example-prod/notificationChannels/harness-channel"
-                ],
-                "conditions": [{
-                    "displayName": "CPU high",
-                    "conditionThreshold": {
-                        "filter": (
-                            'metric.type="compute.googleapis.com/instance/'
-                            'cpu/utilization"'
-                        ),
-                        "comparison": "COMPARISON_GT",
-                        "thresholdValue": 0.9,
-                    },
-                }],
-            }]
-        }
+        return {"alertPolicies": [alert_policy()]}
+    return None
+
+
+def patch_response(raw_path, body):
+    request = urlparse(raw_path)
+    query = parse_qs(request.query, keep_blank_values=True)
+    if request.path.endswith(f"/alertPolicies/{POLICY_ID}"):
+        if query.get("updateMask", [None])[0] != "enabled":
+            return None
+        enabled = json.loads(body).get("enabled")
+        if not isinstance(enabled, bool):
+            return None
+        POLICY_ENABLED["value"] = enabled
+        MUTATIONS.append(f"patch:{POLICY_ID}:enabled={str(enabled).lower()}")
+        return alert_policy()
     return None
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path != "/health":
-            authorization = self.headers.get("Authorization")
-            if authorization != f"Bearer {ACCESS_TOKEN}":
-                self.write_json(
-                    401,
-                    {"error": {"code": 401, "message": "invalid token"}},
-                )
-                return
+        if not self.authorized():
+            return
         payload = response(self.path)
         if payload is None:
             self.write_json(
@@ -132,6 +149,35 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         self.write_json(200, payload)
+
+    def do_PATCH(self):
+        if not self.authorized():
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length).decode() if length else ""
+        payload = patch_response(self.path, body)
+        if payload is None:
+            self.write_json(
+                404,
+                {"error": {
+                    "code": 404,
+                    "message": f"unhandled patch {self.path}",
+                }},
+            )
+            return
+        self.write_json(200, payload)
+
+    def authorized(self):
+        if urlparse(self.path).path in ("/health", "/probe/state"):
+            return True
+        authorization = self.headers.get("Authorization")
+        if authorization != f"Bearer {ACCESS_TOKEN}":
+            self.write_json(
+                401,
+                {"error": {"code": 401, "message": "invalid token"}},
+            )
+            return False
+        return True
 
     def write_json(self, status, payload):
         body = json.dumps(payload).encode()

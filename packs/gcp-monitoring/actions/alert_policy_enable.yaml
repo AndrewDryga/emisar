@@ -1,0 +1,52 @@
+schema_version: 1
+id: gcp.alert_policy_enable
+title: Enable a Cloud Monitoring alert policy
+kind: script
+risk: high
+description: >
+  Enable one exact alerting policy so its conditions evaluate and notify
+  again. Idempotent: enabling an already-enabled policy succeeds and changes
+  nothing. Returns the updated policy; roll back with
+  gcp.alert_policy_disable.
+side_effects:
+  - One gcloud token read and one Monitoring API PATCH restricted to the policy's enabled field.
+  - The policy's conditions resume evaluating and can page its notification channels.
+search_terms:
+  - enable alert
+  - resume alerting
+  - unsilence policy
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: policy
+    type: string
+    required: true
+    description: >
+      Numeric alert-policy ID — the last segment of
+      projects/PROJECT/alertPolicies/ID. Find it with gcp.alert_policies.
+    validation:
+      pattern: "^[0-9]{1,20}$"
+execution:
+  script:
+    path: scripts/monitoring_api.sh
+    interpreter: /bin/sh
+  argv:
+    - alert-policy-set-enabled
+    - "{{ args.project }}"
+    - "{{ args.policy }}"
+    - "true"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Re-enable a CPU alert policy after maintenance
+    args:
+      project: example-prod
+      policy: "8675309001234"

@@ -85,6 +85,22 @@ case "$mode" in
     request "$@" "$api_base/v3/projects/$project/metricDescriptors"
     ;;
 
+  alert-policy-set-enabled)
+    policy=$3
+    enabled=$4
+    case "$enabled" in
+      true|false) ;;
+      *)
+        printf '%s\n' "enabled must be true or false" >&2
+        exit 2
+        ;;
+    esac
+    request --request PATCH \
+      --header 'Content-Type: application/json' \
+      --data "{\"enabled\": $enabled}" \
+      "$api_base/v3/projects/$project/alertPolicies/$policy?updateMask=enabled"
+    ;;
+
   interconnect-utilization)
     attachment=$3
     region=$4

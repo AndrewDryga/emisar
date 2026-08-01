@@ -1,0 +1,81 @@
+schema_version: 1
+id: gcp.dns_record_upsert
+title: gcloud dns record-sets create or update
+kind: script
+risk: high
+description: >
+  Create or replace one exact DNS record set in a managed zone with the given
+  TTL and record data. Existing data for that name and type is overwritten:
+  read it first with gcp.dns_record_lookup, and roll back by upserting the
+  previous values. Resolvers keep serving cached answers until the previous
+  TTL expires.
+side_effects:
+  - Creates the record set when absent; otherwise replaces its TTL and record data.
+  - Replaces any routing policy on the record set with the given static data.
+  - Resolvers serve the previous data until its TTL expires.
+search_terms:
+  - set DNS record
+  - update A record
+  - point hostname
+  - DNS failover
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: zone
+    type: string
+    required: true
+    description: Managed-zone name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+  - name: name
+    type: string
+    required: true
+    description: Fully qualified DNS name ending with a dot.
+    validation: {pattern: "^[A-Za-z0-9_*](?:[A-Za-z0-9_.*-]{0,251}[A-Za-z0-9_*-])?\\.$", max_length: 253}
+  - name: type
+    type: string
+    required: true
+    description: DNS record type. The Cloud DNS-managed SOA record cannot be upserted.
+    validation:
+      enum: [A, AAAA, CAA, CNAME, DS, IPSECKEY, MX, NAPTR, NS, PTR, SPF, SRV, SSHFP, TLSA, TXT]
+  - name: ttl
+    type: integer
+    required: true
+    description: Record TTL in seconds.
+    validation: {min: 1, max: 604800}
+  - name: values
+    type: string
+    required: true
+    description: >
+      Complete record data for the set, comma-separated for multiple values
+      (for example two A addresses). A comma always separates values — a
+      literal comma inside one value is not supported — and no value may
+      start with "-" or "^".
+    validation: {pattern: "^[ -+.-\\]_-~][ -+\\--~]{0,998}(?:,[ -+.-\\]_-~][ -+\\--~]{0,998})*$", max_length: 1000}
+execution:
+  script: {path: scripts/dns.sh, interpreter: /bin/sh}
+  argv:
+    - record-upsert
+    - "{{ args.project }}"
+    - "{{ args.zone }}"
+    - "{{ args.name }}"
+    - "{{ args.type }}"
+    - "{{ args.ttl }}"
+    - "{{ args.values }}"
+  timeout: 120s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Point an application address record at a healthy IP
+    args:
+      project: example-prod
+      zone: app
+      name: api.example.test.
+      type: A
+      ttl: 300
+      values: "203.0.113.40"

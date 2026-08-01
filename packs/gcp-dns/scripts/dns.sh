@@ -51,6 +51,58 @@ case "$mode" in
       '--format=json(name,type,ttl,rrdatas,routingPolicy,signatureRrdatas)' \
       --quiet
     ;;
+  record-upsert)
+    zone=$3 name=$4 rtype=$5 ttl=$6 values=$7
+    current=$(gcloud dns record-sets list \
+      "--zone=$zone" "--name=$name" "--type=$rtype" \
+      "--project=$project" --limit=2 --format=json --quiet)
+    if printf '%s' "$current" | jq -e 'length == 0' >/dev/null; then
+      exec gcloud dns record-sets create "$name" \
+        "--zone=$zone" "--type=$rtype" "--ttl=$ttl" "--rrdatas=$values" \
+        "--project=$project" --format=json --quiet
+    fi
+    exec gcloud dns record-sets update "$name" \
+      "--zone=$zone" "--type=$rtype" "--ttl=$ttl" "--rrdatas=$values" \
+      "--project=$project" --format=json --quiet
+    ;;
+  record-delete)
+    zone=$3 name=$4 rtype=$5 values=$6
+    current=$(gcloud dns record-sets list \
+      "--zone=$zone" "--name=$name" "--type=$rtype" \
+      "--project=$project" --limit=2 --format=json --quiet)
+    if ! printf '%s' "$current" | jq -e --arg values "$values" \
+      'length == 1 and ((.[0].rrdatas // []) | sort) == ($values | split(",") | sort)' \
+      >/dev/null; then
+      printf '%s\n' \
+        "live record set does not match the expected values; refusing to delete" >&2
+      exit 3
+    fi
+    # Delete through a DNS change so the provider re-verifies the exact live
+    # record data at apply time: a concurrent modification fails the change
+    # instead of deleting whatever replaced it.
+    ttl=$(printf '%s' "$current" | jq -r '.[0].ttl')
+    umask 077
+    txdir=$(mktemp -d)
+    trap 'rm -rf -- "$txdir"' EXIT HUP INT TERM
+    old_ifs=$IFS
+    set -f
+    IFS='
+'
+    set -- $(printf '%s' "$current" | jq -r '.[0].rrdatas[]')
+    set +f
+    IFS=$old_ifs
+    gcloud dns record-sets transaction start \
+      "--zone=$zone" "--project=$project" \
+      "--transaction-file=$txdir/transaction.yaml" --skip-soa-update --quiet >&2
+    gcloud dns record-sets transaction remove "$@" \
+      "--name=$name" "--ttl=$ttl" "--type=$rtype" \
+      "--zone=$zone" "--project=$project" \
+      "--transaction-file=$txdir/transaction.yaml" --quiet >&2
+    gcloud dns record-sets transaction execute \
+      "--zone=$zone" "--project=$project" \
+      "--transaction-file=$txdir/transaction.yaml" --format=none --quiet >&2
+    printf '%s' "$current" | jq '.[0] | {name, type, ttl, rrdatas, deleted: true}'
+    ;;
   policies)
     project_with_jq \
       'map({

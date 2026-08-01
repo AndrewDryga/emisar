@@ -3,6 +3,8 @@ versions:
   - version: 577.0.0-slim
     digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
     default: true
+risk_accountability:
+  mode: complete
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
   CLOUDSDK_API_ENDPOINT_OVERRIDES_DNS: http://gcp-api:8080/dns/v1/
@@ -36,3 +38,117 @@ cases:
     args: {project: example-prod, response_policy: harness-response}
     expect:
       stdout_contains: [harness-rule, blocked.example.test., NXDOMAIN]
+  - name: gcp.dns_record_upsert-creates-absent-record
+    action: gcp.dns_record_upsert
+    args:
+      project: example-prod
+      zone: harness-zone
+      name: www.example.test.
+      type: A
+      ttl: 60
+      values: "203.0.113.40,203.0.113.41"
+    expect:
+      stdout_contains: [www.example.test., 203.0.113.40, 203.0.113.41]
+    probes:
+      - name: the provider received the create
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["create:www.example.test.:A:60:203.0.113.40,203.0.113.41"]
+  - name: gcp.dns_record_upsert-replaces-existing-record
+    action: gcp.dns_record_upsert
+    args:
+      project: example-prod
+      zone: harness-zone
+      name: api.example.test.
+      type: A
+      ttl: 120
+      values: "203.0.113.99"
+    expect:
+      stdout_contains: [api.example.test., 203.0.113.99, '"ttl": 120']
+    probes:
+      - name: the provider received the patch
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["patch:api.example.test.:A:120:203.0.113.99"]
+  - name: gcp.dns_record_upsert-fails-on-missing-zone
+    action: gcp.dns_record_upsert
+    args:
+      project: example-prod
+      zone: missing-zone
+      name: www.example.test.
+      type: A
+      ttl: 60
+      values: "203.0.113.40"
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [missing-zone]
+  - name: gcp.dns_record_upsert-rejects-relative-name
+    action: gcp.dns_record_upsert
+    args:
+      project: example-prod
+      zone: harness-zone
+      name: www.example.test
+      type: A
+      ttl: 60
+      values: "203.0.113.40"
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
+  - action: gcp.dns_record_delete
+    args:
+      project: example-prod
+      zone: harness-zone
+      name: api.example.test.
+      type: A
+      values: "203.0.113.30"
+    expect:
+      stdout_contains: [api.example.test., 203.0.113.30, '"deleted": true']
+      stderr_contains: ["Executed transaction"]
+    probes:
+      - name: the provider received the exact-match deletion change
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["delete:api.example.test.:A"]
+  - name: gcp.dns_record_delete-refuses-mismatched-values
+    action: gcp.dns_record_delete
+    args:
+      project: example-prod
+      zone: harness-zone
+      name: api.example.test.
+      type: A
+      values: "203.0.113.99"
+    expect:
+      status: failure
+      exit: [3]
+      reason_contains: [process exited with code 3]
+      stderr_contains: [refusing to delete]
+    probes:
+      - name: the provider received no mutation
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_not_contains: ["delete:"]
+  - name: gcp.dns_record_delete-rejects-flag-shaped-name
+    action: gcp.dns_record_delete
+    args:
+      project: example-prod
+      zone: harness-zone
+      name: --log-http.
+      type: A
+      values: "203.0.113.30"
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
+  - name: gcp.dns_record_upsert-rejects-delimiter-override-values
+    action: gcp.dns_record_upsert
+    args:
+      project: example-prod
+      zone: harness-zone
+      name: www.example.test.
+      type: A
+      ttl: 60
+      values: "^;^203.0.113.40;203.0.113.41"
+    expect:
+      status: failure
+      reason_contains: [must match pattern]

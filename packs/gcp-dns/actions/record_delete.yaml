@@ -1,0 +1,76 @@
+schema_version: 1
+id: gcp.dns_record_delete
+title: gcloud dns record-sets delete
+kind: script
+risk: high
+description: >
+  Delete one exact DNS record set from a managed zone after verifying that the
+  live record data matches the expected values; refuses without mutating when
+  the live data differs, the set is absent, or it carries a routing policy
+  instead of plain record data. The deletion is applied through a DNS change
+  that names the verified record data, so the provider rejects it — deleting
+  nothing — if the record set changes concurrently. Returns the deleted record
+  set — roll back by recreating it with gcp.dns_record_upsert. Resolvers keep
+  serving cached answers until the TTL expires.
+side_effects:
+  - The record set is removed; the name stops resolving for that type as resolver caches expire.
+  - Refused with exit 3 and no API mutation when the live record data does not exactly match the expected values.
+  - Fails without deleting when the record set is modified between verification and the change, because the change's deletion no longer matches live data.
+search_terms:
+  - remove DNS record
+  - delete record set
+  - unpublish name
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: zone
+    type: string
+    required: true
+    description: Managed-zone name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+  - name: name
+    type: string
+    required: true
+    description: Fully qualified DNS name ending with a dot.
+    validation: {pattern: "^[A-Za-z0-9_*](?:[A-Za-z0-9_.*-]{0,251}[A-Za-z0-9_*-])?\\.$", max_length: 253}
+  - name: type
+    type: string
+    required: true
+    description: DNS record type. The Cloud DNS-managed SOA record cannot be deleted.
+    validation:
+      enum: [A, AAAA, CAA, CNAME, DS, IPSECKEY, MX, NAPTR, NS, PTR, SPF, SRV, SSHFP, TLSA, TXT]
+  - name: values
+    type: string
+    required: true
+    description: >
+      Expected current record data, comma-separated for multiple values, in
+      any order. Deletion proceeds only when the live data matches exactly;
+      read it first with gcp.dns_record_lookup. A comma always separates
+      values, and no value may start with "-" or "^".
+    validation: {pattern: "^[ -+.-\\]_-~][ -+\\--~]{0,998}(?:,[ -+.-\\]_-~][ -+\\--~]{0,998})*$", max_length: 1000}
+execution:
+  script: {path: scripts/dns.sh, interpreter: /bin/sh}
+  argv:
+    - record-delete
+    - "{{ args.project }}"
+    - "{{ args.zone }}"
+    - "{{ args.name }}"
+    - "{{ args.type }}"
+    - "{{ args.values }}"
+  timeout: 120s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Remove a retired service record after confirming its data
+    args:
+      project: example-prod
+      zone: app
+      name: old.example.test.
+      type: A
+      values: "203.0.113.10"

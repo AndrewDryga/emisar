@@ -1,12 +1,14 @@
 schema_version: 1
 
 id: gcp-dns
-name: Google Cloud DNS diagnostics
-version: 0.1.0
+name: Google Cloud DNS diagnostics and record control
+version: 0.2.0
 description: >
-  Read-only Cloud DNS diagnostics for managed zones, DNSSEC, exact record
-  lookups, server policies, response policies, and response-policy rules.
-  Zone-wide record dumps are intentionally excluded.
+  Cloud DNS diagnostics plus governed exact-record control: managed-zone,
+  DNSSEC, server-policy, response-policy, and exact-record reads, and
+  upsert or delete of one exact record set with explicit zone, name, type,
+  TTL, and value semantics. Zone-wide record dumps and arbitrary change
+  batches are intentionally excluded.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -26,7 +28,7 @@ setup:
       description: Optional credential file that overrides the active gcloud account.
       example: /etc/emisar/gcp-reader.json
   notes:
-    - "The principal needs roles/dns.reader or equivalent read permissions."
+    - "Grant least privilege for the actions you enable: reads need roles/dns.reader or equivalent; the record upsert and delete mutations need roles/dns.admin-equivalent permissions on the target zones."
     - "Exact record and response-policy-rule actions return DNS record data, including TXT values when explicitly requested."
     - "Projected actions use mode-0600 temporary response files and remove them before exit."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
@@ -36,6 +38,8 @@ actions:
   - actions/zones.yaml
   - actions/zone_describe.yaml
   - actions/record_lookup.yaml
+  - actions/record_upsert.yaml
+  - actions/record_delete.yaml
   - actions/policies.yaml
   - actions/response_policies.yaml
   - actions/response_policy_rules.yaml

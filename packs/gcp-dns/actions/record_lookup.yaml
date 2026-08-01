@@ -22,7 +22,7 @@ args:
     type: string
     required: true
     description: Fully qualified DNS name ending with a dot.
-    validation: {pattern: "^[A-Za-z0-9_.*-](?:[A-Za-z0-9_.*-]{0,251}[A-Za-z0-9_*-])?\\.$", max_length: 253}
+    validation: {pattern: "^[A-Za-z0-9_*](?:[A-Za-z0-9_.*-]{0,251}[A-Za-z0-9_*-])?\\.$", max_length: 253}
   - name: type
     type: string
     required: true
