@@ -1,0 +1,74 @@
+schema_version: 1
+id: gcp.cost_export_freshness
+title: Check Cloud Billing export freshness
+kind: script
+risk: low
+description: >
+  Check how current the Cloud Billing export in BigQuery is — its newest export
+  time, that lag in hours, the usage period it covers, and the row count in the
+  window. Run this before trusting a cost number that looks too low.
+side_effects:
+  - One gcloud token read and one BigQuery query billed by bytes scanned.
+  - The query fails rather than scanning past max_scan_gb.
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project that holds the billing export dataset and runs the query.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: dataset
+    type: string
+    required: true
+    description: BigQuery dataset holding the billing export tables.
+    validation:
+      pattern: "^[A-Za-z0-9_]+$"
+      max_length: 1024
+  - name: billing_account
+    type: string
+    required: true
+    description: Billing account ID whose export table is queried, such as 01B678-5ED3E1-AD1F9F.
+    validation:
+      pattern: "^[A-Z0-9]{6}-[A-Z0-9]{6}-[A-Z0-9]{6}$"
+  - name: days
+    type: integer
+    required: false
+    default: 7
+    description: Recent usage window in days to summarize.
+    validation:
+      min: 1
+      max: 400
+  - name: max_scan_gb
+    type: integer
+    required: false
+    default: 20
+    description: Hard cap on BigQuery bytes billed for this query, in GiB.
+    validation:
+      min: 1
+      max: 200
+execution:
+  script:
+    path: scripts/billing_export_query.sh
+    interpreter: /bin/sh
+  argv:
+    - export-freshness
+    - "{{ args.project }}"
+    - "{{ args.dataset }}"
+    - "{{ args.billing_account }}"
+    - "{{ args.days }}"
+    - "1"
+    - "{{ args.max_scan_gb }}"
+    - ""
+  timeout: 180s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 16384
+examples:
+  - title: Export lag over the last week
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 7

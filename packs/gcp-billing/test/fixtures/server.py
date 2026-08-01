@@ -1,0 +1,190 @@
+import json
+import ssl
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
+
+ACCESS_TOKEN = "packtest-canary-gcp-billing-access-token-7f3c"
+BILLING_ACCOUNT = "billingAccounts/01B678-5ED3E1-AD1F9F"
+GIB = 1073741824
+
+
+def table(*columns):
+    """Shape rows the way BigQuery jobs.query does: a schema plus f/v cells."""
+    names = [name for name, _ in columns]
+    values = list(zip(*[cells for _, cells in columns]))
+    return {
+        "kind": "bigquery#queryResponse",
+        "schema": {"fields": [{"name": name, "type": "STRING"} for name in names]},
+        "rows": [{"f": [{"v": cell} for cell in row]} for row in values],
+        "totalRows": str(len(values)),
+        "totalBytesProcessed": "4194304",
+        "cacheHit": False,
+        "jobComplete": True,
+    }
+
+
+def query_response(sql):
+    if "MAX(export_time)" in sql:
+        return table(
+            ("latest_export_time", ["2026-08-01 06:00:00"]),
+            ("export_lag_hours", ["3"]),
+            ("latest_usage_end_time", ["2026-08-01 05:00:00"]),
+            ("earliest_usage_start_time", ["2026-07-25 00:00:00"]),
+            ("rows_in_window", ["8241"]),
+        )
+    if "GROUP BY usage_date" in sql:
+        return table(
+            ("usage_date", ["2026-07-31", "2026-07-30"]),
+            ("gross_cost", ["41.5", "38.0"]),
+            ("credits", ["-4.5", "-4.0"]),
+            ("net_cost", ["37.0", "34.0"]),
+            ("currency", ["USD", "USD"]),
+        )
+    if "GROUP BY service, sku" in sql:
+        return table(
+            ("service", ["Compute Engine", "Cloud SQL"]),
+            ("sku", ["N2 Instance Core running in Americas", "Cloud SQL for PostgreSQL: Zonal - vCPU"]),
+            ("gross_cost", ["96.0", "48.0"]),
+            ("credits", ["-9.5", "0.0"]),
+            ("net_cost", ["86.5", "48.0"]),
+            ("currency", ["USD", "USD"]),
+            ("usage_amount", ["720.0", "360.0"]),
+            ("usage_unit", ["hour", "hour"]),
+        )
+    if "GROUP BY project_id" in sql:
+        return table(
+            ("project_id", ["example-prod", "(unattributed)"]),
+            ("project_name", ["Example Production", None]),
+            ("gross_cost", ["150.0", "12.0"]),
+            ("credits", ["-15.0", "0.0"]),
+            ("net_cost", ["135.0", "12.0"]),
+            ("currency", ["USD", "USD"]),
+        )
+    if "GROUP BY service" in sql:
+        return table(
+            ("service", ["Compute Engine", "Cloud SQL"]),
+            ("gross_cost", ["140.0", "70.0"]),
+            ("credits", ["-11.5", "-5.75"]),
+            ("net_cost", ["128.5", "64.25"]),
+            ("currency", ["USD", "USD"]),
+        )
+    return None
+
+
+def billing_response(path):
+    if path == "/v1/billingAccounts":
+        return {
+            "billingAccounts": [{
+                "name": BILLING_ACCOUNT,
+                "displayName": "Harness Billing Account",
+                "open": True,
+                "currencyCode": "USD",
+                "masterBillingAccount": "",
+            }]
+        }
+    if path == f"/v1/{BILLING_ACCOUNT}/projects":
+        return {
+            "projectBillingInfo": [{
+                "name": "projects/example-prod/billingInfo",
+                "projectId": "example-prod",
+                "billingAccountName": BILLING_ACCOUNT,
+                "billingEnabled": True,
+            }]
+        }
+    if path == f"/v1/{BILLING_ACCOUNT}/budgets":
+        return {
+            "budgets": [{
+                "name": f"{BILLING_ACCOUNT}/budgets/harness-budget",
+                "displayName": "Harness monthly budget",
+                "amount": {"specifiedAmount": {"currencyCode": "USD", "units": "500"}},
+                "thresholdRules": [
+                    {"thresholdPercent": 0.5},
+                    {"thresholdPercent": 0.9, "spendBasis": "FORECASTED_SPEND"},
+                ],
+                "budgetFilter": {"projects": ["projects/example-prod"]},
+            }]
+        }
+    return None
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path == "/health":
+            self.write_json(200, {"ok": True})
+            return
+        if not self.authorized():
+            return
+        payload = billing_response(path)
+        if payload is None:
+            self.not_found(path)
+            return
+        self.write_json(200, payload)
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if not self.authorized():
+            return
+        if not path.endswith("/queries"):
+            self.not_found(path)
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        request = json.loads(self.rfile.read(length) or b"{}")
+
+        # Every cost action must cap its own scan; an uncapped query would bill
+        # whatever the export happens to hold, so the harness refuses it.
+        capped = request.get("maximumBytesBilled")
+        if not capped:
+            self.error_json(400, "query did not cap maximumBytesBilled")
+            return
+        if int(capped) < 2 * GIB:
+            self.error_json(
+                400,
+                f"Query exceeded limit for bytes billed: {capped}. "
+                f"{2 * GIB} or higher required.",
+            )
+            return
+
+        sql = request.get("query", "")
+        # A dataset named for a slow export stands in for a query that outruns
+        # the request timeout and returns no rows.
+        if "slow_export" in sql:
+            self.write_json(200, {"kind": "bigquery#queryResponse", "jobComplete": False})
+            return
+
+        payload = query_response(sql)
+        if payload is None:
+            self.error_json(400, "unhandled query shape")
+            return
+        self.write_json(200, payload)
+
+    def authorized(self):
+        if self.headers.get("Authorization") == f"Bearer {ACCESS_TOKEN}":
+            return True
+        self.error_json(401, "invalid token")
+        return False
+
+    def not_found(self, path):
+        self.error_json(404, f"unhandled path {path}")
+
+    def error_json(self, status, message):
+        self.write_json(status, {"error": {"code": status, "message": message}})
+
+    def write_json(self, status, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, fmt, *args):
+        pass
+
+
+server = ThreadingHTTPServer(("0.0.0.0", 8443), Handler)
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain("/fixture/server.crt", "/fixture/server.key")
+server.socket = context.wrap_socket(server.socket, server_side=True)
+server.serve_forever()

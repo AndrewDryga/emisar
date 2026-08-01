@@ -1,0 +1,38 @@
+schema_version: 1
+id: gcp.billing_accounts
+title: gcloud billing accounts list
+kind: exec
+risk: low
+description: List Cloud Billing accounts the runner's credentials can see, with currency, open state, and parent organization.
+side_effects:
+  - Read-only Cloud Billing API pagination.
+  - Returned accounts are capped by limit.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum billing accounts to return.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - billing
+      - accounts
+      - list
+      - "--limit={{ args.limit }}"
+      - --format=json
+      - --quiet
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Visible billing accounts
+    args:
+      limit: 100

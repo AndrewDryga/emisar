@@ -1,0 +1,92 @@
+schema_version: 1
+id: gcp.cost_by_sku
+title: Show Google Cloud cost by SKU
+kind: script
+risk: low
+description: >
+  Show the costliest SKUs over a recent window with their billed usage
+  quantity, read from the Cloud Billing export in BigQuery. This is the
+  breakdown that names what a spend increase actually bought.
+side_effects:
+  - One gcloud token read and one BigQuery query billed by bytes scanned.
+  - The query fails rather than scanning past max_scan_gb.
+  - Recent days are still settling, so the window is an estimate rather than the invoice.
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project that holds the billing export dataset and runs the query.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: dataset
+    type: string
+    required: true
+    description: BigQuery dataset holding the billing export tables.
+    validation:
+      pattern: "^[A-Za-z0-9_]+$"
+      max_length: 1024
+  - name: billing_account
+    type: string
+    required: true
+    description: Billing account ID whose export table is queried, such as 01B678-5ED3E1-AD1F9F.
+    validation:
+      pattern: "^[A-Z0-9]{6}-[A-Z0-9]{6}-[A-Z0-9]{6}$"
+  - name: days
+    type: integer
+    required: false
+    default: 30
+    description: Recent usage window in days.
+    validation:
+      min: 1
+      max: 400
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Maximum SKUs to return.
+    validation:
+      min: 1
+      max: 1000
+  - name: max_scan_gb
+    type: integer
+    required: false
+    default: 20
+    description: Hard cap on BigQuery bytes billed for this query, in GiB.
+    validation:
+      min: 1
+      max: 200
+  - name: service
+    type: string
+    required: false
+    default: ""
+    description: Optional exact service description to restrict the window to, such as Compute Engine.
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 256
+execution:
+  script:
+    path: scripts/billing_export_query.sh
+    interpreter: /bin/sh
+  argv:
+    - cost-by-sku
+    - "{{ args.project }}"
+    - "{{ args.dataset }}"
+    - "{{ args.billing_account }}"
+    - "{{ args.days }}"
+    - "{{ args.limit }}"
+    - "{{ args.max_scan_gb }}"
+    - "{{ args.service }}"
+  timeout: 180s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Costliest SKUs last 7 days
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 7
+      limit: 25

@@ -1,0 +1,137 @@
+services: [gcp-api]
+versions:
+  - version: 577.0.0-slim
+    digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
+    default: true
+secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
+env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_BIGQUERY: https://gcp-api:8443/
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDBILLING: https://gcp-api:8443/
+  CURL_CA_BUNDLE: /packs/gcp-billing/test/fixtures/server.crt
+  CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-billing-access-token-7f3c
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains: [packtest-canary-gcp-billing-access-token-7f3c]
+cases:
+  - action: gcp.cost_by_service
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 30
+      limit: 50
+    expect:
+      stdout_contains:
+        - gcp_billing_export_v1_01B678_5ED3E1_AD1F9F
+        - Compute Engine
+        - '"net_cost":"128.5"'
+        - '"credits":"-11.5"'
+
+  - action: gcp.cost_by_project
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 30
+    expect:
+      stdout_contains:
+        - example-prod
+        - (unattributed)
+        - '"net_cost":"135.0"'
+
+  - action: gcp.cost_by_sku
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 7
+      limit: 25
+      service: Compute Engine
+    expect:
+      stdout_contains:
+        - N2 Instance Core running in Americas
+        - '"net_cost":"86.5"'
+        - '"usage_unit":"hour"'
+
+  - action: gcp.cost_daily_trend
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 30
+    expect:
+      stdout_contains:
+        - '"usage_date":"2026-07-31"'
+        - '"net_cost":"37.0"'
+
+  - action: gcp.cost_export_freshness
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 7
+    expect:
+      stdout_contains:
+        - '"export_lag_hours":"3"'
+        - '"rows_in_window":"8241"'
+
+  - action: gcp.billing_accounts
+    args: {limit: 100}
+    expect:
+      stdout_contains: [Harness Billing Account, '"open": true', USD]
+
+  - action: gcp.billing_projects
+    args:
+      billing_account: 01B678-5ED3E1-AD1F9F
+      limit: 200
+    expect:
+      stdout_contains: [example-prod, '"billingEnabled": true']
+
+  # gcp.billing_budgets stays contract-only: gcloud registers no
+  # api_endpoint_overrides/billingbudgets property, so the budgets call cannot be
+  # pointed at this fixture the way the cloudbilling ones are, and the action is
+  # a low read whose flags gcloud parses before it ever reaches the network.
+
+  # The scan cap is what keeps an LLM-invoked cost read from billing an
+  # unbounded scan, so its rejection has to reach the operator intact.
+  - name: gcp.cost-by-service-surfaces-the-scan-cap-rejection
+    action: gcp.cost_by_service
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 400
+      max_scan_gb: 1
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Query exceeded limit for bytes billed]
+
+  # An unfinished job returns no rows; reporting that as an empty result would
+  # read as "nothing was spent".
+  - name: gcp.cost-by-service-fails-on-an-incomplete-job
+    action: gcp.cost_by_service
+    args:
+      project: example-prod
+      dataset: slow_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 30
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [BigQuery did not finish the query]
+
+  - name: gcp.cost-by-service-rejects-http-endpoint
+    action: gcp.cost_by_service
+    env:
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_BIGQUERY: http://gcp-api:8080/
+    args:
+      project: example-prod
+      dataset: billing_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 30
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [BigQuery API endpoint must use HTTPS]

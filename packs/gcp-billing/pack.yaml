@@ -1,0 +1,49 @@
+schema_version: 1
+
+id: gcp-billing
+name: Google Cloud billing and cost analytics
+version: 0.1.0
+description: >
+  Read-only Google Cloud spend analytics — cost by service, project, and SKU,
+  a daily trend, and export freshness — read from the Cloud Billing export in
+  BigQuery, alongside billing account, linked project, and budget reads from
+  the Cloud Billing API. Google Cloud publishes no cost-report API, so the cost
+  actions read the billing export rather than a reporting endpoint.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os: [linux]
+  binaries: [gcloud, curl, jq]
+
+setup:
+  summary: >
+    Uses gcloud authentication on the runner host. The cost actions obtain a
+    short-lived access token from gcloud and post an authored query to the fixed
+    bigquery.googleapis.com endpoint, keeping the token out of argv and output.
+  env:
+    - name: CLOUDSDK_CONFIG
+      description: Optional gcloud configuration directory.
+      example: /etc/emisar/gcloud
+    - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+      description: Optional path to a credential file that overrides the active gcloud account.
+      example: /etc/emisar/gcp-billing-reader.json
+  notes:
+    - "Any credential/config env you set must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "The cost actions read the standard billing export table gcp_billing_export_v1_<BILLING_ACCOUNT_ID>. Turn on Billing export to BigQuery first — it is not retroactive and takes up to a day to populate, so a fresh export answers recent windows only."
+    - "The principal needs roles/billing.viewer on the billing account for the account, project, and budget reads, plus roles/bigquery.jobUser on the query project and roles/bigquery.dataViewer on the export dataset for the cost queries."
+    - "Budget reads need billingbudgets.googleapis.com enabled on the quota project."
+    - "BigQuery bills every cost query by bytes scanned, so each cost action sends maximumBytesBilled from its max_scan_gb argument: an over-broad window fails outright instead of billing an unbounded scan."
+    - "Cost rows settle for several days after usage, and credits post on their own schedule, so a recent window is an estimate rather than the invoice."
+    - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
+  verify: gcp.billing_accounts
+
+actions:
+  - actions/billing_accounts.yaml
+  - actions/billing_projects.yaml
+  - actions/budgets.yaml
+  - actions/cost_by_service.yaml
+  - actions/cost_by_project.yaml
+  - actions/cost_by_sku.yaml
+  - actions/cost_daily_trend.yaml
+  - actions/cost_export_freshness.yaml

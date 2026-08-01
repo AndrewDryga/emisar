@@ -1,0 +1,46 @@
+schema_version: 1
+id: gcp.billing_projects
+title: gcloud billing projects list
+kind: exec
+risk: low
+description: List projects billed to one Cloud Billing account, with each project's billing-enabled state.
+side_effects:
+  - Read-only Cloud Billing API pagination.
+  - Returned projects are capped by limit.
+args:
+  - name: billing_account
+    type: string
+    required: true
+    description: Billing account ID, such as 01B678-5ED3E1-AD1F9F.
+    validation:
+      pattern: "^[A-Z0-9]{6}-[A-Z0-9]{6}-[A-Z0-9]{6}$"
+  - name: limit
+    type: integer
+    required: false
+    default: 200
+    description: Maximum projects to return.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - billing
+      - projects
+      - list
+      - "--billing-account={{ args.billing_account }}"
+      - "--limit={{ args.limit }}"
+      - --format=json
+      - --quiet
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Projects on one billing account
+    args:
+      billing_account: 01B678-5ED3E1-AD1F9F
+      limit: 200
