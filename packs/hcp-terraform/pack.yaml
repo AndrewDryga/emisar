@@ -2,13 +2,15 @@ schema_version: 1
 
 id: hcp-terraform
 name: HCP Terraform run review and gating
-version: 0.2.0
+version: 0.3.0
 description: >
   Review HCP Terraform (formerly Terraform Cloud) and Terraform Enterprise runs
   and gate what happens next: list workspaces and runs, project a run's plan
-  into a summary that carries no resource or output values, queue a speculative
-  plan-only run, and confirm, discard, or cancel a run through emisar's policy
-  and approval path instead of the HCP UI.
+  into a summary that carries no resource or output values, read why a run
+  failed from a bounded tail of its plan or apply log, queue a speculative
+  plan-only run, retry a failed run against its exact configuration version,
+  and confirm, discard, or cancel a run through emisar's policy and approval
+  path instead of the HCP UI.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -41,6 +43,8 @@ setup:
     - "The token can do everything these actions expose, so scope it to the workspaces you actually want reachable and let emisar policy decide who may reach the mutating actions."
     - "Needs curl 7.76 or newer: the actions use --fail-with-body so a rejected request reports the API's error document instead of failing with empty output."
     - "json-output answers with a one-minute presigned redirect. curl drops the Authorization header on that cross-host hop by design; the redirect target carries its own signature."
+    - "run_diagnostics downloads the failed phase's log through the presigned URL HCP returns. That URL is a credential and never appears in output or audit, but the log text itself becomes part of the governed result — which is why this read is medium risk and policy-gated."
+    - "retry_run creates a standard run, so HCP requires a user or team token that can queue plans in the workspace. The new run is created with auto-apply off and still needs tfc.apply_run before anything changes."
   verify: tfc.list_organizations
 
 actions:
@@ -49,7 +53,9 @@ actions:
   - actions/list_runs.yaml
   - actions/run_details.yaml
   - actions/plan_summary.yaml
+  - actions/run_diagnostics.yaml
   - actions/create_plan_only_run.yaml
+  - actions/retry_run.yaml
   - actions/apply_run.yaml
   - actions/discard_run.yaml
   - actions/cancel_run.yaml

@@ -13,6 +13,9 @@ defaults:
     stdout_not_contains:
       - packtest-canary-tfe-token-6d2a
       - packtest-canary-tfe-plan-secret-91c7
+      # The signature of a presigned log URL is a credential; no action may
+      # emit the URL it fetched a log through.
+      - packtest-canary-tfe-log-signature-4b9e
 cases:
   - action: tfc.list_organizations
     expect:
@@ -82,6 +85,82 @@ cases:
         /outputs/0/name: db_password
         /outputs/0/sensitive: true
 
+  # The plan is the failed phase. The tail keeps only the last 200 lines with
+  # ANSI control codes stripped ('\u001b' is how a surviving escape byte would
+  # read in the JSON output), and the presigned log URL stays out of stdout —
+  # its signature canary sits in the default stdout_not_contains.
+  - action: tfc.run_diagnostics
+    args: {run_id: run-2PlanErrVt8Kq5Wd}
+    expect:
+      stdout_contains:
+        - "Error: creating S3 Bucket (emisar-legacy): AccessDenied"
+        - refresh line 250
+      stdout_not_contains:
+        - '\u001b'
+        - refresh line 42
+      json:
+        /phase: plan
+        /run/status: errored
+        /diagnostics/status: errored
+        /diagnostics/started_at: "2026-07-30T02:11:04+00:00"
+        /diagnostics/ended_at: "2026-07-30T02:12:31+00:00"
+        /log/available: true
+
+  - name: tfc.run_diagnostics-selects-the-apply-phase
+    action: tfc.run_diagnostics
+    args: {run_id: run-3ApplyErrJn6Rt4c}
+    expect:
+      stdout_contains:
+        - "Error: updating RDS DB Instance (emisar-db): timeout while waiting for state"
+      json:
+        /phase: apply
+        /diagnostics/status: errored
+        /diagnostics/ended_at: "2026-07-29T10:02:47+00:00"
+        /log/available: true
+
+  # HCP returned no log-read-url for the errored plan: say so instead of
+  # emitting an empty tail that reads as "the log was clean".
+  - name: tfc.run_diagnostics-reports-a-missing-log
+    action: tfc.run_diagnostics
+    args: {run_id: run-5NoLogWp4Hs2Ym8q}
+    expect:
+      json:
+        /phase: plan
+        /log/available: false
+        /log/reason: HCP returned no log for this phase
+
+  - name: tfc.run_diagnostics-reports-an-unreadable-log
+    action: tfc.run_diagnostics
+    args: {run_id: run-6DeniedBv1Zx7Qf3}
+    expect:
+      json:
+        /phase: plan
+        /log/available: false
+        /log/reason: the log is gone or this token may not read it
+
+  # curl expands {a,b} in a URL into one transfer per alternative, which would
+  # hand the presigned signature to a second host of the API's choosing. The
+  # log must stay unfetched — the error line the fixture would serve proves it
+  # if it ever appears.
+  - name: tfc.run_diagnostics-refuses-a-log-url-that-smuggles-a-second-host
+    action: tfc.run_diagnostics
+    args: {run_id: run-9GlobUrlYz2Bc5Df}
+    expect:
+      stdout_not_contains:
+        - "Error: creating S3 Bucket (emisar-legacy): AccessDenied"
+      json:
+        /phase: plan
+        /log/available: false
+        /log/reason: HCP returned a malformed log URL
+
+  - name: tfc.run_diagnostics-refuses-a-run-that-did-not-fail
+    action: tfc.run_diagnostics
+    args: {run_id: run-4Qm7TvLpXsRbNc2d}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [has no errored or canceled plan or apply phase]
+
   - action: tfc.create_plan_only_run
     args: {workspace_id: ws-8Rp2nKcQvWxYzA1b, message: Pre-change review}
     expect:
@@ -95,6 +174,43 @@ cases:
         argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/runs/run-9Zk3WdFyHnJqEr5t"]
         expect:
           stdout_contains: ['"status": "pending"']
+
+  - action: tfc.retry_run
+    args: {source_run_id: run-2PlanErrVt8Kq5Wd, message: Retry after fixing IAM}
+    expect:
+      json:
+        /run/id: run-7Xb5RetryNpQw3Ke
+        /run/status: pending
+        /run/plan_only: false
+        /source_run_id: run-2PlanErrVt8Kq5Wd
+        /configuration_version_id: cv-6JmJpQnRsTuVwX2y
+    probes:
+      - name: the retry pinned the exact configuration version and still needs a human apply
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/runs/run-7Xb5RetryNpQw3Ke"]
+        expect:
+          stdout_contains:
+            - '"status": "pending"'
+            - '"plan-only": false'
+            - '"auto-apply": false'
+            - '"configuration-version": "cv-6JmJpQnRsTuVwX2y"'
+
+  - name: tfc.retry_run-refuses-a-non-terminal-source
+    action: tfc.retry_run
+    args: {source_run_id: run-4Qm7TvLpXsRbNc2d}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["retry only re-runs an errored, canceled, force_canceled, or discarded run"]
+
+  # The canceled status passes the terminal gate; the absent configuration
+  # version is what must fail closed.
+  - name: tfc.retry_run-fails-closed-without-a-configuration-version
+    action: tfc.retry_run
+    args: {source_run_id: run-8NoCvFh9Kl4Tq6wY}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [must be a cv-]
 
   - action: tfc.apply_run
     args: {run_id: run-4Qm7TvLpXsRbNc2d, comment: Reviewed via emisar}

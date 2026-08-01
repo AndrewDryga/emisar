@@ -1,0 +1,104 @@
+schema_version: 1
+id: tfc.run_diagnostics
+title: Diagnose a failed run from its plan or apply log
+kind: script
+risk: medium
+description: >
+  Show why a run failed: picks the phase that failed — the apply when it
+  errored or was canceled, otherwise the plan — and returns that phase's
+  status and timestamps with a bounded tail of its log, the last 200 lines
+  capped at 64 KiB with control codes stripped. Provider logs can carry
+  sensitive operational values, so this read is medium risk and policy-gated
+  even though it changes nothing. The presigned log URL HCP returns is fetched
+  but never emitted, and a missing or unreadable log is reported explicitly
+  instead of passing as an empty tail.
+side_effects:
+  - Two read-only HTTP GETs — the run, then its phase's presigned log URL.
+  - Emits provider log content, which can include sensitive operational values.
+  - Read-only.
+search_terms:
+  - why did the run fail
+  - errored run
+  - terraform apply error log
+  - diagnose failed run
+args:
+  - name: run_id
+    type: string
+    required: true
+    description: Errored or canceled run ID from list_runs (run-…).
+    validation:
+      pattern: "^run-[A-Za-z0-9]{1,32}$"
+      max_length: 36
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [run_diagnostics, "{{ args.run_id }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [run, phase, diagnostics, log]
+    properties:
+      run:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+          - status
+          - message
+          - is_destroy
+          - plan_only
+          - has_changes
+          - source
+          - created_at
+          - workspace_id
+          - actions
+        properties:
+          id: {type: string}
+          status: {type: string}
+          message: {type: string}
+          is_destroy: {type: boolean}
+          plan_only: {type: boolean}
+          has_changes: {type: boolean}
+          source: {type: string}
+          created_at: {type: string}
+          workspace_id: {type: string}
+          actions:
+            type: object
+            additionalProperties: false
+            required: [confirmable, discardable, cancelable]
+            properties:
+              confirmable: {type: boolean}
+              discardable: {type: boolean}
+              cancelable: {type: boolean}
+      phase:
+        enum: [plan, apply]
+      diagnostics:
+        type: object
+        additionalProperties: false
+        required: [status, started_at, ended_at]
+        properties:
+          status: {type: string}
+          started_at: {type: string}
+          ended_at: {type: string}
+      log:
+        type: object
+        additionalProperties: false
+        required: [available]
+        properties:
+          available: {type: boolean}
+          reason: {type: string}
+          tail:
+            type: array
+            items: {type: string}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Read why a run errored
+    args:
+      run_id: run-4Qm7TvLpXsRbNc2d

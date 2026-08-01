@@ -11,6 +11,8 @@
 set -euo pipefail
 
 readonly max_response_bytes=33554432
+readonly max_log_tail_lines=200
+readonly max_log_tail_bytes=65536
 
 fail() {
   printf '%s\n' "$1" >&2
@@ -157,6 +159,146 @@ def project_plan:
     };
 '
 
+# A run fails in a phase, not as a whole: the apply when it errored, otherwise
+# the plan. Both phases can be canceled mid-flight, so canceled counts as
+# failed; a run with neither has nothing to diagnose.
+readonly diagnostics_selection='
+def included_first($type): [(.included // [])[] | select(.type == $type)] | first;
+
+def phase_failed($doc):
+  $doc != null and (($doc.attributes.status // "") | . == "errored" or . == "canceled");
+
+def chosen_phase:
+  included_first("applies") as $apply
+  | included_first("plans") as $plan
+  | if phase_failed($apply) then {name: "apply", doc: $apply}
+    elif phase_failed($plan) then {name: "plan", doc: $plan}
+    else null
+    end;
+'
+
+# Terraform streams ANSI color and cursor sequences into its logs; strip CSI
+# sequences, then every remaining control byte except tab and newline, so a
+# hostile log cannot smuggle terminal escapes into the result or the audit.
+sanitize_log() {
+  sed $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g' | tr -d '\000-\010\013-\037\177'
+}
+
+# The phase's log-read-url is a presigned credential: it reaches curl through a
+# config document on stdin, never argv, output, stderr, or the audit trail. An
+# absent, malformed, or unreadable log reports why instead of failing the whole
+# diagnosis — the phase status and timestamps are still worth returning.
+#
+# --globoff is a credential control, not a nicety: curl expands {a,b} in a URL
+# into one transfer per alternative, so an API answering with a braced host list
+# would send the presigned signature to every host in it. The shape check
+# rejects braces (never legitimate in a URL) and --globoff refuses to expand
+# whatever else arrives, while still letting an IPv6 literal host through.
+# The log is read to its end because the tail is the useful part, so the
+# transfer is bounded by time rather than --max-filesize, which would turn a
+# legitimately large apply log into an unreadable one.
+fetch_log_tail() {
+  local url=$1 url_shape='^https?://[^[:space:]"\\{}]+$' tail_text status=0
+  if [[ -z "$url" ]]; then
+    jq -nc '{available: false, reason: "HCP returned no log for this phase"}'
+    return
+  fi
+  if [[ ! "$url" =~ $url_shape ]]; then
+    jq -nc '{available: false, reason: "HCP returned a malformed log URL"}'
+    return
+  fi
+  tail_text=$(printf 'url = "%s"\n' "$url" |
+    curl -q --fail -s --globoff --proto '=http,https' \
+      --connect-timeout 10 --max-time 90 -K - |
+    tail -c $((max_log_tail_bytes * 4)) |
+    sanitize_log |
+    tail -n "$max_log_tail_lines" |
+    tail -c "$max_log_tail_bytes") || status=$?
+  if ((status != 0)); then
+    jq -nc '{available: false, reason: "the log is gone or this token may not read it"}'
+    return
+  fi
+  printf '%s' "$tail_text" |
+    jq -Rsc '{available: true, tail: (if . == "" then [] else split("\n") end)}'
+}
+
+run_diagnostics() {
+  local run_id=$1 response phase log_url log_json
+  require_id "run_id" "$run_id" "run-"
+  response=$(request api_get "/runs/$run_id?include=plan,apply")
+
+  phase=$(printf '%s' "$response" |
+    jq -r "$diagnostics_selection"'chosen_phase | if . == null then "" else .name end')
+  if [[ -z "$phase" ]]; then
+    local run_status
+    run_status=$(printf '%s' "$response" | jq -r '.data.attributes.status // "unknown"')
+    fail "run $run_id has no errored or canceled plan or apply phase to diagnose (run status: $run_status)"
+  fi
+
+  log_url=$(printf '%s' "$response" |
+    jq -r "$diagnostics_selection"'chosen_phase.doc.attributes["log-read-url"] // ""')
+  log_json=$(fetch_log_tail "$log_url")
+
+  printf '%s' "$response" |
+    jq -ce --argjson log "$log_json" "$pagination$diagnostics_selection"'
+      chosen_phase as $phase
+      | $phase.doc.attributes as $a
+      | ($a["status-timestamps"] // {}) as $ts
+      | {
+          run: run_of(.data),
+          phase: $phase.name,
+          diagnostics: {
+            status: ($a.status // ""),
+            started_at: ($ts["started-at"] // ""),
+            ended_at: ($ts["errored-at"] // $ts["canceled-at"] // $ts["finished-at"] // "")
+          },
+          log: $log
+        }'
+}
+
+# Retry is deliberately not generic run creation: the workspace and the
+# configuration version come only from the fetched source run, the source must
+# already be terminal, and both safety gates are explicit in the POST body so
+# the new run cannot apply anything without a human tfc.apply_run.
+retry_run() {
+  local source_run_id=$1 message=$2 response source_status workspace_id configuration_version_id body
+  require_id "source_run_id" "$source_run_id" "run-"
+  response=$(request api_get "/runs/$source_run_id")
+
+  source_status=$(printf '%s' "$response" | jq -r '.data.attributes.status // ""')
+  case "$source_status" in
+    errored | canceled | force_canceled | discarded) ;;
+    *)
+      fail "source run $source_run_id is '$source_status' — retry only re-runs an errored, canceled, force_canceled, or discarded run"
+      ;;
+  esac
+
+  workspace_id=$(printf '%s' "$response" | jq -r '.data.relationships.workspace.data.id // ""')
+  configuration_version_id=$(printf '%s' "$response" |
+    jq -r '.data.relationships["configuration-version"].data.id // ""')
+  require_id "the source run's workspace" "$workspace_id" "ws-"
+  require_id "the source run's configuration version" "$configuration_version_id" "cv-"
+
+  body=$(jq -nc --arg workspace "$workspace_id" --arg configuration_version "$configuration_version_id" \
+    --arg message "$message" '
+    {
+      data: {
+        type: "runs",
+        attributes: (
+          {"plan-only": false, "auto-apply": false}
+          + (if $message == "" then {} else {message: $message} end)
+        ),
+        relationships: {
+          workspace: {data: {type: "workspaces", id: $workspace}},
+          "configuration-version": {data: {type: "configuration-versions", id: $configuration_version}}
+        }
+      }
+    }')
+  request api_post "/runs" "$body" |
+    jq -ce --arg source "$source_run_id" --arg configuration_version "$configuration_version_id" \
+      "$pagination"'{run: run_of(.data), source_run_id: $source, configuration_version_id: $configuration_version}'
+}
+
 list_organizations() {
   request api_get "/organizations?page%5Bsize%5D=$1&page%5Bnumber%5D=$2" |
     jq -ce "$pagination"'
@@ -280,6 +422,12 @@ case "$mode" in
     ;;
   run_details)
     run_details "$2"
+    ;;
+  run_diagnostics)
+    run_diagnostics "$2"
+    ;;
+  retry_run)
+    retry_run "$2" "$3"
     ;;
   plan_summary)
     plan_summary "$2"

@@ -1,0 +1,92 @@
+schema_version: 1
+id: tfc.retry_run
+title: POST /runs (retry a failed run's exact configuration)
+kind: script
+risk: medium
+description: >
+  Retry a failed run by creating a new standard run from the source run's
+  exact workspace and configuration version. Only an errored, canceled,
+  force-canceled, or discarded source can be retried, and both IDs are taken
+  from the fetched source run, never from the caller. The new run is created
+  with plan-only and auto-apply explicitly false, so nothing is applied until
+  a human confirms it through tfc.apply_run. Only the configuration is pinned:
+  workspace variables and provider state are re-read when the new run plans.
+side_effects:
+  - Queues work on HCP Terraform's runners and consumes plan minutes.
+  - Calls every provider's read API to refresh state — quota usage applies.
+  - Creates a confirmable run; applying it still requires tfc.apply_run.
+search_terms:
+  - retry failed run
+  - re-run terraform
+  - rerun errored run
+args:
+  - name: source_run_id
+    type: string
+    required: true
+    description: Errored, canceled, force-canceled, or discarded run to retry (run-…).
+    validation:
+      pattern: "^run-[A-Za-z0-9]{1,32}$"
+      max_length: 36
+  - name: message
+    type: string
+    required: false
+    default: ""
+    description: Message recorded on the new run in HCP Terraform.
+    validation:
+      max_length: 512
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [retry_run, "{{ args.source_run_id }}", "{{ args.message }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [run, source_run_id, configuration_version_id]
+    properties:
+      run:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+          - status
+          - message
+          - is_destroy
+          - plan_only
+          - has_changes
+          - source
+          - created_at
+          - workspace_id
+          - actions
+        properties:
+          id: {type: string}
+          status: {type: string}
+          message: {type: string}
+          is_destroy: {type: boolean}
+          plan_only: {type: boolean}
+          has_changes: {type: boolean}
+          source: {type: string}
+          created_at: {type: string}
+          workspace_id: {type: string}
+          actions:
+            type: object
+            additionalProperties: false
+            required: [confirmable, discardable, cancelable]
+            properties:
+              confirmable: {type: boolean}
+              discardable: {type: boolean}
+              cancelable: {type: boolean}
+      source_run_id: {type: string}
+      configuration_version_id: {type: string}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Retry an errored run unchanged
+    args:
+      source_run_id: run-4Qm7TvLpXsRbNc2d
+      message: Retry after fixing provider credentials
