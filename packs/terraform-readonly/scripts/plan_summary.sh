@@ -131,9 +131,20 @@ def project_stream:
       summary: summarize($changes; $drift)
     } + bounded_lists($changes; $drift; $outputs; $diagnostics);
 
+# Reading a collection with []? would swallow the type error on a malformed
+# document — "resource_changes": 7 would project as a confident, entirely
+# EMPTY summary. Only absence stays an empty plan (the CLI omits empty
+# collections rather than writing them out); a present value of any other
+# type — null included, which no released CLI emits here — refuses.
+def collection($name; $kind):
+  if (has($name) | not) then (if $kind == "array" then [] else {} end)
+    elif (.[$name] | type) == $kind then .[$name]
+    else error("\($name) in the plan document is \(.[$name] | type) rather than \(if $kind == "array" then "an array" else "an object" end), so the summary cannot be trusted")
+    end;
+
 def project_file:
   . as $plan
-  | [ $plan.resource_changes[]?
+  | [ ($plan | collection("resource_changes"; "array"))[]
       | {
           address: (.address // ""),
           resource_type: (.type // ""),
@@ -143,7 +154,7 @@ def project_file:
         }
       | select(is_noop(.action) | not)
     ] as $changes
-  | [ $plan.resource_drift[]?
+  | [ ($plan | collection("resource_drift"; "array"))[]
       | {
           address: (.address // ""),
           resource_type: (.type // ""),
@@ -152,7 +163,7 @@ def project_file:
         }
       | select(is_noop(.action) | not)
     ] as $drift
-  | [ ($plan.output_changes // {})
+  | [ ($plan | collection("output_changes"; "object"))
       | to_entries[]
       | {
           name: .key,

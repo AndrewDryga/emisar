@@ -189,6 +189,18 @@ cases:
         /truncated/drift: 197
         /truncated/outputs: 43
 
+  # The fixture's document still reads back as a plan but carries a scalar
+  # where a collection belongs. Skipping the type error would yield a
+  # confident, entirely EMPTY summary for a plan whose contents are unknown,
+  # so the action refuses rather than answers.
+  - name: tfc.plan_summary-fails-closed-on-a-malformed-collection
+    action: tfc.plan_summary
+    args: {run_id: run-MalformedPlanDoc}
+    expect:
+      status: failure
+      stderr_contains: [resource_drift in the plan document is string rather than an array]
+      stdout_not_contains: ['"total":0']
+
   # The plan is the failed phase. The tail keeps only the last 200 lines with
   # ANSI control codes stripped ('\u001b' is how a surviving escape byte would
   # read in the JSON output), and the presigned log URL stays out of stdout —

@@ -244,6 +244,28 @@ cases:
         /truncated/outputs: 2
         /truncated/diagnostics: 0
 
+  # The stand-in hands `show -json` a document that still carries
+  # format_version but a scalar where resource_changes belongs. Skipping the
+  # type error would yield a confident, entirely EMPTY summary for a plan
+  # whose contents are unknown, so the action refuses rather than answers.
+  - name: tf.plan_file_summary-fails-closed-on-a-malformed-collection
+    action: tf.plan_file_summary
+    args: {plan_file: malformed.tfplan}
+    env:
+      TF_DIR: /packs/terraform-readonly/test/fixtures/plan
+      TF_BIN: /packs/terraform-readonly/test/fixtures/streams/malformed-plan-show.sh
+      TF_PLAN_DIR: /tmp/tfmalformed/plans
+    arrange:
+      - name: stage a placeholder saved plan
+        argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/tfmalformed/plans && touch /tmp/tfmalformed/plans/malformed.tfplan"
+    expect:
+      status: failure
+      stderr_contains: [resource_changes in the plan document is number rather than an array]
+      stdout_not_contains: ['"total":0']
+
   - name: tf.plan_file_summary-rejects-traversal
     action: tf.plan_file_summary
     args: {plan_file: ../workspace/terraform.tfstate}

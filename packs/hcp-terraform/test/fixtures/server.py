@@ -24,6 +24,7 @@ DENIED_LOG_RUN_ID = "run-6DeniedBv1Zx7Qf3"
 CANCELED_NO_CV_RUN_ID = "run-8NoCvFh9Kl4Tq6wY"
 GLOB_LOG_RUN_ID = "run-9GlobUrlYz2Bc5Df"
 WORST_PLAN_RUN_ID = "run-HugePlanWorstCase"
+MALFORMED_PLAN_RUN_ID = "run-MalformedPlanDoc"
 
 # One mutable run table per server process. Every case owns a fresh Compose
 # project, so mutations always start from the same fixture state; the errored
@@ -472,6 +473,20 @@ def worst_plan_json_output():
     }
 
 
+# A document that still reads back as a plan but carries a scalar where a
+# collection belongs — what a truncating proxy or storage layer can return.
+# The projection must refuse it: reading the collection with []? would report
+# it as a plan with no changes.
+def malformed_plan_json_output():
+    return {
+        "format_version": "1.2",
+        "terraform_version": "1.13.1",
+        "resource_changes": [],
+        "resource_drift": "unavailable",
+        "output_changes": {},
+    }
+
+
 # 300 refresh lines push the error past the action's 200-line tail window, so
 # the case can prove the bound: early noise is dropped, the error survives.
 # ANSI codes wrap the error exactly the way terraform colors its output.
@@ -623,9 +638,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/blob/worst-plan-json-output":
             self.write_json(200, worst_plan_json_output())
             return
+        if path == "/blob/malformed-plan-json-output":
+            self.write_json(200, malformed_plan_json_output())
+            return
         if not self.authenticated():
             return
-        for run_id, blob in ((RUN_ID, "/blob/plan-json-output"), (WORST_PLAN_RUN_ID, "/blob/worst-plan-json-output")):
+        for run_id, blob in (
+            (RUN_ID, "/blob/plan-json-output"),
+            (WORST_PLAN_RUN_ID, "/blob/worst-plan-json-output"),
+            (MALFORMED_PLAN_RUN_ID, "/blob/malformed-plan-json-output"),
+        ):
             if path == f"/api/v2/runs/{run_id}/plan/json-output":
                 self.send_response(307)
                 self.send_header("Location", blob)
