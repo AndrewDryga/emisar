@@ -18,7 +18,11 @@ hard way. And read the PROJECT's own `AGENTS.md` (portal/runner/mcp/packs/infra)
 before editing inside it — each has non-negotiable, per-language rules.
 
 - **thinker** — architecture calls, intermittent bugs, and a pre-commit review of
-  anything on a trust boundary: surfaces that ingest runner / LLM / operator input,
+  anything on a trust boundary. NOT every task: a mechanical rename, a doc/description
+  sweep, or a diff fully judged by the gate ships on the gate plus your own review —
+  measured, a reflexive consult added 3+ minutes and millions of tokens to every task
+  while changing nothing outside trust boundaries. When you skip one, say so in log.md
+  in one line. Trust boundaries remain: surfaces that ingest runner / LLM / operator input,
   policy + approval gating, pack schema validation, the runner↔portal and MCP wire
   paths. It returns a conclusion with file:line evidence; you act on it.
 - **critic** — one self-contained question when a decision is one-way or

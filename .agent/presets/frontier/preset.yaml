@@ -20,7 +20,7 @@ roles:
     # READ-ONLY deep-reasoning peer via coop-consult. Terra at xhigh: near-frontier
     # thinking without burning the Sol/Fable quota the lead and signoff run on.
     mode: consult
-    agent:  codex:gpt-5.6-sol/xhigh
+    agent:  codex:gpt-5.6-sol/high
     # emisar is a security product — the thinker's docket leans hard on the
     # trust-boundary work: anything ingesting runner / LLM / operator input.
     when: [architecture, debugging, security, code-review, before-commit]
@@ -31,7 +31,7 @@ roles:
     # a third vendor's blind spots, for one-way doors: committed DB migrations,
     # wire/protocol formats, pack manifest semantics, billing/entitlements.
     mode: consult
-    agent: codex:gpt-5.6-sol/xhigh
+    agent: codex:gpt-5.6-sol/high
     when: [plan-review, tradeoffs, one-way-doors, security]
     prompt: roles/critic.md
 
