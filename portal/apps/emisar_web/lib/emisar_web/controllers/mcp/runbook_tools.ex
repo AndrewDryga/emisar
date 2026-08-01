@@ -13,6 +13,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
   @default_limit 15
+  @max_definition_issues 64
   @hidden_contract_reasons [
     :action_contract_changed,
     :action_not_found,
@@ -105,11 +106,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
          )}
 
       {:error, issues} when is_list(issues) ->
-        {:error, issue_error(issues)}
+        {:error, definition_issue_error(issues)}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:error,
-         error("invalid_runbook", "The draft failed validation.", false, %{
+         error("invalid_draft", "The draft failed validation.", false, %{
            fields: changeset_errors(changeset)
          })}
 
@@ -133,8 +134,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
         end
 
       {:error, :not_found} ->
-        with {:ok, definition} <- validate_draft(input),
-             attrs <- draft_attrs(input, definition) do
+        with :ok <- validate_draft_envelope(input) do
+          attrs = draft_attrs(input, input.definition)
+
           Runbooks.create_mcp_draft(
             attrs,
             operation_attrs.operation_id,
@@ -591,7 +593,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     }
   end
 
-  defp validate_draft(input) do
+  defp validate_draft_envelope(input) do
     envelope = %{
       "title" => input.title,
       "slug" => input.slug,
@@ -599,10 +601,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       "definition" => input.definition
     }
 
-    with :ok <-
-           encoded_size(envelope, Runbooks.Definition.limit!(:max_definition_bytes) + 8_192) do
-      Runbooks.Definition.validate(input.definition)
-    end
+    encoded_size(envelope, Runbooks.Definition.limit!(:max_definition_bytes) + 8_192)
   end
 
   defp draft_attrs(input, definition) do
@@ -786,6 +785,23 @@ defmodule EmisarWeb.MCP.RunbookTools do
     first.code
     |> error(first.message, false, details)
     |> update_in([:error], &Map.put(&1, :path, first.path))
+  end
+
+  defp definition_issue_error(issues) do
+    issue_count = length(issues)
+    visible_issues = Enum.take(issues, @max_definition_issues)
+    noun = if issue_count == 1, do: "issue", else: "issues"
+
+    error(
+      "invalid_runbook",
+      "The draft has #{issue_count} definition #{noun}.",
+      false,
+      %{
+        issue_count: issue_count,
+        issues_truncated: issue_count > length(visible_issues),
+        issues: visible_issues
+      }
+    )
   end
 
   defp maybe_put(map, _key, nil), do: map

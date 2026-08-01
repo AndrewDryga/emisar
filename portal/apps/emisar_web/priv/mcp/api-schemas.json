@@ -429,6 +429,40 @@
         }
       }
     },
+    "runbook_definition_issue": {
+      "type": "object",
+      "required": ["code", "path", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {"type": "string", "minLength": 1, "maxLength": 80},
+        "path": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^(?:|/(?:[^~/]|~[01])*)*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "x-maxUtf8Bytes": 1024
+        }
+      }
+    },
+    "runbook_definition_report": {
+      "type": "object",
+      "required": ["issue_count", "issues_truncated", "issues"],
+      "additionalProperties": false,
+      "properties": {
+        "issue_count": {"type": "integer", "minimum": 1},
+        "issues_truncated": {"type": "boolean"},
+        "issues": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/runbook_definition_issue"}
+        }
+      }
+    },
     "error": {
       "type": "object",
       "required": ["code", "message", "retryable"],
@@ -451,6 +485,13 @@
           "then": {
             "required": ["details"],
             "properties": {"details": {"$ref": "#/$defs/validation_details"}}
+          }
+        },
+        {
+          "if": {"properties": {"code": {"const": "invalid_runbook"}}},
+          "then": {
+            "required": ["details"],
+            "properties": {"details": {"$ref": "#/$defs/runbook_definition_report"}}
           }
         },
         {
@@ -1410,7 +1451,7 @@
     },
     "create_runbook_draft": {
       "title": "Create runbook draft",
-      "description": "Save a proposed runbook draft for human review. This neither publishes the runbook nor executes any action.",
+      "description": "Validate and save a proposed runbook draft for human review. Invalid definitions return exact issue paths and are not persisted. This neither publishes the runbook nor executes any action.",
       "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
       "inputSchema": {
         "type": "object",

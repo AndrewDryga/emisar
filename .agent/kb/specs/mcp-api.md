@@ -1718,11 +1718,16 @@ limits. Unknown fields are rejected at every level.
 The bridge injects an operation ID. The result is `ok: true` with
 `operation_id`, `draft_id`, `slug`, `status: "draft"`, and `review_url`. It
 creates neither a published ref nor a run. Static DefinitionV1 validation is
-required when saving; current target/pack preflight happens in the console
-before publication and again at execution. Human review and publication remain
-mandatory. Retry returns the same draft through the common operation contract.
-`get_operation` recovers the draft ID, slug, and review URL after an ambiguous
-response; no synthetic run is created for recovery.
+required before reserving the operation or writing the draft. An invalid
+definition returns `invalid_runbook` with the total issue count and up to 64
+ordered `{code, path, message}` issues using exact JSON Pointer paths. The
+`issues_truncated` flag says when the bounded report has more issues to fix; a
+21-issue definition returns all 21. No runbook, operation, audit event, or other
+side effect is written on this path. Current target/pack preflight happens in
+the console before publication and again at execution. Human review and
+publication remain mandatory. Retry returns the same draft through the common
+operation contract. `get_operation` recovers the draft ID, slug, and review URL
+after an ambiguous response; no synthetic run is created for recovery.
 
 ## Error taxonomy
 
@@ -1761,10 +1766,11 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `invalid_attestation` | The action signature is malformed or disagrees with the call. | Do not dispatch; refresh or fix bridge signing. |
 | `invalid_binding` | A runbook binding is unknown, sensitive in the wrong place, type-incompatible, or ambiguous after fan-out. | Correct the returned definition path. |
 | `invalid_cursor` | Cursor expired, mismatched, or scope changed. | Restart the same read. |
+| `invalid_draft` | Draft title, slug, or description failed persistence validation. | Correct the returned fields. |
 | `invalid_definition` | DefinitionV1 shape or semantics are invalid. | Correct the returned definition path. |
 | `invalid_input` | Supplied run-time inputs do not satisfy the declaration. | Correct `input_values` at the returned path. |
 | `invalid_operation` | Transport operation identity is malformed or ambiguous. | Fix the transport; do not invent an ID. |
-| `invalid_runbook` | Draft metadata failed persistence validation. | Correct the returned fields. |
+| `invalid_runbook` | A proposed DefinitionV1 document is invalid. | Correct every returned issue path; repeat if `issues_truncated` is true. |
 | `incompatible_action_contracts` | Selected trusted packs disagree on the action contract. | Align target deployments or edit the target selection. |
 | `pack_unavailable` | A target has no current trusted pack exposing the declared action. | Deploy or trust the pack, or edit the runbook; do not substitute one silently. |
 | `not_allowed` | Current scope does not permit the request. | Do not probe. |

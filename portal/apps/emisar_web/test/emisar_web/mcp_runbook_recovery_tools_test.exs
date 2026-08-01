@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   use EmisarWeb.ConnCase, async: true
   import EmisarWeb.MCPContractAssertions
-  alias Emisar.{ApiKeys, Approvals, Catalog, Crypto, Repo, Runbooks, Runners, Runs}
+  alias Emisar.{ApiKeys, Approvals, Audit, Catalog, Crypto, Repo, Runbooks, Runners, Runs}
   alias Emisar.MCPOperations.Operation
   alias Emisar.Runs.ActionRun
   alias EmisarWeb.MCP.{ResponseBudget, RunbookTools}
@@ -447,38 +447,73 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   end
 
   test "draft creation rejects an invalid canonical definition before reserving an operation", %{
-    conn: conn,
-    account: account,
-    subject: subject
+    conn: conn
   } do
-    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "required-args")
-
-    observe_catalog!(
-      runner,
-      %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
-      [action([%{"name" => "service", "type" => "string", "required" => true}])]
-    )
-
-    trust_all!(subject)
-
-    definition =
-      runbook_definition(
-        %{"selection" => "all", "refs" => ["runner:" <> runner_ref(runner)]},
-        args: %{"service" => %{"source" => "input", "ref" => "missing"}}
-      )
+    audit_count = Repo.aggregate(Audit.Event, :count)
 
     result =
       call(conn, "create_runbook_draft", %{
         "title" => "Invalid draft",
         "slug" => nil,
         "description" => nil,
-        "definition" => definition
+        "definition" => definition_with_21_binding_issues()
       })
 
     refute result["ok"]
-    assert result["error"]["code"] == "invalid_binding"
-    assert result["error"]["path"] == "/stages/0/steps/0/args/service/ref"
+    assert result["error"]["code"] == "invalid_runbook"
+    assert result["error"]["message"] == "The draft has 21 definition issues."
+
+    assert %{
+             "issue_count" => 21,
+             "issues_truncated" => false,
+             "issues" => issues
+           } = result["error"]["details"]
+
+    assert length(issues) == 21
+
+    for step_index <- 0..5 do
+      base = "/stages/3/steps/#{step_index}/args/project"
+      assert Enum.any?(issues, &(&1["path"] == "#{base}/ref"))
+      assert Enum.any?(issues, &(&1["path"] == "#{base}/source"))
+      assert Enum.any?(issues, &(&1["path"] == "#{base}/value"))
+    end
+
+    base = "/stages/5/steps/1/args/organization"
+    assert Enum.any?(issues, &(&1["path"] == "#{base}/ref"))
+    assert Enum.any?(issues, &(&1["path"] == "#{base}/source"))
+    assert Enum.any?(issues, &(&1["path"] == "#{base}/value"))
+
+    assert Enum.all?(issues, &(&1["code"] == "invalid_definition"))
+    assert Enum.all?(issues, &(is_binary(&1["message"]) and &1["message"] != ""))
     refute Repo.exists?(Operation)
+    refute Repo.exists?(Runbooks.Runbook)
+    assert Repo.aggregate(Audit.Event, :count) == audit_count
+  end
+
+  test "draft creation bounds a complete definition issue report", %{conn: conn} do
+    audit_count = Repo.aggregate(Audit.Event, :count)
+
+    result =
+      call(conn, "create_runbook_draft", %{
+        "title" => "Invalid large draft",
+        "slug" => nil,
+        "description" => nil,
+        "definition" => definition_with_66_binding_issues()
+      })
+
+    refute result["ok"]
+    assert result["error"]["code"] == "invalid_runbook"
+
+    assert %{
+             "issue_count" => 66,
+             "issues_truncated" => true,
+             "issues" => issues
+           } = result["error"]["details"]
+
+    assert length(issues) == 64
+    refute Repo.exists?(Operation)
+    refute Repo.exists?(Runbooks.Runbook)
+    assert Repo.aggregate(Audit.Event, :count) == audit_count
   end
 
   test "discovery keeps fan-out separate from bounded stage parallelism", %{
@@ -1964,6 +1999,84 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
           ]
         }
       ]
+    }
+  end
+
+  defp definition_with_21_binding_issues do
+    stages =
+      Enum.map(0..5, fn stage_index ->
+        steps =
+          case stage_index do
+            3 ->
+              Enum.map(
+                0..5,
+                &definition_step("project_#{&1}", %{
+                  "project" => %{"source" => "project"}
+                })
+              )
+
+            5 ->
+              [
+                definition_step("organization_preflight"),
+                definition_step("organization_check", %{
+                  "organization" => %{"source" => "organization"}
+                })
+              ]
+
+            _other ->
+              [definition_step("step_#{stage_index}")]
+          end
+
+        %{
+          "id" => "stage_#{stage_index}",
+          "title" => "Stage #{stage_index + 1}",
+          "mode" => "sequential",
+          "steps" => steps
+        }
+      end)
+
+    %{
+      "schema_version" => 1,
+      "context_markdown" => "",
+      "inputs" => [],
+      "stages" => stages
+    }
+  end
+
+  defp definition_with_66_binding_issues do
+    steps =
+      Enum.map(
+        0..21,
+        &definition_step("project_#{&1}", %{
+          "project" => %{"source" => "project"}
+        })
+      )
+
+    %{
+      "schema_version" => 1,
+      "context_markdown" => "",
+      "inputs" => [],
+      "stages" => [
+        %{
+          "id" => "large_invalid_stage",
+          "title" => "Large invalid stage",
+          "mode" => "sequential",
+          "steps" => steps
+        }
+      ]
+    }
+  end
+
+  defp definition_step(id, args \\ %{}) do
+    %{
+      "id" => id,
+      "pack" => %{"id" => "operations"},
+      "action" => "operations.health",
+      "targets" => %{"selection" => "all", "refs" => ["group:default"]},
+      "args" => args,
+      "outputs" => [],
+      "success" => [],
+      "wait" => nil
     }
   end
 

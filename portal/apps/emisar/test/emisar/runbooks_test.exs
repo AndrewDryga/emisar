@@ -488,6 +488,39 @@ defmodule Emisar.RunbooksTest do
       assert Repo.aggregate(Runbooks.Runbook, :count) == 1
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
     end
+
+    test "rejects an invalid definition before reserving the operation" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "invalid draft")
+      attrs = runbook_attrs(definition: %{"schema_version" => 1})
+
+      assert {:error, [%{path: "/context_markdown"} | _rest]} =
+               Runbooks.create_mcp_draft(
+                 attrs,
+                 operation_id(),
+                 String.duplicate("c", 64),
+                 subject
+               )
+
+      refute Repo.exists?(Runbooks.Runbook)
+      refute Repo.exists?(MCPOperations.Operation)
+    end
+
+    test "denies before reporting definition issues" do
+      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
+      subject = membership_subject(account, :operator)
+      attrs = runbook_attrs(definition: %{"schema_version" => 1})
+
+      assert Runbooks.create_mcp_draft(
+               attrs,
+               operation_id(),
+               String.duplicate("c", 64),
+               subject
+             ) == {:error, :unauthorized}
+
+      refute Repo.exists?(Runbooks.Runbook)
+      refute Repo.exists?(MCPOperations.Operation)
+    end
   end
 
   describe "subscribe_account_runbooks/1" do

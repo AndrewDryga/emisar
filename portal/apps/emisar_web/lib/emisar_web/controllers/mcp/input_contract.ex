@@ -1,22 +1,35 @@
 defmodule EmisarWeb.MCP.InputContract do
   @moduledoc """
-  Compiles and enforces the fixed tools' published input schemas.
+  Compiles and enforces the fixed tools' input schemas.
 
   JSONSchex owns standard Draft 2020-12 validation; byte budgets that schemas
-  cannot express are enforced by the tool handlers. This module additionally
-  normalizes integral JSON numbers at the top-level fields the schemas declare
-  as `integer`, so handlers receive real integers from clients that send `50.0`.
+  cannot express and explicitly domain-owned authoring subtrees are enforced by
+  their contexts. This module additionally normalizes integral JSON numbers at
+  the top-level fields the schemas declare as `integer`, so handlers receive
+  real integers from clients that send `50.0`.
   """
 
   alias EmisarWeb.MCP.{SchemaRegistry, ValidationError}
   alias EmisarWeb.MCP.SchemaRegistry.Compiler
 
   @contracts Map.new(SchemaRegistry.contracts(), fn descriptor ->
+               name = Map.fetch!(descriptor, "name")
                schema = Map.fetch!(descriptor, "inputSchema")
                expanded = Compiler.expand!(schema, schema)
 
+               # Keep DefinitionV1 in the published tool schema so models author
+               # against the exact contract. The domain validator owns its
+               # actionable, indexed issue report, so only the adapter's copy
+               # defers that one subtree instead of collapsing it to eight paths.
+               validation_schema =
+                 if name == "create_runbook_draft" do
+                   put_in(schema, ["properties", "definition"], %{})
+                 else
+                   schema
+                 end
+
                compiled =
-                 case JSONSchex.compile(schema, format_assertion: true) do
+                 case JSONSchex.compile(validation_schema, format_assertion: true) do
                    {:ok, compiled} -> compiled
                    {:error, error} -> raise "invalid MCP input schema: #{inspect(error)}"
                  end
@@ -30,7 +43,7 @@ defmodule EmisarWeb.MCP.InputContract do
 
                root_fields = root_properties |> Map.keys() |> MapSet.new()
 
-               {Map.fetch!(descriptor, "name"),
+               {name,
                 %{compiled: compiled, integer_fields: integer_fields, root_fields: root_fields}}
              end)
 

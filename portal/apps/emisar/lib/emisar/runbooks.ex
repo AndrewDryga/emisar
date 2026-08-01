@@ -293,17 +293,20 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  @doc "Creates or replays one MCP draft under its bridge operation identity."
+  @doc "Strictly validates, then creates or replays one MCP draft under its operation identity."
   def create_mcp_draft(attrs, operation_id, fingerprint, %Subject{account: account} = subject)
       when is_binary(operation_id) and is_binary(fingerprint) do
+    definition = if is_map(attrs), do: Map.get(attrs, "definition")
+
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              {:one_of,
               [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
-           ) do
+           ),
+         {:ok, definition} <- Definition.validate(definition) do
       id = MCPOperations.resource_id(operation_id, :create_runbook_draft, subject)
-      attrs = Map.put(attrs, "id", id)
+      attrs = attrs |> Map.put("definition", definition) |> Map.put("id", id)
 
       operation_attrs = %{
         operation_id: operation_id,

@@ -82,6 +82,23 @@ defmodule EmisarWeb.MCP.InputContractTest do
              InputContract.validate("list_packs", %{"junk" => 1})
   end
 
+  test "defers runbook definition details while preserving its published schema" do
+    arguments = %{
+      "title" => "Repair draft",
+      "slug" => nil,
+      "description" => nil,
+      "definition" => %{"schema_version" => 1, "stages" => []}
+    }
+
+    assert {:ok, ^arguments} = InputContract.validate("create_runbook_draft", arguments)
+
+    assert {:error, [%{path: "$.title", code: "type"}]} =
+             InputContract.validate(
+               "create_runbook_draft",
+               Map.put(arguments, "title", false)
+             )
+  end
+
   test "exposes published root argument names for safe log paths" do
     assert MapSet.member?(InputContract.known_root_fields("list_packs"), "limit")
     assert MapSet.member?(InputContract.known_root_fields("run_action"), "action_id")
