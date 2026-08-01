@@ -21,8 +21,10 @@
 # lands in argv, a `ps` listing, or the audit log. Basic auth is deliberate:
 # unlike an X-Auth-Token session it consumes NO iDRAC session slot (iDRAC9
 # allows only 8 concurrent), which is the right fit for stateless monitoring
-# polls. iDRAC ships a self-signed cert, so TLS verification is skipped by
-# default; set IDRAC_INSECURE=false once a CA-signed cert is installed.
+# polls. TLS verification is on by default — Basic credentials must never cross
+# an unverified channel. iDRAC ships a Dell self-signed cert, so either install
+# a CA-signed cert on the iDRAC or set IDRAC_INSECURE=true explicitly to accept
+# the self-signed one; only that exact value skips verification.
 set -u
 
 host=$1
@@ -40,7 +42,7 @@ auth=$(printf '%s:%s' "$IDRAC_USER" "$IDRAC_PASSWORD" | base64 | tr -d '\n')
 # Assemble curl's argument list. -H @- reads the auth header from the stdin
 # piped in below, so the credential stays out of argv.
 set -- -sS -X "$method" -H @- "https://$host/redfish/v1$path"
-[ "${IDRAC_INSECURE:-true}" != "false" ] && set -- -k "$@"
+[ "${IDRAC_INSECURE:-}" = "true" ] && set -- -k "$@"
 if [ -n "$body" ]; then
 	set -- "$@" -H "Content-Type: application/json" --data "$body"
 fi
@@ -60,6 +62,9 @@ rc=$?
 
 if [ "$rc" -ne 0 ]; then
 	echo "dell-idrac: curl failed (exit $rc) reaching iDRAC at $host" >&2
+	if [ "$rc" -eq 60 ]; then
+		echo "dell-idrac: TLS certificate verification failed — install a CA-signed cert on the iDRAC, or set IDRAC_INSECURE=true (allowlisted in inherit_env) to accept its self-signed cert" >&2
+	fi
 	exit "$rc"
 fi
 case "$code" in

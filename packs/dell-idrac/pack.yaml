@@ -2,7 +2,10 @@ schema_version: 1
 
 id: dell-idrac
 name: Dell iDRAC (Redfish)
-version: 0.1.0
+version: 0.2.0
+# 0.1.0 skipped TLS verification by default, sending Basic credentials over an
+# unverified channel — retired as a security fix.
+retired_below: 0.2.0
 description: >
   Monitor and operate a Dell iDRAC over its Redfish REST API with curl — system
   identity and health rollup, the Dell subsystem rollup, storage controllers
@@ -46,11 +49,14 @@ setup:
         audit log.
     - name: IDRAC_INSECURE
       required: false
-      default: "true"
       description: >
-        Skip TLS verification of the iDRAC certificate. Default true because
-        iDRAC ships a Dell self-signed cert; set to false once you have
-        installed a CA-signed cert on the iDRAC.
+        Set to exactly "true" to skip TLS verification of the iDRAC
+        certificate. Unset (and any other value) verifies — the secure
+        default, since credentials travel over this channel. iDRAC ships a
+        Dell self-signed cert, so either install a CA-signed cert on the
+        iDRAC (preferred) or set this escape hatch explicitly for a
+        self-signed fleet.
+      example: "true"
   notes:
     - "Any of IDRAC_USER / IDRAC_PASSWORD / IDRAC_INSECURE you set must also be allowlisted in the runner's inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a var present on the host but not allowlisted is silently dropped and the call fails to authenticate."
     - "Auth is HTTP Basic on purpose. It consumes no iDRAC session slot, whereas X-Auth-Token sessions draw from the shared web/Redfish session budget (iDRAC9: 8 concurrent, iDRAC8: 6); monitoring tools that open sessions and never close them are the classic cause of a 'maximum number of user sessions reached' lockout of the GUI/admin. Stateless Basic polls avoid that entirely."

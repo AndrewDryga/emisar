@@ -1,0 +1,12 @@
+services:
+  idrac:
+    image: python:${PACKTEST_VERSION:-3.14.0-slim}${PACKTEST_DIGEST-}
+    entrypoint: [python3, /fixture/server.py]
+    volumes:
+      - ${EMISAR_ROOT}/packs/dell-idrac/test/fixtures/server.py:/fixture/server.py:ro
+    healthcheck:
+      test: [CMD, python3, -c, "import ssl, urllib.request; urllib.request.urlopen('https://localhost/health', context=ssl._create_unverified_context())"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

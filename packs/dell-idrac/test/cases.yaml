@@ -1,0 +1,57 @@
+services: [idrac]
+versions:
+  - version: "3.14.0-slim"
+    digest: "@sha256:0aecac02dc3d4c5dbb024b753af084cafe41f5416e02193f1ce345d671ec966e"
+    default: true
+secret_env: [IDRAC_PASSWORD]
+env:
+  IDRAC_USER: packtest-monitor
+  IDRAC_PASSWORD: packtest-canary-idrac-password-9f27
+defaults:
+  expect:
+    stdout_not_contains: [packtest-canary-idrac-password-9f27]
+cases:
+  # The fixture's cert is self-signed, so a verifying curl must refuse it:
+  # exit 60 with no IDRAC_INSECURE set proves TLS verification is the default.
+  - name: idrac.system-verifies-tls-by-default
+    action: idrac.system
+    args: {host: idrac}
+    expect:
+      status: failure
+      exit: [60]
+      reason_contains: [process exited with code 60]
+      stderr_contains: ["curl failed (exit 60)", set IDRAC_INSECURE=true]
+
+  - name: idrac.system-explicit-insecure-accepts-self-signed
+    action: idrac.system
+    args: {host: idrac}
+    env:
+      IDRAC_INSECURE: "true"
+    expect:
+      json:
+        /Model: PowerEdge R750
+        /PowerState: "On"
+        /Status/HealthRollup: OK
+
+  # Before 0.2.0 any value except "false" skipped verification, so a typo'd
+  # opt-out was silently insecure. Now anything but exactly "true" verifies.
+  - name: idrac.system-non-true-insecure-value-still-verifies
+    action: idrac.system
+    args: {host: idrac}
+    env:
+      IDRAC_INSECURE: "yes"
+    expect:
+      status: failure
+      exit: [60]
+      reason_contains: [process exited with code 60]
+      stderr_contains: ["curl failed (exit 60)"]
+
+  - name: idrac.system-missing-credentials
+    action: idrac.system
+    args: {host: idrac}
+    unset_env: [IDRAC_USER]
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [set IDRAC_USER and IDRAC_PASSWORD]

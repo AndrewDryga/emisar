@@ -69,6 +69,9 @@ execution:
     - HTTPD_ACCESS_LOG
     - HTTPD_ERROR_LOG
     - HTTPD_STATUS_URL
+    - IDRAC_INSECURE
+    - IDRAC_PASSWORD
+    - IDRAC_USER
     - KAFKA_BOOTSTRAP
     - KUBECONFIG
     - MC_HOST_minio
