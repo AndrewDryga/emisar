@@ -201,25 +201,48 @@ cases:
       stderr_contains: [resource_drift in the plan document is string rather than an array]
       stdout_not_contains: ['"total":0']
 
-  # The plan is the failed phase. The tail keeps only the last 200 lines with
-  # ANSI control codes stripped ('\u001b' is how a surviving escape byte would
-  # read in the JSON output), and the presigned log URL stays out of stdout —
-  # its signature canary sits in the default stdout_not_contains.
+  # The plan is the failed phase. The tail keeps only the last 60 lines and
+  # 2 KiB with ANSI control codes stripped ('\u001b' is how a surviving
+  # escape byte would read in the JSON output), and the presigned log URL
+  # stays out of stdout — its signature canary sits in the default
+  # stdout_not_contains. Against the fixture's 304-line log both bounds cut:
+  # line 42 falls outside the 60-line window, line 250 survives the line
+  # window but not the 2 KiB byte cap, and the error block at the end is what
+  # the tail keeps.
   - action: tfc.run_diagnostics
     args: {run_id: run-2PlanErrVt8Kq5Wd}
     expect:
       stdout_contains:
         - "Error: creating S3 Bucket (emisar-legacy): AccessDenied"
-        - refresh line 250
+        - refresh line 280
       stdout_not_contains:
         - '\u001b'
         - refresh line 42
+        - refresh line 250
       json:
         /phase: plan
         /run/status: errored
         /diagnostics/status: errored
         /diagnostics/started_at: "2026-07-30T02:11:04+00:00"
         /diagnostics/ended_at: "2026-07-30T02:12:31+00:00"
+        /log/available: true
+
+  # The worst structured result this action can emit: every log byte is
+  # invalid UTF-8, which jq replaces with three-byte U+FFFD — the worst
+  # raw-to-encoded expansion the tail can meet — and the run message is a
+  # U+2028 flood whose escape doubles during the runner's canonical
+  # re-encode. The runner rejects a structured result over 8 KiB, so this
+  # case's success IS the byte-cap proof, and the sentinel shows the tail
+  # still ends with the error line an operator diagnoses from.
+  - name: tfc.run_diagnostics-fits-the-cap-when-the-tail-is-worst-case
+    action: tfc.run_diagnostics
+    args: {run_id: run-1TailFloodMx9Kd4Ws}
+    expect:
+      stdout_contains:
+        - "Error: worst-case tail flood sentinel"
+      json:
+        /phase: plan
+        /diagnostics/status: errored
         /log/available: true
 
   - name: tfc.run_diagnostics-selects-the-apply-phase

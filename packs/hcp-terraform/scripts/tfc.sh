@@ -11,8 +11,16 @@
 set -euo pipefail
 
 readonly max_response_bytes=33554432
-readonly max_log_tail_lines=200
-readonly max_log_tail_bytes=65536
+# The diagnostics tail rides a structured result the runner caps at 8 KiB
+# after canonical JSON encoding, next to a run/phase envelope of up to ~1 KiB.
+# A raw log byte can cost three encoded bytes (jq replaces an invalid UTF-8
+# byte with three-byte U+FFFD; escapes and U+2028/U+2029 double), so 2 KiB of
+# raw tail is what honestly fits: at most ~6.3 KiB encoded, ~1 KiB headroom.
+# The fetch window stays 64 KiB so a color-heavy log still fills the tail
+# after the ANSI strip.
+readonly max_log_tail_lines=60
+readonly max_log_tail_bytes=2048
+readonly max_log_fetch_bytes=65536
 
 fail() {
   printf '%s\n' "$1" >&2
@@ -260,7 +268,7 @@ fetch_log_tail() {
   tail_text=$(printf 'url = "%s"\n' "$url" |
     curl -q --fail -s --globoff --proto '=http,https' \
       --connect-timeout 10 --max-time 90 -K - |
-    tail -c $((max_log_tail_bytes * 4)) |
+    tail -c "$max_log_fetch_bytes" |
     sanitize_log |
     tail -n "$max_log_tail_lines" |
     tail -c "$max_log_tail_bytes") || status=$?

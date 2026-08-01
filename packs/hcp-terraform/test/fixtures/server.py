@@ -23,8 +23,15 @@ LOGLESS_RUN_ID = "run-5NoLogWp4Hs2Ym8q"
 DENIED_LOG_RUN_ID = "run-6DeniedBv1Zx7Qf3"
 CANCELED_NO_CV_RUN_ID = "run-8NoCvFh9Kl4Tq6wY"
 GLOB_LOG_RUN_ID = "run-9GlobUrlYz2Bc5Df"
+WORST_TAIL_RUN_ID = "run-1TailFloodMx9Kd4Ws"
 WORST_PLAN_RUN_ID = "run-HugePlanWorstCase"
 MALFORMED_PLAN_RUN_ID = "run-MalformedPlanDoc"
+
+# Every codepoint of this message costs six bytes once JSON-escaped — the
+# single most expensive shape the clip can emit. A page (or a diagnosed run)
+# where every row carries it exercises the calculated worst case, not just a
+# mixed sample.
+UNIFORM_WORST_MESSAGE = "\u2028" * 60
 
 # One mutable run table per server process. Every case owns a fresh Compose
 # project, so mutations always start from the same fixture state; the errored
@@ -155,6 +162,28 @@ RUNS = {
             "log-url-override": "http://{tfc-api,tfc-api}:8080/blob/logs/errored-plan",
         },
     },
+    # The diagnostics worst case: the log floods the tail window with invalid
+    # UTF-8 (the worst raw-to-encoded expansion — jq replaces each such byte
+    # with three-byte U+FFFD) and the message floods the clip, so one run
+    # exercises every bound of the structured result at once.
+    WORST_TAIL_RUN_ID: {
+        "status": "errored",
+        "message": UNIFORM_WORST_MESSAGE,
+        "plan-only": False,
+        "confirmable": False,
+        "discardable": False,
+        "cancelable": False,
+        "configuration-version": CONFIGURATION_VERSION_ID,
+        "plan": {
+            "id": "plan-1TailFloodQr7St2U",
+            "status": "errored",
+            "status-timestamps": {
+                "started-at": "2026-07-31T05:30:00+00:00",
+                "errored-at": "2026-07-31T05:47:19+00:00",
+            },
+            "log-path": "/blob/logs/worst-case-flood",
+        },
+    },
     CANCELED_NO_CV_RUN_ID: {
         "status": "canceled",
         "message": "CLI-driven run without a configuration version",
@@ -253,11 +282,6 @@ WORST_MESSAGES = [
     f"ci: bump module versions and rotate credentials for stack {n} " + "long trailing commit body " * 20
     for n in range(4)
 ]
-
-# Every codepoint of this message costs six bytes once JSON-escaped — the
-# single most expensive shape the clip can emit. A page where every row
-# carries it exercises the calculated worst case, not just a mixed sample.
-UNIFORM_WORST_MESSAGE = "\u2028" * 60
 
 
 def worst_run_document(index, message, workspace_id=WORST_WORKSPACE_ID):
@@ -487,9 +511,10 @@ def malformed_plan_json_output():
     }
 
 
-# 300 refresh lines push the error past the action's 200-line tail window, so
-# the case can prove the bound: early noise is dropped, the error survives.
-# ANSI codes wrap the error exactly the way terraform colors its output.
+# 300 refresh lines push the error far past the action's 60-line / 2 KiB tail
+# window, so the case can prove both bounds: early noise is dropped, the error
+# survives. ANSI codes wrap the error exactly the way terraform colors its
+# output.
 def plan_error_log():
     lines = [f"aws_instance.api: Refreshing state... refresh line {n}" for n in range(1, 301)]
     lines += [
@@ -513,10 +538,21 @@ def finished_plan_log():
     return "Plan: 1 to add, 1 to change, 2 to destroy.\n"
 
 
+# Bytes, not str: invalid UTF-8 cannot round-trip through a Python string.
+# Every byte is invalid UTF-8, which jq replaces with three-byte U+FFFD — the
+# worst raw-to-encoded expansion the tail pipeline can meet. 120 lines make
+# the 60-line window bind first and the 2 KiB byte cap second, and the ASCII
+# sentinel at the end proves the tail still ends with the line an operator
+# diagnoses from.
+def worst_case_flood_log():
+    return (b"\xff" * 64 + b"\n") * 120 + b"Error: worst-case tail flood sentinel\n"
+
+
 LOG_BLOBS = {
     "/blob/logs/errored-plan": plan_error_log,
     "/blob/logs/errored-apply": apply_error_log,
     "/blob/logs/finished-plan": finished_plan_log,
+    "/blob/logs/worst-case-flood": worst_case_flood_log,
 }
 
 
@@ -630,7 +666,10 @@ class Handler(BaseHTTPRequestHandler):
             self.write_json(403, {"errors": [{"title": "forbidden"}]})
             return
         if path in LOG_BLOBS:
-            self.write_bytes(200, "text/plain", LOG_BLOBS[path]().encode())
+            body = LOG_BLOBS[path]()
+            if isinstance(body, str):
+                body = body.encode()
+            self.write_bytes(200, "text/plain", body)
             return
         if path == "/blob/plan-json-output":
             self.write_json(200, plan_json_output())

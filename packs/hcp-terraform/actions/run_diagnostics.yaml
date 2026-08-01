@@ -6,8 +6,8 @@ risk: medium
 description: >
   Show why a run failed: picks the phase that failed — the apply when it
   errored or was canceled, otherwise the plan — and returns that phase's
-  status and timestamps with a bounded tail of its log, the last 200 lines
-  capped at 64 KiB with control codes stripped. Provider logs can carry
+  status and timestamps with a bounded tail of its log, the last 60 lines
+  capped at 2 KiB with control codes stripped. Provider logs can carry
   sensitive operational values, so this read is medium risk and policy-gated
   even though it changes nothing. The presigned log URL HCP returns is fetched
   but never emitted, and a missing or unreadable log is reported explicitly
@@ -93,9 +93,14 @@ output:
         properties:
           available: {type: boolean}
           reason: {type: string}
+          # 60 lines / 2 KiB of raw tail is what fits the runner's 8 KiB
+          # structured-output cap next to the run envelope — a raw log byte
+          # can cost three encoded bytes. The sizing arithmetic lives with
+          # the bounds in scripts/tfc.sh.
           tail:
             type: array
-            items: {type: string}
+            maxItems: 60
+            items: {type: string, maxLength: 2048}
   max_stdout_bytes: 262144
   max_stderr_bytes: 8192
 examples:
