@@ -3,7 +3,7 @@ id: rpm.dnf_remove
 title: dnf remove -y <pkg>
 kind: exec
 risk: high
-description: Remove one package + dependencies that no longer have a reverse-dep.
+description: Remove one package + dependencies that no longer have a reverse-dep; removing a package that backs a running service takes that service down.
 side_effects:
   - Files installed by the package are deleted.
   - Other packages depending on it may also be removed.

@@ -3,7 +3,7 @@ id: haproxy.set_maxconn
 title: set maxconn frontend <name> <N>
 kind: exec
 risk: high
-description: Live-update the maxconn cap on one frontend without a reload.
+description: Live-update the maxconn cap on one frontend without a reload; lowering it below the current connection count turns away new connections until the count drops.
 side_effects:
   - Lowering below current conns rejects new connections until count drops.
 search_terms:

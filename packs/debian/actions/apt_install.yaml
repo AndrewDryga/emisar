@@ -6,11 +6,12 @@ kind: exec
 risk: high
 
 description: >
-  Install ONE named package non-interactively. Args are restricted to
-  one package — multi-package installs and arbitrary apt flags are
-  intentionally not supported. Verify with `dpkg_status` afterward.
-  Holds the apt lock for the duration; concurrent dpkg/apt operations
-  will queue.
+  Install ONE named package non-interactively. Its maintainer scripts
+  run as root and typically start or restart the service it ships.
+  Args are restricted to one package — multi-package installs and
+  arbitrary apt flags are intentionally not supported. Verify with
+  `dpkg_status` afterward. Holds the apt lock for the duration;
+  concurrent dpkg/apt operations will queue.
 
 side_effects:
   - Holds the apt lock.

@@ -3,7 +3,7 @@ id: minio.user_enable
 title: mc admin user enable
 kind: exec
 risk: high
-description: Re-enable one IAM user.
+description: Re-enable one IAM user; their credentials work again immediately with every policy still attached — access cut during an incident comes back.
 side_effects:
   - User can authenticate again.
 args:

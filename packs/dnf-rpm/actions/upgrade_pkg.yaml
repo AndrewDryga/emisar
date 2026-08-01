@@ -4,8 +4,9 @@ title: dnf upgrade -y <pkg>
 kind: exec
 risk: high
 description: >
-  Upgrade one named package to the latest available version. Use
-  for CVE remediation. Other packages untouched.
+  Upgrade one named package to the latest available version; the
+  package's service may restart mid-upgrade. Use for CVE
+  remediation. Other packages untouched.
 side_effects:
   - One package upgraded.
   - Service backed by the package may restart (depending on the package).

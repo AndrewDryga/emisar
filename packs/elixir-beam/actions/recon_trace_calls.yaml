@@ -3,7 +3,7 @@ id: beam.recon_trace_calls
 title: Bounded recon_trace call capture
 kind: script
 risk: high
-description: Trace calls to one existing module/function in the running Elixir release for a bounded time window.
+description: Trace calls to one existing module/function in the running Elixir release for a bounded time window; tracing adds load while active, and the include_args / include_return flags copy raw arguments and returns — routinely secret-bearing — into the recorded output.
 side_effects:
   - Resolves the target release from running BEAM processes (reads /proc; docker exec when container is set).
   - Installs recon_trace call tracing in the running release, then clears it after duration_ms.

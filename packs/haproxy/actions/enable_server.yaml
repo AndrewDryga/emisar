@@ -3,7 +3,7 @@ id: haproxy.enable_server
 title: enable server <backend>/<server>
 kind: exec
 risk: high
-description: Re-enable one backend server that was administratively disabled.
+description: Re-enable one backend server that was administratively disabled; it returns to rotation and live traffic reaches it again (subject to health checks).
 side_effects:
   - Server begins receiving traffic again (subject to health checks).
 search_terms:

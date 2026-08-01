@@ -3,7 +3,7 @@ id: nomad.job_dispatch
 title: nomad job dispatch <id>
 kind: exec
 risk: high
-description: Dispatch a parameterized job with optional meta variables.
+description: Dispatch a parameterized job with optional meta variables; a new instance of the job's workload starts running on the cluster with the values you pass.
 side_effects:
   - A new dispatched job instance is created and scheduled.
   - Counts toward job history.
