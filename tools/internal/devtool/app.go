@@ -29,7 +29,7 @@ Fast feedback:
 Local development:
   setup                       Prepare the complete development environment
   up                          Start PostgreSQL and Keycloak
-  down                        Stop PostgreSQL and Keycloak
+  down [--all]                Stop PostgreSQL and Keycloak, or every started stack
   serve                       Start Phoenix in the active workspace
   seed                        Load or refresh the idempotent demo data
   reset [--seed] [--yes]      Recreate the development database
@@ -154,13 +154,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		a.printURLs(workspace)
 		return nil
 	case "down":
-		if err := exact(rest, 0, "usage: ./run down"); err != nil {
-			return err
-		}
-		if a.inBox() {
-			return fmt.Errorf("run ./run down on the host")
-		}
-		return a.run(ctx, a.Root, nil, "coop", "down")
+		return a.down(ctx, rest)
 	case "serve":
 		if err := exact(rest, 0, "usage: ./run serve"); err != nil {
 			return err

@@ -44,6 +44,26 @@ func (a *App) up(ctx context.Context) (Workspace, map[string]string, error) {
 	return workspace, env, nil
 }
 
+func (a *App) down(ctx context.Context, args []string) error {
+	all := len(args) == 1 && args[0] == "--all"
+	if !all {
+		if err := exact(args, 0, "usage: ./run down [--all]"); err != nil {
+			return err
+		}
+	}
+	if a.inBox() {
+		return fmt.Errorf("run ./run down on the host")
+	}
+	if err := a.run(ctx, a.Root, nil, "coop", "down"); err != nil {
+		return err
+	}
+	if !all {
+		return nil
+	}
+	// Volumes stay: down stops stacks, it never destroys development data.
+	return a.run(ctx, a.Root, nil, "docker", "compose", "down")
+}
+
 func (a *App) tlsClient() (*http.Client, error) {
 	ca, err := os.ReadFile(filepath.Join(a.Certs, "ca.crt"))
 	if err != nil {

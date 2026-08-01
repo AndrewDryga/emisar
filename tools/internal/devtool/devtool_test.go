@@ -874,6 +874,72 @@ func TestNoArgumentsPrintsGroupedHumanHelpAndSucceeds(t *testing.T) {
 	}
 }
 
+func TestDownStopsTheWorkspaceAndWithAllTheSmokeStack(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "bare down stops only the workspace", args: []string{"down"}, want: []string{"coop|down"}},
+		{name: "--all also stops the smoke stack", args: []string{"down", "--all"}, want: []string{"coop|down", "docker|compose down"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			bin := filepath.Join(root, "fake-bin")
+			if err := os.Mkdir(bin, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			log := filepath.Join(root, "commands.log")
+			t.Setenv("COMMAND_LOG", log)
+			t.Setenv("PATH", bin)
+			t.Setenv("COOP_BOX", "")
+			for _, name := range []string{"coop", "docker"} {
+				script := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$PWD\" '" + name + "' \"$*\" >> \"$COMMAND_LOG\"\n"
+				if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+
+			if err := app.Run(t.Context(), test.args); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(log)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := make([]string, len(test.want))
+			for i, command := range test.want {
+				want[i] = dir + "|" + command
+			}
+			got := strings.Split(strings.TrimSpace(string(data)), "\n")
+			if !slices.Equal(got, want) {
+				t.Fatalf("commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+		})
+	}
+}
+
+func TestDownRejectsUnknownArgumentsAndBoxes(t *testing.T) {
+	app := testApp(t)
+	for _, args := range [][]string{{"down", "-v"}, {"down", "--all", "extra"}} {
+		if err := app.Run(t.Context(), args); !IsUsage(err) {
+			t.Fatalf("%v error = %v, want usage", args, err)
+		}
+	}
+	t.Setenv("COOP_BOX", "1")
+	for _, args := range [][]string{{"down"}, {"down", "--all"}} {
+		if err := app.Run(t.Context(), args); err == nil || !strings.Contains(err.Error(), "on the host") {
+			t.Fatalf("%v in-box error = %v", args, err)
+		}
+	}
+}
+
 func TestMainHelpListsEveryPublicCommand(t *testing.T) {
 	for _, command := range []string{
 		"setup", "up", "down", "serve", "seed", "reset", "urls", "doctor", "certs",
