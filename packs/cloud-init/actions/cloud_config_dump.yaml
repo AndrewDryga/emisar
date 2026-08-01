@@ -2,16 +2,17 @@ schema_version: 1
 id: cloud-init.cloud_config_dump
 title: cat /var/lib/cloud/instance/cloud-config.txt
 kind: exec
-risk: medium
+risk: high
 description: >
   Dump the final merged cloud-config (user-data + vendor-data + system defaults)
   as cloud-init evaluated it. The source of truth for "what did
-  cloud-init actually try to do?".
+  cloud-init actually try to do?". User-data classically embeds
+  credentials, keys, and tokens, and the merged cloud-config is a superset
+  of it; the runner's redaction is a pattern-bound backstop, not a
+  guarantee.
 side_effects:
   - Reads one file.
-  - May expose secrets baked into user-data / vendor-data — the merged
-    cloud-config is a superset; the runner redacts via its configured
-    redaction rules.
+  - Read-only, but exposes the merged cloud-config (may include secrets).
 args: []
 execution:
   command:

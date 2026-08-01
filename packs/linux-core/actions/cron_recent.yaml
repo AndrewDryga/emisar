@@ -3,15 +3,19 @@ schema_version: 1
 id: linux.cron_recent
 title: Recent cron job execution log
 kind: exec
-risk: low
+risk: high
 
 description: >
   Show last N journalctl entries matching CRON. Lets operators see "did
   the backup job fire last night?" without grepping syslog. Read-only.
+  CRON log lines include the executed command lines (`CMD (…)`), which
+  routinely carry inline credentials — the same exposure as
+  `linux.crontab_all`; the runner's redaction is a pattern-bound
+  backstop, not a guarantee.
 
 side_effects:
   - One journalctl invocation.
-  - Read-only.
+  - Read-only, but exposes cron command lines (may include inline secrets).
 
 args:
   - name: count

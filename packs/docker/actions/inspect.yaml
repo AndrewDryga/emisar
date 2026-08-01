@@ -3,7 +3,7 @@ schema_version: 1
 id: docker.inspect
 title: docker inspect (one container)
 kind: exec
-risk: medium
+risk: high
 
 description: >
   Return the full JSON inspect document for one container — state, exit

@@ -2,12 +2,16 @@ schema_version: 1
 id: docker.image_history
 title: docker history
 kind: exec
-risk: low
+risk: high
 description: >
-  Return the layer-by-layer build history of one image — useful for tracing "where did this 2 GB layer come from?" Read-only.
+  Return the layer-by-layer build history of one image — useful for tracing
+  "where did this 2 GB layer come from?" Read-only. History runs with
+  --no-trunc, so CREATED BY lines carry the complete Dockerfile commands,
+  including any `ENV`/`ARG` secret a badly-built image baked in; the
+  runner's redaction is a pattern-bound backstop, not a guarantee.
 side_effects:
   - One docker history invocation.
-  - Read-only.
+  - Read-only, but exposes full layer commands (may include baked-in secrets).
 search_terms:
   - image bloat
 args:

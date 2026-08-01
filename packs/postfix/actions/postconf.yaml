@@ -2,9 +2,15 @@ schema_version: 1
 id: postfix.postconf
 title: postconf -n
 kind: exec
-risk: low
-description: Show non-default Postfix config.
-side_effects: ["One postconf call.", "Read-only."]
+risk: high
+description: >
+  Show non-default Postfix config (`postconf -n`). A full parameter dump:
+  `smtp_sasl_password_maps`-style parameters can inline `static:`
+  credentials, so this can surface secrets. The runner's redaction is a
+  pattern-bound backstop, not a guarantee.
+side_effects:
+  - One postconf call.
+  - Read-only, but dumps every non-default parameter (may include inline credentials).
 args: []
 execution:
   command: {binary: postconf, argv: ["-n"]}

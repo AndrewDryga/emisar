@@ -3,8 +3,16 @@ id: zk.conf
 title: conf (server config)
 kind: exec
 risk: low
-description: Show the server's effective configuration.
-side_effects: ["One 4lw command.", "Read-only."]
+description: >
+  Show the server's effective configuration via the `conf` four-letter
+  word. The output is a fixed, bounded property list (client ports,
+  data/log dirs and sizes, tick + session timeouts, serverId, and on
+  quorum members the election/quorum ports and membership) — it discloses
+  paths and topology; stock ZooKeeper does not dump zoo.cfg or arbitrary
+  properties here, so auth material like `superDigest` never appears.
+side_effects:
+  - One 4lw command.
+  - Read-only; discloses paths and topology — no secret values.
 args:
   - name: server
     type: string

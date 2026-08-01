@@ -2,9 +2,17 @@ schema_version: 1
 id: caddy.adapt_caddyfile
 title: caddy adapt --config <file>
 kind: exec
-risk: low
-description: Convert a Caddyfile to JSON config without loading it.
-side_effects: ["One forked process.", "Read-only."]
+risk: high
+description: >
+  Convert a Caddyfile to JSON config without loading it. The output is the
+  full resulting config — the same content class as `caddy.config_dump` —
+  and can carry secrets (TLS private-key material, basic-auth hashes,
+  upstream credentials, API tokens); adapt errors also quote offending
+  Caddyfile lines back. The runner's redaction is a fail-closed backstop,
+  not a guarantee — it is pattern-bound and can miss a bespoke secret.
+side_effects:
+  - One forked process.
+  - Read-only, but emits the full adapted config (may include secrets).
 args:
   - name: file
     type: string

@@ -2,12 +2,15 @@ schema_version: 1
 id: cloud-init.query_metadata
 title: cloud-init query <key>
 kind: exec
-risk: low
+risk: high
 description: >
-  Pull one key out of cloud-init's runtime metadata
-  (instance-id, hostname, region, availability_zone, …). Pass
-  `--all` to dump everything. Sensitive fields are redacted by
-  cloud-init itself.
+  Pull one key out of cloud-init's runtime metadata (instance-id,
+  hostname, region, availability_zone, …), or pass `--all` (the default)
+  to dump everything. cloud-init redacts sensitive values only for
+  non-root callers: as root, `--all` and the `userdata` / `vendordata` /
+  `combined_cloud_config` keys return raw user-data, which classically
+  embeds credentials, keys, and tokens. The runner's redaction is a
+  pattern-bound backstop, not a guarantee.
 side_effects:
   - One CLI call.
   - Read-only.

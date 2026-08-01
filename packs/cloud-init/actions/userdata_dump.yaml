@@ -2,15 +2,16 @@ schema_version: 1
 id: cloud-init.userdata_dump
 title: cat /var/lib/cloud/instance/user-data.txt
 kind: exec
-risk: medium
+risk: high
 description: >
   Dump raw user-data as cloud-init received it (after MIME decoding, before
   cloud-config merging). Compare against what you set in the launch
-  config to confirm delivery.
+  config to confirm delivery. User-data classically embeds credentials,
+  keys, and tokens; the runner's redaction is a pattern-bound backstop,
+  not a guarantee.
 side_effects:
   - Reads one file.
-  - May expose secrets baked into user-data — the runner redacts via
-    its configured redaction rules.
+  - Read-only, but exposes raw user-data (may include secrets).
 args: []
 execution:
   command:

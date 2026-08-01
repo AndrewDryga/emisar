@@ -2,15 +2,16 @@ schema_version: 1
 id: cloud-init.vendor_data_dump
 title: cat /var/lib/cloud/instance/vendor-data.txt
 kind: exec
-risk: medium
+risk: high
 description: >
   Dump vendor-data the cloud provider injected (AWS / GCE / Azure provider
   defaults that ran before user-data). Useful when "why is X installed
-  that I didn't ask for?" leads back to a vendor module.
+  that I didn't ask for?" leads back to a vendor module. Vendor-data can
+  embed the same credential material as user-data; the runner's redaction
+  is a pattern-bound backstop, not a guarantee.
 side_effects:
   - Reads one file.
-  - May expose secrets baked into vendor-data — the runner redacts via
-    its configured redaction rules.
+  - Read-only, but exposes raw vendor-data (may include secrets).
 args: []
 execution:
   command:

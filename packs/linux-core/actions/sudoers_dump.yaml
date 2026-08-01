@@ -7,8 +7,9 @@ risk: medium
 
 description: >
   Dump /etc/sudoers and the index of /etc/sudoers.d/. Use for an
-  audit pass — "who can sudo to what?". Sensitive content; output
-  goes through redaction. Read-only.
+  audit pass — "who can sudo to what?". Output is the host's
+  privilege-escalation policy — security-sensitive recon, but sudoers
+  stores rules, never credentials. Read-only.
 
 side_effects:
   - Reads /etc/sudoers and ls of /etc/sudoers.d/.
