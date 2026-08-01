@@ -537,7 +537,7 @@ func mcpClientConfiguration(h *harness) error {
 		return err
 	}
 
-	server := newDeviceServer(false)
+	server := newDeviceServer("")
 	defer server.close()
 	result := runClientFlow(h, home, server.server.URL, false, "")
 	output, err := requireOutput(result)
@@ -595,7 +595,7 @@ curl() { printf 'unexpected network call on rerun\n' >&2; exit 9; }
 	if err := h.mkdir(filepath.Join(deniedHome, ".cursor")); err != nil {
 		return err
 	}
-	denied := newDeviceServer(true)
+	denied := newDeviceServer("access_denied")
 	defer denied.close()
 	result = runClientFlow(h, deniedHome, denied.server.URL, false, "")
 	output, err = requireOutput(result)
@@ -606,6 +606,33 @@ curl() { printf 'unexpected network call on rerun\n' >&2; exit 9; }
 		return fmt.Errorf("denied flow configured clients")
 	}
 	if err := requireAbsent(filepath.Join(deniedHome, ".cursor", "mcp.json")); err != nil {
+		return err
+	}
+
+	// An unknown 400 error code exercises the terminal catchall: any poll
+	// error other than authorization_pending must stop after a single poll,
+	// not retry until the grant expires.
+	strandedHome := h.path("stranded-home")
+	if err := h.mkdir(filepath.Join(strandedHome, ".cursor")); err != nil {
+		return err
+	}
+	stranded := newDeviceServer("quota_exhausted")
+	defer stranded.close()
+	result = runClientFlow(h, strandedHome, stranded.server.URL, false, "")
+	output, err = requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if configuredClients(string(output)) != "" {
+		return fmt.Errorf("terminal poll error configured clients")
+	}
+	if !strings.Contains(string(output), "quota_exhausted") {
+		return fmt.Errorf("terminal poll error was not reported to the operator:\n%s", output)
+	}
+	if got := stranded.polls.Load(); got != 1 {
+		return fmt.Errorf("terminal poll error polled %d times, expected exactly one", got)
+	}
+	if err := requireAbsent(filepath.Join(strandedHome, ".cursor", "mcp.json")); err != nil {
 		return err
 	}
 

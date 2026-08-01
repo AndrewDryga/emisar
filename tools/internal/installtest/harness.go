@@ -445,14 +445,18 @@ func argvHolders(secret string) []string {
 	return holders
 }
 
+// errorCode, when set, makes every token poll fail with HTTP 400 and that
+// OAuth error code; "" serves the happy path: a code-less 502 blip, a 429
+// rate limit, a malformed 400 error value, one pending, then success —
+// every retryable response class the installer must survive.
 type deviceServer struct {
-	server *httptest.Server
-	polls  atomic.Int32
-	deny   bool
+	server    *httptest.Server
+	polls     atomic.Int32
+	errorCode string
 }
 
-func newDeviceServer(deny bool) *deviceServer {
-	device := &deviceServer{deny: deny}
+func newDeviceServer(errorCode string) *deviceServer {
+	device := &deviceServer{errorCode: errorCode}
 	device.server = httptest.NewServer(http.HandlerFunc(device.handle))
 	return device
 }
@@ -470,12 +474,26 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 				`"verification_uri":"%s/activate","verification_uri_complete":"%s/activate?code=FKZQ-2418",`+
 				`"expires_in":60,"interval":0}`, d.server.URL, d.server.URL))
 	case "/api/mcp/device_token":
-		if d.deny {
+		poll := d.polls.Add(1)
+		if d.errorCode != "" {
 			response.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(response, `{"error":"access_denied"}`)
+			_, _ = io.WriteString(response, fmt.Sprintf(`{"error":%q}`, d.errorCode))
 			return
 		}
-		if d.polls.Add(1) < 2 {
+		switch poll {
+		case 1: // a gateway blip with no OAuth error code must keep the poll alive
+			response.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(response, "Bad Gateway")
+			return
+		case 2: // the portal's own rate limiter: token-shaped code, non-400 status
+			response.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(response, `{"error":"rate_limited"}`)
+			return
+		case 3: // a 400 whose error value is outside the OAuth code charset
+			response.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(response, `{"error":"upstream connect timeout"}`)
+			return
+		case 4:
 			response.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(response, `{"error":"authorization_pending"}`)
 			return

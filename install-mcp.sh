@@ -1616,10 +1616,14 @@ request_device_grant() {
   DEVICE_EXPIRES_IN=$(json_string_field "${DEVICE_RESP}" expires_in) || DEVICE_EXPIRES_IN=900
 }
 
-# Polls the token endpoint until approval (0; TOKEN_RESP holds the keys),
-# denial, or expiry. Network blips and rate limits just keep polling.
+# Polls the token endpoint until approval (0; TOKEN_RESP holds the keys)
+# or a terminal poll error. Only an HTTP 400 body carries a poll verdict
+# (RFC 8628 rides OAuth's 400 error envelope), and of those only
+# authorization_pending retries; network blips, rate limits, and proxy
+# responses on any other status keep polling. LC_ALL=C pins the charset
+# classification below to ASCII regardless of the operator's locale.
 await_device_approval() {
-  local deadline now status error
+  local deadline now status error LC_ALL=C
   deadline=$(($(date +%s) + DEVICE_EXPIRES_IN))
   out ""
   hdr "Approve this machine in your browser"
@@ -1651,8 +1655,16 @@ await_device_approval() {
       ok "Approved."
       return 0
     fi
+    # Any status but 400 is transport-level — the portal's own rate limiter
+    # answers 429 {"error":"rate_limited"}, and a proxy 5xx can carry a
+    # token-shaped body — so no terminal verdict lives there.
+    [ "${status}" = "400" ] || continue
     error=$(json_string_field "${TOKEN_RESP}" error) || error=""
     case "${error}" in
+      # Poll on while approval is pending — and on bodies carrying no OAuth
+      # error code: parse failures land here as "", and a value outside the
+      # token charset is a malformed response, not a code.
+      authorization_pending | '' | *[!a-zA-Z0-9._-]*) : ;;
       access_denied)
         warn "the request was denied in the portal — no clients configured"
         return 1
@@ -1661,7 +1673,16 @@ await_device_approval() {
         warn "approval code expired — re-run the installer to try again"
         return 1
         ;;
-      *) : ;;
+      invalid_grant)
+        warn "the approval code is no longer valid — re-run the installer to try again"
+        return 1
+        ;;
+      *)
+        # Any other error code is terminal (RFC 8628: only authorization_pending
+        # retries here); retrying it would just spin until the grant expires.
+        warn "the portal reported ${error:0:40} — re-run the installer to try again"
+        return 1
+        ;;
     esac
   done
 }

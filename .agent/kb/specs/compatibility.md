@@ -258,7 +258,7 @@ response via `expires_in`, not frozen contract. The device-authorization
 response fields (`device_code`, `user_code`, `verification_uri`,
 `verification_uri_complete`, `expires_in`, `interval`) and the token poll's
 emisar-specific success payload — a `client_keys` map of per-client API keys,
-not an OAuth token response — are frozen; poll errors are
+not an OAuth token response — are frozen; today's poll errors are
 `authorization_pending`, `access_denied`, `expired_token`, and
 `invalid_grant`, and `slow_down` is never emitted.
 
@@ -269,11 +269,13 @@ failures, never silent downgrades. The frozen part of the metadata is the
 issuer, the endpoint paths, and the meaning of every advertised member;
 capability sets and error vocabularies may still grow additively, since
 RFC 8414 clients ignore unknown members — adding a scope or grant type is not
-a breaking change. The device poll is the exception: the deployed installer reads the device
-response fields above and treats every poll error except `access_denied` and
-`expired_token` as retryable, so a new terminal poll-error code would leave
-old installers polling until expiry: additions must be retry-safe, and a new
-terminal outcome needs a new poll contract. Already-issued `emk-` keys and
+a breaking change. The device poll follows the same rule for terminal outcomes: the deployed
+installer reads a poll verdict only from an HTTP 400 body (rate limits,
+proxy responses, and blips on any other status keep polling), retries only
+`authorization_pending`, and fails cleanly on every other or unknown 400
+code — so a new terminal poll error is an additive change. The breaking
+direction is a new retryable code: a deployed installer would abort on it,
+so `slow_down` or any other retry signal needs a new poll contract. Already-issued `emk-` keys and
 refresh tokens are saved customer credentials and must keep authenticating.
 
 ### Enterprise SSO callback and SCIM provisioning
