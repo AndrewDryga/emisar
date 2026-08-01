@@ -128,8 +128,9 @@ const helpText = `emisar-mcp - MCP stdio-to-HTTP bridge for emisar
 
 DESCRIPTION
   Proxies MCP JSON-RPC between a local LLM client and the emisar control plane
-  at POST /api/mcp/rpc. The portal owns tools, policy, approvals, and audit.
-  Optional signed dispatch keeps the operator's Ed25519 key on this machine.
+  at POST /api/mcp/rpc. The control plane owns tools, policy, approvals, and
+  audit. Optional signed dispatch keeps the operator's Ed25519 key on this
+  machine.
 
 ENVIRONMENT
   EMISAR_URL (required)
@@ -170,7 +171,7 @@ CLIENT SETUP
     curl -sSL https://emisar.dev/install-mcp.sh | sudo bash
 
   An interactive install offers to configure the clients below itself —
-  you approve the connection in the portal and it writes the configs.
+  you approve the connection in the control plane and it writes the configs.
   The manual forms follow. Replace emk-... below with a key from
   https://emisar.dev/app/agents. These examples assume the bridge is
   installed in /usr/local/bin.
@@ -254,11 +255,11 @@ CLIENT SETUP
       allow = ["MCPTool(emisar__*)"]
 
 KEY ROTATION
-  The bridge prepares and durably stores a successor before asking the portal
-  to rotate an expiring key. It activates that successor only after the portal
-  acknowledges the exact digest and the promoted state is durable. State is
-  bound to the endpoint origin in owner-only files under
-  <user-config-dir>/emisar/credentials/. Keep that directory persistent.
+  The bridge prepares and durably stores a successor before asking the
+  control plane to rotate an expiring key. It activates that successor only
+  after the control plane acknowledges the exact digest and the promoted
+  state is durable. State is bound to the endpoint origin in owner-only files
+  under <user-config-dir>/emisar/credentials/. Keep that directory persistent.
   OAuth and arbitrary Bearer tokens bypass this state. Without durable storage,
   automatic rotation is off.
 
@@ -1143,33 +1144,33 @@ func (b *bridge) forwardAttempt(req *http.Request, meta requestMeta) (portalResp
 	result := portalResponse{status: resp.StatusCode, header: resp.Header.Clone()}
 	if meta.notification() {
 		if resp.StatusCode != http.StatusAccepted {
-			return result, fmt.Errorf("portal returned status %d for a notification", resp.StatusCode)
+			return result, fmt.Errorf("control plane returned status %d for a notification", resp.StatusCode)
 		}
 		body, err := readCappedBody(resp.Body, maxResponseBytes)
 		if err != nil {
 			return result, err
 		}
 		if len(bytes.TrimSpace(body)) != 0 {
-			return result, errors.New("portal returned a body for a notification")
+			return result, errors.New("control plane returned a body for a notification")
 		}
 		return result, nil
 	}
 	if resp.StatusCode == http.StatusAccepted {
-		return result, errors.New("portal returned notification status for a request")
+		return result, errors.New("control plane returned notification status for a request")
 	}
 	if resp.StatusCode != http.StatusOK && (resp.StatusCode < 400 || resp.StatusCode >= 500) {
-		return result, fmt.Errorf("unsupported portal response status %d", resp.StatusCode)
+		return result, fmt.Errorf("unsupported control-plane response status %d", resp.StatusCode)
 	}
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil || !strings.EqualFold(mediaType, "application/json") {
-		return result, errors.New("portal response is not application/json")
+		return result, errors.New("control-plane response is not application/json")
 	}
 	body, err := readCappedBody(resp.Body, maxResponseBytes)
 	if err != nil {
 		return result, err
 	}
 	if !utf8.Valid(body) {
-		return result, errors.New("portal response is not valid UTF-8")
+		return result, errors.New("control-plane response is not valid UTF-8")
 	}
 	if err := validateRPCResponse(meta, resp.StatusCode, body); err != nil {
 		return result, err
@@ -1198,31 +1199,31 @@ func (b *bridge) setProtocolVersion(version string) {
 
 func validateRPCResponse(meta requestMeta, status int, body []byte) error {
 	if err := validateStrictJSON(body); err != nil {
-		return errors.New("portal response is not strict JSON")
+		return errors.New("control-plane response is not strict JSON")
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
-		return errors.New("portal response is not a JSON-RPC object")
+		return errors.New("control-plane response is not a JSON-RPC object")
 	}
 
 	var version string
 	if err := json.Unmarshal(envelope["jsonrpc"], &version); err != nil || version != "2.0" {
-		return errors.New("portal response has an invalid jsonrpc version")
+		return errors.New("control-plane response has an invalid jsonrpc version")
 	}
 	responseID, ok := envelope["id"]
 	if !ok || !matchingJSONRPCID(meta.responseID(), responseID) {
-		return errors.New("portal response id does not match request")
+		return errors.New("control-plane response id does not match request")
 	}
 	_, hasResult := envelope["result"]
 	rawError, hasError := envelope["error"]
 	if hasResult == hasError {
-		return errors.New("portal response must contain exactly one of result or error")
+		return errors.New("control-plane response must contain exactly one of result or error")
 	}
 	if status >= 400 && !hasError {
-		return errors.New("portal error status did not contain a JSON-RPC error")
+		return errors.New("control-plane error status did not contain a JSON-RPC error")
 	}
 	if hasError && !validRPCError(rawError) {
-		return errors.New("portal response has an invalid JSON-RPC error")
+		return errors.New("control-plane response has an invalid JSON-RPC error")
 	}
 	return nil
 }
@@ -1356,7 +1357,7 @@ func readCappedBody(r io.Reader, limit int) ([]byte, error) {
 		return nil, err
 	}
 	if len(body) > limit {
-		return nil, fmt.Errorf("portal response exceeds %d bytes", limit)
+		return nil, fmt.Errorf("control-plane response exceeds %d bytes", limit)
 	}
 	return body, nil
 }
@@ -1442,7 +1443,7 @@ func parseClientMetadata(raw string) (string, error) {
 				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q exceeds %d characters", key, maxClientMetadataValue)
 			}
 			if strings.ContainsAny(v.String(), ".eE") && !portalCompatibleFloat(v.String()) {
-				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q exceeds the portal's numeric range", key)
+				return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q exceeds the control plane's numeric range", key)
 			}
 		default:
 			return "", fmt.Errorf("EMISAR_CLIENT_METADATA value for key %q must be a string or number", key)

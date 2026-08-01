@@ -127,6 +127,9 @@ func TestMain_HelpFlagPrintsHelpExitsZero(t *testing.T) {
 	if strings.Contains(helpText, "emisar cert new") {
 		t.Error("help names the nonexistent `emisar cert new` command")
 	}
+	if strings.Contains(helpText, "portal") {
+		t.Error("help must call the hosted service the control plane, not the portal")
+	}
 }
 
 func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {

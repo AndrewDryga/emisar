@@ -9,7 +9,7 @@ The Go binary in this directory is the bridge for clients that launch MCP
 servers over stdio. It forwards bounded JSON-RPC frames to the hosted HTTP
 endpoint and keeps credentials and optional dispatch-signing keys on the client.
 All tools, schemas, authorization, policy, approvals, and response content live
-in the portal.
+in the control plane.
 
 ## Choose a connection
 
@@ -64,7 +64,7 @@ entry:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `EMISAR_URL` | yes | Absolute portal origin with no path, query, fragment, or credentials, for example `https://emisar.dev` |
+| `EMISAR_URL` | yes | Absolute control-plane origin with no path, query, fragment, or credentials, for example `https://emisar.dev` |
 | `EMISAR_API_KEY` | yes | Operator API key sent as a Bearer token |
 | `EMISAR_CLIENT` | no | Client label recorded with audit attribution |
 | `EMISAR_CLIENT_METADATA` | no | Self-reported JSON metadata for audit/SIEM correlation; at most 10 string keys with string or number values |
@@ -99,7 +99,8 @@ so attribution and revocation stay precise.
 
 ## What the bridge owns
 
-The bridge is intentionally thin. It owns only the client-to-portal transport:
+The bridge is intentionally thin. It owns only the transport between the
+client and the control plane:
 
 - line-delimited JSON-RPC on stdin and stdout;
 - bounded request and response frames;
@@ -116,9 +117,9 @@ It writes only validated MCP frames to stdout. Diagnostics stay on stderr. A
 network failure becomes a correlated JSON-RPC error instead of corrupting the
 client stream.
 
-The portal owns every tool and semantic response. The normative contract is
-[the MCP API specification](../.agent/kb/specs/mcp-api.md) with machine-readable
-schemas in
+The control plane owns every tool and semantic response. The normative
+contract is [the MCP API specification](../.agent/kb/specs/mcp-api.md) with
+machine-readable schemas in
 [`portal/apps/emisar_web/priv/mcp/api-schemas.json`](../portal/apps/emisar_web/priv/mcp/api-schemas.json).
 Server-side tool changes do not require a bridge release.
 
@@ -127,13 +128,14 @@ Server-side tool changes do not require a bridge release.
 The bridge admits at most eight concurrent requests within a 1 MiB aggregate
 request budget. Each request is capped at 128 KiB, each response at 512 KiB,
 and decoded string IDs and integer decimal forms at 4,096 bytes. Its 90-second
-HTTP deadline stays above the portal's 60-second wait cap, so pings and unrelated
-calls remain responsive during a wait.
+HTTP deadline stays above the control plane's 60-second wait cap, so pings and
+unrelated calls remain responsive during a wait.
 
 Every admitted `tools/call` receives a private, bounded operation identity
-derived from the bridge process and request sequence. The portal reserves that
-identity with mutations under the API-key rotation lineage. An identical retry
-returns the original resource; changed facts or a different mutation conflict.
+derived from the bridge process and request sequence. The control plane
+reserves that identity with mutations under the API-key rotation lineage. An
+identical retry returns the original resource; changed facts or a different
+mutation conflict.
 If the client loses a mutation response, `get_operation` is the recovery path
 when the transport error includes an operation ID. Reads retry normally.
 
@@ -147,8 +149,9 @@ Expiring MCP API keys rotate through a crash-safe, client-prepared exchange:
 
 1. The bridge generates a successor and persists it as pending before making a
    request.
-2. It sends only the successor prefix and digest. The portal installs those
-   exact values atomically when the current key enters its rotation window.
+2. It sends only the successor prefix and digest. The control plane installs
+   those exact values atomically when the current key enters its rotation
+   window.
 3. The bridge promotes the acknowledged successor durably before using it.
    First successful use retires the replaced key chain.
 
@@ -166,10 +169,10 @@ audit-export tokens bypass local rotation state.
 ## Client-attested dispatch
 
 `EMISAR_SIGNING_KEY` and `EMISAR_SIGNING_CERT` let the bridge sign the exact
-`run_action` intent: portal origin, action, immutable pack, arguments, complete
-runner set, reason, operation identity, nonce, and time. A signature-enforcing
-runner verifies that intent against a trusted offline CA and refuses altered,
-replayed, stale, or out-of-scope calls.
+`run_action` intent: control-plane origin, action, immutable pack, arguments,
+complete runner set, reason, operation identity, nonce, and time. A
+signature-enforcing runner verifies that intent against a trusted offline CA
+and refuses altered, replayed, stale, or out-of-scope calls.
 
 Signing is the only place where the bridge inspects tool semantics. The public
 MCP frame remains unchanged; the attestation travels in a private HTTP header.

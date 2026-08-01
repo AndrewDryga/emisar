@@ -2638,7 +2638,7 @@ func TestParseClientMetadata_FailsClosed(t *testing.T) {
 		{"object value", `{"a":{"b":"c"}}`, "must be a string or number"},
 		{"bool value", `{"a":true}`, "must be a string or number"},
 		{"null value", `{"a":null}`, "must be a string or number"},
-		{"float overflow", `{"a":1e309}`, "numeric range"},
+		{"float overflow", `{"a":1e309}`, "control plane's numeric range"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
