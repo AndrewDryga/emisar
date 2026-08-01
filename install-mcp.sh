@@ -1597,6 +1597,59 @@ PY
   return 1
 }
 
+# RFC 8628 leaves interval/expires_in to the server, and each lands on a hot
+# surface: bash arithmetic (which evaluates a variable's own content as an
+# expression, so `x[$(cmd)]` would execute) and sleep's argv (where a
+# non-number fails instantly and hot-loops the poll). Only a bounded plain
+# decimal passes; any other shape falls back to the RFC-shaped default.
+# LC_ALL=C pins the digit classification to ASCII, as in the poll loop.
+bounded_decimal_field() {
+  local value="$1" min="$2" max="$3" fallback="$4" LC_ALL=C
+  case "${value}" in
+    ''|*[!0-9]*) printf '%s\n' "${fallback}"; return 0 ;;
+  esac
+  # Longer than max means out of bounds; checking before arithmetic also
+  # keeps a huge digit string from wrapping intmax. 10# below defuses the
+  # octal reading of a leading zero.
+  if [ "${#value}" -gt "${#max}" ]; then
+    printf '%s\n' "${fallback}"
+    return 0
+  fi
+  value=$((10#${value}))
+  if [ "${value}" -lt "${min}" ] || [ "${value}" -gt "${max}" ]; then
+    printf '%s\n' "${fallback}"
+    return 0
+  fi
+  printf '%s\n' "${value}"
+}
+
+# True only for a JSON body carrying the client_keys map — the portal's
+# actual approval verdict. A proxy can answer 200 with its own page, and
+# announcing that as approved would end polling with no keys delivered.
+json_has_client_keys() {
+  local file="$1"
+  local status=0
+  if command -v python3 >/dev/null 2>&1; then
+    MCP_JSON_FILE="${file}" python3 - 2>/dev/null <<'PY' || status=1
+import json, os
+
+def main():
+    with open(os.environ["MCP_JSON_FILE"]) as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict) or not isinstance(data.get("client_keys"), dict):
+        raise SystemExit(1)
+
+main()
+PY
+    return "${status}"
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    jq -e '.client_keys | type == "object"' "${file}" >/dev/null 2>&1
+    return "$?"
+  fi
+  return 1
+}
+
 # Opens the device grant for the consented clients. Sets DEVICE_* from the
 # response; any failure means "use the portal's manual snippets instead".
 request_device_grant() {
@@ -1612,8 +1665,10 @@ request_device_grant() {
   DEVICE_CODE=$(json_string_field "${DEVICE_RESP}" device_code) || return 1
   DEVICE_USER_CODE=$(json_string_field "${DEVICE_RESP}" user_code) || return 1
   DEVICE_VERIFY_URI=$(json_string_field "${DEVICE_RESP}" verification_uri_complete) || return 1
-  DEVICE_INTERVAL=$(json_string_field "${DEVICE_RESP}" interval) || DEVICE_INTERVAL=5
-  DEVICE_EXPIRES_IN=$(json_string_field "${DEVICE_RESP}" expires_in) || DEVICE_EXPIRES_IN=900
+  DEVICE_INTERVAL=$(json_string_field "${DEVICE_RESP}" interval) || DEVICE_INTERVAL=""
+  DEVICE_INTERVAL=$(bounded_decimal_field "${DEVICE_INTERVAL}" 1 120 5)
+  DEVICE_EXPIRES_IN=$(json_string_field "${DEVICE_RESP}" expires_in) || DEVICE_EXPIRES_IN=""
+  DEVICE_EXPIRES_IN=$(bounded_decimal_field "${DEVICE_EXPIRES_IN}" 60 3600 900)
 }
 
 # Polls the token endpoint until approval (0; TOKEN_RESP holds the keys)
@@ -1650,6 +1705,9 @@ await_device_approval() {
       -o "${TOKEN_RESP}" -w '%{http_code}' \
       "${EMISAR_URL}/api/mcp/device_token") || continue
     if [ "${status}" = "200" ]; then
+      # Only a body carrying the client_keys map is the portal's approval;
+      # a proxy's own 200 page keeps polling like any other transport noise.
+      json_has_client_keys "${TOKEN_RESP}" || continue
       out ""
       out ""
       ok "Approved."

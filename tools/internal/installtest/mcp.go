@@ -3,6 +3,8 @@ package installtest
 import (
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +31,7 @@ func MCP(root string, out io.Writer) error {
 		{"installation and rollback", mcpInstallRollback},
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
+		{"device grant response validation", mcpDeviceGrantValidation},
 		{"LLM client configuration", mcpClientConfiguration},
 		{"uninstall", mcpUninstall},
 	}
@@ -427,7 +430,8 @@ var clientFunctions = []string{
 	"toml_config_has_emisar", "yaml_config_has_emisar", "file_has_content",
 	"write_fresh_json_config", "merge_json_config", "append_codex_toml",
 	"append_yaml_config", "own_config_file", "install_client_config",
-	"json_string_field", "json_client_key", "request_device_grant",
+	"json_string_field", "json_client_key", "json_has_client_keys",
+	"bounded_decimal_field", "request_device_grant",
 	"await_device_approval", "scan_client", "scan_llm_clients", "out", "hdr",
 	"ok", "dim", "client_row", "open_browser", "configure_llm_clients",
 }
@@ -487,6 +491,70 @@ func configuredClients(output string) string {
 		return ""
 	}
 	return strings.TrimSpace(output[start+len("CONFIGURED_BEGIN\n") : end])
+}
+
+// mcpDeviceGrantValidation proves the device-grant response's interval and
+// expires_in cannot reach bash arithmetic or sleep unvalidated: an
+// expression-shaped value from the portal response falls back to the 5/900
+// defaults without executing its payload, and every out-of-shape or
+// out-of-bounds value falls back the same way.
+func mcpDeviceGrantValidation(h *harness) error {
+	home := h.path("grant-home")
+	if err := h.mkdir(home); err != nil {
+		return err
+	}
+	marker := h.path("grant-arith-marker")
+	payload := fmt.Sprintf("x[$(touch %s)]", marker)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/mcp/device_authorization" {
+			http.NotFound(response, request)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(response, fmt.Sprintf(
+			`{"device_code":"emdg-hostile","user_code":"HHHH-0000",`+
+				`"verification_uri":"%s/activate","verification_uri_complete":"%s/activate?code=HHHH-0000",`+
+				`"expires_in":%q,"interval":%q}`, server.URL, server.URL, payload, payload))
+	}))
+	defer server.Close()
+
+	result := h.functions(h.repoPath("install-mcp.sh"),
+		[]string{"json_string_field", "bounded_decimal_field", "request_device_grant"}, `
+DEVICE_RESP="$CLIENT_HOME/device-authorization.json"
+DEVICE_CODE=""
+DEVICE_USER_CODE=""
+DEVICE_VERIFY_URI=""
+DEVICE_INTERVAL=5
+DEVICE_EXPIRES_IN=900
+request_device_grant "claude-code"
+printf 'INTERVAL=%s EXPIRES=%s\n' "$DEVICE_INTERVAL" "$DEVICE_EXPIRES_IN"
+deadline=$(($(date +%s) + DEVICE_EXPIRES_IN))
+test "$deadline" -gt "$(date +%s)"
+
+test "$(bounded_decimal_field 7 1 120 5)" = 7
+test "$(bounded_decimal_field 007 1 120 5)" = 7
+test "$(bounded_decimal_field 0 1 120 5)" = 5
+test "$(bounded_decimal_field 121 1 120 5)" = 5
+test "$(bounded_decimal_field 3600 60 3600 900)" = 3600
+test "$(bounded_decimal_field 59 60 3600 900)" = 900
+test "$(bounded_decimal_field 18446744073709551616 60 3600 900)" = 900
+test "$(bounded_decimal_field '' 60 3600 900)" = 900
+test "$(bounded_decimal_field '5.5' 1 120 5)" = 5
+test "$(bounded_decimal_field '-5' 1 120 5)" = 5
+test "$(bounded_decimal_field '1 -a -x /bin/sh' 1 120 5)" = 5
+`, map[string]string{"CLIENT_HOME": home, "EMISAR_URL": server.URL})
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(output), "INTERVAL=5 EXPIRES=900") {
+		return fmt.Errorf("hostile grant fields were not replaced by defaults:\n%s", output)
+	}
+	if err := requireAbsent(marker); err != nil {
+		return fmt.Errorf("arithmetic payload executed: %w", err)
+	}
+	return nil
 }
 
 func mcpClientConfiguration(h *harness) error {
@@ -668,13 +736,24 @@ json_config_has_emisar "$REAL"
 			`{"device_code":"emdg-x","interval":7,"client_keys":{"claude-code":"emk-jq"}}`, 0o600); err != nil {
 			return err
 		}
+		noKeys := h.path("jq-no-keys.json")
+		if err := writeFile(noKeys, `{"status":"ok"}`, 0o600); err != nil {
+			return err
+		}
+		htmlPage := h.path("jq-proxy-page.html")
+		if err := writeFile(htmlPage, "<html><body>Signed in</body></html>", 0o600); err != nil {
+			return err
+		}
 		result = h.functions(h.repoPath("install-mcp.sh"),
-			[]string{"json_string_field", "json_client_key"}, `
+			[]string{"json_string_field", "json_client_key", "json_has_client_keys"}, `
 test "$(json_string_field "$PROBE" device_code)" = emdg-x
 test "$(json_string_field "$PROBE" interval)" = 7
 test "$(json_client_key "$PROBE" claude-code)" = emk-jq
 if json_string_field "$PROBE" missing_key; then exit 1; fi
-`, map[string]string{"PATH": jqBin, "PROBE": probe})
+json_has_client_keys "$PROBE"
+if json_has_client_keys "$NO_KEYS"; then exit 1; fi
+if json_has_client_keys "$HTML_PAGE"; then exit 1; fi
+`, map[string]string{"PATH": jqBin, "PROBE": probe, "NO_KEYS": noKeys, "HTML_PAGE": htmlPage})
 		if _, err := requireOutput(result); err != nil {
 			return fmt.Errorf("jq response readers: %w", err)
 		}

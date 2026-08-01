@@ -447,8 +447,9 @@ func argvHolders(secret string) []string {
 
 // errorCode, when set, makes every token poll fail with HTTP 400 and that
 // OAuth error code; "" serves the happy path: a code-less 502 blip, a 429
-// rate limit, a malformed 400 error value, one pending, then success —
-// every retryable response class the installer must survive.
+// rate limit, a malformed 400 error value, one pending, a proxy's 200 page,
+// a 200 JSON body without client_keys, then success — every retryable
+// response class the installer must survive without announcing approval.
 type deviceServer struct {
 	server    *httptest.Server
 	polls     atomic.Int32
@@ -496,6 +497,13 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 		case 4:
 			response.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(response, `{"error":"authorization_pending"}`)
+			return
+		case 5: // a proxy's 200 page carries no client_keys — not an approval
+			response.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(response, "<html><body>Signed in</body></html>")
+			return
+		case 6: // 200 JSON without the client_keys map is not an approval either
+			_, _ = io.WriteString(response, `{"status":"ok"}`)
 			return
 		}
 		_, _ = io.WriteString(response, `{"client_keys":{`+
