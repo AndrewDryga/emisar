@@ -2,7 +2,7 @@ schema_version: 1
 
 id: oidc-jwks
 name: OIDC and JWKS diagnostics
-version: 0.1.0
+version: 0.1.1
 description: >
   Generic read-only OpenID Connect discovery and JWKS diagnostics, plus local
   key-ID comparison and protected JWT-header inspection. Network actions use

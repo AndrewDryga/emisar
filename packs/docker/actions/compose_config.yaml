@@ -6,8 +6,8 @@ risk: low
 description: >
   Parse one contained Compose file without interpolation or environment
   resolution, then return only service, image, network, volume, and profile
-  names. Raw YAML, environment values, secrets, labels, and build arguments are
-  never returned.
+  names as sorted, capped samples with per-list truncation counts. Raw YAML,
+  environment values, secrets, labels, and build arguments are never returned.
 side_effects:
   - Parses one Compose file beneath an approved deployment root.
   - Does not query or modify containers.
@@ -37,15 +37,25 @@ output:
     $schema: https://json-schema.org/draft/2020-12/schema
     type: object
     additionalProperties: false
-    required: [valid, file, services, images, networks, volumes, profiles]
+    required: [valid, file, services, images, networks, volumes, profiles, truncated]
     properties:
       valid: {const: true}
-      file: {type: string}
-      services: {type: array, items: {type: string}}
-      images: {type: array, items: {type: string}}
-      networks: {type: array, items: {type: string}}
-      volumes: {type: array, items: {type: string}}
-      profiles: {type: array, items: {type: string}}
+      file: {type: string, maxLength: 257}
+      services: {type: array, maxItems: 24, items: {type: string, maxLength: 48}}
+      images: {type: array, maxItems: 12, items: {type: string, maxLength: 96}}
+      networks: {type: array, maxItems: 8, items: {type: string, maxLength: 48}}
+      volumes: {type: array, maxItems: 8, items: {type: string, maxLength: 48}}
+      profiles: {type: array, maxItems: 6, items: {type: string, maxLength: 32}}
+      truncated:
+        type: object
+        additionalProperties: false
+        required: [services, images, networks, volumes, profiles]
+        properties:
+          services: {type: integer, minimum: 0}
+          images: {type: integer, minimum: 0}
+          networks: {type: integer, minimum: 0}
+          volumes: {type: integer, minimum: 0}
+          profiles: {type: integer, minimum: 0}
   max_stdout_bytes: 262144
   max_stderr_bytes: 16384
 examples:

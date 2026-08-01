@@ -46,12 +46,9 @@ execution:
 output:
   parser: json
   parser_required: true
-  schema:
-    $schema: https://json-schema.org/draft/2020-12/schema
-    type: object
-    required: [nftables]
-    properties:
-      nftables: {type: array}
+  # No output.schema: native nftables JSON scales with the chain (a real
+  # filter chain runs tens of KiB), so it can never fit the runner's 8 KiB
+  # structured-output cap. parser_required still fails a non-JSON result.
   max_stdout_bytes: 524288
   max_stderr_bytes: 8192
 examples:

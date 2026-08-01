@@ -141,6 +141,9 @@ case "$mode" in
   compare-key-ids)
     : "${OIDC_AUTHORITATIVE_KEY_IDS_JSON:?missing authoritative key IDs}"
     : "${OIDC_CONSUMER_KEY_IDS_JSON:?missing consumer key IDs}"
+    # The verdict is counts plus relation; the ID lists are capped, clipped
+    # evidence samples — echoing 128 x 256-char inputs back would blow the
+    # runner's 8 KiB structured-output cap the caller cannot reason around.
     jq -nce '
       def ids($name):
         env[$name] | fromjson |
@@ -149,16 +152,26 @@ case "$mode" in
         then error($name + " must be a JSON array of at most 128 bounded strings")
         else unique | sort
         end;
+      def clipped($chars; $bytes):
+        (tostring | gsub("[[:cntrl:]]+"; " ")) as $clean
+        | ($clean | .[:$chars] | until(utf8bytelength <= $bytes; .[:-1])) as $cut
+        | if $cut == $clean then $clean else ($cut | .[:$chars - 1]) + "…" end;
       (ids("OIDC_AUTHORITATIVE_KEY_IDS_JSON")) as $authoritative |
       (ids("OIDC_CONSUMER_KEY_IDS_JSON")) as $consumer |
       ($authoritative - $consumer) as $missing |
       ($consumer - $authoritative) as $extra |
       {
-        authoritative_key_ids: $authoritative,
-        consumer_key_ids: $consumer,
-        shared_key_ids: ($authoritative - $missing),
-        missing_from_consumer: $missing,
-        extra_in_consumer: $extra,
+        authoritative_count: ($authoritative | length),
+        consumer_count: ($consumer | length),
+        shared_count: (($authoritative | length) - ($missing | length)),
+        missing_count: ($missing | length),
+        extra_count: ($extra | length),
+        missing_from_consumer: ($missing | .[:16] | map(clipped(64; 64))),
+        extra_in_consumer: ($extra | .[:16] | map(clipped(64; 64))),
+        truncated: {
+          missing_from_consumer: (($missing | length) - ($missing | .[:16] | length)),
+          extra_in_consumer: (($extra | length) - ($extra | .[:16] | length))
+        },
         exact_match: (($missing | length) == 0 and ($extra | length) == 0),
         consumer_covers_authoritative: (($missing | length) == 0),
         relation:
@@ -197,8 +210,20 @@ case "$mode" in
     fi
     ((${#header} <= 16384)) || fail "JWT protected header exceeded the size limit"
 
+    # Every recognized field is byte-bounded so the projection fits the
+    # runner's 8 KiB structured-output cap at its worst case; no real IdP
+    # exceeds these, so an oversized field is rejected rather than clipped.
     HEADER_JSON=$header SERIALIZATION=$serialization SEGMENT_COUNT=$segment_count jq -nce '
       (env.HEADER_JSON | fromjson) as $header |
+      ([["alg", 64], ["enc", 64], ["kid", 256], ["typ", 64], ["cty", 128], ["zip", 32],
+        ["jku", 512], ["x5u", 512], ["x5t", 64], ["x5t#S256", 64]]) as $bounds |
+      (if ($header | type) == "object" then
+         first($bounds[] | . as [$name, $max] | select(
+           $header[$name] != null and ($header[$name] | type) == "string" and
+           (($header[$name] | utf8bytelength) > $max or
+            ($header[$name] | explode | any(.[]; . < 32)))
+         )) // null
+       else null end) as $oversized |
       if ($header | type) != "object" then
         error("JWT protected header must be a JSON object")
       elif ($header.alg | type) != "string" or ($header.alg | length) == 0 then
@@ -206,13 +231,16 @@ case "$mode" in
       elif env.SERIALIZATION == "jwe" and
            (($header.enc | type) != "string" or ($header.enc | length) == 0) then
         error("JWE protected header must contain a non-empty enc")
-      elif any(["alg", "enc", "kid", "typ", "cty", "zip", "jku", "x5u", "x5t", "x5t#S256"][];
-               $header[.] != null and ($header[.] | type) != "string") then
+      elif any($bounds[]; $header[.[0]] != null and ($header[.[0]] | type) != "string") then
         error("recognized JWT protected-header fields must be strings")
+      elif $oversized != null then
+        error("JWT protected-header field " + $oversized[0] + " exceeds " +
+              ($oversized[1] | tostring) + " bytes or contains control characters")
       elif $header.crit != null and
-           (($header.crit | type) != "array" or ($header.crit | length) > 32 or
-            any($header.crit[]; type != "string" or length == 0 or length > 256)) then
-        error("JWT crit must be a bounded string array")
+           (($header.crit | type) != "array" or ($header.crit | length) > 16 or
+            any($header.crit[]; type != "string" or length == 0 or
+                utf8bytelength > 64 or (explode | any(.[]; . < 32)))) then
+        error("JWT crit must be at most 16 bounded strings")
       else
         {
           serialization: env.SERIALIZATION,

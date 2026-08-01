@@ -4,8 +4,9 @@ title: Compare authoritative and consumer key IDs
 kind: script
 risk: low
 description: >
-  Compare two bounded JSON arrays of public key IDs and report missing, extra,
-  and shared IDs. Inputs are sorted and deduplicated before comparison.
+  Compare two bounded JSON arrays of public key IDs and report exact counts of
+  shared, missing, and extra IDs plus capped, clipped samples of the missing
+  and extra ones. Inputs are sorted and deduplicated before comparison.
 side_effects:
   - Local JSON parsing only.
   - Does not perform network or filesystem I/O.
@@ -41,20 +42,38 @@ output:
     type: object
     additionalProperties: false
     required:
-      - authoritative_key_ids
-      - consumer_key_ids
-      - shared_key_ids
+      - authoritative_count
+      - consumer_count
+      - shared_count
+      - missing_count
+      - extra_count
       - missing_from_consumer
       - extra_in_consumer
+      - truncated
       - exact_match
       - consumer_covers_authoritative
       - relation
     properties:
-      authoritative_key_ids: {type: array, items: {type: string}}
-      consumer_key_ids: {type: array, items: {type: string}}
-      shared_key_ids: {type: array, items: {type: string}}
-      missing_from_consumer: {type: array, items: {type: string}}
-      extra_in_consumer: {type: array, items: {type: string}}
+      authoritative_count: {type: integer, minimum: 0, maximum: 128}
+      consumer_count: {type: integer, minimum: 0, maximum: 128}
+      shared_count: {type: integer, minimum: 0, maximum: 128}
+      missing_count: {type: integer, minimum: 0, maximum: 128}
+      extra_count: {type: integer, minimum: 0, maximum: 128}
+      missing_from_consumer:
+        type: array
+        maxItems: 16
+        items: {type: string, maxLength: 64}
+      extra_in_consumer:
+        type: array
+        maxItems: 16
+        items: {type: string, maxLength: 64}
+      truncated:
+        type: object
+        additionalProperties: false
+        required: [missing_from_consumer, extra_in_consumer]
+        properties:
+          missing_from_consumer: {type: integer, minimum: 0, maximum: 128}
+          extra_in_consumer: {type: integer, minimum: 0, maximum: 128}
       exact_match: {type: boolean}
       consumer_covers_authoritative: {type: boolean}
       relation:

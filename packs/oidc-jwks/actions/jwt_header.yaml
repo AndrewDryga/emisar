@@ -6,7 +6,8 @@ risk: low
 description: >
   Decode and project recognized fields from a compact JWS or JWE protected
   header. The payload and claims are never decoded, and no signature or claim
-  validation is performed.
+  validation is performed. Recognized fields are byte-bounded; a header whose
+  field exceeds its bound or carries control characters is rejected.
 side_effects:
   - Local base64url and JSON decoding only.
   - The sensitive compact token is passed through environment, not argv, and is never emitted.
@@ -52,20 +53,24 @@ output:
     properties:
       serialization: {enum: [jws, jwe]}
       segment_count: {enum: [3, 5]}
-      alg: {type: string}
-      enc: {type: [string, "null"]}
-      kid: {type: [string, "null"]}
-      typ: {type: [string, "null"]}
-      cty: {type: [string, "null"]}
-      zip: {type: [string, "null"]}
+      alg: {type: string, minLength: 1, maxLength: 64}
+      enc: {type: [string, "null"], maxLength: 64}
+      kid: {type: [string, "null"], maxLength: 256}
+      typ: {type: [string, "null"], maxLength: 64}
+      cty: {type: [string, "null"], maxLength: 128}
+      zip: {type: [string, "null"], maxLength: 32}
       crit:
         type: [array, "null"]
-        items: {type: string}
-      jku: {type: [string, "null"]}
-      x5u: {type: [string, "null"]}
-      x5t: {type: [string, "null"]}
-      x5t_s256: {type: [string, "null"]}
-      present_fields: {type: array, items: {type: string}}
+        maxItems: 16
+        items: {type: string, maxLength: 64}
+      jku: {type: [string, "null"], maxLength: 512}
+      x5u: {type: [string, "null"], maxLength: 512}
+      x5t: {type: [string, "null"], maxLength: 64}
+      x5t_s256: {type: [string, "null"], maxLength: 64}
+      present_fields:
+        type: array
+        maxItems: 11
+        items: {type: string, maxLength: 8}
   max_stdout_bytes: 32768
   max_stderr_bytes: 8192
 examples:

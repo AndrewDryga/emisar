@@ -26,20 +26,11 @@ execution:
 output:
   parser: json
   parser_required: true
-  schema:
-    $schema: https://json-schema.org/draft/2020-12/schema
-    type: object
-    required: [keys]
-    properties:
-      keys:
-        type: array
-        minItems: 1
-        maxItems: 128
-        items:
-          type: object
-          required: [kty]
-          properties:
-            kty: {type: string, minLength: 1}
+  # No output.schema: a JWKS at its advertised worst (128 keys, x5c chains)
+  # runs tens of KiB, far over the runner's 8 KiB structured-output cap. The
+  # script still enforces the real contract — a JSON object with 1..128 keys,
+  # each a kty-bearing object with no private or symmetric material — and
+  # parser_required fails a non-JSON result.
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:

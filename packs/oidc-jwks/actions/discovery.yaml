@@ -26,13 +26,10 @@ execution:
 output:
   parser: json
   parser_required: true
-  schema:
-    $schema: https://json-schema.org/draft/2020-12/schema
-    type: object
-    required: [issuer, jwks_uri]
-    properties:
-      issuer: {type: string}
-      jwks_uri: {type: string}
+  # No output.schema: the action returns the provider's whole configuration,
+  # and real discovery documents (Okta, Entra) exceed the runner's 8 KiB
+  # structured-output cap. The script still requires a JSON object carrying a
+  # non-empty issuer and jwks_uri, and parser_required fails a non-JSON result.
   max_stdout_bytes: 262144
   max_stderr_bytes: 8192
 examples:

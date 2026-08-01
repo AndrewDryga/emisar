@@ -29,32 +29,11 @@ execution:
 output:
   parser: json
   parser_required: true
-  schema:
-    $schema: https://json-schema.org/draft/2020-12/schema
-    type: object
-    additionalProperties: false
-    required: [port, direct_matches, unresolved]
-    properties:
-      port: {type: integer, minimum: 1, maximum: 65535}
-      direct_matches:
-        type: array
-        items: {$ref: "#/$defs/rule"}
-      unresolved:
-        type: array
-        items: {$ref: "#/$defs/rule"}
-    $defs:
-      rule:
-        type: object
-        additionalProperties: false
-        required: [family, table, chain, handle, comment, port_evaluation, expr]
-        properties:
-          family: {type: string}
-          table: {type: string}
-          chain: {type: string}
-          handle: {type: [integer, "null"]}
-          comment: {type: [string, "null"]}
-          port_evaluation: {enum: [direct_match, unresolved]}
-          expr: {type: array}
+  # No output.schema: each projected rule carries its native nftables expr
+  # (unbounded — an anonymous set alone can run KiBs) and a busy port matches
+  # an unbounded rule count, so the result can never promise to fit the
+  # runner's 8 KiB structured-output cap. parser_required still fails a
+  # non-JSON result.
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
