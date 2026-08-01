@@ -14,7 +14,7 @@
         <:dek>
           To operate the nodes themselves, run one runner per node as a DaemonSet. The runner can
           only act on what the pod spec grants — which makes the manifest your blast-radius dial.
-          This page is the worked manifest; the two mechanics it relies on (a service-less binary
+          This page is the worked manifest; the mechanics it relies on (the official runner image
           and a persistent state volume) are on <.link
             navigate={~p"/docs/containers"}
             class="text-brand-400 hover:text-brand-300"
@@ -50,7 +50,9 @@
       <span class="text-sky-300">hostNetwork</span>: <span class="text-amber-300">true</span>  <span class="text-zinc-600"># see the node's real interfaces and ports</span>
       <span class="text-sky-300">containers</span>:
         - <span class="text-sky-300">name</span>: runner
-          <span class="text-sky-300">image</span>: your-registry/emisar-runner
+          <span class="text-sky-300">image</span>: ghcr.io/andrewdryga/emisar-runner:X.Y.Z  <span class="text-zinc-600"># pin the current runner release</span>
+          <span class="text-sky-300">securityContext</span>:
+            <span class="text-sky-300">runAsUser</span>: <span class="text-brand-300">0</span>  <span class="text-zinc-600"># journald + /host reads are root-only; see below</span>
           <span class="text-sky-300">env</span>:
             - <span class="text-sky-300">name</span>: EMISAR_URL
               <span class="text-sky-300">value</span>: <span class="text-brand-300">"https://emisar.dev"</span>
@@ -91,11 +93,22 @@
         With the manifest above, process packs see every node process
         (<code class="font-mono">hostPID</code>), network packs see the node's real ports
         (<code class="font-mono">hostNetwork</code>), journal reads work against the mounted
-        journal, and file-inspection actions reach node paths under <code class="font-mono">/host</code>. Two limits: pack binaries run from the
-        container's image, so put the tools your packs call into it; and the mounts above are
-        read-only on purpose. You own the image, built from the release tarball, and every grant in
-        it — narrow the mounts and drop <code class="font-mono">hostPID</code>/<code class="font-mono">hostNetwork</code>
-        for a tighter runner that only inspects what you allow.
+        journal, and file-inspection actions reach node paths under <code class="font-mono">/host</code>. Node-level reads are why the manifest sets <code class="font-mono">runAsUser: 0</code>: journald and most of
+        <code class="font-mono">/host</code>
+        are readable only by root, and the <code class="font-mono">hostPath</code>
+        state dir is root-owned — the image itself defaults to non-root uid <code class="font-mono">65532</code>. Two limits: pack binaries run from the container's
+        image — the official image ships the container observation set, so
+        <.link
+          navigate={~p"/docs/containers" <> "#extending"}
+          class="text-brand-400 hover:text-brand-300"
+        >extend it</.link>
+        with the node tools your packs call; and the mounts above are read-only
+        on purpose. This is a privileged host-observer profile, not a baseline workload —
+        <code class="font-mono">hostPath</code>
+        and root are both outside Kubernetes' Restricted pod security standard, so deploy it in a
+        namespace that permits privileged pods, deliberately. Every grant here is yours to narrow
+        — drop <code class="font-mono">runAsUser</code>, <code class="font-mono">hostPID</code>/<code class="font-mono">hostNetwork</code>, and the wider
+        mounts for a tighter runner that only inspects what you allow.
       </p>
 
       <.docs_h2 id="mutating">Letting a node action mutate</.docs_h2>

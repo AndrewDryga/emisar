@@ -315,13 +315,16 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ "Run the control plane in your own VPC"
   end
 
-  test "containers docs page covers visibility, --no-service, identity, and the fleet shapes",
+  test "containers docs page covers visibility, the official image, identity, and the fleet shapes",
        %{conn: conn} do
     html = conn |> get(~p"/docs/containers") |> html_response(200)
 
     # The honest core: a containerized runner acts on its own namespace.
     assert html =~ "act on what its own namespace can reach"
-    # The two mechanics: the installer flag and identity persistence.
+    # The official image and its FROM-based extension mechanic.
+    assert html =~ "ghcr.io/andrewdryga/emisar-runner"
+    assert html =~ "emisar pack install"
+    # The custom-image fallback flag and identity persistence.
     assert html =~ "--no-service"
     assert html =~ "/var/lib/emisar/token.json"
     # Fleet templates need a reusable key, not the dashboard's single-use one.

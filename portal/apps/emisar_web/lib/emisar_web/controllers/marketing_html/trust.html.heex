@@ -272,7 +272,10 @@
 <span class="text-zinc-500">$</span> gh attestation verify emisar-&lt;version&gt;-linux-amd64.tar.gz --owner andrewdryga
 
 <span class="text-zinc-500"># checksums — the bytes match what we published (SHA256SUMS-MCP for the bridge)</span>
-<span class="text-zinc-500">$</span> sha256sum -c SHA256SUMS</pre>
+<span class="text-zinc-500">$</span> sha256sum -c SHA256SUMS
+
+<span class="text-zinc-500"># the official runner container image carries the same provenance + an SBOM</span>
+<span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:&lt;version&gt; --owner andrewdryga</pre>
         </div>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           A green check names the source repository and the release workflow, so it means the

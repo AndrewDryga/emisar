@@ -165,9 +165,14 @@ Never title a product release with a bare `vX.Y.Z`.
 
 The `runner-*`/`mcp-*` workflows already publish **SLSA-3 build provenance**
 (`actions/attest-build-provenance@v4`, Sigstore-signed) and a `SHA256SUMS`
-(`SHA256SUMS-MCP` for the bridge) on every release. This is the recipe a security
-team runs before installing — keep it in sync with what `/trust#release-integrity`
-publishes:
+(`SHA256SUMS-MCP` for the bridge) on every release. A `runner-v*` release also
+publishes the official container image
+`ghcr.io/andrewdryga/emisar-runner:<version>` (multi-arch, provenance + SBOM,
+digest in the release notes). One-time step after the first image release:
+GHCR creates the package private — flip `emisar-runner` to public in the
+package settings or every documented `docker pull` fails. This is the recipe a
+security team runs before installing — keep it in sync with what
+`/trust#release-integrity` publishes:
 
 ```sh
 # provenance — proves the artifact was built by our workflow, from our source
@@ -175,6 +180,9 @@ gh attestation verify emisar-<version>-linux-amd64.tar.gz --owner andrewdryga
 
 # checksum — proves the bytes match what we published
 sha256sum -c SHA256SUMS                 # SHA256SUMS-MCP for the bridge
+
+# the container image carries the same provenance
+gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:<version> --owner andrewdryga
 ```
 
 The runner and MCP release workflows execute the same checksum and provenance

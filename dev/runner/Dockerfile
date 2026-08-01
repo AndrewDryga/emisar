@@ -1,6 +1,8 @@
 # Development runner image for the repository demo and integration tests.
-# It is not a published product image. The build context is the repository
-# root because the demo bundles both runner/ and packs/.
+# It is not a published product image — that is runner/release/Dockerfile,
+# which reuses the release-built binary instead of compiling from source.
+# The build context is the repository root because the demo bundles both
+# runner/ and packs/.
 #
 # Base images are digest-pinned for reproducible builds. Refresh with:
 #   docker buildx imagetools inspect golang:1.26-alpine --format '{{.Manifest.Digest}}'

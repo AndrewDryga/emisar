@@ -1,0 +1,12 @@
+# Packs baked into the official runner container image (one per line).
+# The set is deliberately small and matches what a container can see:
+# its filesystem (fs-search), its processes (debugging), and its
+# network (network-tls). Every binary these packs execute is installed
+# by runner/release/Dockerfile — keep the two in sync; the image smoke
+# (runner/release/verify-image.sh) fails on drift. Anything else
+# belongs in an operator-built extension image (FROM the official
+# image), never in this list — the image is a capability boundary,
+# not a universal toolbox.
+fs-search
+debugging
+network-tls

@@ -477,6 +477,33 @@ scripts do not negotiate an older interface, so a 1.0 change must keep the
 old input and asset path during the deprecation window or publish an explicit
 migration.
 
+### Official runner container image
+
+**What it is.** Every `runner-v*` release publishes
+`ghcr.io/andrewdryga/emisar-runner:<version>` (linux/amd64 + linux/arm64,
+signed provenance + SBOM), built by `runner-release.yml` from
+`runner/release/Dockerfile` around the exact tested release binary. Its
+operator-facing contract is the image name and version-tag scheme (no `latest`
+tag is published), the `EMISAR_ENROLLMENT_KEY` / `EMISAR_URL` environment
+variables, the default config at `/etc/emisar/config.yaml`, state under
+`/var/lib/emisar`, packs under `/opt/emisar/packs`, the observation-only
+default (baked admission caps at `low` risk), and the non-root uid 65532 —
+the container and Kubernetes docs and operators' extension Dockerfiles
+(`FROM` + tools + `emisar pack install`) all depend on these.
+
+**How it is versioned today.** Tags follow the runner release version, and a
+published version tag is never moved to a different digest (the release
+workflow refuses); each release's notes carry the digest reference. A given
+digest is immutable — same runner, packs, and OS packages forever. The baked
+pack set (`runner/release/container-packs.txt`) is deliberately small and may
+change between releases; it is not itself a frozen contract.
+
+**What happens on skew.** A renamed image, retagged version, moved config or
+state path, or changed uid breaks deployed pull specs, mounted configs,
+volume ownership, and extension Dockerfiles with no negotiation layer. At 1.0
+these freeze like the install scripts: a breaking change needs a new image
+name or a major release, following the deprecation path.
+
 ### Registry URL layout
 
 **What it is.** The pack registry has two related URL contracts:

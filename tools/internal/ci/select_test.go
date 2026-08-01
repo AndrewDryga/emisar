@@ -21,6 +21,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 	writeFixture(t, root, "packs/mysql/test/cases.yaml", behaviorPlan("mysql",
 		versionRow("9.7.1", "c", true),
 	))
+	writeFixture(t, root, "runner/release/container-packs.txt", "# baked packs\nmysql\n")
 	commitAll(t, root, "base")
 	base := gitText(t, root, "rev-parse", "HEAD")
 
@@ -69,7 +70,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !selection.Workflows || !selection.Portal || !selection.Runner || !selection.MCP || !selection.Tools || !selection.Packs || !selection.Infra || !selection.Deps || !selection.MCPListing {
+		if !selection.Workflows || !selection.Portal || !selection.Runner || !selection.MCP || !selection.Tools || !selection.Packs || !selection.Infra || !selection.Deps || !selection.MCPListing || !selection.RunnerImage {
 			t.Fatalf("workflow selection is incomplete: %+v", selection)
 		}
 		if selection.PortalRelease || selection.PacksRelease {
@@ -93,6 +94,43 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 			selection.PackBehavior[0].Version != "18.4" ||
 			selection.PackBehavior[1].Version != "17.6" {
 			t.Fatalf("pack behavior selection = %v", selection.PackBehavior)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("runner source selects the container image", func(t *testing.T) {
+		writeFixture(t, root, "runner/doctor.go", "package main\n")
+		commitAll(t, root, "runner source")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.RunnerImage {
+			t.Fatalf("runner/ change did not select the image: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("only a baked pack selects the container image", func(t *testing.T) {
+		writeFixture(t, root, "packs/mysql/actions/uptime.yaml", "id: mysql.uptime\n")
+		commitAll(t, root, "baked pack")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.RunnerImage {
+			t.Fatalf("baked pack change did not select the image: %+v", selection)
+		}
+		resetHard(t, root, base)
+
+		writeFixture(t, root, "packs/postgres/actions/uptime.yaml", "id: postgres.uptime\n")
+		commitAll(t, root, "unbaked pack")
+		selection, err = Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selection.RunnerImage {
+			t.Fatalf("unbaked pack change selected the image: %+v", selection)
 		}
 		resetHard(t, root, base)
 	})

@@ -66,6 +66,7 @@ jobs:
       go_modules: ${{ steps.detect.outputs.go_modules }}
       portal_release: ${{ steps.detect.outputs.portal_release }}
       packs_release: ${{ steps.detect.outputs.packs_release }}
+      runner_image: ${{ steps.detect.outputs.runner_image }}
       pack_behavior: ${{ steps.detect.outputs.pack_behavior }}
       signing_e2e: ${{ steps.detect.outputs.signing_e2e }}
       sso_e2e: ${{ steps.detect.outputs.sso_e2e }}
@@ -528,6 +529,58 @@ jobs:
             echo "ok: $target"
           done
 
+  runner-image:
+    name: Runner - Image
+    needs: changes
+    if: needs.changes.outputs.runner_image == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: Build runner binary
+        # The release image consumes the release job's attested binaries; CI
+        # proves the same Dockerfile assembles and smokes with a from-source
+        # build, so image breakage surfaces on the PR, not on the next tag.
+        working-directory: runner
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          go build -trimpath \
+            -ldflags "-buildid= -s -w -X main.Version=0.0.0-ci" \
+            -o ../dist/image/linux-amd64/emisar .
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build container image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: runner/release/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: emisar/runner:ci
+          build-contexts: |
+            dist=dist/image
+
+      - name: Smoke-test container image
+        run: runner/release/verify-image.sh emisar/runner:ci 0.0.0-ci
+
   packs:
     name: Packs - Validate
     needs: changes
@@ -879,7 +932,7 @@ jobs:
   ci-gate:
     name: Required - CI
     if: always()
-    needs: [changes, portal, portal-image, mcp-listing, go, packs, pack-tools, pack-behavior, signing-e2e, sso-e2e, infra, dep-age, actionlint]
+    needs: [changes, portal, portal-image, mcp-listing, go, packs, runner-image, pack-tools, pack-behavior, signing-e2e, sso-e2e, infra, dep-age, actionlint]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -893,6 +946,8 @@ jobs:
       GO_MODULES: ${{ needs.changes.outputs.go_modules }}
       PACKS: ${{ needs.packs.result }}
       SELECT_PACKS: ${{ needs.changes.outputs.packs }}
+      RUNNER_IMAGE: ${{ needs.runner-image.result }}
+      SELECT_RUNNER_IMAGE: ${{ needs.changes.outputs.runner_image }}
       PACK_TOOLS: ${{ needs.pack-tools.result }}
       PACK_BEHAVIOR: ${{ needs.pack-behavior.result }}
       SELECT_PACK_BEHAVIOR: ${{ needs.changes.outputs.pack_behavior }}
@@ -934,6 +989,7 @@ jobs:
             require_selected GO true
           fi
           require_selected PACKS "$SELECT_PACKS"
+          require_selected RUNNER_IMAGE "$SELECT_RUNNER_IMAGE"
           if [ "$SELECT_PACK_BEHAVIOR" = '[]' ]; then
             require_selected PACK_TOOLS false
             require_selected PACK_BEHAVIOR false

@@ -1,0 +1,41 @@
+# Default configuration baked into the official runner container image
+# (runner/release/Dockerfile). The container contract:
+#
+#   * EMISAR_ENROLLMENT_KEY enrolls the runner on first connect.
+#   * EMISAR_URL overrides cloud.url for a self-hosted control plane.
+#   * Mount a volume at /var/lib/emisar so the runner identity, token,
+#     and durable dispatch state survive restarts.
+#   * Mount your own file over /etc/emisar/config.yaml to change
+#     anything else (group, labels, admission, signing, redaction).
+schema_version: 1
+
+runner:
+  # The portal's auto-grouping key. Containers share one bucket by
+  # default; mount a config with your own group (and a pinned
+  # runner.id when the orchestrator changes hostnames) to relabel.
+  group: containers
+
+cloud:
+  url: "https://emisar.dev"
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
+  token_path: /var/lib/emisar/token.json
+
+paths:
+  data_dir: /var/lib/emisar
+  work_dir: /var/lib/emisar/work
+  packs:
+    - /opt/emisar/packs
+
+# The default image is observation-only: actions above `low` risk (the
+# debugging pack's kill/sysctl/drop_caches mutators, its process-env
+# dump) are hidden from the advertised catalog and refused at dispatch.
+# Cloud policy still gates everything; this is the host-side floor.
+# Mount your own config to admit more — deliberately, per fleet.
+admission:
+  max_risk: low
+
+events:
+  jsonl_path: /var/log/emisar/events.jsonl
+
+redaction:
+  rules: []

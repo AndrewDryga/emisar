@@ -3,7 +3,9 @@ package ci
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +25,7 @@ type Selection struct {
 	MCPListing    bool
 	PortalRelease bool
 	PacksRelease  bool
+	RunnerImage   bool
 	PackBehavior  []packtest.MatrixRow
 	SigningE2E    bool
 	SSOE2E        bool
@@ -46,6 +49,11 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 	for _, file := range files {
 		selection.include(file)
 	}
+	runnerImage, err := selectRunnerImage(root, files)
+	if err != nil {
+		return Selection{}, err
+	}
+	selection.RunnerImage = selection.RunnerImage || runnerImage
 	if err := packtest.ValidateRiskChanges(filepath.Join(root, "packs"), files); err != nil {
 		return Selection{}, err
 	}
@@ -58,6 +66,7 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 		selection.Infra = true
 		selection.Deps = true
 		selection.MCPListing = true
+		selection.RunnerImage = true
 		selection.SigningE2E = true
 		selection.SSOE2E = true
 	}
@@ -78,7 +87,7 @@ func (selection *Selection) include(file string) {
 		*selection = Selection{
 			Portal: true, Runner: true, MCP: true, Tools: true, Packs: true,
 			Infra: true, Deps: true, Workflows: true, MCPListing: true,
-			PortalRelease: true, PacksRelease: true,
+			PortalRelease: true, PacksRelease: true, RunnerImage: true,
 			SigningE2E: true, SSOE2E: true,
 		}
 		return
@@ -143,6 +152,51 @@ func (selection *Selection) include(file string) {
 	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go") {
 		selection.SSOE2E = true
 	}
+}
+
+// selectRunnerImage reports whether the official runner container image must
+// be rebuilt and smoke-tested: its inputs are the runner source the CI job
+// compiles into it (which also carries the CLI surface verify-image.sh
+// drives), the shared filtered root context (.dockerignore), and the packs
+// container-packs.txt bakes in — read from that file so the trigger list can
+// never drift from the baked pack list.
+func selectRunnerImage(root string, files []string) (bool, error) {
+	packs, err := containerPacks(root)
+	if err != nil {
+		return false, err
+	}
+	for _, file := range files {
+		if file == "__run_all__" || file == ".dockerignore" || strings.HasPrefix(file, "runner/") {
+			return true, nil
+		}
+		for _, pack := range packs {
+			if strings.HasPrefix(file, "packs/"+pack+"/") {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// containerPacks reads the image's baked pack list. A repository without the
+// list (test fixtures) simply has no container image to select.
+func containerPacks(root string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(root, "runner", "release", "container-packs.txt"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var packs []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		packs = append(packs, line)
+	}
+	return packs, nil
 }
 
 func selectPackBehavior(root string, files []string, workflows bool) ([]packtest.MatrixRow, error) {
@@ -239,10 +293,10 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 	if err != nil {
 		return err
 	}
-	output := fmt.Sprintf("portal=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
+	output := fmt.Sprintf("portal=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
 		selection.Portal, selection.Packs, selection.Infra, selection.Deps,
 		selection.Workflows, selection.MCPListing, modules,
-		selection.PortalRelease, selection.PacksRelease, packBehavior,
+		selection.PortalRelease, selection.PacksRelease, selection.RunnerImage, packBehavior,
 		selection.SigningE2E, selection.SSOE2E)
 	if err := appendOrPrint(outputPath, output); err != nil {
 		return err
@@ -254,10 +308,11 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 		}
 		return "skip"
 	}
-	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - MCP | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
+	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - MCP | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
 		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner),
 		mark(selection.MCP), mark(selection.Tools), mark(selection.Packs),
 		len(selection.PackBehavior), mark(len(selection.PackBehavior) > 0),
+		mark(selection.RunnerImage),
 		mark(selection.SigningE2E), mark(selection.SSOE2E),
 		mark(selection.Infra), mark(selection.Deps), mark(selection.Workflows),
 		mark(selection.MCPListing))

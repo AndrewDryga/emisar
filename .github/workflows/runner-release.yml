@@ -30,6 +30,11 @@ run-name: Release ${{ github.ref_name }}
 #
 # `install.sh` queries the latest release matching `runner-v*` and
 # downloads `emisar-${version}-${os}-${arch}.tar.gz` + `SHA256SUMS`.
+#
+# The release also publishes the official container image
+# `ghcr.io/<owner>/emisar-runner:<version>` (linux/amd64 + linux/arm64),
+# assembled from the exact tested linux tarball binaries — see the
+# `image` job and runner/release/Dockerfile.
 
 on:
   push:
@@ -284,11 +289,156 @@ jobs:
           retention-days: 7
           overwrite: true
 
+  image:
+    name: Publish container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build]
+    # Same ref-bounding environment as build: the GHCR push credential and
+    # the Sigstore OIDC token are minted only for refs the environment's
+    # tag patterns admit.
+    environment:
+      name: public-releases
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Derive version
+        id: ver
+        run: |
+          [[ "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#runner-v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Derive image name
+        id: name
+        # GHCR requires a lowercase namespace; the repository owner isn't.
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/emisar-runner" >> "$GITHUB_OUTPUT"
+
+      - name: Download release archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: emisar-runner-${{ steps.ver.outputs.version }}-linux-*
+          path: artefacts/
+
+      - name: Stage the exact tested binaries
+        # The image ships the binaries the build job produced, verified,
+        # and attested — never a rebuild. Re-check each tarball against its
+        # recorded checksum before extracting the binary into the `dist`
+        # build context the Dockerfile consumes.
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            name="emisar-${VERSION}-linux-${arch}"
+            tarball=$(find artefacts/ -name "${name}.tar.gz")
+            checksum=$(find artefacts/ -name "${name}.tar.gz.sha256")
+            test -n "$tarball" && test -n "$checksum"
+            echo "$(cat "$checksum")  ${tarball}" | sha256sum -c -
+            mkdir -p "dist/image/linux-${arch}"
+            tar -xzf "$tarball" -C "dist/image/linux-${arch}" --strip-components=1 "${name}/emisar"
+            test -x "dist/image/linux-${arch}/emisar"
+          done
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push multi-arch image by digest
+        id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: runner/release/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          # Push UNTAGGED (by digest): the version tag appears only after the
+          # smoke and attestation below pass, so a failed release never
+          # leaves a pullable public tag pointing at unverified bytes.
+          outputs: type=image,name=${{ steps.name.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          build-contexts: |
+            dist=dist/image
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.title=emisar-runner
+            org.opencontainers.image.description=Official emisar runner base image
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Smoke-test the pushed digest
+        # By digest, per platform, AFTER the push — the checked bytes are the
+        # published bytes, matching the tarballs' exact-tested-artifact bar.
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          runner/release/verify-image.sh "${IMAGE}@${DIGEST}" "$VERSION" linux/amd64
+          runner/release/verify-image.sh "${IMAGE}@${DIGEST}" "$VERSION" linux/arm64
+
+      - name: Attest image provenance
+        # Same Sigstore workflow-bound provenance as the tarballs, pushed to
+        # the registry so `gh attestation verify oci://...` works. Skipped on
+        # a private repo for the same free-tier gate as the build job.
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Promote the smoked digest to the version tag
+        # The version tag is the immutable public reference; no `latest` is
+        # published — pinning an image that IS a capability boundary should
+        # be an explicit act. An existing version tag is never moved to a
+        # different digest, so a rerun can only ever republish the same bytes.
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          if existing=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}' 2>/dev/null); then
+            if [ "$existing" != "$DIGEST" ]; then
+              echo "::error::${IMAGE}:${VERSION} already exists at ${existing}; refusing to move it to ${DIGEST}"
+              exit 1
+            fi
+            echo "${IMAGE}:${VERSION} already points at the smoked digest — nothing to promote."
+          else
+            docker buildx imagetools create --tag "${IMAGE}:${VERSION}" "${IMAGE}@${DIGEST}"
+          fi
+
   publish:
     name: Publish release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [build]
+    needs: [build, image]
     # No `environment:` block here — the ref restriction already applied at
     # build, and publish only uploads what build attested. A second
     # environment gate would add nothing.
@@ -337,6 +487,15 @@ jobs:
           # that's what most install pipelines (`curl | bash`) hit.
           make_latest: legacy
           generate_release_notes: true
+          # The digest is the immutable reference to the exact smoke-tested
+          # multi-arch image; the notes are where operators pin from.
+          append_body: true
+          body: |
+            **Container image** (linux/amd64, linux/arm64 — signed provenance + SBOM):
+
+            ```
+            ${{ needs.image.outputs.image }}:${{ steps.ver.outputs.version }}@${{ needs.image.outputs.digest }}
+            ```
           files: |
             release/emisar-*.tar.gz
             release/emisar-*.tar.gz.sha256
