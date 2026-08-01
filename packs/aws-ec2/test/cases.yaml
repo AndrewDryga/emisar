@@ -9,9 +9,6 @@ env:
   AWS_DEFAULT_REGION: us-east-1
   AWS_ENDPOINT_URL: "http://localstack:4566"
   AWS_SECRET_ACCESS_KEY: packtest-canary-aws-ec2-secret-4e90
-defaults:
-  expect:
-    stdout_not_empty: true
 cases:
   - action: ec2.describe_instances
     arrange:
@@ -38,5 +35,83 @@ cases:
       - argv: [aws, ec2, run-instances, --image-id, ami-12345678, --instance-type, t3.nano, --count, "1"]
     expect:
       stdout_contains: [InstanceStatuses, InstanceId]
+    cleanup:
+      - argv: [/bin/sh, -c, 'ids="$(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)"; test -z "$ids" || aws ec2 terminate-instances --instance-ids $ids >/dev/null']
+  - action: ec2.stop_instance
+    arrange:
+      - argv: [aws, ec2, run-instances, --image-id, ami-12345678, --instance-type, t3.nano, --count, "1"]
+      - name: instance running before stop
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].State.Name", --output, text]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [running]
+    resolve_args:
+      instance_id:
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].InstanceId", --output, text]
+        retry_for: 20s
+        retry_every: 1s
+    expect:
+      stdout_contains: [StoppingInstances]
+    probes:
+      - name: instance reached stopped state
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].State.Name", --output, text]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [stopped]
+    cleanup:
+      - argv: [/bin/sh, -c, 'ids="$(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)"; test -z "$ids" || aws ec2 terminate-instances --instance-ids $ids >/dev/null']
+  - action: ec2.start_instance
+    arrange:
+      - argv: [aws, ec2, run-instances, --image-id, ami-12345678, --instance-type, t3.nano, --count, "1"]
+      - argv: [/bin/sh, -c, 'aws ec2 stop-instances --instance-ids "$(aws ec2 describe-instances --query "Reservations[0].Instances[0].InstanceId" --output text)" >/dev/null']
+        retry_for: 20s
+        retry_every: 1s
+      - name: instance stopped before start
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].State.Name", --output, text]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [stopped]
+    resolve_args:
+      instance_id:
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].InstanceId", --output, text]
+        retry_for: 20s
+        retry_every: 1s
+    expect:
+      stdout_contains: [StartingInstances]
+    probes:
+      - name: instance running again
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].State.Name", --output, text]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [running]
+    cleanup:
+      - argv: [/bin/sh, -c, 'ids="$(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)"; test -z "$ids" || aws ec2 terminate-instances --instance-ids $ids >/dev/null']
+  # reboot-instances returns no response body, so the action's proof is its
+  # exit status plus the state probe, not stdout.
+  - action: ec2.reboot_instance
+    arrange:
+      - argv: [aws, ec2, run-instances, --image-id, ami-12345678, --instance-type, t3.nano, --count, "1"]
+      - name: instance running before reboot
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].State.Name", --output, text]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [running]
+    resolve_args:
+      instance_id:
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].InstanceId", --output, text]
+        retry_for: 20s
+        retry_every: 1s
+    probes:
+      - name: instance still running after reboot
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].State.Name", --output, text]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [running]
     cleanup:
       - argv: [/bin/sh, -c, 'ids="$(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)"; test -z "$ids" || aws ec2 terminate-instances --instance-ids $ids >/dev/null']
