@@ -1,14 +1,18 @@
 package ci
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
@@ -78,6 +82,19 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 	if event == "push" {
 		selection.Portal = true
 		selection.PortalRelease = true
+		if !selection.PacksRelease {
+			reason, err := packsReleaseDrift(ctx, root)
+			if err != nil {
+				return Selection{}, err
+			}
+			if reason != "" {
+				fmt.Printf("::notice::%s\n", reason)
+				// Packs runs too: the stranded pack push may have failed CI, so
+				// the sources about to be published may never have validated green.
+				selection.Packs = true
+				selection.PacksRelease = true
+			}
+		}
 	}
 	return selection, nil
 }
@@ -197,6 +214,85 @@ func containerPacks(root string) ([]string, error) {
 		packs = append(packs, line)
 	}
 	return packs, nil
+}
+
+// publishedCatalogURL is the canonical serving endpoint the CD packs-publish
+// and deployment-plan jobs verify against; a variable so tests can probe a
+// local server instead of the live registry.
+var publishedCatalogURL = "https://registry.emisar.dev/v1/catalog.json"
+
+// packsReleaseDrift reports why a main push must publish the pack registry
+// even though its diff touches no pack source. The diff trigger alone is
+// edge-triggered: when a pack-changing push's CD run fails, is cancelled, or
+// loses its approval race, no later push carries the pack diff to retry, and
+// the registry silently serves a stale catalog (12 packs stranded this way
+// between 2026-07-29 and 2026-07-31). Comparing the live catalog against the
+// committed one — which the packs gate keeps byte-equal to a fresh build —
+// makes publication level-triggered on registry state instead. An empty
+// reason means the registry already serves the committed bytes. An unreadable
+// registry is a reason to publish, so the publish job's own preflight reports
+// the outage explicitly rather than CD silently skipping. A repository
+// without the committed catalog (test fixtures) has no registry to reconcile.
+func packsReleaseDrift(ctx context.Context, root string) (string, error) {
+	committed, err := os.ReadFile(filepath.Join(root, "portal", "apps", "emisar", "priv", "packs", "catalog.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	live, err := fetchPublishedCatalog(ctx, int64(len(committed))+1)
+	if err != nil {
+		return fmt.Sprintf("Publishing the pack registry: the live catalog is unreadable (%v)", err), nil
+	}
+	if !bytes.Equal(live, committed) {
+		return "Publishing the pack registry: the live catalog does not match the committed catalog", nil
+	}
+	return "", nil
+}
+
+// fetchPublishedCatalog reads the live catalog pointer for the equality check.
+// Reading one byte past the committed length is enough to prove inequality
+// while bounding hostile input. Redirects are refused, matching the workflows'
+// plain curl: the canonical endpoint serves directly, and treating a redirect
+// as unreadable both publishes (fail-safe) and keeps a tampered response from
+// steering the runner elsewhere. The worst case — three 15s attempts plus two
+// 2s sleeps — stays well inside the changes job's five-minute budget.
+func fetchPublishedCatalog(ctx context.Context, limit int64) ([]byte, error) {
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			time.Sleep(2 * time.Second)
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, publishedCatalogURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if response.StatusCode != http.StatusOK {
+			response.Body.Close()
+			lastErr = fmt.Errorf("catalog returned %s", response.Status)
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(response.Body, limit))
+		response.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return body, nil
+	}
+	return nil, lastErr
 }
 
 func selectPackBehavior(root string, files []string, workflows bool) ([]packtest.MatrixRow, error) {

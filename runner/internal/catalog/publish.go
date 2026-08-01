@@ -90,7 +90,8 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 	// explicitly versioned schemas) BEFORE the mutable pointers (catalog.json /
 	// latest) that reference them, so a mid-publish failure never leaves the live
 	// pointer resolving to a 404 tarball. Stable so objects of the same class keep
-	// their manifest order.
+	// their manifest order — the build emits catalog.json as the last mutable
+	// pointer, the release-completion marker CI's drift probe byte-compares.
 	sort.SliceStable(m.Objects, func(i, j int) bool {
 		return m.Objects[i].Immutable && !m.Objects[j].Immutable
 	})

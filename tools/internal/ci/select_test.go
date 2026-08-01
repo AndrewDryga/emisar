@@ -2,10 +2,13 @@ package ci
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -259,6 +262,152 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 			resetHard(t, root, base)
 		})
 	}
+}
+
+func TestSelectPacksReleaseDrift(t *testing.T) {
+	committedCatalog := `{"schema_version":1,"packs":[]}` + "\n"
+	catalogPath := "portal/apps/emisar/priv/packs/catalog.json"
+	root := newGitRepo(t)
+	writeFixture(t, root, catalogPath, committedCatalog)
+	writeFixture(t, root, "docs.md", "docs\n")
+	writeFixture(t, root, "packs/postgres/test/cases.yaml", behaviorPlan("postgres",
+		versionRow("18.4", "a", true),
+	))
+	commitAll(t, root, "base")
+	base := gitText(t, root, "rev-parse", "HEAD")
+
+	var requests atomic.Int32
+	var liveStatus atomic.Int32
+	var liveCatalog atomic.Value
+	liveStatus.Store(http.StatusOK)
+	liveCatalog.Store(committedCatalog)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(int(liveStatus.Load()))
+		w.Write([]byte(liveCatalog.Load().(string)))
+	}))
+	t.Cleanup(server.Close)
+	previousURL := publishedCatalogURL
+	publishedCatalogURL = server.URL
+	t.Cleanup(func() { publishedCatalogURL = previousURL })
+
+	pushWithoutPackDiff := func(t *testing.T) Selection {
+		t.Helper()
+		writeFixture(t, root, "docs.md", "docs for "+t.Name()+"\n")
+		commitAll(t, root, "docs")
+		selection, err := Select(context.Background(), root, "push", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return selection
+	}
+
+	t.Run("matching live catalog stays skipped", func(t *testing.T) {
+		requests.Store(0)
+		selection := pushWithoutPackDiff(t)
+		if selection.PacksRelease || selection.Packs {
+			t.Fatalf("matching catalog selected a release: %+v", selection)
+		}
+		if requests.Load() != 1 {
+			t.Fatalf("drift probe made %d requests, want 1", requests.Load())
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("drifted live catalog forces the release", func(t *testing.T) {
+		requests.Store(0)
+		liveCatalog.Store(`{"schema_version":1,"packs":["stale"]}` + "\n")
+		t.Cleanup(func() { liveCatalog.Store(committedCatalog) })
+		selection := pushWithoutPackDiff(t)
+		if !selection.PacksRelease || !selection.Packs {
+			t.Fatalf("drifted catalog did not select the release: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("unreadable registry forces the release", func(t *testing.T) {
+		requests.Store(0)
+		liveStatus.Store(http.StatusInternalServerError)
+		t.Cleanup(func() { liveStatus.Store(http.StatusOK) })
+		selection := pushWithoutPackDiff(t)
+		if !selection.PacksRelease || !selection.Packs {
+			t.Fatalf("unreadable registry did not select the release: %+v", selection)
+		}
+		if requests.Load() != 3 {
+			t.Fatalf("drift probe made %d requests, want 3 attempts", requests.Load())
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("redirects are refused, not followed", func(t *testing.T) {
+		requests.Store(0)
+		var followed atomic.Int32
+		target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			followed.Add(1)
+			w.Write([]byte(committedCatalog))
+		}))
+		t.Cleanup(target.Close)
+		redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			http.Redirect(w, r, target.URL, http.StatusFound)
+		}))
+		t.Cleanup(redirecting.Close)
+		publishedCatalogURL = redirecting.URL
+		t.Cleanup(func() { publishedCatalogURL = server.URL })
+		selection := pushWithoutPackDiff(t)
+		if !selection.PacksRelease {
+			t.Fatalf("redirecting registry did not select the release: %+v", selection)
+		}
+		if followed.Load() != 0 {
+			t.Fatalf("drift probe followed a redirect %d times", followed.Load())
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("pack diff is the fast path without a probe", func(t *testing.T) {
+		requests.Store(0)
+		writeFixture(t, root, "packs/host-only/actions/status.yaml", "id: host.status\n")
+		commitAll(t, root, "pack change")
+		selection, err := Select(context.Background(), root, "push", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.PacksRelease {
+			t.Fatalf("pack diff did not select the release: %+v", selection)
+		}
+		if requests.Load() != 0 {
+			t.Fatalf("pack diff still probed the registry %d times", requests.Load())
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("pull request never probes", func(t *testing.T) {
+		requests.Store(0)
+		writeFixture(t, root, "docs.md", "docs pr\n")
+		commitAll(t, root, "docs pr")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selection.PacksRelease || requests.Load() != 0 {
+			t.Fatalf("pull request probed the registry (%d requests): %+v", requests.Load(), selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("repository without the committed catalog never probes", func(t *testing.T) {
+		requests.Store(0)
+		runGit(t, root, "rm", "-q", catalogPath)
+		commitAll(t, root, "drop catalog")
+		selection, err := Select(context.Background(), root, "push", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selection.PacksRelease || requests.Load() != 0 {
+			t.Fatalf("catalog-less repository probed the registry (%d requests): %+v", requests.Load(), selection)
+		}
+		resetHard(t, root, base)
+	})
 }
 
 func behaviorPlan(service string, versions ...string) string {

@@ -84,10 +84,12 @@ func Write(reg *packs.Registry, cat *Catalog, outDir string) (*Manifest, error) 
 		return nil
 	}
 
-	// Latest pointer (mutable) + its immutable content-addressed snapshot.
-	if err := add("v1/catalog.json", false, contentTypeJSON, catalogBytes); err != nil {
-		return nil, err
-	}
+	// The latest pointer's immutable content-addressed snapshot. The mutable
+	// pointer itself is added LAST (below): the publish step keeps manifest
+	// order within each immutability class, and the live catalog.json is the
+	// release-completion marker CI's drift probe byte-compares — written first,
+	// a mid-publish failure would leave suggest.json stale while the registry
+	// already looks fully published.
 	if err := add("v1/catalog/"+catalogHash+".json", true, contentTypeJSON, catalogBytes); err != nil {
 		return nil, err
 	}
@@ -122,6 +124,13 @@ func Write(reg *packs.Registry, cat *Catalog, outDir string) (*Manifest, error) 
 		if err := add(TarballObject(p.ID, p.Version, p.ContentHash), true, contentTypeGzip, tarball); err != nil {
 			return nil, err
 		}
+	}
+
+	// The mutable latest pointer goes last of all: it uploads only after every
+	// object it references — and after suggest.json — so live-catalog equality
+	// proves the whole publication completed (see the snapshot comment above).
+	if err := add("v1/catalog.json", false, contentTypeJSON, catalogBytes); err != nil {
+		return nil, err
 	}
 
 	manifestBytes, err := marshalJSON(m)

@@ -296,6 +296,13 @@ func TestPublish_ImmutableObjectsUploadedBeforeMutablePointers(t *testing.T) {
 	if !sawMutable {
 		t.Fatal("expected at least one mutable pointer in the upload order")
 	}
+
+	// And the catalog pointer uploads last of all: it is the release-completion
+	// marker CI's drift probe byte-compares, so a publish that dies earlier
+	// (e.g. before suggest.json) must still read as unpublished and be retried.
+	if last := f.order[len(f.order)-1]; last != "v1/catalog.json" {
+		t.Errorf("last uploaded object = %s, want the v1/catalog.json completion marker", last)
+	}
 }
 
 func TestPublish_ExistingImmutableIsSkipped(t *testing.T) {

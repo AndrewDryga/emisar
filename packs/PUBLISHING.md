@@ -71,7 +71,9 @@ packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry --dry-r
 
 # Upload. Immutable objects use an if-generation-match:0 precondition, so an
 # existing object is never overwritten (a precondition failure = identical bytes
-# already published = skipped). The mutable pointers are overwritten last.
+# already published = skipped). The mutable pointers are overwritten last —
+# catalog.json last of all: it is the release-completion marker CD's drift
+# probe compares, so a partial publish reads as unpublished and is retried.
 packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
 ```
 
@@ -80,21 +82,24 @@ only** — it can append new artifacts and cut a new catalog generation but cann
 delete or mutate history. The append-only guarantee is IAM-enforced, not
 conventional.
 
-## When CD publishes — and when it silently doesn't
+## When CD publishes
 
 In normal operation publication is CD's job, not a manual one: a main push
-that changes pack sources or the pack toolchain sets `packs_release`
-(`tools/internal/ci/select.go`), and after a human approves the
-`pack-registry-approval` environment gate, `packs-publish` in
-`.github/workflows/cd.yml` builds against the live catalog and publishes.
+sets `packs_release` (`tools/internal/ci/select.go`) when its diff changes
+pack sources or the pack toolchain — or, failing that fast path, when the live
+`v1/catalog.json` no longer byte-matches the committed
+`portal/apps/emisar/priv/packs/catalog.json` (or cannot be read at all). After
+a human approves the `pack-registry-approval` environment gate,
+`packs-publish` in `.github/workflows/cd.yml` builds against the live catalog
+and publishes.
 
-That trigger is edge-triggered on the **push diff**, not on registry state: if
-a pack-changing push's CD run fails, is cancelled, or its approval wait is
-superseded, no later run retries — subsequent pushes carry no pack diff, so
-the registry silently serves a stale catalog until the next pack-source push
-lands green **and** approved (this stranded 12 packs between 2026-07-29 and
-2026-07-31). After any failed or cancelled CD run for a pack change, check for
-drift:
+The drift probe makes publication level-triggered on registry state rather
+than edge-triggered on one push's diff: when a pack-changing push's CD run
+fails, is cancelled, or its approval wait is superseded, the next green main
+push raises the release again with no new pack change needed (before the
+probe, exactly that stranded 12 packs between 2026-07-29 and 2026-07-31).
+When the registry already serves the committed bytes, no publish is
+triggered. To inspect a suspected drift by hand:
 
 ```bash
 curl -fsS https://registry.emisar.dev/v1/catalog.json \
@@ -104,8 +109,9 @@ for f in packs/*/pack.yaml; do
 done | sort | diff /tmp/live-versions.txt -
 ```
 
-A non-empty diff means the registry is stale: land the next pack change (or
-publish manually, above) and watch its CD run through approval to publication.
+A non-empty diff means the registry is stale: any main push (or a manual
+publish, above) republishes it — watch the CD run through approval to
+publication.
 
 ## Verify
 
