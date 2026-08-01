@@ -54,7 +54,29 @@ A separate runner SemVer policy lives in `Emisar.Compat`. The current production
 threshold is `runner_minimum >= 0.10.0`, with enforcement off, so an old runner
 is currently warned about rather than rejected. When enforcement is on, the
 portal audits and rejects a runner below the minimum by sending a `shutdown`
-envelope before closing the session.
+envelope before closing the session. A missing or unparseable reported version
+classifies as `:unknown` and is never rejected, even with enforcement on;
+enforcement acts only on a parseable version below the minimum. That is
+deliberate: the version is self-reported, so it is an operational hygiene
+signal, not a security control — an authenticated peer gains no capability by
+lying about it, and a `dev` build must not be locked out. Both behaviors are
+pinned by `Emisar.CompatTest` and the enforcement call sites act on
+`:unsupported` alone.
+
+The pre-1.0 thresholds are operational warning lines, not certified
+interoperability promises: no 0.x artifact pair is cross-version tested, and
+components are expected to move together (the greenfield assumption). The v1
+support window is deliberately narrow and coordinated: when `v1.0.0` is cut,
+`runner_minimum` and `mcp_minimum` are raised to the coordinated v1 component
+releases shipped with it, so the certified pair is exactly the v1 portal with
+the v1 runner and bridge — proven by the same-repo gates and the wire golden at
+the release tag, not by a cross-version binary matrix against 0.x artifacts.
+Raising the minimums does not by itself disconnect deployed 0.x components:
+enforcement is a separate, deliberate flip taken only after operators have had
+an upgrade window, and until then a below-minimum peer is warned, not cut off.
+From then on the frozen wire contract, not a test matrix, is what keeps every
+later 1.x portal compatible with the v1.0 runner and bridge; the golden and the
+additive-change rules in this section are the enforcement mechanism.
 
 **What happens on skew.** A known frame with the wrong `protocol_version` fails
 loudly: the portal closes the socket with WebSocket code 1002 and a reason, and
@@ -188,27 +210,134 @@ inputs are strict: unknown or renamed fields are rejected. The bridge
 identifies itself as `emisar-mcp/<version>` and the current bridge
 threshold is `mcp_minimum >= 0.3.0`, also warn-only in production today.
 
-OAuth client registration accepts both mechanisms. A Client ID Metadata
-Document client presents an HTTPS document URL as its `client_id`; the
-authorization server fetches and validates that document on every
-authorization and the client is addressed only by that URL thereafter.
-Deprecated Dynamic Client Registration (`POST /oauth/register`) still works
-and its clients are addressed only by the issued id. Support is advertised as
-`client_id_metadata_document_supported` alongside
-`authorization_response_iss_parameter_supported` (RFC 9207) in the
-authorization-server metadata.
-
 **What happens on skew.** An older client calling a renamed or removed tool
 gets JSON-RPC `method-not-found`. A stray or renamed input field is rejected;
 it is not silently ignored. A new optional input field or a new tool is
 additive for clients that do not use it. If MCP enforcement is enabled, a
 bridge below the minimum receives a structured JSON-RPC `-32003` upgrade error
-with the required minimum and upgrade URL. The current MCP surface has no
+with the required minimum and upgrade URL. A bridge reporting a missing or
+unparseable version is classified `:unknown` and never rejected; like the
+runner policy, enforcement acts only on a parseable version below the minimum,
+and the bridge minimum follows the same coordinated v1 window (raised to the
+v1 bridge release when `v1.0.0` is cut). The current MCP surface has no
 general deprecation mechanism; removals and renames must use the path below.
 
 The normative tool names and schemas live in
 [MCP API specification](mcp-api.md) and its
 [machine-readable schema](../../../portal/apps/emisar_web/priv/mcp/api-schemas.json).
+
+### OAuth authorization server and device authorization
+
+**What it is.** The portal is the OAuth authorization server MCP clients are
+configured against. It serves `GET /.well-known/oauth-protected-resource`
+(RFC 9728), `GET /.well-known/oauth-authorization-server` (RFC 8414),
+`POST /oauth/register` (RFC 7591 dynamic registration, deprecated),
+`GET`/`POST /oauth/authorize`, and `POST /oauth/token`. The bridge installer's
+interactive setup drives the separate RFC 8628-shaped device pair
+`POST /api/mcp/device_authorization` and `POST /api/mcp/device_token`.
+
+**How it is versioned today.** There is no path version; the advertised
+metadata is the negotiation surface. The authorization-server document
+advertises `response_types_supported: ["code"]`, grants `authorization_code`
+and `refresh_token`, PKCE `S256` only (`plain` is rejected and the challenge
+is mandatory), `token_endpoint_auth_methods_supported: ["none"]`, scopes
+`mcp` and `offline_access`, `authorization_response_iss_parameter_supported`
+(RFC 9207 — every authorization redirect, success or error, carries `iss`
+equal to the metadata `issuer`), and `client_id_metadata_document_supported`.
+Client registration accepts both mechanisms: a Client ID Metadata Document
+client presents an HTTPS document URL as its `client_id`, which the server
+fetches and validates on every authorization and addresses the client by
+thereafter; a deprecated DCR client is addressed only by its issued id. The
+`resource` parameter must exactly equal the advertised MCP resource URI.
+Issued credentials are recognizable prefixed formats — authorization codes
+`emoc-`, access tokens `emo-`, refresh tokens `emor-` (rotated on use, issued
+only with `offline_access`), device codes `emdg-`, and the per-client `emk-`
+API keys the device flow mints. Lifetimes (60 s codes, 1 h access tokens,
+30 day refresh tokens, 900 s device grants) are policy advertised per
+response via `expires_in`, not frozen contract. The device-authorization
+response fields (`device_code`, `user_code`, `verification_uri`,
+`verification_uri_complete`, `expires_in`, `interval`) and the token poll's
+emisar-specific success payload — a `client_keys` map of per-client API keys,
+not an OAuth token response — are frozen; poll errors are
+`authorization_pending`, `access_denied`, `expired_token`, and
+`invalid_grant`, and `slow_down` is never emitted.
+
+**What happens on skew.** An unknown grant type fails with
+`unsupported_grant_type`, a wrong `resource` with `invalid_target`, and an
+unregistered `redirect_uri` with a non-redirecting error page — explicit
+failures, never silent downgrades. The frozen part of the metadata is the
+issuer, the endpoint paths, and the meaning of every advertised member;
+capability sets and error vocabularies may still grow additively, since
+RFC 8414 clients ignore unknown members — adding a scope or grant type is not
+a breaking change. The device poll is the exception: the deployed installer reads the device
+response fields above and treats every poll error except `access_denied` and
+`expired_token` as retryable, so a new terminal poll-error code would leave
+old installers polling until expiry: additions must be retry-safe, and a new
+terminal outcome needs a new poll contract. Already-issued `emk-` keys and
+refresh tokens are saved customer credentials and must keep authenticating.
+
+### Enterprise SSO callback and SCIM provisioning
+
+**What they are.** Customers register two portal values inside their identity
+provider, where we cannot rotate them: the fixed OIDC redirect URI
+`GET /sign_in/sso/callback` for SSO sign-in, and the SCIM 2.0 base URL
+`<base>/scim/v2` plus a per-provider `ems-` bearer token for directory
+provisioning (Okta, Entra, JumpCloud, Keycloak, Google).
+
+**How they are versioned today.** SCIM is path-versioned at `/scim/v2`
+(RFC 7643/7644). Discovery serves `ServiceProviderConfig`, `ResourceTypes`,
+and `Schemas` advertising the deliberate subset: `patch` and `filter`
+(`maxResults` 100) on, `bulk`/`sort`/`etag` off. Every SCIM resource `id` IS
+the IdP's `externalId` — internal UUIDs are never exposed — so single-resource
+routes round-trip on the IdP's own identifier. Users support idempotent
+create/reconcile, `userName eq`/`externalId eq` filters only, PATCH limited to
+`active` and rename attributes, PUT limited to `displayName` plus `active`,
+and DELETE as soft deprovision (suspend), never a hard delete. Groups support
+upsert by `externalId` (falling back to `id`, then `displayName`), membership
+`add`/`remove`/`replace` including Okta's filtered removal form, a
+`displayName eq` filter, and DELETE as membership emptying. Several tolerant
+parses are load-bearing for specific IdPs and are part of the contract: the
+case-insensitive and schemeless `Authorization` header (Okta header-auth
+apps), unquoted `eq` filter values, and the Group upsert fallback (JumpCloud's
+activation probe). An unsupported Users filter fails with 400 `invalidFilter`;
+an unparseable Groups filter deliberately lists everything instead.
+
+**What happens on skew.** An IdP sending an unsupported operation gets an
+explicit SCIM error (`invalidPath`, `invalidFilter`, `tooMany`, 409
+`uniqueness`/`mutability`), never silent acceptance, and a rejected request
+changes nothing. Renaming either registered value, narrowing a tolerant
+parse, or exposing a different `id` breaks deployed IdP configurations that
+only the customer can update — after 1.0 all of it moves only through the
+deprecation path, and already-issued `ems-` tokens must keep authenticating.
+
+### Audit export for SIEM
+
+**What it is.** `GET /api/audit` streams the account audit trail as NDJSON
+(`application/x-ndjson`, one event object per line) for SIEM collectors,
+authenticated by a bearer `emk-` API key of the dedicated `audit_export`
+kind. The console also serves a CSV download of the same trail.
+
+**How it is versioned today.** There is no path version; the contract is the
+parameter and field names. Query parameters are `since` (ISO 8601 inclusive
+lower bound), `cursor` (opaque resume point, wins over `since`),
+`event_type` (repeatable or comma-separated), and `limit` (default 100,
+cap 1000). Any non-empty page returns `X-Next-Cursor`; a full page also
+returns `Link: <…>; rel="next"`; an empty page returns neither. Each exported
+event today carries the 14 top-level fields `id`, `occurred_at`,
+`account_id`, `event_type`, `actor_kind`, `actor_id`, `actor_label`,
+`target_kind`, `target_id`, `target_label`, `ip_address`, `user_agent`,
+`request_id`, `mcp_client_metadata`, and `payload`. The CSV download's header
+row, column order, CRLF line endings, always-quoted fields, and
+formula-injection guard are likewise fixed, since operators parse the saved
+artifact.
+
+**What happens on skew.** A key of the wrong kind fails with 403
+`wrong_key_kind`; a malformed parameter with 400 `invalid_params`. Adding a
+new top-level field or event type is additive; removing or renaming one of
+the 14 fields, a parameter, or the `X-Next-Cursor` header is breaking. A
+SIEM persists its last cursor across polls, so previously issued cursor
+values must remain resumable; a change to the cursor encoding must keep
+accepting the old form for the deprecation window.
 
 ### Runner and MCP bridge CLI, configuration, and environment
 
@@ -234,7 +363,9 @@ The runner's global flags are `--config`, `--json`, `--packs-dir`, and
 `-v/--version`. `action run` also accepts `--arg`, `--reason`, `--timeout`, and
 `--stream`. Pack registry operations accept `--registry`; pack installation
 also accepts `--hash`, `--dest`, and `--force`. These command names and flags,
-including the documented aliases, are public inputs.
+including the documented aliases, are public inputs. The structured output
+`--json` emits exists to be parsed by scripts, so those shapes freeze with the
+flags: after 1.0 they change only additively.
 
 The runner configuration is YAML with exact `schema_version: 1` and strict
 keys. Its top-level sections are `runner`, `cloud`, `paths`, `execution`,
@@ -330,11 +461,10 @@ It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
 and `EMISAR_URL` (the portal its interactive LLM-client setup talks to and
 writes into configs; default `https://emisar.dev`). The interactive setup
-drives the portal's device-authorization pair —
-`POST /api/mcp/device_authorization` and `POST /api/mcp/device_token`, RFC
-8628-shaped fields and poll errors with an emisar-specific success payload
-(per-client API keys) — which freezes at 1.0 alongside the other public API
-surfaces. The current release tags are `runner-v0.16.0` and `mcp-v0.5.0`. The
+drives the portal's device-authorization pair, whose frozen contract lives in
+the OAuth authorization server section above; the installer is the deployed
+consumer its skew note describes. The current release tags are
+`runner-v0.16.0` and `mcp-v0.5.0`. The
 bridge installer also requires the selected GitHub release to be marked
 immutable.
 

@@ -219,11 +219,12 @@ cassandra-dbcas103~8e9a70d2d45a1f23c8b4ae63da1384f1
 ```
 
 The name is readable display context. The 128-bit suffix pins the runner's
-locally generated enrollment identity even if a deleted name is reused. It is
-not a secret or a substitute for authorization. Before first registration the
-runner already generates and durably stores a UUID `external_id`; reconnects
-present the same value. Registration requires it and rejects a live duplicate
-or suffix collision inside an account. Names are 1 through 80 ASCII characters
+enrolled external identity even if a deleted name is reused. It is not a
+secret or a substitute for authorization. The runner's `external_id` is its
+configured `runner.id` or, by default, its current hostname; reconnects from
+the same host present the same value, and a replacement host with a new
+hostname enrolls as a new runner. Registration requires that nonblank value
+and rejects a live duplicate or suffix collision inside an account. Names are 1 through 80 ASCII characters
 and match `^[A-Za-z0-9][A-Za-z0-9._-]*$`; display labels may carry richer text
 without becoming part of an identifier.
 
