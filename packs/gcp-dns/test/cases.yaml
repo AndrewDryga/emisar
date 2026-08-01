@@ -128,6 +128,7 @@ cases:
       - name: the provider received no mutation
         argv: [curl, -fsS, http://gcp-api:8080/probe/state]
         expect:
+          stdout_contains: ['"mutations": []']
           stdout_not_contains: ["delete:"]
   - name: gcp.dns_record_delete-rejects-flag-shaped-name
     action: gcp.dns_record_delete
