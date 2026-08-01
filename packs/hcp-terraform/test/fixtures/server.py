@@ -23,6 +23,7 @@ LOGLESS_RUN_ID = "run-5NoLogWp4Hs2Ym8q"
 DENIED_LOG_RUN_ID = "run-6DeniedBv1Zx7Qf3"
 CANCELED_NO_CV_RUN_ID = "run-8NoCvFh9Kl4Tq6wY"
 GLOB_LOG_RUN_ID = "run-9GlobUrlYz2Bc5Df"
+WORST_PLAN_RUN_ID = "run-HugePlanWorstCase"
 
 # One mutable run table per server process. Every case owns a fresh Compose
 # project, so mutations always start from the same fixture state; the errored
@@ -393,6 +394,84 @@ def plan_json_output():
     }
 
 
+# A production-scale plan whose every field is hostile: hundreds of changes and
+# drifted resources, addresses flooded with the byte JSON escaping doubles
+# (backslash) and the codepoint whose escape costs six bytes (U+2028), types,
+# modules, and reasons past every clip, and more outputs than the bounded
+# sample keeps. The worst-case behavior case projects this plan; the runner
+# rejects a structured result over 8 KiB, so the case's success is the
+# byte-cap proof. The two sentinel deletes sort first (uppercase sorts before
+# a backslash) and pin the exact clip boundary: 80 characters survive intact,
+# 81 clip to 79 plus an ellipsis.
+BACKSLASH_FLOOD = "\\" * 100
+U2028_FLOOD = "\u2028" * 60
+SENTINEL_KEEP_ADDRESS = "AAA-sentinel-delete-" + "x" * 60
+SENTINEL_CLIP_ADDRESS = "AAB-sentinel-delete-" + "x" * 61
+
+
+def worst_resource_change(address, actions, reason=None):
+    change = {
+        "address": address,
+        "module_address": "module." + BACKSLASH_FLOOD,
+        "mode": "managed",
+        "type": "aws_" + BACKSLASH_FLOOD,
+        "name": "worst",
+        "change": {"actions": actions, "before": {}, "after": {}},
+    }
+    if reason is not None:
+        change["action_reason"] = reason
+    return change
+
+
+def worst_plan_json_output():
+    changes = [
+        worst_resource_change(SENTINEL_KEEP_ADDRESS, ["delete"]),
+        worst_resource_change(SENTINEL_CLIP_ADDRESS, ["delete"]),
+    ]
+    # The AAC deletes sort into the shown sample and keep U+2028 — whose escape
+    # doubles a byte-bound value during the runner's canonical re-encode — in
+    # the emitted result, not just in the dropped tail.
+    changes += [
+        worst_resource_change(f"AAC-{n:03d}-{U2028_FLOOD}", ["delete"], BACKSLASH_FLOOD)
+        for n in range(4)
+    ]
+    changes += [
+        worst_resource_change(f"{BACKSLASH_FLOOD}-{n:03d}", ["delete"], BACKSLASH_FLOOD)
+        for n in range(114)
+    ]
+    changes += [
+        worst_resource_change(f"{U2028_FLOOD}-{n:03d}", ["create", "delete"], BACKSLASH_FLOOD)
+        for n in range(80)
+    ]
+    changes += [worst_resource_change(f"{BACKSLASH_FLOOD}-update-{n:03d}", ["update"]) for n in range(99)]
+    changes += [worst_resource_change(f"{U2028_FLOOD}-create-{n:03d}", ["create"]) for n in range(80)]
+    changes += [worst_resource_change(f"{BACKSLASH_FLOOD}-read-{n:03d}", ["read"]) for n in range(15)]
+    changes += [worst_resource_change(f"{BACKSLASH_FLOOD}-import-{n:03d}", ["import"]) for n in range(5)]
+    # A future CLI verb the projection has never seen: it must survive as a
+    # joined, clipped action and still land in the total.
+    changes.append(worst_resource_change("future-verb", ["provision", "refresh-only"]))
+    changes += [worst_resource_change(f"noise-{n:03d}", ["no-op"]) for n in range(20)]
+    outputs = {}
+    for n in range(46):
+        name = f"primary-database-connection-endpoint-{n:03d}-" + "x" * 20
+        outputs[name] = {
+            "actions": ["update"],
+            "before_sensitive": n % 2 == 0,
+            "after_sensitive": n % 2 == 0,
+        }
+    outputs[U2028_FLOOD] = {"actions": ["create"], "before_sensitive": False, "after_sensitive": False}
+    outputs["stable-output"] = {"actions": ["no-op"], "before_sensitive": False, "after_sensitive": False}
+    return {
+        "format_version": "1.2",
+        "terraform_version": "1.13.1-enterprise-worst-case-build-2026",
+        "resource_changes": changes,
+        "resource_drift": [
+            worst_resource_change(f"{BACKSLASH_FLOOD}-drift-{n:03d}", ["update"]) for n in range(200)
+        ],
+        "output_changes": outputs,
+    }
+
+
 # 300 refresh lines push the error past the action's 200-line tail window, so
 # the case can prove the bound: early noise is dropped, the error survives.
 # ANSI codes wrap the error exactly the way terraform colors its output.
@@ -541,14 +620,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/blob/plan-json-output":
             self.write_json(200, plan_json_output())
             return
+        if path == "/blob/worst-plan-json-output":
+            self.write_json(200, worst_plan_json_output())
+            return
         if not self.authenticated():
             return
-        if path == f"/api/v2/runs/{RUN_ID}/plan/json-output":
-            self.send_response(307)
-            self.send_header("Location", "/blob/plan-json-output")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
+        for run_id, blob in ((RUN_ID, "/blob/plan-json-output"), (WORST_PLAN_RUN_ID, "/blob/worst-plan-json-output")):
+            if path == f"/api/v2/runs/{run_id}/plan/json-output":
+                self.send_response(307)
+                self.send_header("Location", blob)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
         host = self.headers.get("Host", "tfc-api:8080")
         for run_id in RUNS:
             if path == f"/api/v2/runs/{run_id}":

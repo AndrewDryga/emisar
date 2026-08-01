@@ -132,7 +132,8 @@ cases:
 
   # The fixture's plan carries the canary in a sensitive output AND in resource
   # attributes, exactly where a real plan carries a secret. The default
-  # stdout_not_contains proves the projection reads neither.
+  # stdout_not_contains proves the projection reads neither. The lists sort
+  # most destructive first, and a complete plan reports zero omitted entries.
   - action: tfc.plan_summary
     args: {run_id: run-4Qm7TvLpXsRbNc2d}
     expect:
@@ -154,9 +155,39 @@ cases:
         /summary/delete: 1
         /summary/replace: 1
         /summary/drifted: 1
+        /changes/0/address: aws_s3_bucket.legacy
+        /changes/0/action: delete
         /drift/0/address: aws_security_group.web
         /outputs/0/name: db_password
         /outputs/0/sensitive: true
+        /truncated/changes: 0
+        /truncated/drift: 0
+        /truncated/outputs: 0
+
+  # A production-scale plan whose every field is hostile: 400 changes, 200
+  # drifted resources, 47 changed outputs, every string flooded past its clip
+  # with the bytes JSON escaping doubles. The runner rejects a structured
+  # result over 8 KiB, so this case's success IS the byte-cap proof; the
+  # truncated counts keep the partial lists honest, and the sentinel deletes
+  # pin the exact clip boundary — 80 characters survive intact, 81 clip to 79
+  # plus an ellipsis.
+  - name: tfc.plan_summary-fits-the-cap-on-a-worst-case-plan
+    action: tfc.plan_summary
+    args: {run_id: run-HugePlanWorstCase}
+    expect:
+      json:
+        /source: hcp_plan
+        /cli_version: "1.13.1-enterprise-worst-case-bu…"
+        /summary/total: 400
+        /summary/delete: 120
+        /summary/replace: 80
+        /summary/drifted: 200
+        /changes/0/address: AAA-sentinel-delete-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        /changes/0/action: delete
+        /changes/1/address: "AAB-sentinel-delete-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+        /truncated/changes: 390
+        /truncated/drift: 197
+        /truncated/outputs: 43
 
   # The plan is the failed phase. The tail keeps only the last 200 lines with
   # ANSI control codes stripped ('\u001b' is how a surviving escape byte would

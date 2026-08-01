@@ -16,7 +16,37 @@ cli() {
 # UI messages, while `show -json` returns one document. Both project to the same
 # schema, and neither ever reads an attribute or output VALUE — a saved plan
 # stores those in cleartext, sensitive ones included.
+#
+# The runner rejects a structured result over 8 KiB and a production plan
+# carries hundreds of resource changes, so each list keeps a bounded sample —
+# most destructive first, so a truncated review can never hide the deletes —
+# and `truncated` counts the entries each list dropped. `summary` is computed
+# from the full arrays before capping and stays the authoritative totals. The
+# clip and cap sizes are chosen so every list at its cap fits the cap with
+# headroom even when every field is at its escaped worst (JSON escaping can
+# double a byte-bound string): clipped collapses control runs to one space,
+# then cuts to a codepoint AND a UTF-8 byte budget with an ellipsis marking
+# the cut. This is the same bounded shape the hcp-terraform pack returns; each
+# pack is installed and hashed on its own, so the projection is necessarily
+# packaged with both rather than shared.
 readonly projection='
+def clipped($chars; $bytes):
+  (. // "" | tostring | gsub("[[:cntrl:]]+"; " ")) as $clean
+  | ($clean | .[:$chars] | until(utf8bytelength <= $bytes; .[:-1])) as $cut
+  | if $cut == $clean then $clean else ($cut | .[:$chars - 1]) + "…" end;
+
+def destruction_rank: {"delete": 0, "replace": 1, "update": 2, "create": 3, "read": 4, "import": 5};
+
+def most_destructive_first: sort_by([(destruction_rank[.action] // 6), .address]);
+
+def omitted($entries; $cap): [($entries | length) - $cap, 0] | max;
+
+def clip_resource:
+  .address |= clipped(80; 80)
+  | .resource_type |= clipped(44; 44)
+  | .module |= clipped(32; 32)
+  | .action |= clipped(12; 12);
+
 def summarize($changes; $drift):
   {
     total: ($changes | length),
@@ -53,6 +83,20 @@ def norm_action($actions):
     else ($a | join("+"))
     end;
 
+def bounded_lists($changes; $drift; $outputs; $diagnostics):
+  {
+    changes: ($changes | most_destructive_first | .[:10] | map(clip_resource | .reason |= clipped(36; 36))),
+    drift: ($drift | most_destructive_first | .[:3] | map(clip_resource)),
+    outputs: ($outputs | .[:4] | map(.name |= clipped(40; 40) | .action |= clipped(12; 12))),
+    diagnostics: ($diagnostics | .[:3] | map(.severity |= clipped(12; 12) | .summary |= clipped(100; 100))),
+    truncated: {
+      changes: omitted($changes; 10),
+      drift: omitted($drift; 3),
+      outputs: omitted($outputs; 4),
+      diagnostics: omitted($diagnostics; 3)
+    }
+  };
+
 def project_stream:
   . as $messages
   | [ $messages[]
@@ -67,29 +111,25 @@ def project_stream:
       | select(is_noop(.action) | not)
       | resource_of(.resource) + {action: (.action // "")}
     ] as $drift
+  | [ $messages[]
+      | select(.type == "outputs")
+      | .outputs
+      | to_entries[]
+      | {name: .key, action: (.value.action // ""), sensitive: (.value.sensitive == true)}
+      | select(is_noop(.action) | not)
+    ] as $outputs
+  | [ $messages[]
+      | select(.type == "diagnostic")
+      | .diagnostic
+      | {severity: (.severity // ""), summary: (.summary // "")}
+    ] as $diagnostics
   | {
       source: "plan",
       cli_version: (
-        [$messages[] | select(.type == "version") | (.terraform // .tofu)] | first // ""
+        [$messages[] | select(.type == "version") | (.terraform // .tofu)] | first | clipped(32; 32)
       ),
-      summary: summarize($changes; $drift),
-      changes: $changes,
-      drift: $drift,
-      outputs: [
-        $messages[]
-        | select(.type == "outputs")
-        | .outputs
-        | to_entries[]
-        | {name: .key, action: (.value.action // ""), sensitive: (.value.sensitive == true)}
-        | select(is_noop(.action) | not)
-      ],
-      diagnostics: [
-        $messages[]
-        | select(.type == "diagnostic")
-        | .diagnostic
-        | {severity: (.severity // ""), summary: (.summary // "")}
-      ]
-    };
+      summary: summarize($changes; $drift)
+    } + bounded_lists($changes; $drift; $outputs; $diagnostics);
 
 def project_file:
   . as $plan
@@ -112,24 +152,20 @@ def project_file:
         }
       | select(is_noop(.action) | not)
     ] as $drift
+  | [ ($plan.output_changes // {})
+      | to_entries[]
+      | {
+          name: .key,
+          action: norm_action(.value.actions),
+          sensitive: ((.value.after_sensitive == true) or (.value.before_sensitive == true))
+        }
+      | select(is_noop(.action) | not)
+    ] as $outputs
   | {
       source: "plan_file",
-      cli_version: ($plan.terraform_version // ""),
-      summary: summarize($changes; $drift),
-      changes: $changes,
-      drift: $drift,
-      outputs: [
-        ($plan.output_changes // {})
-        | to_entries[]
-        | {
-            name: .key,
-            action: norm_action(.value.actions),
-            sensitive: ((.value.after_sensitive == true) or (.value.before_sensitive == true))
-          }
-        | select(is_noop(.action) | not)
-      ],
-      diagnostics: []
-    };
+      cli_version: ($plan.terraform_version | clipped(32; 32)),
+      summary: summarize($changes; $drift)
+    } + bounded_lists($changes; $drift; $outputs; []);
 '
 
 # Only severity and summary: a diagnostic detail can quote the offending

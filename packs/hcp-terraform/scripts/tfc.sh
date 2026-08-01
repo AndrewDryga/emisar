@@ -107,6 +107,15 @@ def run_of($run):
 # an agent reads one summary format whether the plan ran on a runner or in HCP
 # Terraform. Each pack is installed and hashed on its own, so the projection is
 # necessarily packaged with both rather than shared.
+#
+# The runner rejects a structured result over 8 KiB and a production plan
+# carries hundreds of resource changes, so each list keeps a bounded sample —
+# most destructive first, so a truncated review can never hide the deletes —
+# and `truncated` counts the entries each list dropped. `summary` is computed
+# from the full arrays before capping and stays the authoritative totals. The
+# clip and cap sizes are chosen so every list at its cap fits the cap with
+# headroom even when every field is at its escaped worst (JSON escaping can
+# double a byte-bound string).
 readonly plan_projection='
 def summarize($changes; $drift):
   {
@@ -132,6 +141,18 @@ def norm_action($actions):
     else ($a | join("+"))
     end;
 
+def destruction_rank: {"delete": 0, "replace": 1, "update": 2, "create": 3, "read": 4, "import": 5};
+
+def most_destructive_first: sort_by([(destruction_rank[.action] // 6), .address]);
+
+def omitted($entries; $cap): [($entries | length) - $cap, 0] | max;
+
+def clip_resource:
+  .address |= clipped(80; 80)
+  | .resource_type |= clipped(44; 44)
+  | .module |= clipped(32; 32)
+  | .action |= clipped(12; 12);
+
 def project_plan:
   . as $plan
   | [ $plan.resource_changes[]?
@@ -153,22 +174,27 @@ def project_plan:
         }
       | select(is_noop(.action) | not)
     ] as $drift
+  | [ ($plan.output_changes // {})
+      | to_entries[]
+      | {
+          name: .key,
+          action: norm_action(.value.actions),
+          sensitive: ((.value.after_sensitive == true) or (.value.before_sensitive == true))
+        }
+      | select(is_noop(.action) | not)
+    ] as $outputs
   | {
       source: "hcp_plan",
-      cli_version: ($plan.terraform_version // ""),
+      cli_version: ($plan.terraform_version | clipped(32; 32)),
       summary: summarize($changes; $drift),
-      changes: $changes,
-      drift: $drift,
-      outputs: [
-        ($plan.output_changes // {})
-        | to_entries[]
-        | {
-            name: .key,
-            action: norm_action(.value.actions),
-            sensitive: ((.value.after_sensitive == true) or (.value.before_sensitive == true))
-          }
-        | select(is_noop(.action) | not)
-      ]
+      changes: ($changes | most_destructive_first | .[:10] | map(clip_resource | .reason |= clipped(36; 36))),
+      drift: ($drift | most_destructive_first | .[:3] | map(clip_resource)),
+      outputs: ($outputs | .[:4] | map(.name |= clipped(40; 40) | .action |= clipped(12; 12))),
+      truncated: {
+        changes: omitted($changes; 10),
+        drift: omitted($drift; 3),
+        outputs: omitted($outputs; 4)
+      }
     };
 '
 
@@ -387,7 +413,7 @@ plan_summary() {
   local run_id=$1
   require_id "run_id" "$run_id" "run-"
   request api_get_following_redirect "/runs/$run_id/plan/json-output" |
-    jq -ce "$plan_projection"' project_plan'
+    jq -ce "$pagination$plan_projection"' project_plan'
 }
 
 # Re-read the run rather than reporting what we hoped would happen: a 202 to an

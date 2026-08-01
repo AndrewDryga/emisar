@@ -9,16 +9,20 @@ search_terms:
   - blast radius
   - destroy count
 description: >
-  List every resource a fresh plan would create, update, delete, or replace,
-  with per-action counts, resources that drifted outside Terraform, planned
-  output changes, and diagnostics. Attribute and output VALUES are never
-  emitted — only addresses, types, actions, and names — so a plan can be
-  reviewed without dumping the secrets a full plan carries in cleartext. Saves
-  no plan file, so nothing this returns can be applied. Needs a workspace that
-  plans on this host: HCP Terraform and Terraform Enterprise workspaces set to
-  remote or agent execution stream no structured output, and this fails rather
-  than reporting an empty plan — review those with the hcp-terraform pack. A
-  `cloud` block alone is fine; what decides it is the workspace's execution mode.
+  List what a fresh plan would create, update, delete, or replace, with
+  per-action counts, resources that drifted outside Terraform, planned output
+  changes, and diagnostics. The summary counts always cover the whole plan;
+  the change, drift, output, and diagnostic lists keep a bounded sample —
+  most destructive first — and `truncated` reports how many entries each list
+  dropped, so the result fits the runner's structured-output cap on plans of
+  any size. Attribute and output VALUES are never emitted — only addresses,
+  types, actions, and names — so a plan can be reviewed without dumping the
+  secrets a full plan carries in cleartext. Saves no plan file, so nothing
+  this returns can be applied. Needs a workspace that plans on this host: HCP
+  Terraform and Terraform Enterprise workspaces set to remote or agent
+  execution stream no structured output, and this fails rather than reporting
+  an empty plan — review those with the hcp-terraform pack. A `cloud` block
+  alone is fine; what decides it is the workspace's execution mode.
 side_effects:
   - Calls every provider's read API to refresh state — quota usage applies.
   - Briefly holds the backend's state lock while planning.
@@ -37,10 +41,10 @@ output:
     $schema: https://json-schema.org/draft/2020-12/schema
     type: object
     additionalProperties: false
-    required: [source, cli_version, summary, changes, drift, outputs, diagnostics]
+    required: [source, cli_version, summary, changes, drift, outputs, diagnostics, truncated]
     properties:
       source: {const: plan}
-      cli_version: {type: string}
+      cli_version: {type: string, maxLength: 32}
       summary:
         type: object
         additionalProperties: false
@@ -56,46 +60,59 @@ output:
           drifted: {type: integer, minimum: 0}
       changes:
         type: array
+        maxItems: 10
         items:
           type: object
           additionalProperties: false
           required: [address, resource_type, module, action, reason]
           properties:
-            address: {type: string}
-            resource_type: {type: string}
-            module: {type: string}
-            action: {type: string}
-            reason: {type: string}
+            address: {type: string, maxLength: 80}
+            resource_type: {type: string, maxLength: 44}
+            module: {type: string, maxLength: 32}
+            action: {type: string, maxLength: 12}
+            reason: {type: string, maxLength: 36}
       drift:
         type: array
+        maxItems: 3
         items:
           type: object
           additionalProperties: false
           required: [address, resource_type, module, action]
           properties:
-            address: {type: string}
-            resource_type: {type: string}
-            module: {type: string}
-            action: {type: string}
+            address: {type: string, maxLength: 80}
+            resource_type: {type: string, maxLength: 44}
+            module: {type: string, maxLength: 32}
+            action: {type: string, maxLength: 12}
       outputs:
         type: array
+        maxItems: 4
         items:
           type: object
           additionalProperties: false
           required: [name, action, sensitive]
           properties:
-            name: {type: string}
-            action: {type: string}
+            name: {type: string, maxLength: 40}
+            action: {type: string, maxLength: 12}
             sensitive: {type: boolean}
       diagnostics:
         type: array
+        maxItems: 3
         items:
           type: object
           additionalProperties: false
           required: [severity, summary]
           properties:
-            severity: {type: string}
-            summary: {type: string}
+            severity: {type: string, maxLength: 12}
+            summary: {type: string, maxLength: 100}
+      truncated:
+        type: object
+        additionalProperties: false
+        required: [changes, drift, outputs, diagnostics]
+        properties:
+          changes: {type: integer, minimum: 0}
+          drift: {type: integer, minimum: 0}
+          outputs: {type: integer, minimum: 0}
+          diagnostics: {type: integer, minimum: 0}
   max_stdout_bytes: 4194304
   max_stderr_bytes: 8192
 examples:

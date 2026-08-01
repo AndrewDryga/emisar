@@ -8,12 +8,16 @@ search_terms:
   - what will change
   - destroy count
 description: >
-  List every resource a run's plan would create, update, delete, or replace,
-  with per-action counts, drift, and planned output changes. Attribute and
-  output VALUES are never emitted — only addresses, types, actions, and names —
-  because the structured plan HCP Terraform serves carries every value in
-  cleartext, sensitive ones included. Needs a user or team token with admin
-  access to the workspace; tfc.run_details gives counts on a read-only token.
+  List what a run's plan would create, update, delete, or replace, with
+  per-action counts, drift, and planned output changes. The summary counts
+  always cover the whole plan; the change, drift, and output lists keep a
+  bounded sample — most destructive first — and `truncated` reports how many
+  entries each list dropped, so the result fits the runner's structured-output
+  cap on plans of any size. Attribute and output VALUES are never emitted —
+  only addresses, types, actions, and names — because the structured plan HCP
+  Terraform serves carries every value in cleartext, sensitive ones included.
+  Needs a user or team token with admin access to the workspace;
+  tfc.run_details gives counts on a read-only token.
 side_effects:
   - One read-only HTTP GET, followed to the API's presigned redirect.
   - Read-only.
@@ -38,10 +42,10 @@ output:
     $schema: https://json-schema.org/draft/2020-12/schema
     type: object
     additionalProperties: false
-    required: [source, cli_version, summary, changes, drift, outputs]
+    required: [source, cli_version, summary, changes, drift, outputs, truncated]
     properties:
       source: {const: hcp_plan}
-      cli_version: {type: string}
+      cli_version: {type: string, maxLength: 32}
       summary:
         type: object
         additionalProperties: false
@@ -57,37 +61,48 @@ output:
           drifted: {type: integer, minimum: 0}
       changes:
         type: array
+        maxItems: 10
         items:
           type: object
           additionalProperties: false
           required: [address, resource_type, module, action, reason]
           properties:
-            address: {type: string}
-            resource_type: {type: string}
-            module: {type: string}
-            action: {type: string}
-            reason: {type: string}
+            address: {type: string, maxLength: 80}
+            resource_type: {type: string, maxLength: 44}
+            module: {type: string, maxLength: 32}
+            action: {type: string, maxLength: 12}
+            reason: {type: string, maxLength: 36}
       drift:
         type: array
+        maxItems: 3
         items:
           type: object
           additionalProperties: false
           required: [address, resource_type, module, action]
           properties:
-            address: {type: string}
-            resource_type: {type: string}
-            module: {type: string}
-            action: {type: string}
+            address: {type: string, maxLength: 80}
+            resource_type: {type: string, maxLength: 44}
+            module: {type: string, maxLength: 32}
+            action: {type: string, maxLength: 12}
       outputs:
         type: array
+        maxItems: 4
         items:
           type: object
           additionalProperties: false
           required: [name, action, sensitive]
           properties:
-            name: {type: string}
-            action: {type: string}
+            name: {type: string, maxLength: 40}
+            action: {type: string, maxLength: 12}
             sensitive: {type: boolean}
+      truncated:
+        type: object
+        additionalProperties: false
+        required: [changes, drift, outputs]
+        properties:
+          changes: {type: integer, minimum: 0}
+          drift: {type: integer, minimum: 0}
+          outputs: {type: integer, minimum: 0}
   max_stdout_bytes: 4194304
   max_stderr_bytes: 8192
 examples:

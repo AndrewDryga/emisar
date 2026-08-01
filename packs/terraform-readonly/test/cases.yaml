@@ -103,6 +103,9 @@ cases:
         /summary/delete: 0
         /summary/replace: 0
         /summary/drifted: 0
+        # A complete plan reports zero omitted entries.
+        /truncated/changes: 0
+        /truncated/outputs: 0
 
   - name: tf.plan_file_summary
     action: tf.plan_file_summary
@@ -156,7 +159,10 @@ cases:
 
   # The stream spells an unchanged output "noop" while a saved plan spells it
   # "no-op". Matching one spelling made the two paths report different outputs
-  # for the same plan, so both filters run through one predicate now.
+  # for the same plan, so both filters run through one predicate now. The 14
+  # changes also exceed the 10-entry list cap, so this doubles as the proof
+  # that the summary still counts everything the truncated list dropped and
+  # that the sample sorts most destructive first.
   - name: tf.plan_summary-filters-unchanged-outputs
     action: tf.plan_summary
     env:
@@ -170,7 +176,73 @@ cases:
         /summary/replace: 6
         /summary/read: 3
         /summary/drifted: 1
+        /changes/0/action: replace
+        /truncated/changes: 4
+        /truncated/drift: 0
         /outputs/0/name: changed_output
+
+  # A production-scale plan whose every field is hostile: 300 changes, more
+  # drift, outputs, and diagnostics than the bounded sample keeps, every
+  # string flooded past its clip with the bytes JSON escaping doubles. The
+  # runner rejects a structured result over 8 KiB, so this case's success IS
+  # the byte-cap proof; the truncated counts keep the partial lists honest,
+  # and the sentinel deletes pin the exact clip boundary — 80 characters
+  # survive intact, 81 clip to 79 plus an ellipsis.
+  - name: tf.plan_summary-fits-the-cap-on-a-worst-case-stream
+    action: tf.plan_summary
+    env:
+      TF_DIR: /packs/terraform-readonly/test/fixtures/plan
+      TF_BIN: /packs/terraform-readonly/test/fixtures/streams/worst-case-flood.sh
+    expect:
+      json:
+        /source: plan
+        /cli_version: "1.15.8-worst-case-build-with-a-…"
+        /summary/total: 300
+        /summary/delete: 120
+        /summary/replace: 60
+        /summary/drifted: 40
+        /changes/0/address: AAA-sentinel-delete-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        /changes/0/action: delete
+        /changes/1/address: "AAB-sentinel-delete-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+        /truncated/changes: 290
+        /truncated/drift: 37
+        /truncated/outputs: 36
+        /truncated/diagnostics: 17
+
+  # The saved-plan path at production scale with the real CLI: 150 resources
+  # whose addresses exceed the 80-character clip and more outputs than the
+  # sample keeps. Success is the byte-cap proof for project_file, same as the
+  # stream case above proves project_stream.
+  - name: tf.plan_file_summary-fits-the-cap-on-a-worst-case-plan
+    action: tf.plan_file_summary
+    args: {plan_file: flood.tfplan}
+    env:
+      TF_DIR: /tmp/tfflood/workspace
+      TF_PLAN_DIR: /tmp/tfflood/plans
+    arrange:
+      - name: stage workspace
+        argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/tfflood/workspace /tmp/tfflood/plans && cp /packs/terraform-readonly/test/fixtures/flood/main.tf /tmp/tfflood/workspace/"
+      - name: initialize workspace
+        argv: [/bin/sh, -c, "cd /tmp/tfflood/workspace && terraform init -input=false"]
+      - name: save a production-scale plan the way CI would
+        argv:
+          - /bin/sh
+          - -c
+          - "cd /tmp/tfflood/workspace && terraform plan -input=false -out=/tmp/tfflood/plans/flood.tfplan"
+    expect:
+      json:
+        /source: plan_file
+        /summary/total: 150
+        /summary/create: 150
+        /summary/delete: 0
+        /summary/drifted: 0
+        /truncated/changes: 140
+        /truncated/drift: 0
+        /truncated/outputs: 2
+        /truncated/diagnostics: 0
 
   - name: tf.plan_file_summary-rejects-traversal
     action: tf.plan_file_summary
