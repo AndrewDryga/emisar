@@ -1,9 +1,13 @@
 schema_version: 1
 id: docker.volume_inspect
 title: docker volume inspect
-kind: exec
+kind: script
 risk: low
-description: Return the JSON inspect document for one volume — driver, mountpoint, labels. Read-only.
+description: >
+  Show one volume's driver, scope, mountpoint, creation time, and labels,
+  projected from `docker volume inspect`. Driver options and driver status are
+  never returned — CIFS/NFS and plugin volume options can carry mount
+  credentials. Read-only.
 side_effects:
   - One docker volume inspect invocation.
   - Read-only.
@@ -15,12 +19,10 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,127}$"
 execution:
-  command:
-    binary: docker
-    argv:
-      - "volume"
-      - "inspect"
-      - "{{ args.name }}"
+  script:
+    path: scripts/volume_inspect.sh
+    interpreter: /bin/bash
+  argv: ["{{ args.name }}"]
   timeout: 10s
 output:
   parser: json
