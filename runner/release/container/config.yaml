@@ -3,16 +3,19 @@
 #
 #   * EMISAR_ENROLLMENT_KEY enrolls the runner on first connect.
 #   * EMISAR_URL overrides cloud.url for a self-hosted control plane.
+#   * EMISAR_GROUP / EMISAR_RUNNER_ID override runner.group / runner.id,
+#     so a fleet relabels without mounting a config file.
 #   * Mount a volume at /var/lib/emisar so the runner identity, token,
 #     and durable dispatch state survive restarts.
 #   * Mount your own file over /etc/emisar/config.yaml to change
-#     anything else (group, labels, admission, signing, redaction).
+#     anything else (labels, admission, signing, redaction).
 schema_version: 1
 
 runner:
-  # The portal's auto-grouping key. Containers share one bucket by
-  # default; mount a config with your own group (and a pinned
-  # runner.id when the orchestrator changes hostnames) to relabel.
+  # The portal's auto-grouping key — a dispatch-targeting input, so
+  # unrelated fleets must not share this default: set EMISAR_GROUP per
+  # fleet (and EMISAR_RUNNER_ID when the orchestrator changes
+  # hostnames) to relabel.
   group: containers
 
 cloud:

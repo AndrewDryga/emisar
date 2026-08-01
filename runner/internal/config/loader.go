@@ -44,8 +44,20 @@ func Load(path string) (*Config, error) {
 
 	// Env overrides. install.sh sets EMISAR_URL so the same baked-in
 	// config can target dev / prod control planes without re-templating.
+	// EMISAR_GROUP / EMISAR_RUNNER_ID relabel container fleets without
+	// mounting a config file: the group is a dispatch-targeting input, so
+	// unrelated fleets must not share the image's baked default, and a
+	// DaemonSet pins the node name as the identity via fieldRef. Empty
+	// values never blank a file value. Overrides land before Validate so
+	// the effective values are the ones checked.
 	if url := os.Getenv("EMISAR_URL"); url != "" {
 		cfg.Cloud.URL = url
+	}
+	if group := os.Getenv("EMISAR_GROUP"); group != "" {
+		cfg.Runner.Group = group
+	}
+	if id := os.Getenv("EMISAR_RUNNER_ID"); id != "" {
+		cfg.Runner.ID = id
 	}
 
 	if err := cfg.Validate(); err != nil {

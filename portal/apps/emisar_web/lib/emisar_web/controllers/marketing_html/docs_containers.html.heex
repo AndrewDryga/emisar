@@ -5,7 +5,8 @@
   published per runner release by runner-release.yml) covers the
   container observation set; extension is FROM + tools + emisar
   pack install. Identity persistence: cloud.token_path + runner.id,
-  since containers lack a stable /etc/machine-id. Kubernetes
+  since containers lack a stable /etc/machine-id; EMISAR_GROUP /
+  EMISAR_RUNNER_ID env overrides relabel without a config mount. Kubernetes
   (DaemonSet) and Nomad (system job) build on this page. Facts
   verified against runner/release/Dockerfile, install.sh, and
   runner/internal/config.
@@ -106,11 +107,18 @@
         (<code class="font-mono">/var/lib/emisar/token.json</code>
         in the official image). Keep the hostname stable and
         <code class="font-mono">/var/lib/emisar</code>
-        in a volume so restarts preserve the same runner and its durable dispatch state. Everything
-        else — the group, labels, admission — changes by mounting your own file over <code class="font-mono">/etc/emisar/config.yaml</code>. Pin
-        <code class="font-mono">runner.id</code>
+        in a volume so restarts preserve the same runner and its durable dispatch state.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Two environment variables relabel a fleet without a config file. <code class="font-mono">EMISAR_GROUP</code>
+        sets <code class="font-mono">runner.group</code>
+        — the image bakes <code class="font-mono">containers</code>, and a group is a dispatch
+        target ("every runner in group web"), so give each fleet its own instead of pooling
+        unrelated fleets in the default. <code class="font-mono">EMISAR_RUNNER_ID</code>
+        pins <code class="font-mono">runner.id</code>
         when the orchestrator changes hostnames across placements but the workload is still one
-        logical runner:
+        logical runner. Everything else — labels, admission — changes by mounting your own file
+        over <code class="font-mono">/etc/emisar/config.yaml</code>:
       </p>
       <.docs_code phx-no-format label="config.yaml"><span class="text-sky-300">schema_version</span>: <span class="text-brand-300">1</span>
 <span class="text-sky-300">runner</span>:

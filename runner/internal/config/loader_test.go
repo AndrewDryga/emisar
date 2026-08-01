@@ -113,7 +113,9 @@ func TestLoad_ResolvesRelativePaths(t *testing.T) {
 func TestLoad_RejectsMissingGroup(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	writeYAML(t, cfgPath, strings.Replace(minimalConfig, "group: test-group\n", "", 1))
+	// Strip the whole indented line — leaving "  " behind would be a YAML
+	// parse error, and this test must fail on the group validation instead.
+	writeYAML(t, cfgPath, strings.Replace(minimalConfig, "  group: test-group\n", "", 1))
 
 	if _, err := Load(cfgPath); err == nil {
 		t.Fatal("expected missing-group to fail")
@@ -243,6 +245,74 @@ func TestLoad_EmptyEMISAR_URLLeavesConfig(t *testing.T) {
 	}
 	if cfg.Cloud.URL != "wss://cloud/runner" {
 		t.Errorf("cloud.url = %q, want the file value (empty EMISAR_URL must not override)", cfg.Cloud.URL)
+	}
+}
+
+// TestLoad_GroupAndRunnerIDOverrides covers: non-empty $EMISAR_GROUP /
+// $EMISAR_RUNNER_ID override runner.group / runner.id from the file
+// (loader.go), so a container fleet relabels the baked-in config — and a
+// DaemonSet sets the node name as the identity — without mounting a file.
+// Like EMISAR_URL, the overrides land before Validate, so an env-supplied
+// group also satisfies the required-group check on a group-less file.
+func TestLoad_GroupAndRunnerIDOverrides(t *testing.T) {
+	t.Run("overrides file values", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "config.yaml")
+		body := strings.Replace(minimalConfig, "  group: test-group\n", "  id: file-id\n  group: test-group\n", 1)
+		writeYAML(t, cfgPath, body)
+
+		t.Setenv("EMISAR_GROUP", "web")
+		t.Setenv("EMISAR_RUNNER_ID", "node-1")
+
+		cfg, err := Load(cfgPath)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if cfg.Runner.Group != "web" {
+			t.Errorf("runner.group = %q, want the EMISAR_GROUP override %q", cfg.Runner.Group, "web")
+		}
+		if cfg.Runner.ID != "node-1" {
+			t.Errorf("runner.id = %q, want the EMISAR_RUNNER_ID override %q", cfg.Runner.ID, "node-1")
+		}
+	})
+
+	t.Run("satisfies required group on a group-less file", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "config.yaml")
+		writeYAML(t, cfgPath, strings.Replace(minimalConfig, "  group: test-group\n", "", 1))
+
+		t.Setenv("EMISAR_GROUP", "web")
+
+		cfg, err := Load(cfgPath)
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if cfg.Runner.Group != "web" {
+			t.Errorf("runner.group = %q, want the EMISAR_GROUP override %q", cfg.Runner.Group, "web")
+		}
+	})
+}
+
+// TestLoad_EmptyGroupAndRunnerIDLeaveConfig confirms empty env values never
+// blank the file's runner.group / runner.id, mirroring EMISAR_URL.
+func TestLoad_EmptyGroupAndRunnerIDLeaveConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	body := strings.Replace(minimalConfig, "  group: test-group\n", "  id: file-id\n  group: test-group\n", 1)
+	writeYAML(t, cfgPath, body)
+
+	t.Setenv("EMISAR_GROUP", "")
+	t.Setenv("EMISAR_RUNNER_ID", "")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Runner.Group != "test-group" {
+		t.Errorf("runner.group = %q, want the file value (empty EMISAR_GROUP must not override)", cfg.Runner.Group)
+	}
+	if cfg.Runner.ID != "file-id" {
+		t.Errorf("runner.id = %q, want the file value (empty EMISAR_RUNNER_ID must not override)", cfg.Runner.ID)
 	}
 }
 

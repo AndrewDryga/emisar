@@ -28,10 +28,16 @@
         anything running on it, from processes to ports to journals. It reuses a
         <strong class="text-zinc-200">reusable enrollment key</strong>
         (via a Secret) and a per-node <code class="font-mono">/var/lib/emisar</code>
-        state volume so each node's runner keeps a stable identity across pod restarts — see the <.link
+        state volume so each node's runner keeps its token and durable dispatch state across pod
+        restarts — see the <.link
           navigate={~p"/docs/containers" <> "#building-blocks"}
           class="text-brand-400 hover:text-brand-300"
-        >shared mechanics</.link>.
+        >shared mechanics</.link>. <code class="font-mono">EMISAR_GROUP</code>
+        gives the fleet its own dispatch-targeting group instead of the image's shared
+        <code class="font-mono">containers</code>
+        default, and <code class="font-mono">EMISAR_RUNNER_ID</code>
+        takes the node name via <code class="font-mono">fieldRef</code>, so each runner's identity
+        is the node it operates no matter how pods are named or rescheduled.
       </p>
       <.docs_code phx-no-format label="yaml"><span class="text-sky-300">apiVersion</span>: apps/v1
 <span class="text-sky-300">kind</span>: DaemonSet
@@ -56,6 +62,12 @@
           <span class="text-sky-300">env</span>:
             - <span class="text-sky-300">name</span>: EMISAR_URL
               <span class="text-sky-300">value</span>: <span class="text-brand-300">"https://emisar.dev"</span>
+            - <span class="text-sky-300">name</span>: EMISAR_GROUP
+              <span class="text-sky-300">value</span>: <span class="text-brand-300">"k8s-nodes"</span>  <span class="text-zinc-600"># a group is a dispatch target — one per fleet</span>
+            - <span class="text-sky-300">name</span>: EMISAR_RUNNER_ID
+              <span class="text-sky-300">valueFrom</span>:
+                <span class="text-sky-300">fieldRef</span>:
+                  <span class="text-sky-300">fieldPath</span>: spec.nodeName  <span class="text-zinc-600"># the node, not the pod, is the identity</span>
             - <span class="text-sky-300">name</span>: EMISAR_ENROLLMENT_KEY
               <span class="text-sky-300">valueFrom</span>:
                 <span class="text-sky-300">secretKeyRef</span>:

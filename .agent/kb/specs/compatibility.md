@@ -372,8 +372,10 @@ flags: after 1.0 they change only additively.
 The runner configuration is YAML with exact `schema_version: 1` and strict
 keys. Its top-level sections are `runner`, `cloud`, `paths`, `execution`,
 `admission`, `signing`, `events`, and `redaction`. `EMISAR_CONFIG` selects the
-file, `EMISAR_URL` overrides `cloud.url`, and `cloud.enrollment_key_env` names the
-bootstrap credential (normally `EMISAR_ENROLLMENT_KEY`). `EMISAR_PACKS_REGISTRY` and
+file, `EMISAR_URL` overrides `cloud.url`, `EMISAR_GROUP` and `EMISAR_RUNNER_ID`
+override `runner.group` and `runner.id` (an empty value never blanks a file
+value), and `cloud.enrollment_key_env` names the bootstrap credential (normally
+`EMISAR_ENROLLMENT_KEY`). `EMISAR_PACKS_REGISTRY` and
 the `--registry` flag select a pack registry.
 
 The MCP bridge has no subcommands. Its flags are `-h/--help` and
@@ -484,7 +486,8 @@ migration.
 signed provenance + SBOM), built by `runner-release.yml` from
 `runner/release/Dockerfile` around the exact tested release binary. Its
 operator-facing contract is the image name and version-tag scheme (no `latest`
-tag is published), the `EMISAR_ENROLLMENT_KEY` / `EMISAR_URL` environment
+tag is published), the `EMISAR_ENROLLMENT_KEY` / `EMISAR_URL` /
+`EMISAR_GROUP` / `EMISAR_RUNNER_ID` environment
 variables, the default config at `/etc/emisar/config.yaml`, state under
 `/var/lib/emisar`, packs under `/opt/emisar/packs`, the observation-only
 default (baked admission caps at `low` risk), and the non-root uid 65532 —

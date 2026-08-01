@@ -327,6 +327,9 @@ defmodule EmisarWeb.MarketingTest do
     # The custom-image fallback flag and identity persistence.
     assert html =~ "--no-service"
     assert html =~ "/var/lib/emisar/token.json"
+    # Fleet relabeling via env, without a config mount.
+    assert html =~ "EMISAR_GROUP"
+    assert html =~ "EMISAR_RUNNER_ID"
     # Fleet templates need a reusable key, not the dashboard's single-use one.
     assert html =~ "reusable enrollment key"
     assert html =~ ~s(href="/docs/runners#enrollment-keys")
@@ -334,6 +337,17 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "DaemonSet"
     assert html =~ "system"
     assert html =~ "sidecar"
+  end
+
+  test "kubernetes docs page sets a per-fleet group and the node name as the identity",
+       %{conn: conn} do
+    html = conn |> get(~p"/docs/kubernetes") |> html_response(200)
+
+    # The DaemonSet relabels via env, not a mounted config: a per-fleet
+    # dispatch-targeting group, and the node name as the runner identity.
+    assert html =~ "EMISAR_GROUP"
+    assert html =~ "EMISAR_RUNNER_ID"
+    assert html =~ "spec.nodeName"
   end
 
   test "SSO docs page covers login setup and the subject-not-email binding", %{conn: conn} do
