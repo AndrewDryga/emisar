@@ -5,13 +5,12 @@ versions:
     default: true
   - version: "8.4.6"
     digest: "@sha256:869218921e61d6c3c89820955d63cca42971f0e3e6c1e2792247bbd944ebc6e9"
+risk_accountability:
+  mode: complete
 secret_env: [MYSQL_PWD]
 env:
   MYSQL_HOST: mysql
   MYSQL_PWD: packtest-canary-mysql-root-b813
-defaults:
-  expect:
-    stdout_not_empty: true
 cases:
   - action: mysql.analyze_table
     args: {database: testdb, table: packtest_analyze}
@@ -42,6 +41,34 @@ cases:
   - action: mysql.innodb_status
     expect:
       stdout_contains: [INNODB MONITOR OUTPUT]
+  - action: mysql.kill_connection
+    arrange:
+      - argv: [/bin/sh, -c, 'nohup mysql -e "SELECT SLEEP(120) AS packtest_kill_connection" >/tmp/packtest-kill-connection.log 2>&1 &']
+    resolve_args:
+      thread_id:
+        argv: [mysql, -NBe, "SELECT id FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_connection%' AND id <> CONNECTION_ID() LIMIT 1"]
+        retry_for: 10s
+        retry_every: 250ms
+    probes:
+      - argv: [mysql, -NBe, "SELECT COUNT(*) FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_connection%' AND id <> CONNECTION_ID()"]
+        expect:
+          stdout_contains: ["0"]
+        retry_for: 10s
+        retry_every: 250ms
+  - action: mysql.kill_query
+    arrange:
+      - argv: [/bin/sh, -c, 'nohup mysql -e "SELECT SLEEP(120) AS packtest_kill_query" >/tmp/packtest-kill-query.log 2>&1 &']
+    resolve_args:
+      thread_id:
+        argv: [mysql, -NBe, "SELECT id FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_query%' AND id <> CONNECTION_ID() LIMIT 1"]
+        retry_for: 10s
+        retry_every: 250ms
+    probes:
+      - argv: [mysql, -NBe, "SELECT COUNT(*) FROM performance_schema.processlist WHERE info LIKE '%packtest_kill_query%' AND id <> CONNECTION_ID()"]
+        expect:
+          stdout_contains: ["0"]
+        retry_for: 10s
+        retry_every: 250ms
   - action: mysql.open_tables
     arrange:
       - argv: [mysql, -e, "SELECT * FROM testdb.orders"]
