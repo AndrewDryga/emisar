@@ -4,9 +4,9 @@ package browser
 
 import "syscall"
 
-// browserSysProcAttr gives the daemon's Chromium its own process group — Chromium forks several
-// children and cancellation kills the whole group — and, on Linux, asks the kernel to kill it when
-// this process dies.
+// browserSysProcAttr gives the lifeline wrapper — and so the Chromium tree it leads — its own
+// process group, because Chromium forks several children and cancellation kills the whole group.
+// On Linux it also asks the kernel to kill the wrapper when this process dies.
 //
 // Pdeathsig is what covers the case the group kill cannot: that kill lives in the command's Cancel
 // hook, which only runs on context cancellation. A coop box's watchdog SIGKILLs a wedged provider,

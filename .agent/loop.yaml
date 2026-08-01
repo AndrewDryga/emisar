@@ -21,8 +21,12 @@ work:
   agent: [frontier]
 
 between:
-  # Audit after EACH completed task (may reopen it before the loop moves on).
-  enabled: true
+  # Measured 2026-08-01 over 49 audits: 4.1 min on a ~12 min task (~31% of runtime) for 3 reopens
+  # (6%). Turned off for throughput — this only drops the ROUTINE per-task audit. Coop still runs a
+  # MANDATORY protected-change audit whenever a task touches gate-defining files (Makefile, loop.yaml,
+  # hooks, workflows), and that one stops the loop on failure, so the gate can never be weakened
+  # unreviewed. Signoff still reviews the whole run at the end.
+  enabled: false
 
   # Review boxes write task queues only; the repository stays read-only.
   writes: tasks

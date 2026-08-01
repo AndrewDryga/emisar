@@ -12,7 +12,7 @@
 # models at max effort, failing over to each other on a rate limit. Fable 5 (the
 # long-horizon agentic frontier) with GPT-5.6 Sol as the cross-vendor twin.
 lead:
-  agent: [claude:claude-fable-5/xhigh, codex:gpt-5.6-sol/xhigh]
+  agent: [claude:claude-fable-5/high, codex:gpt-5.6-sol/high]
   prompt: roles/lead.md
 
 roles:
