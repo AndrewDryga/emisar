@@ -1,6 +1,6 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 API_TOKEN = "packtest-canary-tfe-token-6d2a"
 PLAN_SECRET = "packtest-canary-tfe-plan-secret-91c7"
@@ -9,7 +9,10 @@ PLAN_SECRET = "packtest-canary-tfe-plan-secret-91c7"
 LOG_URL_SIGNATURE = "packtest-canary-tfe-log-signature-4b9e"
 
 ORGANIZATION = "example-corp"
+MEGA_ORGANIZATION = "example-mega-corp"
 WORKSPACE_ID = "ws-8Rp2nKcQvWxYzA1b"
+WORST_WORKSPACE_ID = "ws-MaxPageWyXz9Qb7c"
+UNIFORM_WORST_WORKSPACE_ID = "ws-AllWorstZq3Vf8Xk"
 CONFIGURATION_VERSION_ID = "cv-6JmJpQnRsTuVwX2y"
 RUN_ID = "run-4Qm7TvLpXsRbNc2d"
 CREATED_RUN_ID = "run-9Zk3WdFyHnJqEr5t"
@@ -230,6 +233,83 @@ def pagination(next_page=None):
     return {"pagination": {"current-page": 1, "next-page": next_page, "total-count": 1}}
 
 
+# The messages a real workspace accumulates: whole CI commit lines, floods of
+# the characters JSON escaping doubles (backslash, quote, U+2028), multibyte
+# text, and raw ANSI/control bytes. The worst-page cases list these at the
+# maximum advertised page_size to prove the projected page stays inside the
+# runner's 8 KiB structured-output cap.
+WORST_MESSAGES = [
+    "Merge pull request #4821 from blitz/renovate/major-terraform-google-modules " + "a" * 400,
+    "\\" * 300,
+    '"' * 300,
+    " " * 200,
+    "\U0001f680" * 150,
+    "部署基础设施变更并轮换生产环境的API密钥" * 10,
+    "deploy:\x1b[31m red \x07bell\x00null\ttab\nline2\nline3" + "x" * 200,
+    "Rotate the API instance",
+] + [
+    f"ci: bump module versions and rotate credentials for stack {n} " + "long trailing commit body " * 20
+    for n in range(4)
+]
+
+# Every codepoint of this message costs six bytes once JSON-escaped — the
+# single most expensive shape the clip can emit. A page where every row
+# carries it exercises the calculated worst case, not just a mixed sample.
+UNIFORM_WORST_MESSAGE = "\u2028" * 60
+
+
+def worst_run_document(index, message, workspace_id=WORST_WORKSPACE_ID):
+    return {
+        "id": f"run-Worst{index:011d}",
+        "type": "runs",
+        "attributes": {
+            "status": "planned_and_finished",
+            "message": message,
+            "is-destroy": False,
+            "plan-only": False,
+            "has-changes": True,
+            "source": "tfe-configuration-version",
+            "created-at": "2026-07-28T12:00:00.000Z",
+            "actions": {
+                "is-confirmable": False,
+                "is-discardable": True,
+                "is-cancelable": False,
+            },
+        },
+        "relationships": {"workspace": {"data": {"id": workspace_id, "type": "workspaces"}}},
+    }
+
+
+def mega_workspace_document(index):
+    name = f"platform-network-segment-{index:02d}-" + "x" * 62
+    return {
+        "id": f"ws-MegaCorp{index:08d}",
+        "type": "workspaces",
+        "attributes": {
+            "name": name,
+            "execution-mode": "remote",
+            # TFE admins register custom Terraform versions under arbitrary
+            # names; longer than the 64-codepoint clip on purpose.
+            "terraform-version": "1.13.1-custom-enterprise-build-with-provider-mirror-2026-07-28-rc1",
+            "auto-apply": False,
+            "locked": True,
+            "resource-count": 9999999,
+            "updated-at": "2026-07-28T11:58:00.000Z",
+        },
+    }
+
+
+def worst_organization_document(index):
+    return {
+        "id": f"mega-operations-team-{index:02d}",
+        "type": "organizations",
+        "attributes": {
+            "email": f"team-{index:02d}-" + "operations-" * 21 + "contact@example.test",
+            "created-at": "2025-01-04T09:30:00.000Z",
+        },
+    }
+
+
 # The structured plan HCP Terraform serves carries every value in cleartext, so
 # the fixture puts the canary where a real plan puts a secret: in a sensitive
 # output and in a resource attribute the projection must never read.
@@ -346,8 +426,24 @@ LOG_BLOBS = {
 }
 
 
-def get_response(path):
+def get_response(path, query):
+    page_size = int(query.get("page[size]", ["20"])[0])
+    page = int(query.get("page[number]", ["1"])[0])
     if path == "/api/v2/organizations":
+        # Page 2 is the maximal page: as many organizations as one request may
+        # ask for, every contact email longer than the projection keeps. Page 3
+        # is the uniform worst case: every email a flood of the most expensive
+        # codepoint the clip can emit.
+        if page == 2:
+            return {
+                "data": [worst_organization_document(n) for n in range(page_size)],
+                "meta": pagination(next_page=3),
+            }
+        if page == 3:
+            documents = [worst_organization_document(n) for n in range(page_size)]
+            for document in documents:
+                document["attributes"]["email"] = UNIFORM_WORST_MESSAGE
+            return {"data": documents, "meta": pagination(next_page=4)}
         return {
             "data": [{
                 "id": ORGANIZATION,
@@ -358,6 +454,21 @@ def get_response(path):
                 },
             }],
             "meta": pagination(),
+        }
+    if path == f"/api/v2/organizations/{MEGA_ORGANIZATION}/workspaces":
+        return {
+            "data": [mega_workspace_document(n) for n in range(page_size)],
+            "meta": pagination(next_page=2),
+        }
+    if path == f"/api/v2/workspaces/{WORST_WORKSPACE_ID}/runs":
+        return {
+            "data": [worst_run_document(n, m) for n, m in enumerate(WORST_MESSAGES[:page_size])],
+            "meta": pagination(next_page=2),
+        }
+    if path == f"/api/v2/workspaces/{UNIFORM_WORST_WORKSPACE_ID}/runs":
+        return {
+            "data": [worst_run_document(n, UNIFORM_WORST_MESSAGE, UNIFORM_WORST_WORKSPACE_ID) for n in range(page_size)],
+            "meta": pagination(next_page=2),
         }
     if path == f"/api/v2/organizations/{ORGANIZATION}/workspaces":
         return {
@@ -446,7 +557,7 @@ class Handler(BaseHTTPRequestHandler):
                     "included": phase_documents(run_id, host),
                 })
                 return
-        payload = get_response(path)
+        payload = get_response(path, parse_qs(urlparse(self.path).query))
         if payload is None:
             self.write_json(404, {"errors": [{"title": "unexpected request"}]})
             return

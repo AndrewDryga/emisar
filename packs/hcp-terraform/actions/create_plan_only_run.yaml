@@ -63,7 +63,7 @@ output:
         properties:
           id: {type: string}
           status: {type: string}
-          message: {type: string}
+          message: {type: string, maxLength: 100}
           is_destroy: {type: boolean}
           plan_only: {type: boolean}
           has_changes: {type: boolean}

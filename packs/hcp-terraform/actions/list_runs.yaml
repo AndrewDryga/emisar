@@ -4,9 +4,10 @@ title: GET /workspaces/<id>/runs
 kind: script
 risk: low
 description: >
-  List a workspace's runs with status, the operator's message, whether the run
-  destroys or is plan-only, and which of confirm/discard/cancel the run will
-  currently accept. Use it to find a run awaiting confirmation.
+  List a workspace's runs with status, the operator's message (clipped to 100
+  characters), whether the run destroys or is plan-only, and which of
+  confirm/discard/cancel the run will currently accept. Use it to find a run
+  awaiting confirmation; page on next_page for older runs.
 side_effects:
   - One read-only HTTP GET to the HCP Terraform API.
   - Read-only.
@@ -22,14 +23,18 @@ args:
     validation:
       pattern: "^ws-[A-Za-z0-9]{1,32}$"
       max_length: 35
+  # 12 is the most a page can promise: a run entry with a clipped message costs
+  # up to ~640 bytes on the wire, and the runner rejects a structured result
+  # over 8192 bytes, so a bigger page would fail deterministically on real
+  # workspaces (run messages carry whole CI commit lines).
   - name: page_size
     type: integer
     required: false
-    default: 20
+    default: 12
     description: Runs per page.
     validation:
       min: 1
-      max: 100
+      max: 12
   - name: page
     type: integer
     required: false
@@ -59,6 +64,7 @@ output:
     properties:
       runs:
         type: array
+        maxItems: 12
         items:
           type: object
           additionalProperties: false
@@ -76,7 +82,7 @@ output:
           properties:
             id: {type: string}
             status: {type: string}
-            message: {type: string}
+            message: {type: string, maxLength: 100}
             is_destroy: {type: boolean}
             plan_only: {type: boolean}
             has_changes: {type: boolean}

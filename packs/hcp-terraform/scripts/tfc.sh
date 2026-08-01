@@ -64,8 +64,21 @@ require_id() {
 
 # Pagination is explicit: every list returns the API's next page number, or null
 # on the last page, so a caller can page on rather than silently seeing a slice.
+#
+# clipped bounds the free-text fields (run messages carry whole CI commit
+# lines): the runner rejects a structured result over 8 KiB, so a page at the
+# maximum advertised page_size must fit it in the worst case. Control bytes
+# collapse to one space, then the value is cut to $chars codepoints AND $bytes
+# UTF-8 bytes — JSON escaping can double bytes (quote, backslash, U+2028/29),
+# so the byte bound is what the page arithmetic in each action relies on — with
+# an ellipsis marking the cut.
 readonly pagination='
 def next_page: (.meta.pagination["next-page"] // null);
+
+def clipped($chars; $bytes):
+  (. // "" | tostring | gsub("[[:cntrl:]]+"; " ")) as $clean
+  | ($clean | .[:$chars] | until(utf8bytelength <= $bytes; .[:-1])) as $cut
+  | if $cut == $clean then $clean else ($cut | .[:$chars - 1]) + "…" end;
 
 def actions_of($attributes):
   {
@@ -79,7 +92,7 @@ def run_of($run):
   | {
       id: $run.id,
       status: ($a.status // ""),
-      message: ($a.message // ""),
+      message: ($a.message | clipped(100; 160)),
       is_destroy: ($a["is-destroy"] == true),
       plan_only: ($a["plan-only"] == true),
       has_changes: ($a["has-changes"] == true),
@@ -305,7 +318,7 @@ list_organizations() {
       {
         organizations: [
           .data[]?
-          | {name: .id, email: (.attributes.email // ""), created_at: (.attributes["created-at"] // "")}
+          | {name: .id, email: (.attributes.email | clipped(100; 140)), created_at: (.attributes["created-at"] // "")}
         ],
         next_page: next_page
       }'
@@ -321,9 +334,9 @@ list_workspaces() {
           | .attributes as $a
           | {
               id: .id,
-              name: ($a.name // ""),
+              name: ($a.name | clipped(90; 180)),
               execution_mode: ($a["execution-mode"] // ""),
-              terraform_version: ($a["terraform-version"] // ""),
+              terraform_version: ($a["terraform-version"] | clipped(64; 128)),
               auto_apply: ($a["auto-apply"] == true),
               locked: ($a.locked == true),
               resource_count: ($a["resource-count"] // 0),

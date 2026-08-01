@@ -24,6 +24,28 @@ cases:
         /organizations/0/email: platform@example.test
         /next_page: null
 
+  # Page 2 is the fixture's maximal page: as many organizations as one request
+  # may ask for, every contact email longer than the 100-character clip. The
+  # success status is the byte-cap proof — an oversized page fails validation.
+  - name: tfc.list_organizations-fits-the-cap-at-the-maximum-page-size
+    action: tfc.list_organizations
+    args: {page_size: 20, page: 2}
+    expect:
+      json:
+        /organizations/19/name: mega-operations-team-19
+        /organizations/19/email: "team-19-operations-operations-operations-operations-operations-operations-operations-operations-ope…"
+        /next_page: 3
+
+  # Page 3 floods every email with U+2028 — the six-byte-escape codepoint — so
+  # all twenty rows hit the calculated per-entry maximum at once.
+  - name: tfc.list_organizations-fits-the-cap-when-every-row-is-worst-case
+    action: tfc.list_organizations
+    args: {page_size: 20, page: 3}
+    expect:
+      json:
+        /organizations/19/name: mega-operations-team-19
+        /next_page: 4
+
   - action: tfc.list_workspaces
     args: {organization: example-corp}
     expect:
@@ -37,6 +59,19 @@ cases:
         # being handed a silently truncated list.
         /next_page: 2
 
+  # The mega organization's workspaces all carry 90-character names — the
+  # longest HCP Terraform accepts — and a TFE custom Terraform version longer
+  # than the 64-codepoint clip, at the maximum advertised page_size. The
+  # success status is the byte-cap proof — an oversized page fails validation.
+  - name: tfc.list_workspaces-fits-the-cap-at-the-maximum-page-size
+    action: tfc.list_workspaces
+    args: {organization: example-mega-corp, page_size: 20}
+    expect:
+      json:
+        /workspaces/19/name: platform-network-segment-19-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        /workspaces/19/terraform_version: "1.13.1-custom-enterprise-build-with-provider-mirror-2026-07-28-…"
+        /next_page: 2
+
   - action: tfc.list_runs
     args: {workspace_id: ws-8Rp2nKcQvWxYzA1b}
     expect:
@@ -46,6 +81,44 @@ cases:
         /runs/0/workspace_id: ws-8Rp2nKcQvWxYzA1b
         /runs/0/actions/confirmable: true
         /next_page: null
+
+  # The runner rejects a structured result over 8 KiB, so a full page at the
+  # maximum advertised page_size must clear it against the nastiest messages a
+  # workspace accumulates: whole CI commit lines, floods of the characters JSON
+  # escaping doubles, multibyte text, and raw ANSI/control bytes. Success here
+  # IS the byte-cap proof — an oversized page fails validation. The clipped
+  # projection cuts to 100 characters with an ellipsis and collapses control
+  # runs to one space, so no escape byte survives into the output.
+  - name: tfc.list_runs-fits-the-cap-at-the-maximum-page-size
+    action: tfc.list_runs
+    args: {workspace_id: ws-MaxPageWyXz9Qb7c, page_size: 12}
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /runs/0/message: "Merge pull request #4821 from blitz/renovate/major-terraform-google-modules aaaaaaaaaaaaaaaaaaaaaaa…"
+        /runs/6/message: "deploy: [31m red  bell null tab line2 line3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+        /runs/11/id: run-Worst00000000011
+        /next_page: 2
+
+  # Every message on this page is a flood of U+2028 — the one codepoint whose
+  # JSON escape costs six bytes — so all twelve rows sit at the projection's
+  # calculated per-entry maximum at once, not just in a mixed sample.
+  - name: tfc.list_runs-fits-the-cap-when-every-row-is-worst-case
+    action: tfc.list_runs
+    args: {workspace_id: ws-AllWorstZq3Vf8Xk, page_size: 12}
+    expect:
+      json:
+        /runs/11/id: run-Worst00000000011
+        /runs/11/workspace_id: ws-AllWorstZq3Vf8Xk
+        /next_page: 2
+
+  - name: tfc.list_runs-rejects-a-page-size-over-the-cap
+    action: tfc.list_runs
+    args: {workspace_id: ws-8Rp2nKcQvWxYzA1b, page_size: 13}
+    expect:
+      status: failure
+      reason_contains: ["must be <= 12"]
 
   - action: tfc.run_details
     args: {run_id: run-4Qm7TvLpXsRbNc2d}

@@ -11,6 +11,9 @@ side_effects:
   - One read-only HTTP GET to the HCP Terraform API.
   - Read-only.
 args:
+  # An organization entry costs up to ~390 bytes on the wire (the contact
+  # email is clipped at 100 characters), and the runner rejects a structured
+  # result over 8192 bytes, so 20 is the most a page can promise.
   - name: page_size
     type: integer
     required: false
@@ -18,7 +21,7 @@ args:
     description: Organizations per page.
     validation:
       min: 1
-      max: 100
+      max: 20
   - name: page
     type: integer
     required: false
@@ -44,13 +47,14 @@ output:
     properties:
       organizations:
         type: array
+        maxItems: 20
         items:
           type: object
           additionalProperties: false
           required: [name, email, created_at]
           properties:
             name: {type: string}
-            email: {type: string}
+            email: {type: string, maxLength: 100}
             created_at: {type: string}
       next_page: {type: [integer, "null"]}
   max_stdout_bytes: 65536
