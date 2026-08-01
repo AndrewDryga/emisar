@@ -732,7 +732,7 @@ api_actions = [
   action_descriptor.("systemd-deep", %{
     "id" => "systemd.unit_show",
     "title" => "systemctl show <unit>",
-    "risk" => "low",
+    "risk" => "high",
     "description" => "Shows systemd properties for one unit.",
     "args" => [%{"name" => "unit", "type" => "string", "required" => true}]
   }),

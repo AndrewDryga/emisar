@@ -16,6 +16,24 @@ cases:
   - action: postfix.postconf
     expect:
       stdout_contains: [myhostname, postfix.example.test]
+  - action: postfix.postcat_qid
+    runner_user: root
+    runner_reason: Postfix keeps queue files under /var/spool/postfix readable only by the superuser.
+    arrange:
+      # Defer all SMTP delivery (and pin short queue IDs) before enqueueing so
+      # the message stays queued deterministically instead of racing the queue
+      # manager to a bounce.
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      - argv: [/bin/sh, -c, "printf 'Subject: packtest postcat\\n\\npacktest postcat body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
+    resolve_args:
+      queue_id:
+        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+[*!]?( |$)/ {id=$1; sub(/[*!]$/, \"\", id); print id; exit}'"]
+        retry_for: 15s
+        retry_every: 500ms
+    expect:
+      stdout_contains:
+        - "Subject: packtest postcat"
+        - packtest postcat body marker
   - action: postfix.check_config
     runner_user: root
     runner_reason: Postfix reserves the postfix command itself for the superuser.

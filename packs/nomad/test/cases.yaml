@@ -24,8 +24,12 @@ risk_accountability:
     nomad.node_purge: requires_cluster
     nomad.operator_raft_remove_peer: requires_cluster
     nomad.task_resources_set: requires_cluster
+secret_env: [NOMAD_PACKTEST_CANARY]
 env:
   NOMAD_ADDR: "http://nomad:4646"
+  # Mirrors the PACKTEST_DB_PASSWORD literal in test/fixtures/inspect.nomad.hcl —
+  # declaring it here makes the harness fail any surface that leaks it unredacted.
+  NOMAD_PACKTEST_CANARY: packtest-canary-nomad-e57d31
 cases:
   - action: nomad.agent_info
     expect:
@@ -76,6 +80,18 @@ cases:
   - action: nomad.server_members
     expect:
       stdout_contains: ['"Status":"alive"', '"ServerName"']
+  - action: nomad.job_inspect
+    args: {job: packtest-inspect}
+    arrange:
+      - argv: [nomad, job, run, -detach, /packs/nomad/test/fixtures/inspect.nomad.hcl]
+    expect:
+      stdout_contains:
+        - '"packtest-inspect"'
+        # The fixture's secret-named env var comes back masked by the runner's
+        # default redaction — the leak this action's high risk is about.
+        - '"PACKTEST_DB_PASSWORD": "[REDACTED]"'
+      stdout_not_contains:
+        - packtest-canary-nomad-e57d31
   - action: nomad.job_stop
     args: {job: packtest-stop}
     arrange:

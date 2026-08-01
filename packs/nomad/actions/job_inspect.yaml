@@ -2,7 +2,7 @@ schema_version: 1
 id: nomad.job_inspect
 title: nomad job inspect <id>
 kind: script
-risk: low
+risk: high
 description: >
   Dump one job's full spec as JSON. This surfaces the job's `env` and
   `template` blocks, which routinely carry injected secrets (DB URLs, API

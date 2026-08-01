@@ -3,7 +3,7 @@ schema_version: 1
 id: linux.crontab_all
 title: All user crontabs + system cron dirs
 kind: exec
-risk: low
+risk: high
 
 description: >
   Dumps every per-user crontab AND the system cron dirs (/etc/crontab,

@@ -3,6 +3,11 @@ versions:
   - version: "1.31.3"
     digest: "@sha256:5a88c9c45479443d7be2eadc894b4ed0a9801bae03d97a5760ae13b5c2005942"
     default: true
+secret_env: [NGINX_PACKTEST_CANARY]
+env:
+  # Mirrors the Authorization canary in test/fixtures/nginx.conf — declaring it
+  # here makes the harness fail any surface that leaks it unredacted.
+  NGINX_PACKTEST_CANARY: packtest-canary-nginx-8c31f7
 cases:
   - action: nginx.active_version
     expect:
@@ -20,7 +25,14 @@ cases:
       stdout_contains: [Active connections, server accepts handled requests]
   - action: nginx.config_dump
     expect:
-      stdout_contains: [packtest.local, packtest_backend]
+      stdout_contains:
+        - packtest.local
+        - packtest_backend
+        # The fixture's Authorization header comes back masked by the runner's
+        # default redaction — the leak this action's high risk is about.
+        - "Bearer [REDACTED]"
+      stdout_not_contains:
+        - packtest-canary-nginx-8c31f7
     probes:
       - argv: [curl, -fsS, http://127.0.0.1/]
         expect:

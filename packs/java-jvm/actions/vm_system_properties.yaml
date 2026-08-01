@@ -2,7 +2,7 @@ schema_version: 1
 id: jvm.vm_system_properties
 title: jcmd VM.system_properties
 kind: exec
-risk: low
+risk: high
 description: >
   Dump every -Dkey=value system property the JVM was started with
   (jcmd VM.system_properties = System.getProperties()). Use to confirm

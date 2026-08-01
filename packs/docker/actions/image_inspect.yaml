@@ -2,7 +2,7 @@ schema_version: 1
 id: docker.image_inspect
 title: docker image inspect
 kind: exec
-risk: low
+risk: high
 description: >
   Returns the full JSON inspect document for one image — labels, config,
   exposed ports, build history root, and the image's baked-in env. Image

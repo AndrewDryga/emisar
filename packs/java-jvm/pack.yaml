@@ -2,7 +2,8 @@ schema_version: 1
 
 id: java-jvm
 name: JVM introspection
-version: 0.1.13
+version: 0.1.14
+retired_below: 0.1.14
 description: >
   JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid
   to match the JVM process owner (or CAP_SYS_PTRACE) — actions return

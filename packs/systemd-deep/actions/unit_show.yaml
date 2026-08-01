@@ -2,7 +2,7 @@ schema_version: 1
 id: systemd.unit_show
 title: systemctl show <unit>
 kind: exec
-risk: low
+risk: high
 description: >
   Show the full property dump for one unit — every directive (CPUShares,
   MemoryMax, Restart, ExecStart, etc). This surfaces the unit's

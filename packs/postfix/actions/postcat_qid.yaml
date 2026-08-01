@@ -2,8 +2,13 @@ schema_version: 1
 id: postfix.postcat_qid
 title: postcat -q <queue-id>
 kind: exec
-risk: low
-description: Decode one queued message — headers + body. Body may contain sensitive content; rely on audit redaction.
+risk: high
+description: >
+  Decode one queued message — headers + body. Message content is
+  inherently sensitive (user PII, and bodies routinely carry password
+  resets, tokens, and other credentials). The runner's redaction is a
+  fail-closed backstop, not a guarantee — it is pattern-bound and can
+  miss a bespoke secret whose name and value match no rule.
 side_effects: ["Reads one spool file.", "Read-only — message content may include user PII."]
 args:
   - name: queue_id
