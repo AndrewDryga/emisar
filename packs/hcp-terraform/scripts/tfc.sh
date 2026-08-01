@@ -172,8 +172,20 @@ def collection($name; $kind):
     else error("\($name) in the plan document is \(.[$name] | type) rather than \(if $kind == "array" then "an array" else "an object" end), so the summary cannot be trusted")
     end;
 
+# The Terraform JSON-format contract tells a consumer to reject an unsupported
+# major format_version: a future 2.x document could keep the outer collection
+# types while changing what the members mean, and would project as a
+# truthful-looking summary of a plan whose semantics are unknown. Released
+# Terraform emits 0.1/0.2 (the 0.12–0.14 era) and 1.x, OpenTofu emits 1.x, so
+# majors 0 and 1 are the supported set.
+def supported_format_version:
+  if (.format_version | type) == "string" and (.format_version | test("^[01]\\.[0-9]+$")) then .
+    else error("format_version \(.format_version | tojson | clipped(32; 32)) in the plan document is not a supported 0.x or 1.x plan format, so the summary cannot be trusted")
+    end;
+
 def project_plan:
-  . as $plan
+  supported_format_version
+  | . as $plan
   | [ ($plan | collection("resource_changes"; "array"))[]
       | {
           address: (.address // ""),

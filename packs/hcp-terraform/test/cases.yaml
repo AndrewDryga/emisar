@@ -201,6 +201,18 @@ cases:
       stderr_contains: [resource_drift in the plan document is string rather than an array]
       stdout_not_contains: ['"total":0']
 
+  # The fixture serves a document from a format major no released CLI emits.
+  # The JSON-format contract says a consumer must reject an unsupported major
+  # — a 2.x document could keep these collection types while changing what
+  # the members mean — so the action refuses, naming the version.
+  - name: tfc.plan_summary-refuses-an-unsupported-format-version
+    action: tfc.plan_summary
+    args: {run_id: run-FutureFormatPlan}
+    expect:
+      status: failure
+      stderr_contains: ['format_version "2.0" in the plan document is not a supported 0.x or 1.x plan format']
+      stdout_not_contains: ['"total":0']
+
   # The plan is the failed phase. The tail keeps only the last 60 lines and
   # 2 KiB with ANSI control codes stripped ('\u001b' is how a surviving
   # escape byte would read in the JSON output), and the presigned log URL

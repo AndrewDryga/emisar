@@ -266,6 +266,28 @@ cases:
       stderr_contains: [resource_changes in the plan document is number rather than an array]
       stdout_not_contains: ['"total":0']
 
+  # The stand-in hands `show -json` a document from a format major no released
+  # CLI emits. The JSON-format contract says a consumer must reject an
+  # unsupported major — a 2.x document could keep these collection types while
+  # changing what the members mean — so the action refuses, naming the version.
+  - name: tf.plan_file_summary-refuses-an-unsupported-format-version
+    action: tf.plan_file_summary
+    args: {plan_file: future.tfplan}
+    env:
+      TF_DIR: /packs/terraform-readonly/test/fixtures/plan
+      TF_BIN: /packs/terraform-readonly/test/fixtures/streams/future-format-show.sh
+      TF_PLAN_DIR: /tmp/tffuture/plans
+    arrange:
+      - name: stage a placeholder saved plan
+        argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/tffuture/plans && touch /tmp/tffuture/plans/future.tfplan"
+    expect:
+      status: failure
+      stderr_contains: ['format_version "2.0" in the plan document is not a supported 0.x or 1.x plan format']
+      stdout_not_contains: ['"total":0']
+
   - name: tf.plan_file_summary-rejects-traversal
     action: tf.plan_file_summary
     args: {plan_file: ../workspace/terraform.tfstate}

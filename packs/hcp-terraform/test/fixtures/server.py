@@ -26,6 +26,7 @@ GLOB_LOG_RUN_ID = "run-9GlobUrlYz2Bc5Df"
 WORST_TAIL_RUN_ID = "run-1TailFloodMx9Kd4Ws"
 WORST_PLAN_RUN_ID = "run-HugePlanWorstCase"
 MALFORMED_PLAN_RUN_ID = "run-MalformedPlanDoc"
+FUTURE_FORMAT_PLAN_RUN_ID = "run-FutureFormatPlan"
 
 # Every codepoint of this message costs six bytes once JSON-escaped — the
 # single most expensive shape the clip can emit. A page (or a diagnosed run)
@@ -511,6 +512,21 @@ def malformed_plan_json_output():
     }
 
 
+# A document from a format major no released CLI emits. The JSON-format
+# contract says a consumer must reject an unsupported major: a 2.x document
+# could keep these collection types while changing what the members mean, so
+# projecting it would report a truthful-looking summary of a plan whose
+# semantics are unknown.
+def future_format_plan_json_output():
+    return {
+        "format_version": "2.0",
+        "terraform_version": "3.0.0",
+        "resource_changes": [],
+        "resource_drift": [],
+        "output_changes": {},
+    }
+
+
 # 300 refresh lines push the error far past the action's 60-line / 2 KiB tail
 # window, so the case can prove both bounds: early noise is dropped, the error
 # survives. ANSI codes wrap the error exactly the way terraform colors its
@@ -680,12 +696,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/blob/malformed-plan-json-output":
             self.write_json(200, malformed_plan_json_output())
             return
+        if path == "/blob/future-format-plan-json-output":
+            self.write_json(200, future_format_plan_json_output())
+            return
         if not self.authenticated():
             return
         for run_id, blob in (
             (RUN_ID, "/blob/plan-json-output"),
             (WORST_PLAN_RUN_ID, "/blob/worst-plan-json-output"),
             (MALFORMED_PLAN_RUN_ID, "/blob/malformed-plan-json-output"),
+            (FUTURE_FORMAT_PLAN_RUN_ID, "/blob/future-format-plan-json-output"),
         ):
             if path == f"/api/v2/runs/{run_id}/plan/json-output":
                 self.send_response(307)
