@@ -1,0 +1,61 @@
+schema_version: 1
+id: gcp.instance_reset
+title: gcloud compute instances reset
+kind: exec
+risk: high
+description: >
+  Reset one Compute Engine instance in its zone — a hard power cycle for a
+  hung VM. The guest OS gets no shutdown signal, so unflushed writes are
+  lost; the instance keeps its IPs and disks. Waits for the reset to be
+  issued and returns the instance's lifecycle state.
+side_effects:
+  - Immediate hard reboot with no guest shutdown; in-memory and unflushed data are lost.
+  - Connections are dropped until the instance finishes rebooting.
+  - The instance keeps its IPs, disks, and metadata.
+search_terms:
+  - hard reboot
+  - hung VM
+  - power cycle
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: zone
+    type: string
+    required: true
+    description: Compute Engine zone.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+  - name: instance
+    type: string
+    required: true
+    description: Instance name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - compute
+      - instances
+      - reset
+      - "{{ args.instance }}"
+      - "--project={{ args.project }}"
+      - "--zone={{ args.zone }}"
+      - "--format=json(name,status,zone,lastStartTimestamp,lastStopTimestamp)"
+      - --quiet
+  timeout: 120s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Power-cycle a hung VM
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: api-01

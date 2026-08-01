@@ -148,6 +148,16 @@ case "$mode" in
       gcloud sql operations list \
       "--instance=$3" "--project=$project" "--limit=$4" --format=json --quiet
     ;;
+  instance-restart)
+    project_with_jq "$operation_projection" \
+      gcloud sql instances restart "$3" \
+      "--project=$project" --async --format=json --quiet
+    ;;
+  instance-failover)
+    project_with_jq "$operation_projection" \
+      gcloud sql instances failover "$3" \
+      "--project=$project" --async --format=json --quiet
+    ;;
   operation-describe)
     project_with_jq "$operation_projection" \
       gcloud sql operations describe "$3" \

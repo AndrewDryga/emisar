@@ -3,6 +3,8 @@ versions:
   - version: 577.0.0-slim
     digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
     default: true
+risk_accountability:
+  mode: complete
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
   CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE: http://gcp-api:8080/compute/v1/
@@ -90,3 +92,127 @@ cases:
       location: us-central1-a
     expect:
       stdout_contains: [harness-operation, DONE, insert]
+  - action: gcp.instance_start
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: harness-vm
+    expect:
+      stdout_contains: [harness-operation-start, RUNNING]
+    probes:
+      - name: the provider received the start
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["start:harness-vm"]
+  - action: gcp.instance_stop
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: harness-vm
+    expect:
+      stdout_contains: [harness-operation-stop, RUNNING]
+    probes:
+      - name: the provider received the stop
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["stop:harness-vm"]
+  - action: gcp.instance_reset
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: harness-vm
+    expect:
+      stdout_contains: [harness-vm, RUNNING]
+    probes:
+      - name: the provider received the reset
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["reset:harness-vm"]
+  - action: gcp.instance_delete
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: harness-vm
+    expect:
+      stderr_contains: ["Deleted ["]
+    probes:
+      - name: the provider received the delete
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["delete:harness-vm"]
+  - name: gcp.instance_start-missing-instance
+    action: gcp.instance_start
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: missing-vm
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [missing-vm]
+  - name: gcp.instance_delete-rejects-invalid-name
+    action: gcp.instance_delete
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: -bad-name-
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
+  - name: gcp.mig-resize-zonal
+    action: gcp.mig_resize
+    args:
+      project: example-prod
+      group: harness-mig
+      scope: zone
+      location: us-central1-a
+      size: 3
+    expect:
+      stdout_contains: [harness-mig, '"targetSize": 3']
+    probes:
+      - name: the provider received the zonal resize
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["resize:harness-mig:3"]
+  - name: gcp.mig-resize-regional
+    action: gcp.mig_resize
+    args:
+      project: example-prod
+      group: harness-mig
+      scope: region
+      location: us-central1
+      size: 2
+    expect:
+      stdout_contains: [harness-mig, '"targetSize": 2']
+    probes:
+      - name: the provider received the regional resize
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["resize:harness-mig:2"]
+  - name: gcp.mig-resize-to-zero
+    action: gcp.mig_resize
+    args:
+      project: example-prod
+      group: harness-mig
+      scope: zone
+      location: us-central1-a
+      size: 0
+    expect:
+      stdout_contains: [harness-mig, '"targetSize": 0']
+    probes:
+      - name: the provider received the size-zero resize
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["resize:harness-mig:0"]
+  - name: gcp.mig-resize-rejects-oversize
+    action: gcp.mig_resize
+    args:
+      project: example-prod
+      group: harness-mig
+      scope: zone
+      location: us-central1-a
+      size: 1001
+    expect:
+      status: failure
+      reason_contains: ["must be <= 1000"]

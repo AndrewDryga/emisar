@@ -1,0 +1,60 @@
+schema_version: 1
+id: gcp.instance_start
+title: gcloud compute instances start
+kind: exec
+risk: high
+description: >
+  Start one stopped Compute Engine instance in its zone. Returns the zonal
+  operation immediately without waiting for the boot; poll
+  gcp.operation_status until it reports DONE.
+side_effects:
+  - Instance begins booting; machine-type billing resumes.
+  - An ephemeral external IPv4 changes across a stop/start unless a static address is reserved.
+search_terms:
+  - power on
+  - boot VM
+  - recover stopped instance
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: zone
+    type: string
+    required: true
+    description: Compute Engine zone.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+  - name: instance
+    type: string
+    required: true
+    description: Instance name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - compute
+      - instances
+      - start
+      - "{{ args.instance }}"
+      - "--project={{ args.project }}"
+      - "--zone={{ args.zone }}"
+      - --async
+      - "--format=json(name,status,operationType,progress,insertTime,startTime,endTime,targetLink,zone,region,error,warnings,httpErrorStatusCode,httpErrorMessage)"
+      - --quiet
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Start a stopped VM
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: api-01

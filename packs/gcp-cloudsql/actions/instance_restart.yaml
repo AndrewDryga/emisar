@@ -1,0 +1,41 @@
+schema_version: 1
+id: gcp.sql_instance_restart
+title: gcloud sql instances restart
+kind: script
+risk: high
+description: >
+  Restart one Cloud SQL instance. Every connection is dropped and the
+  database is unavailable until the restart completes. Returns the Cloud SQL
+  operation immediately without waiting; poll gcp.sql_operation_describe
+  until it reports DONE.
+side_effects:
+  - All database connections are dropped; the instance is unavailable during the restart.
+  - Returns the pending operation without waiting for completion.
+  - Uses a mode-0600 temporary response file and removes it before exit.
+search_terms:
+  - restart database
+  - hung database
+  - recover instance
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: instance
+    type: string
+    required: true
+    description: Cloud SQL instance ID.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,96}[a-z0-9])?$", max_length: 98}
+execution:
+  script: {path: scripts/cloudsql.sh, interpreter: /bin/sh}
+  argv: [instance-restart, "{{ args.project }}", "{{ args.instance }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Restart a stuck application database
+    args: {project: example-prod, instance: app-db}

@@ -1,0 +1,78 @@
+schema_version: 1
+id: gcp.mig_resize
+title: gcloud compute instance-groups managed resize
+kind: script
+risk: high
+description: >
+  Resize one zonal or regional managed instance group to an exact instance
+  count. Scaling down deletes surplus instances; size 0 deletes every
+  instance and the group serves nothing until scaled back up. Fails on a
+  group managed by an autoscaler. Waits for the resize to be accepted and
+  returns the group's new target size; instances converge asynchronously
+  (watch with gcp.mig_health).
+side_effects:
+  - Scaling down DELETES surplus instances and their auto-delete disks; size 0 empties the group.
+  - Scaling up creates instances from the group's current template; billing changes with the size.
+  - Rejected when an autoscaler manages the group's size.
+search_terms:
+  - scale out
+  - scale in
+  - add capacity
+  - drain group
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: group
+    type: string
+    required: true
+    description: Managed instance group name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+  - name: scope
+    type: string
+    required: true
+    description: Whether the managed instance group is zonal or regional.
+    validation:
+      enum: [zone, region]
+  - name: location
+    type: string
+    required: true
+    description: Zone or region selected by scope.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+  - name: size
+    type: integer
+    required: true
+    description: Exact target number of instances; 0 deletes every instance in the group.
+    validation:
+      min: 0
+      max: 1000
+execution:
+  script:
+    path: scripts/compute_scope.sh
+    interpreter: /bin/sh
+  argv:
+    - mig-resize
+    - "{{ args.group }}"
+    - "{{ args.scope }}"
+    - "{{ args.location }}"
+    - "{{ args.project }}"
+    - "{{ args.size }}"
+  timeout: 180s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Scale a regional MIG to 3 instances
+    args:
+      project: example-prod
+      group: api
+      scope: region
+      location: us-central1
+      size: 3

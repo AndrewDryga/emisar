@@ -3,6 +3,8 @@ versions:
   - version: 577.0.0-slim
     digest: "@sha256:0d048f80b3bac596bdafc6f0b289b4267ecaaf1e73506e4f6da0b4bef8909fef"
     default: true
+risk_accountability:
+  mode: complete
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
   CLOUDSDK_API_ENDPOINT_OVERRIDES_SQL: http://gcp-api:8080/
@@ -44,3 +46,35 @@ cases:
     args: {project: example-prod, instance: harness-sql}
     expect:
       stdout_contains: [harness-server-ca, AB:CD:EF, 2027-07-27]
+  - action: gcp.sql_instance_restart
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      stdout_contains: [harness-restart-operation, RESTART, PENDING]
+    probes:
+      - name: the provider received the restart
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["restart:harness-sql"]
+  - action: gcp.sql_instance_failover
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      stdout_contains: [harness-failover-operation, FAILOVER, PENDING]
+    probes:
+      - name: the provider received the failover
+        argv: [curl, -fsS, http://gcp-api:8080/probe/state]
+        expect:
+          stdout_contains: ["failover:harness-sql"]
+  - name: gcp.sql_instance_restart-missing-instance
+    action: gcp.sql_instance_restart
+    args: {project: example-prod, instance: missing-sql}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [missing-sql]
+  - name: gcp.sql_instance_failover-rejects-invalid-name
+    action: gcp.sql_instance_failover
+    args: {project: example-prod, instance: -bad-name-}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]

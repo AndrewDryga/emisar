@@ -1,0 +1,62 @@
+schema_version: 1
+id: gcp.instance_delete
+title: gcloud compute instances delete
+kind: exec
+risk: critical
+description: >
+  Permanently delete one Compute Engine instance from its zone. Cannot be
+  undone: local SSDs are always destroyed and attached disks marked
+  auto-delete are destroyed with it. Fails on an instance with deletion
+  protection enabled. Waits until the deletion completes and reports the
+  deleted instance URL on stderr.
+side_effects:
+  - Instance is shut down and DELETED; this is irreversible.
+  - Local SSD data is always destroyed; auto-delete disks (boot disk by default) are destroyed too.
+  - Instance IPs are released; a managed instance group may recreate a deleted member.
+search_terms:
+  - terminate VM
+  - decommission instance
+  - remove instance
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: zone
+    type: string
+    required: true
+    description: Compute Engine zone.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+  - name: instance
+    type: string
+    required: true
+    description: Instance name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - compute
+      - instances
+      - delete
+      - "{{ args.instance }}"
+      - "--project={{ args.project }}"
+      - "--zone={{ args.zone }}"
+      - --format=json
+      - --quiet
+  timeout: 300s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Delete a decommissioned VM
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: api-01

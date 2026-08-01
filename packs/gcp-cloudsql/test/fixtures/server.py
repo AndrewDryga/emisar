@@ -3,6 +3,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CANARY = "packtest-canary-gcp-sql-secret-da31"
 
+MUTATIONS = []
+
 
 def instance():
     return {
@@ -61,9 +63,34 @@ def operation():
     }
 
 
+def mutation_operation(kind):
+    return {
+        "name": f"harness-{kind.lower()}-operation",
+        "operationType": kind,
+        "status": "PENDING",
+        "targetId": "harness-sql",
+        "targetProject": "example-prod",
+        "user": "operator@example.test",
+        "insertTime": "2026-07-27T00:00:00Z",
+        "importContext": {"uri": f"gs://bucket/{CANARY}"},
+    }
+
+
+def mutate(path):
+    if "/instances/harness-sql/restart" in path:
+        MUTATIONS.append("restart:harness-sql")
+        return mutation_operation("RESTART")
+    if "/instances/harness-sql/failover" in path:
+        MUTATIONS.append("failover:harness-sql")
+        return mutation_operation("FAILOVER")
+    return {"error": {"code": 404, "message": f"unhandled path {path}"}}
+
+
 def response(path):
     if path == "/health":
         return {"ok": True}
+    if path == "/probe/state":
+        return {"mutations": MUTATIONS}
     if "/instances/harness-sql/databases" in path:
         return {
             "items": [{
@@ -117,6 +144,10 @@ def response(path):
         }
     if "/instances/harness-sql" in path:
         return instance()
+    if "/operations/harness-restart-operation" in path:
+        return mutation_operation("RESTART")
+    if "/operations/harness-failover-operation" in path:
+        return mutation_operation("FAILOVER")
     if "/operations/harness-operation" in path:
         return operation()
     if "/operations" in path:
@@ -127,8 +158,7 @@ def response(path):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        payload = response(self.path)
+    def reply(self, payload):
         status = 404 if "error" in payload else 200
         body = json.dumps(payload).encode()
         self.send_response(status)
@@ -136,6 +166,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_GET(self):
+        self.reply(response(self.path))
+
+    def do_POST(self):
+        self.reply(mutate(self.path))
 
     def log_message(self, fmt, *args):
         pass

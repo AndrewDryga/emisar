@@ -1,0 +1,42 @@
+schema_version: 1
+id: gcp.sql_instance_failover
+title: gcloud sql instances failover
+kind: script
+risk: high
+description: >
+  Fail one high-availability (REGIONAL) Cloud SQL primary over to its
+  standby in the secondary zone. Connections are dropped and writes pause
+  until the standby is serving; only works on an instance with REGIONAL
+  availability. Returns the Cloud SQL operation immediately without waiting;
+  poll gcp.sql_operation_describe until it reports DONE.
+side_effects:
+  - All connections are dropped; the database is briefly unavailable while the standby takes over.
+  - The primary and secondary zones swap; clients reconnect to the same address.
+  - Fails on an instance without REGIONAL (high-availability) configuration.
+search_terms:
+  - promote standby
+  - zone outage
+  - HA failover
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: instance
+    type: string
+    required: true
+    description: Cloud SQL instance ID.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,96}[a-z0-9])?$", max_length: 98}
+execution:
+  script: {path: scripts/cloudsql.sh, interpreter: /bin/sh}
+  argv: [instance-failover, "{{ args.project }}", "{{ args.instance }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Fail over an HA primary during a zone incident
+    args: {project: example-prod, instance: app-db}

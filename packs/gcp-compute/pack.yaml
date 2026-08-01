@@ -1,13 +1,15 @@
 schema_version: 1
 
 id: gcp-compute
-name: Google Cloud Compute diagnostics
-version: 0.1.1
+name: Google Cloud Compute diagnostics and recovery
+version: 0.2.0
 description: >
-  Read-only Google Cloud Compute diagnostics for VM instances, managed
-  instance groups and asynchronous operations. Load-balancer diagnostics live
-  in the gcp-load-balancing pack. Every action
-  names the target project explicitly and uses fixed gcloud commands.
+  Google Cloud Compute diagnostics plus governed recovery mutations: VM
+  instance and managed-instance-group reads, instance start/stop/reset/delete,
+  and MIG resize. Load-balancer diagnostics live in the gcp-load-balancing
+  pack. Every action names the target project and zone or region explicitly
+  and uses fixed gcloud commands; mutations return their operation without
+  waiting and are polled with gcp.operation_status.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -30,7 +32,7 @@ setup:
   notes:
     - "Any credential/config env you set must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
     - "For a credential file, populate a dedicated CLOUDSDK_CONFIG with `gcloud auth login --cred-file=...` or set CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE; ordinary gcloud commands do not authenticate from GOOGLE_APPLICATION_CREDENTIALS."
-    - "Use a read-only principal. The actions need Compute Viewer-equivalent permissions plus compute.instances.getSerialPortOutput for serial diagnostics."
+    - "Grant least privilege for the actions you enable: reads need Compute Viewer-equivalent permissions plus compute.instances.getSerialPortOutput for serial diagnostics; the lifecycle and resize mutations need roles/compute.instanceAdmin.v1-equivalent permissions on the target instances and groups."
     - "This is a remote-target client pack and is never host-auto-suggested merely because gcloud is installed."
     - "All actions pass --quiet and an explicit --project, so ambient project configuration cannot redirect a request."
   verify: gcp.instance_describe
@@ -38,6 +40,11 @@ setup:
 actions:
   - actions/instance_describe.yaml
   - actions/instance_serial_output.yaml
+  - actions/instance_start.yaml
+  - actions/instance_stop.yaml
+  - actions/instance_reset.yaml
+  - actions/instance_delete.yaml
   - actions/mig_instances.yaml
   - actions/mig_health.yaml
+  - actions/mig_resize.yaml
   - actions/operation_status.yaml

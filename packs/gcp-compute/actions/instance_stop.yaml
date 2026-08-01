@@ -1,0 +1,62 @@
+schema_version: 1
+id: gcp.instance_stop
+title: gcloud compute instances stop
+kind: exec
+risk: high
+description: >
+  Stop one running Compute Engine instance in its zone. The guest OS is shut
+  down and every workload on the instance goes offline until it is started
+  again. Returns the zonal operation immediately without waiting for the
+  shutdown; poll gcp.operation_status until it reports DONE.
+side_effects:
+  - All workloads on the instance go offline; connections are dropped.
+  - An ephemeral external IPv4 is released; a new one is assigned on start.
+  - Machine-type billing stops; attached disks keep billing and their data.
+search_terms:
+  - power off
+  - shut down VM
+  - take instance offline
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: zone
+    type: string
+    required: true
+    description: Compute Engine zone.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+  - name: instance
+    type: string
+    required: true
+    description: Instance name.
+    validation:
+      pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+execution:
+  command:
+    binary: gcloud
+    argv:
+      - compute
+      - instances
+      - stop
+      - "{{ args.instance }}"
+      - "--project={{ args.project }}"
+      - "--zone={{ args.zone }}"
+      - --async
+      - "--format=json(name,status,operationType,progress,insertTime,startTime,endTime,targetLink,zone,region,error,warnings,httpErrorStatusCode,httpErrorMessage)"
+      - --quiet
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+examples:
+  - title: Stop a misbehaving VM
+    args:
+      project: example-prod
+      zone: us-central1-a
+      instance: api-01

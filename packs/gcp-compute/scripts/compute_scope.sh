@@ -6,6 +6,7 @@ name=$2
 scope=$3
 location=$4
 project=$5
+size=${6-}
 
 case "$scope" in
   global)
@@ -44,6 +45,20 @@ case "$mode" in
     }
     exec gcloud compute instance-groups managed describe "$name" "$@" \
       "--project=$project" \
+      "--format=json(name,targetSize,status,versions,autoHealingPolicies,updatePolicy,instanceGroup)" \
+      --quiet
+    ;;
+  mig-resize)
+    [ "$scope" != global ] || {
+      printf '%s\n' "managed instance groups must be zonal or regional" >&2
+      exit 2
+    }
+    [ -n "$size" ] || {
+      printf '%s\n' "size is required" >&2
+      exit 2
+    }
+    exec gcloud compute instance-groups managed resize "$name" "$@" \
+      "--project=$project" "--size=$size" \
       "--format=json(name,targetSize,status,versions,autoHealingPolicies,updatePolicy,instanceGroup)" \
       --quiet
     ;;

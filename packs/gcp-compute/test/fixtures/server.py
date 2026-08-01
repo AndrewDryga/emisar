@@ -1,8 +1,11 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 CANARY = "packtest-canary-gcp-compute-secret-a951"
+
+MUTATIONS = []
+MIG_SIZE = {"value": 1}
 
 
 def instance():
@@ -72,7 +75,7 @@ def manager(region=False):
     location = "regions/us-central1" if region else "zones/us-central1-a"
     return {
         "name": "harness-mig",
-        "targetSize": 1,
+        "targetSize": MIG_SIZE["value"],
         "status": {
             "isStable": True,
             "versionTarget": {"isReached": True},
@@ -124,11 +127,59 @@ def operation(path):
     }
 
 
-def response(method, raw_path):
-    path = urlparse(raw_path).path
+def mutation_operation(kind, path, host):
+    # gcloud parses selfLink to build the operation reference, so it must be a
+    # real URL under the overridden endpoint's scope path. start/stop run with
+    # --async and return a RUNNING operation; reset/delete/resize have no
+    # --async flag, so their operation completes immediately for the sync wait.
+    scope_path = path.split("/instances/")[0].split("/instanceGroupManagers/")[0]
+    running = kind in ("start", "stop")
+    if "/regions/" in path:
+        scope = {"region": "regions/us-central1"}
+    else:
+        scope = {"zone": "zones/us-central1-a"}
+    target_path = path.removesuffix(f"/{kind}") if path.endswith(f"/{kind}") else path
+    return {
+        "name": f"harness-operation-{kind}",
+        "status": "RUNNING" if running else "DONE",
+        "operationType": kind,
+        "progress": 0 if running else 100,
+        "insertTime": "2026-07-27T00:00:00.000-06:00",
+        "selfLink": f"http://{host}{scope_path}/operations/harness-operation-{kind}",
+        "targetLink": f"http://{host}{target_path}",
+        "clientOperationId": CANARY,
+        **scope,
+    }
+
+
+def mutation(method, path, query, host):
+    for verb in ("start", "stop", "reset"):
+        if method == "POST" and path.endswith(f"/instances/harness-vm/{verb}"):
+            MUTATIONS.append(f"{verb}:harness-vm")
+            return mutation_operation(verb, path, host)
+    if method == "DELETE" and path.endswith("/instances/harness-vm"):
+        MUTATIONS.append("delete:harness-vm")
+        return mutation_operation("delete", path, host)
+    if method == "POST" and path.endswith("/instanceGroupManagers/harness-mig/resize"):
+        size = parse_qs(query).get("size", ["missing"])[0]
+        MUTATIONS.append(f"resize:harness-mig:{size}")
+        if size.isdigit():
+            MIG_SIZE["value"] = int(size)
+        return mutation_operation("resize", path, host)
+    return None
+
+
+def response(method, raw_path, host):
+    parsed = urlparse(raw_path)
+    path = parsed.path
     if path == "/health":
         return {"ok": True}
-    if path.endswith("/instances/harness-vm"):
+    if path == "/probe/state":
+        return {"mutations": MUTATIONS}
+    mutated = mutation(method, path, parsed.query, host)
+    if mutated is not None:
+        return mutated
+    if method == "GET" and path.endswith("/instances/harness-vm"):
         return instance()
     if path.endswith("/instances/harness-vm/serialPort"):
         return {
@@ -149,7 +200,7 @@ def response(method, raw_path):
 
 class Handler(BaseHTTPRequestHandler):
     def handle_request(self):
-        payload = response(self.command, self.path)
+        payload = response(self.command, self.path, self.headers.get("Host", "gcp-api:8080"))
         status = 200 if payload is not None else 404
         body = json.dumps(payload or {
             "error": {"code": 404, "message": f"unhandled path {self.path}"}
@@ -162,6 +213,7 @@ class Handler(BaseHTTPRequestHandler):
 
     do_GET = handle_request
     do_POST = handle_request
+    do_DELETE = handle_request
 
     def log_message(self, fmt, *args):
         pass
