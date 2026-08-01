@@ -59,6 +59,17 @@ cases:
   - action: kafka.reassign_status
     expect:
       stdout_contains: [No partition reassignments found]
+  - action: kafka.preferred_leader_election
+    expect:
+      exit: [0]
+    probes:
+      # A healthy KRaft cluster omits election-not-needed partitions from the
+      # all-partitions response, so the tool prints nothing on success; the
+      # semantic proof is that every orders partition is led by its preferred
+      # (sole) replica, broker 1, after the election.
+      - argv: [/bin/sh, -c, 'test "$(kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic orders | grep -c "Leader: 1")" = 2 && echo preferred-leaders-hold']
+        expect:
+          stdout_contains: [preferred-leaders-hold]
   - action: kafka.alter_topic_retention
     args: {topic: orders, retention_ms: 60000}
     probes:
