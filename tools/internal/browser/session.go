@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"os/exec"
+
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 )
@@ -20,7 +22,12 @@ type Session struct {
 	cancel  context.CancelFunc
 	alloc   context.CancelFunc
 	cleanup func()
-	BaseURL string
+	// lifeline is the owner-held write end tying the browser tree's lifetime to this process:
+	// the kernel closes it if we die (even by SIGKILL) and the wrapper's watchdog then reaps the
+	// whole tree. Close() closes it explicitly as a belt. Nil for daemon-attached sessions, whose
+	// browser the daemon owns.
+	lifeline *os.File
+	BaseURL  string
 }
 
 func (m *Manager) Session(ctx context.Context, baseURL string, isolated bool) (*Session, error) {
@@ -75,20 +82,37 @@ func (m *Manager) isolatedSessionWithOptions(ctx context.Context, baseURL string
 		)
 	}
 	options = append(options, extra...)
+	// The lifeline replaces chromedp's default Pdeathsig, which fork drops (see lifeline.go).
+	keep, child, err := newLifeline()
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	options = append(options, chromedp.ModifyCmdFunc(func(cmd *exec.Cmd) { wrapWithLifeline(cmd, child) }))
 	allocator, cancelAllocator := chromedp.NewExecAllocator(ctx, options...)
 	tab, cancelTab := chromedp.NewContext(allocator)
 	if err := chromedp.Run(tab); err != nil {
 		cancelTab()
 		cancelAllocator()
+		_ = child.Close()
+		_ = keep.Close()
 		cleanup()
 		return nil, err
 	}
-	return &Session{Context: tab, cancel: cancelTab, alloc: cancelAllocator, cleanup: cleanup, BaseURL: baseURL}, nil
+	// The wrapper holds the read end now; dropping the owner's copy is fd hygiene only — the
+	// EOF that reaps the tree comes from `keep`, the write end this process holds until it dies.
+	_ = child.Close()
+	return &Session{Context: tab, cancel: cancelTab, alloc: cancelAllocator, cleanup: cleanup, lifeline: keep, BaseURL: baseURL}, nil
 }
 
 func (s *Session) Close() {
 	s.cancel()
 	s.alloc()
+	// Belt: even if chromedp's graceful teardown wedged or only killed the wrapper, closing the
+	// lifeline EOFs the watchdog, which SIGKILLs the browser's whole process group.
+	if s.lifeline != nil {
+		_ = s.lifeline.Close()
+	}
 	if s.cleanup != nil {
 		s.cleanup()
 	}

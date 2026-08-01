@@ -289,11 +289,20 @@ func RunDaemon(ctx context.Context, config Config) error {
 	if err := os.Remove(active); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	// The lifeline outlives every Go-side hook: if this daemon dies without running any cleanup
+	// (SIGKILL), the kernel closes `keep` and the wrapper's watchdog reaps the whole browser
+	// group. The deferred close makes daemon shutdown reap it the same way as a belt.
+	keep, child, err := newLifeline()
+	if err != nil {
+		return err
+	}
+	defer keep.Close()
 	command := exec.CommandContext(ctx, chrome, args...)
 	command.Stdout, command.Stderr = config.Out, config.Err
-	command.SysProcAttr = browserSysProcAttr()
+	wrapWithLifeline(command, child)
 	// Chromium forks several children. Killing only the process created by Go
-	// leaves those descendants alive in a box, so cancellation owns the group.
+	// leaves those descendants alive in a box, so cancellation owns the group —
+	// the wrapper leads it, so -pid covers wrapper, watchdog, and browser tree.
 	command.Cancel = func() error {
 		if err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 			return err
@@ -301,8 +310,10 @@ func RunDaemon(ctx context.Context, config Config) error {
 		return nil
 	}
 	if err := command.Start(); err != nil {
+		_ = child.Close()
 		return err
 	}
+	_ = child.Close()
 	var endpoint string
 	for range 100 {
 		data, readErr := os.ReadFile(active)
@@ -316,20 +327,22 @@ func RunDaemon(ctx context.Context, config Config) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	if endpoint == "" {
-		_ = command.Process.Kill()
+		_ = command.Cancel() // group kill: Process.Kill would reap only the wrapper
 		return fmt.Errorf("browser did not publish DevToolsActivePort")
 	}
 	if err := os.WriteFile(config.Marker, []byte(config.SPKI+"\n"), 0o600); err != nil {
-		_ = command.Process.Kill()
+		_ = command.Cancel() // group kill: Process.Kill would reap only the wrapper
 		return err
 	}
 	if err := os.Chmod(config.Marker, 0o600); err != nil {
-		_ = command.Process.Kill()
+		_ = command.Cancel() // group kill: Process.Kill would reap only the wrapper
 		return err
 	}
+	// BrowserPID is the lifeline wrapper — the browser group's leader. Nothing kills by this pid
+	// (Stop closes over CDP); it is recorded for diagnostics.
 	state := State{DaemonPID: os.Getpid(), BrowserPID: command.Process.Pid, WSEndpoint: endpoint, TLSSPKI: config.SPKI}
 	if err := writeState(config.State, state); err != nil {
-		_ = command.Process.Kill()
+		_ = command.Cancel() // group kill: Process.Kill would reap only the wrapper
 		return err
 	}
 	err = command.Wait()

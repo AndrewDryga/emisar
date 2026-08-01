@@ -1,13 +1,16 @@
 package browser
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -235,4 +238,103 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 		t.Fatal("isolated session inherited the persistent profile cookie")
 	}
 	session.Close()
+}
+
+// countIsolatedChromium counts live processes whose cmdline names an isolated-session profile.
+// /proc scan, so box/CI (linux) only — exactly where the orphan class bites.
+func countIsolatedChromium(t *testing.T) int {
+	t.Helper()
+	matches, err := filepath.Glob("/proc/[0-9]*/cmdline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, path := range matches {
+		data, readErr := os.ReadFile(path)
+		if readErr == nil && strings.Contains(string(data), "emisar-browser-isolated") {
+			count++
+		}
+	}
+	return count
+}
+
+// The lifeline is the only mechanism that survives the owner dying without running any Go code.
+// Before it existed this exact shape leaked: an isolated session outlived its owner's SIGKILL,
+// because Pdeathsig applies to the immediate child only and Chromium forks the real browser —
+// and the orphan then held a coop box open for its whole descendant drain, un-completing the
+// finished task. Reproduce the shape: launch a session in a child process, SIGKILL the child,
+// and require the whole browser tree to be gone. The stale profile directory is expected — no
+// code survives to remove it; only the processes hold a box open.
+func TestIsolatedSessionDiesWithSIGKILLedOwner(t *testing.T) {
+	if os.Getenv("BROWSER_LIFELINE_CHILD") == "1" {
+		manager := New(Config{
+			SPKI: base64.StdEncoding.EncodeToString(make([]byte, 32)),
+			Out:  io.Discard, Err: io.Discard, InBox: testInBox(),
+		})
+		session, err := manager.isolatedSessionWithOptions(context.Background(), "http://127.0.0.1:1")
+		if err != nil {
+			fmt.Println("LAUNCH_FAILED:", err)
+			os.Exit(1)
+		}
+		defer session.Close() // never reached; the parent SIGKILLs us — that is the point
+		fmt.Println("READY")
+		time.Sleep(60 * time.Second)
+		return
+	}
+	if !testInBox() {
+		t.Skip("SIGKILL-orphan semantics are exercised in the box (linux /proc + bundled chromium)")
+	}
+	baseline := countIsolatedChromium(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(self, "-test.run", "^TestIsolatedSessionDiesWithSIGKILLedOwner$", "-test.v")
+	child.Env = append(os.Environ(), "BROWSER_LIFELINE_CHILD=1")
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child.Stderr = io.Discard
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = child.Process.Kill(); _, _ = child.Process.Wait() }()
+	ready := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "READY" || strings.HasPrefix(line, "LAUNCH_FAILED") {
+				ready <- line
+				return
+			}
+		}
+		ready <- "EOF"
+	}()
+	select {
+	case line := <-ready:
+		if line != "READY" {
+			t.Fatalf("child session never became ready: %s", line)
+		}
+	case <-time.After(120 * time.Second):
+		t.Fatal("child session did not start within its cold-start budget")
+	}
+	if live := countIsolatedChromium(t); live <= baseline {
+		t.Fatalf("expected a live isolated browser before the kill (baseline %d, live %d)", baseline, live)
+	}
+	if err := child.Process.Kill(); err != nil { // SIGKILL: no defers, no Cancel hooks, no Go code
+		t.Fatal(err)
+	}
+	_, _ = child.Process.Wait()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if live := countIsolatedChromium(t); live <= baseline {
+			return // the kernel-side lifeline reaped the tree
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("isolated browser tree survived its owner's SIGKILL (baseline %d, live %d)", baseline, countIsolatedChromium(t))
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
