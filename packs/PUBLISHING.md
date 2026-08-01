@@ -80,6 +80,33 @@ only** — it can append new artifacts and cut a new catalog generation but cann
 delete or mutate history. The append-only guarantee is IAM-enforced, not
 conventional.
 
+## When CD publishes — and when it silently doesn't
+
+In normal operation publication is CD's job, not a manual one: a main push
+that changes pack sources or the pack toolchain sets `packs_release`
+(`tools/internal/ci/select.go`), and after a human approves the
+`pack-registry-approval` environment gate, `packs-publish` in
+`.github/workflows/cd.yml` builds against the live catalog and publishes.
+
+That trigger is edge-triggered on the **push diff**, not on registry state: if
+a pack-changing push's CD run fails, is cancelled, or its approval wait is
+superseded, no later run retries — subsequent pushes carry no pack diff, so
+the registry silently serves a stale catalog until the next pack-source push
+lands green **and** approved (this stranded 12 packs between 2026-07-29 and
+2026-07-31). After any failed or cancelled CD run for a pack change, check for
+drift:
+
+```bash
+curl -fsS https://registry.emisar.dev/v1/catalog.json \
+  | jq -r '.packs[] | "\(.id)@\(.version)"' | sort > /tmp/live-versions.txt
+for f in packs/*/pack.yaml; do
+  awk '/^id:/{id=$2} /^version:/{v=$2} END{print id"@"v}' "$f"
+done | sort | diff /tmp/live-versions.txt -
+```
+
+A non-empty diff means the registry is stale: land the next pack change (or
+publish manually, above) and watch its CD run through approval to publication.
+
 ## Verify
 
 ```bash
