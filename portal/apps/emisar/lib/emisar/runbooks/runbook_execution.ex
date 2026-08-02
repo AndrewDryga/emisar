@@ -31,6 +31,13 @@ defmodule Emisar.Runbooks.RunbookExecution do
     belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]
     belongs_to :initiating_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
     belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
+    # api_key_id is already a field above; this reuses it so an MCP-dispatched
+    # execution can name its accountable key owner without a second FK.
+    belongs_to :api_key, Emisar.ApiKeys.ApiKey,
+      foreign_key: :api_key_id,
+      define_field: false,
+      where: [deleted_at: nil]
+
     belongs_to :mcp_operation_record, Emisar.MCPOperations.Operation
 
     has_many :stages, Emisar.Runbooks.ExecutionStage

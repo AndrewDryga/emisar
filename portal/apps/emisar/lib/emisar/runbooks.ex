@@ -10,10 +10,11 @@ defmodule Emisar.Runbooks do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Approvals, Audit, Auth, Crypto, MCPOperations, Repo, Runs}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Crypto, MCPOperations, Repo, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Authorizer, Compiler, Definition, Runbook, RunbookExecution, Scheduler}
   alias Emisar.Runbooks.ExecutionItem
+  alias Emisar.Users
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -808,6 +809,7 @@ defmodule Emisar.Runbooks do
         |> RunbookExecution.Query.by_runner_access(Accounts.runner_access_for_subject(subject))
         |> RunbookExecution.Query.ordered_by_recent()
         |> RunbookExecution.Query.limit_to(limit)
+        |> RunbookExecution.Query.with_attribution()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -826,12 +828,60 @@ defmodule Emisar.Runbooks do
         |> RunbookExecution.Query.ordered_by_recent()
         |> RunbookExecution.Query.limit_to(limit)
         |> RunbookExecution.Query.with_runbook()
+        |> RunbookExecution.Query.with_attribution()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
       {:ok, executions}
     end
   end
+
+  @doc """
+  Human-first attribution facts for a loaded execution, as `{who, via}`.
+
+  `who` is the accountable human this account knows — the requesting operator,
+  or an MCP execution's API-key owner — named through the initiating membership
+  so directory renames stay account-local; `nil` when no human row survives.
+  `via` is the secondary channel: the API-key name (falling back to
+  "LLM agent" when the key row is gone) for a key-dispatched execution, `nil`
+  for a plain operator dispatch. Pure — reads the attribution associations the
+  execution reads in this module already preload.
+  """
+  def execution_who_via(%RunbookExecution{} = execution),
+    do: {execution_who(execution), execution_via(execution)}
+
+  defp execution_who(%RunbookExecution{requested_by: %Users.User{} = user} = execution),
+    do: Accounts.member_display_name(execution_membership(execution), user)
+
+  defp execution_who(
+         %RunbookExecution{api_key: %ApiKeys.ApiKey{created_by: %Users.User{} = user}} =
+           execution
+       ),
+       do: api_key_owner_name(execution_membership(execution), user)
+
+  defp execution_who(_execution), do: nil
+
+  defp api_key_owner_name(%Accounts.Membership{} = membership, user),
+    do: Accounts.member_display_name(membership, user)
+
+  # A gone membership must not surface the key owner's cross-account global
+  # name; the email still identifies the accountable human.
+  defp api_key_owner_name(nil, user), do: user.email
+
+  defp execution_membership(%RunbookExecution{
+         initiating_membership: %Accounts.Membership{} = membership
+       }),
+       do: membership
+
+  defp execution_membership(_execution), do: nil
+
+  defp execution_via(%RunbookExecution{api_key_id: nil}), do: nil
+
+  defp execution_via(%RunbookExecution{api_key: %ApiKeys.ApiKey{name: name}})
+       when is_binary(name) and name != "",
+       do: name
+
+  defp execution_via(%RunbookExecution{}), do: "LLM agent"
 
   defp fetch_scoped_execution(execution_id, access, subject, preload?) do
     query =
@@ -844,13 +894,14 @@ defmodule Emisar.Runbooks do
     |> Repo.fetch(RunbookExecution.Query)
   end
 
-  # requested_by is part of the result projection's contract: every consumer
-  # attributes the execution to its accountable human (console header, MCP
-  # serialization keeps it cheap to ignore).
+  # Attribution rows are part of the result projection's contract: every
+  # consumer attributes the execution to its accountable human via
+  # `execution_who_via/1` (console header, MCP serialization keeps it cheap
+  # to ignore).
   defp maybe_with_execution_result(query, true) do
     query
     |> RunbookExecution.Query.with_stages_and_items()
-    |> RunbookExecution.Query.with_requested_by()
+    |> RunbookExecution.Query.with_attribution()
   end
 
   defp maybe_with_execution_result(query, false), do: query

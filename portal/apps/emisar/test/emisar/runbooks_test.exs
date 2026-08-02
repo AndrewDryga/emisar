@@ -426,6 +426,75 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "execution_who_via/1" do
+    test "names the requesting operator account-locally with no channel" do
+      {user, account, owner} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, owner)
+      Runners.subscribe_runner_transport(runner)
+      runbook = create_runbook(owner, definition: definition(runner.group)) |> publish(owner)
+
+      assert {:ok, %{execution_id: execution_id}} =
+               Runbooks.dispatch_runbook(runbook, "inspect fleet", owner)
+
+      assert {:ok, result} = Runbooks.fetch_execution_result(execution_id, owner)
+      assert Runbooks.execution_who_via(result.execution) == {"Test User", nil}
+
+      account.id
+      |> Fixtures.Memberships.fetch_membership(user.id)
+      |> Fixtures.Memberships.sync_display_name("Directory Ops")
+
+      assert {:ok, renamed} = Runbooks.fetch_execution_result(execution_id, owner)
+      assert Runbooks.execution_who_via(renamed.execution) == {"Directory Ops", nil}
+    end
+
+    test "an MCP execution names the key owner with the key as the channel" do
+      fixture = mcp_execution_fixture()
+
+      assert {:ok, result} =
+               Runbooks.fetch_execution_result(fixture.execution_id, fixture.owner)
+
+      assert Runbooks.execution_who_via(result.execution) == {"Test User", "execution client"}
+    end
+
+    test "a gone membership degrades the key owner to their email" do
+      fixture = mcp_execution_fixture()
+      owner_user = fixture.owner.actor
+      admin = membership_subject(fixture.account, "admin")
+
+      fixture.account.id
+      |> Fixtures.Memberships.fetch_membership(owner_user.id)
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      assert {:ok, result} = Runbooks.fetch_execution_result(fixture.execution_id, admin)
+
+      assert Runbooks.execution_who_via(result.execution) ==
+               {owner_user.email, "execution client"}
+    end
+
+    test "missing actor rows degrade honestly" do
+      {user, account, owner} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, owner)
+      Runners.subscribe_runner_transport(runner)
+      runbook = create_runbook(owner, definition: definition(runner.group)) |> publish(owner)
+
+      assert {:ok, %{execution_id: execution_id}} =
+               Runbooks.dispatch_runbook(runbook, "inspect fleet", owner)
+
+      Fixtures.Users.mark_user_as_deleted(user)
+
+      assert {:ok, result} = Runbooks.fetch_execution_result(execution_id, owner)
+      assert Runbooks.execution_who_via(result.execution) == {nil, nil}
+
+      # A key-dispatched execution whose key row is gone still names its channel.
+      assert Runbooks.execution_who_via(%RunbookExecution{
+               api_key_id: Repo.generate_id(),
+               api_key: nil
+             }) == {nil, "LLM agent"}
+    end
+  end
+
   describe "fetch_runbook_for_execution/2" do
     test "retains the immutable source after its visible family is deleted" do
       fixture = mcp_execution_fixture()

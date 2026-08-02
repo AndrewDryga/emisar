@@ -1277,6 +1277,30 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "member_display_name/2" do
+    test "the directory-synced membership name wins over the user's own" do
+      user = %User{full_name: "Global Name", email: "person@example.com"}
+      membership = %Membership{directory_display_name: "Directory Name"}
+
+      assert Accounts.member_display_name(membership, user) == "Directory Name"
+    end
+
+    test "without a directory name the user's nonblank full name is used" do
+      user = %User{full_name: "Own Name", email: "person@example.com"}
+
+      assert Accounts.member_display_name(%Membership{}, user) == "Own Name"
+      assert Accounts.member_display_name(nil, user) == "Own Name"
+    end
+
+    test "a blank or absent full name falls back to the email" do
+      blank = %User{full_name: "  ", email: "blank@example.com"}
+      unnamed = %User{full_name: nil, email: "unnamed@example.com"}
+
+      assert Accounts.member_display_name(nil, blank) == "blank@example.com"
+      assert Accounts.member_display_name(nil, unnamed) == "unnamed@example.com"
+    end
+  end
+
   describe "list_active_memberships_for_user/1" do
     test "returns one membership per account the user actively belongs to" do
       user = Fixtures.Users.create_user()

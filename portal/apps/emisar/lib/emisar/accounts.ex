@@ -720,6 +720,24 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  The name this account knows a member by: the directory-synced membership
+  display name when this account's IdP set one, else the user's own nonblank
+  full name, else their email. Pass `nil` for the membership when no current
+  membership is in scope to fall back to the user's own name. Pure — attribution
+  surfaces render its result verbatim instead of re-deriving naming rules.
+  """
+  def member_display_name(%Membership{directory_display_name: name}, _user)
+      when is_binary(name) and name != "",
+      do: name
+
+  def member_display_name(_membership, %Users.User{full_name: name, email: email})
+      when is_binary(name) do
+    if String.trim(name) == "", do: email, else: name
+  end
+
+  def member_display_name(_membership, %Users.User{email: email}), do: email
+
+  @doc """
   Internal — Audit's user-event fan-out: EVERY active (not-deleted, not-suspended)
   membership the user holds, so a user-scoped security event lands one row per
   account the user belongs to (each account legitimately sees its own copy). No

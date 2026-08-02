@@ -2,6 +2,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   @moduledoc false
 
   use EmisarWeb, :html
+  alias Emisar.Runbooks
   alias EmisarWeb.RunbookEditorCatalog
 
   @doc "Returns the human runner name from a frozen runner reference."
@@ -26,7 +27,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         :visible_executions,
         Enum.filter(
           assigns.executions,
-          &(not assigns.show_runbook? or match?(%Emisar.Runbooks.Runbook{}, &1.runbook))
+          &(not assigns.show_runbook? or match?(%Runbooks.Runbook{}, &1.runbook))
         )
       )
 
@@ -37,6 +38,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     <ul :if={@visible_executions != []} class="divide-y divide-zinc-800/70">
       <li :for={execution <- @visible_executions}>
         <% runbook = if @show_runbook?, do: execution.runbook, else: @runbook %>
+        <% attribution = execution_attribution(execution) %>
         <.link
           navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/runs/#{execution.id}"}
           class="-mx-2 block rounded-md px-2 py-3 hover:bg-white/[0.04]"
@@ -55,13 +57,26 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             </span>
             <.status_badge status={execution.status} class="shrink-0" />
           </div>
-          <span class="mt-1 block text-[11px] text-zinc-500">
+          <span class="mt-1 block truncate text-[11px] text-zinc-500">
             <.local_time value={execution.inserted_at} mode={:relative} />
+            <span :if={attribution}>· {attribution}</span>
           </span>
         </.link>
       </li>
     </ul>
     """
+  end
+
+  # "by <who> via <agent>" — the domain owns who/via
+  # (Runbooks.execution_who_via/1); this only words the sentence, mirroring
+  # the dashboard digest row. A missing segment is dropped, not dashed.
+  defp execution_attribution(execution) do
+    case Runbooks.execution_who_via(execution) do
+      {nil, nil} -> nil
+      {who, nil} -> "by #{who}"
+      {nil, via} -> "via #{via}"
+      {who, via} -> "by #{who} via #{via}"
+    end
   end
 
   attr :name, :string, required: true

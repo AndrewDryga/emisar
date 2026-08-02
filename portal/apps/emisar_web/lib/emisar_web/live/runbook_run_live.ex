@@ -36,6 +36,7 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:reason, "")
      |> assign(:input_raw, %{})
      |> assign(:input_errors, %{})
+     |> assign(:touched_inputs, MapSet.new())
      |> assign(:target_selection_seed, nil)
      |> assign(:preflight_generation, 0)
      |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
@@ -68,6 +69,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:reason, "")
           |> assign(:input_raw, initial_input_raw(runbook.definition))
           |> assign(:input_errors, %{})
+          |> assign(:touched_inputs, MapSet.new())
           |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
           |> assign(:preflight_generation, 0)
           |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
@@ -120,6 +122,7 @@ defmodule EmisarWeb.RunbookRunLive do
   def handle_event("run_form_changed", params, socket) do
     {:noreply,
      socket
+     |> mark_input_touched(params)
      |> assign(:reason, params["reason"] || "")
      |> assign(:input_raw, params["inputs"] || %{})
      |> schedule_preflight()}
@@ -181,6 +184,8 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   defp start_execution(socket) do
+    socket = touch_all_inputs(socket)
+
     {input_values, input_errors} =
       parse_input_values(socket.assigns.runbook.definition, socket.assigns.input_raw)
 
@@ -370,8 +375,27 @@ defmodule EmisarWeb.RunbookRunLive do
     |> assign(:reason, "")
     |> assign(:target_selection_seed, Runbooks.new_target_selection_seed())
     |> assign(:input_raw, initial_input_raw(socket.assigns.runbook.definition))
+    |> assign(:touched_inputs, MapSet.new())
     |> schedule_preflight()
   end
+
+  # Only the field the operator actually changed reveals its validation — a
+  # change event carries EVERY field, so a required input they haven't reached
+  # yet must stay quiet (forms reveal before they validate).
+  defp mark_input_touched(socket, %{"_target" => ["inputs", id]}) when is_binary(id),
+    do: update(socket, :touched_inputs, &MapSet.put(&1, id))
+
+  defp mark_input_touched(socket, _params), do: socket
+
+  # A submit attempt is the other reveal boundary: after it, every still-blank
+  # required input may be named.
+  defp touch_all_inputs(socket),
+    do: assign(socket, :touched_inputs, MapSet.new(input_ids(socket.assigns.runbook.definition)))
+
+  defp input_ids(%{"inputs" => declarations}) when is_list(declarations),
+    do: Enum.map(declarations, & &1["id"])
+
+  defp input_ids(_definition), do: []
 
   defp load_recent_executions(socket) do
     case Runbooks.list_recent_executions_for_runbook(
@@ -444,10 +468,11 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp parse_input_values(_definition, _raw), do: {%{}, %{}}
 
-  defp parse_input_value(%{"required" => false}, value) when value in [nil, ""],
-    do: {:ok, :missing}
+  # A blank control supplied nothing, whatever its type: an optional blank is
+  # simply omitted, and a required blank surfaces as the compiler's own
+  # missing-input issue instead of a per-type parse accusation under the field.
+  defp parse_input_value(_declaration, value) when value in [nil, ""], do: {:ok, :missing}
 
-  defp parse_input_value(%{"type" => "string"}, nil), do: {:ok, :missing}
   defp parse_input_value(%{"type" => "string"}, value), do: {:ok, value}
 
   defp parse_input_value(%{"type" => "integer"}, value) when is_binary(value) do
@@ -528,15 +553,6 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
-  # Human-first attribution, mirroring the run detail's Dispatched by cell: the
-  # requesting user leads; an API-key dispatch adds the channel as secondary
-  # context. `requested_by` is preloaded by `fetch_execution_result`.
-  defp execution_who_via(execution) do
-    who = user_display_name(execution.requested_by)
-    via = if execution.api_key_id, do: "LLM agent"
-    {who, via}
-  end
-
   defp execution_duration_ms(%{completed_at: %DateTime{} = completed_at} = execution),
     do: DateTime.diff(completed_at, execution.inserted_at, :millisecond)
 
@@ -581,6 +597,32 @@ defmodule EmisarWeb.RunbookRunLive do
     assigns.preflight.state == :ready and String.trim(assigns.reason) != "" and
       assigns.input_errors == %{}
   end
+
+  # The RENDERED preflight: identical to the raw result except that a required
+  # input's missing-value issue stays invisible until its field was touched or
+  # a start was attempted — on first paint those blanks are guidance, not
+  # errors. When only untouched blanks remain, the whole error state renders
+  # as neutral :awaiting_input guidance instead of a rose block.
+  defp preflight_view(%{state: :error} = preflight, definition, input_raw, touched_inputs) do
+    pending = pending_input_paths(definition, input_raw, touched_inputs)
+    {hidden, visible} = Enum.split_with(preflight.issues, &(&1.path in pending))
+
+    if visible == [] and hidden != [],
+      do: %{preflight | state: :awaiting_input, issues: []},
+      else: %{preflight | issues: visible}
+  end
+
+  defp preflight_view(preflight, _definition, _input_raw, _touched_inputs), do: preflight
+
+  defp pending_input_paths(%{"inputs" => declarations}, input_raw, touched_inputs)
+       when is_list(declarations) do
+    for %{"id" => id} <- declarations,
+        Map.get(input_raw, id) in [nil, ""],
+        not MapSet.member?(touched_inputs, id),
+        do: "/input_values/#{id}"
+  end
+
+  defp pending_input_paths(_definition, _input_raw, _touched_inputs), do: []
 
   defp output_rows(outputs), do: Enum.sort_by(outputs, &elem(&1, 0))
 
@@ -684,6 +726,7 @@ defmodule EmisarWeb.RunbookRunLive do
           reason={@reason}
           input_raw={@input_raw}
           input_errors={@input_errors}
+          touched_inputs={@touched_inputs}
           preflight={@preflight}
           expanded_stages={@expanded_plan_stages}
           can_start?={can_start?(assigns)}
@@ -699,6 +742,7 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :reason, :string, required: true
   attr :input_raw, :map, required: true
   attr :input_errors, :map, required: true
+  attr :touched_inputs, :any, required: true
   attr :preflight, :map, required: true
   attr :expanded_stages, :any, required: true
   attr :can_start?, :boolean, required: true
@@ -706,6 +750,18 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :recent_executions, :list, required: true
 
   defp run_form(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :preflight_view,
+        preflight_view(
+          assigns.preflight,
+          assigns.runbook.definition,
+          assigns.input_raw,
+          assigns.touched_inputs
+        )
+      )
+
     ~H"""
     <div class="grid min-w-0 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <main class="min-w-0 space-y-10">
@@ -772,7 +828,7 @@ defmodule EmisarWeb.RunbookRunLive do
               </div>
             </div>
 
-            <.plan_details preflight={@preflight} expanded_stages={@expanded_stages} />
+            <.plan_details preflight={@preflight_view} expanded_stages={@expanded_stages} />
 
             <div class="flex flex-wrap items-center gap-4 border-t border-zinc-800/70 pt-4">
               <.button
@@ -786,9 +842,11 @@ defmodule EmisarWeb.RunbookRunLive do
               </.button>
               <p class="text-xs text-zinc-400">
                 <%= cond do %>
-                  <% @preflight.state == :loading -> %>
+                  <% @preflight_view.state == :loading -> %>
                     Checking the current plan…
-                  <% @preflight.state == :error -> %>
+                  <% @preflight_view.state == :awaiting_input -> %>
+                    Fill in the required inputs to start this execution.
+                  <% @preflight_view.state == :error -> %>
                     Resolve the plan issues above before starting.
                   <% String.trim(@reason) == "" -> %>
                     Add a reason to start this execution.
@@ -814,7 +872,7 @@ defmodule EmisarWeb.RunbookRunLive do
           </div>
         </section>
 
-        <.plan_summary preflight={@preflight} />
+        <.plan_summary preflight={@preflight_view} />
 
         <section id="runbook-execution-history">
           <.section_header title="Recent executions" />
@@ -843,6 +901,10 @@ defmodule EmisarWeb.RunbookRunLive do
         <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
         Checking current state…
       </div>
+
+      <p :if={@preflight.state == :awaiting_input} class="text-sm leading-6 text-zinc-400">
+        Waiting for the required inputs.
+      </p>
 
       <p :if={@preflight.state == :error} class="text-sm leading-6 text-rose-300">
         Resolve the plan issues before starting.
@@ -895,6 +957,10 @@ defmodule EmisarWeb.RunbookRunLive do
         <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
         Resolving actions and runners…
       </div>
+
+      <p :if={@preflight.state == :awaiting_input} class="text-sm leading-6 text-zinc-400">
+        The plan resolves once the required inputs above are filled in.
+      </p>
 
       <.event_block
         :if={@preflight.state == :error}
@@ -1019,7 +1085,9 @@ defmodule EmisarWeb.RunbookRunLive do
             <.status_badge status={@result.execution.status} />
           </.meta_field>
           <.meta_field label="Started by">
-            <% {who, via} = execution_who_via(@result.execution) %>
+            <%!-- Mirrors the run detail's Dispatched by cell; the domain owns
+                 who/via (Runbooks.execution_who_via/1). --%>
+            <% {who, via} = Runbooks.execution_who_via(@result.execution) %>
             <span class="block truncate">
               <span :if={who} class="text-zinc-200">{who}</span>
               <span :if={via} class={if who, do: "text-zinc-400", else: "text-zinc-200"}>

@@ -314,6 +314,70 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                "#runbook-run-form[phx-submit=start] button[type=submit]:not([disabled])"
              )
     end
+
+    test "untouched required inputs stay neutral until touched or submitted", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      args = [
+        %{
+          "name" => "token",
+          "type" => "string",
+          "required" => true,
+          "sensitive" => true
+        }
+      ]
+
+      runner = trusted_runner(account, subject, args: args)
+      runbook = published_runbook(subject, runner, sensitive_input: true)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      send(lv.pid, {:run_preflight, 1})
+      html = render(lv)
+
+      refute html =~ "Plan blocked"
+      refute html =~ "Required input is missing."
+      assert html =~ "The plan resolves once the required inputs above are filled in."
+      assert html =~ "Waiting for the required inputs."
+      assert html =~ "Fill in the required inputs to start this execution."
+      assert has_element?(lv, "#start-runbook-button[disabled]")
+
+      # Touching a DIFFERENT field keeps the unreached blank quiet.
+      render_change(lv, "run_form_changed", %{
+        "_target" => ["reason"],
+        "reason" => "Investigate incident INC-42",
+        "inputs" => %{"token" => ""}
+      })
+
+      send(lv.pid, {:run_preflight, 2})
+      html = render(lv)
+      refute html =~ "Plan blocked"
+      assert html =~ "The plan resolves once the required inputs above are filled in."
+
+      # Interacting with the field itself reveals its validation.
+      render_change(lv, "run_form_changed", %{
+        "_target" => ["inputs", "token"],
+        "reason" => "Investigate incident INC-42",
+        "inputs" => %{"token" => ""}
+      })
+
+      send(lv.pid, {:run_preflight, 3})
+      html = render(lv)
+      assert html =~ "Plan blocked"
+      assert html =~ "Required input is missing."
+
+      # A valid value resolves the plan and arms the start button.
+      render_change(lv, "run_form_changed", %{
+        "_target" => ["inputs", "token"],
+        "reason" => "Investigate incident INC-42",
+        "inputs" => %{"token" => "secret-token"}
+      })
+
+      send(lv.pid, {:run_preflight, 4})
+      refute render(lv) =~ "Plan blocked"
+      assert has_element?(lv, "#start-runbook-button:not([disabled])")
+    end
   end
 
   describe "durable staged results" do
@@ -335,6 +399,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       )
 
       assert html =~ "Started by"
+      assert html =~ "Test User"
       assert html =~ "running"
       assert html =~ runner.name
       refute html =~ @hash
@@ -596,6 +661,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "Start execution"
       assert html =~ "Recent executions"
       assert html =~ "Investigate incident INC-42"
+      assert html =~ "by Test User"
       refute html =~ "Execution cancelled"
     end
   end
