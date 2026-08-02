@@ -4,13 +4,12 @@ defmodule EmisarWeb.MCP.ActionTools do
 
   It resolves only exact trusted catalog contracts and exact runner-generation
   references. Model-facing input never chooses a database id or relies on a
-  display name. The Runs context remains the policy, approval, audit, and
-  persistence authority.
+  display name. The Runs context remains the policy, approval, audit,
+  signature-binding, and persistence authority.
   """
 
   alias Emisar.ActionContract
   alias Emisar.{Catalog, Crypto, MCPOperations, Runners}
-  alias EmisarWeb.MCP.Attestation
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.MCP.Service
   alias EmisarWeb.MCP.ValidationError
@@ -149,10 +148,7 @@ defmodule EmisarWeb.MCP.ActionTools do
 
   defp dispatch_new(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers) do
     with {:ok, targets, action} <- resolve_targets(conn, input),
-         :ok <- validate_action_args(input.args, action),
-         facts <- attestation_facts(conn, input, args_raw, operation_attrs.operation_id),
-         {:ok, attestation} <- Attestation.extract(attestation_headers, facts),
-         :ok <- require_attestation_for_enforcing(targets, attestation) do
+         :ok <- validate_action_args(input.args, action) do
       intent = %{
         action_id: input.action_id,
         pack_ref: input.pack_ref,
@@ -161,12 +157,21 @@ defmodule EmisarWeb.MCP.ActionTools do
         reason: input.reason,
         evidence: input.evidence,
         expected: input.expected,
-        operation_attrs: operation_attrs,
-        attestation: attestation
+        operation_attrs: signed_dispatch_attrs(conn, operation_attrs, attestation_headers)
       }
 
       Service.dispatch_fixed_action(conn, targets, intent, wait_ms)
     end
+  end
+
+  # Runs owns the envelope's bounds and its binding to the dispatch. The
+  # boundary contributes only what it alone knows: the raw header and the actual
+  # request origin the client signed over. Both ride the fresh-dispatch attrs,
+  # so the replay lookup above still matches on the operation facts alone.
+  defp signed_dispatch_attrs(conn, operation_attrs, attestation_headers) do
+    operation_attrs
+    |> Map.put(:attestation_headers, attestation_headers)
+    |> Map.put(:portal_origin, request_origin(conn))
   end
 
   defp operation_attrs(input, operation_id, fingerprint) do
@@ -249,12 +254,7 @@ defmodule EmisarWeb.MCP.ActionTools do
       case Map.get(by_ref, runner_ref) do
         %{id: id} = runner ->
           if MapSet.member?(compatible_ids, id) do
-            target = %{
-              id: runner.id,
-              name: runner.name,
-              runner_ref: runner.runner_ref,
-              enforce_signatures: runner.enforce_signatures
-            }
+            target = %{id: runner.id, name: runner.name, runner_ref: runner.runner_ref}
 
             {:cont, {:ok, [target | targets]}}
           else
@@ -303,28 +303,6 @@ defmodule EmisarWeb.MCP.ActionTools do
       action_id: input.action_id,
       pack_ref: input.pack_ref
     )
-  end
-
-  defp require_attestation_for_enforcing(targets, nil) do
-    runner_refs = targets |> Enum.filter(& &1.enforce_signatures) |> Enum.map(& &1.runner_ref)
-
-    if runner_refs == [],
-      do: :ok,
-      else: {:error, {:signature_required, runner_refs}}
-  end
-
-  defp require_attestation_for_enforcing(_targets, _attestation), do: :ok
-
-  defp attestation_facts(conn, input, args_raw, operation_id) do
-    %{
-      action_id: input.action_id,
-      pack_ref: input.pack_ref,
-      args_raw: args_raw,
-      runner_refs: input.runner_refs,
-      reason: input.reason,
-      operation_id: operation_id,
-      portal_origin: request_origin(conn)
-    }
   end
 
   # URL generation may advertise a public browser origin while a runner or

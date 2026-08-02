@@ -735,16 +735,17 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     Fixtures.Catalog.create_action(runner: runner)
 
     stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
+    %{attestation: attestation} = Fixtures.Runs.signed_attestation(issued_at: stale)
 
-    {:ok, run} =
-      Runs.create_run(%{
+    run =
+      Fixtures.Runs.create_signed_run(%{
         account_id: account.id,
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
         args: %{},
         status: :pending_approval,
-        attestation: %{"key_id" => "k", "sig" => "x", "issued_at" => stale}
+        attestation: attestation
       })
 
     # A different requester so this is a real (non-self) approval.

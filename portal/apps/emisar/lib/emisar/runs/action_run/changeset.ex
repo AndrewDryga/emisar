@@ -2,11 +2,11 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   use Emisar, :changeset
   alias Emisar.Crypto
   alias Emisar.Repo.Changeset, as: RepoChangeset
-  alias Emisar.Runs.ActionRun
+  alias Emisar.Runs.{ActionRun, Attestation}
 
   @create_fields ~w[
     account_id runner_id request_id action_id args_raw args_sha256 sensitive_arg_names client_info mcp_client_metadata
-    ip_address user_agent opts attestation reason evidence expected source requested_by_id api_key_id initiating_membership_id
+    ip_address user_agent opts reason evidence expected source requested_by_id api_key_id initiating_membership_id
     operation_id mcp_operation_record_id pack_ref runner_ref runbook_id runbook_step_id runbook_execution_id
     runbook_execution_item_id attempt_number expected_pack_hash
     structured_output_expected output_schema_snapshot
@@ -63,6 +63,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
 
     %ActionRun{}
     |> cast(attrs, @create_fields)
+    |> put_attestation(Map.get(attrs, :attestation))
     |> validate_required([:account_id, :runner_id, :request_id, :action_id, :source, :args_raw])
     |> validate_change(:request_id, &validate_request_id/2)
     |> validate_length(:reason, max: @max_reason_length)
@@ -89,6 +90,20 @@ defmodule Emisar.Runs.ActionRun.Changeset do
       name: :action_runs_runbook_attempt_identity_check
     )
   end
+
+  # The signed envelope is deliberately not a cast field. This is the
+  # context-internal persistence seam for an already-validated,
+  # dispatch-bound `%Attestation{}`; a raw map is any other writer asserting
+  # signed state, and fails here instead of minting it. The struct alone is not
+  # authority — `Emisar.Runs` refuses one from every caller-facing entry point,
+  # so only its preflighted MCP fan-out reaches this clause.
+  defp put_attestation(changeset, nil), do: changeset
+
+  defp put_attestation(changeset, %Attestation{} = attestation),
+    do: put_change(changeset, :attestation, Attestation.envelope(attestation))
+
+  defp put_attestation(changeset, _unvalidated),
+    do: add_error(changeset, :attestation, "must be a validated attestation")
 
   defp validate_output_schema_snapshot(changeset) do
     expected? = get_field(changeset, :structured_output_expected)

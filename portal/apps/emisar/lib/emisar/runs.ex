@@ -18,7 +18,7 @@ defmodule Emisar.Runs do
   alias Emisar.MCPOperations
   alias Emisar.Repo
   alias Emisar.RequestContext
-  alias Emisar.Runs.{ActionRun, Authorizer, RunEvent}
+  alias Emisar.Runs.{ActionRun, Attestation, Authorizer, RunEvent}
   alias Emisar.Users
   require Logger
 
@@ -621,14 +621,21 @@ defmodule Emisar.Runs do
   triggering the transport to deliver `run_action` once the row is
   persisted (see Emisar.Transport).
 
-  Returns `{:ok, run}` or `{:error, changeset}`.
+  Returns `{:ok, run}` or `{:error, changeset}`. An `:attestation` is always
+  refused here — signed state is minted only by the preflighted MCP fan-out.
 
   Tests can also call this directly to seed runs without exercising
   policy + dispatch.
   """
   def create_run(attrs, opts \\ []) do
     request_id = attrs[:request_id] || Crypto.run_request_id()
-    attrs = attrs |> resolve_initiating_membership() |> put_action_arguments_raw()
+
+    attrs =
+      attrs
+      |> strip_unproven_attestation()
+      |> resolve_initiating_membership()
+      |> put_action_arguments_raw()
+
     attrs = Map.put(attrs, :request_id, request_id)
     attrs = Map.put(attrs, :queued_at, DateTime.utc_now())
 
@@ -655,6 +662,17 @@ defmodule Emisar.Runs do
         {:error, reason}
     end
   end
+
+  # `create_run/2` is reachable by any domain caller, so a `%Attestation{}`
+  # arriving here carries no proof that the facts it signed are the facts of
+  # this row. Strip the carrier back to a plain envelope and let the changeset
+  # refuse it the same way it refuses a raw map — the transaction rolls back, so
+  # no run, audit, or approval state is written. The MCP fan-out never comes
+  # through here; it inserts its preflighted attrs inside its own transaction.
+  defp strip_unproven_attestation(%{attestation: %Attestation{} = attestation} = attrs),
+    do: Map.put(attrs, :attestation, Attestation.envelope(attestation))
+
+  defp strip_unproven_attestation(attrs), do: attrs
 
   defp resolve_initiating_membership(%{initiating_membership_id: id} = attrs)
        when is_binary(id),
@@ -700,7 +718,12 @@ defmodule Emisar.Runs do
       {:ok, :running, run}        — sent to runner
       {:ok, :pending_approval, r} — waiting on operator
       {:error, :denied_by_policy, reason}
+      {:error, :invalid_attestation}      — attrs claimed signed authority
+      {:error, :runner_requires_attestation}
       {:error, changeset}
+
+  This path is unsigned: only the MCP fan-out preflights a signed envelope, so
+  an `:attestation` here is a claim nobody proved.
   """
   def dispatch_run(attrs, %Subject{account: %{id: account_id}} = subject) do
     with :ok <-
@@ -722,6 +745,9 @@ defmodule Emisar.Runs do
   The public subject-aware path establishes attribution and membership scope
   before entering here. Durable schedulers may also supply the initiating
   membership explicitly, so every attempt rechecks current runner access.
+
+  This dispatch is unsigned by definition: it never preflighted a signed
+  envelope, so caller attrs carrying an `:attestation` are refused.
   """
   def dispatch_run_for_account(attrs, account_id) when is_binary(account_id) do
     attrs = Map.put(attrs, :account_id, account_id)
@@ -730,12 +756,13 @@ defmodule Emisar.Runs do
     reason = attrs[:reason]
     membership_id = Map.get(attrs, :requested_by_membership_id)
 
-    with :ok <- require_runner(runner_id),
+    with :ok <- refuse_caller_attestation(attrs),
+         :ok <- require_runner(runner_id),
          :ok <- require_action(action_id),
          :ok <- require_reason(reason),
          :ok <- runner_in_account(runner_id, account_id),
          :ok <- runner_online_for_runbook(attrs, runner_id, account_id),
-         :ok <- check_attestation(attrs, runner_id, account_id),
+         :ok <- check_attestation(attrs, runner_id, account_id, false),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
          {:ok, runner_ref} <- public_runner_ref(runner_id),
          {:ok, contract} <-
@@ -755,6 +782,11 @@ defmodule Emisar.Runs do
   @doc """
   Atomically reserves one fixed MCP operation and persists every target outcome.
 
+  `operation_attrs` carries the raw `:attestation_headers` and the actual
+  request `:portal_origin`; this function — not its caller — validates the
+  signed envelope and binds it to the refs of the runners this account really
+  scopes. Target attrs may not carry an `:attestation` of their own.
+
   Catalog trust, runner scope, attestation presence, and policy are re-evaluated
   for every target inside the transaction. No run is broadcast or delivered and
   no approval notification is emitted until the operation row, every run, every
@@ -764,18 +796,29 @@ defmodule Emisar.Runs do
   """
   def dispatch_mcp_fanout(operation_attrs, target_attrs, %Subject{} = subject)
       when is_map(operation_attrs) and is_list(target_attrs) do
+    {attestation_input, operation_attrs} = pop_attestation_input(operation_attrs)
+
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.dispatch_run_permission()
            ),
          :ok <- require_subject_membership(subject),
-         :ok <- validate_mcp_targets(operation_attrs, target_attrs) do
+         :ok <- validate_mcp_targets(operation_attrs, target_attrs),
+         :ok <- refuse_caller_attestations(target_attrs),
+         {:ok, attestation} <-
+           preflight_attestation(
+             attestation_input,
+             operation_attrs,
+             target_attrs,
+             subject.account.id
+           ) do
       target_attrs =
         Enum.map(target_attrs, fn attrs ->
           attrs
           |> put_dispatcher_context(subject)
           |> put_dispatcher_identity(subject)
+          |> put_validated_attestation(attestation)
         end)
 
       commit_mcp_fanout(operation_attrs, target_attrs, subject, true)
@@ -821,6 +864,91 @@ defmodule Emisar.Runs do
   end
 
   defp validate_mcp_targets(_operation_attrs, _target_attrs), do: {:error, :invalid_targets}
+
+  defp pop_attestation_input(operation_attrs) do
+    {headers, operation_attrs} = Map.pop(operation_attrs, :attestation_headers, [])
+    {portal_origin, operation_attrs} = Map.pop(operation_attrs, :portal_origin)
+    {%{headers: headers, portal_origin: portal_origin}, operation_attrs}
+  end
+
+  defp put_validated_attestation(attrs, nil), do: attrs
+
+  defp put_validated_attestation(attrs, %Attestation{} = attestation),
+    do: Map.put(attrs, :attestation, attestation)
+
+  # Signature-required dispatch is decided before the operation is reserved, and
+  # the envelope is bound to the refs of the runners this account actually
+  # scopes — never to refs the caller sent.
+  defp preflight_attestation(input, operation_attrs, target_attrs, account_id) do
+    with {:ok, runners} <- scoped_target_runners(target_attrs, account_id) do
+      resolve_attestation(input, operation_attrs, target_attrs, runners)
+    end
+  end
+
+  defp resolve_attestation(%{headers: []}, _operation_attrs, _target_attrs, runners) do
+    case Enum.filter(runners, & &1.enforce_signatures) do
+      [] -> {:ok, nil}
+      enforcing -> {:error, {:signature_required, Enum.map(enforcing, & &1.runner_ref)}}
+    end
+  end
+
+  defp resolve_attestation(input, operation_attrs, target_attrs, runners) do
+    with {:ok, facts} <- attestation_facts(input, operation_attrs, target_attrs, runners),
+         {:ok, %Attestation{} = attestation} <- Attestation.validate(input.headers, facts) do
+      {:ok, attestation}
+    else
+      _ -> {:error, :invalid_attestation}
+    end
+  end
+
+  # The signed claim covers ONE operation, so every target must agree on the
+  # exact argument bytes and reason it binds; the action, pack, and operation
+  # already agree by `validate_mcp_targets/2`.
+  defp attestation_facts(input, operation_attrs, [first | _] = target_attrs, runners) do
+    facts = %{
+      action_id: operation_attrs.action_id,
+      pack_ref: operation_attrs.pack_ref,
+      args_raw: first[:args_raw],
+      runner_refs: Enum.map(runners, & &1.runner_ref),
+      reason: first[:reason],
+      operation_id: operation_attrs.operation_id,
+      portal_origin: input.portal_origin
+    }
+
+    agreed? =
+      is_binary(facts.args_raw) and is_binary(facts.reason) and
+        is_binary(facts.portal_origin) and
+        Enum.all?(
+          target_attrs,
+          &(&1[:args_raw] == facts.args_raw and &1[:reason] == facts.reason)
+        )
+
+    if agreed?, do: {:ok, facts}, else: {:error, :invalid_attestation}
+  end
+
+  defp scoped_target_runners(target_attrs, account_id) do
+    target_attrs
+    |> Enum.reduce_while({:ok, []}, fn attrs, {:ok, runners} ->
+      case scoped_target_runner(attrs[:runner_id], account_id) do
+        {:ok, runner} -> {:cont, {:ok, [runner | runners]}}
+        {:error, :runner_not_found} -> {:halt, {:error, :runner_not_found}}
+      end
+    end)
+    |> case do
+      {:ok, runners} -> {:ok, Enum.reverse(runners)}
+      {:error, :runner_not_found} -> {:error, :runner_not_found}
+    end
+  end
+
+  defp scoped_target_runner(runner_id, account_id) do
+    with true <- Emisar.Runners.runner_in_account?(runner_id, account_id),
+         %Emisar.Runners.Runner{} = runner <- Emisar.Runners.peek_runner_by_id(runner_id),
+         {:ok, runner_ref} <- Emisar.Catalog.MCPProjection.runner_ref(runner) do
+      {:ok, %{runner_ref: runner_ref, enforce_signatures: runner.enforce_signatures}}
+    else
+      _ -> {:error, :runner_not_found}
+    end
+  end
 
   defp commit_mcp_fanout(operation_attrs, target_attrs, subject, use_grants?) do
     base = put_active_account_lock(Multi.new(), subject.account.id, :active_account)
@@ -899,7 +1027,8 @@ defmodule Emisar.Runs do
              Authorizer.dispatch_run_permission()
            ),
          :ok <- require_subject_membership(subject),
-         :ok <- validate_dispatch_batch(target_attrs) do
+         :ok <- validate_dispatch_batch(target_attrs),
+         :ok <- refuse_caller_attestations(target_attrs) do
       target_attrs =
         Enum.map(target_attrs, fn attrs ->
           attrs
@@ -951,7 +1080,8 @@ defmodule Emisar.Runs do
     use_grants? = Keyword.get(opts, :use_grants?, true)
     execution_id = Keyword.get(opts, :runbook_execution_id)
 
-    with :ok <- validate_runbook_attempt_batch(target_attrs, execution_id) do
+    with :ok <- validate_runbook_attempt_batch(target_attrs, execution_id),
+         :ok <- refuse_caller_attestations(target_attrs) do
       target_attrs =
         Enum.map(target_attrs, fn attrs ->
           attrs
@@ -1044,12 +1174,16 @@ defmodule Emisar.Runs do
     action_id = attrs[:action_id]
     reason = attrs[:reason]
     membership_id = Map.get(attrs, :requested_by_membership_id)
+    # Reserving an operation record is what the signed MCP fan-out — and only it
+    # — does, so it doubles as the proof that this plan came through
+    # `preflight_attestation/4`.
+    signed_fanout? = is_binary(operation_record_id)
 
     with :ok <- require_runner(runner_id),
          :ok <- require_action(action_id),
          :ok <- require_reason(reason),
          :ok <- runner_in_account(runner_id, account_id),
-         :ok <- check_attestation(attrs, runner_id, account_id),
+         :ok <- check_attestation(attrs, runner_id, account_id, signed_fanout?),
          :ok <-
            attestation_fresh(attrs[:attestation], Emisar.Runners.peek_runner_by_id(runner_id)),
          :ok <- runner_in_membership_scope(runner_id, account_id, membership_id),
@@ -1454,6 +1588,11 @@ defmodule Emisar.Runs do
     attestation_fresh(run.attestation, run.runner)
   end
 
+  # Before insert the value is still the validated struct; after insert it is
+  # the normalized envelope the row stores.
+  defp attestation_fresh(%Attestation{} = attestation, runner),
+    do: attestation_fresh(Attestation.envelope(attestation), runner)
+
   defp attestation_fresh(
          att,
          %Emisar.Runners.Runner{enforce_signatures: true, max_attestation_age_seconds: max_age}
@@ -1478,6 +1617,14 @@ defmodule Emisar.Runs do
     do: {:error, :attestation_stale}
 
   defp attestation_fresh(_att, _runner), do: :ok
+
+  defp approval_attestation_deadline(%{attestation: %Attestation{} = attestation} = attrs) do
+    envelope = Attestation.envelope(attestation)
+
+    attrs
+    |> Map.put(:attestation, envelope)
+    |> approval_attestation_deadline()
+  end
 
   defp approval_attestation_deadline(%{attestation: attestation, runner_id: runner_id})
        when is_map(attestation) and is_binary(runner_id) do
@@ -1604,32 +1751,56 @@ defmodule Emisar.Runs do
 
   defp ensure_primary_executable_available(_action), do: :ok
 
+  # `%Attestation{}` is an ordinary Elixir struct, so holding one proves nothing
+  # about who built it or what it was bound to. Only `preflight_attestation/4`
+  # mints one, and only after validating the raw header against the exact facts
+  # of the fan-out it is about to reserve. Every other entry point therefore
+  # refuses a caller's `:attestation` outright — map or struct — before a run
+  # row, an audit row, or an operation reservation can exist.
+  defp refuse_caller_attestation(attrs) do
+    if carries_attestation?(attrs), do: {:error, :invalid_attestation}, else: :ok
+  end
+
+  defp refuse_caller_attestations(target_attrs) do
+    if Enum.any?(target_attrs, &carries_attestation?/1),
+      do: {:error, :invalid_attestation},
+      else: :ok
+  end
+
+  defp carries_attestation?(attrs), do: not is_nil(Map.get(attrs, :attestation))
+
   # Refuse a portal-originated (operator / runbook / API-key) dispatch to a
   # runner that advertises it enforces client signatures. The runner would
   # reject an unsigned run anyway; blocking here means no run row is created and
-  # the caller gets a clear reason. A signed MCP dispatch carries an
-  # `:attestation` and passes. The MCP boundary has already validated its shape
-  # and exact selected-target match; the runner remains the cryptographic
-  # authority that verifies the Ed25519 signature. This portal flag is the
-  # UX/backstop gate; the runner's signature check is the real one.
-  defp check_attestation(attrs, runner_id, account_id) do
-    cond do
-      attrs[:attestation] ->
-        :ok
+  # the caller gets a clear reason.
+  #
+  # `signed_fanout?` is true only for the MCP fan-out, the one path that
+  # validated the envelope against this exact dispatch before reserving its
+  # operation. Every other composer plans unsigned, so a carrier in its attrs is
+  # a claim of authority nobody proved. The runner remains the cryptographic
+  # authority that verifies the Ed25519 signature; this portal flag is the
+  # UX/backstop gate.
+  defp check_attestation(attrs, runner_id, account_id, signed_fanout?) do
+    case Map.get(attrs, :attestation) do
+      nil -> refuse_unsigned_dispatch(attrs, runner_id, account_id)
+      %Attestation{} when signed_fanout? -> :ok
+      _unproven -> {:error, :invalid_attestation}
+    end
+  end
 
-      Emisar.Runners.runner_enforces_signatures?(runner_id, account_id) ->
-        Audit.record(
-          Audit.Events.dispatch_blocked_requires_attestation(
-            account_id,
-            runner_id,
-            attrs[:action_id]
-          )
+  defp refuse_unsigned_dispatch(attrs, runner_id, account_id) do
+    if Emisar.Runners.runner_enforces_signatures?(runner_id, account_id) do
+      Audit.record(
+        Audit.Events.dispatch_blocked_requires_attestation(
+          account_id,
+          runner_id,
+          attrs[:action_id]
         )
+      )
 
-        {:error, :runner_requires_attestation}
-
-      true ->
-        :ok
+      {:error, :runner_requires_attestation}
+    else
+      :ok
     end
   end
 

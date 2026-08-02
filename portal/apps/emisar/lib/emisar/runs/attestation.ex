@@ -1,15 +1,18 @@
-defmodule EmisarWeb.MCP.Attestation do
+defmodule Emisar.Runs.Attestation do
   @moduledoc """
-  Decodes and compares the private `Emisar-Attestation` action header.
+  The bounded client-signed `run_action` envelope, bound to one exact dispatch.
 
-  The portal is deliberately not a signature authority. It rejects malformed
-  envelopes and refuses to relay one whose signed facts differ from the
-  authenticated request, while the runner verifies the customer CA, certificate,
-  signature, freshness, local target identity, and replay nonce.
+  A validated value is the only thing that can satisfy signature-required
+  dispatch or become signed audit state, so the domain never has to trust that
+  some boundary already checked an arbitrary map. Validation rejects a malformed
+  or ambiguous envelope and one whose signed facts differ from the dispatch the
+  portal would relay.
+
+  The portal is deliberately not a signature authority: the runner verifies the
+  customer CA, the certificate, the Ed25519 signature, freshness, its own local
+  target identity, and the replay nonce.
   """
-
   alias Emisar.Crypto
-  alias EmisarWeb.MCP.RawJSON
 
   @version "emisar-attestation-v4"
   @tool "run_action"
@@ -28,6 +31,11 @@ defmodule EmisarWeb.MCP.Attestation do
   @cert_fields ~w(ca_id key_id public_key valid_from valid_until scope serial sig)
   @scope_fields ~w(group labels)
 
+  @enforce_keys [:envelope]
+  defstruct [:envelope]
+
+  @opaque t :: %__MODULE__{envelope: map()}
+
   @type facts :: %{
           required(:action_id) => String.t(),
           required(:pack_ref) => String.t(),
@@ -38,29 +46,79 @@ defmodule EmisarWeb.MCP.Attestation do
           required(:portal_origin) => String.t()
         }
 
-  @doc "Returns a bounded matching envelope, nil when absent, or an error."
-  @spec extract([String.t()], facts()) :: {:ok, map() | nil} | {:error, atom()}
-  def extract([], _facts), do: {:ok, nil}
+  @doc """
+  Validates one raw `Emisar-Attestation` header list against the exact facts of
+  the dispatch it would authorize.
 
-  def extract([header], facts) when is_binary(header) do
+  Returns the validated envelope, `nil` when no header was sent, or
+  `{:error, :invalid_attestation}` for anything bounded-but-wrong: a malformed
+  or ambiguous envelope, an out-of-bounds field, or a signed fact that disagrees
+  with this call.
+  """
+  @spec validate([String.t()], facts()) :: {:ok, t() | nil} | {:error, :invalid_attestation}
+  def validate([], _facts), do: {:ok, nil}
+
+  def validate([header], facts) when is_binary(header) do
     with :ok <- bounded_header(header),
          {:ok, raw} <- Base.url_decode64(header, padding: false),
-         {:ok, _tree} <- RawJSON.parse(raw),
-         {:ok, envelope} <- Jason.decode(raw),
+         {:ok, envelope} <- decode_unambiguous(raw),
          {:ok, normalized} <- normalize(envelope),
          :ok <- compare(normalized, facts) do
-      {:ok, normalized}
+      {:ok, %__MODULE__{envelope: normalized}}
     else
       _ -> {:error, :invalid_attestation}
     end
   end
 
-  def extract(_headers, _facts), do: {:error, :invalid_attestation}
+  def validate(_headers, _facts), do: {:error, :invalid_attestation}
+
+  @doc "Internal — the normalized v4 envelope the portal persists and relays verbatim."
+  @spec envelope(t()) :: map()
+  def envelope(%__MODULE__{envelope: envelope}), do: envelope
 
   defp bounded_header(header) do
     if header != "" and byte_size(header) <= @max_header_bytes,
       do: :ok,
       else: {:error, :invalid_attestation}
+  end
+
+  # A duplicate key anywhere makes the signed claim ambiguous — one reader takes
+  # the field the client signed while another takes the one an attacker
+  # appended. The ordered decode keeps every pair, so a key set that shrinks
+  # when deduplicated IS the duplicate, at any depth.
+  defp decode_unambiguous(raw) do
+    case Jason.decode(raw, objects: :ordered_objects) do
+      {:ok, decoded} -> unambiguous(decoded)
+      {:error, _reason} -> {:error, :invalid_attestation}
+    end
+  end
+
+  defp unambiguous(%Jason.OrderedObject{values: pairs}) do
+    {keys, values} = Enum.unzip(pairs)
+
+    with true <- length(Enum.uniq(keys)) == length(keys),
+         {:ok, values} <- unambiguous_values(values) do
+      {:ok, keys |> Enum.zip(values) |> Map.new()}
+    else
+      _ -> {:error, :invalid_attestation}
+    end
+  end
+
+  defp unambiguous(values) when is_list(values), do: unambiguous_values(values)
+  defp unambiguous(value), do: {:ok, value}
+
+  defp unambiguous_values(values) do
+    values
+    |> Enum.reduce_while({:ok, []}, fn value, {:ok, converted} ->
+      case unambiguous(value) do
+        {:ok, value} -> {:cont, {:ok, [value | converted]}}
+        {:error, :invalid_attestation} -> {:halt, {:error, :invalid_attestation}}
+      end
+    end)
+    |> case do
+      {:ok, converted} -> {:ok, Enum.reverse(converted)}
+      {:error, :invalid_attestation} -> {:error, :invalid_attestation}
+    end
   end
 
   defp normalize(%{} = envelope) do

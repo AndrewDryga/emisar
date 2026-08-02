@@ -300,15 +300,18 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      {:ok, run} =
-        Runs.create_run(%{
+      %{attestation: attestation} =
+        Fixtures.Runs.signed_attestation(ca_id: "acme-2026", key_id: "op-dba-01")
+
+      run =
+        Fixtures.Runs.create_signed_run(%{
           account_id: account.id,
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
           args: %{},
           operation_id: "op_724NN9NMDZ1T76NARWCKM5A0D6",
-          attestation: %{"cert" => %{"ca_id" => "acme-2026", "key_id" => "op-dba-01"}}
+          attestation: attestation
         })
 
       payload =

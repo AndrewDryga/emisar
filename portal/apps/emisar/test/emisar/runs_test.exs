@@ -1,8 +1,8 @@
 defmodule Emisar.RunsTest do
   use Emisar.DataCase, async: true
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Approvals, Catalog, MCPOperations, Repo, RequestContext, Runners, Runs}
-  alias Emisar.Fixtures
+  alias Emisar.{ApiKeys, Approvals, Audit, Catalog, Fixtures}
+  alias Emisar.{MCPOperations, Repo, RequestContext, Runners, Runs}
   alias Emisar.Runners.Presence
   alias Emisar.Runs.{ActionRun, RunEvent}
 
@@ -73,6 +73,7 @@ defmodule Emisar.RunsTest do
 
   @mcp_pack_hash "sha256:" <> String.duplicate("a", 64)
   @mcp_pack_ref "linux-core@1.0.0/" <> @mcp_pack_hash
+  @mcp_portal_origin "https://portal.example"
 
   describe "run_filters/0" do
     test "carries the Runs table's filters in panel order" do
@@ -976,6 +977,23 @@ defmodule Emisar.RunsTest do
       assert Keyword.has_key?(changeset.errors, :args_raw)
     end
 
+    # Signed audit state is minted by exactly one path — the preflighted MCP
+    # fan-out — so this seam refuses the raw envelope and the carrier alike
+    # rather than letting another domain caller mint one.
+    test "refuses any attestation", %{account: account, runner: runner} do
+      signed = Fixtures.Runs.signed_attestation()
+
+      for claimed <- [signed.envelope, signed.attestation] do
+        attrs = base_attrs(account.id, runner.id, %{attestation: claimed})
+
+        assert {:error, changeset} = Runs.create_run(attrs)
+        assert "must be a validated attestation" in errors_on(changeset).attestation
+      end
+
+      refute Repo.one(ActionRun)
+      refute Repo.one(Audit.Event)
+    end
+
     test "broadcasts the new run on the account topic (fresh insert only)", %{
       account: account,
       runner: runner
@@ -1611,31 +1629,30 @@ defmodule Emisar.RunsTest do
 
       assert {:error, :runner_requires_attestation} =
                Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+
+      refute Repo.one(ActionRun)
     end
 
-    test "a signed dispatch persists the attestation and relays it on the wire" do
+    # A `%Attestation{}` is an ordinary struct: holding one says nothing about
+    # what dispatch it was bound to. Only the MCP fan-out, which validates the
+    # raw header against its own facts, may assert signed authority — so a
+    # direct dispatch refuses the envelope AND the carrier alike.
+    test "no caller-supplied attestation satisfies signature-required dispatch" do
       account = Fixtures.Accounts.create_account()
       _ = Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
       runner = Fixtures.Runners.create_runner(account_id: account.id, enforce_signatures: true)
       _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
-      attestation = %{
-        "key_id" => "k1",
-        "sig" => "deadbeef",
-        "nonce" => "n1",
-        "issued_at" => "2026-06-17T12:00:00Z"
-      }
+      signed = Fixtures.Runs.signed_attestation()
 
-      Emisar.Runners.subscribe_runner_transport(runner)
+      for claimed <- [signed.envelope, signed.attestation] do
+        attrs = base_attrs(account.id, runner.id, %{attestation: claimed})
+        assert Runs.dispatch_run(attrs, subject) == {:error, :invalid_attestation}
+      end
 
-      attrs = base_attrs(account.id, runner.id, %{attestation: attestation})
-      assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
-
-      # Stored on the run row, and relayed verbatim — the portal only carries it.
-      assert run.attestation == attestation
-      assert_receive {:cloud_to_runner, _generation, payload}, 500
-      assert payload["attestation"] == attestation
+      refute Repo.one(ActionRun)
+      refute Repo.one(Audit.Event)
     end
 
     test "canonical runner options survive the DB and wire round-trip" do
@@ -1845,6 +1862,43 @@ defmodule Emisar.RunsTest do
       assert {:error, :invalid_targets} =
                Runs.compose_dispatch_batch_in_multi(Multi.new(), [], subject, :empty)
     end
+
+    test "refuses any caller-supplied attestation before composing the batch" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      signed = Fixtures.Runs.signed_attestation()
+
+      for claimed <- [signed.envelope, signed.attestation] do
+        target =
+          runner
+          |> mcp_target_attrs(key, "op_334NN9NMDZ1T76NARWCKM5A0D6")
+          |> Map.put(:attestation, claimed)
+
+        assert Runs.compose_dispatch_batch_in_multi(Multi.new(), [target], subject, :forged) ==
+                 {:error, :invalid_attestation}
+      end
+
+      refute Repo.one(ActionRun)
+    end
+
+    test "refuses an unsigned composed target on an enforcing runner" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+
+      assert {:ok, runner} =
+               Emisar.Runners.apply_state(runner, %{
+                 "enforce_signatures" => true,
+                 "max_attestation_age_seconds" => 3_600
+               })
+
+      target = mcp_target_attrs(runner, key, "op_334NN9NMDZ1T76NARWCKM5A0D6")
+
+      assert {:ok, multi} =
+               Runs.compose_dispatch_batch_in_multi(Multi.new(), [target], subject, :unsigned)
+
+      assert {:error, {:dispatch_batch, :unsigned}, :runner_requires_attestation, _changes} =
+               Repo.transaction(multi)
+
+      refute Repo.one(ActionRun)
+    end
   end
 
   describe "compose_runbook_attempts_in_multi/6" do
@@ -1867,6 +1921,34 @@ defmodule Emisar.RunsTest do
                membership_id,
                :malformed
              ) == {:error, :invalid_targets}
+    end
+
+    test "refuses any caller-supplied attestation before composing attempts" do
+      account_id = Ecto.UUID.generate()
+      membership_id = Ecto.UUID.generate()
+      execution_id = Ecto.UUID.generate()
+      signed = Fixtures.Runs.signed_attestation()
+
+      for claimed <- [signed.envelope, signed.attestation] do
+        target = %{
+          runner_id: Ecto.UUID.generate(),
+          runbook_execution_item_id: Ecto.UUID.generate(),
+          runbook_execution_id: execution_id,
+          attempt_number: 1,
+          attestation: claimed
+        }
+
+        assert Runs.compose_runbook_attempts_in_multi(
+                 Multi.new(),
+                 [target],
+                 account_id,
+                 membership_id,
+                 :forged,
+                 runbook_execution_id: execution_id
+               ) == {:error, :invalid_attestation}
+      end
+
+      refute Repo.one(ActionRun)
     end
   end
 
@@ -2140,15 +2222,14 @@ defmodule Emisar.RunsTest do
       operation = mcp_operation_attrs("op_514NN9NMDZ1T76NARWCKM5A0D6")
       now = DateTime.utc_now()
 
-      attestation = %{
-        "issued_at" => now |> DateTime.add(-7_200, :second) |> DateTime.to_iso8601(),
-        "cert" => %{"valid_until" => now |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()}
-      }
+      signed =
+        signed_mcp_attestation(operation, [runner],
+          issued_at: now |> DateTime.add(-7_200, :second) |> DateTime.to_iso8601(),
+          valid_until: now |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
+        )
 
-      target =
-        runner
-        |> mcp_target_attrs(key, operation.operation_id)
-        |> Map.put(:attestation, attestation)
+      operation = signed_mcp_operation_attrs(operation, signed.header)
+      target = mcp_target_attrs(runner, key, operation.operation_id)
 
       assert {:error, :attestation_stale} =
                Runs.dispatch_mcp_fanout(operation, [target], subject)
@@ -2187,15 +2268,14 @@ defmodule Emisar.RunsTest do
       now = DateTime.utc_now()
       cert_deadline = DateTime.add(now, 600, :second)
 
-      attestation = %{
-        "issued_at" => DateTime.to_iso8601(now),
-        "cert" => %{"valid_until" => DateTime.to_iso8601(cert_deadline)}
-      }
+      signed =
+        signed_mcp_attestation(operation, [runner],
+          issued_at: DateTime.to_iso8601(now),
+          valid_until: DateTime.to_iso8601(cert_deadline)
+        )
 
-      target =
-        runner
-        |> mcp_target_attrs(key, operation.operation_id)
-        |> Map.put(:attestation, attestation)
+      operation = signed_mcp_operation_attrs(operation, signed.header)
+      target = mcp_target_attrs(runner, key, operation.operation_id)
 
       assert {:ok, [%ActionRun{status: :pending_approval} = run]} =
                Runs.dispatch_mcp_fanout(operation, [target], subject)
@@ -2206,6 +2286,126 @@ defmodule Emisar.RunsTest do
       assert request.run_id == run.id
       assert DateTime.diff(request.expires_at, now, :second) in 599..600
       assert DateTime.compare(request.expires_at, cert_deadline) != :gt
+    end
+
+    test "a valid signed fan-out persists and relays the normalized envelope" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+
+      assert {:ok, runner} =
+               Emisar.Runners.apply_state(runner, %{
+                 "enforce_signatures" => true,
+                 "max_attestation_age_seconds" => 3_600
+               })
+
+      :ok = Emisar.Runners.subscribe_runner_transport(runner)
+
+      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D7")
+      signed = signed_mcp_attestation(operation, [runner])
+      target = mcp_target_attrs(runner, key, operation.operation_id)
+
+      assert {:ok, [run]} =
+               Runs.dispatch_mcp_fanout(
+                 signed_mcp_operation_attrs(operation, signed.header),
+                 [target],
+                 subject
+               )
+
+      assert run.attestation == signed.envelope
+      assert_receive {:cloud_to_runner, _generation, payload}, 500
+      assert payload["attestation"] == signed.envelope
+    end
+
+    test "an unsigned call to an enforcing runner names the refs that enforce" do
+      %{subject: subject, runners: [open_runner, enforcing_runner], key: key} =
+        mcp_fanout_fixture(["low", "low"])
+
+      assert {:ok, enforcing_runner} =
+               Emisar.Runners.apply_state(enforcing_runner, %{
+                 "enforce_signatures" => true,
+                 "max_attestation_age_seconds" => 3_600
+               })
+
+      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D8")
+
+      targets =
+        Enum.map(
+          [open_runner, enforcing_runner],
+          &mcp_target_attrs(&1, key, operation.operation_id)
+        )
+
+      assert Runs.dispatch_mcp_fanout(operation, targets, subject) ==
+               {:error, {:signature_required, mcp_runner_refs([enforcing_runner])}}
+
+      refute Repo.one(MCPOperations.Operation)
+      refute Repo.one(ActionRun)
+    end
+
+    test "a caller-supplied attestation never reaches the operation" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D9")
+      signed = Fixtures.Runs.signed_attestation()
+
+      # Even the carrier this context would itself have minted is refused: the
+      # facts it bound came from the fixture, not from this call.
+      for claimed <- [signed.envelope, signed.attestation] do
+        target =
+          runner
+          |> mcp_target_attrs(key, operation.operation_id)
+          |> Map.put(:attestation, claimed)
+
+        assert Runs.dispatch_mcp_fanout(operation, [target], subject) ==
+                 {:error, :invalid_attestation}
+      end
+
+      refute Repo.one(MCPOperations.Operation)
+      refute Repo.one(ActionRun)
+    end
+
+    test "every bound fact must agree with the call before the operation is reserved" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0DA")
+      target = mcp_target_attrs(runner, key, operation.operation_id)
+
+      mismatches = [
+        [action_id: "linux.reboot"],
+        [pack_ref: "linux-core@2.0.0/" <> @mcp_pack_hash],
+        [args_raw: ~s({"verbose":true})],
+        [runner_refs: ["stand-in~" <> String.duplicate("0", 32)]],
+        [reason: "something else"],
+        [operation_id: "op_00000000000000000000000000"],
+        [portal_origin: "https://attacker.example"]
+      ]
+
+      for overrides <- mismatches do
+        signed = signed_mcp_attestation(operation, [runner], overrides)
+
+        assert Runs.dispatch_mcp_fanout(
+                 signed_mcp_operation_attrs(operation, signed.header),
+                 [target],
+                 subject
+               ) == {:error, :invalid_attestation}
+      end
+
+      refute Repo.one(MCPOperations.Operation)
+      refute Repo.one(ActionRun)
+    end
+
+    test "the signed target set is compared against the runners this account scopes" do
+      %{subject: subject, runners: [selected, unselected], key: key} =
+        mcp_fanout_fixture(["low", "low"])
+
+      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0DB")
+      signed = signed_mcp_attestation(operation, [unselected])
+      target = mcp_target_attrs(selected, key, operation.operation_id)
+
+      assert Runs.dispatch_mcp_fanout(
+               signed_mcp_operation_attrs(operation, signed.header),
+               [target],
+               subject
+             ) == {:error, :invalid_attestation}
+
+      refute Repo.one(MCPOperations.Operation)
+      refute Repo.one(ActionRun)
     end
 
     test "rejects duplicate targets before reserving an operation" do
@@ -2521,6 +2721,37 @@ defmodule Emisar.RunsTest do
     }
   end
 
+  defp mcp_runner_refs(runners) do
+    Enum.map(runners, fn runner ->
+      {:ok, runner_ref} = Emisar.Runners.public_ref(runner)
+      runner_ref
+    end)
+  end
+
+  # The bridge signs over the facts of the call it is about to make, so the
+  # defaults here mirror `mcp_target_attrs/3` and a test overrides only the one
+  # fact it is bending.
+  defp signed_mcp_attestation(operation, runners, overrides \\ []) do
+    defaults = [
+      action_id: operation.action_id,
+      pack_ref: operation.pack_ref,
+      args_raw: "{}",
+      runner_refs: mcp_runner_refs(runners),
+      reason: "inspect uptime",
+      operation_id: operation.operation_id,
+      portal_origin: @mcp_portal_origin
+    ]
+
+    Fixtures.Runs.signed_attestation(Keyword.merge(defaults, overrides))
+  end
+
+  defp signed_mcp_operation_attrs(operation, header) do
+    Map.merge(operation, %{
+      attestation_headers: [header],
+      portal_origin: @mcp_portal_origin
+    })
+  end
+
   defp mcp_target_attrs(runner, key, operation_id) do
     %{
       action_id: "linux.uptime",
@@ -2678,19 +2909,14 @@ defmodule Emisar.RunsTest do
     end
 
     defp signed_run(account, runner, issued_at) do
-      cert_deadline = DateTime.utc_now() |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
+      valid_until = DateTime.utc_now() |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
 
-      {:ok, run} =
-        Runs.create_run(
-          base_attrs(account.id, runner.id, %{
-            attestation: %{
-              "issued_at" => issued_at,
-              "cert" => %{"valid_until" => cert_deadline}
-            }
-          })
-        )
+      %{attestation: attestation} =
+        Fixtures.Runs.signed_attestation(issued_at: issued_at, valid_until: valid_until)
 
-      run
+      account.id
+      |> base_attrs(runner.id, %{attestation: attestation})
+      |> Fixtures.Runs.create_signed_run()
     end
 
     test "a fresh signature passes", %{account: account, runner: runner} do

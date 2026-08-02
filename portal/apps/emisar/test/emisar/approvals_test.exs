@@ -2164,9 +2164,10 @@ defmodule Emisar.ApprovalsTest do
     } do
       # Parked with a signature already 2h old — it would be refused at dispatch.
       stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
+      %{attestation: attestation} = Fixtures.Runs.signed_attestation(issued_at: stale)
 
-      {:ok, run} =
-        Runs.create_run(%{
+      run =
+        Fixtures.Runs.create_signed_run(%{
           account_id: account.id,
           runner_id: runner.id,
           action_id: "linux.uptime",
@@ -2175,7 +2176,7 @@ defmodule Emisar.ApprovalsTest do
           initiating_membership_id: requester_membership.id,
           args: %{},
           status: :pending_approval,
-          attestation: %{"key_id" => "k", "sig" => "x", "issued_at" => stale}
+          attestation: attestation
         })
 
       {:ok, request} = Approvals.create_request(run, requester.id, "please")
@@ -2198,8 +2199,11 @@ defmodule Emisar.ApprovalsTest do
       fresh = DateTime.to_iso8601(DateTime.utc_now())
       valid_until = DateTime.utc_now() |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
 
-      {:ok, run} =
-        Runs.create_run(%{
+      %{attestation: attestation} =
+        Fixtures.Runs.signed_attestation(issued_at: fresh, valid_until: valid_until)
+
+      run =
+        Fixtures.Runs.create_signed_run(%{
           account_id: account.id,
           runner_id: runner.id,
           action_id: "linux.uptime",
@@ -2208,12 +2212,7 @@ defmodule Emisar.ApprovalsTest do
           initiating_membership_id: requester_membership.id,
           args: %{},
           status: :pending_approval,
-          attestation: %{
-            "key_id" => "k",
-            "sig" => "x",
-            "issued_at" => fresh,
-            "cert" => %{"valid_until" => valid_until}
-          }
+          attestation: attestation
         })
 
       {:ok, request} = Approvals.create_request(run, requester.id, "please")

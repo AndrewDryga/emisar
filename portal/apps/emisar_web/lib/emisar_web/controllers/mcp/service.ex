@@ -37,7 +37,6 @@ defmodule EmisarWeb.MCP.Service do
           source: "mcp",
           api_key_id: api_key.id,
           client_info: api_key.last_client_info || %{},
-          attestation: intent.attestation,
           operation_id: operation_attrs.operation_id,
           pack_ref: intent.pack_ref,
           requested_by_membership_id: api_key.created_by_membership_id

@@ -1,6 +1,7 @@
 defmodule Emisar.Runs.ActionRunTest do
   use ExUnit.Case, async: true
   import Emisar.DataCase, only: [errors_on: 1]
+  alias Emisar.Fixtures
   alias Emisar.Runs.ActionRun
 
   defp create_attrs(attrs) do
@@ -252,14 +253,30 @@ defmodule Emisar.Runs.ActionRunTest do
 
     test "rejects nonempty runner options on an attested run" do
       attrs = %{
-        attestation: %{"version" => "emisar-attestation-v4"},
+        attestation: Fixtures.Runs.signed_attestation().attestation,
         opts: %{"timeout" => 1}
       }
 
       changeset = ActionRun.Changeset.create(create_attrs(attrs))
 
       refute changeset.valid?
-      assert {"must be empty for an attested run", _opts} = changeset.errors[:opts]
+      assert "must be empty for an attested run" in errors_on(changeset).opts
+    end
+
+    test "refuses an attestation the Runs domain did not validate" do
+      forged = Fixtures.Runs.signed_attestation().envelope
+      changeset = ActionRun.Changeset.create(create_attrs(%{attestation: forged}))
+
+      refute changeset.valid?
+      assert "must be a validated attestation" in errors_on(changeset).attestation
+    end
+
+    test "persists a validated attestation as its normalized envelope" do
+      %{attestation: attestation, envelope: envelope} = Fixtures.Runs.signed_attestation()
+      changeset = ActionRun.Changeset.create(create_attrs(%{attestation: attestation}))
+
+      assert changeset.valid?
+      assert changeset.changes.attestation == envelope
     end
   end
 
