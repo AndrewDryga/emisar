@@ -122,7 +122,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ "No actions yet"
+    assert html =~ "No actions yet."
     assert html =~ "hasn&#39;t reported a catalog yet"
   end
 
@@ -135,7 +135,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ "No runs yet"
+    assert html =~ "No runs yet."
     assert html =~ "Nothing dispatched to this runner yet"
   end
 

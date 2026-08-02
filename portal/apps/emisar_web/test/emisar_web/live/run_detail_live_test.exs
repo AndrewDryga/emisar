@@ -161,6 +161,21 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "approval denied: not during the change freeze"
   end
 
+  test "the held-run approval CTA uses the shared arrow, not a literal glyph", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    run = run_with(account, %{status: :pending_approval, requires_approval: true})
+    {:ok, _request} = Emisar.Approvals.create_request(run, user.id, "deploy")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "Waiting on approval"
+    assert html =~ "View approval"
+    # <.cta_arrow/> — a decorative icon span, not a "→" screen readers announce.
+    assert html =~ "hero-arrow-right"
+    refute html =~ "View approval →"
+  end
+
   test "omits the policy summary when no decision was recorded", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{})

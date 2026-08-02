@@ -679,10 +679,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           View activity
         </.button>
       </:actions>
-      <div :if={not @loaded?} class="mt-8 flex items-center gap-2 text-sm text-zinc-400">
-        <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
-        Loading approval…
-      </div>
+      <.loading_state :if={not @loaded?} />
       <%!-- The page owns its rhythm (§3.3): ONE space-y-12 child, mt-4 for air
            under the title; the STATUS block groups the naked meta row with the
            verdict that elaborates it. --%>
@@ -1268,26 +1265,32 @@ defmodule EmisarWeb.ApprovalDetailLive do
     """
   end
 
-  defp decision_intro(true, _self_blocked?, _options) do
+  # Self-blocked requester: only Deny renders, so the intro must not explain
+  # an Approve button they'll never see — the paragraph above already says a
+  # different operator has to approve.
+  defp decision_intro(_execution_request?, true, _options) do
+    "You can still deny your own request — your decision is logged."
+  end
+
+  defp decision_intro(true, false, _options) do
     "Approve once to release every action shown here. This execution will not ask for another " <>
       "approval. If policy changes to deny the work, runner access is removed, or a trusted " <>
       "pack is no longer available before dispatch, Emisar stops the execution."
   end
 
-  defp decision_intro(false, self_blocked?, options) do
-    "Approve runs this action once#{reuse_clause(self_blocked?, options)} decision is logged."
+  defp decision_intro(false, false, options) do
+    "Approve runs this action once#{reuse_clause(options)} decision is logged."
   end
 
   # The middle clause of the decide-form lead line. The reuse-window offer
   # appears only when the standing-grant menu itself does — the account allows a
-  # duration past "once" (`grant_duration_options` has more than one entry) and
-  # the operator isn't self-blocked — so the copy never names an affordance the
-  # form doesn't show.
-  defp reuse_clause(false, [_, _ | _]) do
+  # duration past "once" (`grant_duration_options` has more than one entry) —
+  # so the copy never names an affordance the form doesn't show.
+  defp reuse_clause([_, _ | _]) do
     " — or pick a reuse window to issue a standing grant. Either"
   end
 
-  defp reuse_clause(_self_blocked?, _options), do: ". Your"
+  defp reuse_clause(_options), do: ". Your"
 
   # The overall verdict the page leads with. A still-pending request that has
   # lapsed past its expiry reads as :expired — the sweeper just hasn't

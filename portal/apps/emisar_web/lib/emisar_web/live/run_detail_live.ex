@@ -368,9 +368,10 @@ defmodule EmisarWeb.RunDetailLive do
                 <.button
                   tone={:amber}
                   size={:md}
+                  class="group"
                   navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
                 >
-                  View approval →
+                  View approval <.cta_arrow />
                 </.button>
               </div>
             </.event_block>
@@ -391,9 +392,10 @@ defmodule EmisarWeb.RunDetailLive do
                   variant={:secondary}
                   tone={:rose}
                   size={:md}
+                  class="group"
                   navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
                 >
-                  View approval →
+                  View approval <.cta_arrow />
                 </.button>
               </div>
             </.event_block>

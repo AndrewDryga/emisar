@@ -541,9 +541,10 @@ defmodule EmisarWeb.EnrollmentKeysLive do
         <.button
           variant={:secondary}
           size={:md}
+          class="group"
           navigate={~p"/app/#{@current_account}/settings/billing"}
         >
-          See plans →
+          See plans <.cta_arrow />
         </.button>
       </:action>
     </.callout>

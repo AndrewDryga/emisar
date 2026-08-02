@@ -540,7 +540,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                 <% else %>
                   <.empty_state
                     icon="hero-cpu-chip"
-                    title="No actions yet"
+                    title="No actions yet."
                     class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
                   >
                     This runner hasn't reported a catalog yet. Check the runner logs on the host.
@@ -571,7 +571,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                    column full) state. --%>
               <.empty_state
                 icon="hero-bolt"
-                title="No runs yet"
+                title="No runs yet."
                 class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
               >
                 Nothing dispatched to this runner yet — runs land here as they happen.

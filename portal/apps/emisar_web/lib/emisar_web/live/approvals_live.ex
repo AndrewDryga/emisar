@@ -452,7 +452,7 @@ defmodule EmisarWeb.ApprovalsLive do
                         :if={request.reason && request.reason != ""}
                         class="mt-1 text-sm italic text-zinc-400"
                       >
-                        "{request.reason}"
+                        “{request.reason}”
                       </p>
                     </div>
                     <div class="shrink-0 text-right">

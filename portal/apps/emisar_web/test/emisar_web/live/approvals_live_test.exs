@@ -94,7 +94,9 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert html =~ "linux.reboot"
-    assert html =~ "reboot for kernel patch"
+    # Curly quotes — the reason is operator prose, quoted the same way the
+    # detail page quotes a decision reason.
+    assert html =~ "“reboot for kernel patch”"
   end
 
   test "labels a requester with this account's directory name", %{conn: conn} do

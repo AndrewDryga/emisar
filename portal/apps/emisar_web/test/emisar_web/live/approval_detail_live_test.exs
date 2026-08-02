@@ -466,6 +466,31 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ note
   end
 
+  test "a self-blocked requester gets deny-only copy, no Approve affordance", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user, allow_self_approval: false)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    # The intro must not describe the Approve button (or the reuse offer)
+    # the self-blocked requester never sees — only the Deny they still have.
+    assert html =~ "a different operator must approve it."
+    assert html =~ "You can still deny your own request — your decision is logged."
+    refute html =~ "Approve runs this action once"
+    refute html =~ "Approve and send"
+    refute html =~ "Allow the LLM to reuse this approval"
+  end
+
+  test "the disconnected (dead) render shows the shared loading state", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    dead = conn |> get(~p"/app/#{account}/approvals/#{request.id}") |> html_response(200)
+
+    assert dead =~ "Loading…"
+    refute dead =~ "Loading approval"
+  end
+
   test "the free-text decision controls each have an accessible name", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
