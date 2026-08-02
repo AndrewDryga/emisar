@@ -3460,6 +3460,97 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "invite_user_to_account_and_deliver/5" do
+    test "emails the join link and reports it sent, without handing back the token" do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      email = "deliver-#{System.unique_integer([:positive])}@example.test"
+
+      assert {:ok, result} =
+               Accounts.invite_user_to_account_and_deliver(
+                 email,
+                 "operator",
+                 Accounts.RunnerAccess.none(),
+                 owner,
+                 subject
+               )
+
+      assert result.delivery == {:ok, :sent}
+      assert %Membership{role: :operator} = result.membership
+      assert result.user.email == email
+      refute Map.has_key?(result, :invitation_token)
+
+      assert_receive {:email, sent}
+      assert sent.to == [{"", email}]
+      assert sent.subject == "You're invited to #{account.name} on emisar"
+      assert sent.text_body =~ "/accept_invitation/"
+    end
+
+    test "a suppressed address still gets the invitation, but no email is sent" do
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      email = "bounced-#{System.unique_integer([:positive])}@example.test"
+      {:ok, _} = Mail.suppress(email, :hard_bounce, "bounce")
+
+      assert {:ok, result} =
+               Accounts.invite_user_to_account_and_deliver(
+                 email,
+                 "operator",
+                 Accounts.RunnerAccess.none(),
+                 owner,
+                 subject
+               )
+
+      assert result.delivery == {:ok, :suppressed}
+      refute Map.has_key?(result, :invitation_token)
+      assert Repo.reload!(result.membership).invitation_token_digest
+      refute_received {:email, _}
+    end
+
+    test "a mailer failure is reported while the invitation stays persisted" do
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      email = "mailer-down-#{System.unique_integer([:positive])}@example.test"
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
+
+      assert {:ok, result} =
+               Accounts.invite_user_to_account_and_deliver(
+                 email,
+                 "operator",
+                 Accounts.RunnerAccess.none(),
+                 owner,
+                 subject
+               )
+
+      assert result.delivery == {:error, {:failed, :boom}}
+      refute Map.has_key?(result, :invitation_token)
+      assert Repo.reload!(result.membership).invitation_token_digest
+    end
+
+    test "a viewer cannot invite, and nothing is emailed" do
+      account = Fixtures.Accounts.create_account()
+      viewer = Fixtures.Users.create_user()
+
+      viewer_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(viewer_membership)
+      email = "denied-deliver-#{System.unique_integer([:positive])}@example.test"
+
+      assert Accounts.invite_user_to_account_and_deliver(
+               email,
+               "operator",
+               Accounts.RunnerAccess.all(),
+               viewer,
+               subject
+             ) ==
+               {:error, :unauthorized}
+
+      refute_received {:email, _}
+    end
+  end
+
   describe "resend_account_invitation/2" do
     test "refreshes the pending invite token and validity window" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
@@ -3588,6 +3679,81 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.resend_account_invitation(membership, admin_subject) ==
                {:error, :insufficient_privileges}
+    end
+  end
+
+  describe "resend_account_invitation_and_deliver/3" do
+    test "rotates the token, emails the refreshed link, and hands back no token" do
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      email = "resend-deliver-#{System.unique_integer([:positive])}@example.test"
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(
+          email,
+          "operator",
+          Accounts.RunnerAccess.none(),
+          subject
+        )
+
+      assert {:ok, result} =
+               Accounts.resend_account_invitation_and_deliver(membership, owner, subject)
+
+      assert result.delivery == {:ok, :sent}
+      refute Map.has_key?(result, :invitation_token)
+
+      refute Repo.reload!(membership).invitation_token_digest ==
+               membership.invitation_token_digest
+
+      assert_receive {:email, sent}
+      assert sent.to == [{"", email}]
+      assert sent.text_body =~ "/accept_invitation/"
+    end
+
+    test "reports a suppressed resend after rotating the invitation" do
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      email = "suppressed-resend-#{System.unique_integer([:positive])}@example.test"
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(
+          email,
+          "operator",
+          Accounts.RunnerAccess.none(),
+          subject
+        )
+
+      {:ok, _} = Mail.suppress(email, :spam_complaint, "complaint")
+
+      assert {:ok, result} =
+               Accounts.resend_account_invitation_and_deliver(membership, owner, subject)
+
+      assert result.delivery == {:ok, :suppressed}
+      refute Map.has_key?(result, :invitation_token)
+
+      refute Repo.reload!(membership).invitation_token_digest ==
+               membership.invitation_token_digest
+
+      refute_received {:email, _}
+    end
+
+    test "an owner of another account cannot resend, and nothing is emailed" do
+      {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{membership: membership}} =
+        Accounts.invite_user_to_account(
+          "cross-resend-deliver-#{System.unique_integer([:positive])}@example.test",
+          "operator",
+          Accounts.RunnerAccess.all(),
+          subject_a
+        )
+
+      assert Accounts.resend_account_invitation_and_deliver(membership, owner_b, subject_b) ==
+               {:error, :unauthorized}
+
+      assert Repo.reload!(membership).invitation_token_digest ==
+               membership.invitation_token_digest
+
+      refute_received {:email, _}
     end
   end
 

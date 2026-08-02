@@ -2379,6 +2379,29 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Invites a user into the account and emails them the join link.
+
+  Same authorization, persistence, and errors as `invite_user_to_account/4`;
+  the raw token is not returned by this workflow. `inviter` is who the email
+  is attributed to — passed explicitly because a support subject has no actor.
+
+  Returns `{:ok, %{membership: m, user: u, delivery: delivery}}`, where
+  `delivery` is `{:ok, :sent}`, `{:ok, :suppressed}` (the address bounced or
+  was marked spam, so nothing was sent), or `{:error, reason}`.
+  """
+  def invite_user_to_account_and_deliver(
+        email,
+        role,
+        %RunnerAccess{} = access,
+        %{} = inviter,
+        %Subject{account: %Account{} = account} = subject
+      ) do
+    with {:ok, invitation} <- invite_user_to_account(email, role, access, subject) do
+      {:ok, invited_result(invitation, inviter, account)}
+    end
+  end
+
+  @doc """
   Resends a pending account invitation. Requires `invite` on memberships,
   role coverage for the invitee's current role, and same-account scope.
 
@@ -2421,6 +2444,41 @@ defmodule Emisar.Accounts do
           {:error, reason}
       end
     end
+  end
+
+  @doc """
+  Resends a pending account invitation and emails the refreshed join link.
+
+  Same authorization, persistence, and errors as
+  `resend_account_invitation/2`; the raw token is not returned by this workflow.
+  Returns `{:ok, %{membership: m, user: u, delivery: delivery}}` with the
+  same `delivery` shapes as `invite_user_to_account_and_deliver/5`.
+  """
+  def resend_account_invitation_and_deliver(
+        %Membership{} = membership,
+        %{} = inviter,
+        %Subject{account: %Account{} = account} = subject
+      ) do
+    with {:ok, invitation} <- resend_account_invitation(membership, subject) do
+      {:ok, invited_result(invitation, inviter, account)}
+    end
+  end
+
+  # The membership + token are committed before the send, so the email is a
+  # post-commit side effect the caller reports on rather than a step that can
+  # undo the invitation. The raw token stays in this delivery workflow — its
+  # callers get a verdict, never a link they could relay themselves.
+  defp invited_result(invitation, inviter, %Account{} = account) do
+    %{membership: membership, user: user, invitation_token: token} = invitation
+
+    delivery =
+      case Emisar.Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token) do
+        {:ok, %{suppressed: true}} -> {:ok, :suppressed}
+        {:ok, _sent} -> {:ok, :sent}
+        {:error, reason} -> {:error, reason}
+      end
+
+    %{membership: membership, user: user, delivery: delivery}
   end
 
   # Inviting needs the base invite_member permission, and you can't invite

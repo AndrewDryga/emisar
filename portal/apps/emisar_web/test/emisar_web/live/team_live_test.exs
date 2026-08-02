@@ -794,7 +794,8 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       # The address hard-bounced / was spam-flagged earlier, so the mailer skips
       # the send. The invite still exists, but the success step must say the email
-      # won't arrive — otherwise the member sits "unconfirmed" forever.
+      # won't arrive — otherwise the member sits "unconfirmed" forever. The
+      # delivery workflow never returns the token, so the copy can't offer it.
       email = "bounced-#{System.unique_integer([:positive])}@example.com"
       {:ok, _} = Emisar.Mail.suppress(email, :hard_bounce)
 
@@ -806,9 +807,33 @@ defmodule EmisarWeb.TeamLiveTest do
         |> form("#invite_form", %{"invite" => %{"email" => email, "role" => "operator"}})
         |> render_submit()
 
-      assert html =~ "Invitation sent"
+      refute html =~ "Invitation sent"
+      assert html =~ "Invitation saved, but we couldn&#39;t email it"
       assert html =~ "bounced or was marked spam"
-      assert html =~ "another way"
+      refute html =~ "another way"
+      assert html =~ "Invite another"
+      assert html =~ "Back to members"
+    end
+
+    test "a failed send says the invite is pending, not that it was sent", %{
+      owner: owner,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team/invite")
+
+      html =
+        lv
+        |> form("#invite_form", %{
+          "invite" => %{"email" => "undeliverable@example.com", "role" => "operator"}
+        })
+        |> render_submit()
+
+      refute html =~ "Invitation sent"
+      assert html =~ "Invitation saved, but the email didn&#39;t go out"
+      assert html =~ "Resend it from the member list"
     end
 
     test "change_role promotes the member", %{

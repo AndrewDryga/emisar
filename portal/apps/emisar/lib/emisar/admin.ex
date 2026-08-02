@@ -9,7 +9,7 @@ defmodule Emisar.Admin do
   alias Emisar.{Accounts, Auth, Billing}
   alias Emisar.Admin.Query
   alias Emisar.Auth.Subject
-  alias Emisar.{Mailers, Repo, Users}
+  alias Emisar.{Repo, Users}
 
   @arg_name ~r/^[a-z][a-z0-9_]*$/
   @job_modules [
@@ -140,15 +140,8 @@ defmodule Emisar.Admin do
     with {:ok, account} <- fetch_account(args),
          {:ok, membership} <- fetch_membership(account.id, member),
          target_subject = support_subject(account),
-         {:ok, result} <- Accounts.resend_account_invitation(membership, target_subject) do
-      _ =
-        Mailers.UserNotifier.deliver_account_invitation(
-          result.user,
-          inviter(),
-          account,
-          result.invitation_token
-        )
-
+         {:ok, result} <-
+           Accounts.resend_account_invitation_and_deliver(membership, inviter(), target_subject) do
       {:ok, membership_result(result.membership)}
     end
   end
@@ -160,20 +153,13 @@ defmodule Emisar.Admin do
     with {:ok, account} <- fetch_account(args),
          target_subject = support_subject(account),
          {:ok, result} <-
-           Accounts.invite_user_to_account(
+           Accounts.invite_user_to_account_and_deliver(
              email,
              role,
              Accounts.RunnerAccess.all(),
+             inviter(),
              target_subject
            ) do
-      _ =
-        Mailers.UserNotifier.deliver_account_invitation(
-          result.user,
-          inviter(),
-          account,
-          result.invitation_token
-        )
-
       {:ok, membership_result(result.membership)}
     end
   end

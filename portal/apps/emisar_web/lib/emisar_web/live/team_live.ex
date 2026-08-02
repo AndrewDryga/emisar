@@ -1,6 +1,6 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Mailers, Runners, SSO}
+  alias Emisar.{Accounts, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
@@ -602,20 +602,21 @@ defmodule EmisarWeb.TeamLive do
   # sync with the authorizers: owner manages billing + adds owners; admin manages
   # members/runners/policies and approves runs but only *views* billing;
   defp do_invite(socket, email, role, %Accounts.RunnerAccess{} = access) do
-    account = socket.assigns.current_account
-    inviter = socket.assigns.current_user
-
-    case Accounts.invite_user_to_account(email, role, access, socket.assigns.current_subject) do
-      {:ok, %{user: user, invitation_token: token}} ->
-        delivery = Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token)
-
+    case Accounts.invite_user_to_account_and_deliver(
+           email,
+           role,
+           access,
+           socket.assigns.current_user,
+           socket.assigns.current_subject
+         ) do
+      {:ok, %{delivery: delivery}} ->
         # Success is a page STATE, not a flash-and-reload: the invite view swaps
         # to a confirmation with "Invite another" / "Back to members", so the
         # inviter isn't dumped back onto the roster wondering if it worked.
         {:noreply,
          socket
          |> assign(:invited_email, email)
-         |> assign(:invite_suppressed?, suppressed_delivery?(delivery))}
+         |> assign(:invite_delivery, delivery)}
 
       {:error, :already_member} ->
         {:noreply, put_flash(socket, :error, "#{email} is already a member.")}
@@ -626,13 +627,12 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp do_resend_invitation(socket, %Accounts.Membership{} = membership) do
-    account = socket.assigns.current_account
-    inviter = socket.assigns.current_user
-
-    case Accounts.resend_account_invitation(membership, socket.assigns.current_subject) do
-      {:ok, %{user: user, invitation_token: token}} ->
-        delivery = Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token)
-
+    case Accounts.resend_account_invitation_and_deliver(
+           membership,
+           socket.assigns.current_user,
+           socket.assigns.current_subject
+         ) do
+      {:ok, %{user: user, delivery: delivery}} ->
         {:noreply,
          socket
          |> flash_resend_invitation_outcome(user.email, delivery)
@@ -643,15 +643,11 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  # The invitation row + token are created regardless of email delivery; the
-  # success panel flags when we could NOT reach the address (a hard-bounced or
-  # spam-flagged recipient, recorded from the Postmark webhook) so the inviter
-  # relays the join link another way instead of leaving the new member stuck
-  # "unconfirmed, never signed in" with no hint why.
-  defp suppressed_delivery?({:ok, %{suppressed: true}}), do: true
-  defp suppressed_delivery?(_), do: false
-
-  defp flash_resend_invitation_outcome(socket, email, {:ok, %{suppressed: true}}) do
+  # The invitation row + token are refreshed regardless of email delivery, so
+  # the flash says which actually happened — otherwise the inviter waits on a
+  # member who never got a link. We can't offer the token as a fallback: it
+  # stays inside Accounts by design.
+  defp flash_resend_invitation_outcome(socket, email, {:ok, :suppressed}) do
     put_flash(
       socket,
       :error,
@@ -659,7 +655,15 @@ defmodule EmisarWeb.TeamLive do
     )
   end
 
-  defp flash_resend_invitation_outcome(socket, email, _delivery),
+  defp flash_resend_invitation_outcome(socket, email, {:error, _reason}) do
+    put_flash(
+      socket,
+      :error,
+      "Invite link refreshed for #{email}, but the email didn't go out. Try resending in a moment."
+    )
+  end
+
+  defp flash_resend_invitation_outcome(socket, email, {:ok, :sent}),
     do: put_flash(socket, :info, "Invitation resent to #{email}.")
 
   defp resend_invitation_error_message(:not_found),
@@ -1035,7 +1039,7 @@ defmodule EmisarWeb.TeamLive do
     socket
     |> assign(:loading?, false)
     |> assign(:invited_email, nil)
-    |> assign(:invite_suppressed?, false)
+    |> assign(:invite_delivery, nil)
     |> assign_form(invite_changeset())
   end
 
@@ -1083,32 +1087,21 @@ defmodule EmisarWeb.TeamLive do
         </.empty_state>
 
         <%!-- Sent: confirm it, then the two next moves — no vanishing flash.
-             The transient event grammar (icon-capped spine), brand = a
-             positive terminal that carries real content: the recipient and
-             the next actions. --%>
-        <.event_block
+             The transient event grammar (icon-capped spine); the tone follows
+             what actually happened to the email, and the next actions ride
+             along either way. --%>
+        <.invite_result
           :if={can_manage?(assigns) and @invited_email}
-          icon="hero-paper-airplane"
-          tone={:brand}
-          title="Invitation sent"
+          email={@invited_email}
+          delivery={@invite_delivery}
         >
-          <:body>
-            We emailed a join link to <span class="font-medium text-zinc-200">{@invited_email}</span>. They'll show in the
-            roster as pending until they accept.
-          </:body>
-
-          <.callout :if={@invite_suppressed?} tone={:amber} class="mt-4">
-            We couldn't email {@invited_email} — it bounced or was marked spam. Send them the
-            join link another way, or invite a different address.
-          </.callout>
-
           <div class="mt-6 flex flex-wrap items-center gap-3">
             <.button phx-click="invite_another" icon="hero-plus">Invite another</.button>
             <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
               Back to members
             </.button>
           </div>
-        </.event_block>
+        </.invite_result>
 
         <div :if={can_manage?(assigns) and is_nil(@invited_email)}>
           <p class="text-sm leading-relaxed text-zinc-400">
@@ -1904,6 +1897,59 @@ defmodule EmisarWeb.TeamLive do
         </aside>
       </div>
     </.dashboard_shell>
+    """
+  end
+
+  attr :email, :string, required: true
+  attr :delivery, :any, required: true
+  slot :inner_block, required: true
+
+  # The invitation is persisted before the email goes out, so the success step
+  # reports what actually happened to the message: brand only when the join
+  # link left, amber when the invitation is pending with no email behind it.
+  # We never offer to relay the link — the raw token stays inside Accounts.
+  defp invite_result(%{delivery: {:ok, :sent}} = assigns) do
+    ~H"""
+    <.event_block icon="hero-paper-airplane" tone={:brand} title="Invitation sent">
+      <:body>
+        We emailed a join link to <span class="font-medium text-zinc-200">{@email}</span>. They'll show in the
+        roster as pending until they accept.
+      </:body>
+      {render_slot(@inner_block)}
+    </.event_block>
+    """
+  end
+
+  defp invite_result(%{delivery: {:ok, :suppressed}} = assigns) do
+    ~H"""
+    <.event_block
+      icon="hero-exclamation-triangle"
+      tone={:amber}
+      title="Invitation saved, but we couldn't email it"
+    >
+      <:body>
+        <span class="font-medium text-zinc-200">{@email}</span>
+        bounced or was marked spam, so no join link was sent. The invitation stays pending — contact
+        support to clear that address, or invite a different one.
+      </:body>
+      {render_slot(@inner_block)}
+    </.event_block>
+    """
+  end
+
+  defp invite_result(%{delivery: {:error, _reason}} = assigns) do
+    ~H"""
+    <.event_block
+      icon="hero-exclamation-triangle"
+      tone={:amber}
+      title="Invitation saved, but the email didn't go out"
+    >
+      <:body>
+        The invitation for <span class="font-medium text-zinc-200">{@email}</span>
+        is pending, but email delivery failed. Resend it from the member list.
+      </:body>
+      {render_slot(@inner_block)}
+    </.event_block>
     """
   end
 
