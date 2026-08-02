@@ -99,7 +99,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
        socket,
        ~p"/app/#{socket.assigns.current_account}/runners/keys",
        params,
-       Runners.EnrollmentKey.Query.filters()
+       Runners.enrollment_key_filters()
      )}
   end
 
@@ -155,7 +155,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     # Revoked keys hide by default via the status filter's `%Filter{default:}` —
     # LiveTable resolves absent → "active" and keeps an explicit "All" in the
     # URL (apply_filter gets the filters below), so no param injection here.
-    filters = Runners.EnrollmentKey.Query.filters()
+    filters = Runners.enrollment_key_filters()
     opts = LiveTable.params_to_opts(params, filters)
 
     case Runners.list_enrollment_keys(

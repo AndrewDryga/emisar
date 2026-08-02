@@ -102,7 +102,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         _ -> []
       end
 
-    Enum.map(Catalog.RunnerAction.Query.filters(), fn
+    Enum.map(Catalog.runner_action_filters(), fn
       %{name: :pack_id} = filter -> %{filter | values: pack_options}
       filter -> filter
     end)

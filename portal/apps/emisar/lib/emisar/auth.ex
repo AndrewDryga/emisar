@@ -8,6 +8,7 @@ defmodule Emisar.Auth do
   """
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit}
+  alias Emisar.Auth.Role
   alias Emisar.Auth.Subject
   alias Emisar.Auth.UserToken
   alias Emisar.Crypto
@@ -18,6 +19,17 @@ defmodule Emisar.Auth do
   alias Emisar.Throttle
   alias Emisar.Users
   require Logger
+
+  # -- Role vocabulary --------------------------------------------------
+
+  @doc "All assignable membership roles, most-privileged first."
+  def roles, do: Role.all()
+
+  @doc "Display label for a membership role (atom or string)."
+  def role_label(role), do: Role.label(role)
+
+  @doc "One-line description of what a membership role can do — `nil` when unknown."
+  def role_description(role), do: Role.description(role)
 
   # -- Session tokens ---------------------------------------------------
 

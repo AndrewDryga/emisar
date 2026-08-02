@@ -30,7 +30,7 @@ defmodule EmisarWeb.RunbooksLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   defp load(socket, params) do
-    filters = Runbooks.Runbook.Query.filters()
+    filters = Runbooks.runbook_filters()
     opts = LiveTable.params_to_opts(params, filters)
 
     socket =

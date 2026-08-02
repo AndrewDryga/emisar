@@ -305,7 +305,7 @@ defmodule EmisarWeb.ActivateLive do
 
   # "Claude Code" / "Claude Code & Cursor" / "Claude Code, Cursor & Codex CLI"
   defp client_labels_phrase(grant) do
-    case Enum.map(grant.requested_clients, &ApiKeys.DeviceGrant.client_label/1) do
+    case Enum.map(grant.requested_clients, &ApiKeys.client_label/1) do
       [one] -> one
       [a, b] -> "#{a} & #{b}"
       many -> Enum.join(Enum.drop(many, -1), ", ") <> " & " <> List.last(many)

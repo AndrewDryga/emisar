@@ -73,6 +73,12 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "runner_filters/0" do
+    test "carries the Runners table's filters in panel order" do
+      assert Enum.map(Runners.runner_filters(), & &1.name) == [:group, :name]
+    end
+  end
+
   describe "list_runners_for_account/2" do
     test "filters by account, group, and status" do
       {account, _user, subject} = account_with_owner_subject()
@@ -1796,6 +1802,12 @@ defmodule Emisar.RunnersTest do
 
       viewer = Fixtures.Subjects.membership_subject(membership)
       assert Runners.any_runners?(viewer)
+    end
+  end
+
+  describe "enrollment_key_filters/0" do
+    test "carries the enrollment-keys table's filters" do
+      assert Enum.map(Runners.enrollment_key_filters(), & &1.name) == [:status]
     end
   end
 

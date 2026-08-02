@@ -56,7 +56,7 @@ defmodule EmisarWeb.RunsLive do
     # dispatched-by child that isn't visible isn't in the list, so its param
     # can never narrow the feed from a hidden control.
     filters =
-      Runs.ActionRun.Query.filters()
+      Runs.run_filters()
       |> put_runner_options(subject)
       |> resolve_dispatcher_children(params, subject)
 

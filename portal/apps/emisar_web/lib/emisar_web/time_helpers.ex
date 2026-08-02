@@ -118,11 +118,11 @@ defmodule EmisarWeb.TimeHelpers do
     end
   end
 
-  # Compile-time map keyed off the Audit.Event.Query whitelist — the
-  # single source of truth for known event types. Adding a new event
-  # type only requires editing one list (Query.@known_event_types) and
-  # the human-facing label here is derived automatically.
-  @event_type_labels Emisar.Audit.Event.Query.known_event_type_values() |> Map.new()
+  # Compile-time map keyed off `Emisar.Audit.known_event_type_values/0` — the
+  # single source of truth for known event types. Adding a new event type only
+  # requires editing that one list, and the human-facing label here is derived
+  # automatically.
+  @event_type_labels Emisar.Audit.known_event_type_values() |> Map.new()
   defp event_type_labels, do: @event_type_labels
 
   defp humanize_event(t) do

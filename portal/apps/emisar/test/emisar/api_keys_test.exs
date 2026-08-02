@@ -18,6 +18,12 @@ defmodule Emisar.ApiKeysTest do
     {user, account, Fixtures.Subjects.subject_for(user, account, role: :owner)}
   end
 
+  describe "api_key_filters/0" do
+    test "carries the Agents table's filters in panel order" do
+      assert Enum.map(ApiKeys.api_key_filters(), & &1.name) == [:name, :status, :owner]
+    end
+  end
+
   describe "list_api_keys_for_account/2" do
     test "lists the account's :mcp keys, hiding audit-export tokens" do
       {_user, account, subject} = owner_subject_pair()
@@ -1448,6 +1454,13 @@ defmodule Emisar.ApiKeysTest do
       subject = Subject.for_runner(runner, account)
 
       refute ApiKeys.no_agents?(subject)
+    end
+  end
+
+  describe "client_label/1" do
+    test "renders the operator-facing label for a device-grant client id" do
+      assert ApiKeys.client_label("claude-code") == "Claude Code"
+      assert ApiKeys.client_label("cursor") == "Cursor"
     end
   end
 

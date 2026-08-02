@@ -1399,6 +1399,9 @@ defmodule Emisar.Catalog do
 
   # -- Reads -----------------------------------------------------------
 
+  @doc "The runner-actions table's `%Repo.Filter{}` list."
+  def runner_action_filters, do: RunnerAction.Query.filters()
+
   @doc """
   Actions advertised by a runner, scoped to the subject's account.
   Returns `{:ok, [runner_action], %Paginator.Metadata{}}`.

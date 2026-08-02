@@ -6,7 +6,7 @@ defmodule EmisarWeb.TeamLive do
 
   # String forms of the canonical role enum — the invite/role forms work
   # in strings (HTTP params); membership.role itself is an atom.
-  @roles Enum.map(Emisar.Auth.Role.all(), &Atom.to_string/1)
+  @roles Enum.map(Emisar.Auth.roles(), &Atom.to_string/1)
   @runner_scope_required "Choose at least one runner group or runner for selected access."
 
   def mount(_params, _session, socket) do
@@ -1144,11 +1144,11 @@ defmodule EmisarWeb.TeamLive do
               >
                 <:card
                   :for={role <- @roles}
-                  :if={Emisar.Auth.Role.description(role)}
+                  :if={Emisar.Auth.role_description(role)}
                   value={role}
-                  title={Emisar.Auth.Role.label(role)}
+                  title={Emisar.Auth.role_label(role)}
                 >
-                  {Emisar.Auth.Role.description(role)}
+                  {Emisar.Auth.role_description(role)}
                 </:card>
               </.choice_cards>
             </fieldset>
@@ -1479,7 +1479,7 @@ defmodule EmisarWeb.TeamLive do
                             text={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
                           >
                             <.chip icon="hero-lock-closed-mini">
-                              {Emisar.Auth.Role.label(membership.role)}
+                              {Emisar.Auth.role_label(membership.role)}
                             </.chip>
                           </.tooltip>
                         <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) -> %>
@@ -1496,7 +1496,7 @@ defmodule EmisarWeb.TeamLive do
                             panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
                           >
                             <:trigger>
-                              {Emisar.Auth.Role.label(membership.role)}
+                              {Emisar.Auth.role_label(membership.role)}
                               <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
                             </:trigger>
                             <.menu_item
@@ -1504,12 +1504,12 @@ defmodule EmisarWeb.TeamLive do
                               :if={role != to_string(membership.role)}
                               phx-click={open_confirm("change-role-#{membership.id}-#{role}")}
                             >
-                              {Emisar.Auth.Role.label(role)}
+                              {Emisar.Auth.role_label(role)}
                             </.menu_item>
                           </.dropdown>
                         <% true -> %>
                           <.chip class="shrink-0">
-                            {Emisar.Auth.Role.label(membership.role)}
+                            {Emisar.Auth.role_label(membership.role)}
                           </.chip>
                       <% end %>
 
@@ -1537,7 +1537,7 @@ defmodule EmisarWeb.TeamLive do
                     id={"change-role-#{membership.id}-#{role}"}
                     tone={:amber}
                     title={role_change_title(member_name(membership) || "this member", role)}
-                    confirm_label={"Change to #{Emisar.Auth.Role.label(role)}"}
+                    confirm_label={"Change to #{Emisar.Auth.role_label(role)}"}
                     on_confirm={
                       JS.push("change_role", value: %{membership_id: membership.id, role: role})
                       |> close_confirm("change-role-#{membership.id}-#{role}")
@@ -2230,7 +2230,7 @@ defmodule EmisarWeb.TeamLive do
   defp role_change_title(name, "owner"), do: "Make #{name} an owner?"
   defp role_change_title(name, "admin"), do: "Make #{name} an admin?"
   defp role_change_title(name, "operator"), do: "Make #{name} an operator?"
-  defp role_change_title(name, role), do: "Change #{name} to #{Emisar.Auth.Role.label(role)}?"
+  defp role_change_title(name, role), do: "Change #{name} to #{Emisar.Auth.role_label(role)}?"
 
   defp role_change_body("owner") do
     "Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."

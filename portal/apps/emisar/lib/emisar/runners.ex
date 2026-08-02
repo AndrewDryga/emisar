@@ -99,6 +99,9 @@ defmodule Emisar.Runners do
 
   def runner_scope_facts_for_ids(_account_id, _ids), do: []
 
+  @doc "The Runners table's `%Repo.Filter{}` list."
+  def runner_filters, do: Runner.Query.filters()
+
   @doc """
   Paginated, filterable runner listing for the RunnersLive UI —
   `:group` / `:status` opts narrow the set. The authenticated subject's
@@ -1179,6 +1182,9 @@ defmodule Emisar.Runners do
   def runner_in_scope?(_runner, _access), do: false
 
   # -- Enrollment keys -------------------------------------------------------
+
+  @doc "The enrollment-keys table's `%Repo.Filter{}` list."
+  def enrollment_key_filters, do: EnrollmentKey.Query.filters()
 
   def list_enrollment_keys(%Subject{} = subject, opts \\ []) do
     with :ok <-

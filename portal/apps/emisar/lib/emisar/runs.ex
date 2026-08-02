@@ -42,6 +42,9 @@ defmodule Emisar.Runs do
 
   # -- Listing / queries ------------------------------------------------
 
+  @doc "The Runs table's `%Repo.Filter{}` list."
+  def run_filters, do: ActionRun.Query.filters()
+
   @doc """
   Paginated + filterable list for the Runs page. Returns
   `{:ok, [run], %Paginator.Metadata{}}` — see `Emisar.Repo.list/3`.

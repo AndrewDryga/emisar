@@ -27,7 +27,7 @@ defmodule EmisarWeb.LiveTable do
         rows={@rows}
         metadata={@metadata}
         filter_params={@filter_params}
-        filters={Emisar.Audit.Event.Query.filters()}
+        filters={Emisar.Audit.event_filters()}
       >
         <:col :let={ev} label="Type"><span class="font-mono">{ev.event_type}</span></:col>
         ...
@@ -44,7 +44,7 @@ defmodule EmisarWeb.LiveTable do
   attr :rows, :list, required: true
   attr :metadata, :any, required: true, doc: "%Paginator.Metadata{} from Repo.list/3"
   attr :filter_params, :map, default: %{}, doc: "params currently driving the filter form"
-  attr :filters, :list, default: [], doc: "list of %Filter{} from the entity's Query module"
+  attr :filters, :list, default: [], doc: "list of %Filter{} from the entity's owning context"
 
   attr :filter_layout, :atom,
     default: :inline,

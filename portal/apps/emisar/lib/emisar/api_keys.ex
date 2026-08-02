@@ -49,6 +49,9 @@ defmodule Emisar.ApiKeys do
 
   # -- Reads -----------------------------------------------------------
 
+  @doc "The Agents table's `%Repo.Filter{}` list."
+  def api_key_filters, do: ApiKey.Query.filters()
+
   @doc """
   Lists MCP / LLM-bridge keys (`kind: :mcp`) for the Agents page — hides
   auto-generated never-used ones AND audit-export tokens. Audit-export
@@ -996,6 +999,9 @@ defmodule Emisar.ApiKeys do
 
   @device_grant_ttl_s 15 * 60
   @device_grant_retention_s 24 * 3_600
+
+  @doc "Operator-facing label for a device-grant client id."
+  def client_label(client), do: DeviceGrant.client_label(client)
 
   @doc "Device-grant lifetime in seconds — the API layer reports it as `expires_in`."
   def device_grant_ttl_s, do: @device_grant_ttl_s

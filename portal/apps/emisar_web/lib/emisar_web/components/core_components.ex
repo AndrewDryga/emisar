@@ -2864,7 +2864,7 @@ defmodule EmisarWeb.CoreComponents do
   the check icon marks the current pick. Values compare as strings.
 
       <.choice_cards name="invite[role]" value={@form[:role].value}>
-        <:card :for={role <- @roles} value={role} title={Emisar.Auth.Role.label(role)}>
+        <:card :for={role <- @roles} value={role} title={Emisar.Auth.role_label(role)}>
           {role_description(role)}
         </:card>
       </.choice_cards>

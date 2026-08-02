@@ -18,7 +18,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # The provider-kind select. `{label, value}` pairs from the schema's enum;
   # the value stays the atom's string form.
   @kind_options Enum.map(
-                  SSO.IdentityProvider.kinds(),
+                  SSO.identity_provider_kinds(),
                   &{Map.fetch!(@kind_labels, &1), Atom.to_string(&1)}
                 )
 
@@ -26,8 +26,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   # directory sync may assign owner (the changeset rejects it too; owner is a
   # deliberate human grant). Don't offer what can't be chosen.
   @role_options Enum.map(
-                  Emisar.Auth.Role.all() -- [:owner],
-                  &{Emisar.Auth.Role.label(&1), Atom.to_string(&1)}
+                  Emisar.Auth.roles() -- [:owner],
+                  &{Emisar.Auth.role_label(&1), Atom.to_string(&1)}
                 )
 
   @mapping_role_options @role_options
@@ -36,8 +36,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   # roles (incl. owner) — unlike the JIT/mapping selects. update_membership_role
   # still enforces the owner / last-owner / self guards server-side.
   @member_role_options Enum.map(
-                         Emisar.Auth.Role.all(),
-                         &{Emisar.Auth.Role.label(&1), Atom.to_string(&1)}
+                         Emisar.Auth.roles(),
+                         &{Emisar.Auth.role_label(&1), Atom.to_string(&1)}
                        )
 
   # New-user provisioning modes for the form's select. JIT auto-creates a user on
@@ -1828,7 +1828,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                     Setting up {setup_kind_label(to_string(provider.kind))}
                   </.doc_link>
                 </li>
-                <li :if={SSO.IdentityProvider.supports_scim?(provider.kind)}>
+                <li :if={SSO.supports_scim?(provider.kind)}>
                   <.doc_link href="/docs/scim">Directory sync</.doc_link>
                 </li>
                 <li><.doc_link href="/docs/teams-and-access">Roles &amp; access</.doc_link></li>
@@ -1836,16 +1836,12 @@ defmodule EmisarWeb.SSOSettingsLive do
             </aside>
 
             <.scim_section
-              :if={
-                @can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
-              }
+              :if={@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)}
               provider={provider}
               scim_base_url={@scim_base_url}
               scim_token={@scim_token}
             />
-            <.section_note :if={
-              @can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
-            }>
+            <.section_note :if={@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)}>
               Your IdP pushes users and groups over SCIM. Removing someone there removes them here.
             </.section_note>
 
@@ -1853,14 +1849,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                  instead of dangling an enable panel or an Enterprise upsell for a
                  feature that could never connect. --%>
             <p
-              :if={not SSO.IdentityProvider.supports_scim?(provider.kind)}
+              :if={not SSO.supports_scim?(provider.kind)}
               class="max-w-prose text-sm leading-relaxed text-zinc-400"
             >
               <span class="font-medium text-zinc-200">Directory sync (SCIM)</span>
               isn't available for {kind_label(provider.kind)} — it has no inbound SCIM for a custom
               app. Members are provisioned on their first sign-in through this connection.
             </p>
-            <.section_spacer :if={not SSO.IdentityProvider.supports_scim?(provider.kind)} />
+            <.section_spacer :if={not SSO.supports_scim?(provider.kind)} />
 
             <.group_mapping_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
@@ -1923,9 +1919,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <%!-- A plan-posture fact, naked — not a boxed interruption. Only for
                  kinds that CAN do SCIM; the note above covers the ones that can't. --%>
             <p
-              :if={
-                !@can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
-              }
+              :if={!@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)}
               class="max-w-prose text-sm leading-relaxed text-zinc-400"
             >
               <span class="font-medium text-zinc-200">SCIM directory sync</span>
@@ -1943,7 +1937,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               >talk to us</a>.
             </p>
             <.section_spacer :if={
-              !@can_configure_directory_sync? and SSO.IdentityProvider.supports_scim?(provider.kind)
+              !@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)
             } />
 
             <%!-- Danger zone at the bottom — the destructive action lives apart
@@ -2308,7 +2302,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 value={value}
                 title={label}
               >
-                {Emisar.Auth.Role.description(value)}
+                {Emisar.Auth.role_description(value)}
               </:card>
             </.choice_cards>
           </div>
@@ -3388,7 +3382,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 text="Role is managed by directory sync — set it in Role mapping above"
               >
                 <.chip icon="hero-lock-closed-mini">
-                  {Emisar.Auth.Role.label(member.membership.role)}
+                  {Emisar.Auth.role_label(member.membership.role)}
                 </.chip>
               </.tooltip>
               <form
@@ -3474,7 +3468,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     "Link this connection to the existing #{email} account? That IdP identity will then sign in as this existing user."
   end
 
-  defp role_label(role), do: Emisar.Auth.Role.label(role)
+  defp role_label(role), do: Emisar.Auth.role_label(role)
 
   defp runner_access_mode_label(:none), do: "No runners"
   defp runner_access_mode_label(:all), do: "All runners"

@@ -30,6 +30,9 @@ defmodule Emisar.Runbooks do
 
   # -- Reads -----------------------------------------------------------
 
+  @doc "The Runbooks table's `%Repo.Filter{}` list."
+  def runbook_filters, do: Runbook.Query.filters()
+
   def list_runbooks(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do

@@ -177,7 +177,7 @@ defmodule EmisarWeb.RunnersLive do
     |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
     |> assign(:show_wizard?, false)
     |> assign(:filter_params, params)
-    |> assign(:filters, Runners.Runner.Query.filters())
+    |> assign(:filters, Runners.runner_filters())
     |> assign(:groups, [])
     |> assign(:fleet, %{online: 0, offline: 0, pending: 0, disabled: 0})
     |> assign(:fleet_signed?, false)
@@ -185,7 +185,7 @@ defmodule EmisarWeb.RunnersLive do
   end
 
   defp load(socket, params) do
-    filters = Runners.Runner.Query.filters()
+    filters = Runners.runner_filters()
     opts = LiveTable.params_to_opts(params, filters)
 
     # Runners derives current access from the subject, so the URL cannot select

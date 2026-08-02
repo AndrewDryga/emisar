@@ -3187,6 +3187,12 @@ defmodule Emisar.SSO do
 
   # -- Capabilities ----------------------------------------------------
 
+  @doc "All supported identity-provider kinds."
+  def identity_provider_kinds, do: IdentityProvider.kinds()
+
+  @doc "True when directory sync (SCIM) is available for this provider kind."
+  def supports_scim?(kind), do: IdentityProvider.supports_scim?(kind)
+
   @doc "True when sessions via this provider satisfy MFA (decision 4 / N2) — drives the TOTP skip + `require_mfa` exemption."
   def provider_satisfies_mfa?(%IdentityProvider{satisfies_mfa: satisfies}), do: satisfies
 

@@ -4716,6 +4716,20 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "identity_provider_kinds/0" do
+    test "carries every supported provider kind" do
+      assert SSO.identity_provider_kinds() ==
+               [:google_workspace, :okta, :entra, :jumpcloud, :keycloak, :openid_connect]
+    end
+  end
+
+  describe "supports_scim?/1" do
+    test "Google Workspace has no inbound SCIM; the other kinds do" do
+      refute SSO.supports_scim?(:google_workspace)
+      assert SSO.supports_scim?(:okta)
+    end
+  end
+
   # -- provider_satisfies_mfa?/1 ---------------------------------------
 
   describe "provider_satisfies_mfa?/1" do

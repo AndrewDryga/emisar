@@ -309,7 +309,7 @@ defmodule EmisarWeb.AgentsLive do
         _ -> []
       end
 
-    Enum.map(ApiKeys.ApiKey.Query.filters(), fn
+    Enum.map(ApiKeys.api_key_filters(), fn
       %{name: :owner} = filter -> %{filter | values: owners}
       filter -> filter
     end)

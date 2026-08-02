@@ -38,7 +38,7 @@ defmodule EmisarWeb.AuditLive do
      # panel around.
      |> assign(
        :filters_open?,
-       LiveTable.has_active_filters?(params, Audit.Event.Query.filters())
+       LiveTable.has_active_filters?(params, Audit.event_filters())
      )
      |> assign(:reload_scheduled?, false)}
   end
@@ -210,7 +210,7 @@ defmodule EmisarWeb.AuditLive do
     with kind when is_binary(kind) <- blank_to_nil(params["actor_kind"]),
          {:ok, [_ | _] = options} <-
            Audit.list_actor_options(kind, subject, ensure: blank_to_nil(params["actor_id"])) do
-      [Audit.Event.Query.actor_filter(options)]
+      [Audit.actor_filter(options)]
     else
       _ -> []
     end
@@ -221,7 +221,7 @@ defmodule EmisarWeb.AuditLive do
   defp target_kind_filter(params, subject) do
     with kind when is_binary(kind) <- blank_to_nil(params["target_kind"]),
          {:ok, [_ | _] = options} <- Audit.list_target_options(kind, subject) do
-      [Audit.Event.Query.target_filter(options)]
+      [Audit.target_filter(options)]
     else
       _ -> []
     end
@@ -231,12 +231,7 @@ defmodule EmisarWeb.AuditLive do
     # Request ID + Sign-in method only apply to some event types — drop them
     # when the selected Type can't carry them (or none is set), so the filter
     # panel shows only filters that can actually narrow the log.
-    base_filters =
-      Audit.Event.Query.applicable_filters(
-        Audit.Event.Query.filters(),
-        params["event_type"],
-        params
-      )
+    base_filters = Audit.applicable_event_filters(params["event_type"], params)
 
     # Render each dynamic picker right after its kind filter (the dependent
     # control belongs next to its trigger), not tacked on at the end.
@@ -422,7 +417,7 @@ defmodule EmisarWeb.AuditLive do
              like every other control — an engaged lens is a filter state, not an
              alarm (the problem ROWS carry their own rose/amber). --%>
         <button
-          :for={{value, label} <- Audit.Event.Query.category_values()}
+          :for={{value, label} <- Audit.event_category_values()}
           type="button"
           phx-click="category"
           phx-value-category={value}
@@ -847,12 +842,12 @@ defmodule EmisarWeb.AuditLive do
   @doc """
   Outcome → house tone for the audit event's `<.status_dot>` — failures `:rose`,
   denials/removals `:amber`, pass verdicts `:brand`, routine events `:neutral`.
-  Keyed off `Audit.Event.Query.outcome/1` so the dot + the "Severity" filter
-  never disagree. Public because the detail page's title dot must match the
-  list (same sharing mechanism as `ref/1`).
+  Keyed off `Audit.event_outcome/1` so the dot + the "Severity" filter never
+  disagree. Public because the detail page's title dot must match the list
+  (same sharing mechanism as `ref/1`).
   """
   def outcome_tone(event_type) do
-    case Audit.Event.Query.outcome(event_type) do
+    case Audit.event_outcome(event_type) do
       :danger -> :rose
       :warn -> :amber
       :pass -> :brand
@@ -869,7 +864,7 @@ defmodule EmisarWeb.AuditLive do
   # must not paint the trail green — problems shout (dot + title), passes nod
   # (dot only), routine stays silent.
   defp event_title_class(event_type) do
-    case Audit.Event.Query.outcome(event_type) do
+    case Audit.event_outcome(event_type) do
       :danger -> "font-medium text-rose-200"
       :warn -> "text-amber-200"
       :pass -> "text-zinc-200"

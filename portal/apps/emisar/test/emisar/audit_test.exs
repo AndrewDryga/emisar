@@ -1780,11 +1780,21 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "Event.Query.outcome/1 (one source for the dots + the Outcome filter)" do
+  describe "known_event_type_values/0" do
+    test "carries the {type, label} pairs the audit list renders" do
+      values = Audit.known_event_type_values()
+
+      assert {"audit.exported", "Audit log exported"} in values
+      assert {"action_run.failed", "Run failed"} in values
+      assert Enum.all?(values, fn {type, label} -> is_binary(type) and is_binary(label) end)
+    end
+  end
+
+  describe "event_outcome/1 (one source for the dots + the Outcome filter)" do
     test "failures and errors are :danger" do
       for t <- ~w[user.sign_in_failed user.mfa_failed
                   action_run.failed action_run.error runner.error action_run.timed_out] do
-        assert Audit.Event.Query.outcome(t) == :danger, "expected #{t} to be :danger"
+        assert Audit.event_outcome(t) == :danger, "expected #{t} to be :danger"
       end
     end
 
@@ -1793,14 +1803,14 @@ defmodule Emisar.AuditTest do
             ~w[approval.denied action_run.denied enrollment_key.revoked user.session_revoked
                   runner.disabled runner.deleted runner.version_rejected membership.removed
                   membership.suspended approval.expired action_run.cancelled approval.grant_revoked] do
-        assert Audit.Event.Query.outcome(t) == :warn, "expected #{t} to be :warn"
+        assert Audit.event_outcome(t) == :warn, "expected #{t} to be :warn"
       end
     end
 
     test "pass verdicts — the gate saying yes — are :pass" do
       for t <- ~w[action_run.success approval.approved approval.grant_used
                   sso.link_request_approved oauth.consent_granted] do
-        assert Audit.Event.Query.outcome(t) == :pass, "expected #{t} to be :pass"
+        assert Audit.event_outcome(t) == :pass, "expected #{t} to be :pass"
       end
     end
 
@@ -1808,13 +1818,13 @@ defmodule Emisar.AuditTest do
       for t <- ~w[api_key.created runner.connected runner.enabled user.signed_in
                   user.email_confirmed user.mfa_enabled membership.invitation_accepted
                   membership.reinstated runbook.published session.account_switched] do
-        assert Audit.Event.Query.outcome(t) == :neutral, "expected #{t} to be :neutral"
+        assert Audit.event_outcome(t) == :neutral, "expected #{t} to be :neutral"
       end
     end
 
     test "nil and non-binary fall back to :neutral" do
-      assert Audit.Event.Query.outcome(nil) == :neutral
-      assert Audit.Event.Query.outcome(42) == :neutral
+      assert Audit.event_outcome(nil) == :neutral
+      assert Audit.event_outcome(42) == :neutral
     end
 
     # the row dot tone (web) and the "Outcome" filter both
@@ -1832,10 +1842,10 @@ defmodule Emisar.AuditTest do
       {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
       {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
 
-      assert Audit.Event.Query.outcome("action_run.failed") == :danger
-      assert Audit.Event.Query.outcome("approval.denied") == :warn
-      assert Audit.Event.Query.outcome("approval.approved") == :pass
-      assert Audit.Event.Query.outcome("runner.connected") == :neutral
+      assert Audit.event_outcome("action_run.failed") == :danger
+      assert Audit.event_outcome("approval.denied") == :warn
+      assert Audit.event_outcome("approval.approved") == :pass
+      assert Audit.event_outcome("runner.connected") == :neutral
 
       {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
       assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]
@@ -1844,6 +1854,67 @@ defmodule Emisar.AuditTest do
 
       assert Enum.sort(Enum.map(both, & &1.event_type)) ==
                ["action_run.failed", "approval.denied"]
+    end
+  end
+
+  describe "event_category_values/0" do
+    test "carries the review categories the audit chips render" do
+      assert Audit.event_category_values() == [
+               {"decisions", "Decisions"},
+               {"access", "Access"},
+               {"activity", "Activity"},
+               {"fleet", "Fleet"},
+               {"admin", "Admin"}
+             ]
+    end
+  end
+
+  describe "event_filters/0" do
+    test "carries the facet panel's filters in panel order" do
+      assert Enum.map(Audit.event_filters(), & &1.name) == [
+               :category,
+               :from,
+               :to,
+               :event_type,
+               :outcome,
+               :request_id,
+               :auth_method,
+               :actor_kind,
+               :target_kind
+             ]
+    end
+  end
+
+  describe "applicable_event_filters/2" do
+    test "no Type selected drops the request-scoped facets and keeps Target type" do
+      names = Enum.map(Audit.applicable_event_filters(nil, %{}), & &1.name)
+
+      refute :request_id in names
+      refute :auth_method in names
+      assert :target_kind in names
+    end
+
+    test "a live param keeps its facet so the applied filter stays clearable" do
+      names = Enum.map(Audit.applicable_event_filters(nil, %{"request_id" => "req_x"}), & &1.name)
+
+      assert :request_id in names
+    end
+  end
+
+  describe "actor_filter/1" do
+    test "carries the picker's loaded options" do
+      options = [{"id-1", "Alice"}]
+
+      assert %Emisar.Repo.Filter{name: :actor_id, values: ^options} = Audit.actor_filter(options)
+    end
+  end
+
+  describe "target_filter/1" do
+    test "carries the picker's loaded options" do
+      options = [{"id-1", "Alice"}]
+
+      assert %Emisar.Repo.Filter{name: :target_id, values: ^options} =
+               Audit.target_filter(options)
     end
   end
 

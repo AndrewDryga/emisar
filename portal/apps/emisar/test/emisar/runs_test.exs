@@ -74,6 +74,20 @@ defmodule Emisar.RunsTest do
   @mcp_pack_hash "sha256:" <> String.duplicate("a", 64)
   @mcp_pack_ref "linux-core@1.0.0/" <> @mcp_pack_hash
 
+  describe "run_filters/0" do
+    test "carries the Runs table's filters in panel order" do
+      assert Enum.map(Runs.run_filters(), & &1.name) == [
+               :status,
+               :action_id,
+               :runner_id,
+               :source,
+               :api_key_id,
+               :requested_by_id,
+               :runbook_id
+             ]
+    end
+  end
+
   describe "list_runs/2" do
     test "pages the subject's account only (cross-account isolation)" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()

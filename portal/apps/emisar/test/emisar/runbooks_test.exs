@@ -13,6 +13,12 @@ defmodule Emisar.RunbooksTest do
 
   @pack_hash "sha256:" <> String.duplicate("a", 64)
 
+  describe "runbook_filters/0" do
+    test "carries the Runbooks table's filters" do
+      assert Enum.map(Runbooks.runbook_filters(), & &1.name) == [:status]
+    end
+  end
+
   describe "list_runbooks/2" do
     test "lists only visible runbooks and applies filters" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()

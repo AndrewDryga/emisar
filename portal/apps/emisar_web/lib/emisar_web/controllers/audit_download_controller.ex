@@ -101,12 +101,7 @@ defmodule EmisarWeb.AuditDownloadController do
   # filters (conditional facets included) plus the actor/target pivots that
   # ride outside the form.
   defp list_opts(params, _subject) do
-    base_filters =
-      Audit.Event.Query.applicable_filters(
-        Audit.Event.Query.filters(),
-        params["event_type"],
-        params
-      )
+    base_filters = Audit.applicable_event_filters(params["event_type"], params)
 
     params
     |> LiveTable.params_to_opts(base_filters)
@@ -161,7 +156,7 @@ defmodule EmisarWeb.AuditDownloadController do
     [
       TimeHelpers.forensic_time(event.occurred_at),
       event.event_type,
-      event.event_type |> Emisar.Audit.Event.Query.outcome() |> Atom.to_string(),
+      event.event_type |> Audit.event_outcome() |> Atom.to_string(),
       event.actor_kind,
       event.actor_id,
       event.actor_label,

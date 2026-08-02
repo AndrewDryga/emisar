@@ -16,6 +16,29 @@ defmodule Emisar.AuthTest do
     n
   end
 
+  describe "roles/0" do
+    test "carries the assignable membership roles, most-privileged first" do
+      assert Auth.roles() == [:owner, :admin, :billing_manager, :operator, :viewer]
+    end
+  end
+
+  describe "role_label/1" do
+    test "renders a role atom or string in its human form" do
+      assert Auth.role_label(:owner) == "Owner"
+      assert Auth.role_label(:billing_manager) == "Billing manager"
+      assert Auth.role_label("billing_manager") == "Billing manager"
+    end
+  end
+
+  describe "role_description/1" do
+    test "describes a known role and stays nil for an unknown one" do
+      assert Auth.role_description(:owner) ==
+               "Full control of the workspace, including billing and adding or removing other owners."
+
+      assert Auth.role_description("unknown") == nil
+    end
+  end
+
   describe "create_session_token!/5" do
     setup do
       %{user: Fixtures.Users.create_user()}

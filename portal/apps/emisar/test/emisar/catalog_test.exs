@@ -2204,6 +2204,12 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "runner_action_filters/0" do
+    test "carries the runner-actions table's filters in panel order" do
+      assert Enum.map(Catalog.runner_action_filters(), & &1.name) == [:action, :pack_id, :risk]
+    end
+  end
+
   describe "list_actions_for_runner/3" do
     setup do
       {account, subject} = account_with_owner()

@@ -699,6 +699,36 @@ defmodule Emisar.Audit do
     end
   end
 
+  # -- UI metadata -----------------------------------------------------
+
+  @doc "The known `{event_type, label}` pairs — the audit list's event-type labels."
+  def known_event_type_values, do: Event.Query.known_event_type_values()
+
+  @doc """
+  The event's outcome class from its type suffix — `:danger | :warn | :pass |
+  :neutral`. One source for the audit dots and the Outcome filter.
+  """
+  def event_outcome(event_type), do: Event.Query.outcome(event_type)
+
+  @doc "The review-category `{value, label}` options — the audit page's category chips."
+  def event_category_values, do: Event.Query.category_values()
+
+  @doc "The audit facet panel's full `%Repo.Filter{}` list."
+  def event_filters, do: Event.Query.filters()
+
+  @doc """
+  The audit facet panel's filters with conditional facets dropped when the
+  selected Type can't carry them.
+  """
+  def applicable_event_filters(type_param, params),
+    do: Event.Query.applicable_filters(Event.Query.filters(), type_param, params)
+
+  @doc "The `%Repo.Filter{}` for the actor picker, given its loaded `{id, label}` options."
+  def actor_filter(options), do: Event.Query.actor_filter(options)
+
+  @doc "The `%Repo.Filter{}` for the target picker, given its loaded `{id, label}` options."
+  def target_filter(options), do: Event.Query.target_filter(options)
+
   # -- Authorization ----------------------------------------------------
 
   @doc "True when the subject may view the audit trail (the console nav + section gate)."
