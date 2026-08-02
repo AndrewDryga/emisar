@@ -2,30 +2,23 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   use Emisar, :changeset
   alias Emisar.ApiKeys.ApiKey
 
+  @fields ~w[name description kind expires_at]a
+
   @doc """
-  Validation-only changeset for the operator create form. Casts the
-  operator-facing fields and runs the same `name` validations as
-  `create/6`, but mints no secret and touches no DB — so the LiveView
-  can drive `phx-change` validation and render inline field errors
-  without generating a key on every keystroke. `expires_at` is left
-  out of the cast: the datetime-local input emits `YYYY-MM-DDTHH:MM`
-  (no seconds/zone), which Ecto can't cast to `:utc_datetime_usec`; it
-  round-trips for redisplay via the changeset params and is parsed when
-  the key is actually created.
+  Validation-only changeset for the operator create form — the same casting,
+  normalization and operator-field validations `create/7` applies, but it mints
+  no secret and touches no DB, so the LiveView can drive `phx-change`
+  validation and render inline field errors without generating a key on every
+  keystroke. Submitting the same params still goes through `create/7`.
   """
-  def form(attrs \\ %{}) do
-    %ApiKey{}
-    |> cast(attrs, [:name, :description])
-    |> validate_required([:name])
-    |> validate_length(:name, min: 1, max: 80)
-  end
+  def form(attrs \\ %{}), do: cast_operator_input(%ApiKey{}, attrs)
 
   # `kind` is the sole capability discriminator (`:mcp` default; the audit page
   # passes `:audit_export`). The key carries no per-key authorization scope —
   # Policy + approval + the operator's own runner scope decide what it may do.
   def create(account_id, user_id, membership_id, prefix, hash, attrs, opts \\ []) do
     %ApiKey{}
-    |> cast(attrs, [:name, :description, :kind, :expires_at])
+    |> cast_operator_input(attrs)
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:created_by_membership_id, membership_id)
@@ -35,11 +28,76 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     )
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
-    |> validate_required([:account_id, :created_by_membership_id, :name])
-    |> validate_length(:name, min: 1, max: 80)
+    |> validate_required([:account_id, :created_by_membership_id])
     |> unique_constraint(:key_prefix)
     |> maybe_put_default_mcp_expiry(opts)
     |> maybe_put_replaces(opts)
+  end
+
+  # The one interpretation of operator-typed key attributes, so the create form
+  # can never accept — or reject — what the mint would decide differently.
+  defp cast_operator_input(%ApiKey{} = key, attrs) do
+    attrs = normalize(attrs)
+
+    key
+    |> cast(attrs, @fields)
+    |> validate_required([:name])
+    |> validate_length(:name, min: 1, max: 80)
+    |> validate_future_expiry()
+  end
+
+  # The create form posts raw browser strings: an untouched optional field
+  # arrives as `""` rather than absent, and `<input type="datetime-local">`
+  # emits `YYYY-MM-DDTHH:MM` (no seconds, no zone), which Ecto can't cast to
+  # `:utc_datetime_usec`. Both key shapes are normalized so a browser map and
+  # an internal atom-keyed map mean the same thing.
+  defp normalize(attrs), do: Map.new(attrs, &normalize_field/1)
+
+  defp normalize_field({field, value}) when field in [:description, "description"],
+    do: {field, blank_to_nil(value)}
+
+  defp normalize_field({field, value}) when field in [:expires_at, "expires_at"],
+    do: {field, normalize_expiry(value)}
+
+  defp normalize_field(field), do: field
+
+  defp blank_to_nil(value) when is_binary(value),
+    do: if(String.trim(value) == "", do: nil, else: value)
+
+  defp blank_to_nil(value), do: value
+
+  # An operator typing "expires Dec 25 at 10am" gets 10:00 UTC that day — the
+  # browser sends no zone, and the form labels the field UTC rather than have
+  # the server guess an offset. Anything that isn't a browser minute stamp (an
+  # already-typed `%DateTime{}`, a full timestamp, or garbage) passes through
+  # for Ecto to cast or reject, so a malformed expiry can never quietly become
+  # "no expiry" — which would hand out a key with the 30-day default instead.
+  defp normalize_expiry(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      expires_at -> parse_browser_expiry(expires_at)
+    end
+  end
+
+  defp normalize_expiry(value), do: value
+
+  defp parse_browser_expiry(value) do
+    case DateTime.from_iso8601(value <> ":00Z") do
+      {:ok, expires_at, _offset} -> expires_at
+      {:error, _reason} -> value
+    end
+  end
+
+  # An expiry at or before now mints a credential that is dead on arrival —
+  # `ApiKeys.key_usable?/2` refuses it on the same boundary — so the operator
+  # gets a field error rather than a key nothing can authenticate with.
+  defp validate_future_expiry(changeset),
+    do: validate_change(changeset, :expires_at, &future_expiry_error/2)
+
+  defp future_expiry_error(:expires_at, expires_at) do
+    if DateTime.compare(expires_at, DateTime.utc_now()) == :gt,
+      do: [],
+      else: [expires_at: "must be in the future"]
   end
 
   # The rotation back-link is an internal opt (`put_change`, never cast) — a

@@ -214,14 +214,9 @@ defmodule EmisarWeb.AgentsLive do
   defp do_create(socket, params) do
     # A Custom key is a plain `:mcp` key — identity + expiry only. It carries no
     # per-key scope: account Policy + the operator's own runner scope decide
-    # what it may do, same as a quick-mint.
-    attrs = %{
-      name: params["name"] || "",
-      description: nil_if_blank(params["description"]),
-      expires_at: parse_expires_at(params["expires_at"])
-    }
-
-    case ApiKeys.create_key(attrs, socket.assigns.current_subject) do
+    # what it may do, same as a quick-mint. ApiKeys owns how the posted fields
+    # are read, so the form and the mint can't drift.
+    case ApiKeys.create_key(params, socket.assigns.current_subject) do
       {:ok, raw, key} ->
         {:noreply,
          socket
@@ -391,28 +386,6 @@ defmodule EmisarWeb.AgentsLive do
 
   defp default_params do
     %{"name" => "", "description" => "", "expires_at" => ""}
-  end
-
-  defp nil_if_blank(nil), do: nil
-  defp nil_if_blank(""), do: nil
-
-  defp nil_if_blank(value) when is_binary(value),
-    do: if(String.trim(value) == "", do: nil, else: value)
-
-  # The `<input type="datetime-local">` posts `"YYYY-MM-DDTHH:MM"` (no
-  # seconds, no timezone). Treat as local time relative to the cloud's
-  # UTC wallclock — operators typing "expires Dec 25 at 10am" expect
-  # something close to "Dec 25 at 10am UTC" rather than guessing the
-  # browser's timezone server-side. Returning nil for blank lets the
-  # cast skip the field entirely.
-  defp parse_expires_at(nil), do: nil
-  defp parse_expires_at(""), do: nil
-
-  defp parse_expires_at(value) when is_binary(value) do
-    case DateTime.from_iso8601(value <> ":00Z") do
-      {:ok, datetime, _} -> datetime
-      _ -> nil
-    end
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
@@ -1920,7 +1893,7 @@ defmodule EmisarWeb.AgentsLive do
         />
 
         <%!-- `datetime-local` posts as "YYYY-MM-DDTHH:MM" with no
-             timezone; the LV parses it as UTC. Operators typing
+             timezone; ApiKeys reads it as UTC. Operators typing
              "expires Dec 25 at 10am" get a key that expires at
              10:00 UTC on that date, which is close enough for an
              audit-friendly default without dragging browser-tz

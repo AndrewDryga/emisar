@@ -700,9 +700,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       flush_key_broadcast(lv)
     end
 
-    # a `datetime-local` expiry on the custom-create form
-    # (no seconds, no zone) is stored as UTC: `parse_expires_at` appends ":00Z"
-    # before parsing, so "2030-12-25 at 10:30" persists as 10:30:00 UTC. (The
+    # a `datetime-local` expiry on the custom-create form (no seconds, no zone)
+    # is stored as UTC: `ApiKeys` reads the browser's minute stamp as a UTC
+    # wallclock, so "2099-12-25 at 10:30" persists as 10:30:00 UTC. (The
     # enrollment-keys form has the parallel; this is the agents path.)
     test "a custom key's expires_at is parsed from datetime-local as UTC", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
@@ -712,7 +712,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       lv
       |> form("#api_key_form", %{
-        "api_key" => %{"name" => "expiring-bot", "expires_at" => "2030-12-25T10:30"}
+        "api_key" => %{"name" => "expiring-bot", "expires_at" => "2099-12-25T10:30"}
       })
       |> render_submit()
 
@@ -721,8 +721,46 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # The column is :utc_datetime_usec, so the stored value carries
       # microseconds — compare on the truncated instant.
-      assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
+      assert DateTime.truncate(key.expires_at, :second) == ~U[2099-12-25 10:30:00Z]
       flush_key_broadcast(lv)
+    end
+
+    # An expiry the server can't read, or one already in the past, comes back
+    # under the field the operator typed it in — never a silently-defaulted key.
+    test "a malformed expiry renders a field error and mints nothing", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      html =
+        lv
+        |> form("#api_key_form", %{
+          "api_key" => %{"name" => "bad-date-bot", "expires_at" => "25/12/2030"}
+        })
+        |> render_submit()
+
+      assert html =~ "is invalid"
+      assert has_element?(lv, "#api_key_form")
+      assert Repo.all(ApiKey) == []
+    end
+
+    test "an expiry already in the past renders a field error and mints nothing", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      html =
+        lv
+        |> form("#api_key_form", %{
+          "api_key" => %{"name" => "dead-bot", "expires_at" => "2020-01-01T10:30"}
+        })
+        |> render_submit()
+
+      assert html =~ "must be in the future"
+      assert has_element?(lv, "#api_key_form")
+      assert Repo.all(ApiKey) == []
     end
 
     # A completed custom create replaces the form with a numbered save step,

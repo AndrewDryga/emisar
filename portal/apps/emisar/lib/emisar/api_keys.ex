@@ -352,35 +352,37 @@ defmodule Emisar.ApiKeys do
   # -- Mutations -------------------------------------------------------
 
   @doc """
-  Validation-only changeset for the create-key form. Pure helper — no
-  secret minted, no DB touched, no subject — so a LiveView can drive
-  `phx-change` validation and render inline field errors. Submitting
-  the validated attrs still goes through `create_key/2`.
+  Validation-only changeset for the create-key form, taking the same attrs
+  `create_key/2` does — including the browser's string-keyed params and its
+  `YYYY-MM-DDTHH:MM` expiry. Pure helper — no secret minted, no DB touched, no
+  subject — so a LiveView can drive `phx-change` validation and render inline
+  field errors.
   """
   def change_key(attrs \\ %{}), do: ApiKey.Changeset.form(attrs)
 
   @doc """
-  Mints an operator-created key of the attrs' `:kind` (`:mcp` default).
-  `%Subject{}` needs `manage_api_keys`; an `:audit_export` token additionally
-  needs the account's paid audit-export entitlement. Returns
-  `{:ok, raw_secret, key}` or
+  Mints an operator-created key of the attrs' `:kind` (`:mcp` default), from
+  either internal attrs or the create form's raw browser params. `%Subject{}`
+  needs `manage_api_keys`; an `:audit_export` token additionally needs the
+  account's paid audit-export entitlement. Returns `{:ok, raw_secret, key}` or
   `{:error, %Ecto.Changeset{} | :unauthorized | :audit_export_not_available | :not_found}`.
   """
   def create_key(attrs, %Subject{account: account} = subject) do
     account_id = account.id
     user_id = Subject.actor_id(subject)
     membership_id = subject.membership_id
-    {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
-
-    changeset = ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
-    kind = Ecto.Changeset.get_field(changeset, :kind)
+    input_changeset = change_key(attrs)
 
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_api_keys_permission()
            ),
-         :ok <- ensure_key_kind_available(kind, account) do
+         {:ok, input} <- Ecto.Changeset.apply_action(input_changeset, :insert),
+         :ok <- ensure_key_kind_available(input.kind, account) do
+      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
+      changeset = ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
+
       Multi.new()
       |> put_active_account_lock(account_id)
       |> Multi.insert(:key, changeset)

@@ -528,6 +528,24 @@ defmodule Emisar.ApiKeysTest do
       refute ApiKeys.change_key(%{}).valid?
       refute ApiKeys.change_key(%{name: String.duplicate("x", 81)}).valid?
     end
+
+    test "reads the create form's raw browser params, same as create_key/2" do
+      params = %{"name" => "ci", "description" => "  ", "expires_at" => "2099-12-25T10:30"}
+
+      changeset = ApiKeys.change_key(params)
+
+      assert changeset.valid?
+      assert changeset.changes == %{name: "ci", expires_at: ~U[2099-12-25 10:30:00.000000Z]}
+    end
+
+    test "an expired or malformed expiry is a field error the form can render" do
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+      expired = ApiKeys.change_key(%{name: "ci", expires_at: past})
+      malformed = ApiKeys.change_key(%{"name" => "ci", "expires_at" => "25/12/2030"})
+
+      assert "must be in the future" in errors_on(expired).expires_at
+      assert "is invalid" in errors_on(malformed).expires_at
+    end
   end
 
   describe "create_key/2" do
@@ -547,6 +565,72 @@ defmodule Emisar.ApiKeysTest do
       assert key.created_by_id == user.id
       assert is_binary(key.key_hash)
       assert is_binary(key.key_prefix)
+    end
+
+    test "the create form's raw browser params mint a key with a UTC expiry" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      params = %{
+        "name" => "expiring-bot",
+        "description" => "laptop bridge",
+        "expires_at" => "2099-12-25T10:30"
+      }
+
+      assert {:ok, _raw, %ApiKey{} = key} = ApiKeys.create_key(params, subject)
+
+      assert key.name == "expiring-bot"
+      assert key.description == "laptop bridge"
+      assert key.expires_at == ~U[2099-12-25 10:30:00.000000Z]
+    end
+
+    test "blank browser values mean no description and the default expiry" do
+      {_user, _account, subject} = owner_subject_pair()
+      params = %{"name" => "blank-bot", "description" => "   ", "expires_at" => ""}
+
+      assert {:ok, _raw, %ApiKey{description: nil, expires_at: expires_at}} =
+               ApiKeys.create_key(params, subject)
+
+      expected = DateTime.add(DateTime.utc_now(), 30 * 24 * 3600, :second)
+      assert_in_delta DateTime.to_unix(expires_at), DateTime.to_unix(expected), 120
+    end
+
+    # A date the server can't read must come back to the operator, not fall
+    # through to the 30-day default as a key they didn't ask for.
+    test "a malformed expiry is a field error — no key, no audit row" do
+      {_user, _account, subject} = owner_subject_pair()
+      params = %{"name" => "bad-date", "expires_at" => "25/12/2030"}
+
+      assert {:error, changeset} = ApiKeys.create_key(params, subject)
+      assert "is invalid" in errors_on(changeset).expires_at
+
+      refute Repo.one(ApiKey)
+
+      assert {:ok, [], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["api_key.created"]])
+    end
+
+    test "an expiry at or before now is a field error — no key, no audit row" do
+      {_user, _account, subject} = owner_subject_pair()
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+
+      assert {:error, changeset} = ApiKeys.create_key(%{name: "dead", expires_at: past}, subject)
+      assert "must be in the future" in errors_on(changeset).expires_at
+
+      refute Repo.one(ApiKey)
+
+      assert {:ok, [], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["api_key.created"]])
+    end
+
+    test "an attrs-supplied account_id cannot mint into another account" do
+      {_user, account, subject} = owner_subject_pair()
+      other_account = Fixtures.Accounts.create_account()
+      attrs = %{"name" => "crafted", "account_id" => other_account.id}
+
+      assert {:ok, _raw, %ApiKey{account_id: account_id}} = ApiKeys.create_key(attrs, subject)
+
+      assert account_id == account.id
+      assert [%ApiKey{account_id: ^account_id}] = Repo.all(ApiKey)
     end
 
     test "MCP keys default to a 30-day expiry when none is given (a leak self-heals)" do
@@ -922,10 +1006,8 @@ defmodule Emisar.ApiKeysTest do
 
       {:ok, revoked} = ApiKeys.revoke_api_key(key, subject)
 
-      expired_at = DateTime.add(DateTime.utc_now(), -1, :second)
-
-      {:ok, _raw, expired} =
-        ApiKeys.create_key(%{name: "expired", expires_at: expired_at}, subject)
+      {:ok, _raw, minted} = ApiKeys.create_key(%{name: "expired", expires_at: soon}, subject)
+      expired = Fixtures.ApiKeys.backdate_api_key_expiry(minted)
 
       {:ok, _raw, export} =
         ApiKeys.create_key(%{name: "siem", kind: :audit_export, expires_at: soon}, subject)
@@ -1299,8 +1381,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "returns nil for an expired key" do
-      yesterday = DateTime.add(DateTime.utc_now(), -24 * 3600, :second)
-      {raw, _key} = Fixtures.ApiKeys.create_api_key(expires_at: yesterday)
+      {raw, key} = Fixtures.ApiKeys.create_api_key()
+      Fixtures.ApiKeys.backdate_api_key_expiry(key)
 
       refute ApiKeys.peek_api_key_by_secret(raw)
     end
