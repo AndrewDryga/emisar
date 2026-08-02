@@ -1,8 +1,8 @@
 defmodule EmisarWeb.RunbooksLiveTest do
   @moduledoc """
-  The runbooks index: lists the account's runbooks, gates the New
-  button on manage permission, links published rows to the Run form,
-  and live-refreshes on the account's runbook feed.
+  The runbooks index: one row per slug family led by its newest version,
+  gates the New button on manage permission, links runnable families to the
+  Run form, and live-refreshes on the account's runbook feed.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Repo, Runbooks}
@@ -88,6 +88,39 @@ defmodule EmisarWeb.RunbooksLiveTest do
     assert html =~ "Half baked"
     assert html =~ ~p"/app/#{account}/runbooks/#{published.id}/run"
     refute html =~ ~p"/app/#{account}/runbooks/#{draft.id}/run"
+  end
+
+  test "collapses a slug family to one row with a version-history link", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = owner_subject(user, account)
+    first = create_runbook!(user, account, "Deploy check", published?: true)
+    {:ok, second} = Runbooks.save_new_version(first, %{"status" => "draft"}, subject)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
+
+    # The draft head leads the family's one row; v1 is only reachable via history.
+    assert html =~ ~p"/app/#{account}/runbooks/#{second.id}/edit"
+    refute html =~ ~p"/app/#{account}/runbooks/#{first.id}/edit"
+
+    assert has_element?(
+             lv,
+             "a[href='#{~p"/app/#{account}/runbooks/deploy-check/versions"}']",
+             "2 versions"
+           )
+  end
+
+  test "a family with a draft head still runs its newest published version", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = owner_subject(user, account)
+    first = create_runbook!(user, account, "Deploy check", published?: true)
+    {:ok, second} = Runbooks.save_new_version(first, %{"status" => "draft"}, subject)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
+
+    assert html =~ ~p"/app/#{account}/runbooks/#{first.id}/run"
+    refute html =~ ~p"/app/#{account}/runbooks/#{second.id}/run"
+    # The row shows the draft head, so the button names the version it dispatches.
+    assert has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks/#{first.id}/run"}']", "Run v1")
   end
 
   test "moves guidance and account-scoped recent runs into the reading rail", %{conn: conn} do

@@ -21,6 +21,9 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def by_slug(queryable, slug),
     do: where(queryable, [runbooks: r], r.slug == ^slug)
 
+  def by_slugs(queryable, slugs),
+    do: where(queryable, [runbooks: r], r.slug in ^slugs)
+
   def by_version(queryable, version),
     do: where(queryable, [runbooks: r], r.version == ^version)
 
@@ -35,6 +38,34 @@ defmodule Emisar.Runbooks.Runbook.Query do
   # and its limit, so a caller can't take the ordering without the cap.
   def latest_version(queryable),
     do: queryable |> order_by([runbooks: r], desc: r.version) |> limit(1)
+
+  # One row per slug family: keeps a row only when NO newer non-deleted version
+  # of its (account, slug) exists. Stays a plain runbooks queryable, so cursor
+  # pagination, filters, and the count aggregate all compose onto it — filters
+  # chained after it therefore judge the family's newest version.
+  def latest_version_per_slug(queryable) do
+    newer_version =
+      from(newer in Emisar.Runbooks.Runbook,
+        where:
+          newer.account_id == parent_as(:runbooks).account_id and
+            newer.slug == parent_as(:runbooks).slug and
+            is_nil(newer.deleted_at) and
+            newer.version > parent_as(:runbooks).version,
+        select: 1
+      )
+
+    where(queryable, [runbooks: _], not exists(newer_version))
+  end
+
+  # One full row per slug — the newest version of whatever the chain narrowed
+  # to (e.g. `published()` → the newest published version). DISTINCT ON pins
+  # its own leading ORDER BY, so never put this under cursor pagination; it's
+  # for bounded `Repo.all` batches.
+  def distinct_latest_per_slug(queryable) do
+    queryable
+    |> distinct([runbooks: r], r.slug)
+    |> order_by([runbooks: r], desc: r.version)
+  end
 
   @impl Emisar.Repo.Query
   def cursor_fields,

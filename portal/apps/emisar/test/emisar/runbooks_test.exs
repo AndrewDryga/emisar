@@ -34,11 +34,128 @@ defmodule Emisar.RunbooksTest do
       refute draft.id in Enum.map(runbooks, & &1.id)
     end
 
+    test "shows one row per slug family, led by its newest version" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      first = create_runbook(subject, slug: "alpha", title: "Alpha") |> publish(subject)
+      assert {:ok, second} = Runbooks.save_new_version(first, %{"status" => "draft"}, subject)
+      single = create_runbook(subject, slug: "beta", title: "Beta")
+
+      assert {:ok, runbooks, metadata} = Runbooks.list_runbooks(subject)
+      assert Enum.map(runbooks, & &1.id) == [second.id, single.id]
+      assert Enum.map(runbooks, & &1.status) == [:draft, :draft]
+      assert metadata.count == 2
+    end
+
+    test "another account's higher version of the same slug doesn't suppress the family head" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      mine = create_runbook(subject, slug: "shared")
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      other_first = create_runbook(other_subject, slug: "shared")
+
+      assert {:ok, _other_second} =
+               Runbooks.save_new_version(other_first, %{"status" => "draft"}, other_subject)
+
+      assert {:ok, runbooks, _metadata} = Runbooks.list_runbooks(subject)
+      assert Enum.map(runbooks, & &1.id) == [mine.id]
+    end
+
+    test "filters judge the family's newest version" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      first = create_runbook(subject, slug: "alpha") |> publish(subject)
+      assert {:ok, second} = Runbooks.save_new_version(first, %{"status" => "draft"}, subject)
+
+      assert {:ok, [], _metadata} =
+               Runbooks.list_runbooks(subject, filter: [status: ["published"]])
+
+      assert {:ok, drafts, _metadata} =
+               Runbooks.list_runbooks(subject, filter: [status: ["draft"]])
+
+      assert Enum.map(drafts, & &1.id) == [second.id]
+    end
+
     test "denies a principal without view permission" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert Runbooks.list_runbooks(Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
+    end
+  end
+
+  describe "list_runbook_versions/3" do
+    test "lists every version of one family newest first, other families excluded" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      first = create_runbook(subject, slug: "alpha") |> publish(subject)
+      assert {:ok, second} = Runbooks.save_new_version(first, %{"status" => "draft"}, subject)
+      _other_family = create_runbook(subject, slug: "beta")
+
+      assert {:ok, versions, metadata} = Runbooks.list_runbook_versions("alpha", subject)
+      assert Enum.map(versions, & &1.id) == [second.id, first.id]
+      assert Enum.map(versions, & &1.version) == [2, 1]
+      assert metadata.count == 2
+    end
+
+    test "hides another account's family" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      _other = create_runbook(other_subject, slug: "cross")
+
+      assert {:ok, [], metadata} = Runbooks.list_runbook_versions("cross", subject)
+      assert metadata.count == 0
+    end
+
+    test "returns only the subject's versions of a slug shared across accounts" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      mine = create_runbook(subject, slug: "cross")
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      _other = create_runbook(other_subject, slug: "cross")
+
+      assert {:ok, versions, _metadata} = Runbooks.list_runbook_versions("cross", subject)
+      assert Enum.map(versions, & &1.id) == [mine.id]
+    end
+
+    test "denies a principal without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.list_runbook_versions("any", Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
+    end
+  end
+
+  describe "latest_published_by_slugs/2" do
+    test "maps each slug to its newest published version, skipping never-published families" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      first = create_runbook(subject, slug: "alpha") |> publish(subject)
+
+      assert {:ok, second_draft} =
+               Runbooks.save_new_version(first, %{"status" => "draft"}, subject)
+
+      second = publish(second_draft, subject)
+      assert {:ok, _third} = Runbooks.save_new_version(second, %{"status" => "draft"}, subject)
+      _draft_only = create_runbook(subject, slug: "beta")
+
+      assert {:ok, published_by_slug} =
+               Runbooks.latest_published_by_slugs(["alpha", "beta"], subject)
+
+      assert Map.keys(published_by_slug) == ["alpha"]
+      assert published_by_slug["alpha"].id == second.id
+    end
+
+    test "hides another account's published family, even behind the subject's own draft slug" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      _mine_draft = create_runbook(subject, slug: "cross")
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      _other = create_runbook(other_subject, slug: "cross") |> publish(other_subject)
+
+      assert Runbooks.latest_published_by_slugs(["cross"], subject) == {:ok, %{}}
+    end
+
+    test "denies a principal without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.latest_published_by_slugs(["any"], Subject.for_runner(runner, account)) ==
                {:error, :unauthorized}
     end
   end

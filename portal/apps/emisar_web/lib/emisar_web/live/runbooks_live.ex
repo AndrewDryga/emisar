@@ -1,8 +1,9 @@
 defmodule EmisarWeb.RunbooksLive do
   @moduledoc """
-  Paginated list of the account's cloud-side runbooks. Each row links
-  to the editor (`/runbooks/:id/edit`); published runbooks get a Run
-  button that opens the parameterized dispatch form.
+  Paginated list of the account's runbook families — one row per slug, led by
+  its newest version. Each row links to the editor and, past v1, to the
+  family's immutable version history; a family with a published version gets
+  a Run button that opens the parameterized dispatch form for it.
   """
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runbooks, Runs}
@@ -39,6 +40,7 @@ defmodule EmisarWeb.RunbooksLive do
           socket
           |> assign(:runbooks, list)
           |> assign(:runbook_risk, resolve_max_risks(list, socket.assigns.current_subject))
+          |> assign(:run_targets, resolve_run_targets(list, socket.assigns.current_subject))
           |> assign(:metadata, meta)
           |> assign(:filter_params, params)
           |> assign(:filters, filters)
@@ -50,6 +52,7 @@ defmodule EmisarWeb.RunbooksLive do
           socket
           |> assign(:runbooks, [])
           |> assign(:runbook_risk, %{})
+          |> assign(:run_targets, %{})
           |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
           |> assign(:filter_params, params)
           |> assign(:filters, filters)
@@ -98,6 +101,22 @@ defmodule EmisarWeb.RunbooksLive do
   # interchangeably, same as the dispatch path).
   defp runbook_action_ids(runbook),
     do: runbook |> Runbooks.expand() |> Enum.map(&(&1["action_id"] || &1["action"]))
+
+  # `%{slug => latest published version}` for the page's families in ONE read —
+  # a family whose head is a draft still runs its newest published version.
+  defp resolve_run_targets(runbooks, subject) do
+    slugs = runbooks |> Enum.map(& &1.slug) |> Enum.uniq()
+
+    case Runbooks.latest_published_by_slugs(slugs, subject) do
+      {:ok, published_by_slug} -> published_by_slug
+      {:error, _} -> %{}
+    end
+  end
+
+  # When the run target isn't the row's own version (a draft head over an
+  # older published version), the label says which version dispatches.
+  defp run_label(%{version: version}, %{version: version}), do: "Run"
+  defp run_label(_runbook, target), do: "Run v#{target.version}"
 
   def render(assigns) do
     ~H"""
@@ -189,27 +208,43 @@ defmodule EmisarWeb.RunbooksLive do
                       <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
                     </:title>
                     <:meta>
-                      <%!-- Row 2: description preview + slug --%>
+                      <%!-- Row 2: description preview + slug + version history --%>
                       <.meta_line>
                         <:seg :if={runbook.description && runbook.description != ""}>
                           {preview(runbook.description)}
                         </:seg>
                         <:seg><span class="font-mono">{runbook.slug}</span></:seg>
+                        <%!-- Versions are dense, so the head's version number IS
+                         the family's version count; a single-version family has
+                         no history beyond this row. --%>
+                        <:seg :if={runbook.version > 1}>
+                          <.link
+                            navigate={~p"/app/#{@current_account}/runbooks/#{runbook.slug}/versions"}
+                            class="text-zinc-300 hover:text-brand-300"
+                          >
+                            {runbook.version} versions
+                          </.link>
+                        </:seg>
                       </.meta_line>
                     </:meta>
                     <:actions>
                       <%!-- Secondary: the page's ONE brand fill is "New runbook" —
-                       a green per row turns the fill into wallpaper. --%>
+                       a green per row turns the fill into wallpaper. Run targets
+                       the family's newest PUBLISHED version, which the head row
+                       may not be while a draft iteration sits on top of it — the
+                       label then names the exact version it dispatches. --%>
                       <.button
                         :if={
-                          runbook.status == :published and
+                          @run_targets[runbook.slug] &&
                             Runs.subject_can_dispatch_run?(@current_subject)
                         }
-                        navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
+                        navigate={
+                          ~p"/app/#{@current_account}/runbooks/#{@run_targets[runbook.slug].id}/run"
+                        }
                         variant={:secondary}
                         size={:sm}
                       >
-                        Run
+                        {run_label(runbook, @run_targets[runbook.slug])}
                       </.button>
                     </:actions>
                   </.list_row>

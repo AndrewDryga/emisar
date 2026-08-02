@@ -272,12 +272,12 @@ end
 
 {:ok, legacy_runbooks, _metadata} = Runbooks.list_runbooks(owner_subject)
 
+# The list is one head row per slug family; delete_runbook tombstones the
+# whole family, so older versions can't resurface as the next head.
 legacy_runbooks
 |> Enum.filter(&(&1.slug == "nightly-edge-health"))
 |> Enum.each(fn runbook ->
-  runbook
-  |> Ecto.Changeset.change(deleted_at: now.())
-  |> Repo.update!()
+  {:ok, _runbook} = Runbooks.delete_runbook(runbook, owner_subject)
 end)
 
 case Repo.fetch(Account.Query.not_deleted() |> Account.Query.by_slug("initech"), Account.Query) do

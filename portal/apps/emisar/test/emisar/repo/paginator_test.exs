@@ -6,11 +6,22 @@ defmodule Emisar.Repo.PaginatorTest do
     def cursor_fields, do: [{:records, :asc, :id}]
   end
 
+  defmodule WideCursorQuery do
+    def cursor_fields, do: [{:records, :asc, :name}, {:records, :asc, :id}]
+  end
+
   describe "init/3" do
     test "clamps the requested page limit" do
       assert {:ok, %{limit: 35}} = Paginator.init(CursorQuery, [], [])
       assert {:ok, %{limit: 1}} = Paginator.init(CursorQuery, [], limit: 0)
       assert {:ok, %{limit: 100}} = Paginator.init(CursorQuery, [], limit: 1_000)
+    end
+
+    test "a prepended order field overrides its non-adjacent cursor-field twin" do
+      # No duplicated keyset slot survives — a crafted cursor could otherwise
+      # carry two different boundary values for one column.
+      assert {:ok, %{cursor_fields: [{:records, :desc, :id}, {:records, :asc, :name}]}} =
+               Paginator.init(WideCursorQuery, [{:records, :desc, :id}], [])
     end
 
     test "accepts a cursor emitted for the same cursor fields" do

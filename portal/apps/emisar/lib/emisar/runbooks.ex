@@ -33,13 +33,64 @@ defmodule Emisar.Runbooks do
   @doc "The Runbooks table's `%Repo.Filter{}` list."
   def runbook_filters, do: Runbook.Query.filters()
 
+  @doc """
+  Lists one row per runbook slug family — the newest non-deleted version, whose
+  status and version number lead the console list (versions are dense, so the
+  head's version IS the family's version count). Filters judge that head row.
+  Requires `view_runbooks`; scoped to the subject's account. Returns
+  `{:ok, [runbook], %Metadata{}} | {:error, :unauthorized | :invalid_cursor}`.
+  """
   def list_runbooks(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
       Runbook.Query.not_deleted()
+      |> Runbook.Query.latest_version_per_slug()
       |> Runbook.Query.ordered_by_title_version()
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runbook.Query, opts)
+    end
+  end
+
+  @doc """
+  Lists every immutable version of one runbook slug family, newest first.
+  Requires `view_runbooks`; scoped to the subject's account. Returns
+  `{:ok, [runbook], %Metadata{}} | {:error, :unauthorized | :invalid_cursor}`.
+  """
+  def list_runbook_versions(slug, %Subject{} = subject, opts \\ []) when is_binary(slug) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      # Versions of one family are ordered by version alone — titles may vary
+      # across versions, so the default title-led cursor fields would shuffle
+      # them. The prepend keeps the keyset in step with the rendered order.
+      opts = Keyword.put(opts, :order_by, [{:runbooks, :desc, :version}])
+
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_slug(slug)
+      |> Authorizer.for_subject(subject)
+      |> Repo.list(Runbook.Query, opts)
+    end
+  end
+
+  @doc """
+  Maps each slug to its newest non-deleted PUBLISHED version, for the listed
+  slugs — the list page's Run target, which stays reachable when a family's
+  head is a draft sitting on an older published version. Requires
+  `view_runbooks`; scoped to the subject's account. Returns
+  `{:ok, %{slug => runbook}}` (families with no published version are absent)
+  or `{:error, :unauthorized}`.
+  """
+  def latest_published_by_slugs(slugs, %Subject{} = subject) when is_list(slugs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      runbooks =
+        Runbook.Query.not_deleted()
+        |> Runbook.Query.published()
+        |> Runbook.Query.by_slugs(slugs)
+        |> Runbook.Query.distinct_latest_per_slug()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, Map.new(runbooks, &{&1.slug, &1})}
     end
   end
 

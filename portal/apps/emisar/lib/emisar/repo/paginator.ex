@@ -28,13 +28,13 @@ defmodule Emisar.Repo.Paginator do
     limit = Keyword.get(opts, :limit, @default_limit)
     limit = max(min(limit, @max_limit), 1)
 
+    # First occurrence wins, wherever the repeat sits: a caller-prepended
+    # field overrides the query module's direction for it, and no field
+    # appears twice — a duplicated keyset slot would let a crafted cursor
+    # carry two different boundary values for one column.
     cursor_fields =
       (order_by ++ Query.fetch_cursor_fields!(query_module))
-      |> Enum.reduce([], fn
-        {binding, _new_order, field}, [{binding, _prev_order, field} | _] = acc -> acc
-        {binding, order, field}, acc -> [{binding, order, field}] ++ acc
-      end)
-      |> Enum.reverse()
+      |> Enum.uniq_by(fn {binding, _order, field} -> {binding, field} end)
 
     if encoded = Keyword.get(opts, :cursor) do
       with {:ok, {direction, values}} <- decode_cursor(encoded),
