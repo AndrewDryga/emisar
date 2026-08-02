@@ -3,6 +3,8 @@ versions:
   - version: 5.1.0-alpine
     digest: "@sha256:6e761312e833947f77af755072c0e77b67d298d127595470a79e9454008dd594"
     default: true
+risk_accountability:
+  mode: complete
 cases:
   - action: postfix.mailq
     expect:
@@ -84,3 +86,79 @@ cases:
       exit: [1]
       reason_contains: [process exited with code 1]
       stderr_contains: [reserved for the superuser]
+  - action: postfix.postsuper_hold
+    runner_user: root
+    runner_reason: Postfix reserves queue-control commands for the superuser.
+    arrange:
+      # Same deterministic-queue setup as postcat_qid/delete_qid: defer delivery
+      # and pin short queue IDs so the enqueued message stays put with an ID
+      # matching the action's ^[A-F0-9]{8,20}$ pattern.
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      - argv: [/bin/sh, -c, "printf 'Subject: packtest hold\\n\\npacktest hold body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
+    resolve_args:
+      qid:
+        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+[*!]?( |$)/ {id=$1; sub(/[*!]$/, \"\", id); print id; exit}'"]
+        retry_for: 15s
+        retry_every: 500ms
+    probes:
+      # postqueue -p appends ! to a held message's queue ID.
+      - argv: [/bin/sh, -c, "postqueue -p | grep -Eq '^[0-9A-F]+!' && echo hold-marker-present"]
+        expect:
+          stdout_contains: [hold-marker-present]
+        retry_for: 10s
+        retry_every: 500ms
+  - action: postfix.postsuper_release
+    runner_user: root
+    runner_reason: Postfix reserves queue-control commands for the superuser.
+    arrange:
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      - argv: [/bin/sh, -c, "printf 'Subject: packtest release\\n\\npacktest release body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
+      # postsuper only sees the message once pickup+cleanup land it in the
+      # queue, so retry the hold until the ! marker shows up.
+      - name: hold the enqueued message
+        argv: [/bin/sh, -c, "postsuper -h ALL >/dev/null 2>&1; postqueue -p | grep -Eq '^[0-9A-F]+!' && echo held"]
+        expect:
+          stdout_contains: [held]
+        retry_for: 15s
+        retry_every: 500ms
+    resolve_args:
+      qid:
+        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+!( |$)/ {id=$1; sub(/!$/, \"\", id); print id; exit}'"]
+        retry_for: 10s
+        retry_every: 500ms
+    probes:
+      # Released back into the queue: an unheld entry is present and no held
+      # (!) entry remains.
+      - argv: [/bin/sh, -c, "postqueue -p | awk '$1 ~ /^[0-9A-F]+!$/ {held=1} /^[0-9A-F]+[*]?( |$)/ {queued=1} END {if (queued && !held) print \"hold-cleared\"}'"]
+        expect:
+          stdout_contains: [hold-cleared]
+        retry_for: 10s
+        retry_every: 500ms
+  - action: postfix.postsuper_requeue
+    runner_user: root
+    runner_reason: Postfix reserves queue-control commands for the superuser.
+    arrange:
+      - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
+      - argv: [/bin/sh, -c, "printf 'Subject: packtest requeue\\n\\npacktest requeue body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
+      # postsuper only sees the message once pickup+cleanup land it in the
+      # queue, so retry the hold until the ! marker shows up.
+      - name: hold the enqueued message
+        argv: [/bin/sh, -c, "postsuper -h ALL >/dev/null 2>&1; postqueue -p | grep -Eq '^[0-9A-F]+!' && echo held"]
+        expect:
+          stdout_contains: [held]
+        retry_for: 15s
+        retry_every: 500ms
+    resolve_args:
+      qid:
+        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+!( |$)/ {id=$1; sub(/!$/, \"\", id); print id; exit}'"]
+        retry_for: 10s
+        retry_every: 500ms
+    probes:
+      # Requeue runs the held message back through cleanup: the hold marker
+      # clears and the message re-enters the queue under a fresh queue ID
+      # (transiently invisible while in maildrop, hence the retry).
+      - argv: [/bin/sh, -c, "postqueue -p | awk '$1 ~ /^[0-9A-F]+!$/ {held=1} /^[0-9A-F]+[*]?( |$)/ {queued=1} END {if (queued && !held) print \"requeued-unheld\"}'"]
+        expect:
+          stdout_contains: [requeued-unheld]
+        retry_for: 15s
+        retry_every: 500ms
