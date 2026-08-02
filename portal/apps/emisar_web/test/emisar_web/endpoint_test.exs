@@ -1,6 +1,10 @@
 defmodule EmisarWeb.EndpointTest do
   use EmisarWeb.ConnCase, async: true
 
+  test "the endpoint and Emisar.PublicUrl advertise the same public origin" do
+    assert EmisarWeb.Endpoint.url() == Emisar.PublicUrl.base()
+  end
+
   test "the session cookie follows the runtime secure-cookie setting" do
     Emisar.Config.put_override(:emisar_web, :force_secure_cookies, true)
     secure_conn = request_with_session()

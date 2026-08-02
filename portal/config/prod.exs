@@ -20,8 +20,14 @@ dev_host_excludes =
     []
   end
 
+# Compile-time placeholder origin — runtime.exs overwrites both keys from
+# PHX_HOST/FORCE_SSL/URL_PORT with one shared binding.
+public_url = [host: "example.com", port: 80]
+
+config :emisar, :public_url, public_url
+
 config :emisar_web, EmisarWeb.Endpoint,
-  url: [host: "example.com", port: 80],
+  url: public_url,
   cache_static_manifest: "priv/static/cache_manifest.json",
   # Force HTTPS in production (this also sets the HSTS header). Phoenix 1.8
   # reads `:force_ssl` via `Application.compile_env`, so it MUST be set at

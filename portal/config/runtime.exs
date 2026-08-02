@@ -163,8 +163,14 @@ if config_env() == :prod do
       String.to_integer(System.get_env("URL_PORT") || System.get_env("PORT") || "4000")
     end
 
+  # One shared origin binding for the endpoint's `url:` and the domain's
+  # `:public_url` (Emisar.PublicUrl) — the two must never diverge.
+  public_url = [host: host, port: url_port, scheme: url_scheme]
+
+  config :emisar, :public_url, public_url
+
   endpoint_opts = [
-    url: [host: host, port: url_port, scheme: url_scheme],
+    url: public_url,
     http: [
       ip: {0, 0, 0, 0},
       port: String.to_integer(System.get_env("PORT") || "4000")

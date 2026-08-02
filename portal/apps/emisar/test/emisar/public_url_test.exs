@@ -2,10 +2,7 @@ defmodule Emisar.PublicUrlTest do
   use ExUnit.Case, async: true
   alias Emisar.PublicUrl
 
-  defp put_url(url_cfg) do
-    cfg = Emisar.Config.get_env(:emisar_web, EmisarWeb.Endpoint, [])
-    Emisar.Config.put_override(:emisar_web, EmisarWeb.Endpoint, Keyword.put(cfg, :url, url_cfg))
-  end
+  defp put_url(url_cfg), do: Emisar.Config.put_override(:emisar, :public_url, url_cfg)
 
   describe "base/0" do
     test "prod-style https host elides the default 443 port" do
@@ -24,7 +21,7 @@ defmodule Emisar.PublicUrlTest do
     end
 
     test "falls back to http://localhost when no url config exists" do
-      Emisar.Config.put_override(:emisar_web, EmisarWeb.Endpoint, [])
+      Emisar.Config.put_override(:emisar, :public_url, [])
       assert PublicUrl.base() == "http://localhost"
     end
   end

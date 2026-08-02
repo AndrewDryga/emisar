@@ -26,6 +26,7 @@ config :emisar,
          ]
 
 dev_url = URI.parse(System.get_env("EMISAR_DEV_URL", "http://localhost:4000"))
+public_url = [scheme: dev_url.scheme, host: dev_url.host, port: dev_url.port]
 listen_port = String.to_integer(System.get_env("EMISAR_LISTEN_PORT", "4000"))
 
 listen_ip =
@@ -44,9 +45,11 @@ end
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
+config :emisar, :public_url, public_url
+
 config :emisar_web, EmisarWeb.Endpoint,
   http: [ip: listen_ip, port: listen_port],
-  url: [scheme: dev_url.scheme, host: dev_url.host, port: dev_url.port],
+  url: public_url,
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

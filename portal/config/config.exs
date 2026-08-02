@@ -67,9 +67,16 @@ config :emisar_web,
   ecto_repos: [Emisar.Repo],
   generators: [context_app: :emisar, binary_id: true]
 
+# The public origin — one binding feeds the endpoint's `url:` and the
+# domain's `:public_url` (read by `Emisar.PublicUrl`), so URL generation
+# on both sides can never disagree.
+public_url = [host: "localhost"]
+
+config :emisar, :public_url, public_url
+
 # Configures the endpoint
 config :emisar_web, EmisarWeb.Endpoint,
-  url: [host: "localhost"],
+  url: public_url,
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
     formats: [html: EmisarWeb.ErrorHTML, json: EmisarWeb.ErrorJSON],

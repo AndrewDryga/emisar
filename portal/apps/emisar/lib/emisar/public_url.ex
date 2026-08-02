@@ -4,17 +4,17 @@ defmodule Emisar.PublicUrl do
   links built outside a request (mailer bodies and Paddle success/cancel
   URLs).
 
-  Reproduces `EmisarWeb.Endpoint.url/0` from the shared
-  `:emisar_web, EmisarWeb.Endpoint` config so callers in the `emisar`
-  context app can build the same string without compile-coupling to
-  `EmisarWeb`. Honors the configured scheme, host, and port and elides
-  the default port (443/80) exactly as Phoenix does, so a single host
-  config drives every absolute URL the app emits.
+  Reads the domain-owned `:emisar, :public_url` config — a
+  `[scheme:, host:, port:]` keyword every config file binds once and
+  feeds to both this module and the endpoint's `url:`, so one origin
+  drives every absolute URL the app emits. Honors the configured
+  scheme, host, and port and elides the default port (443/80) exactly
+  as Phoenix does.
   """
 
   @doc "The public base URL, e.g. `https://emisar.dev` — no trailing slash."
   def base do
-    url = Emisar.Config.get_env(:emisar_web, EmisarWeb.Endpoint, []) |> Keyword.get(:url, [])
+    url = Emisar.Config.get_env(:emisar, :public_url, [])
 
     %URI{
       scheme: Keyword.get(url, :scheme, "http"),

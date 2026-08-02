@@ -25,10 +25,18 @@ config :emisar, Emisar.Repo,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 
+# The advertised origin pins port 80 explicitly — without it Phoenix would
+# infer the URL port from the (unused, server: false) listen port 4002 and
+# drift from the domain's `:public_url`.
+public_url = [scheme: "http", host: "localhost", port: 80]
+
+config :emisar, :public_url, public_url
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :emisar_web, EmisarWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
+  url: public_url,
   secret_key_base: "S1d0sqYUPUO4VjfuqukIgBitA+mmPo4Zn2s8xR+oKZsTF9fxI7oahrFmmEqecrKU",
   server: false
 
