@@ -39,6 +39,95 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "resolve_post_auth_account/2" do
+    test "an unbranded sign-in has no target" do
+      assert Auth.resolve_post_auth_account(Fixtures.Users.create_user(), nil) == :no_target
+    end
+
+    test "a live member lands on the branded account, by slug or id" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      account_id = account.id
+
+      assert {:member, %Accounts.Account{id: ^account_id}} =
+               Auth.resolve_post_auth_account(user, account.slug)
+
+      assert {:member, %Accounts.Account{id: ^account_id}} =
+               Auth.resolve_post_auth_account(user, account.id)
+    end
+
+    test "a member of a disabled account is routed to that account, not denied" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      Fixtures.Accounts.disable_account(account)
+      account_id = account.id
+
+      assert {:disabled, %Accounts.Account{id: ^account_id}} =
+               Auth.resolve_post_auth_account(user, account.slug)
+    end
+
+    test "an unknown ref and a non-member's ref both refuse the same way" do
+      member = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      outsider = Fixtures.Users.create_user()
+
+      # Same `:not_member` either way — a branded sign-in never confirms a tenant
+      # exists on the slug-probing path.
+      assert Auth.resolve_post_auth_account(outsider, account.slug) == :not_member
+      assert Auth.resolve_post_auth_account(outsider, "no-such-team") == :not_member
+    end
+
+    test "a stale membership — suspended or tombstoned — refuses too" do
+      suspended_user = Fixtures.Users.create_user()
+      deleted_user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      suspended_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: suspended_user.id
+        )
+
+      deleted_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: deleted_user.id)
+
+      Fixtures.Memberships.suspend_membership(suspended_membership)
+      Fixtures.Memberships.mark_membership_as_deleted(deleted_membership)
+
+      assert Auth.resolve_post_auth_account(suspended_user, account.slug) == :not_member
+      assert Auth.resolve_post_auth_account(deleted_user, account.slug) == :not_member
+    end
+
+    test "a soft-deleted account refuses even for its member" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      Fixtures.Accounts.mark_account_as_deleted(account)
+
+      assert Auth.resolve_post_auth_account(user, account.slug) == :not_member
+      assert Auth.resolve_post_auth_account(user, account.id) == :not_member
+    end
+
+    test "a member of account A cannot land on account B" do
+      user = Fixtures.Users.create_user()
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
+
+      Fixtures.Memberships.create_membership(
+        account_id: account_b.id,
+        user_id: Fixtures.Users.create_user().id
+      )
+
+      assert Auth.resolve_post_auth_account(user, account_b.slug) == :not_member
+      assert Auth.resolve_post_auth_account(user, account_b.id) == :not_member
+    end
+  end
+
   describe "create_session_token!/5" do
     setup do
       %{user: Fixtures.Users.create_user()}

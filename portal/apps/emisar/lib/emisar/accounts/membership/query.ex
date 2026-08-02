@@ -20,6 +20,16 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_account_slug(queryable, slug),
     do: queryable |> with_joined_account() |> where([account: a], a.slug == ^slug)
 
+  @doc """
+  Scope to the membership whose (non-deleted) account has this slug, including a
+  DISABLED account. Pairs with `with_joined_account_including_disabled/1`.
+  """
+  def by_account_slug_including_disabled(queryable, slug) do
+    queryable
+    |> with_joined_account_including_disabled()
+    |> where([account: a], a.slug == ^slug)
+  end
+
   def by_user_id(queryable, user_id),
     do: where(queryable, [memberships: m], m.user_id == ^user_id)
 
@@ -116,6 +126,35 @@ defmodule Emisar.Accounts.Membership.Query do
   def with_preloaded_account(queryable) do
     queryable
     |> with_joined_account()
+    |> preload([memberships: m, account: account], account: account)
+  end
+
+  @doc """
+  Inner-join the membership's non-deleted account, idempotently — unlike
+  `with_joined_account/1`, a DISABLED account is kept. The post-auth sign-in
+  target needs it: a member of a disabled account is sent to that account's own
+  page, so the row must resolve. A deleted account is still dropped.
+  """
+  def with_joined_account_including_disabled(queryable) do
+    with_named_binding(queryable, :account, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [memberships: m],
+        account in ^Emisar.Accounts.Account.Query.not_deleted(),
+        on: m.account_id == account.id,
+        as: ^binding
+      )
+    end)
+  end
+
+  @doc """
+  Join (if needed) and preload the membership's account, disabled included.
+  See `with_joined_account_including_disabled/1`.
+  """
+  def with_preloaded_account_including_disabled(queryable) do
+    queryable
+    |> with_joined_account_including_disabled()
     |> preload([memberships: m, account: account], account: account)
   end
 

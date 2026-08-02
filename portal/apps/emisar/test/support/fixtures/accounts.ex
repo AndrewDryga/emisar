@@ -53,6 +53,13 @@ defmodule Emisar.Fixtures.Accounts do
     |> Repo.update!()
   end
 
+  @doc "Disables an account (sets `disabled_at`), returning the disabled struct."
+  def disable_account(%Account{} = account) do
+    account
+    |> Account.Changeset.disable(DateTime.utc_now())
+    |> Repo.update!()
+  end
+
   @doc """
   Mints (or refreshes) the account's subscription at `plan` — the way a real
   account lands on a paid tier (Paddle webhook → `Billing.upsert_subscription`).

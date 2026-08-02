@@ -29,7 +29,10 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert conn.resp_cookies["emisar_magic"]
     end
 
-    test "a disabled branded account keeps the uniform response but issues no link", %{
+    # Link issuance is uniform for any known address — a disabled target must
+    # look exactly like an unknown one, or /start becomes an account-existence
+    # oracle. The account's state is judged after the factor passes instead.
+    test "a disabled branded account issues the link, then refuses the session", %{
       conn: conn,
       user: user
     } do
@@ -41,13 +44,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
         role: "owner"
       )
 
-      assert {:ok, _account} =
-               Accounts.set_account_disabled_for_support(
-                 account.id,
-                 true,
-                 "Temporary hold",
-                 owner_subject(user, account)
-               )
+      Fixtures.Accounts.disable_account(account)
 
       conn =
         post(conn, ~p"/sign_in/magic/start", %{
@@ -56,8 +53,14 @@ defmodule EmisarWeb.UserSessionControllerTest do
         })
 
       assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      refute conn.resp_cookies["emisar_magic"]
-      refute_received {:email, _message}
+      assert conn.resp_cookies["emisar_magic"]
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+      conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
     end
 
     # The sign-up form posts a signed registration handoff to /start; the

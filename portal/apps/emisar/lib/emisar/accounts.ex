@@ -1345,6 +1345,34 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — post-factor sign-in: `Auth.resolve_post_auth_account/2` resolves the
+  branded `/app/:account_id_or_slug` target once both factors have passed, so no
+  `%Subject{}` exists yet. Scoped to the user's OWN live membership, and — unlike
+  `fetch_membership_by_account_id_or_slug/2` — the preloaded account may be
+  DISABLED, so a member of a disabled account can be routed to that account's own
+  page. An unknown ref, a non-member, a suspended or tombstoned membership, and a
+  deleted account all return `{:error, :not_found}` — indistinguishable, so
+  sign-in never confirms a tenant exists.
+  """
+  def fetch_post_auth_membership(%Users.User{id: user_id}, account_id_or_slug)
+      when is_binary(account_id_or_slug) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_user_id(user_id)
+    |> Membership.Query.not_disabled()
+    |> scope_to_account_ref_including_disabled(account_id_or_slug)
+    |> Membership.Query.with_preloaded_account_including_disabled()
+    |> Repo.fetch(Membership.Query)
+  end
+
+  defp scope_to_account_ref_including_disabled(queryable, account_id_or_slug) do
+    if Repo.valid_uuid?(account_id_or_slug) do
+      Membership.Query.by_account_id(queryable, account_id_or_slug)
+    else
+      Membership.Query.by_account_slug_including_disabled(queryable, account_id_or_slug)
+    end
+  end
+
+  @doc """
   Switch the operator's active tenant to `account_id`. Requires
   `view_own_account_permission`. Returns `{:ok, membership}` — the freshly
   validated target membership with `:account` and `:user` preloaded, which the

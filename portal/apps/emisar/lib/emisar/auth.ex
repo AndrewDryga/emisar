@@ -31,6 +31,36 @@ defmodule Emisar.Auth do
   @doc "One-line description of what a membership role can do — `nil` when unknown."
   def role_description(role), do: Role.description(role)
 
+  # -- Post-auth account target -----------------------------------------
+
+  @doc """
+  Internal — post-factor sign-in: decides which account a just-authenticated user
+  lands on for a branded `/app/:account_id_or_slug` sign-in. The web boundary has
+  already validated the local return path and extracted its account ref; the
+  session token IS the credential being minted, so there's no Subject yet.
+
+  Returns `:no_target` when the sign-in wasn't branded, `{:member, account}` when
+  the user still holds a live membership on the target, `{:disabled, account}`
+  when that account is disabled (its members are sent to the account's own
+  sign-in page), and `:not_member` otherwise. An unknown ref, a non-member, a
+  suspended or tombstoned membership, and a deleted account are all
+  `:not_member` — a branded sign-in never confirms a tenant exists.
+  """
+  def resolve_post_auth_account(%Users.User{}, nil), do: :no_target
+
+  def resolve_post_auth_account(%Users.User{} = user, account_ref) when is_binary(account_ref) do
+    case Accounts.fetch_post_auth_membership(user, account_ref) do
+      {:ok, %Accounts.Membership{account: %Accounts.Account{disabled_at: nil} = account}} ->
+        {:member, account}
+
+      {:ok, %Accounts.Membership{account: %Accounts.Account{} = account}} ->
+        {:disabled, account}
+
+      {:error, :not_found} ->
+        :not_member
+    end
+  end
+
   # -- Session tokens ---------------------------------------------------
 
   @doc """

@@ -11,7 +11,7 @@ defmodule EmisarWeb.UserSessionController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, Auth, Mailers, Throttle, Users}
+  alias Emisar.{Auth, Mailers, Throttle, Users}
   alias EmisarWeb.Analytics
   alias EmisarWeb.CoreComponents
   alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
@@ -57,8 +57,7 @@ defmodule EmisarWeb.UserSessionController do
 
     conn =
       with :ok <- Throttle.check("magic_link", key, 5, 900_000),
-           {:ok, user} <- Users.fetch_user_by_email(email),
-           :active <- branded_account_status(return_to) do
+           {:ok, user} <- Users.fetch_user_by_email(email) do
         registration_user_id = registration_user_id(registration_handoff, user)
         registered? = is_binary(registration_user_id)
         {token_id, nonce, secret} = Auth.issue_magic_link(user, context)
@@ -346,13 +345,14 @@ defmodule EmisarWeb.UserSessionController do
     do: delete_session(conn, :magic_link_registration_user_id)
 
   # A sign-in begun on a team's branded page carries a `/app/<slug>` return_to.
-  # Resolve the operator's membership of THAT team and either remember it for the
-  # next sign-in's one-click return, or — if they aren't a member — drop the
-  # branded target so they don't land on a bare 404 after a successful sign-in.
+  # `Auth.resolve_post_auth_account/2` decides the landing account; when the
+  # operator isn't a member we drop the branded target so they don't land on a
+  # bare 404 after a successful sign-in.
   #
-  # The membership read returns `:not_found` for a non-member AND an unknown team
-  # alike (the deliberate no-leak property), so the denial flash never names the
-  # team — naming it would confirm a tenant exists on the slug-probing path.
+  # That decision collapses a non-member, an unknown team, and a stale membership
+  # into one `:not_member` (the deliberate no-leak property), so the denial flash
+  # never names the team — naming it would confirm a tenant exists on the
+  # slug-probing path.
   @branded_denied_message "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
 
   # After the magic link verifies factor one (email), branch on MFA enrollment:
@@ -385,8 +385,10 @@ defmodule EmisarWeb.UserSessionController do
     |> delete_session(:mfa_pending_registered?)
   end
 
-  defp complete_branded_sign_in(conn, user, log_in) do
-    case branded_return_membership(conn, user) do
+  defp complete_branded_sign_in(conn, %Users.User{} = user, log_in) do
+    account_ref = branded_account_ref(get_session(conn, :user_return_to))
+
+    case Auth.resolve_post_auth_account(user, account_ref) do
       {:member, account} ->
         # Cookie write is a resp_cookie — separate from the session, so
         # `log_in_user`'s session renewal keeps it (same as the SSO callback).
@@ -407,49 +409,19 @@ defmodule EmisarWeb.UserSessionController do
 
         put_flash(conn, :info, @branded_denied_message)
 
-      :no_branded_target ->
+      :no_target ->
         finish_sign_in(conn, nil, log_in)
-    end
-  end
-
-  defp branded_return_membership(conn, %Users.User{} = user) do
-    case branded_account_ref(get_session(conn, :user_return_to)) do
-      {:ok, ref} ->
-        case Accounts.fetch_membership_by_account_id_or_slug(user, ref) do
-          {:ok, membership} -> {:member, membership.account}
-          {:error, :not_found} -> disabled_account_or_not_member(ref)
-        end
-
-      _ ->
-        :no_branded_target
     end
   end
 
   defp branded_account_ref("/app/" <> path) do
     case String.split(path, "/", parts: 2) do
-      [ref | _rest] when ref != "" -> {:ok, ref}
-      _ -> :error
+      [ref | _rest] when ref != "" -> ref
+      _ -> nil
     end
   end
 
-  defp branded_account_ref(_return_to), do: :error
-
-  defp branded_account_status(return_to) do
-    with {:ok, ref} <- branded_account_ref(return_to),
-         {:ok, %{disabled_at: %DateTime{}} = account} <-
-           Accounts.fetch_account_by_id_or_slug_including_disabled(ref) do
-      {:disabled, account}
-    else
-      _ -> :active
-    end
-  end
-
-  defp disabled_account_or_not_member(ref) do
-    case Accounts.fetch_account_by_id_or_slug_including_disabled(ref) do
-      {:ok, %{disabled_at: %DateTime{}} = account} -> {:disabled, account}
-      _ -> :not_member
-    end
-  end
+  defp branded_account_ref(_return_to), do: nil
 
   defp log_in_magic_user(conn, user, nil, mfa, registered?, context) do
     Users.record_sign_in(user, "magic_link", context)

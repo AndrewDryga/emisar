@@ -1766,6 +1766,82 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "fetch_post_auth_membership/2" do
+    test "resolves a live membership on a DISABLED account, with the account preloaded" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      Fixtures.Accounts.disable_account(account)
+
+      assert {:ok, %Membership{id: id, account: %Account{} = resolved}} =
+               Accounts.fetch_post_auth_membership(user, account.slug)
+
+      assert id == membership.id
+      assert resolved.id == account.id
+      assert %DateTime{} = resolved.disabled_at
+    end
+
+    test "resolves by the account id too (the UUID form for API/SSO/redirects)" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      assert {:ok, %Membership{id: id}} = Accounts.fetch_post_auth_membership(user, account.id)
+      assert id == membership.id
+    end
+
+    test "a non-member's ref is indistinguishable from an unknown one" do
+      member = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      outsider = Fixtures.Users.create_user()
+
+      assert Accounts.fetch_post_auth_membership(outsider, account.slug) == {:error, :not_found}
+      assert Accounts.fetch_post_auth_membership(outsider, account.id) == {:error, :not_found}
+      assert Accounts.fetch_post_auth_membership(outsider, "no-such-team") == {:error, :not_found}
+    end
+
+    test "a suspended or tombstoned membership does not resolve" do
+      suspended_user = Fixtures.Users.create_user()
+      deleted_user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      suspended_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: suspended_user.id
+        )
+
+      deleted_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: deleted_user.id)
+
+      Fixtures.Memberships.suspend_membership(suspended_membership)
+      Fixtures.Memberships.mark_membership_as_deleted(deleted_membership)
+
+      assert Accounts.fetch_post_auth_membership(suspended_user, account.slug) ==
+               {:error, :not_found}
+
+      assert Accounts.fetch_post_auth_membership(deleted_user, account.slug) ==
+               {:error, :not_found}
+    end
+
+    test "a soft-deleted account does not resolve, by slug or id" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      Fixtures.Accounts.mark_account_as_deleted(account)
+
+      assert Accounts.fetch_post_auth_membership(user, account.slug) == {:error, :not_found}
+      assert Accounts.fetch_post_auth_membership(user, account.id) == {:error, :not_found}
+    end
+  end
+
   describe "switch_account/2" do
     setup do
       user = Fixtures.Users.create_user()
