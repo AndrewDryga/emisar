@@ -79,6 +79,11 @@ defmodule EmisarWeb.AuditExportController do
         |> put_status(:forbidden)
         |> json(%{error: "forbidden", message: "This token's role lacks audit access."})
 
+      # The plug already bounced an ineligible plan, but the domain gate is
+      # authoritative — an entitlement withdrawn mid-poll still surfaces here.
+      {:error, :audit_export_not_available} ->
+        plan_required(conn)
+
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
@@ -251,20 +256,24 @@ defmodule EmisarWeb.AuditExportController do
 
   # Audit export (SIEM API + CSV download alike) is a Team+ feature — the
   # in-console trail is on every plan; taking the data out is paid. 403 with
-  # an upgrade pointer, mirroring the scope error's shape.
+  # an upgrade pointer, mirroring the scope error's shape. Courtesy copy —
+  # `Audit.list_for_export/2` enforces the same gate authoritatively.
   defp require_export_plan(conn, _opts) do
     if Billing.audit_export_available?(conn.assigns.current_subject.account) do
       conn
     else
-      conn
-      |> put_status(:forbidden)
-      |> json(%{
-        error: "plan_required",
-        required: "team",
-        message: "Audit export is available on the Team plan. Upgrade in Settings → Billing."
-      })
-      |> halt()
+      conn |> plan_required() |> halt()
     end
+  end
+
+  defp plan_required(conn) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{
+      error: "plan_required",
+      required: "team",
+      message: "Audit export is available on the Team plan. Upgrade in Settings → Billing."
+    })
   end
 
   # The audit stream is for `:audit_export` tokens only — an MCP key

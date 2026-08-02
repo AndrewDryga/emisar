@@ -20,7 +20,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_api_keys_for_account/2" do
     test "lists the account's :mcp keys, hiding audit-export tokens" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, agent_key} =
         ApiKeys.create_key(%{name: "agent"}, subject)
@@ -66,7 +67,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_key_owner_options/1 + the owner filter" do
     test "returns the distinct creators of the account's visible (non-audit) keys" do
-      {user, _account, subject} = owner_subject_pair()
+      {user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, _k1} = ApiKeys.create_key(%{name: "a"}, subject)
       {:ok, _raw, _k2} = ApiKeys.create_key(%{name: "b"}, subject)
@@ -108,7 +110,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_key_options/1" do
     test "returns {id, name} for the account's agent keys, revoked included" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, live_key} =
         ApiKeys.create_key(%{name: "live"}, subject)
@@ -158,7 +161,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_audit_export_keys_for_account/2" do
     test "audit-export tokens land on the audit list, never the agents list" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, agent_key} =
         ApiKeys.create_key(%{name: "agent"}, subject)
@@ -186,7 +190,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an owner of account B never sees account A's export tokens (cross-account isolation)" do
-      {_user_a, _account_a, subject_a} = owner_subject_pair()
+      {_user_a, account_a, subject_a} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account_a, "team")
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "a-siem", kind: :audit_export}, subject_a)
 
       {_user_b, _account_b, subject_b} = owner_subject_pair()
@@ -319,9 +324,41 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "audit-export tokens never get a default expiry — it would break log shipping" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       assert {:ok, _raw, %ApiKey{expires_at: nil}} =
+               ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+    end
+
+    test "a free account cannot mint an audit-export token — export is the paid surface" do
+      {_user, _account, subject} = owner_subject_pair()
+
+      assert {:error, :audit_export_not_available} =
+               ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+
+      refute Repo.one(ApiKey)
+    end
+
+    test "a withdrawn entitlement blocks the mint even on Team" do
+      {_user, account, subject} = owner_subject_pair()
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{"features_audit_export_enabled?" => false}
+      )
+
+      assert {:error, :audit_export_not_available} =
+               ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+    end
+
+    test "a granted entitlement enables the mint on an otherwise ineligible plan" do
+      {_user, account, subject} = owner_subject_pair()
+
+      Fixtures.Accounts.create_subscription(account, "starter-2027",
+        entitlements: %{"features_audit_export_enabled?" => true}
+      )
+
+      assert {:ok, _raw, %ApiKey{kind: :audit_export}} =
                ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
     end
 
@@ -363,7 +400,8 @@ defmodule Emisar.ApiKeysTest do
     # new key as target + its kind in the payload. The mint of a log-shipping
     # credential is itself part of the log it ships.
     test "minting an audit-export token writes an api_key.created audit row" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       assert {:ok, _raw, key} =
                ApiKeys.create_key(%{name: "SIEM export", kind: :audit_export}, subject)
@@ -401,6 +439,29 @@ defmodule Emisar.ApiKeysTest do
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(original.id, subject)
       assert is_nil(reloaded.revoked_at)
       assert ApiKey.usable?(reloaded)
+    end
+
+    test "an audit-export key rotates on an entitled plan" do
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+
+      assert {:ok, _new_raw, %ApiKey{kind: :audit_export}} =
+               ApiKeys.rotate_api_key(key, subject)
+    end
+
+    test "an audit-export key cannot mint a successor after the entitlement is withdrawn" do
+      # Rotation mints a fresh export credential, so it is a mint path too — a
+      # downgraded account keeps its existing token but cannot extend the line.
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{"features_audit_export_enabled?" => false}
+      )
+
+      assert {:error, :audit_export_not_available} = ApiKeys.rotate_api_key(key, subject)
     end
 
     test "an operator without manage_api_keys is refused with :unauthorized" do
@@ -603,6 +664,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "a revoked or expired key and an audit-export token are not eligible" do
       {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {_raw, prefix, hash} = Crypto.mint("emk-", 12)
 
@@ -1343,7 +1405,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "ignores audit-export and unused auto-generated keys until an MCP client connects" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, _export_key} =
         ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)

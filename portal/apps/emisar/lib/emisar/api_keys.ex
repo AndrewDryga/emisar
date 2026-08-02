@@ -16,7 +16,7 @@ defmodule Emisar.ApiKeys do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, RequestContext}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, RequestContext}
   alias Emisar.ApiKeys.{ApiKey, Authorizer, DeviceGrant}
   alias Emisar.Auth.Subject
   require Logger
@@ -167,20 +167,28 @@ defmodule Emisar.ApiKeys do
   """
   def change_key(attrs \\ %{}), do: ApiKey.Changeset.form(attrs)
 
+  @doc """
+  Mints an operator-created key of the attrs' `:kind` (`:mcp` default).
+  `%Subject{}` needs `manage_api_keys`; an `:audit_export` token additionally
+  needs the account's paid audit-export entitlement. Returns
+  `{:ok, raw_secret, key}` or
+  `{:error, %Ecto.Changeset{} | :unauthorized | :audit_export_not_available | :not_found}`.
+  """
   def create_key(attrs, %Subject{account: account} = subject) do
+    account_id = account.id
+    user_id = Subject.actor_id(subject)
+    membership_id = subject.membership_id
+    {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
+
+    changeset = ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
+    kind = Ecto.Changeset.get_field(changeset, :kind)
+
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_api_keys_permission()
-           ) do
-      account_id = account.id
-      user_id = Subject.actor_id(subject)
-      membership_id = subject.membership_id
-      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
-
-      changeset =
-        ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
-
+           ),
+         :ok <- ensure_key_kind_available(kind, account) do
       Multi.new()
       |> put_active_account_lock(account_id)
       |> Multi.insert(:key, changeset)
@@ -202,7 +210,9 @@ defmodule Emisar.ApiKeys do
   successor's FIRST authenticated use proves the client swapped and retires
   the replaced chain automatically (`api_key.retired_by_rotation` in the
   audit trail). The operator can still revoke the old key by hand sooner.
-  `%Subject{}` needs `manage_api_keys`; returns `{:ok, raw_secret, new_key}`.
+  `%Subject{}` needs `manage_api_keys` — and, for an `:audit_export` source,
+  the account's paid audit-export entitlement (the successor is a fresh export
+  credential); returns `{:ok, raw_secret, new_key}`.
   """
   def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
     with :ok <-
@@ -222,7 +232,8 @@ defmodule Emisar.ApiKeys do
       |> put_active_account_lock(subject.account.id)
       |> Multi.run(:source, fn repo, _changes ->
         with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
-             :ok <- ensure_rotatable(source) do
+             :ok <- ensure_rotatable(source),
+             :ok <- ensure_key_kind_available(source.kind, subject.account) do
           {:ok, source}
         end
       end)
@@ -399,6 +410,18 @@ defmodule Emisar.ApiKeys do
   defp ensure_rotatable(%ApiKey{} = source) do
     if ApiKey.oauth_backing?(source), do: {:error, :oauth_backing}, else: :ok
   end
+
+  # An audit-export token is the paid export surface's credential — minting one
+  # (directly or as a rotation successor) requires the account's audit-export
+  # entitlement. The web's plan checks are courtesy UX; this gate is
+  # authoritative. MCP keys are on every plan.
+  defp ensure_key_kind_available(:audit_export, %Accounts.Account{} = account) do
+    if Billing.audit_export_available?(account),
+      do: :ok,
+      else: {:error, :audit_export_not_available}
+  end
+
+  defp ensure_key_kind_available(_kind, _account), do: :ok
 
   # The attribute set a successor inherits — shared by operator rotation and
   # auto-rotation so the two paths can't drift. Just identity + kind now; the

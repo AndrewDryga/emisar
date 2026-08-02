@@ -475,15 +475,15 @@ defmodule Emisar.Audit do
     * `:limit` — page size, default #{100}, hard-capped at #{1_000}
 
   Returns `{:ok, events}` — a plain list of `%Audit.Event{}` rows in
-  ascending order. The controller projects to NDJSON; the context just
-  hands back rows.
+  ascending order, or `{:error, :unauthorized | :audit_export_not_available}`
+  (export is the paid surface — see `list_events_for_export/2`). The
+  controller projects to NDJSON; the context just hands back rows.
   """
   @default_export_limit 100
   @max_export_limit 1_000
 
   def list_for_export(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+    with :ok <- ensure_can_export_audit(subject) do
       types = Keyword.get(opts, :event_types, [])
       limit = clamp_export_limit(Keyword.get(opts, :limit, @default_export_limit))
 
@@ -497,6 +497,19 @@ defmodule Emisar.Audit do
         |> Repo.all()
 
       {:ok, events}
+    end
+  end
+
+  @doc """
+  The CSV-download read — the operator's current filtered view, in the same
+  paginated shape as `list_events/2`, but gated on the paid audit-export
+  entitlement: the in-console trail stays on every plan, taking the data OUT
+  is Team+. Returns `{:ok, [event], %Paginator.Metadata{}}` or
+  `{:error, :unauthorized | :audit_export_not_available}`.
+  """
+  def list_events_for_export(%Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_can_export_audit(subject) do
+      list_events(subject, opts)
     end
   end
 
@@ -691,4 +704,16 @@ defmodule Emisar.Audit do
   @doc "True when the subject may view the audit trail (the console nav + section gate)."
   def subject_can_view_audit?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_audit_permission())
+
+  # Export (the SIEM sweep and the CSV download alike) is the paid surface —
+  # the in-console trail stays on every plan. The web's plan checks are
+  # courtesy navigation/copy; this gate is authoritative for both export reads.
+  defp ensure_can_export_audit(%Subject{account: account} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+      if Billing.audit_export_available?(account),
+        do: :ok,
+        else: {:error, :audit_export_not_available}
+    end
+  end
 end

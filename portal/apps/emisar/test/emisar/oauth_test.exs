@@ -1078,8 +1078,14 @@ defmodule Emisar.OAuthTest do
     test "never sweeps an audit-export token, even non-expiring and aged past the grace window" do
       # An audit-export token is non-expiring like a backing key, so only its
       # :audit_export kind keeps it off the sweep — the candidate filter is
-      # kind: :mcp, never merely "no expiry".
-      {_raw, export} = Fixtures.ApiKeys.create_api_key(kind: :audit_export)
+      # kind: :mcp, never merely "no expiry". Minting one needs the paid
+      # export entitlement, so the account carries a Team subscription.
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      {_raw, export} =
+        Fixtures.ApiKeys.create_api_key(kind: :audit_export, account_id: account.id)
+
       assert export.kind == :audit_export
       assert is_nil(export.expires_at)
 

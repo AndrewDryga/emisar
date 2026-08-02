@@ -39,6 +39,8 @@ defmodule EmisarWeb.AuditDownloadController do
         |> put_flash(:error, "You don't have permission to export the audit log.")
         |> redirect(to: ~p"/app/#{account}")
 
+      # Courtesy navigation — `Audit.list_events_for_export/2` enforces the
+      # same gate authoritatively; this branch just lands on the upgrade page.
       not Billing.audit_export_available?(account) ->
         conn
         |> put_flash(:info, "Audit export is available on the Team plan.")
@@ -55,7 +57,7 @@ defmodule EmisarWeb.AuditDownloadController do
   defp start_download(conn, subject, account, params) do
     opts = list_opts(params, subject)
 
-    case Audit.list_events(subject, Keyword.put(opts, :page, limit: 1)) do
+    case Audit.list_events_for_export(subject, Keyword.put(opts, :page, limit: 1)) do
       {:ok, _probe, %{count: count}} when count > 0 ->
         if count <= max_rows() do
           stream_csv(conn, subject, account, opts, params)
@@ -130,7 +132,7 @@ defmodule EmisarWeb.AuditDownloadController do
     # (the up-front probe already counted once).
     page_opts = opts |> Keyword.put(:page, page(cursor)) |> Keyword.put(:count, false)
 
-    case Audit.list_events(subject, page_opts) do
+    case Audit.list_events_for_export(subject, page_opts) do
       {:ok, [], _meta} ->
         {conn, count}
 

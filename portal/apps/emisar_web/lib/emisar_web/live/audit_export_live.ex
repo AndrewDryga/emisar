@@ -87,6 +87,14 @@ defmodule EmisarWeb.AuditExportLive do
           {:ok, raw, _key} ->
             {:noreply, s |> assign(:export_secret, raw) |> assign_export_keys()}
 
+          # The mount check already bounced an ineligible plan; this covers an
+          # entitlement withdrawn while the page was open.
+          {:error, :audit_export_not_available} ->
+            {:noreply,
+             s
+             |> put_flash(:info, "Audit export is available on the Team plan.")
+             |> push_navigate(to: ~p"/app/#{s.assigns.current_account}/settings/billing")}
+
           {:error, _} ->
             {:noreply, put_flash(s, :error, "Could not mint the export key.")}
         end

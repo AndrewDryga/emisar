@@ -278,8 +278,9 @@ defmodule EmisarWeb.AuditExportLiveTest do
       # Account A (a different tenant) has its own export token. The admin of B
       # fires revoke with A's real key id — the subject-gated fetch scopes to B,
       # so A's key is never found and never revoked.
-      {a_user, _account_a, a_subject} = Fixtures.Subjects.owner_subject()
+      {a_user, account_a, a_subject} = Fixtures.Subjects.owner_subject()
       _ = a_user
+      Fixtures.Accounts.create_subscription(account_a, "team")
 
       {:ok, _raw, a_key} =
         Emisar.ApiKeys.create_key(
@@ -359,8 +360,9 @@ defmodule EmisarWeb.AuditExportLiveTest do
     test "another account's export tokens never appear in this account's SIEM list",
          %{conn: conn, account: account_b} do
       # Account A mints a distinctively-named export token.
-      {a_user, _account_a, a_subject} = Fixtures.Subjects.owner_subject()
+      {a_user, account_a, a_subject} = Fixtures.Subjects.owner_subject()
       _ = a_user
+      Fixtures.Accounts.create_subscription(account_a, "team")
 
       {:ok, _raw, _a_key} =
         Emisar.ApiKeys.create_key(

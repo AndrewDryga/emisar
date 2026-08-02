@@ -1268,17 +1268,20 @@ defmodule Emisar.AuditTest do
 
     setup do
       account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
       %{account: account, subject: subject}
     end
 
+    # The setup's subscription mint audits `subscription.changed`, so exact-list
+    # assertions filter to the seeded type (the controller-test precedent).
     test "returns ascending (occurred_at, id) so SIEMs can checkpoint", %{
       account: account,
       subject: subject
     } do
       [first, second, third] = seed_export_events(account, 3)
 
-      assert {:ok, events} = Audit.list_for_export(subject)
+      assert {:ok, events} = Audit.list_for_export(subject, event_types: ["user.signed_in"])
       assert Enum.map(events, & &1.id) == [first.id, second.id, third.id]
     end
 
@@ -1289,7 +1292,10 @@ defmodule Emisar.AuditTest do
       [first, second, third] = seed_export_events(account, 3)
 
       assert {:ok, [event_a, event_b]} =
-               Audit.list_for_export(subject, after: {first.occurred_at, first.id})
+               Audit.list_for_export(subject,
+                 after: {first.occurred_at, first.id},
+                 event_types: ["user.signed_in"]
+               )
 
       assert event_a.id == second.id
       assert event_b.id == third.id
@@ -1329,23 +1335,59 @@ defmodule Emisar.AuditTest do
     } do
       _ = seed_export_events(account, 2)
 
-      assert {:ok, [_, _]} = Audit.list_for_export(subject, limit: "junk")
+      assert {:ok, [_, _]} =
+               Audit.list_for_export(subject, limit: "junk", event_types: ["user.signed_in"])
+
       assert Audit.max_export_limit() == 1_000
       assert Audit.default_export_limit() == 100
     end
 
-    test "an owner of account B never exports account A's events (cross-account)" do
-      account_a = Fixtures.Accounts.create_account()
+    test "an owner of account B never exports account A's events (cross-account)", %{
+      account: account_a
+    } do
       _ = seed_export_events(account_a, 2)
 
-      subject_b =
-        Fixtures.Subjects.subject_for(
-          Fixtures.Users.create_user(),
-          Fixtures.Accounts.create_account(),
-          role: :owner
-        )
+      account_b = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account_b, "team")
 
-      assert {:ok, []} = Audit.list_for_export(subject_b)
+      subject_b =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b, role: :owner)
+
+      assert {:ok, []} = Audit.list_for_export(subject_b, event_types: ["user.signed_in"])
+    end
+
+    test "a free account is refused — the SIEM sweep is the paid surface" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      _ = seed_export_events(account, 1)
+
+      assert {:error, :audit_export_not_available} = Audit.list_for_export(subject)
+    end
+
+    test "a withdrawn entitlement overrides the Team plan default", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{"features_audit_export_enabled?" => false}
+      )
+
+      assert {:error, :audit_export_not_available} = Audit.list_for_export(subject)
+    end
+
+    test "a granted entitlement enables the sweep on an otherwise ineligible plan" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      Fixtures.Accounts.create_subscription(account, "starter-2027",
+        entitlements: %{"features_audit_export_enabled?" => true}
+      )
+
+      [event] = seed_export_events(account, 1)
+      event_id = event.id
+
+      assert {:ok, [%Audit.Event{id: ^event_id}]} =
+               Audit.list_for_export(subject, event_types: ["user.signed_in"])
     end
 
     # a subject whose role carries no `view_audit` is
@@ -1361,6 +1403,71 @@ defmodule Emisar.AuditTest do
       runner_subject = Subject.for_runner(runner, account)
 
       assert {:error, :unauthorized} = Audit.list_for_export(runner_subject)
+    end
+  end
+
+  describe "list_events_for_export/2 (the CSV download read)" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      %{account: account, subject: subject}
+    end
+
+    test "returns the same filtered page shape as list_events/2", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+      {:ok, _denied} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+      event_id = event.id
+
+      assert {:ok, [%Audit.Event{id: ^event_id}], _meta} =
+               Audit.list_events_for_export(subject, filter: [event_type: ["user.signed_in"]])
+    end
+
+    test "a free account is refused while its in-console trail stays readable" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      {:ok, _event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+
+      assert {:error, :audit_export_not_available} = Audit.list_events_for_export(subject)
+      assert {:ok, [_event], _meta} = Audit.list_events(subject)
+    end
+
+    test "a withdrawn entitlement is refused even on Team", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{"features_audit_export_enabled?" => false}
+      )
+
+      assert {:error, :audit_export_not_available} = Audit.list_events_for_export(subject)
+    end
+
+    test "a no-view_audit role is :unauthorized before the plan is consulted", %{
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:error, :unauthorized} =
+               Audit.list_events_for_export(Subject.for_runner(runner, account))
+    end
+
+    test "an owner of account B never exports account A's events (cross-account)", %{
+      account: account_a
+    } do
+      {:ok, _event} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
+
+      account_b = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account_b, "team")
+
+      subject_b =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b, role: :owner)
+
+      assert {:ok, [], _meta} =
+               Audit.list_events_for_export(subject_b, filter: [event_type: ["user.signed_in"]])
     end
   end
 

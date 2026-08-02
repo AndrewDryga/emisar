@@ -33,8 +33,11 @@ defmodule EmisarWeb.AuditExportControllerTest do
     %{account: account, subject: subject, raw_key: raw}
   end
 
-  test "a free-plan key is refused with an upgrade pointer", %{} do
+  test "a key on a downgraded plan is refused with an upgrade pointer", %{} do
+    # The mint itself is entitlement-gated, so the ineligible-plan key can only
+    # exist via a downgrade: minted on Team, then the entitlement withdrawn.
     {free_user, free_account, _subject} = Fixtures.Subjects.owner_subject()
+    Fixtures.Accounts.create_subscription(free_account, "team")
 
     {raw, _key} =
       Fixtures.ApiKeys.create_api_key(
@@ -42,6 +45,10 @@ defmodule EmisarWeb.AuditExportControllerTest do
         created_by_id: free_user.id,
         kind: :audit_export
       )
+
+    Fixtures.Accounts.create_subscription(free_account, "team",
+      entitlements: %{"features_audit_export_enabled?" => false}
+    )
 
     conn =
       build_conn()

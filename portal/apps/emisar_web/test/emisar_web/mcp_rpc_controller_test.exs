@@ -397,8 +397,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       conn: conn,
       raw: raw,
       key: key,
+      account: account,
       subject: subject
     } do
+      Fixtures.Accounts.create_subscription(account, "team")
       :ok = Logger.put_application_level(:emisar_web, :info)
       on_exit(fn -> Logger.delete_application_level(:emisar_web) end)
 
@@ -705,7 +707,12 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert length(body["result"]["tools"]) == 12
     end
 
-    test "non-MCP keys are refused at the tool boundary", %{conn: conn, subject: subject} do
+    test "non-MCP keys are refused at the tool boundary", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.create_subscription(account, "team")
       {:ok, raw, _key} = ApiKeys.create_key(%{name: "audit", kind: :audit_export}, subject)
       body = conn |> authorize(raw) |> rpc("tools/list") |> json_response(200)
 
