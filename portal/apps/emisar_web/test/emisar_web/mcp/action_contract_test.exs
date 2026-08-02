@@ -1,6 +1,6 @@
 defmodule EmisarWeb.MCP.ActionContractTest do
   use ExUnit.Case, async: true
-  alias Emisar.ActionContract
+  alias Emisar.{ActionContract, JSONNumber}
   alias EmisarWeb.MCP.RawJSON
 
   test "accepts exact numeric tokens and every supported portable type" do
@@ -158,6 +158,160 @@ defmodule EmisarWeb.MCP.ActionContractTest do
              )
   end
 
+  test "renders declared defaults as browser form values" do
+    action =
+      action([
+        arg("path", "string", default: "/var/log"),
+        arg("count", "integer", default: 5),
+        arg("ratio", "number", default: 0.5),
+        arg("delay", "duration", default: "5m"),
+        arg("force", "boolean", default: true),
+        arg("quiet", "boolean", default: false),
+        arg("verbose", "boolean"),
+        arg("tags", "string_array", default: ["a", "b"]),
+        arg("ports", "integer_array", default: []),
+        arg("name", "string")
+      ])
+
+    assert ActionContract.form_values(action) == %{
+             "path" => "/var/log",
+             "count" => "5",
+             "ratio" => "0.5",
+             "delay" => "5m",
+             "force" => "true",
+             "quiet" => "false",
+             "verbose" => "false",
+             "tags" => "a, b",
+             "ports" => "",
+             "name" => ""
+           }
+  end
+
+  test "casts every portable form type into JSON-encodable arguments" do
+    action =
+      action([
+        arg("name", "string", required: true),
+        arg("file", "path"),
+        arg("count", "integer"),
+        arg("ratio", "number"),
+        arg("force", "boolean"),
+        arg("timeout", "duration"),
+        arg("tags", "string_array"),
+        arg("ports", "integer_array"),
+        arg("note", "string")
+      ])
+
+    raw = %{
+      "name" => "db",
+      "file" => "/var/log/app.log",
+      "count" => " 42 ",
+      "ratio" => " 0.1234567890123456789 ",
+      "force" => "on",
+      "timeout" => "1h30m",
+      "tags" => "a, ,b ,",
+      "ports" => "80, 443",
+      "note" => ""
+    }
+
+    assert {:ok, args} = ActionContract.cast_form(raw, action)
+
+    assert args == %{
+             "name" => "db",
+             "file" => "/var/log/app.log",
+             "count" => 42,
+             "ratio" => %JSONNumber{raw: "0.1234567890123456789"},
+             "force" => true,
+             "timeout" => "1h30m",
+             "tags" => ["a", "b"],
+             "ports" => [80, 443]
+           }
+
+    assert Jason.encode!(args) =~ ~s("ratio":0.1234567890123456789)
+    assert ActionContract.validate(args, action) == :ok
+  end
+
+  test "fills unsubmitted arguments from the rendered defaults" do
+    action =
+      action([
+        arg("mode", "string", required: true, default: "safe"),
+        arg("delay", "duration", default: "5m"),
+        arg("file", "path")
+      ])
+
+    assert ActionContract.cast_form(%{}, action) == {:ok, %{"mode" => "safe", "delay" => "5m"}}
+
+    assert {:error, [%{arg: "mode", code: "required", path: ["mode"]}]} =
+             ActionContract.cast_form(%{"mode" => ""}, action)
+  end
+
+  test "applies the portable bounds to cast form values" do
+    action =
+      action([
+        arg("delay", "duration", validation: %{"max_duration" => "1h"}),
+        arg("file", "path", validation: %{"allowed_prefixes" => ["/var/log"]}),
+        arg("labels", "string_array", validation: %{"max_items" => 1, "max_length" => 3}),
+        arg("mode", "string", validation: %{"enum" => ["safe"]})
+      ])
+
+    assert {:error, [%{arg: "delay", code: "max_duration"}]} =
+             ActionContract.cast_form(%{"delay" => "2h"}, action)
+
+    assert {:error, [%{arg: "file", code: "path"}]} =
+             ActionContract.cast_form(%{"file" => "relative.log"}, action)
+
+    assert {:error, [%{arg: "labels", code: "max_items"}]} =
+             ActionContract.cast_form(%{"labels" => "a, b"}, action)
+
+    assert {:error, [%{arg: "labels", code: "max_length", path: ["labels", 0]}]} =
+             ActionContract.cast_form(%{"labels" => "abcd"}, action)
+
+    assert {:error, [%{arg: "mode", code: "enum"}]} =
+             ActionContract.cast_form(%{"mode" => "unsafe"}, action)
+  end
+
+  test "reports every failing form argument in schema order with its path" do
+    action =
+      action([
+        arg("pid", "integer", required: true),
+        arg("force", "boolean"),
+        arg("ratio", "number"),
+        arg("ports", "integer_array"),
+        arg("labels", "string_array", validation: %{"max_items" => 1})
+      ])
+
+    raw = %{
+      "pid" => "",
+      "force" => "maybe",
+      "ratio" => "1e309",
+      "ports" => "80, http",
+      "labels" => "a, b"
+    }
+
+    assert {:error, issues} = ActionContract.cast_form(raw, action)
+
+    assert Enum.map(issues, &{&1.arg, &1.code, &1.path}) == [
+             {"pid", "required", ["pid"]},
+             {"force", "type", ["force"]},
+             {"ratio", "type", ["ratio"]},
+             {"ports", "type", ["ports", 1]},
+             {"labels", "max_items", ["labels"]}
+           ]
+  end
+
+  test "rejects submitted arguments the contract does not declare" do
+    action = action([arg("path", "string")])
+
+    assert {:error, issues} = ActionContract.cast_form(%{"zeta" => "1", "alpha" => "2"}, action)
+
+    assert Enum.map(issues, &{&1.arg, &1.code}) == [
+             {"alpha", "unknown_arg"},
+             {"zeta", "unknown_arg"}
+           ]
+
+    assert ActionContract.cast_form("not an object", action) ==
+             {:error, [%{arg: "args", code: "type", message: "expected object", path: ["args"]}]}
+  end
+
   test "accepts every bundled example and declared default" do
     catalog =
       :emisar
@@ -179,6 +333,16 @@ defmodule EmisarWeb.MCP.ActionContractTest do
 
         assert result == :ok,
                "#{pack["id"]}.#{action["id"]}:#{spec["name"]}: #{inspect(result)}"
+
+        # The rendered default is what an operator submits untouched, so it has
+        # to survive the browser round trip and land back on the contract.
+        form = ActionContract.form_values(default_contract)
+        cast = ActionContract.cast_form(form, default_contract)
+
+        assert {:ok, cast_args} = cast,
+               "#{pack["id"]}.#{action["id"]}:#{spec["name"]}: #{inspect(cast)}"
+
+        assert ActionContract.validate(cast_args, default_contract) == :ok
       end
     end
   end
@@ -202,6 +366,7 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     %{"name" => name, "type" => type}
     |> maybe_put("required", opts[:required])
     |> maybe_put("validation", opts[:validation])
+    |> maybe_put("default", opts[:default])
   end
 
   defp maybe_put(map, _key, nil), do: map

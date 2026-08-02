@@ -275,6 +275,54 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert path =~ ~r{^/app/#{account.slug}/runs/[0-9a-f-]+$}
   end
 
+  # The form only ever submits text; the run the runner executes carries the
+  # contract's typed values, and an exact number keeps the operator's digits.
+  test "a typed dispatch persists the coerced argument values", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.tail_log",
+        args_schema: %{
+          "args" => [
+            %{
+              "name" => "lines",
+              "type" => "integer",
+              "required" => true,
+              "description" => "Lines"
+            },
+            %{"name" => "paths", "type" => "string_array", "description" => "Paths"},
+            %{"name" => "ratio", "type" => "number", "description" => "Sample ratio"}
+          ]
+        }
+      )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    args = %{
+      "lines" => "200",
+      "paths" => "/var/log/app.log, /var/log/syslog",
+      "ratio" => "0.1234567890123456789"
+    }
+
+    lv
+    |> form("#dispatch_form", %{"args" => args, "reason" => "tailing both logs"})
+    |> render_submit()
+
+    {path, _flash} = assert_redirect(lv)
+    assert path =~ ~r{^/app/#{account.slug}/runs/[0-9a-f-]+$}
+
+    assert {:ok, [run], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+
+    assert %{"lines" => 200, "paths" => ["/var/log/app.log", "/var/log/syslog"]} =
+             Jason.decode!(run.args_raw)
+
+    assert run.args_raw =~ ~s("ratio":0.1234567890123456789)
+  end
+
   test "a policy denial is a flash, and no run is dispatched", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
@@ -686,7 +734,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   # a non-numeric integer arg renders an
-  # inline parse error on the field ("not an integer"), not a flash, and no run
+  # inline parse error on the field ("expected integer"), not a flash, and no run
   # is dispatched.
   test "a bad integer arg renders an inline error on the field, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
@@ -703,14 +751,49 @@ defmodule EmisarWeb.RunNewLiveTest do
       })
       |> render_submit()
 
-    assert html =~ "not an integer"
+    assert html =~ "expected integer"
     refute html =~ "Dispatch failed"
+    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+  end
+
+  # a bound the browser cannot enforce (the contract's max) is caught by the
+  # domain cast, so it renders on the field like a parse error and no run is
+  # created.
+  test "an out-of-bounds arg renders inline on the field, no run", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.tail_log",
+        args_schema: %{
+          "args" => [
+            %{
+              "name" => "lines",
+              "type" => "integer",
+              "required" => true,
+              "description" => "Lines to read",
+              "validation" => %{"min" => 1, "max" => 100}
+            }
+          ]
+        }
+      )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    lv
+    |> form("#dispatch_form", %{"args" => %{"lines" => "5000"}, "reason" => "tailing the log"})
+    |> render_submit()
+
+    assert has_element?(lv, "#dispatch_form p.text-rose-400", "is above the maximum")
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
   # several bad args are collected and
   # rendered inline in ONE pass, not just the first: a blank required `pid`
-  # ("pid is required") AND a non-numeric `signal` ("not an integer") both show.
+  # ("pid is required") AND a non-numeric `signal` ("expected integer") both show.
   test "every bad arg is reported at once, not just the first", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     {runner, action} = action_with_two_int_args(account)
@@ -728,7 +811,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     # Both fields' errors render — the missing-required one AND the bad-integer
     # one — proving the coercion collects every error, not just the first.
     assert html =~ "pid is required"
-    assert html =~ "not an integer"
+    assert html =~ "expected integer"
   end
 
   # a zero-arg action's phx-change payload has no "args"

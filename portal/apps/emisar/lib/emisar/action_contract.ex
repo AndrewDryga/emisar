@@ -27,7 +27,12 @@ defmodule Emisar.ActionContract do
   @max_duration_nanoseconds @max_duration_magnitude - 1
   @max_float_scale_before_multiply 1.797_693_134_862_315_7e307
 
-  @type issue :: %{arg: String.t(), code: String.t(), message: String.t()}
+  @type issue :: %{
+          arg: String.t(),
+          code: String.t(),
+          message: String.t(),
+          path: [String.t() | non_neg_integer()]
+        }
 
   @doc """
   Normalize the trusted fields whose equality makes one authored runbook step
@@ -65,6 +70,43 @@ defmodule Emisar.ActionContract do
   end
 
   def validate(_args, _action), do: issue("args", "type", "expected object")
+
+  @doc """
+  Render a trusted descriptor's declared defaults as browser form parameters.
+
+  Every declared argument gets a string value: arrays join on `", "`, booleans
+  render `"true"`/`"false"`, and an argument with no default renders blank.
+  """
+  @spec form_values(map()) :: %{optional(String.t()) => String.t()}
+  def form_values(action) when is_map(action) do
+    action
+    |> action_args()
+    |> Map.new(fn spec -> {spec["name"], form_value(spec["type"], spec["default"])} end)
+  end
+
+  @doc """
+  Cast a browser form's string-keyed arguments against a trusted descriptor.
+
+  Arguments the form did not submit fall back to `form_values/1`, blank optional
+  values are omitted, and the coerced values satisfy the same portable contract
+  `validate/2` enforces. Returns `{:ok, args}` (JSON-encodable) or
+  `{:error, issues}` with every failing argument in schema order.
+  """
+  @spec cast_form(map(), map()) :: {:ok, map()} | {:error, [issue()]}
+  def cast_form(raw, action) when is_map(raw) and is_map(action) do
+    specs = action_args(action)
+
+    case unknown_form_args(specs, raw) do
+      [] ->
+        values = Map.merge(form_values(action), raw)
+        cast_form_specs(specs, values)
+
+      unknown ->
+        {:error, Enum.map(unknown, &arg_issue(&1, "unknown_arg", "unknown argument"))}
+    end
+  end
+
+  def cast_form(_raw, _action), do: {:error, [arg_issue("args", "type", "expected object")]}
 
   defp canonical_json(%{} = value) do
     value
@@ -146,8 +188,11 @@ defmodule Emisar.ActionContract do
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, []}, fn {item, index}, {:ok, normalized} ->
       case coercer.(item) do
-        {:ok, coerced} -> {:cont, {:ok, [coerced | normalized]}}
-        :error -> {:halt, issue(name, "type", "element #{index} is not #{expected}")}
+        {:ok, coerced} ->
+          {:cont, {:ok, [coerced | normalized]}}
+
+        :error ->
+          {:halt, element_issue(name, index, "type", "element #{index} is not #{expected}")}
       end
     end)
     |> case do
@@ -176,7 +221,12 @@ defmodule Emisar.ActionContract do
           :ok
 
         {_item, index} when is_list(value) ->
-          issue(spec["name"], "max_length", "element #{index} exceeds #{limit} bytes")
+          element_issue(
+            spec["name"],
+            index,
+            "max_length",
+            "element #{index} exceeds #{limit} bytes"
+          )
 
         _ ->
           issue(spec["name"], "max_length", "exceeds #{limit} bytes")
@@ -212,7 +262,13 @@ defmodule Emisar.ActionContract do
           {:cont, :ok}
 
         {:error, issue} ->
-          {:halt, {:error, %{issue | message: "element #{index}: #{issue.message}"}}}
+          element = %{
+            issue
+            | message: "element #{index}: #{issue.message}",
+              path: [issue.arg, index]
+          }
+
+          {:halt, {:error, element}}
       end
     end)
   end
@@ -306,6 +362,108 @@ defmodule Emisar.ActionContract do
     Enum.any?(~w(allowed_paths denied_paths allowed_prefixes denied_prefixes), fn key ->
       is_list(validation[key]) and validation[key] != []
     end)
+  end
+
+  defp form_value(type, default) when type in ["string_array", "integer_array"] do
+    case default do
+      list when is_list(list) -> Enum.map_join(list, ", ", &to_string/1)
+      nil -> ""
+      other -> to_string(other)
+    end
+  end
+
+  defp form_value("boolean", true), do: "true"
+  defp form_value("boolean", _default), do: "false"
+  defp form_value(_type, nil), do: ""
+  defp form_value(_type, default), do: to_string(default)
+
+  defp unknown_form_args(specs, raw) do
+    known = MapSet.new(specs, & &1["name"])
+
+    raw
+    |> Map.keys()
+    |> Enum.sort()
+    |> Enum.reject(&MapSet.member?(known, &1))
+  end
+
+  defp cast_form_specs(specs, values) do
+    {args, issues} =
+      Enum.reduce(specs, {%{}, []}, fn spec, {args, issues} ->
+        case cast_form_value(spec, values[spec["name"]]) do
+          :skip -> {args, issues}
+          {:ok, value} -> {Map.put(args, spec["name"], value), issues}
+          {:error, issue} -> {args, [issue | issues]}
+        end
+      end)
+
+    if issues == [], do: {:ok, args}, else: {:error, Enum.reverse(issues)}
+  end
+
+  defp cast_form_value(%{"required" => true, "name" => name}, value) when value in [nil, ""],
+    do: issue(name, "required", "is required")
+
+  defp cast_form_value(_spec, value) when value in [nil, ""], do: :skip
+
+  defp cast_form_value(spec, value) do
+    with {:ok, coerced} <- coerce_form(spec, value),
+         :ok <- validate_value(spec, coerced) do
+      {:ok, coerced}
+    end
+  end
+
+  defp coerce_form(%{"type" => "boolean"}, value) when value in ["true", "on", true],
+    do: {:ok, true}
+
+  defp coerce_form(%{"type" => "boolean"}, value) when value in ["false", false], do: {:ok, false}
+
+  defp coerce_form(%{"name" => name, "type" => "boolean"}, _value),
+    do: issue(name, "type", "expected boolean")
+
+  defp coerce_form(%{"type" => type}, value)
+       when type in ["string", "path", "duration"] and is_binary(value),
+       do: {:ok, value}
+
+  defp coerce_form(%{"name" => name, "type" => "integer"}, value) when is_binary(value) do
+    case exact_integer(String.trim(value)) do
+      {:ok, integer} -> {:ok, integer}
+      :error -> issue(name, "type", "expected integer")
+    end
+  end
+
+  # Keep the operator's exact digits: a float round-trip would silently change
+  # the value the runner receives, so the token rides through as-is and Jason
+  # emits it verbatim.
+  defp coerce_form(%{"name" => name, "type" => "number"}, value) when is_binary(value) do
+    number = %JSONNumber{raw: String.trim(value)}
+
+    with {:ok, decoded} <- Jason.decode(number.raw, floats: :decimals),
+         true <- is_integer(decoded) or is_struct(decoded, Decimal),
+         {:ok, _decimal} <- exact_number(number) do
+      {:ok, number}
+    else
+      _ -> issue(name, "type", "expected number")
+    end
+  end
+
+  defp coerce_form(%{"type" => "string_array"}, value) when is_binary(value),
+    do: {:ok, split_items(value)}
+
+  defp coerce_form(%{"name" => name, "type" => "integer_array"}, value) when is_binary(value),
+    do: coerce_array(name, split_items(value), &exact_integer/1, "integer")
+
+  # Every form field arrives as text; a crafted payload can still submit a list
+  # or a map, which no portable type accepts.
+  defp coerce_form(%{"name" => name}, value) when not is_binary(value),
+    do: issue(name, "type", "expected text")
+
+  defp coerce_form(%{"name" => name}, _value),
+    do: issue(name, "type", "unsupported argument type")
+
+  defp split_items(value) do
+    value
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
   end
 
   defp exact_integer(%JSONNumber{raw: raw}), do: exact_integer(raw)
@@ -468,5 +626,10 @@ defmodule Emisar.ActionContract do
   defp action_args(%{"args_schema" => %{"args" => args}}) when is_list(args), do: args
   defp action_args(_action), do: []
 
-  defp issue(arg, code, message), do: {:error, %{arg: arg, code: code, message: message}}
+  defp issue(arg, code, message), do: {:error, arg_issue(arg, code, message)}
+
+  defp element_issue(arg, index, code, message),
+    do: {:error, %{arg_issue(arg, code, message) | path: [arg, index]}}
+
+  defp arg_issue(arg, code, message), do: %{arg: arg, code: code, message: message, path: [arg]}
 end

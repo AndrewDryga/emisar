@@ -1,6 +1,6 @@
 defmodule EmisarWeb.RunNewLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Catalog, Runners, Runs}
+  alias Emisar.{ActionContract, Catalog, Runners, Runs}
   alias EmisarWeb.Permissions
 
   def mount(%{"runner_id" => runner_id, "action_id" => action_id}, _session, socket) do
@@ -36,7 +36,7 @@ defmodule EmisarWeb.RunNewLive do
          |> assign(:runner_id, runner_id)
          |> assign(:runner, runner)
          |> assign(:args_schema, args_schema)
-         |> assign_form(initial_args(args_schema))
+         |> assign_form(ActionContract.form_values(action))
          |> assign(:reason, "")
          |> assign(:reason_error, nil)
          |> assign(
@@ -114,7 +114,7 @@ defmodule EmisarWeb.RunNewLive do
 
     {:noreply,
      socket
-     |> assign_form(args, arg_errors(args, socket.assigns.args_schema))
+     |> assign_form(args, arg_errors(args, socket.assigns.action))
      |> assign(:reason, reason)
      # Clear the inline error as soon as the operator fills the field in — never
      # add one here (a blank field shouldn't show "required" until they dispatch).
@@ -146,11 +146,11 @@ defmodule EmisarWeb.RunNewLive do
   end
 
   defp do_dispatch_with_reason(socket, raw_args, reason) do
-    case coerce_args(raw_args, socket.assigns.args_schema) do
+    case ActionContract.cast_form(raw_args, socket.assigns.action) do
       # Bad/missing args render inline under the offending fields (rose
       # border) via the form's per-arg errors — not a flash banner.
-      {:error, errors} ->
-        {:noreply, assign_form(socket, raw_args, errors)}
+      {:error, issues} ->
+        {:noreply, assign_form(socket, raw_args, Enum.map(issues, &field_error/1))}
 
       {:ok, args} ->
         attrs = %{
@@ -457,7 +457,6 @@ defmodule EmisarWeb.RunNewLive do
   # here rather than a new cond branch.
   @input_type_for %{
     "boolean" => {"checkbox", nil},
-    "bool" => {"checkbox", nil},
     "integer" => {"number", nil},
     "number" => {"number", nil},
     "string_array" => {"text", "Comma-separated."},
@@ -512,125 +511,27 @@ defmodule EmisarWeb.RunNewLive do
     assign(socket, :form, to_form(params, as: "args", errors: errors))
   end
 
-  # -- initial values --------------------------------------------------
-
-  defp initial_args(schema) do
-    Enum.into(schema, %{}, fn arg ->
-      {arg["name"], initial_value(arg["type"], arg["default"])}
-    end)
-  end
-
-  defp initial_value(type, default) when type in ~w(string_array integer_array) do
-    case default do
-      list when is_list(list) -> Enum.map_join(list, ", ", &to_string/1)
-      nil -> ""
-      other -> to_string(other)
-    end
-  end
-
-  defp initial_value(type, default) when type in ~w(boolean bool) do
-    case default do
-      true -> "true"
-      false -> "false"
-      nil -> "false"
-      _ -> "false"
-    end
-  end
-
-  defp initial_value(_, nil), do: ""
-  defp initial_value(_, default), do: to_string(default)
-
-  # -- coercion --------------------------------------------------------
+  # -- arg errors ------------------------------------------------------
   #
-  # The form always submits string values. We parse them into the shapes
-  # the runner's validator expects, per the declared arg type. Missing
-  # required args become an error here so we don't dispatch a bad run.
-  #
-  # Errors come back keyed by arg name as `{msg, opts}` tuples — the exact
-  # shape `<.input field={@form[name]}>` renders inline (rose border +
-  # message under the field). We collect *every* bad arg, not just the
-  # first, so the operator sees all of them in one pass.
+  # `Emisar.ActionContract` owns the defaults, coercion, and validation; the
+  # only web-side translation is turning its issues into the `{msg, opts}`
+  # tuples `<.input field={@form[name]}>` renders inline (rose border + message
+  # under the field). Every failing arg comes back, not just the first, so the
+  # operator sees all of them in one pass.
 
-  defp coerce_args(raw, schema) do
-    {ok, errors} =
-      Enum.reduce(schema, {%{}, []}, fn arg, {acc, errs} ->
-        name = arg["name"]
-
-        case coerce_one(arg, Map.get(raw, name)) do
-          :skip -> {acc, errs}
-          {:ok, parsed} -> {Map.put(acc, name, parsed), errs}
-          {:error, reason} -> {acc, [{name, {reason, []}} | errs]}
-        end
-      end)
-
-    if errors == [], do: {:ok, ok}, else: {:error, Enum.reverse(errors)}
-  end
-
-  # Field errors for `phx-change` validation — same coercion, but we only
-  # want the error list (the coerced values are recomputed on submit).
-  defp arg_errors(raw, schema) do
-    case coerce_args(raw, schema) do
-      {:ok, _} -> []
-      {:error, errors} -> errors
+  # Field errors for `phx-change` validation — same cast, but we only want the
+  # error list (the typed args are recomputed on submit).
+  defp arg_errors(raw_args, action) do
+    case ActionContract.cast_form(raw_args, action) do
+      {:ok, _args} -> []
+      {:error, issues} -> Enum.map(issues, &field_error/1)
     end
   end
 
-  # Missing or blank optional → skip. Missing required → error.
-  defp coerce_one(%{"required" => true, "name" => name}, v) when v in [nil, ""] do
-    {:error, "#{name} is required"}
-  end
-
-  defp coerce_one(_arg, v) when v in [nil, ""], do: :skip
-
-  defp coerce_one(%{"type" => t}, v) when t in ~w(string path duration) do
-    {:ok, v}
-  end
-
-  defp coerce_one(%{"type" => t}, v) when t in ~w(boolean bool) do
-    {:ok, v in ["true", "on", true]}
-  end
-
-  defp coerce_one(%{"type" => "integer"}, v) do
-    case Integer.parse(String.trim(v)) do
-      {n, ""} -> {:ok, n}
-      _ -> {:error, "not an integer"}
-    end
-  end
-
-  defp coerce_one(%{"type" => "number"}, v) do
-    case Float.parse(String.trim(v)) do
-      {f, ""} -> {:ok, f}
-      _ -> {:error, "not a number"}
-    end
-  end
-
-  defp coerce_one(%{"type" => "string_array"}, v) do
-    {:ok, split_csv(v)}
-  end
-
-  defp coerce_one(%{"type" => "integer_array"}, v) do
-    parts = split_csv(v)
-
-    Enum.reduce_while(parts, {:ok, []}, fn part, {:ok, acc} ->
-      case Integer.parse(part) do
-        {n, ""} -> {:cont, {:ok, [n | acc]}}
-        _ -> {:halt, {:error, "#{inspect(part)} is not an integer"}}
-      end
-    end)
-    |> case do
-      {:ok, list} -> {:ok, Enum.reverse(list)}
-      err -> err
-    end
-  end
-
-  defp coerce_one(_arg, v), do: {:ok, v}
-
-  defp split_csv(v) when is_binary(v) do
-    v
-    |> String.split(",")
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-  end
+  # The domain's required message reads bare ("is required"), so it takes the
+  # arg name here — the field label is above the input, the error below it.
+  defp field_error(%{arg: arg, code: "required"}), do: {arg, {"#{arg} is required", []}}
+  defp field_error(%{arg: arg, message: message}), do: {arg, {message, []}}
 
   # `examples` is a packspec field — list of `{description, args}` maps.
   # Defensive: any shape that isn't a list is a no-op render. Empty
