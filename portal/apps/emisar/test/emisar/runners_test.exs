@@ -1991,8 +1991,8 @@ defmodule Emisar.RunnersTest do
     test "builds a valid form changeset from the operator-facing fields (no DB write)" do
       changeset = Runners.change_enrollment_key(%{"description" => "for dev"})
 
-      assert %Ecto.Changeset{} = changeset
-      assert Ecto.Changeset.get_change(changeset, :description) == "for dev"
+      assert changeset.valid?
+      assert changeset.changes == %{description: "for dev"}
       # It's a pure builder — no key was minted.
       refute Repo.exists?(EnrollmentKey.Query.all())
     end
@@ -2026,6 +2026,33 @@ defmodule Emisar.RunnersTest do
       assert key.description == "for dev"
     end
 
+    test "mints from the raw browser params the form posts", %{subject: subject} do
+      params = %{
+        "description" => "pool key",
+        "reusable" => "true",
+        "max_uses" => "5",
+        "expires_at" => "2099-12-25T10:30"
+      }
+
+      assert {:ok, _raw, %EnrollmentKey{} = key} =
+               Runners.create_enrollment_key(params, subject)
+
+      assert key.description == "pool key"
+      assert key.reusable
+      assert key.max_uses == 5
+      assert key.expires_at == ~U[2099-12-25 10:30:00.000000Z]
+    end
+
+    test "a single-use submission stores no max_uses", %{subject: subject} do
+      params = %{"description" => "one shot", "reusable" => "false", "max_uses" => "5"}
+
+      assert {:ok, _raw, %EnrollmentKey{} = key} =
+               Runners.create_enrollment_key(params, subject)
+
+      refute key.reusable
+      assert is_nil(key.max_uses)
+    end
+
     test "rejects max_uses: 0 at the write path, not just the form", %{subject: subject} do
       # max_uses 0 mints a key that's dead on arrival; create/5 must enforce
       # the same `> 0` guard the editor form does, not rely on it.
@@ -2033,6 +2060,15 @@ defmodule Emisar.RunnersTest do
                Runners.create_enrollment_key(%{description: "dead", max_uses: 0}, subject)
 
       assert %{max_uses: ["must be greater than 0"]} = errors_on(changeset)
+    end
+
+    test "a malformed expiry mints nothing and audits nothing", %{subject: subject} do
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Runners.create_enrollment_key(%{"expires_at" => "25/12/2030"}, subject)
+
+      assert "is invalid" in errors_on(changeset).expires_at
+      refute Repo.exists?(EnrollmentKey.Query.all())
+      assert Repo.all(Audit.Event) == []
     end
 
     test "a viewer (no manage_enrollment_keys) is refused", %{account: account} do

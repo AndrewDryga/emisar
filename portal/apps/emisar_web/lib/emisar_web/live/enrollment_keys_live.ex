@@ -104,32 +104,20 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   end
 
   defp do_create(socket, params) do
-    changeset = Runners.change_enrollment_key(params)
+    case Runners.create_enrollment_key(params, socket.assigns.current_subject) do
+      {:ok, raw, key} ->
+        # The reveal IS the success step on the /new page — no flash, and no
+        # list reload (the list isn't shown here; :index remounts fresh).
+        {:noreply,
+         socket
+         |> assign(:new_secret, raw)
+         |> assign(:new_key, key)
+         |> assign_form(Runners.change_enrollment_key())}
 
-    if changeset.valid? do
-      attrs =
-        %{}
-        |> put_if_present(:description, params["description"])
-        |> Map.put(:reusable, truthy?(params["reusable"]))
-        |> put_expires(params["expires_at"])
-        |> put_max_uses(params["max_uses"])
-
-      case Runners.create_enrollment_key(attrs, socket.assigns.current_subject) do
-        {:ok, raw, key} ->
-          # The reveal IS the success step on the /new page — no flash, and no
-          # list reload (the list isn't shown here; :index remounts fresh).
-          {:noreply,
-           socket
-           |> assign(:new_secret, raw)
-           |> assign(:new_key, key)
-           |> assign_form(Runners.change_enrollment_key())}
-
-        # Field errors (e.g. a DB constraint) render inline on the form.
-        {:error, %Ecto.Changeset{} = changeset} ->
-          {:noreply, assign_form(socket, changeset)}
-      end
-    else
-      {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
+      # Field errors (a rejected value, a DB constraint) render inline on the
+      # form, with the operator's own params preserved for redisplay.
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
@@ -184,33 +172,8 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     end
   end
 
-  # Only set max_uses when reusable AND a positive integer was typed —
-  # single-use keys ignore it (they self-cap at 1 via the schema), and
-  # an empty string means "unlimited within the reusable window".
-  defp put_max_uses(map, value) when value in [nil, ""], do: map
-
-  defp put_max_uses(map, value) when is_binary(value) do
-    case Integer.parse(value) do
-      {n, ""} when n > 0 -> Map.put(map, :max_uses, n)
-      _ -> map
-    end
-  end
-
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset, as: "enrollment_key"))
-  end
-
-  defp put_if_present(map, _key, nil), do: map
-  defp put_if_present(map, _key, ""), do: map
-  defp put_if_present(map, key, value), do: Map.put(map, key, value)
-
-  defp put_expires(map, value) when value in [nil, ""], do: map
-
-  defp put_expires(map, value) when is_binary(value) do
-    case DateTime.from_iso8601(value <> ":00Z") do
-      {:ok, datetime, _} -> Map.put(map, :expires_at, datetime)
-      _ -> map
-    end
   end
 
   defp truthy?("true"), do: true

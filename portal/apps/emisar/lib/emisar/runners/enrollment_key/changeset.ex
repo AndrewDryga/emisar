@@ -2,46 +2,96 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
   @moduledoc """
   Changesets for runner enrollment keys: create / mint-install (auto-generated)
   / revoke / soft-delete / usage. The raw key only ever flows through
-  `create/2` and `mint_install/2` return values — `key_hash` is the
+  `create/5` and `mint_install/5` return values — `key_hash` is the
   persisted form.
   """
   use Emisar, :changeset
   alias Emisar.Runners.EnrollmentKey
 
+  @fields ~w[description reusable max_uses expires_at]a
+
   @doc """
-  Validation-only changeset for the operator create form. Casts the
-  operator-facing fields and runs the same field validations as `create/5`,
-  but mints no secret — so the LiveView can drive `phx-change` validation and
-  render inline field errors without generating a key on every keystroke.
-  `expires_at` is left out of the cast: the datetime-local input emits
-  `YYYY-MM-DDTHH:MM` (no seconds/zone), which Ecto can't cast to
-  `:utc_datetime_usec`; it round-trips for redisplay via the changeset params
-  and is parsed when the key is actually created.
+  Validation-only changeset for the operator create form — the same casting,
+  normalization and operator-field validations `create/5` applies, but it mints
+  no secret and touches no DB, so the LiveView can drive `phx-change`
+  validation and render inline field errors without generating a key on every
+  keystroke. Submitting the same params still goes through `create/5`.
   """
-  def form(attrs \\ %{}) do
-    %EnrollmentKey{}
-    |> cast(attrs, [:description, :reusable, :max_uses])
-    |> validate_fields()
-  end
+  def form(attrs \\ %{}), do: cast_operator_input(%EnrollmentKey{}, attrs)
 
   def create(account_id, user_id, prefix, hash, attrs) do
     %EnrollmentKey{}
-    |> cast(attrs, [:description, :reusable, :max_uses, :expires_at])
+    |> cast_operator_input(attrs)
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> validate_required([:account_id])
-    |> validate_fields()
   end
 
-  # Shared field validations so the write path (`create/5`) enforces exactly
-  # what the editor form (`form/1`) shows — a max_uses of 0 mints a key that's
-  # dead on arrival (uses_count 0 >= max_uses 0), so it's rejected at both.
-  defp validate_fields(changeset) do
-    changeset
+  # The one interpretation of operator-typed key attributes, so the create form
+  # can never accept — or reject — what the mint would decide differently.
+  defp cast_operator_input(%EnrollmentKey{} = key, attrs) do
+    attrs = normalize(attrs)
+
+    key
+    |> cast(attrs, @fields)
     |> validate_length(:description, max: 200)
+    # A max_uses of 0 mints a key that's dead on arrival (uses_count 0 >= 0).
     |> validate_number(:max_uses, greater_than: 0)
+    |> drop_max_uses_unless_reusable()
+  end
+
+  # The create form posts raw browser strings: an untouched optional field
+  # arrives as `""` rather than absent, and `<input type="datetime-local">`
+  # emits `YYYY-MM-DDTHH:MM` (no seconds, no zone), which Ecto can't cast to
+  # `:utc_datetime_usec`. Both key shapes are normalized so a browser map and
+  # an internal atom-keyed map mean the same thing.
+  defp normalize(attrs), do: Map.new(attrs, &normalize_field/1)
+
+  defp normalize_field({field, value}) when field in [:description, "description"],
+    do: {field, blank_to_nil(value)}
+
+  defp normalize_field({field, value}) when field in [:expires_at, "expires_at"],
+    do: {field, normalize_expiry(value)}
+
+  defp normalize_field(field), do: field
+
+  defp blank_to_nil(value) when is_binary(value),
+    do: if(String.trim(value) == "", do: nil, else: value)
+
+  defp blank_to_nil(value), do: value
+
+  # An operator typing "expires Dec 25 at 10am" gets 10:00 UTC that day — the
+  # browser sends no zone, and the form labels the field UTC rather than have
+  # the server guess an offset. Anything that isn't a browser minute stamp (an
+  # already-typed `%DateTime{}`, a full timestamp, or garbage) passes through
+  # for Ecto to cast or reject, so a malformed expiry can never quietly become
+  # "no expiry" — which would hand out a standing fleet-enrollment secret.
+  defp normalize_expiry(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      expires_at -> parse_browser_expiry(expires_at)
+    end
+  end
+
+  defp normalize_expiry(value), do: value
+
+  defp parse_browser_expiry(value) do
+    case DateTime.from_iso8601(value <> ":00Z") do
+      {:ok, expires_at, _offset} -> expires_at
+      {:error, _reason} -> value
+    end
+  end
+
+  # A single-use key is spent on its first registration, so a cap on top of it
+  # never applies — canonicalize it to nil rather than persist a number the
+  # list would then render. Dropping the change can't erase a cast error, so a
+  # malformed max_uses still comes back to the operator on its own field.
+  defp drop_max_uses_unless_reusable(changeset) do
+    if get_field(changeset, :reusable),
+      do: changeset,
+      else: delete_change(changeset, :max_uses)
   end
 
   # Mirrors Emisar.Runners' mint size ("emkey-enroll-" + 16 random chars => 29);

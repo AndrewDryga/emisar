@@ -62,9 +62,9 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "still-here"
   end
 
-  # `put_max_uses` keeps max_uses only for a reusable key
-  # with a positive value; a single-use key (and a blank value) drops it (the
-  # single-use key self-caps at 1 via the schema's not-reusable rule).
+  # max_uses is kept only for a reusable key with a positive
+  # value; a single-use key (and a blank value) drops it (the single-use key
+  # self-caps at 1 via the schema's not-reusable rule).
   test "max_uses is kept for a reusable+positive key, dropped otherwise", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
@@ -119,6 +119,47 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "should be at most 200 character(s)"
     # …and no flash banner with a humanized changeset dump.
     refute html =~ "Could not create key"
+  end
+
+  test "a malformed expiry is refused on the field and mints no key", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(user, account)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
+
+    html =
+      lv
+      |> form("#enrollment_key_form", %{
+        "enrollment_key" => %{"description" => "typo-key", "expires_at" => "25/12/2030"}
+      })
+      |> render_submit()
+
+    assert html =~ "is invalid"
+    refute html =~ "Copy this enrollment key now"
+    assert {:ok, [], _} = Runners.list_enrollment_keys(subject)
+  end
+
+  test "a zero max_uses is refused on the field and mints no key", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(user, account)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
+
+    # Ticking Reusable reveals the max_uses input the submit below fills.
+    lv
+    |> form("#enrollment_key_form", %{"enrollment_key" => %{"reusable" => "true"}})
+    |> render_change()
+
+    params = %{"description" => "pool-key", "reusable" => "true", "max_uses" => "0"}
+
+    html =
+      lv
+      |> form("#enrollment_key_form", %{"enrollment_key" => params})
+      |> render_submit()
+
+    assert html =~ "must be greater than 0"
+    refute html =~ "Copy this enrollment key now"
+    assert {:ok, [], _} = Runners.list_enrollment_keys(subject)
   end
 
   # The revoke happy path off the list: revoking is routine and reversible
@@ -258,9 +299,9 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     refute html =~ "At runner limit"
   end
 
-  # a `datetime-local` expiry (no seconds, no zone) is
-  # stored as UTC: `put_expires` appends ":00Z" before parsing, so "2030-12-25
-  # at 10:30" persists as 10:30:00 UTC.
+  # a `datetime-local` expiry (no seconds, no zone) is stored
+  # as UTC: the changeset appends ":00Z" before parsing, so "2030-12-25 at
+  # 10:30" persists as 10:30:00 UTC.
   test "expires_at from a datetime-local field is stored as UTC", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
