@@ -6215,12 +6215,18 @@ defmodule EmisarWeb.CoreComponents do
   Conversion CTA for the foot of a marketing page — a convinced reader gets
   one obvious next step. The primary action is always "Start free"; pass a
   contextual secondary (`secondary_label` + `secondary_path`, the latter a
-  `~p` route or a `mailto:`). `note` defaults to the free-tier reassurance.
+  `~p` route, a `mailto:`, or — with `secondary_external` — an off-site URL).
+  `note` defaults to the free-tier reassurance.
   """
   attr :headline, :string, required: true
   attr :subcopy, :string, required: true
   attr :secondary_label, :string, required: true
   attr :secondary_path, :string, required: true
+
+  attr :secondary_external, :boolean,
+    default: false,
+    doc: "secondary CTA is an outbound link — opens a new, isolated tab"
+
   attr :note, :string, default: "Three runners. Seven-day audit. No credit card."
 
   def marketing_cta(assigns) do
@@ -6243,6 +6249,7 @@ defmodule EmisarWeb.CoreComponents do
               </.marketing_button>
               <.marketing_button
                 variant={:secondary}
+                external={@secondary_external}
                 href={@secondary_path}
                 class="w-full sm:w-auto"
               >

@@ -623,6 +623,17 @@ defmodule EmisarWeb.MarketingTest do
         assert link =~ ~s(rel="noopener noreferrer"),
                "external link missing safe rel on /security: #{link}"
       end
+
+      # The footer CTA books the walkthrough calendar directly, and that
+      # off-site anchor is held to the same tab-safety contract.
+      assert html =~ "Book a walkthrough"
+
+      calendar_href = ~s(href="https://cal.com/andrew-dryga/emisar")
+      calendar_link = Enum.find(external_links(html), &(&1 =~ calendar_href))
+
+      assert calendar_link, "the /security CTA does not link the walkthrough calendar"
+      assert calendar_link =~ ~s(target="_blank")
+      assert calendar_link =~ ~s(rel="noopener noreferrer")
     end
 
     test "the /zero-trust page's external framework PDF carries the safe-rel pair", %{conn: conn} do
