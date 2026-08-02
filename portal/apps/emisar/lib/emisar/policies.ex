@@ -28,7 +28,7 @@ defmodule Emisar.Policies do
       }
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Repo}
+  alias Emisar.{Accounts, Audit, Auth, Repo, Runners}
   alias Emisar.Auth.Subject
   alias Emisar.Policies.{Authorizer, Glob, Policy}
 
@@ -320,6 +320,9 @@ defmodule Emisar.Policies do
   `(account, scope)` — first save or edit, one live row per scope. The
   runner_id / group name in `scope_value` is the override's identity;
   dispatch resolution picks it over the account default for that runner/group.
+  A `:runner` scope must resolve to a runner in the subject's account —
+  `{:error, :runner_not_found}` for a foreign, deleted, or malformed id. A
+  `:group` scope stays free-form so an override can pre-date its runners.
   """
   def save_scoped_rules(rules, scope_type, scope_value, %Subject{} = subject)
       when scope_type in [:runner, :group],
@@ -348,6 +351,9 @@ defmodule Emisar.Policies do
       Multi.new()
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(account_id, repo: repo)
+      end)
+      |> Multi.run(:runner_scope, fn repo, _changes ->
+        ensure_runner_scope(scope_type, scope_value, account_id, repo)
       end)
       |> Multi.run(:before, fn repo, _changes ->
         {:ok, peek_scoped_policy(repo, account_id, scope_type, scope_value)}
@@ -444,6 +450,20 @@ defmodule Emisar.Policies do
     |> Policy.Query.by_scope(scope_type, scope_value)
     |> repo.peek()
   end
+
+  # A caller bypassing the editor UI (IL-15 — never trust the rendered form)
+  # can hand a foreign or garbage runner id; reject it inside the transaction
+  # so the account can't accumulate inert `(account, :runner, <foreign>)` rows.
+  defp ensure_runner_scope(:runner, runner_id, account_id, repo)
+       when is_binary(runner_id) and runner_id != "" do
+    if Runners.runner_in_account?(runner_id, account_id, repo: repo),
+      do: {:ok, runner_id},
+      else: {:error, :runner_not_found}
+  end
+
+  # A blank/non-string `:runner` value falls through to the changeset's
+  # scope_value validation at the insert step; :account/:group are free-form.
+  defp ensure_runner_scope(_scope_type, scope_value, _account_id, _repo), do: {:ok, scope_value}
 
   # -- Evaluation -----------------------------------------------------
 

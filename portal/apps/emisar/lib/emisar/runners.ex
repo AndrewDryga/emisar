@@ -416,6 +416,26 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Internal — the Policies scoped-override gate: true when `runner_id` is a
+  non-deleted runner in `account_id`. Unlike `runner_active_in_account?/2`,
+  a disabled runner counts — its policy override stays editable while the
+  runner is offline. A malformed id is false. Pass `repo:` to join an open
+  transaction.
+  """
+  def runner_in_account?(runner_id, account_id, opts \\ []) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    if Repo.valid_uuid?(runner_id) do
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_id(runner_id)
+      |> Runner.Query.by_account_id(account_id)
+      |> repo.exists?()
+    else
+      false
+    end
+  end
+
+  @doc """
   Internal — true when any of `runner_ids` is a runner in `account_id` that
   registered with `enrollment_key_id` as its bootstrap key. The install wizard checks
   this on a presence join so it only advances when the runner minted from THIS

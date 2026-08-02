@@ -4,6 +4,7 @@ defmodule Emisar.PoliciesTest do
   alias Emisar.Fixtures
   alias Emisar.Policies
   alias Emisar.Policies.Policy
+  alias Emisar.Runners
 
   describe "default_rules/0" do
     test "reproduce single-approver, self-approval-allowed behavior" do
@@ -459,8 +460,9 @@ defmodule Emisar.PoliciesTest do
 
   describe "list_scoped_policies/1" do
     test "lists the account's scoped overrides, excluding the account default" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, scoped} = Policies.save_scoped_rules(allow_all_rules(), :runner, "runner-1", subject)
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, scoped} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, subject)
 
       assert {:ok, [listed]} = Policies.list_scoped_policies(subject)
       assert listed.id == scoped.id
@@ -470,7 +472,8 @@ defmodule Emisar.PoliciesTest do
 
     test "an operator (view_policies) can list; an api_client cannot" do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
-      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, "runner-1", owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, owner)
 
       operator =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
@@ -483,8 +486,9 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "cross-account: never lists another account's overrides" do
-      {_user_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, "runner-1", subject_a)
+      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
+      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_a)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       assert {:ok, []} = Policies.list_scoped_policies(subject_b)
@@ -493,8 +497,9 @@ defmodule Emisar.PoliciesTest do
 
   describe "delete_scoped_policy/2" do
     test "soft-deletes an override so its scope falls back to the next-broader scope" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", subject)
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject)
 
       assert {:ok, deleted} = Policies.delete_scoped_policy(policy, subject)
       assert deleted.id == policy.id
@@ -506,7 +511,8 @@ defmodule Emisar.PoliciesTest do
 
     test "a viewer can't delete an override (no manage_policies)" do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
-      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", owner)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, owner)
 
       viewer =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
@@ -517,10 +523,11 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "cross-account: B can't delete A's override (:not_found, row untouched)" do
-      {_user_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
 
       {:ok, policy_a} =
-        Policies.save_scoped_rules(deny_all_rules(), :runner, "runner-1", subject_a)
+        Policies.save_scoped_rules(deny_all_rules(), :runner, runner_a.id, subject_a)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
@@ -534,16 +541,19 @@ defmodule Emisar.PoliciesTest do
   describe "save_scoped_rules/4" do
     test "creates a runner override, then upserts the same row in place" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-      assert {:ok, created} = Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", subject)
+      assert {:ok, created} =
+               Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject)
+
       assert created.account_id == account.id
       assert created.scope_type == :runner
-      assert created.scope_value == "r1"
+      assert created.scope_value == runner.id
       assert created.rules["defaults"]["low"] == "deny"
 
       # A second save of the same scope is an upsert: same row, bumped vsn.
       assert {:ok, updated} =
-               Policies.save_scoped_rules(allow_all_rules(), :runner, "r1", subject)
+               Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, subject)
 
       assert updated.id == created.id
       assert updated.vsn == created.vsn + 1
@@ -559,6 +569,49 @@ defmodule Emisar.PoliciesTest do
       assert %{scope_value: [_ | _]} = errors_on(changeset)
     end
 
+    test "rejects another account's runner id (:runner_not_found, no row written)" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      foreign_runner = Fixtures.Runners.create_runner(connected?: false)
+
+      assert {:error, :runner_not_found} =
+               Policies.save_scoped_rules(deny_all_rules(), :runner, foreign_runner.id, subject)
+
+      assert {:ok, []} = Policies.list_scoped_policies(subject)
+    end
+
+    test "rejects a nonexistent and a malformed runner id (:runner_not_found)" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :runner_not_found} =
+               Policies.save_scoped_rules(
+                 deny_all_rules(),
+                 :runner,
+                 Ecto.UUID.generate(),
+                 subject
+               )
+
+      assert {:error, :runner_not_found} =
+               Policies.save_scoped_rules(deny_all_rules(), :runner, "not-a-uuid", subject)
+    end
+
+    test "rejects a soft-deleted runner's id (:runner_not_found)" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, _} = Runners.delete_runner(runner, subject)
+
+      assert {:error, :runner_not_found} =
+               Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject)
+    end
+
+    test "a group scope stays free-form — it may pre-date any runner in that group" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, saved} =
+               Policies.save_scoped_rules(deny_all_rules(), :group, "future-group", subject)
+
+      assert saved.scope_value == "future-group"
+    end
+
     test "a viewer can't save a scoped override (no manage_policies)" do
       {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
 
@@ -569,20 +622,24 @@ defmodule Emisar.PoliciesTest do
                Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", viewer)
     end
 
-    test "cross-account: B's save never mutates A's same-named override" do
-      {_user_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      {:ok, runner_a} = Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", subject_a)
+    test "cross-account: B can't claim A's runner id, and A's override is untouched" do
+      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
 
-      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      {:ok, runner_b} = Policies.save_scoped_rules(allow_all_rules(), :runner, "r1", subject_b)
+      {:ok, policy_a} =
+        Policies.save_scoped_rules(deny_all_rules(), :runner, runner_a.id, subject_a)
 
-      # B's write is a distinct row in B's account; A's deny override is intact.
-      assert runner_b.account_id == account_b.id
-      refute runner_b.id == runner_a.id
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :runner_not_found} =
+               Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_b)
+
+      assert {:ok, []} = Policies.list_scoped_policies(subject_b)
 
       assert {:ok, [fetched_a]} = Policies.list_scoped_policies(subject_a)
-      assert fetched_a.id == runner_a.id
+      assert fetched_a.id == policy_a.id
       assert fetched_a.rules["defaults"]["low"] == "deny"
+      assert fetched_a.vsn == policy_a.vsn
     end
   end
 
@@ -658,7 +715,8 @@ defmodule Emisar.PoliciesTest do
   describe "peek_policy_for_account/1" do
     test "returns the account's default policy struct, never a scoped override" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, _scoped} = Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", subject)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, _scoped} = Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject)
 
       assert %Policy{scope_type: :account, account_id: account_id} =
                Policies.peek_policy_for_account(account.id)

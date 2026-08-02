@@ -506,6 +506,35 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "runner_in_account?/3" do
+    test "true for an account runner, including a disabled one" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      assert Runners.runner_in_account?(runner.id, account.id)
+
+      # Disable is recoverable, so the runner still counts (its policy
+      # override stays editable while it's offline).
+      {:ok, _} = Runners.disable_runner(runner, subject)
+      assert Runners.runner_in_account?(runner.id, account.id)
+    end
+
+    test "false for a soft-deleted runner" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, _} = Runners.delete_runner(runner, subject)
+
+      refute Runners.runner_in_account?(runner.id, account.id)
+    end
+
+    test "false across accounts and for a malformed id" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      other = Fixtures.Accounts.create_account()
+
+      refute Runners.runner_in_account?(runner.id, other.id)
+      refute Runners.runner_in_account?("not-a-uuid", other.id)
+    end
+  end
+
   describe "any_runner_bootstrapped_by_key?/3" do
     test "true when a listed runner registered with that key" do
       account = Fixtures.Accounts.create_account()

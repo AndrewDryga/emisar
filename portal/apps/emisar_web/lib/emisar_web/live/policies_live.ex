@@ -281,26 +281,13 @@ defmodule EmisarWeb.PoliciesLive do
   defp save_editor(socket, %{scope_type: :account} = editor),
     do: persist(socket, editor, &Policies.save_rules/2)
 
-  # A crafted `set_target` event (IL-15 — never trust the rendered UI) can carry a
-  # runner id outside the account; resolve it against the subject before persisting
-  # so the editor can't write an inert `(account, :runner, <foreign/garbage>)` row.
-  # `:group` is a free-form name (a policy may legitimately pre-date the runners
-  # assigned to it), so it isn't resolution-checked.
-  defp save_editor(socket, %{scope_type: :runner, scope_value: runner_id} = editor) do
-    case Runners.fetch_runner_by_id(runner_id, socket.assigns.current_subject) do
-      {:ok, _runner} ->
-        persist(socket, editor, fn rules, subject ->
-          Policies.save_scoped_rules(rules, :runner, runner_id, subject)
-        end)
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "That runner isn't in this account.")}
-    end
-  end
-
-  defp save_editor(socket, %{scope_type: :group, scope_value: value} = editor) do
+  # Runner-scope ownership is the context's call: `Policies.save_scoped_rules/4`
+  # rejects a foreign/garbage runner id inside its transaction (a crafted
+  # `set_target` event can carry one — IL-15); `persist_rules` maps the denial.
+  defp save_editor(socket, %{scope_type: scope_type, scope_value: value} = editor)
+       when scope_type in [:runner, :group] and is_binary(value) and value != "" do
     persist(socket, editor, fn rules, subject ->
-      Policies.save_scoped_rules(rules, :group, value, subject)
+      Policies.save_scoped_rules(rules, scope_type, value, subject)
     end)
   end
 
@@ -335,6 +322,9 @@ defmodule EmisarWeb.PoliciesLive do
          update_editor(socket, editor.uid, fn editor ->
            %{editor | rules_errors: changeset_rules_errors(changeset)}
          end)}
+
+      {:error, :runner_not_found} ->
+        {:noreply, put_flash(socket, :error, "That runner isn't in this account.")}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Could not save policy.")}
