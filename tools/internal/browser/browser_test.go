@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"image/png"
 	"io"
@@ -20,6 +21,31 @@ import (
 
 	"github.com/chromedp/chromedp"
 )
+
+// TestMain lets this test binary stand in for the devtool CLI as a daemon target: Manager.Start
+// re-execs its binary with __browser-daemon argv, and only devtool implements that command. The
+// intercept mirrors devtool's own flag surface, which is what makes a real spawned-daemon test
+// possible without building devtool first.
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "__browser-daemon" {
+		flags := flag.NewFlagSet("__browser-daemon", flag.ExitOnError)
+		config := Config{Out: os.Stdout, Err: os.Stderr}
+		flags.StringVar(&config.State, "state", "", "")
+		flags.StringVar(&config.Profile, "profile", "", "")
+		flags.StringVar(&config.Marker, "marker", "", "")
+		flags.StringVar(&config.SPKI, "spki", "", "")
+		flags.BoolVar(&config.InBox, "box", false, "")
+		if err := flags.Parse(os.Args[2:]); err != nil {
+			os.Exit(2)
+		}
+		if err := RunDaemon(context.Background(), config); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 // Chrome's zygote needs user namespaces. A coop box lacks them, and so does a
 // GitHub runner — without the container flags it aborts with "No usable
@@ -241,9 +267,9 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 	session.Close()
 }
 
-// countIsolatedChromium counts live processes whose cmdline names an isolated-session profile.
-// /proc scan, so box/CI (linux) only — exactly where the orphan class bites.
-func countIsolatedChromium(t *testing.T) int {
+// countProcessesMentioning counts live processes whose cmdline contains needle. /proc scan, so
+// box/CI (linux) only — exactly where the orphan class bites.
+func countProcessesMentioning(t *testing.T, needle string) int {
 	t.Helper()
 	matches, err := filepath.Glob("/proc/[0-9]*/cmdline")
 	if err != nil {
@@ -252,11 +278,17 @@ func countIsolatedChromium(t *testing.T) int {
 	count := 0
 	for _, path := range matches {
 		data, readErr := os.ReadFile(path)
-		if readErr == nil && strings.Contains(string(data), "emisar-browser-isolated") {
+		if readErr == nil && strings.Contains(string(data), needle) {
 			count++
 		}
 	}
 	return count
+}
+
+// countIsolatedChromium counts live processes whose cmdline names an isolated-session profile.
+func countIsolatedChromium(t *testing.T) int {
+	t.Helper()
+	return countProcessesMentioning(t, "emisar-browser-isolated")
 }
 
 // The lifeline is the only mechanism that survives the owner dying without running any Go code.
@@ -345,9 +377,9 @@ func TestIsolatedSessionDiesWithSIGKILLedOwner(t *testing.T) {
 // same detachment left the daemon holding the box open for its whole descendant drain, and the
 // handoff then un-completed the finished task and re-ran it — three times in one session.
 //
-// This exercises the mechanism directly rather than spawning a real daemon: only the devtool CLI
-// implements __browser-daemon, so a spawn test would need that binary built. What matters here is
-// that closing the write end cancels the daemon's context, and that a daemon handed NO lifeline
+// This exercises the mechanism in-process so it runs everywhere, workstations included; the full
+// spawned-daemon shape is TestBoxedDaemonDiesWithItsStarter, which needs a box. What matters here
+// is that closing the write end cancels the daemon's context, and that a daemon handed NO lifeline
 // (a workstation) is never cancelled.
 func TestDaemonLifelineCancelsOnStarterExit(t *testing.T) {
 	keep, child, err := newLifeline()
@@ -384,5 +416,103 @@ func TestDaemonWithoutLifelineIsNeverCancelled(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("daemon with no lifeline was cancelled")
 	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// The daemon lifeline end to end: Start hands a boxed daemon fd 3 plus the env var, and the daemon
+// — setsid'd, so no signal reaches it through the starter — must still die with the process that
+// started it. Reproduce the burn shape: a child process starts a real daemon, the child is
+// SIGKILLed, and the daemon and its whole chromium tree must be gone; nothing may remain to hold a
+// coop box open for its descendant drain.
+func TestBoxedDaemonDiesWithItsStarter(t *testing.T) {
+	if os.Getenv("BROWSER_DAEMON_STARTER") == "1" {
+		root := os.Getenv("BROWSER_DAEMON_ROOT")
+		self, err := os.Executable()
+		if err != nil {
+			fmt.Println("START_FAILED:", err)
+			os.Exit(1)
+		}
+		manager := New(Config{
+			State: filepath.Join(root, "state.json"), Profile: filepath.Join(root, "profile"),
+			Marker: filepath.Join(root, "profile", "marker"), Log: filepath.Join(root, "browser.log"),
+			SPKI:  base64.StdEncoding.EncodeToString(make([]byte, 32)),
+			InBox: true,
+		})
+		if _, err := manager.Start(context.Background(), self); err != nil {
+			// Start's own wait is 10s; a cold chromium start on a shared runner can outrun it while
+			// the daemon it already spawned comes up. Keep waiting on the published state instead.
+			deadline := time.Now().Add(90 * time.Second)
+			for {
+				if _, stateErr := manager.State(); stateErr == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					fmt.Println("START_FAILED:", err)
+					os.Exit(1)
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+		}
+		fmt.Println("READY")
+		time.Sleep(120 * time.Second)
+		return
+	}
+	if !testInBox() {
+		t.Skip("spawned-daemon lifetime is exercised in the box (linux /proc + bundled chromium)")
+	}
+	root := t.TempDir()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(self, "-test.run", "^TestBoxedDaemonDiesWithItsStarter$", "-test.v")
+	child.Env = append(os.Environ(), "BROWSER_DAEMON_STARTER=1", "BROWSER_DAEMON_ROOT="+root)
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child.Stderr = io.Discard
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = child.Process.Kill(); _, _ = child.Process.Wait() }()
+	ready := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "READY" || strings.HasPrefix(line, "START_FAILED") {
+				ready <- line
+				return
+			}
+		}
+		ready <- "EOF"
+	}()
+	select {
+	case line := <-ready:
+		if line != "READY" {
+			t.Fatalf("child starter never brought a daemon up: %s", line)
+		}
+	case <-time.After(120 * time.Second):
+		t.Fatal("child starter did not bring a daemon up within its cold-start budget")
+	}
+	// The daemon's argv and chromium's --user-data-dir both name root, so this counts the daemon
+	// plus its browser tree and nothing else.
+	if live := countProcessesMentioning(t, root); live < 2 {
+		t.Fatalf("expected a live daemon and browser before the kill, saw %d", live)
+	}
+	if err := child.Process.Kill(); err != nil { // SIGKILL: no defers, no Cancel hooks, no Go code
+		t.Fatal(err)
+	}
+	_, _ = child.Process.Wait()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if live := countProcessesMentioning(t, root); live == 0 {
+			return // the lifeline cancelled the daemon, and its Cancel hook group-killed the browser
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("daemon or browser survived its starter's SIGKILL (%d live)", countProcessesMentioning(t, root))
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
