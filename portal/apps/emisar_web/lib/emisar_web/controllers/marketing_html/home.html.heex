@@ -259,11 +259,11 @@
     <span class="text-sky-300">type</span>: string
     <span class="text-sky-300">required</span>: <span class="text-amber-300">true</span>
     <span class="text-sky-300">validation</span>:
-      <span class="text-sky-300">pattern</span>: <span class="text-brand-300">"^[a-zA-Z0-9@._-]&#123;1,128&#125;$"</span>
+      <span class="text-sky-300">pattern</span>: <span class="text-brand-300">"^[a-zA-Z0-9@._][a-zA-Z0-9@._-]&#123;0,127&#125;$"</span>
 <span class="text-sky-300">execution</span>:
   <span class="text-sky-300">command</span>:
-    <span class="text-sky-300">binary</span>: /usr/bin/systemctl
-    <span class="text-sky-300">argv</span>: [<span class="text-brand-300">"status"</span>, <span class="text-brand-300">"&#123;&#123; args.unit &#125;&#125;"</span>]</pre>
+    <span class="text-sky-300">binary</span>: systemctl
+    <span class="text-sky-300">argv</span>: [<span class="text-brand-300">"status"</span>, <span class="text-brand-300">"&#123;&#123; args.unit &#125;&#125;"</span>, <span class="text-brand-300">"--no-pager"</span>]</pre>
           </div>
         </div>
 

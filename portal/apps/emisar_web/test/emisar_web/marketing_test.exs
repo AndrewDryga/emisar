@@ -772,6 +772,36 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "w-[6.25rem]"
     end
 
+    test "the home catalog snippet matches the published linux.systemctl_status contract", %{
+      conn: conn
+    } do
+      # The pillar-1 example claims to BE the pack's source file, so its
+      # decision-changing fields are bound to the bundled catalog (itself
+      # gate-verified against packs/) — the page can never show a contract
+      # that doesn't exist.
+      catalog =
+        :emisar
+        |> Application.app_dir("priv/packs/catalog.json")
+        |> File.read!()
+        |> Jason.decode!()
+
+      pack = Enum.find(catalog["packs"], &(&1["id"] == "linux-core"))
+      action = Enum.find(pack["actions"], &(&1["id"] == "linux.systemctl_status"))
+      [%{"name" => arg_name, "validation" => %{"pattern" => pattern}}] = action["args"]
+      %{"binary" => binary, "argv" => argv} = action["command"]
+
+      html = conn |> get(~p"/") |> html_response(200)
+      text = catalog_snippet_text(html)
+
+      assert text =~ "id: #{action["id"]}"
+      assert text =~ ~s(title: "#{action["title"]}")
+      assert text =~ "risk: #{action["risk"]}"
+      assert text =~ "name: #{arg_name}"
+      assert text =~ ~s(pattern: "#{pattern}")
+      assert text =~ "binary: #{binary}"
+      assert text =~ "argv: [" <> Enum.map_join(argv, ", ", &~s("#{&1}")) <> "]"
+    end
+
     test "the security page renders the trust-boundary diagram, key claims, and disclosures",
          %{conn: conn} do
       html = conn |> get(~p"/security") |> html_response(200)
@@ -1905,6 +1935,23 @@ defmodule EmisarWeb.MarketingTest do
       [content_type] = get_resp_header(conn, "content-type")
       assert content_type =~ "shellscript"
     end
+  end
+
+  # The home pillar-1 pack-source snippet as plain text: the <pre> that
+  # follows the systemctl_status.yaml header, tags stripped and the
+  # HEEx-escaped brace/quote entities decoded, so assertions compare
+  # against the catalog's raw values instead of markup.
+  defp catalog_snippet_text(html) do
+    [snippet] =
+      ~r{linux-core/actions/systemctl_status\.yaml\s*</div>\s*<pre[^>]*>(.*?)</pre>}s
+      |> Regex.run(html, capture: :all_but_first)
+
+    snippet
+    |> String.replace(~r/<[^>]+>/, "")
+    |> String.replace("&#123;", "{")
+    |> String.replace("&#125;", "}")
+    |> String.replace("&quot;", "\"")
+    |> String.replace("&amp;", "&")
   end
 
   # Pull every external (`href="http…"`) anchor out of rendered HTML so a
