@@ -83,14 +83,22 @@ defmodule EmisarWeb.AgentsLive do
   # -- Events ----------------------------------------------------------
 
   def handle_event("select_client", %{"client" => "custom"}, socket) do
-    # The custom tab swaps the snippet for a key-builder form — no
-    # quick mint, the operator fills in the form and submits.
-    {:noreply,
-     socket
-     |> assign(:selected_client, "custom")
-     |> assign(:quick_secret, nil)
-     |> assign(:quick_key_id, nil)
-     |> assign(:quick_connected?, false)}
+    # The custom tab swaps the snippet for a key-builder form — no quick mint,
+    # the operator fills in the form and submits. Manage-gated like the "create"
+    # submit it leads to: the tab renders locked for a role that can't manage
+    # keys, so a crafted event must not open a form that only dies at submit.
+    Permissions.gated(
+      socket,
+      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      fn socket ->
+        {:noreply,
+         socket
+         |> assign(:selected_client, "custom")
+         |> assign(:quick_secret, nil)
+         |> assign(:quick_key_id, nil)
+         |> assign(:quick_connected?, false)}
+      end
+    )
   end
 
   def handle_event("select_client", %{"client" => id}, socket) when id in @remote_client_ids do
@@ -969,7 +977,7 @@ defmodule EmisarWeb.AgentsLive do
 
       <.page_intro :if={@live_action == :index}>
         The agents connected to this workspace, and the key behind each — connect a new one, or
-        revoke access in one click.
+        revoke access in seconds.
       </.page_intro>
 
       <.page_intro :if={@live_action == :connect}>
@@ -1002,6 +1010,7 @@ defmodule EmisarWeb.AgentsLive do
         snippet_open?={@snippet_open?}
         current_account={@current_account}
         form={@form}
+        can_manage_keys?={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
       />
 
       <%!-- Rotation success — the SAME "here's your key" grammar as the connect
@@ -1062,6 +1071,7 @@ defmodule EmisarWeb.AgentsLive do
             snippet_open?={@snippet_open?}
             current_account={@current_account}
             form={@form}
+            can_manage_keys?={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
           />
         </div>
       </section>
@@ -1099,37 +1109,51 @@ defmodule EmisarWeb.AgentsLive do
           />
           <%!-- NAKED posture line (the runners grammar): page-level notices
                come first, then activity, then filters/data on every list page. --%>
+          <%!-- Each activity word explains itself through the shared <.tooltip>
+               (focusable + aria-describedby), never a raw title= on a plain span
+               a keyboard/touch operator can't reach. Left-aligned bubbles: the
+               line hugs the content's left edge, so a right-anchored bubble
+               would grow off-page. --%>
           <div
             :if={@issued_count > 0}
             class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs"
           >
-            <span
-              class="flex items-center gap-1.5"
-              title="called an action in the last 5 minutes"
+            <.tooltip
+              id="agents-active-tip"
+              align={:left}
+              text="called an action in the last 5 minutes"
             >
-              <.status_dot
-                tone={if @active_count > 0, do: :brand, else: :neutral}
-                size={:sm}
-                ping={@active_count > 0}
-              />
-              <span class="tabular-nums text-zinc-400">{@active_count} active now</span>
-            </span>
-            <span
+              <span class="flex items-center gap-1.5">
+                <.status_dot
+                  tone={if @active_count > 0, do: :brand, else: :neutral}
+                  size={:sm}
+                  ping={@active_count > 0}
+                />
+                <span class="tabular-nums text-zinc-400">{@active_count} active now</span>
+              </span>
+            </.tooltip>
+            <.tooltip
               :if={@idle_count > 0}
-              class="flex items-center gap-1.5"
-              title="last call within 24 hours"
+              id="agents-idle-tip"
+              align={:left}
+              text="last call within 24 hours"
             >
-              <.status_dot tone={:neutral} size={:sm} />
-              <span class="tabular-nums text-zinc-400">{@idle_count} idle</span>
-            </span>
-            <span
+              <span class="flex items-center gap-1.5">
+                <.status_dot tone={:neutral} size={:sm} />
+                <span class="tabular-nums text-zinc-400">{@idle_count} idle</span>
+              </span>
+            </.tooltip>
+            <.tooltip
               :if={@dormant_count > 0}
-              class="flex items-center gap-1.5"
-              title="no call for over 24 hours"
+              id="agents-dormant-tip"
+              align={:left}
+              text="no call for over 24 hours"
             >
-              <.status_dot tone={:neutral} size={:sm} />
-              <span class="tabular-nums text-zinc-400">{@dormant_count} dormant</span>
-            </span>
+              <span class="flex items-center gap-1.5">
+                <.status_dot tone={:neutral} size={:sm} />
+                <span class="tabular-nums text-zinc-400">{@dormant_count} dormant</span>
+              </span>
+            </.tooltip>
             <span :if={@never_used_count > 0} class="flex items-center gap-1.5">
               <.status_dot tone={:neutral} size={:sm} />
               <span class="tabular-nums text-zinc-400">{@never_used_count} never used</span>
@@ -1197,13 +1221,16 @@ defmodule EmisarWeb.AgentsLive do
                        Once settled the lineage is forensic — the audit trail keeps
                        it — not a per-row fact on every rotated key forever. --%>
                     <:seg :if={swap_pending?(key)}>
-                      <span
-                        class="text-amber-300/90"
-                        title="Replaces a rotated key — the old key is revoked automatically the first time this key is used"
+                      <.tooltip
+                        id={"swap-pending-#{key.id}"}
+                        align={:left}
+                        text="Replaces a rotated key — the old key is revoked automatically the first time this key is used"
                       >
-                        replaces <span class="font-mono">{replaced_key_label(key)}</span>
-                        · swap pending
-                      </span>
+                        <span class="text-amber-300/90">
+                          replaces <span class="font-mono">{replaced_key_label(key)}</span>
+                          · swap pending
+                        </span>
+                      </.tooltip>
                     </:seg>
                     <:seg>
                       last call{" "}<.local_time
@@ -1226,29 +1253,67 @@ defmodule EmisarWeb.AgentsLive do
                   </.meta_line>
                 </:meta>
                 <:actions>
-                  <%!-- What this agent actually did — deep-link the audit log
-                     filtered to this key's actor. Shown for revoked keys too:
-                     that's exactly when "what did it do" matters. Every role
-                     that can see this page also holds view_audit. --%>
-                  <%!-- An agent's activity is its RUNS (scoped by api_key_id); the
-                     audit actor filter is empty for an api_key (terminal run events
-                     are engine-attributed), so this pivots to the runs feed. Both
-                     params: source picks the Dispatched-by kind, api_key_id the
-                     agent — the bar lands with the pair visibly active. --%>
-                  <.button
-                    navigate={
-                      ~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"
-                    }
-                    variant={:ghost}
-                    size={:sm}
-                  >
-                    View activity
-                  </.button>
-                  <%!-- OAuth backing keys hide Rotate: a fresh emk- secret can't
-                     reach the OAuth client (it holds tokens bound to the old
-                     backing-key id), so rotation would only break the connection.
-                     Revoke stays — it's the operator's off-switch. --%>
-                  <.confirm_button
+                  <%!-- A manager's live row carries three verbs — the labeled-menu
+                     threshold (the team-roster grammar: bordered `Actions ▾`
+                     trigger, ghost faces only on the menu rows). Everyone else —
+                     and every revoked row — has the one read verb, which wears a
+                     small bordered face, never a ghost. --%>
+                  <%= if is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
+                    <.dropdown
+                      class="inline-block shrink-0 text-left"
+                      summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                      panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
+                    >
+                      <:trigger>
+                        Actions
+                        <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                      </:trigger>
+                      <%!-- An agent's activity is its RUNS (scoped by api_key_id); the
+                         audit actor filter is empty for an api_key (terminal run events
+                         are engine-attributed), so this pivots to the runs feed. Both
+                         params: source picks the Dispatched-by kind, api_key_id the
+                         agent — the bar lands with the pair visibly active. --%>
+                      <.menu_item
+                        navigate={
+                          ~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"
+                        }
+                        icon="hero-clipboard-document-list"
+                      >
+                        View activity
+                      </.menu_item>
+                      <%!-- OAuth backing keys hide Rotate: a fresh emk- secret can't
+                         reach the OAuth client (it holds tokens bound to the old
+                         backing-key id), so rotation would only break the connection.
+                         Revoke stays — it's the operator's off-switch. --%>
+                      <.menu_item
+                        :if={not ApiKeys.ApiKey.oauth_backing?(key)}
+                        phx-click={open_confirm("rotate-#{key.id}")}
+                      >
+                        Rotate
+                      </.menu_item>
+                      <div class="my-1 border-t border-zinc-800/70"></div>
+                      <.menu_item
+                        tone={:rose}
+                        phx-click={show_confirm_dialog("revoke-agent-key-#{key.id}")}
+                      >
+                        Revoke
+                      </.menu_item>
+                    </.dropdown>
+                  <% else %>
+                    <%!-- "What did this agent do" matters most right after a key is
+                       revoked, so the read verb stays on revoked rows too. Every
+                       role that can see this page also holds view_audit. --%>
+                    <.button
+                      navigate={
+                        ~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"
+                      }
+                      variant={:secondary}
+                      size={:sm}
+                    >
+                      View activity
+                    </.button>
+                  <% end %>
+                  <.confirm_dialog
                     :if={
                       is_nil(key.revoked_at) and
                         ApiKeys.subject_can_manage_api_keys?(@current_subject) and
@@ -1257,37 +1322,26 @@ defmodule EmisarWeb.AgentsLive do
                     id={"rotate-#{key.id}"}
                     title="Rotate this key?"
                     confirm_label="Rotate key"
-                    variant={:ghost}
-                    tone={:neutral}
-                    size={:sm}
-                    on_confirm={JS.push("rotate", value: %{id: key.id})}
+                    on_confirm={
+                      JS.push("rotate", value: %{id: key.id}) |> close_confirm("rotate-#{key.id}")
+                    }
                   >
                     <:body>
                       A new key with the same scope is minted; this one keeps working until the new
                       key's first use, then it's revoked automatically.
                     </:body>
-                    Rotate
-                  </.confirm_button>
+                  </.confirm_dialog>
                   <%!-- IRREVERSIBLE credential kill — typed confirm, same tier
-                     as enrollment keys (one ladder for one action class). --%>
-                  <.button
-                    :if={
-                      is_nil(key.revoked_at) and
-                        ApiKeys.subject_can_manage_api_keys?(@current_subject)
-                    }
-                    variant={:secondary}
-                    tone={:rose}
-                    size={:sm}
-                    phx-click={show_confirm_dialog("revoke-agent-key-#{key.id}")}
-                  >
-                    Revoke
-                  </.button>
-                  <%!-- Per-row typed dialog with the key's name baked in at render,
+                     as enrollment keys (one ladder for one action class).
+                     Per-row dialog with the key's name baked in at render,
                      so it opens already-populated. A single page-level dialog
                      filled by an "open_revoke" round-trip flashed a blank
                      name/token for one round-trip before the server filled it. --%>
                   <.confirm_dialog
-                    :if={is_nil(key.revoked_at)}
+                    :if={
+                      is_nil(key.revoked_at) and
+                        ApiKeys.subject_can_manage_api_keys?(@current_subject)
+                    }
                     id={"revoke-agent-key-#{key.id}"}
                     title="Revoke this agent key"
                     confirm_label="Revoke key"
@@ -1360,7 +1414,7 @@ defmodule EmisarWeb.AgentsLive do
         the audit trail.
       </p>
       <p>
-        Each connection gets its own key, revocable in one click. A key reaches only the runners
+        Each connection gets its own key, revocable in seconds. A key reaches only the runners
         the operator who created it can reach — it never outgrows the person behind it, and
         narrowing that operator's scope shrinks every key they've issued. Cloud LLMs like
         Claude.ai and ChatGPT connect from the server URL over OAuth — no token to manage.
@@ -1408,6 +1462,7 @@ defmodule EmisarWeb.AgentsLive do
   attr :snippet_open?, :boolean, default: false
   attr :current_account, :any, required: true
   attr :form, :any, default: nil
+  attr :can_manage_keys?, :boolean, required: true
 
   defp connect_panel(assigns) do
     config =
@@ -1466,11 +1521,26 @@ defmodule EmisarWeb.AgentsLive do
             Roll your own
           </p>
           <div class="mt-2.5 flex flex-wrap gap-1.5">
-            <.client_tab
-              id="custom"
-              label="Custom key (advanced)"
-              selected={"custom" == @selected_client}
-            />
+            <%!-- Custom-key creation is manage-gated (admin+) while the quick
+               flows above are the operator tier — a role that can't submit the
+               form gets the tab disabled + lock + tooltip (the plan/permission
+               gate grammar), never a form that dies in a denial at submit. The
+               "create"/"select_client" handlers still gate (defense in depth). --%>
+            <%= if @can_manage_keys? do %>
+              <.client_tab
+                id="custom"
+                label="Custom key (advanced)"
+                selected={"custom" == @selected_client}
+              />
+            <% else %>
+              <.tooltip
+                id="custom-key-lock"
+                align={:left}
+                text="Creating a custom key needs an admin or owner role."
+              >
+                <.client_tab id="custom" label="Custom key (advanced)" disabled />
+              </.tooltip>
+            <% end %>
           </div>
         </div>
 
@@ -1678,21 +1748,25 @@ defmodule EmisarWeb.AgentsLive do
   attr :id, :string, required: true
   attr :label, :string, required: true
   attr :selected, :boolean, default: false
+  attr :disabled, :boolean, default: false
 
   defp client_tab(assigns) do
     ~H"""
     <button
       type="button"
-      phx-click="select_client"
+      disabled={@disabled}
+      phx-click={not @disabled && "select_client"}
       phx-value-client={@id}
       class={[
-        "inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition",
-        if(@selected,
-          do: "bg-zinc-100 text-zinc-950",
-          else: "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-        )
+        "inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
+        cond do
+          @disabled -> "cursor-not-allowed bg-zinc-900 text-zinc-500"
+          @selected -> "bg-zinc-100 text-zinc-950"
+          true -> "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+        end
       ]}
     >
+      <.icon :if={@disabled} name="hero-lock-closed" class="h-3.5 w-3.5" />
       {@label}
     </button>
     """

@@ -323,6 +323,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # Auto-unused — operator's list is still empty until an MCP call
       # promotes it.
       assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+      flush_key_broadcast(lv)
     end
 
     test "the installer path flips waiting→connected on a grant-minted key's first call",
@@ -375,6 +376,7 @@ defmodule EmisarWeb.AgentsLiveTest do
                ApiKeys.list_api_keys_for_account(owner_subject(user, account))
 
       assert id == auto.id
+      flush_key_broadcast(lv)
     end
 
     test "agents list shows the creator's email", %{conn: conn} do
@@ -695,6 +697,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # It's a visible (non-auto) key → shows in the default live list.
       assert html =~ "my-custom-bot"
       assert {:ok, [_], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+      flush_key_broadcast(lv)
     end
 
     # a `datetime-local` expiry on the custom-create form
@@ -719,6 +722,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # The column is :utc_datetime_usec, so the stored value carries
       # microseconds — compare on the truncated instant.
       assert DateTime.truncate(key.expires_at, :second) == ~U[2030-12-25 10:30:00Z]
+      flush_key_broadcast(lv)
     end
 
     # A completed custom create replaces the form with a numbered save step,
@@ -763,6 +767,32 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, keys, _} = ApiKeys.list_api_keys_for_account(subject)
       assert length(keys) == 2
       assert Enum.all?(keys, &is_nil(&1.revoked_at))
+      flush_key_broadcast(lv)
+    end
+
+    # The activity words and the swap-pending state explain themselves through
+    # the shared <.tooltip> (focusable trigger + role=tooltip bubble), never a
+    # raw title= a keyboard or touch operator can't reach (WCAG 1.4.13).
+    test "activity and rotation-state explanations are accessible tooltips", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "rotate-me"}, subject)
+      {:ok, _new_raw, successor} = ApiKeys.rotate_api_key(key, subject)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+
+      # Posture line: the "active now" word carries its threshold as a tooltip.
+      assert has_element?(lv, "#agents-active-tip[role='tooltip']")
+      assert html =~ "called an action in the last 5 minutes"
+
+      # Swap pending: the successor row's amber seg explains the auto-revoke.
+      assert has_element?(lv, "#swap-pending-#{successor.id}[role='tooltip']")
+      assert html =~ "revoked automatically the first time this key is used"
+
+      # No raw title= fallback remains for these explanations.
+      refute html =~ ~s(title="called an action in the last 5 minutes")
+      refute html =~ ~s(title="Replaces a rotated key)
     end
 
     # picking a real client mints + shows a quick_secret;
@@ -786,6 +816,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       again = render_click(lv, "reveal_snippet", %{})
       assert again =~ ~r/EMISAR_API_KEY=emk-[A-Za-z0-9_-]+/
       refute again =~ raw
+      flush_key_broadcast(lv)
     end
 
     test "Claude Code setup offers the optional auto-permit step with the verified rule",
@@ -815,6 +846,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "default_tools_approval_mode = &quot;approve&quot;"
       assert html =~ "trusts only the emisar MCP server"
       assert html =~ "emisar still applies its own policies and approvals"
+      flush_key_broadcast(lv)
     end
 
     test "each new local client tab reveals its exact config shape", %{conn: conn} do
@@ -840,6 +872,8 @@ defmodule EmisarWeb.AgentsLiveTest do
         assert html =~ location, "#{client}: missing location #{location}"
         assert html =~ marker, "#{client}: missing shape marker #{marker}"
       end
+
+      flush_key_broadcast(lv)
     end
 
     test "Grok setup registers the bridge and offers its server-scoped allow rule",
@@ -855,6 +889,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Skip the per-tool prompts"
       assert html =~ "~/.grok/config.toml"
       assert html =~ "MCPTool(emisar__*)"
+      flush_key_broadcast(lv)
     end
 
     # the agents list is account-scoped: A's admin sees A's
@@ -940,6 +975,70 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.reload!(key).revoked_at != nil
       # …and the default (live-only) list reloaded without it.
       refute html =~ "doomed-bot"
+      flush_key_broadcast(lv)
+    end
+
+    # Three verbs on a manager's live row is the labeled-menu threshold: one
+    # bordered `Actions ▾` trigger with the verbs as menu rows — no per-row
+    # ghost buttons. The confirm ladder is unchanged behind the menu.
+    test "an admin's key row carries the labeled Actions menu with all three verbs",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      {:ok, _raw, _key} =
+        ApiKeys.create_key(%{name: "managed-bot"}, owner_subject(user, account))
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+
+      assert has_element?(lv, "details summary", "Actions")
+      assert has_element?(lv, "details a", "View activity")
+      assert has_element?(lv, "details button", "Rotate")
+      assert has_element?(lv, "details button", "Revoke")
+      # The menu rows still open the same confirm dialogs.
+      assert html =~ "Rotate this key?"
+      assert html =~ "Revoke this agent key"
+      # Revoke is a typed-confirm flow, so the page copy promises "seconds",
+      # never "one click".
+      assert html =~ "revoke access in seconds"
+      refute html =~ "one click"
+    end
+
+    # A role that can't manage keys sees the ONE verb it holds — View
+    # activity — as a small bordered button (a visible action button wears a
+    # bordered face; no menu, no ghost), and the manage-only dialogs are not
+    # rendered at all.
+    test "an operator's row shows a bordered View activity button, no Actions menu",
+         %{conn: conn} do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "watch-bot"}, owner_subject(owner, account))
+
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+
+      refute has_element?(lv, "details summary", "Actions")
+      assert has_element?(lv, "a.border-zinc-800", "View activity")
+      # The manage-only dialogs aren't rendered at all for this role.
+      refute has_element?(lv, "#rotate-#{key.id}")
+      refute has_element?(lv, "#revoke-agent-key-#{key.id}")
+      refute html =~ "Rotate this key?"
+      refute html =~ "Revoke this agent key"
+
+      # Forcing rotate past the hidden menu is refused; no successor minted.
+      assert render_click(lv, "rotate", %{"id" => key.id}) =~
+               "You don&#39;t have permission to do that."
+
+      assert [%ApiKey{id: only_id}] = Repo.all(ApiKey)
+      assert only_id == key.id
     end
 
     # an operator holds
@@ -1003,6 +1102,36 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
+    # The Custom tab leads to the manage-gated "create" submit — a role that
+    # may only quick-mint gets it disabled + lock + accessible tooltip (never
+    # a form that dies in a denial flash at submit), and forcing the
+    # select_client event past the disabled tab is refused too (IL-15).
+    test "an operator's Custom tab is locked; a forced select_client is refused", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+
+      # The tab renders locked: disabled, no click wiring, tooltip naming the gate.
+      assert has_element?(lv, "button[disabled]", "Custom key (advanced)")
+      refute has_element?(lv, "button[phx-click='select_client'][phx-value-client='custom']")
+      assert has_element?(lv, "#custom-key-lock[role='tooltip']")
+      assert html =~ "Creating a custom key needs an admin or owner role."
+
+      assert render_click(lv, "select_client", %{"client" => "custom"}) =~
+               "You don&#39;t have permission to do that."
+
+      refute has_element?(lv, "#api_key_form")
+    end
+
     # a forged/foreign key id revoke is a quiet no-op: the
     # account-scoped `fetch_api_key_by_id` returns not-found, so nothing is
     # revoked and no error leaks the foreign key's existence.
@@ -1043,4 +1172,11 @@ defmodule EmisarWeb.AgentsLiveTest do
     {position, _length} = :binary.match(html, text)
     position
   end
+
+  # A key mutation with the view mounted broadcasts {:list_changed, :api_key, …}
+  # back to it — local PubSub delivery is synchronous, so the message is already
+  # queued when the mutating call returns. One render/1 makes the view run that
+  # reload while the test still owns the DB sandbox; without it the reload can
+  # land after teardown as Postgrex disconnect noise, which fails the gate.
+  defp flush_key_broadcast(lv), do: render(lv)
 end
