@@ -66,26 +66,6 @@ defmodule Emisar.ApiKeys.ApiKey do
     timestamps()
   end
 
-  def usable?(%__MODULE__{
-        created_by_membership_id: membership_id,
-        revoked_at: nil,
-        deleted_at: nil,
-        expires_at: nil
-      })
-      when is_binary(membership_id),
-      do: true
-
-  def usable?(%__MODULE__{
-        created_by_membership_id: membership_id,
-        revoked_at: nil,
-        deleted_at: nil,
-        expires_at: exp
-      })
-      when is_binary(membership_id),
-      do: DateTime.compare(DateTime.utc_now(), exp) == :lt
-
-  def usable?(_), do: false
-
   @doc """
   True when the key is auto-generated AND has never been used. Drives
   UI visibility (hidden) and ring eviction (only auto-unused keys get
@@ -94,15 +74,4 @@ defmodule Emisar.ApiKeys.ApiKey do
   def auto_unused?(%__MODULE__{auto_generated_at: nil}), do: false
   def auto_unused?(%__MODULE__{last_used_at: ts}) when not is_nil(ts), do: false
   def auto_unused?(%__MODULE__{}), do: true
-
-  @doc """
-  True for an OAuth backing key — a non-expiring MCP key. Consent mints these
-  without an expiry (`ApiKeys.create_backing_key/4`): OAuth owns the lifecycle via
-  the refresh token, and backing-key revocation is the off-switch. Every
-  operator-minted MCP key carries an expiry, so among `:mcp` keys the absent
-  `expires_at` uniquely identifies an OAuth-backed connection. The agents UI reads
-  it to hide manual Rotate — a fresh `emk-` secret can't reach the OAuth client.
-  """
-  def oauth_backing?(%__MODULE__{kind: :mcp, expires_at: nil}), do: true
-  def oauth_backing?(%__MODULE__{}), do: false
 end

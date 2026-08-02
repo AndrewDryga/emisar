@@ -18,6 +18,21 @@ defmodule Emisar.ApiKeysTest do
     {user, account, Fixtures.Subjects.subject_for(user, account, role: :owner)}
   end
 
+  # The lifecycle classifiers read the struct only, so they're exercised on
+  # plain structs — the salient lifecycle fields stay inline in each test.
+  defp build_key(fields \\ []) do
+    struct!(
+      %ApiKey{
+        name: "agent",
+        kind: :mcp,
+        key_prefix: "emk-aa11bb22",
+        created_by_membership_id: Ecto.UUID.generate(),
+        last_client_info: %{}
+      },
+      fields
+    )
+  end
+
   describe "api_key_filters/0" do
     test "carries the Agents table's filters in panel order" do
       assert Enum.map(ApiKeys.api_key_filters(), & &1.name) == [:name, :status, :owner]
@@ -275,6 +290,234 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "key_facts/2" do
+    test "the activity ladder turns over exactly at 5 minutes and 24 hours" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+
+      assert ApiKeys.key_facts(build_key(last_used_at: DateTime.add(now, -300, :second)), now).activity ==
+               :active
+
+      assert ApiKeys.key_facts(build_key(last_used_at: DateTime.add(now, -301, :second)), now).activity ==
+               :idle
+
+      assert ApiKeys.key_facts(build_key(last_used_at: DateTime.add(now, -24, :hour)), now).activity ==
+               :idle
+
+      assert ApiKeys.key_facts(build_key(last_used_at: DateTime.add(now, -86_401, :second)), now).activity ==
+               :dormant
+    end
+
+    test "a key no client has authenticated with is never used" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      facts = ApiKeys.key_facts(build_key(), now)
+
+      assert facts.activity == :never_used
+      refute facts.used?
+    end
+
+    test "revocation wins over a call that just landed" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      facts = ApiKeys.key_facts(build_key(last_used_at: now, revoked_at: now), now)
+
+      assert facts.activity == :revoked
+      assert facts.revoked?
+      refute facts.usable?
+      refute facts.rotatable?
+    end
+
+    test "expiry exactly at now is already dead; a second later the key is live" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      dead = ApiKeys.key_facts(build_key(expires_at: now), now)
+      live = ApiKeys.key_facts(build_key(expires_at: DateTime.add(now, 1, :second)), now)
+
+      assert dead.expiry == :expired
+      refute dead.usable?
+      assert live.expiry == :expiring_soon
+      assert live.usable?
+    end
+
+    test "the expiring-soon horizon is exclusive at 7 days" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      horizon = DateTime.add(now, 7, :day)
+
+      assert ApiKeys.key_facts(build_key(expires_at: horizon), now).expiry == :current
+
+      assert ApiKeys.key_facts(build_key(expires_at: DateTime.add(horizon, -1, :second)), now).expiry ==
+               :expiring_soon
+
+      assert ApiKeys.key_facts(build_key(), now).expiry == :none
+    end
+
+    test "the reported client is the title, else the name, and never a blank" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      titled = build_key(last_client_info: %{"title" => "Claude Code", "name" => "claude-code"})
+      named = build_key(last_client_info: %{"name" => "claude-code"})
+      blank = build_key(last_client_info: %{"title" => ""})
+
+      assert ApiKeys.key_facts(titled, now).reported_client == "Claude Code"
+      assert ApiKeys.key_facts(named, now).reported_client == "claude-code"
+      assert is_nil(ApiKeys.key_facts(blank, now).reported_client)
+      assert is_nil(ApiKeys.key_facts(build_key(), now).reported_client)
+    end
+
+    test "a client that only echoes the key's name is not a distinct fact" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      # "Claude Code" and "claude-code" differ only in case and separators.
+      echo = build_key(name: "Claude Code", last_client_info: %{"name" => "claude-code"})
+      distinct = build_key(name: "prod-mcp", last_client_info: %{"name" => "claude-code"})
+
+      assert is_nil(ApiKeys.key_facts(echo, now).distinct_client)
+      assert ApiKeys.key_facts(distinct, now).distinct_client == "claude-code"
+    end
+
+    test "rotation is pending only while the replaced key is still usable" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      replaced_id = Ecto.UUID.generate()
+      usable_ancestor = build_key(id: replaced_id, key_prefix: "emk-old11111")
+      expired_ancestor = struct!(usable_ancestor, expires_at: now)
+      revoked_ancestor = struct!(usable_ancestor, revoked_at: now)
+
+      pending =
+        build_key(replaces_id: replaced_id, replaces: usable_ancestor)
+        |> ApiKeys.key_facts(now)
+
+      assert pending.rotation == :swap_pending
+      assert pending.replaced_key_prefix == "emk-old11111"
+
+      settled_expired =
+        build_key(replaces_id: replaced_id, replaces: expired_ancestor)
+        |> ApiKeys.key_facts(now)
+
+      settled_revoked =
+        build_key(replaces_id: replaced_id, replaces: revoked_ancestor)
+        |> ApiKeys.key_facts(now)
+
+      assert settled_expired.rotation == :settled
+      assert settled_revoked.rotation == :settled
+
+      never_rotated = ApiKeys.key_facts(build_key(), now)
+      assert never_rotated.rotation == :none
+      assert is_nil(never_rotated.replaced_key_prefix)
+    end
+
+    test "the bridge version comes from the reported client info" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      bridged = build_key(last_client_info: %{"bridge_version" => "0.4.1"})
+
+      assert ApiKeys.key_facts(bridged, now).bridge_version == "0.4.1"
+      assert is_nil(ApiKeys.key_facts(build_key(), now).bridge_version)
+    end
+
+    test "a non-expiring MCP key is OAuth-backed and cannot be rotated" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      backing = ApiKeys.key_facts(build_key(), now)
+      operator_minted = ApiKeys.key_facts(build_key(expires_at: DateTime.add(now, 30, :day)), now)
+
+      assert backing.oauth_backing?
+      refute backing.rotatable?
+      refute operator_minted.oauth_backing?
+      assert operator_minted.rotatable?
+    end
+  end
+
+  describe "with_bridge_compatibility/2" do
+    test "a blocked bridge takes over the row's status, leaving activity intact" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+
+      facts =
+        build_key(last_used_at: now)
+        |> ApiKeys.key_facts(now)
+        |> ApiKeys.with_bridge_compatibility(:unsupported)
+
+      assert facts.status == :unsupported
+      assert facts.activity == :active
+    end
+
+    test "operator intent wins — a revoked key stays revoked" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+
+      facts =
+        build_key(last_used_at: now, revoked_at: now)
+        |> ApiKeys.key_facts(now)
+        |> ApiKeys.with_bridge_compatibility(:unsupported)
+
+      assert facts.status == :revoked
+    end
+
+    test "every other compatibility status leaves the liveness word alone" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      facts = ApiKeys.key_facts(build_key(last_used_at: now), now)
+
+      for compatibility <- [:supported, :outdated, :unknown] do
+        assert ApiKeys.with_bridge_compatibility(facts, compatibility).status == :active
+      end
+    end
+  end
+
+  describe "summarize_key_facts/1" do
+    test "counts and the newest call come only from still-usable keys" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      newest_usable_call = DateTime.add(now, -60, :second)
+
+      keys = [
+        build_key(last_used_at: newest_usable_call),
+        build_key(last_used_at: DateTime.add(now, -6, :hour)),
+        build_key(last_used_at: DateTime.add(now, -3, :day)),
+        build_key(),
+        # Both dead, and both called more recently than any live key.
+        build_key(last_used_at: now, revoked_at: now),
+        build_key(last_used_at: now, expires_at: now)
+      ]
+
+      summary = keys |> Enum.map(&ApiKeys.key_facts(&1, now)) |> ApiKeys.summarize_key_facts()
+
+      assert summary.total == 6
+      assert summary.live == 4
+      assert summary.connected == 3
+      assert summary.activity == %{active: 1, idle: 1, dormant: 1, never_used: 1}
+      assert summary.active_today == 2
+      assert summary.last_call_at == newest_usable_call
+    end
+
+    test "a call exactly 24 hours ago still counts as active today" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+      facts = ApiKeys.key_facts(build_key(last_used_at: DateTime.add(now, -24, :hour)), now)
+      summary = ApiKeys.summarize_key_facts([facts])
+
+      assert summary.activity.idle == 1
+      assert summary.active_today == 1
+    end
+
+    test "an empty page keeps the fixed shape at zero" do
+      assert ApiKeys.summarize_key_facts([]) == %{
+               total: 0,
+               live: 0,
+               connected: 0,
+               active_today: 0,
+               last_call_at: nil,
+               activity: %{active: 0, idle: 0, dormant: 0, never_used: 0}
+             }
+    end
+  end
+
+  describe "key_usable?/2" do
+    test "a membership-bound, unexpired key is usable" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+
+      assert ApiKeys.key_usable?(build_key(), now)
+      assert ApiKeys.key_usable?(build_key(expires_at: DateTime.add(now, 1, :second)), now)
+    end
+
+    test "an unbound, deleted, revoked or expired key is not" do
+      now = ~U[2026-08-02 12:00:00.000000Z]
+
+      refute ApiKeys.key_usable?(build_key(created_by_membership_id: nil), now)
+      refute ApiKeys.key_usable?(build_key(deleted_at: now), now)
+      refute ApiKeys.key_usable?(build_key(revoked_at: now), now)
+      refute ApiKeys.key_usable?(build_key(expires_at: now), now)
+    end
+  end
+
   describe "change_key/1" do
     test "validates the form fields without touching the DB" do
       assert %Ecto.Changeset{} = changeset = ApiKeys.change_key(%{name: "ci"})
@@ -313,7 +556,7 @@ defmodule Emisar.ApiKeysTest do
                ApiKeys.create_key(%{name: "mcp"}, subject)
 
       assert exp
-      assert ApiKey.usable?(key)
+      assert ApiKeys.key_usable?(key, DateTime.utc_now())
 
       expected = DateTime.add(DateTime.utc_now(), 30 * 24 * 3600, :second)
       assert_in_delta DateTime.to_unix(exp), DateTime.to_unix(expected), 120
@@ -444,7 +687,7 @@ defmodule Emisar.ApiKeysTest do
       # use (or a manual revoke).
       {:ok, reloaded} = ApiKeys.fetch_api_key_by_id(original.id, subject)
       assert is_nil(reloaded.revoked_at)
-      assert ApiKey.usable?(reloaded)
+      assert ApiKeys.key_usable?(reloaded, DateTime.utc_now())
     end
 
     test "an audit-export key rotates on an entitled plan" do
@@ -1132,7 +1375,7 @@ defmodule Emisar.ApiKeysTest do
 
       {:ok, retired} = ApiKeys.fetch_api_key_by_id(original.id, subject)
       assert %DateTime{} = retired.revoked_at
-      refute ApiKey.usable?(retired)
+      refute ApiKeys.key_usable?(retired, DateTime.utc_now())
 
       {:ok, [event], _} =
         Emisar.Audit.list_events(subject,
@@ -1240,7 +1483,7 @@ defmodule Emisar.ApiKeysTest do
       # OAuth governs the lifecycle, so the backing key opts out of the 30-day
       # default expiry — it must not self-expire mid-refresh.
       assert is_nil(key.expires_at)
-      assert ApiKey.usable?(key)
+      assert ApiKeys.key_usable?(key, DateTime.utc_now())
     end
 
     test "the backing key resolves via the bearer auth boundary" do

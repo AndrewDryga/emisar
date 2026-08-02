@@ -403,7 +403,7 @@ defmodule Emisar.OAuthTest do
       # self-heal must NOT apply, or every OAuth connection would die 30 days
       # after consent even while it is actively refreshing.
       assert key.expires_at == nil
-      assert Emisar.ApiKeys.ApiKey.usable?(key)
+      assert Emisar.ApiKeys.key_usable?(key, DateTime.utc_now())
     end
 
     test "consent audits oauth.consent_granted with the backing key as subject",

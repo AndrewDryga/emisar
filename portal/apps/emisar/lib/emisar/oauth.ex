@@ -604,7 +604,7 @@ defmodule Emisar.OAuth do
   defp live?(%DateTime{} = at), do: DateTime.compare(at, DateTime.utc_now()) == :gt
   defp secs_from_now(s), do: DateTime.add(DateTime.utc_now(), s, :second)
 
-  # `peek_api_key_by_id` returns nil unless the key passes `ApiKey.usable?`
+  # `peek_api_key_by_id` returns nil unless the key passes `key_usable?/2`
   # (not revoked / deleted / expired) — the same liveness gate the access
   # token's resolve path uses.
   defp backing_key_usable?(api_key_id), do: not is_nil(ApiKeys.peek_api_key_by_id(api_key_id))

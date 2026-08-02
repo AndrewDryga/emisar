@@ -9,16 +9,10 @@ defmodule EmisarWeb.AgentsLive do
   copy-paste config snippets are always one click away — not buried
   behind a "Generate key" button.
 
-  Status derivation is based on `last_used_at`:
-
-    * `:active`    — call within last 5 min (green pulse)
-    * `:idle`      — call within last 24 h
-    * `:dormant`   — call > 24 h ago
-    * `:never_used`— issued but no MCP call has ever landed
-
-  A live key whose emisar-mcp bridge is below the minimum supported
-  version reads rose "unsupported" in place of that liveness word — a
-  version-blocked client isn't merely quiet (see `pill_status/1`).
+  `ApiKeys.key_facts/2` classifies each key's activity, liveness, expiry
+  and rotation state; this page composes the emisar-mcp bridge's version
+  status onto it (`ApiKeys.with_bridge_compatibility/2`) and renders the
+  result — words, colors and countdowns only.
 
   We re-render every #{5} s via a self-scheduled `:tick` so "Last call"
   + the status badge stay fresh without a full PubSub subscription on
@@ -29,8 +23,6 @@ defmodule EmisarWeb.AgentsLive do
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
-  @active_threshold_secs 5 * 60
-  @idle_threshold_secs 24 * 60 * 60
   @refresh_ms 5_000
   @remote_client_ids ~w(claude_web chatgpt)
 
@@ -282,9 +274,9 @@ defmodule EmisarWeb.AgentsLive do
   # on screen (a quick mint / rotation reveal must not vanish when the reload
   # lands). Otherwise the flow lives on its own /connect page behind the title
   # CTA.
-  defp assign_connect_inline(socket, keys) do
+  defp assign_connect_inline(socket, summary) do
     inline? =
-      active_keys(keys) == [] or socket.assigns.selected_client != nil or
+      summary.live == 0 or socket.assigns.selected_client != nil or
         socket.assigns.quick_secret != nil
 
     assign(socket, :show_connect_inline?, inline?)
@@ -296,15 +288,15 @@ defmodule EmisarWeb.AgentsLive do
   # device-grant approval and unknown to this page — watches for any key
   # minted AFTER this page opened making its first call (a pre-existing
   # agent's activity can never flip it; scoped-advance discipline).
-  defp quick_key_connected?(%{assigns: %{quick_connected?: true}}, _keys), do: true
+  defp quick_key_connected?(%{assigns: %{quick_connected?: true}}, _rows), do: true
 
-  defp quick_key_connected?(%{assigns: %{quick_key_id: id}}, keys) when is_binary(id),
-    do: Enum.any?(keys, &(&1.id == id and &1.last_used_at))
+  defp quick_key_connected?(%{assigns: %{quick_key_id: id}}, rows) when is_binary(id),
+    do: Enum.any?(rows, fn {key, facts} -> key.id == id and facts.used? end)
 
-  defp quick_key_connected?(%{assigns: assigns}, keys) do
+  defp quick_key_connected?(%{assigns: assigns}, rows) do
     local_client?(assigns.selected_client) and
-      Enum.any?(keys, fn key ->
-        key.last_used_at && DateTime.compare(key.inserted_at, assigns.watch_since) == :gt
+      Enum.any?(rows, fn {key, facts} ->
+        facts.used? and DateTime.compare(key.inserted_at, assigns.watch_since) == :gt
       end)
   end
 
@@ -335,18 +327,24 @@ defmodule EmisarWeb.AgentsLive do
            Keyword.put(opts, :preload, [:created_by, :replaces])
          ) do
       {:ok, keys, meta} ->
+        # One `now` for the whole page, so every row's activity, expiry and
+        # rotation state is judged against the same instant.
+        now = DateTime.utc_now()
+        rows = Enum.map(keys, &{&1, row_facts(&1, now)})
+        summary = ApiKeys.summarize_key_facts(Enum.map(rows, fn {_key, facts} -> facts end))
+
         socket
-        |> assign(:api_keys, keys)
+        |> assign(:key_rows, rows)
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
-        |> assign(:active_count, count_status(keys, :active))
-        |> assign(:idle_count, count_status(keys, :idle))
-        |> assign(:dormant_count, count_status(keys, :dormant))
-        |> assign(:never_used_count, count_status(keys, :never_used))
-        |> assign(:issued_count, length(active_keys(keys)))
-        |> assign(:quick_connected?, quick_key_connected?(socket, keys))
-        |> assign_connect_inline(keys)
+        |> assign(:active_count, summary.activity.active)
+        |> assign(:idle_count, summary.activity.idle)
+        |> assign(:dormant_count, summary.activity.dormant)
+        |> assign(:never_used_count, summary.activity.never_used)
+        |> assign(:issued_count, summary.live)
+        |> assign(:quick_connected?, quick_key_connected?(socket, rows))
+        |> assign_connect_inline(summary)
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it
@@ -354,7 +352,7 @@ defmodule EmisarWeb.AgentsLive do
       # would read "no keys" when really the read failed).
       {:error, _} when map_size(params) == 0 ->
         socket
-        |> assign(:api_keys, [])
+        |> assign(:key_rows, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
@@ -374,20 +372,22 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
-  defp active_keys(keys), do: Enum.reject(keys, & &1.revoked_at)
+  # A row pairs the key with the domain's reading of it, plus this control
+  # plane's bridge-version policy — the one place the two are composed.
+  defp row_facts(key, now) do
+    facts = ApiKeys.key_facts(key, now)
+    ApiKeys.with_bridge_compatibility(facts, Compat.mcp_status(facts.bridge_version))
+  end
 
   # The issuing human — the grouping key for the list. Falls back to "Auto"
   # for system-minted keys with no creator.
-  defp owner_label(%{created_by: %{} = user}), do: Accounts.user_display_name(user)
-  defp owner_label(_), do: "Auto-minted"
+  defp owner_label({%{created_by: %{} = user}, _facts}), do: Accounts.user_display_name(user)
+  defp owner_label({_key, _facts}), do: "Auto-minted"
 
   # Pre-sort by owner so each `group_by={&owner_label/1}` cluster is one
   # contiguous run under a single header; within a cluster the context's
   # recent-first order holds.
-  defp sort_by_owner(keys), do: Enum.sort_by(keys, &owner_label/1)
-
-  defp count_status(keys, status),
-    do: Enum.count(active_keys(keys), &(client_status(&1) == status))
+  defp sort_by_owner(rows), do: Enum.sort_by(rows, &owner_label/1)
 
   defp default_params do
     %{"name" => "", "description" => "", "expires_at" => ""}
@@ -418,109 +418,16 @@ defmodule EmisarWeb.AgentsLive do
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "api_key"))
 
-  defp expired?(%ApiKeys.ApiKey{expires_at: %DateTime{} = exp}),
-    do: DateTime.compare(exp, DateTime.utc_now()) == :lt
+  # Past expiry reads rose (the key is dead); inside the rotation window, amber
+  # (rotate soon); otherwise muted like the rest of the meta line.
+  defp expiry_class(:expired), do: "text-rose-400"
+  defp expiry_class(:expiring_soon), do: "text-amber-400"
+  defp expiry_class(_expiry), do: "text-zinc-400"
 
-  defp expired?(%ApiKeys.ApiKey{}), do: false
-
-  # Past expiry reads rose (the key is dead); inside a week, amber (rotate
-  # soon); otherwise muted like the rest of the meta line.
-  defp expiry_class(%ApiKeys.ApiKey{expires_at: %DateTime{} = exp}) do
-    now = DateTime.utc_now()
-
-    cond do
-      DateTime.compare(exp, now) == :lt -> "text-rose-400"
-      DateTime.diff(exp, now, :day) < 7 -> "text-amber-400"
-      true -> "text-zinc-400"
-    end
-  end
-
-  defp expiry_class(%ApiKeys.ApiKey{}), do: "text-zinc-400"
-
-  # Rotation lineage. The swap is PENDING while the replaced key is still usable
-  # — this key's first authenticated use retires it. The lineage seg renders only
-  # while pending, so the replaced row is always the preloaded, still-usable
-  # ancestor; successors inherit the name, so it's named by its distinguishing
-  # prefix.
-  defp swap_pending?(%ApiKeys.ApiKey{replaces: %ApiKeys.ApiKey{} = replaced}),
-    do: ApiKeys.ApiKey.usable?(replaced)
-
-  defp swap_pending?(%ApiKeys.ApiKey{}), do: false
-
-  defp replaced_key_label(%ApiKeys.ApiKey{replaces: %ApiKeys.ApiKey{} = replaced}),
-    do: replaced.key_prefix <> "…"
-
-  # -- Status derivation ----------------------------------------------
-
-  defp client_status(%ApiKeys.ApiKey{revoked_at: ts}) when not is_nil(ts), do: :revoked
-  defp client_status(%ApiKeys.ApiKey{last_used_at: nil}), do: :never_used
-
-  defp client_status(%ApiKeys.ApiKey{last_used_at: ts}) do
-    diff = DateTime.diff(DateTime.utc_now(), ts, :second)
-
-    cond do
-      diff <= @active_threshold_secs -> :active
-      diff <= @idle_threshold_secs -> :idle
-      true -> :dormant
-    end
-  end
-
-  # The status the row LEADS with. A bridge below the minimum emisar-mcp
-  # version is blocked by version policy, so its recency is moot — the pill
-  # reads rose "unsupported" in place of "idle"/"active", the way the packs
-  # page reads "retired" instead of "trusted". A revoked key stays "revoked"
-  # (operator intent wins, as "rejected" wins over "retired" there); an
-  # outdated-but-usable bridge keeps its real liveness with the amber version
-  # chip beside it.
-  defp pill_status(%ApiKeys.ApiKey{} = key) do
-    status = client_status(key)
-    bridge_status = Compat.mcp_status(mcp_bridge_version(key))
-
-    if status != :revoked and bridge_status == :unsupported do
-      :unsupported
-    else
-      status
-    end
-  end
-
-  # The MCP client a key reported at `initialize` (clientInfo): the human-readable
-  # "title", else the machine "name". Name only — the client's own version is
-  # detail material, not row meta. nil until a client has connected.
-  defp reported_client(%ApiKeys.ApiKey{last_client_info: %{} = info}) do
-    label = info["title"] || info["name"]
-    if is_binary(label) and label != "", do: label
-  end
-
-  defp reported_client(_), do: nil
-
-  # The connecting client only earns a meta seg when it ADDS to the row. A
-  # quick-mint names the key after the client it was minted for ("Claude Code"),
-  # so the client that then connects ("claude-code") just echoes the title and is
-  # dropped; a custom-named key ("prod-mcp") keeps it — the client is new info.
-  defp distinct_client(%ApiKeys.ApiKey{name: name} = key) do
-    case reported_client(key) do
-      nil -> nil
-      client -> if normalize_client(client) == normalize_client(name), do: nil, else: client
-    end
-  end
-
-  # Fold case + separators so "Claude Code" and "claude-code" compare equal.
-  defp normalize_client(value),
-    do: value |> String.downcase() |> String.replace(~r/[^a-z0-9]/, "")
-
-  # The emisar-mcp bridge version this key last connected with (captured from
-  # the UA at `initialize`), for the stale-version chip. nil for a remote
-  # connector, which reports no bridge UA.
-  defp mcp_bridge_version(%ApiKeys.ApiKey{last_client_info: %{"bridge_version" => version}})
-       when is_binary(version),
-       do: version
-
-  defp mcp_bridge_version(_), do: nil
-
-  defp usable_mcp_bridge_versions(keys) do
-    keys
-    |> Enum.filter(&ApiKeys.ApiKey.usable?/1)
-    |> Enum.map(&mcp_bridge_version/1)
+  # The upgrade notice speaks for the bridges an operator can still reach —
+  # a dead key's stale bridge is not something anyone needs to go fix.
+  defp usable_mcp_bridge_versions(rows) do
+    for {_key, facts} <- rows, facts.usable?, do: facts.bridge_version
   end
 
   defp status_label(:active), do: "active"
@@ -1089,7 +996,7 @@ defmodule EmisarWeb.AgentsLive do
       <section
         :if={
           @live_action == :index and
-            not (@show_connect_inline? and @api_keys == [] and
+            not (@show_connect_inline? and @key_rows == [] and
                    not LiveTable.has_active_filters?(@filter_params, @filters))
         }
         class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"
@@ -1103,7 +1010,7 @@ defmodule EmisarWeb.AgentsLive do
           <.version_upgrade_notice
             id="mcp-upgrade"
             kind={:mcp}
-            versions={usable_mcp_bridge_versions(@api_keys)}
+            versions={usable_mcp_bridge_versions(@key_rows)}
             base_url={@base_url}
             class="mb-10"
           />
@@ -1163,7 +1070,7 @@ defmodule EmisarWeb.AgentsLive do
             layout={:cards}
             id="agents"
             path={~p"/app/#{@current_account}/agents"}
-            rows={sort_by_owner(@api_keys)}
+            rows={sort_by_owner(@key_rows)}
             metadata={@metadata}
             filter_params={@filter_params}
             filters={@filters}
@@ -1177,7 +1084,7 @@ defmodule EmisarWeb.AgentsLive do
             <:group_header :let={owner}>
               <.list_group_header label={owner} />
             </:group_header>
-            <:item :let={key}>
+            <:item :let={{key, facts}}>
               <.list_row padding="py-4">
                 <:title>
                   <span class="truncate font-medium text-zinc-100">{key.name}</span>
@@ -1186,20 +1093,20 @@ defmodule EmisarWeb.AgentsLive do
                      glance across agents, the same v{version} grammar the runners list
                      uses. A remote connector reports no bridge → nothing here. --%>
                   <span
-                    :if={mcp_bridge_version(key)}
+                    :if={facts.bridge_version}
                     class="font-mono text-[11px] text-zinc-400"
                   >
-                    v{mcp_bridge_version(key)}
+                    v{facts.bridge_version}
                   </span>
-                  <.client_status_pill key={key} />
+                  <.client_status_pill status={facts.status} />
                   <%!-- The pill already leads with rose "unsupported" when the
                        bridge is below the minimum (a blocked client isn't
                        "idle"), so the chip here only surfaces the softer amber
                        "outdated" — never a second, redundant red label. --%>
                   <.version_chip
-                    :if={pill_status(key) != :unsupported}
+                    :if={facts.status != :unsupported}
                     kind={:mcp}
-                    version={mcp_bridge_version(key)}
+                    version={facts.bridge_version}
                     id={"mcp-version-#{key.id}"}
                   />
                 </:title>
@@ -1212,22 +1119,22 @@ defmodule EmisarWeb.AgentsLive do
                     <%!-- The client only earns a seg when it ADDS to the name —
                        a quick-mint names the key after its client, so the seg
                        would just echo the title; a custom-named key keeps it. --%>
-                    <:seg :if={distinct_client(key)}>
-                      client <span class="text-zinc-300">{distinct_client(key)}</span>
+                    <:seg :if={facts.distinct_client}>
+                      client <span class="text-zinc-300">{facts.distinct_client}</span>
                     </:seg>
                     <%!-- Rotation lineage shows ONLY while the swap is unproven:
                        the replaced key keeps working until this one's first use
                        auto-revokes it, so "swap pending" is the actionable state.
                        Once settled the lineage is forensic — the audit trail keeps
                        it — not a per-row fact on every rotated key forever. --%>
-                    <:seg :if={swap_pending?(key)}>
+                    <:seg :if={facts.rotation == :swap_pending}>
                       <.tooltip
                         id={"swap-pending-#{key.id}"}
                         align={:left}
                         text="Replaces a rotated key — the old key is revoked automatically the first time this key is used"
                       >
                         <span class="text-amber-300/90">
-                          replaces <span class="font-mono">{replaced_key_label(key)}</span>
+                          replaces <span class="font-mono">{facts.replaced_key_prefix}…</span>
                           · swap pending
                         </span>
                       </.tooltip>
@@ -1235,17 +1142,17 @@ defmodule EmisarWeb.AgentsLive do
                     <:seg>
                       last call{" "}<.local_time
                         id={"agent-key-used-#{key.id}"}
-                        value={key.last_used_at}
+                        value={facts.last_used_at}
                         mode={:relative}
                         placeholder="never"
                       />
                     </:seg>
-                    <:seg :if={key.expires_at}>
-                      <span class={expiry_class(key)}>
-                        {if expired?(key), do: "expired", else: "expires"}
+                    <:seg :if={facts.expires_at}>
+                      <span class={expiry_class(facts.expiry)}>
+                        {if facts.expiry == :expired, do: "expired", else: "expires"}
                         <.local_time
                           id={"agent-key-expires-#{key.id}"}
-                          value={key.expires_at}
+                          value={facts.expires_at}
                           mode={:relative}
                         />
                       </span>
@@ -1258,7 +1165,7 @@ defmodule EmisarWeb.AgentsLive do
                      trigger, ghost faces only on the menu rows). Everyone else —
                      and every revoked row — has the one read verb, which wears a
                      small bordered face, never a ghost. --%>
-                  <%= if is_nil(key.revoked_at) and ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
+                  <%= if not facts.revoked? and ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
                     <.dropdown
                       class="inline-block shrink-0 text-left"
                       summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
@@ -1286,7 +1193,7 @@ defmodule EmisarWeb.AgentsLive do
                          backing-key id), so rotation would only break the connection.
                          Revoke stays — it's the operator's off-switch. --%>
                       <.menu_item
-                        :if={not ApiKeys.ApiKey.oauth_backing?(key)}
+                        :if={facts.rotatable?}
                         phx-click={open_confirm("rotate-#{key.id}")}
                       >
                         Rotate
@@ -1315,9 +1222,8 @@ defmodule EmisarWeb.AgentsLive do
                   <% end %>
                   <.confirm_dialog
                     :if={
-                      is_nil(key.revoked_at) and
-                        ApiKeys.subject_can_manage_api_keys?(@current_subject) and
-                        not ApiKeys.ApiKey.oauth_backing?(key)
+                      facts.rotatable? and
+                        ApiKeys.subject_can_manage_api_keys?(@current_subject)
                     }
                     id={"rotate-#{key.id}"}
                     title="Rotate this key?"
@@ -1339,7 +1245,7 @@ defmodule EmisarWeb.AgentsLive do
                      name/token for one round-trip before the server filled it. --%>
                   <.confirm_dialog
                     :if={
-                      is_nil(key.revoked_at) and
+                      not facts.revoked? and
                         ApiKeys.subject_can_manage_api_keys?(@current_subject)
                     }
                     id={"revoke-agent-key-#{key.id}"}
@@ -1423,16 +1329,13 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  attr :key, :map, required: true
+  attr :status, :atom, required: true
 
   # Sanctioned page-local status (composes the shared `<.status_dot>` + a toned
   # word — the status_badge grammar): the words are the agents-specific activity
-  # ladder overridden by a blocked bridge (see `pill_status/1`), and :active
-  # carries the live ping status_badge can't express.
+  # ladder overridden by a blocked bridge, and :active carries the live ping
+  # status_badge can't express.
   defp client_status_pill(assigns) do
-    status = pill_status(assigns.key)
-    assigns = assign(assigns, status: status)
-
     ~H"""
     <span class={[
       "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium",

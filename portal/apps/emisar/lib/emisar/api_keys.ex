@@ -47,6 +47,11 @@ defmodule Emisar.ApiKeys do
   # the bridge's self-rotation fire on the same horizon.
   @rotation_window_days 7
 
+  # The activity ladder an operator watches: a call inside 5 minutes is a live
+  # agent, one inside a day a quiet one, anything older dormant.
+  @active_threshold_seconds 5 * 60
+  @idle_threshold_seconds 24 * 60 * 60
+
   # -- Reads -----------------------------------------------------------
 
   @doc "The Agents table's `%Repo.Filter{}` list."
@@ -158,6 +163,190 @@ defmodule Emisar.ApiKeys do
       false -> {:error, :not_found}
       other -> other
     end
+  end
+
+  # -- Key facts -------------------------------------------------------
+
+  @doc """
+  How one key reads at `now` — activity, liveness, expiry, rotation lineage,
+  reported client and bridge version — as one fixed map, so a caller renders a
+  row without re-deriving lifecycle meaning from raw columns. Pure, no subject:
+  the key is already the caller's to see. `:replaces` must be preloaded for a
+  pending swap to be visible; without it the rotation reads `:settled`.
+  """
+  def key_facts(%ApiKey{} = key, %DateTime{} = now) do
+    activity = activity(key, now)
+
+    %{
+      activity: activity,
+      # The word the row LEADS with — `with_bridge_compatibility/2` overrides it
+      # when the control plane blocks the client's bridge version.
+      status: activity,
+      usable?: key_usable?(key, now),
+      used?: not is_nil(key.last_used_at),
+      revoked?: not is_nil(key.revoked_at),
+      rotatable?: is_nil(key.revoked_at) and not oauth_backing?(key),
+      oauth_backing?: oauth_backing?(key),
+      last_used_at: key.last_used_at,
+      expires_at: key.expires_at,
+      expiry: expiry(key.expires_at, now),
+      rotation: rotation(key, now),
+      replaced_key_prefix: replaced_key_prefix(key),
+      reported_client: reported_client(key),
+      distinct_client: distinct_client(key),
+      bridge_version: bridge_version(key)
+    }
+  end
+
+  @doc """
+  Folds an `Emisar.Compat` bridge status into the row `status`: a version-blocked
+  client leads with `:unsupported` instead of its liveness word, the way a
+  retired pack version leads over "trusted". Operator intent still wins — a
+  revoked key stays revoked. The caller passes the status, so version policy
+  stays with the compatibility module and its meaning here.
+  """
+  def with_bridge_compatibility(%{activity: :revoked} = facts, _compatibility), do: facts
+
+  def with_bridge_compatibility(facts, :unsupported), do: %{facts | status: :unsupported}
+
+  def with_bridge_compatibility(facts, _compatibility), do: facts
+
+  @doc """
+  Rolls a page's `key_facts/2` into the account's agent posture: the raw row
+  count, plus counts that only a still-usable credential can contribute to —
+  a revoked or expired key is not an agent anyone can reach. `active_today`
+  spans active + idle, i.e. a call inside the last 24 hours.
+  """
+  def summarize_key_facts(facts) when is_list(facts) do
+    usable = Enum.filter(facts, & &1.usable?)
+    counts = Enum.frequencies_by(usable, & &1.activity)
+    active = Map.get(counts, :active, 0)
+    idle = Map.get(counts, :idle, 0)
+
+    %{
+      total: length(facts),
+      live: length(usable),
+      connected: Enum.count(usable, & &1.used?),
+      active_today: active + idle,
+      last_call_at: last_call_at(usable),
+      activity: %{
+        active: active,
+        idle: idle,
+        dormant: Map.get(counts, :dormant, 0),
+        never_used: Map.get(counts, :never_used, 0)
+      }
+    }
+  end
+
+  @doc """
+  Whether the key can still authenticate at `now`: bound to a membership, not
+  revoked, not deleted, and either non-expiring or expiring strictly after
+  `now`. The single liveness gate behind MCP auth, OAuth token resolution and
+  the agents list's live/dead split.
+  """
+  def key_usable?(%ApiKey{} = key, %DateTime{} = now) do
+    is_binary(key.created_by_membership_id) and is_nil(key.revoked_at) and
+      is_nil(key.deleted_at) and not expired?(key.expires_at, now)
+  end
+
+  defp activity(%ApiKey{revoked_at: revoked_at}, _now) when not is_nil(revoked_at), do: :revoked
+  defp activity(%ApiKey{last_used_at: nil}, _now), do: :never_used
+
+  defp activity(%ApiKey{last_used_at: last_used_at}, now) do
+    seconds = DateTime.diff(now, last_used_at, :second)
+
+    cond do
+      seconds <= @active_threshold_seconds -> :active
+      seconds <= @idle_threshold_seconds -> :idle
+      true -> :dormant
+    end
+  end
+
+  defp expiry(nil, _now), do: :none
+
+  defp expiry(%DateTime{} = expires_at, now) do
+    cond do
+      expired?(expires_at, now) -> :expired
+      expiring_soon?(expires_at, now) -> :expiring_soon
+      true -> :current
+    end
+  end
+
+  # Expiry exactly at `now` is already dead — the same boundary the auth path
+  # enforces, so a row can never read live for a key that would be refused.
+  defp expired?(nil, _now), do: false
+
+  defp expired?(%DateTime{} = expires_at, now),
+    do: DateTime.compare(expires_at, now) != :gt
+
+  defp expiring_soon?(%DateTime{} = expires_at, now) do
+    window_end = DateTime.add(now, @rotation_window_days, :day)
+    DateTime.compare(expires_at, window_end) == :lt
+  end
+
+  # The swap is PENDING while the replaced key is still usable — this key's
+  # first authenticated use retires it. Once that lands the lineage is forensic
+  # (the audit trail keeps it), so it settles.
+  defp rotation(%ApiKey{replaces: %ApiKey{} = replaced}, now) do
+    if key_usable?(replaced, now), do: :swap_pending, else: :settled
+  end
+
+  defp rotation(%ApiKey{replaces_id: nil}, _now), do: :none
+  defp rotation(%ApiKey{}, _now), do: :settled
+
+  # Successors inherit the name, so a replaced key is named by its
+  # distinguishing prefix.
+  defp replaced_key_prefix(%ApiKey{replaces: %ApiKey{} = replaced}), do: replaced.key_prefix
+  defp replaced_key_prefix(%ApiKey{}), do: nil
+
+  # The MCP client a key reported at `initialize` (clientInfo): the
+  # human-readable "title", else the machine "name". nil until a client has
+  # connected.
+  defp reported_client(%ApiKey{last_client_info: %{} = info}) do
+    label = info["title"] || info["name"]
+    if is_binary(label) and label != "", do: label
+  end
+
+  defp reported_client(%ApiKey{}), do: nil
+
+  # The connecting client is only worth showing when it ADDS to the key's name:
+  # a quick-mint is named after the client it was minted for ("Claude Code"), so
+  # the client that then connects ("claude-code") just echoes the title.
+  defp distinct_client(%ApiKey{name: name} = key) do
+    case reported_client(key) do
+      nil -> nil
+      client -> if same_client?(client, name), do: nil, else: client
+    end
+  end
+
+  # Fold case + separators so "Claude Code" and "claude-code" compare equal.
+  defp same_client?(client, name), do: normalized_client(client) == normalized_client(name)
+
+  defp normalized_client(value),
+    do: value |> String.downcase() |> String.replace(~r/[^a-z0-9]/, "")
+
+  # The emisar-mcp bridge version this key last connected with, captured from
+  # the UA at `initialize`. nil for a remote connector, which reports no bridge.
+  defp bridge_version(%ApiKey{last_client_info: %{"bridge_version" => version}})
+       when is_binary(version),
+       do: version
+
+  defp bridge_version(%ApiKey{}), do: nil
+
+  # An OAuth backing key is a non-expiring MCP key: consent mints it without an
+  # expiry (`create_backing_key/4`) because OAuth owns the lifecycle through the
+  # refresh token, and revocation is the off-switch. Every operator-minted MCP
+  # key carries an expiry, so among `:mcp` keys the absent `expires_at`
+  # uniquely identifies an OAuth-backed connection — and one can't be rotated,
+  # since a fresh `emk-` secret can't reach the OAuth client.
+  defp oauth_backing?(%ApiKey{kind: :mcp, expires_at: nil}), do: true
+  defp oauth_backing?(%ApiKey{}), do: false
+
+  defp last_call_at(facts) do
+    facts
+    |> Enum.map(& &1.last_used_at)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.max(DateTime, fn -> nil end)
   end
 
   # -- Mutations -------------------------------------------------------
@@ -319,17 +508,12 @@ defmodule Emisar.ApiKeys do
     end)
   end
 
+  # A non-expiring MCP key (currently an OAuth backing key) never rotates; auth
+  # already guarantees an expiring key is still usable when this runs.
   defp auto_rotation_eligible?(%ApiKey{} = key) do
-    key.kind == :mcp and ApiKey.usable?(key) and expiring_soon?(key.expires_at)
-  end
+    now = DateTime.utc_now()
 
-  # A non-expiring MCP key (currently an OAuth backing key) never rotates;
-  # auth already guarantees an expiring key is still usable when this runs.
-  defp expiring_soon?(nil), do: false
-
-  defp expiring_soon?(%DateTime{} = expires_at) do
-    window_end = DateTime.add(DateTime.utc_now(), @rotation_window_days, :day)
-    DateTime.compare(expires_at, window_end) == :lt
+    key.kind == :mcp and key_usable?(key, now) and expiry(key.expires_at, now) == :expiring_soon
   end
 
   defp install_or_fetch_successor(repo, %ApiKey{rotated_to_id: nil} = source, prefix, hash) do
@@ -411,7 +595,7 @@ defmodule Emisar.ApiKeys do
     do: {:error, :revoked}
 
   defp ensure_rotatable(%ApiKey{} = source) do
-    if ApiKey.oauth_backing?(source), do: {:error, :oauth_backing}, else: :ok
+    if oauth_backing?(source), do: {:error, :oauth_backing}, else: :ok
   end
 
   # An audit-export token is the paid export surface's credential — minting one
@@ -641,7 +825,7 @@ defmodule Emisar.ApiKeys do
   account-scoped `emk-` keys (and the OAuth backing keys behind `emo-`
   tokens) keep resolving after the user's membership is gone. Accounts
   revokes browser sessions alongside this bulk key update. Both honor the
-  `usable?` gate, so flipping `revoked_at` kills MCP dispatch + OAuth
+  `key_usable?/2` gate, so flipping `revoked_at` kills MCP dispatch + OAuth
   refresh at once. Bulk update — the `membership_removed`/`_suspended`
   event is the audit anchor. Returns `{:ok, count}`.
   """
@@ -734,7 +918,7 @@ defmodule Emisar.ApiKeys do
   defp authenticate_candidate(repo, queryable, hash) do
     with %ApiKey{} = key <- repo.peek(queryable),
          true <- Crypto.secure_compare(key.key_hash, hash),
-         true <- ApiKey.usable?(key) do
+         true <- key_usable?(key, DateTime.utc_now()) do
       {:ok, key}
     else
       _ -> {:error, :invalid}
@@ -853,11 +1037,11 @@ defmodule Emisar.ApiKeys do
   non-deleted) key by id. Returns the key or `nil`.
   """
   def peek_api_key_by_id(id) when is_binary(id) do
-    # Deliberately all(): `usable?/1` is the single liveness gate.
+    # Deliberately all(): `key_usable?/2` is the single liveness gate.
     queryable = ApiKey.Query.all() |> ApiKey.Query.by_id(id)
 
     case Repo.peek(queryable) do
-      %ApiKey{} = key -> if ApiKey.usable?(key), do: key, else: nil
+      %ApiKey{} = key -> if key_usable?(key, DateTime.utc_now()), do: key, else: nil
       _ -> nil
     end
   end
@@ -930,7 +1114,7 @@ defmodule Emisar.ApiKeys do
       |> ApiKey.Query.lock_for_update()
 
     case repo.one(queryable) do
-      %ApiKey{account_id: ^account_id} = key -> ApiKey.usable?(key)
+      %ApiKey{account_id: ^account_id} = key -> key_usable?(key, DateTime.utc_now())
       _ -> false
     end
   end

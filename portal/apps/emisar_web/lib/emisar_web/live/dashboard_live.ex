@@ -149,28 +149,22 @@ defmodule EmisarWeb.DashboardLive do
   defp read_ok?(_), do: false
 
   # The LLM-agents pillar's live facts, from the same MCP-key list the agents
-  # page shows (revoked + auto-unused already excluded). "Active today" is a
-  # key whose last call landed inside 24h — the "is an agent actually using
-  # this?" signal; the newest call overall carries the idle case. `connected`
-  # counts keys with an observed authenticated call — an issued key someone
-  # hasn't finished wiring into an MCP client is not a connected agent.
+  # page shows and the same domain reading of it. The pillar counts the keys an
+  # agent can still authenticate with (`live`), so an account left holding only
+  # revoked or expired credentials falls back to the connect invitation.
   defp agents_summary(api_keys) do
     now = DateTime.utc_now()
 
-    last_call_at =
+    summary =
       api_keys
-      |> Enum.map(& &1.last_used_at)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.max(DateTime, fn -> nil end)
+      |> Enum.map(&ApiKeys.key_facts(&1, now))
+      |> ApiKeys.summarize_key_facts()
 
     %{
-      total: length(api_keys),
-      connected: Enum.count(api_keys, &(not is_nil(&1.last_used_at))),
-      active_today:
-        Enum.count(api_keys, fn key ->
-          key.last_used_at && DateTime.diff(now, key.last_used_at, :hour) < 24
-        end),
-      last_call_at: last_call_at
+      total: summary.live,
+      connected: summary.connected,
+      active_today: summary.active_today,
+      last_call_at: summary.last_call_at
     }
   end
 
