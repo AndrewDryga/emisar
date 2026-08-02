@@ -3,6 +3,8 @@ versions:
   - version: latest
     digest: "@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
     default: true
+risk_accountability:
+  mode: complete
 secret_env: [MC_HOST_minio]
 env:
   MC_HOST_minio: "http://minio_admin:packtest-canary-minio-74a9@minio:9000"
@@ -38,6 +40,22 @@ cases:
   # Green/Yellow/Red/Grey health table.
   - action: minio.heal_summary
     args: {alias: minio}
+    arrange:
+      - argv: [mc, mb, "--ignore-existing", minio/harness-bucket]
+      - argv: [/bin/sh, -c, 'printf packtest | mc pipe minio/harness-bucket/probe.txt']
+    expect:
+      stdout_contains: ["objects;", Green]
+    probes:
+      - argv: [mc, cat, minio/harness-bucket/probe.txt]
+        expect:
+          stdout_contains: [packtest]
+    cleanup:
+      - argv: [mc, rb, "--force", minio/harness-bucket]
+  # Bucket-scoped heal shares heal_summary's code path: mc splits the
+  # alias/bucket URL and follows the same heal status UI, so the same
+  # progress line and health table prove the scan completed.
+  - action: minio.heal_bucket
+    args: {alias: minio, bucket: harness-bucket}
     arrange:
       - argv: [mc, mb, "--ignore-existing", minio/harness-bucket]
       - argv: [/bin/sh, -c, 'printf packtest | mc pipe minio/harness-bucket/probe.txt']
@@ -86,3 +104,29 @@ cases:
           stdout_contains: [enabled]
     cleanup:
       - argv: [mc, admin, user, remove, minio, harness_user]
+  # The server re-execs itself in place on restart, so the container (and its
+  # /data) survives; mc prints one compact JSON line (piped stdin turns on
+  # JSONLine mode). The probes retry through the restart window and prove the
+  # server came back serving the pre-restart object.
+  - action: minio.service_restart
+    args: {alias: minio}
+    arrange:
+      - argv: [mc, mb, "--ignore-existing", minio/harness-bucket]
+      - argv: [/bin/sh, -c, 'printf packtest | mc pipe minio/harness-bucket/probe.txt']
+    expect:
+      stdout_contains: ['"status":"success"', restartDuration]
+    probes:
+      - name: server healthy again after the restart
+        argv: [mc, admin, info, minio, --json]
+        retry_for: 60s
+        retry_every: 1s
+        expect:
+          stdout_contains: ['"status":"success"']
+      - name: pre-restart data survived
+        argv: [mc, cat, minio/harness-bucket/probe.txt]
+        retry_for: 15s
+        retry_every: 1s
+        expect:
+          stdout_contains: [packtest]
+    cleanup:
+      - argv: [mc, rb, "--force", minio/harness-bucket]

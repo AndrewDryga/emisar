@@ -21,7 +21,11 @@ args:
 execution:
   command:
     binary: mc
-    argv: ["admin", "service", "restart", "{{ args.alias }}"]
+    # --json is load-bearing: mc's plain-mode restart status is a bubbletea UI
+    # that opens /dev/tty when stdin is piped, so without a controlling
+    # terminal (every runner dispatch) the command dies with "Unable to
+    # initialize service restart UI" before reporting the restart.
+    argv: ["admin", "service", "restart", "{{ args.alias }}", "--json"]
   timeout: 600s
   cancel_grace: 60s
 output:
