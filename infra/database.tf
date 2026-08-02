@@ -57,9 +57,11 @@ resource "google_sql_database_instance" "emisar" {
     }
 
     insights_config {
-      # Shared-core tiers don't support Query Insights; enabled automatically on
-      # db-custom-* tiers.
-      query_insights_enabled = startswith(var.db_tier, "db-custom-")
+      # Always on: the console's query performance view and the gcp-cloudsql
+      # pack's sql_query_insights action read this data, and Cloud SQL accepts
+      # it on every tier we run (verified live 2026-08-01 — the old tier-prefix
+      # derivation would have disabled it on the next apply).
+      query_insights_enabled = true
     }
 
     database_flags {

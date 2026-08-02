@@ -316,7 +316,7 @@ variable "x_ads_conversions_json" {
 # ── Database ──────────────────────────────────────────────────────────────────
 variable "db_tier" {
   type        = string
-  description = "Cloud SQL machine tier, set per-workspace. Shared-core tiers do not support Query Insights; db-custom-* tiers do."
+  description = "Cloud SQL machine tier, set per-workspace."
   default     = "db-custom-1-3840"
 }
 
