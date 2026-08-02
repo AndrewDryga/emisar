@@ -59,12 +59,15 @@ cases:
         retry_for: 20s
         retry_every: 1s
     probes:
+      # The master announces the signal it actually received: every 2.4 MPM
+      # logs AH00493, not the AH00171 "Graceful restart requested" line that
+      # only the -k caller emits.
       - name: master logged the graceful restart
-        argv: [grep, Graceful restart requested, /usr/local/apache2/logs/error_log]
+        argv: [grep, AH00493, /usr/local/apache2/logs/error_log]
         retry_for: 20s
         retry_every: 1s
         expect:
-          stdout_contains: ["Graceful restart requested"]
+          stdout_contains: ["Doing graceful restart"]
       - name: workers respawned and still serve
         argv: [curl, -fsS, http://127.0.0.1/]
         retry_for: 20s
