@@ -328,13 +328,15 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
-  A captioned docs screenshot that opens fullscreen on click. The window-bar
-  `title` and the visible `caption` mark it as a figure OF the console, so a
-  screenshot can't be mistaken for the docs page's own UI. Pure CSS lightbox
-  (a hidden checkbox toggles a fixed overlay via `peer-checked`) so it works
-  on these controller-rendered pages with no JS and no CSP inline. `id` is
-  derived from the filename so each figure's checkbox drives only its own
-  overlay.
+  A captioned docs screenshot that opens fullscreen on activation. The
+  window-bar `title` and the visible `caption` mark it as a figure OF the
+  console, so a screenshot can't be mistaken for the docs page's own UI. The
+  trigger is a real button and the overlay a labelled `role="dialog"`;
+  `docs_lightbox.js` in the marketing bundle (these controller-rendered pages
+  ship no LiveSocket) opens it, contains Tab on the close button, closes on
+  Escape / the close button / a click anywhere, and returns focus to the
+  trigger. `id` is derived from the filename so each figure's trigger drives
+  only its own overlay.
   """
   attr :src, :string, required: true
   attr :alt, :string, required: true
@@ -356,8 +358,13 @@ defmodule EmisarWeb.DocsComponents do
         <div class="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-400">
           <.icon name="hero-window" class="h-3.5 w-3.5" /> {@title}
         </div>
-        <input type="checkbox" id={@lb_id} class="peer sr-only" aria-hidden="true" tabindex="-1" />
-        <label for={@lb_id} class="group relative block cursor-zoom-in">
+        <button
+          type="button"
+          data-lightbox-open={@lb_id}
+          aria-haspopup="dialog"
+          aria-controls={@lb_id}
+          class="group relative block w-full cursor-zoom-in"
+        >
           <img
             src={@src}
             alt={@alt}
@@ -370,16 +377,29 @@ defmodule EmisarWeb.DocsComponents do
             :if={@preview_h}
             class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-zinc-950/90 to-transparent"
           ></span>
-          <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 opacity-0 backdrop-blur transition group-hover:opacity-100">
+          <%!-- The Expand affordance also reveals on keyboard focus, not hover only. --%>
+          <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
             <.icon name="hero-arrows-pointing-out" class="h-3.5 w-3.5" /> Expand
           </span>
-        </label>
-        <label
-          for={@lb_id}
-          class="fixed inset-0 z-[60] hidden cursor-zoom-out items-center justify-center bg-black/90 p-4 backdrop-blur-sm peer-checked:flex sm:p-10"
+        </button>
+        <div
+          id={@lb_id}
+          data-lightbox
+          role="dialog"
+          aria-modal="true"
+          aria-label={@title}
+          class="fixed inset-0 z-[60] hidden cursor-zoom-out items-center justify-center bg-black/90 p-4 backdrop-blur-sm sm:p-10"
         >
+          <button
+            type="button"
+            data-lightbox-close
+            aria-label="Close screenshot"
+            class="absolute right-4 top-4 rounded-md bg-black/60 p-2 text-zinc-200 ring-1 ring-white/20 backdrop-blur hover:bg-black/80 hover:text-white"
+          >
+            <.icon name="hero-x-mark" class="h-5 w-5" />
+          </button>
           <img src={@src} alt={@alt} class="max-h-full max-w-full rounded-lg shadow-2xl" />
-        </label>
+        </div>
       </div>
       <figcaption :if={@caption} class="mt-2.5 text-sm leading-6 text-zinc-500">
         {@caption}

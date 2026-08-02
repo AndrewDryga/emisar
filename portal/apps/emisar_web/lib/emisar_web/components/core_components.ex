@@ -1726,23 +1726,25 @@ defmodule EmisarWeb.CoreComponents do
         />
       </aside>
 
-      <%!-- Mobile drawer (hidden by default; JS toggles `open`) --%>
+      <%!-- Mobile drawer (hidden by default; JS toggles `open`). The focus_wrap
+           contains Tab inside the open drawer; DialogFocus returns focus to the
+           hamburger on close — without both, a keyboard/SR operator tabs into
+           the page hidden behind the backdrop and loses their place. --%>
       <div
         id="mobile-nav"
         class="fixed inset-0 z-40 hidden lg:hidden"
         role="dialog"
         aria-modal="true"
-        phx-window-keydown={
-          JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")
-        }
+        aria-label="Menu"
+        phx-hook="DialogFocus"
+        phx-window-keydown={close_mobile_nav()}
         phx-key="escape"
       >
-        <div
-          class="absolute inset-0 bg-black/60"
-          phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
+        <div class="absolute inset-0 bg-black/60" phx-click={close_mobile_nav()}></div>
+        <.focus_wrap
+          id="mobile-nav-wrap"
+          class="relative flex h-full w-72 max-w-[80vw] flex-col border-r border-zinc-800/70 bg-black shadow-2xl"
         >
-        </div>
-        <aside class="relative flex h-full w-72 max-w-[80vw] flex-col border-r border-zinc-800/70 bg-black shadow-2xl">
           <div class="flex items-center justify-between border-b border-zinc-800/70 px-4 py-3">
             <.shell_brand
               current_account={@current_account}
@@ -1752,7 +1754,7 @@ defmodule EmisarWeb.CoreComponents do
               type="button"
               aria-label="Close menu"
               class="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
-              phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
+              phx-click={close_mobile_nav()}
             >
               <.icon name="hero-x-mark" class="h-5 w-5" />
             </button>
@@ -1773,7 +1775,7 @@ defmodule EmisarWeb.CoreComponents do
             current_account={@current_account}
             current_membership={@current_membership}
           />
-        </aside>
+        </.focus_wrap>
       </div>
 
       <%!-- The whole console — sidebar AND work column — is one black plane.
@@ -1825,12 +1827,12 @@ defmodule EmisarWeb.CoreComponents do
                  visibly below the title's optical center. --%>
             <button
               type="button"
+              id="mobile-nav-open"
               aria-label="Open menu"
+              aria-controls="mobile-nav"
+              aria-expanded="false"
               class="-ml-1.5 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 lg:hidden"
-              phx-click={
-                JS.show(to: "#mobile-nav", display: "block")
-                |> JS.add_class("overflow-hidden", to: "body")
-              }
+              phx-click={open_mobile_nav()}
             >
               <.icon name="hero-bars-3" class="h-5 w-5" />
             </button>
@@ -1877,6 +1879,23 @@ defmodule EmisarWeb.CoreComponents do
   defp shell_width(:detail), do: "max-w-6xl"
   defp shell_width(:form), do: "max-w-3xl"
   defp shell_width(:settings), do: "max-w-4xl"
+
+  # The drawer opens/closes entirely client-side, so these commands own the
+  # hamburger's aria-expanded state too; focus_first moves focus inside on open
+  # (the focus_wrap sentinels are aria-hidden, so it lands on a real control)
+  # and the DialogFocus hook restores it to the hamburger on close.
+  defp open_mobile_nav do
+    JS.show(to: "#mobile-nav", display: "block")
+    |> JS.add_class("overflow-hidden", to: "body")
+    |> JS.set_attribute({"aria-expanded", "true"}, to: "#mobile-nav-open")
+    |> JS.focus_first(to: "#mobile-nav")
+  end
+
+  defp close_mobile_nav do
+    JS.hide(to: "#mobile-nav")
+    |> JS.remove_class("overflow-hidden", to: "body")
+    |> JS.set_attribute({"aria-expanded", "false"}, to: "#mobile-nav-open")
+  end
 
   # -- shell sub-components (shared between desktop + mobile) ----------
 
@@ -4504,7 +4523,7 @@ defmodule EmisarWeb.CoreComponents do
       role="dialog"
       aria-modal="true"
       aria-label={@title}
-      phx-hook="ConfirmDialog"
+      phx-hook="DialogFocus"
       phx-window-keydown={@close_dialog}
       phx-key="escape"
     >
@@ -4522,7 +4541,12 @@ defmodule EmisarWeb.CoreComponents do
            button + the copy, never an alarm frame around the whole dialog
            (design-system §8.1: tone the icon, keep the surface + words calm). --%>
       <div class="fixed inset-0 flex items-center justify-center p-4">
-        <div class="w-full max-w-md rounded-xl bg-zinc-900 p-6 shadow-2xl ring-1 ring-white/10">
+        <%!-- focus_wrap contains Tab inside the open dialog — without it, Tab
+             walks out into the page dimmed behind the backdrop. --%>
+        <.focus_wrap
+          id={"#{@id}-wrap"}
+          class="w-full max-w-md rounded-xl bg-zinc-900 p-6 shadow-2xl ring-1 ring-white/10"
+        >
           <%!-- The header IS a status_note (the shared note grammar): a bare
                rose icon lead, a zinc title, zinc body — one voice with every
                other note in the console. The dialog takes its accessible name
@@ -4585,7 +4609,7 @@ defmodule EmisarWeb.CoreComponents do
               {@confirm_label}
             </.button>
           </div>
-        </div>
+        </.focus_wrap>
       </div>
     </div>
     """

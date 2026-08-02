@@ -11,7 +11,7 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
 
-  test "carries the ConfirmDialog focus hook so the opener regains focus on close (UI-016)" do
+  test "restores focus to the opener on close and contains Tab while open (UI-016)" do
     assigns = %{}
 
     html =
@@ -30,8 +30,11 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     # restores focus to it on Escape / backdrop / Cancel (behavior verified in
     # the browser — the suite has no DOM). Without the hook focus falls to
     # <body>; this pins the wiring so that a11y regression can't return silently.
-    assert html =~ ~s(phx-hook="ConfirmDialog")
+    assert html =~ ~s(phx-hook="DialogFocus")
     assert html =~ ~s(role="dialog")
+    # Tab / Shift-Tab stay inside the open dialog: the panel is a focus_wrap.
+    assert html =~ ~s(id="del-wrap")
+    assert html =~ ~s(phx-hook="Phoenix.FocusWrap")
   end
 
   test "renders title, body, and the type-to-confirm prompt for the token" do

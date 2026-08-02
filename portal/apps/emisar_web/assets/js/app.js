@@ -501,14 +501,16 @@ const Tooltip = {
   }
 }
 
-// Return focus to the element that opened a <.confirm_dialog> when it closes.
-// The dialog shows/hides entirely client-side (JS commands, no round-trip), so
-// without this the opener's focus falls to <body> on Escape / backdrop / Cancel
-// — a keyboard or screen-reader operator loses their place after dismissing a
-// destructive prompt (UI-016). phx:show-start fires before the dialog's
-// focus_first moves focus inward, so document.activeElement is still the opener
-// there; phx:hide-end fires once it has fully closed.
-const ConfirmDialog = {
+// Return focus to the element that opened a client-side dialog — a
+// <.confirm_dialog> or the shell's mobile nav drawer — when it closes. Those
+// surfaces show/hide entirely via JS commands (no round-trip), so without this
+// the opener's focus falls to <body> on Escape / backdrop / Cancel / the close
+// button — a keyboard or screen-reader operator loses their place (UI-016).
+// phx:show-start fires before the dialog's focus_first moves focus inward, so
+// document.activeElement is still the opener there; phx:hide-end fires once it
+// has fully closed. Tab containment inside the open dialog is Phoenix's own
+// <.focus_wrap> in the markup, not this hook.
+const DialogFocus = {
   mounted() {
     this.opener = null
     this.onShow = () => {
@@ -535,7 +537,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
   // neutral recovery notice should still acknowledge the interruption.
   disconnectedTimeout: 100,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, ConfirmDialog }
+  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus }
 })
 
 // Show progress bar on live navigation and form submits

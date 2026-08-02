@@ -74,6 +74,28 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Verify your email"
     end
 
+    test "the shell's mobile drawer is a focus-contained dialog wired to its trigger",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      # The hamburger announces what it controls and whether it's open; the
+      # open/close JS commands keep aria-expanded accurate.
+      [hamburger] = Regex.run(~r/<button[^>]*id="mobile-nav-open"[^>]*>/, html)
+      assert hamburger =~ ~s(aria-controls="mobile-nav")
+      assert hamburger =~ ~s(aria-expanded="false")
+
+      # The drawer is a labelled modal dialog; focus_wrap contains Tab inside
+      # it and DialogFocus returns focus to the hamburger on close (behavior
+      # verified in the browser — the suite has no DOM).
+      [drawer] = Regex.run(~r/<div[^>]*id="mobile-nav"[^>]*>/, html)
+      assert drawer =~ ~s(role="dialog")
+      assert drawer =~ ~s(aria-modal="true")
+      assert drawer =~ ~s(phx-hook="DialogFocus")
+      assert html =~ ~s(id="mobile-nav-wrap")
+      assert html =~ ~s(phx-hook="Phoenix.FocusWrap")
+    end
+
     test "a fresh account renders the setup checklist — ordered, one primary, team optional",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

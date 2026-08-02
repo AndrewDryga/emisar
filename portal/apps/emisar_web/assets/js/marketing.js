@@ -17,6 +17,7 @@
 // global LiveView `on_mount` hook sets on every live render.
 import {setupCopyToClipboardDelegation} from "./copy.js"
 import {initConsoleCasts} from "./console_cast.js"
+import {initDocsLightbox} from "./docs_lightbox.js"
 import {initDocsNavScroll} from "./docs_nav_scroll.js"
 import {initDocsToc} from "./docs-toc.js"
 import {initEmisarDemo} from "./emisar_demo.js"
@@ -43,6 +44,7 @@ if (document.querySelector('nav[aria-label="Docs"]')) {
 } else {
   initLegalToc()
 }
+initDocsLightbox()
 initMobileNav()
 initPackSearch()
 initPricingCycle()
