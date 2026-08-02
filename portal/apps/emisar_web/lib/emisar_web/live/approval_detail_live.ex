@@ -142,8 +142,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
        }),
        do: runbook["title"] || "Runbook execution"
 
-  defp request_title(%{context: context, id: id}),
-    do: context["action_id"] || String.slice(id, 0, 8)
+  defp request_title(%{context: context, id: id}), do: context["action_id"] || id
 
   defp execution_risk(%{"stages" => stages}) when is_list(stages) do
     stages
@@ -599,14 +598,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp approval_channel(%{source: source}), do: format_source(source)
 
-  # First 12 chars of a runner UUID + "…" trailer when one exists, or
-  # an em-dash if the context didn't carry a runner_id at all. Kept as
-  # a helper so the template stays single-expression — mixing a slice
-  # and a ternary inline tripped the HEEx formatter into an unstable
-  # whitespace fixed-point.
-  defp truncated_runner_id(nil), do: "—"
-  defp truncated_runner_id(id) when is_binary(id), do: String.slice(id, 0, 12) <> "…"
-
   # An action only leaves the queue when its runner is connected. The
   # decision panel surfaces this so an operator doesn't approve into a
   # dead runner and then wonder why the run never moved.
@@ -720,9 +711,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   {@run.runner.name}
                 </.link>
               <% else %>
-                <span class="truncate font-mono text-xs text-zinc-400">
-                  {truncated_runner_id(@request.context["runner_id"])}
+                <%!-- The frozen dispatch-time runner id, in full — the container
+                     truncates for display and the title recovers the whole value. --%>
+                <% runner_id = @request.context["runner_id"] %>
+                <span
+                  :if={runner_id}
+                  class="truncate font-mono text-xs text-zinc-400"
+                  title={runner_id}
+                >
+                  {runner_id}
                 </span>
+                <span :if={is_nil(runner_id)} class="text-zinc-500">—</span>
               <% end %>
             </.meta_field>
             <.meta_field :if={@execution_request?} label="Frozen work">

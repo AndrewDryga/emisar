@@ -868,14 +868,15 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Decisions</h3>"
   end
 
-  test "a soft-deleted target runner degrades to the truncated runner-id fallback", %{conn: conn} do
+  test "a soft-deleted target runner falls back to the full frozen runner id", %{conn: conn} do
     # the run preloads its runner via a LEFT join scoped to
     # `not_deleted()`, so a soft-deleted runner makes `@run.runner` nil. The meta
-    # strip falls back to the request's context runner_id (truncated UUID) instead
-    # of the runner name + link, and the page renders without crashing. (The same
-    # fallback covers a fully-pruned run, where `@run` itself is nil — but a run
-    # can't be hard-deleted while its request lives, since the request FKs the run
-    # with on_delete: :delete_all.)
+    # strip falls back to the request's context runner_id — in FULL, the title
+    # recovering the whole value — instead of the runner name + link, and the
+    # page renders without crashing. (The same fallback covers a fully-pruned
+    # run, where `@run` itself is nil — but a run can't be hard-deleted while
+    # its request lives, since the request FKs the run with on_delete:
+    # :delete_all.)
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
@@ -893,8 +894,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     # The action id still reads off the request context…
     assert html =~ "linux.uptime"
-    # …and the runner falls back to the truncated id, not a name+link (no crash).
-    assert html =~ String.slice(runner_id, 0, 12) <> "…"
+    # …and the runner falls back to the frozen id, not a name+link (no crash).
+    assert html =~ runner_id
+    assert html =~ ~s(title="#{runner_id}")
   end
 
   test "a removed requester is labelled as a former member and still renders", %{conn: conn} do

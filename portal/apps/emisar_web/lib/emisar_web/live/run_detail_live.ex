@@ -103,7 +103,10 @@ defmodule EmisarWeb.RunDetailLive do
     do: name
 
   defp decider_label(%Users.User{email: email}, _id), do: email
-  defp decider_label(_, id) when is_binary(id), do: String.slice(id, 0, 8) <> "…"
+  # The deciding user's row is gone — an honest label beats an id fragment
+  # (the approvals surfaces render the same deleted-user state as "Former
+  # member"); the full decider id stays on the audit trail.
+  defp decider_label(_, id) when is_binary(id), do: "a former member"
   defp decider_label(_, _), do: "—"
 
   def handle_info({:run_updated, run}, socket) when run.id == socket.assigns.run.id do
@@ -310,11 +313,17 @@ defmodule EmisarWeb.RunDetailLive do
             </.meta_field>
             <.meta_field label="Runner">
               <.link
+                :if={@run.runner}
                 navigate={~p"/app/#{@current_account}/runners/#{@run.runner_id}"}
                 class="truncate text-zinc-200 hover:text-brand-300"
               >
                 {runner_label(@run.runner)}
               </.link>
+              <.removed_runner
+                :if={is_nil(@run.runner)}
+                runner_id={@run.runner_id}
+                class="text-zinc-400"
+              />
             </.meta_field>
             <.meta_field label="Dispatched by">
               <% {who, via} = run_who_via(@run) %>
@@ -703,7 +712,9 @@ defmodule EmisarWeb.RunDetailLive do
   defp runner_label(%Emisar.Runners.Runner{hostname: host}) when is_binary(host) and host != "",
     do: host
 
-  defp runner_label(_), do: "Unknown runner"
+  # Only reachable from running-sentence copy (the offline event block) — the
+  # Runner meta field renders `<.removed_runner>` for a nil association instead.
+  defp runner_label(_), do: "a removed runner"
 
   # Live connection state of the run's runner (:online | :offline). Keyed
   # on runner_id/account_id — both columns, always loaded — so it survives

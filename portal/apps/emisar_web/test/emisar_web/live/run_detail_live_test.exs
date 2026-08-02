@@ -59,6 +59,20 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "target_id=#{run.id}"
   end
 
+  test "a removed runner renders an unlinked label that keeps the full id", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+    run = run_with(account, %{runner_id: runner.id})
+    Fixtures.Runners.mark_deleted(runner)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    # The runner row is gone — no live hyperlink into "Runner not found."
+    refute html =~ ~p"/app/#{account}/runners/#{runner.id}"
+    assert html =~ "Removed runner"
+    assert html =~ ~s(title="#{runner.id}")
+  end
+
   test "the header runner subtitle hides on phones; the Runner fact still names it", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     run = run_with(account, %{})

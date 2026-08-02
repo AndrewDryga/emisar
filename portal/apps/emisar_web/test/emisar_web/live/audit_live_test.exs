@@ -185,6 +185,23 @@ defmodule EmisarWeb.AuditLiveTest do
       refute secondary =~ "via"
     end
 
+    test "an unresolvable actor id renders in full, never a slice", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      ghost_id = Ecto.UUID.generate()
+
+      {:ok, event} =
+        Audit.log(account.id, "action.dispatched", actor_kind: "user", actor_id: ghost_id)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      # The deleted-record fallback keeps the WHOLE id — the hover title is
+      # built from this text, so a slice here would make the id unrecoverable
+      # anywhere on the trail; CSS truncation does the display fitting.
+      actor_cell = lv |> element("#event-#{event.id} [data-audit-actor]") |> render()
+      assert actor_cell =~ ghost_id
+      assert actor_cell =~ ~s(title="#{ghost_id}")
+    end
+
     test "rows name the actor, and the date filters render in the facet panel",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

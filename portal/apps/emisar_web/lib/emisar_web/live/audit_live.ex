@@ -874,15 +874,17 @@ defmodule EmisarWeb.AuditLive do
 
   # Look up the live label from `refs` first (the freshest); fall back
   # to the label that was stamped on the event at write time; finally
-  # to a short slice of the UUID. The event might predate any rename,
-  # and the underlying record might have been deleted.
+  # to the raw id — in FULL, because the hover titles are built from this
+  # return, so a slice here would make the id unrecoverable anywhere on
+  # the trail. The event might predate any rename, and the underlying
+  # record might have been deleted; the containers truncate for display.
   defp resolve_label(refs, kind, id, fallback_label) do
     live = kind && id && refs |> Map.get(kind, %{}) |> Map.get(id)
 
     cond do
       live -> live
       fallback_label && fallback_label != "" -> fallback_label
-      is_binary(id) -> String.slice(id, 0, 8)
+      is_binary(id) -> id
       true -> "—"
     end
   end

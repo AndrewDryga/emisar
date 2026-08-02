@@ -151,14 +151,16 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ runner.name
   end
 
-  test "an offline runner's Run affordance is aria-disabled with a non-color cue",
+  test "an offline runner's Run affordance is disabled with an accessible reason",
        %{conn: conn, account: account, runner: runner} do
-    # setup's runner is offline, so the action row renders the disabled span.
-    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+    # setup's runner is offline, so the action row renders the disabled tooltip.
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ ~s(aria-disabled="true")
+    # The reason is a real tooltip (keyboard/touch reachable), not a raw title.
+    assert has_element?(lv, "#action-offline-#{action.id}-tt button[disabled]", "Run")
+    assert has_element?(lv, "#action-offline-#{action.id}[role=tooltip]", "can't be dispatched")
     # The signal-slash icon is the non-color cue (not the dimmed text alone).
     assert html =~ "hero-signal-slash"
   end
@@ -174,11 +176,19 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
         connected?: true
       )
 
-    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ "Signed dispatch only"
+    # The reason is a real tooltip (keyboard/touch reachable), not a raw title.
+    assert has_element?(lv, "#action-signed-only-#{action.id}-tt button[disabled]", "Run")
+
+    assert has_element?(
+             lv,
+             "#action-signed-only-#{action.id}[role=tooltip]",
+             "Signed dispatch only"
+           )
+
     # Points operators at the concrete provisioning tool.
     assert html =~ "emisar signing init"
     # The Run affordance is the disabled lock variant (not color alone), and is
@@ -241,16 +251,25 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
-    Fixtures.Catalog.create_action(
-      runner: runner,
-      action_id: "beam.epmd_names",
-      primary_executable_available: false,
-      missing_executable: "epmd"
-    )
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "beam.epmd_names",
+        primary_executable_available: false,
+        missing_executable: "epmd"
+      )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    assert html =~ "Primary executable epmd is missing"
+    # The reason is a real tooltip (keyboard/touch reachable), not a raw title.
+    assert has_element?(lv, "#action-missing-exec-#{action.id}-tt button[disabled]", "Run")
+
+    assert has_element?(
+             lv,
+             "#action-missing-exec-#{action.id}[role=tooltip]",
+             "Primary executable epmd is missing"
+           )
+
     assert html =~ "hero-wrench-screwdriver"
     refute html =~ "/runs/new/#{runner.id}/beam.epmd_names"
   end

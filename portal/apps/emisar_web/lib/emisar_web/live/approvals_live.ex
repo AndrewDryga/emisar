@@ -201,12 +201,14 @@ defmodule EmisarWeb.ApprovalsLive do
   defp risk_rank("low"), do: 1
   defp risk_rank(_risk), do: 0
 
+  # A labels miss means the runner row is gone — an honest label beats an id
+  # fragment; the detail page still carries the frozen runner id in full.
   defp runner_label(request, labels) do
     id = runner_id_from(request)
 
     cond do
       id && labels[id] -> labels[id]
-      id -> String.slice(id, 0, 8) <> "…"
+      id -> "a removed runner"
       true -> "—"
     end
   end
@@ -237,7 +239,9 @@ defmodule EmisarWeb.ApprovalsLive do
   defp plural(_count, noun), do: noun <> "s"
 
   defp user_label(nil, _labels), do: "—"
-  defp user_label(id, labels), do: labels[id] || String.slice(id, 0, 8) <> "…"
+  # A labels miss means the user row is gone — the approval detail page
+  # renders the same state as "Former member", so the two surfaces agree.
+  defp user_label(id, labels), do: labels[id] || "Former member"
 
   # -- Grant helpers (moved from old GrantsLive) ---------------------
 

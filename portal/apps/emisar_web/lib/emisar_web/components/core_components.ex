@@ -3903,6 +3903,22 @@ defmodule EmisarWeb.CoreComponents do
   defp chip_class(:neutral), do: "bg-zinc-800/80 text-zinc-300"
 
   @doc """
+  The honest label for a run's runner after the runner row itself was removed —
+  unlinked, because its detail route can only land on "Runner not found.", with
+  the full runner id preserved in the `title` for forensics.
+
+      <.removed_runner runner_id={run.runner_id} />
+  """
+  attr :runner_id, :string, default: nil
+  attr :class, :string, default: nil
+
+  def removed_runner(assigns) do
+    ~H"""
+    <span class={["truncate", @class]} title={@runner_id}>Removed runner</span>
+    """
+  end
+
+  @doc """
   A stale-version warning chip for a runner or the emisar-mcp bridge, driven by
   the `Emisar.Compat` policy. Renders nothing for a current (`:supported`) or
   unparseable/missing (`:unknown`) version; an amber "outdated" chip below the

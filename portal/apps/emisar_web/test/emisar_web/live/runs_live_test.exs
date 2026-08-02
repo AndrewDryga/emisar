@@ -64,6 +64,30 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ ~s(data-format="relative")
   end
 
+  test "a removed runner shows an honest label that keeps the full id", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+
+    {:ok, _run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        args: %{}
+      })
+
+    Fixtures.Runners.mark_deleted(runner)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
+
+    # An unlinked honest label, never a bare id slice; the full id survives
+    # in the title for forensics.
+    assert html =~ "Removed runner"
+    assert html =~ ~s(title="#{runner.id}")
+    refute html =~ "runner-1"
+  end
+
   test "falls back to the accountable person's email when no name exists", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     owner = Fixtures.Users.create_user(full_name: nil, email: "owner@example.test")

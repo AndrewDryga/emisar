@@ -475,31 +475,42 @@ defmodule EmisarWeb.RunnerDetailLive do
                           </.button>
                         </.tooltip>
                       <% action.primary_executable_available == false -> %>
-                        <.button
-                          size={:sm}
-                          variant={:secondary}
-                          aria-disabled="true"
-                          icon="hero-wrench-screwdriver"
-                          title={"Primary executable #{action.missing_executable || "unknown"} is missing on this runner"}
-                          class="shrink-0 cursor-not-allowed opacity-60"
+                        <.tooltip
+                          id={"action-missing-exec-#{action.id}"}
+                          text={"Primary executable #{action.missing_executable || "unknown"} is missing on this runner"}
+                          class="shrink-0"
                         >
-                          Run
-                        </.button>
+                          <.button
+                            size={:sm}
+                            variant={:secondary}
+                            disabled
+                            aria-disabled="true"
+                            icon="hero-wrench-screwdriver"
+                            class="cursor-not-allowed opacity-60"
+                          >
+                            Run
+                          </.button>
+                        </.tooltip>
                       <% @runner.enforce_signatures -> %>
-                        <%!-- Signed-only: the portal can't dispatch here. aria-disabled
-                           (focusable, so the title explains WHY) + the lock icon carry
-                           it without relying on color alone (a11y) — not real `disabled`,
-                           which drops focus and hides the explanation. --%>
-                        <.button
-                          size={:sm}
-                          variant={:secondary}
-                          aria-disabled="true"
-                          icon="hero-lock-closed"
-                          title="Signed dispatch only — run this from your MCP client; the portal can't dispatch to this runner"
-                          class="shrink-0 cursor-not-allowed opacity-60"
+                        <%!-- Signed-only: the portal can't dispatch here. The lock icon
+                           carries it without relying on color alone; the tooltip explains
+                           WHY on hover, keyboard focus, and touch alike. --%>
+                        <.tooltip
+                          id={"action-signed-only-#{action.id}"}
+                          text="Signed dispatch only — run this from your MCP client; the portal can't dispatch to this runner"
+                          class="shrink-0"
                         >
-                          Run
-                        </.button>
+                          <.button
+                            size={:sm}
+                            variant={:secondary}
+                            disabled
+                            aria-disabled="true"
+                            icon="hero-lock-closed"
+                            class="cursor-not-allowed opacity-60"
+                          >
+                            Run
+                          </.button>
+                        </.tooltip>
                       <% @runner.online? -> %>
                         <%!-- Secondary: a brand fill per catalog row out-shouts the
                            page's real primary; the row's affordance is enough. --%>
@@ -514,19 +525,25 @@ defmodule EmisarWeb.RunnerDetailLive do
                           Run
                         </.button>
                       <% true -> %>
-                        <%!-- Offline: aria-disabled (focusable, title explains why) + a
-                           signal-slash icon carry "can't run" without relying on the
-                           dimmed color alone (a11y). --%>
-                        <.button
-                          size={:sm}
-                          variant={:secondary}
-                          aria-disabled="true"
-                          icon="hero-signal-slash"
-                          title={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
-                          class="shrink-0 cursor-not-allowed opacity-60"
+                        <%!-- Offline: the signal-slash icon carries "can't run" without
+                           relying on the dimmed color alone; the tooltip explains why on
+                           hover, keyboard focus, and touch alike. --%>
+                        <.tooltip
+                          id={"action-offline-#{action.id}"}
+                          text={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
+                          class="shrink-0"
                         >
-                          Run
-                        </.button>
+                          <.button
+                            size={:sm}
+                            variant={:secondary}
+                            disabled
+                            aria-disabled="true"
+                            icon="hero-signal-slash"
+                            class="cursor-not-allowed opacity-60"
+                          >
+                            Run
+                          </.button>
+                        </.tooltip>
                     <% end %>
                   </:actions>
                 </.list_row>

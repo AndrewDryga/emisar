@@ -286,7 +286,8 @@ defmodule EmisarWeb.RunsLive do
           <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-zinc-400">
             <.source_badge source={run.source} label={run_actor(run)} class="max-w-[60vw] text-xs" />
             <span aria-hidden="true">·</span>
-            <span>{(run.runner && run.runner.name) || String.slice(run.runner_id, 0, 8)}</span>
+            <span :if={run.runner}>{run.runner.name}</span>
+            <.removed_runner :if={is_nil(run.runner)} runner_id={run.runner_id} />
             <span aria-hidden="true">·</span>
             <.local_time value={run.inserted_at} mode={:relative} />
           </div>
@@ -320,9 +321,12 @@ defmodule EmisarWeb.RunsLive do
              the column you scan for) fit without a horizontal scroll; it's on the
              run detail and reappears at sm+. --%>
         <:col :let={run} label="Runner" class="hidden sm:table-cell">
-          <span class="text-xs text-zinc-400">
-            {(run.runner && run.runner.name) || String.slice(run.runner_id, 0, 8)}
-          </span>
+          <span :if={run.runner} class="text-xs text-zinc-400">{run.runner.name}</span>
+          <.removed_runner
+            :if={is_nil(run.runner)}
+            runner_id={run.runner_id}
+            class="text-xs text-zinc-400"
+          />
         </:col>
         <%!-- Desktop/tablet table only — the phone card renders the origin in
              its own line 2 (the responsive table is hidden below sm). --%>
