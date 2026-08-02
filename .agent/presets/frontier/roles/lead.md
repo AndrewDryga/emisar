@@ -43,10 +43,9 @@ before editing inside it — each has non-negotiable, per-language rules.
   qualifying change yourself anyway, write one line in the task's `log.md` saying why —
   an unexplained solo implementation is the failure this rule exists to catch.
 
-  **Budget its latency.** A delegate that has produced nothing after ~5 minutes is not
-  coming back usefully: interrupt it, note it in `log.md`, and implement the slice
-  yourself. Do not sit in the foreground waiting — that spends the expensive tier's time
-  to save the cheap one's.
+  **A delegate that is still working is working.** Large slices legitimately take a long
+  time; do not interrupt one because it is slow. While it runs, do something that does not
+  touch its files — read the next surface, draft the log entry, prepare the gate command.
 
   Review its handback like a stranger's PR; it never commits — you run the touched
   project's gate and you commit. If its diff is off-spec, tighten the spec and
