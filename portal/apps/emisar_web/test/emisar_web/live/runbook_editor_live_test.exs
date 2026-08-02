@@ -136,7 +136,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Arguments"
       assert html =~ "Extracted outputs"
       assert html =~ "Success conditions"
-      assert html =~ "Retry policy"
+      assert html =~ "Wait policy"
       assert html =~ "Build the first stage"
       refute html =~ "Choose runners first"
       refute html =~ "Pack selection follows the action automatically"
@@ -150,7 +150,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(lv, "#runbook-stage-0-step-0-arguments")
       assert has_element?(lv, "#runbook-stage-0-step-0-outputs")
       assert has_element?(lv, "#runbook-stage-0-step-0-success")
-      assert has_element?(lv, "#runbook-stage-0-step-0-retry")
+      assert has_element?(lv, "#runbook-stage-0-step-0-wait")
 
       assert has_element?(
                lv,
@@ -693,12 +693,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         )
 
       change(lv, draft)
-      render_click(lv, "toggle_panel", %{"key" => "retry-0-0"})
+      render_click(lv, "toggle_panel", %{"key" => "wait-0-0"})
       html = render(lv)
 
       assert has_element?(
                lv,
-               ~s|#runbook-stage-0-step-0-retry-controls[class~="lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]"]|
+               ~s|#runbook-stage-0-step-0-wait-controls[class~="lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]"]|
              )
 
       assert :binary.match(html, ~s(name="draft[stages][0][steps][0][wait][enabled]")) <

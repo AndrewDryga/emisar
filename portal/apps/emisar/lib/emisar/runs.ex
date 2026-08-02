@@ -1062,7 +1062,7 @@ defmodule Emisar.Runs do
          reason,
          matched,
          use_grants?,
-         _approved_stage_id
+         _execution_id
        ) do
     with {:ok, approval} <- Emisar.Policies.approval_settings_for(policy.rules) do
       {:ok, plan_mcp_approval(attrs, policy, reason, matched, use_grants?, approval)}

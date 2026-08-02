@@ -41,7 +41,7 @@ defmodule Emisar.Approvals.Request.Query do
       ) do
     disallowed_execution_item =
       Emisar.Runbooks.ExecutionItem.Query.all()
-      |> with_named_binding(:scope_stage_runner, fn queryable, binding ->
+      |> with_named_binding(:scope_item_runner, fn queryable, binding ->
         join(
           queryable,
           :left,
@@ -52,7 +52,7 @@ defmodule Emisar.Approvals.Request.Query do
         )
       end)
       |> where(
-        [runbook_execution_items: item, scope_stage_runner: runner],
+        [runbook_execution_items: item, scope_item_runner: runner],
         item.runbook_execution_id == parent_as(:requests).runbook_execution_id and
           (is_nil(runner.id) or
              (runner.id not in ^runner_ids and runner.group not in ^groups))

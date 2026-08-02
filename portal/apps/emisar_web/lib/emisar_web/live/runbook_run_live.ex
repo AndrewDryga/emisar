@@ -1234,7 +1234,7 @@ defmodule EmisarWeb.RunbookRunLive do
             · selected from {@item.target_group}
           </span>
           <span class="font-mono text-zinc-500"> · {@item.step_id}</span>
-          <%!-- One attempt is the norm — only a retry earns a mention. --%>
+          <%!-- One attempt is the norm — only a repeat observation earns a mention. --%>
           <span :if={@item.attempt_count > 1}> · {@item.attempt_count} attempts</span>
         </p>
       </div>

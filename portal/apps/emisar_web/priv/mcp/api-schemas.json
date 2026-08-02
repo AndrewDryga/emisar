@@ -908,6 +908,8 @@
           "items": {"$ref": "#/$defs/runbook_execution_stage"}
         },
         "runs_next": {"$ref": "#/$defs/next_recent_runs"},
+        "approval": {"$ref": "#/$defs/approval"},
+        "wait_until": {"$ref": "#/$defs/timestamp"},
         "next": {"$ref": "#/$defs/next_wait"}
       },
       "allOf": [

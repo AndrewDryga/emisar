@@ -8,6 +8,7 @@ defmodule EmisarWeb.MCP.Service do
   """
 
   alias Emisar.{Approvals, Crypto, Runs}
+  alias Emisar.Auth.Subject
   alias EmisarWeb.MCP.{Cancellation, OutputCursor, ResponseBudget, WaitLimiter}
 
   @recheck_interval_ms 2_000
@@ -427,21 +428,25 @@ defmodule EmisarWeb.MCP.Service do
 
   defp fixed_approval(%{status: :pending_approval} = run, subject) do
     case Approvals.fetch_request_for_visible_run(run, subject) do
-      {:ok, request} ->
-        approval = %{
-          request_id: request.id,
-          url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/approvals/#{request.id}",
-          expires_at: request.expires_at
-        }
-
-        {approval, request.expires_at}
-
-      _ ->
-        {nil, nil}
+      {:ok, request} -> {approval_summary(request, subject), request.expires_at}
+      _ -> {nil, nil}
     end
   end
 
   defp fixed_approval(_run, _subject), do: {nil, nil}
+
+  @doc """
+  The bounded `{request_id, url, expires_at}` approval object shared by run
+  and runbook-execution summaries, pointing the operator at the console
+  approval page.
+  """
+  def approval_summary(%Approvals.Request{} = request, %Subject{} = subject) do
+    %{
+      request_id: request.id,
+      url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/approvals/#{request.id}",
+      expires_at: request.expires_at
+    }
+  end
 
   # Policy and approval causes are control-plane facts. Do not substitute the
   # operator's freeform run reason here: it is untrusted context and may carry

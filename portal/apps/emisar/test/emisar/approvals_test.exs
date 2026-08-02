@@ -1,7 +1,7 @@
 defmodule Emisar.ApprovalsTest do
   use Emisar.DataCase, async: true
   alias Ecto.Multi
-  alias Emisar.{Accounts, Approvals, Audit, Catalog, Repo, Runs}
+  alias Emisar.{Accounts, Approvals, Audit, Catalog, Repo, Runbooks, Runs}
   alias Emisar.Approvals.{Decision, Grant, Request}
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
@@ -736,6 +736,51 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:error, :unauthorized} =
                Approvals.fetch_request_for_visible_run(run, no_permissions)
+    end
+  end
+
+  describe "fetch_request_for_visible_runbook_execution/2" do
+    test "lets an API client read only the approval attached to its visible account execution" do
+      {requester, account, owner} = Fixtures.Subjects.owner_subject()
+      request = Fixtures.Approvals.create_execution_request(account, requester)
+      execution = Repo.one!(Runbooks.RunbookExecution)
+
+      {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "approval observer"}, owner)
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+
+      assert {:ok, fetched} =
+               Approvals.fetch_request_for_visible_runbook_execution(execution, subject)
+
+      assert fetched.id == request.id
+
+      {foreign_requester, foreign_account, _foreign_subject} = Fixtures.Subjects.owner_subject()
+
+      foreign_request =
+        Fixtures.Approvals.create_execution_request(foreign_account, foreign_requester)
+
+      foreign_execution = %Runbooks.RunbookExecution{
+        id: foreign_request.runbook_execution_id,
+        account_id: foreign_account.id
+      }
+
+      # `Subject.ensure_in_account` refuses the cross-account read.
+      assert {:error, :not_found} =
+               Approvals.fetch_request_for_visible_runbook_execution(foreign_execution, subject)
+    end
+
+    test "still requires runbook-view permission" do
+      {requester, account, _subject} = Fixtures.Subjects.owner_subject()
+      _request = Fixtures.Approvals.create_execution_request(account, requester)
+      execution = Repo.one!(Runbooks.RunbookExecution)
+
+      no_permissions = %Emisar.Auth.Subject{
+        account: account,
+        role: :viewer,
+        permissions: MapSet.new()
+      }
+
+      assert {:error, :unauthorized} =
+               Approvals.fetch_request_for_visible_runbook_execution(execution, no_permissions)
     end
   end
 

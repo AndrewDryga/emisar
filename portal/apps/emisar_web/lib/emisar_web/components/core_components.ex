@@ -2632,7 +2632,7 @@ defmodule EmisarWeb.CoreComponents do
         :pass
 
       s
-      when s in ~w[pending pending_approval awaiting_approval queued waiting refused rejected expired cancelled] ->
+      when s in ~w[pending pending_approval queued waiting refused rejected expired cancelled] ->
         :pending
 
       s
@@ -2653,7 +2653,7 @@ defmodule EmisarWeb.CoreComponents do
 
   defp status_dot_spec(s) when s in ~w[active running sent cancelling], do: {:brand, true}
 
-  defp status_dot_spec(s) when s in ~w[pending_approval awaiting_approval waiting],
+  defp status_dot_spec(s) when s in ~w[pending_approval waiting],
     do: {:amber, true}
 
   defp status_dot_spec("queued"), do: {:amber, false}
@@ -2673,7 +2673,6 @@ defmodule EmisarWeb.CoreComponents do
   defp status_dot_spec(_), do: {:neutral, false}
 
   defp format_status("pending_approval"), do: "awaiting approval"
-  defp format_status("awaiting_approval"), do: "awaiting approval"
   defp format_status("validation_failed"), do: "validation failed"
   defp format_status("unknown_action"), do: "unknown action"
   defp format_status("timed_out"), do: "timed out"

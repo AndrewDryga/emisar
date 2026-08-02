@@ -1658,6 +1658,28 @@ stable code and message plus the applicable stage, step, and runner identity.
 It describes whole-execution approval, a scheduled wait, or the terminal cause.
 Both `pending_approval` and `active` executions include `next`.
 
+A `pending_approval` execution also carries the same bounded `approval` object
+a pending action run gets — the request ID, the console approval URL the model
+relays to the operator, and the hard expiry — plus `wait_until` set to that
+expiry. Both fields appear only while the whole-run approval is pending and
+its request is visible to the caller:
+
+```json
+{
+  "status": "pending_approval",
+  "blocking": {
+    "code": "approval_required",
+    "message": "Runbook execution approval is required."
+  },
+  "approval": {
+    "request_id": "8b7c9d4e-2f31-4a68-9c05-7d1e83b2a6f4",
+    "url": "https://emisar.dev/app/example/approvals/8b7c9d4e-2f31-4a68-9c05-7d1e83b2a6f4",
+    "expires_at": "2026-07-13T15:12:10Z"
+  },
+  "wait_until": "2026-07-13T15:12:10Z"
+}
+```
+
 Cloud-expanded runbooks cannot currently target a runner advertising
 `enforce_signatures: true`, because the client has not signed the frozen expanded
 step plan. The tool fails before creating an execution with

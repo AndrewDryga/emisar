@@ -7,8 +7,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
   scheduling; this module only handles wire identity and bounded projection.
   """
 
-  alias Emisar.{Crypto, MCPOperations, Runbooks, Slug}
-  alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract}
+  alias Emisar.{Approvals, Crypto, MCPOperations, Runbooks, Slug}
+  alias Emisar.Auth.Subject
+  alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract, Service}
   alias EmisarWeb.MCP.ValidationError
 
   @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
@@ -286,23 +287,28 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   @doc "Builds the fixed execution projection used by execute, wait, and recovery."
   def execution_payload(conn, execution_id) when is_binary(execution_id) do
-    with {:ok, result} <-
-           Runbooks.fetch_execution_result(execution_id, conn.assigns.current_subject) do
-      project_execution(result)
+    subject = conn.assigns.current_subject
+
+    with {:ok, result} <- Runbooks.fetch_execution_result(execution_id, subject) do
+      project_execution(result, subject)
     end
   end
 
   @doc false
-  def project_execution(%{
-        execution: execution,
-        runbook: runbook,
-        latest_attempts: latest_attempts
-      }) do
+  def project_execution(
+        %{
+          execution: execution,
+          runbook: runbook,
+          latest_attempts: latest_attempts
+        },
+        %Subject{} = subject
+      ) do
     attempts_by_item = Map.new(latest_attempts, &{&1.runbook_execution_item_id, &1})
+    approval = execution_approval(execution, subject)
 
     [:full, :summary, :minimal]
     |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
-      payload = execution_projection(execution, runbook, attempts_by_item, mode)
+      payload = execution_projection(execution, runbook, attempts_by_item, approval, mode)
 
       if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
         {:halt, {:ok, payload}}
@@ -312,7 +318,16 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end)
   end
 
-  defp execution_projection(execution, runbook, attempts_by_item, mode) do
+  defp execution_approval(%{status: :pending_approval} = execution, subject) do
+    case Approvals.fetch_request_for_visible_runbook_execution(execution, subject) do
+      {:ok, request} -> Service.approval_summary(request, subject)
+      _ -> nil
+    end
+  end
+
+  defp execution_approval(_execution, _subject), do: nil
+
+  defp execution_projection(execution, runbook, attempts_by_item, approval, mode) do
     items_by_stage = Enum.group_by(execution.items, & &1.runbook_execution_stage_id)
 
     %{
@@ -330,6 +345,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
         arguments: %{runbook_execution_id: execution.id, limit: 15}
       }
     }
+    |> maybe_put(:approval, approval)
+    |> maybe_put(:wait_until, approval[:expires_at])
     |> maybe_put(
       :next,
       if(execution.status in [:active, :pending_approval],

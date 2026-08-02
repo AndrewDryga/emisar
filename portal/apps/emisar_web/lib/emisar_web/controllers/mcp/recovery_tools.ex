@@ -299,7 +299,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     subject = conn.assigns.current_subject
 
     with {:ok, result} <- Runbooks.fetch_execution_result(execution_id, subject),
-         {:ok, payload} <- RunbookTools.project_execution(result) do
+         {:ok, payload} <- RunbookTools.project_execution(result, subject) do
       execution = result.execution
 
       token =

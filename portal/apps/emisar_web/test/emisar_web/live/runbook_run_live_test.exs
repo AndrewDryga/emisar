@@ -1,5 +1,6 @@
 defmodule EmisarWeb.RunbookRunLiveTest do
   use EmisarWeb.ConnCase, async: true
+  import EmisarWeb.MCPContractAssertions
   alias Emisar.{Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
   alias Emisar.Runbooks.RunbookExecution
   alias EmisarWeb.MCP.RunbookTools
@@ -181,6 +182,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   end
 
   defp execution, do: Repo.one!(RunbookExecution)
+
+  # The console-started execution has no MCP operation, so a schema-valid
+  # placeholder stands in for the id when checking the wire contract.
+  defp wire_response(projection) do
+    %{"ok" => true, "operation_id" => "op_01J0E11D8Q1W7SM4R5T3Y6V9PA", "execution" => projection}
+    |> Jason.encode!()
+    |> Jason.decode!()
+  end
 
   defp assert_before(html, first, second) do
     assert :binary.match(html, first) < :binary.match(html, second)
@@ -437,8 +446,11 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "Run again"
 
       assert {:ok, result} = Runbooks.fetch_execution_result(execution().id, subject)
-      assert {:ok, projection} = RunbookTools.project_execution(result)
+      assert {:ok, projection} = RunbookTools.project_execution(result, subject)
       assert projection.status == "succeeded"
+      refute Map.has_key?(projection, :approval)
+      refute Map.has_key?(projection, :wait_until)
+      assert_valid_tool_result("execute_runbook", wire_response(projection))
 
       assert [
                %{
@@ -549,6 +561,21 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                ~s(a[href="/app/#{account.slug}/approvals/#{request.id}"]),
                "View approval"
              )
+
+      # The MCP projection hands the model the same bounded approval object an
+      # action run gets: the operator URL and hard expiry, nothing else.
+      assert {:ok, projection} = RunbookTools.project_execution(result, subject)
+      assert projection.blocking.code == "approval_required"
+
+      assert projection.approval == %{
+               request_id: request.id,
+               url: "#{EmisarWeb.Endpoint.url()}/app/#{account.slug}/approvals/#{request.id}",
+               expires_at: request.expires_at
+             }
+
+      assert projection.wait_until == request.expires_at
+      assert projection.next.tool == "wait_for_run"
+      assert_valid_tool_result("execute_runbook", wire_response(projection))
     end
 
     test "cancellation is durable and the page can start over", %{

@@ -246,6 +246,33 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  Reads the approval attached to an already-authorized visible runbook
+  execution.
+
+  API clients do not receive the account approvals permission, but they need
+  the bounded request URL and expiry for their own execution status. The
+  caller must supply the execution returned by the Runbooks context; this
+  function independently checks runbook-view permission and account
+  membership before reading it.
+  """
+  def fetch_request_for_visible_runbook_execution(
+        %Runbooks.RunbookExecution{account_id: account_id, id: execution_id},
+        %Subject{} = subject
+      ) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Runbooks.Authorizer.view_runbooks_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id) do
+      Request.Query.all()
+      |> Request.Query.by_runbook_execution_id(execution_id)
+      |> Request.Query.by_account_id(account_id)
+      |> Repo.fetch(Request.Query)
+    end
+  end
+
+  @doc """
   The recorded votes on a request, oldest first, with each decider preloaded
   for the UI tally. Requires `view` on approvals; account-scoped (via the
   `:approval_decisions` Authorizer clause). Returns `{:ok, [decision]}`.

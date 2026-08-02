@@ -537,7 +537,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         step_index={@step_index}
         read_only?={@read_only?}
       />
-      <.retry_editor
+      <.wait_editor
         wait={@step["wait"]}
         stage_index={@stage_index}
         step_index={@step_index}
@@ -1343,24 +1343,24 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :open_panels, :any, required: true
   attr :read_only?, :boolean, required: true
 
-  defp retry_editor(assigns) do
-    key = "retry-#{assigns.stage_index}-#{assigns.step_index}"
+  defp wait_editor(assigns) do
+    key = "wait-#{assigns.stage_index}-#{assigns.step_index}"
     assigns = assign(assigns, :panel_key, key)
 
     ~H"""
     <div
-      id={"runbook-stage-#{@stage_index}-step-#{@step_index}-retry"}
+      id={"runbook-stage-#{@stage_index}-step-#{@step_index}-wait"}
       class="mt-6 border-t border-zinc-800/70 pt-5"
     >
       <.panel_toggle
         panel_key={@panel_key}
         open?={MapSet.member?(@open_panels, @panel_key)}
-        label="Retry policy"
-        hint={if @wait["enabled"] == "true", do: "Observe again", else: "No retry · halt on failure"}
+        label="Wait policy"
+        hint={if @wait["enabled"] == "true", do: "Observe again", else: "Halt execution"}
       />
       <div
         :if={MapSet.member?(@open_panels, @panel_key)}
-        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-retry-controls"}
+        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-wait-controls"}
         class="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]"
       >
         <.input
