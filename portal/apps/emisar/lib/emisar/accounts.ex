@@ -659,9 +659,15 @@ defmodule Emisar.Accounts do
   here and nowhere else the directory genuinely is the authority for who they
   are, and the caller may write the global name too — which keeps the ordinary
   single-workspace case showing one name on every surface.
+
+  The caller supplies `:audit`: this name is what the account's roster, run
+  attribution and audit actor/target labels render for the member, so a
+  directory moving it is always recorded.
   """
-  def sync_member_display_name(account_id, user_id, display_name)
+  def sync_member_display_name(account_id, user_id, display_name, opts)
       when is_binary(account_id) and is_binary(user_id) do
+    audit = Keyword.fetch!(opts, :audit)
+
     # One transaction for the membership write AND the tenancy question. Read
     # separately, the answer could go stale between them: another account adding
     # a membership in that window let this directory's name through to a
@@ -677,7 +683,7 @@ defmodule Emisar.Accounts do
           Repo.rollback(:not_found)
 
         %Membership{} = membership ->
-          case write_display_name(membership, display_name) do
+          case write_display_name(membership, display_name, audit) do
             {:ok, updated} -> {updated, sole_tenancy?(user_id, account_id)}
             {:error, reason} -> Repo.rollback(reason)
           end
@@ -689,10 +695,18 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp write_display_name(%Membership{} = membership, display_name) do
+  # The audit row carries the pre-update membership, so the event reads
+  # from→to. An unchanged name writes nothing and is not an event.
+  defp write_display_name(%Membership{} = membership, display_name, audit) do
     case Membership.Changeset.sync_display_name(membership, display_name) do
-      {:noop, membership} -> {:ok, membership}
-      changeset -> Repo.update(changeset)
+      {:noop, membership} ->
+        {:ok, membership}
+
+      changeset ->
+        with {:ok, updated} <- Repo.update(changeset),
+             {:ok, _event} <- Repo.insert(audit.(membership)) do
+          {:ok, updated}
+        end
     end
   end
 

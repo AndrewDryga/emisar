@@ -1190,13 +1190,24 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "sync_member_display_name/3" do
-    test "records the name and reports whether this is the person's only workspace" do
+  describe "sync_member_display_name/4" do
+    setup do
       account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      %{account: account, provider: provider}
+    end
+
+    test "records the name and reports whether this is the person's only workspace", %{
+      account: account,
+      provider: provider
+    } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Dir Name")
 
       assert {:ok, updated, true} =
-               Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name")
+               Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
+                 audit: audit
+               )
 
       assert updated.directory_display_name == "Dir Name"
 
@@ -1208,16 +1219,61 @@ defmodule Emisar.AccountsTest do
         role: "viewer"
       )
 
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Another Name")
+
       assert {:ok, _updated, false} =
-               Accounts.sync_member_display_name(account.id, member.user_id, "Another Name")
+               Accounts.sync_member_display_name(account.id, member.user_id, "Another Name",
+                 audit: audit
+               )
     end
 
-    test "an unknown member is not found" do
-      account = Fixtures.Accounts.create_account()
+    test "the directory's name change is audited from→to", %{
+      account: account,
+      provider: provider
+    } do
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Dir Name")
+
+      assert {:ok, _updated, true} =
+               Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
+                 audit: audit
+               )
+
+      assert event = Repo.one(Emisar.Audit.Event)
+      assert event.event_type == "membership.renamed_via_scim"
+      assert event.actor_kind == "directory_sync"
+      assert event.actor_id == provider.id
+      assert event.target_id == member.user_id
+      assert event.payload["from"] == nil
+      assert event.payload["to"] == "Dir Name"
+    end
+
+    test "an unchanged name writes no row and no audit event", %{
+      account: account,
+      provider: provider
+    } do
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Dir Name")
+
+      {:ok, _updated, true} =
+        Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name", audit: audit)
+
+      Repo.delete_all(Emisar.Audit.Event)
+
+      assert {:ok, _updated, true} =
+               Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
+                 audit: audit
+               )
+
+      refute Repo.one(Emisar.Audit.Event)
+    end
+
+    test "an unknown member is not found", %{account: account, provider: provider} do
       stranger = Fixtures.Users.create_user()
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Nobody")
 
       assert {:error, :not_found} =
-               Accounts.sync_member_display_name(account.id, stranger.id, "Nobody")
+               Accounts.sync_member_display_name(account.id, stranger.id, "Nobody", audit: audit)
     end
   end
 

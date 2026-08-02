@@ -1466,7 +1466,9 @@ defmodule Emisar.SSO do
       when is_binary(full_name) do
     with {:ok, identity} <- fetch_scim_identity(provider, external_id),
          {:ok, _membership, sole_tenancy?} <-
-           Accounts.sync_member_display_name(provider.account_id, identity.user_id, full_name),
+           Accounts.sync_member_display_name(provider.account_id, identity.user_id, full_name,
+             audit: &Audit.Events.membership_renamed_via_scim(&1, provider, full_name)
+           ),
          {:ok, _user} <- rename_the_person(identity, full_name, provider, sole_tenancy?) do
       {:ok, identity}
     end

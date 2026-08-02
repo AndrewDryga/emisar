@@ -114,6 +114,7 @@ defmodule Emisar.Audit.Event.Query do
     {"user.provisioned_via_sso", "User provisioned (SSO JIT)"},
     {"user.provisioned_via_scim", "User provisioned (SCIM)"},
     {"user.renamed_via_scim", "User renamed (SCIM)"},
+    {"membership.renamed_via_scim", "Member renamed (SCIM)"},
     {"membership.deprovisioned_via_scim", "Member deprovisioned (SCIM)"},
     {"membership.reprovisioned_via_scim", "Member reprovisioned (SCIM)"},
     {"membership.role_synced_via_scim", "Member role synced (SCIM)"},
@@ -300,6 +301,7 @@ defmodule Emisar.Audit.Event.Query do
        {"user.provisioned_via_sso", "User provisioned (SSO)"},
        {"user.provisioned_via_scim", "User provisioned (SCIM)"},
        {"user.renamed_via_scim", "User renamed (SCIM)"},
+       {"membership.renamed_via_scim", "Member renamed"},
        {"membership.deprovisioned_via_scim", "Member deprovisioned"},
        {"membership.reprovisioned_via_scim", "Member reprovisioned"},
        {"membership.role_synced_via_scim", "Role synced"},
@@ -907,6 +909,9 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, true, "The identity provider provisioned a user over SCIM."},
     "user.renamed_via_scim" =>
       {false, false, true, "The identity provider renamed a user over SCIM."},
+    "membership.renamed_via_scim" =>
+      {false, false, true,
+       "The identity provider changed the name this account shows for a member."},
     "membership.deprovisioned_via_scim" =>
       {true, false, true,
        "The identity provider deprovisioned a member (suspended, sessions killed)."},

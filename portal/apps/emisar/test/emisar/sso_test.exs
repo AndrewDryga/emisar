@@ -2175,6 +2175,38 @@ defmodule Emisar.SSOTest do
       # …and the other one still sees the person.
       assert Repo.reload!(user).full_name == their_own_name
     end
+
+    test "the account's own label for a member is audited even when the person is not renamed" do
+      # `directory_display_name` outranks `users.full_name` in every label this
+      # account renders — the roster, run attribution, and the actor/target name
+      # on EXISTING audit events. A directory that moves it relabels the audit
+      # trail retroactively, so the move is itself an audit event; without one it
+      # was silent for any member who belongs to a second workspace.
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|relabel")
+
+      other_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: identity.user_id,
+        role: "operator"
+      )
+
+      assert {:ok, _} = SSO.scim_rename_user(provider, "okta|relabel", "Someone Else")
+
+      assert event =
+               Enum.find(
+                 Repo.all(Emisar.Audit.Event),
+                 &(&1.event_type == "membership.renamed_via_scim")
+               )
+
+      assert event.account_id == account.id
+      assert event.actor_kind == "directory_sync"
+      assert event.actor_id == provider.id
+      assert event.target_id == identity.user_id
+      assert event.payload["to"] == "Someone Else"
+    end
   end
 
   describe "scim_provision_user/2 key spaces" do

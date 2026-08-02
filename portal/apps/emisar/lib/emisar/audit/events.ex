@@ -1311,6 +1311,27 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc "A member's directory display name replaced by an inbound SCIM rename. `membership` is the pre-update row, for the from→to payload."
+  def membership_renamed_via_scim(
+        %Accounts.Membership{} = membership,
+        %SSO.IdentityProvider{} = provider,
+        display_name
+      ) do
+    Audit.changeset(membership.account_id, "membership.renamed_via_scim",
+      actor_kind: "directory_sync",
+      actor_id: provider.id,
+      actor_label: provider.name,
+      target_kind: "user",
+      target_id: membership.user_id,
+      payload: %{
+        provider_id: provider.id,
+        provider_kind: to_string(provider.kind),
+        from: membership.directory_display_name,
+        to: display_name
+      }
+    )
+  end
+
   @doc "A membership suspended by an inbound SCIM deprovision (`active:false`/DELETE)."
   def membership_deprovisioned_via_scim(
         %Accounts.Membership{} = membership,
