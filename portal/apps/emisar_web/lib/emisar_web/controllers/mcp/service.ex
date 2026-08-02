@@ -122,6 +122,22 @@ defmodule EmisarWeb.MCP.Service do
     Crypto.hash_hex(conn.assigns.current_subject.account.id <> "\0" <> key.credential_lineage_id)
   end
 
+  # Cursors expire routinely (900s), so mid-incident expiry is normal operation;
+  # every invalid_cursor error must teach the cursorless restart instead of
+  # stranding the model. One builder so the recovery wording cannot drift.
+  @doc "The shared expiring-cursor error message, ending with the tool's cursorless restart."
+  def invalid_cursor_message(:page, tool) do
+    "The cursor is invalid, expired, or belongs to another query. " <>
+      "Copy the cursor verbatim from the `next` continuation (or `next_cursor`) an identical prior call returned instead of constructing one. " <>
+      "If it has expired, call #{tool} again with the same arguments and no cursor to restart from the first page."
+  end
+
+  def invalid_cursor_message(:tail, tool) do
+    "The cursor is invalid, expired, or belongs to another run. " <>
+      "Follow the `next` continuation from a prior response instead of constructing one. " <>
+      "If it has expired, call #{tool} again with just the run_id and no cursor to re-seed the tail from the run's current output."
+  end
+
   @doc "Renders fixed-contract run summaries within one 64 KiB output-preview budget."
   def fixed_run_summaries(runs, subject, opts \\ []) when is_list(runs) do
     summary_opts = [

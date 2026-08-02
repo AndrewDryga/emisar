@@ -55,8 +55,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:ok, fit_runbook_page(items, more?, observed_at, scope, filters)}
     else
       {:error, :invalid_cursor} ->
-        {:error,
-         error("invalid_cursor", "The cursor is invalid, expired, or belongs to another query.")}
+        {:error, error("invalid_cursor", Service.invalid_cursor_message(:page, "list_runbooks"))}
 
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read runbooks.")}

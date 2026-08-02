@@ -204,6 +204,9 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     assert wrong_query["error"]["code"] == "invalid_cursor"
 
+    assert wrong_query["error"]["message"] =~
+             "call list_packs again with the same arguments and no cursor"
+
     found = call(conn, "find_actions", %{"action_id" => "demo.action7"})
 
     assert [%{"action_id" => "demo.action7", "matched_fields" => ["action_id"]}] =

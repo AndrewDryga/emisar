@@ -508,6 +508,11 @@ defmodule EmisarWeb.MCPRpcControllerTest do
                    ["result", "structuredContent", "error", "code"]
                  ) == "invalid_operation"
 
+          assert get_in(
+                   invalid_operation,
+                   ["result", "structuredContent", "error", "message"]
+                 ) =~ "do not re-edit valid args or retry in a loop"
+
           {:ok, audit_raw, _audit_key} =
             ApiKeys.create_key(%{name: "audit", kind: :audit_export}, subject)
 

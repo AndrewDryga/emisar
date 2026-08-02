@@ -9,7 +9,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
   """
 
   alias Emisar.{Catalog, Crypto, Runners}
-  alias EmisarWeb.MCP.{CatalogCursor, ToolSchema}
+  alias EmisarWeb.MCP.{CatalogCursor, Service, ToolSchema}
 
   @default_limit 15
   @max_search_score 9_999
@@ -613,8 +613,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
         {:ok, Map.put(result, field, rendered)}
 
       {:error, :invalid_cursor} ->
-        {:error,
-         error("invalid_cursor", "The cursor is invalid, expired, or belongs to another query.")}
+        {:error, error("invalid_cursor", Service.invalid_cursor_message(:page, tool))}
     end
   end
 

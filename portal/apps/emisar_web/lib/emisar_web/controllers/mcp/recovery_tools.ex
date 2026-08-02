@@ -103,11 +103,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
         :cancelled
 
       {:error, :invalid_cursor} ->
-        {:error,
-         error(
-           "invalid_cursor",
-           "The cursor is invalid, expired, or belongs to another run. Follow the `next` continuation from a prior response instead of constructing one. If it has expired, call wait_for_run again with just the run_id and no cursor to re-seed the tail from the run's current output."
-         )}
+        {:error, error("invalid_cursor", Service.invalid_cursor_message(:tail, "wait_for_run"))}
 
       {:error, :not_found} ->
         {:error, error("run_not_found", "No visible run or execution has that id.")}
@@ -324,8 +320,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       {:ok, payload}
     else
       {:error, :invalid_cursor} ->
-        {:error,
-         error("invalid_cursor", "The cursor is invalid, expired, or belongs to another query.")}
+        {:error, error("invalid_cursor", Service.invalid_cursor_message(:page, "recent_runs"))}
 
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read run history.")}

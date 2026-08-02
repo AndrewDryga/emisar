@@ -320,12 +320,14 @@ defmodule EmisarWeb.MCPRpcController do
   # Like `initialize` it is not gated on key kind; it reveals nothing a key
   # holder couldn't learn from the handshake.
   defp dispatch(conn, "server/discover", _params) do
-    {:ok,
-     put_catalog_cache_fields(conn, %{
-       supportedVersions: @supported_protocol_versions,
-       capabilities: capabilities(),
-       instructions: Instructions.text()
-     })}
+    with :ok <- enforce_bridge_version(conn) do
+      {:ok,
+       put_catalog_cache_fields(conn, %{
+         supportedVersions: @supported_protocol_versions,
+         capabilities: capabilities(),
+         instructions: Instructions.text()
+       })}
+    end
   end
 
   defp dispatch(_conn, "ping", _params), do: {:ok, %{}}
@@ -540,21 +542,7 @@ defmodule EmisarWeb.MCPRpcController do
         end
 
       _ ->
-        fixed_tool_result(
-          conn,
-          "run_action",
-          %{
-            ok: false,
-            error: %{
-              code: "invalid_operation",
-              message:
-                "This mutation requires one transport-owned operation_id. This is a bridge or transport fault; report it to the operator instead of changing valid arguments.",
-              retryable: false
-            },
-            dispatch_started: false
-          },
-          true
-        )
+        fixed_tool_result(conn, "run_action", invalid_operation_payload(), true)
     end
   end
 
@@ -565,21 +553,7 @@ defmodule EmisarWeb.MCPRpcController do
         runbook_tool_result(conn, name, args, operation_id)
 
       _ ->
-        fixed_tool_result(
-          conn,
-          name,
-          %{
-            ok: false,
-            error: %{
-              code: "invalid_operation",
-              message:
-                "This mutation requires one transport-owned operation_id. If your args match the schema, this is a bridge/transport fault, not an argument error — report it to the operator; do not re-edit valid args or retry in a loop.",
-              retryable: false
-            },
-            dispatch_started: false
-          },
-          true
-        )
+        fixed_tool_result(conn, name, invalid_operation_payload(), true)
     end
   end
 
@@ -590,6 +564,21 @@ defmodule EmisarWeb.MCPRpcController do
       {:ok, payload} -> fixed_tool_result(conn, name, payload, false)
       {:error, payload} -> fixed_tool_result(conn, name, payload, true)
     end
+  end
+
+  # One stable message for a missing/invalid transport-owned operation_id —
+  # the wording that also stops a model from re-editing valid args in a loop.
+  defp invalid_operation_payload do
+    %{
+      ok: false,
+      error: %{
+        code: "invalid_operation",
+        message:
+          "This mutation requires one transport-owned operation_id. If your args match the schema, this is a bridge/transport fault, not an argument error — report it to the operator; do not re-edit valid args or retry in a loop.",
+        retryable: false
+      },
+      dispatch_started: false
+    }
   end
 
   defp mutation_operation_id(conn) do
@@ -805,8 +794,9 @@ defmodule EmisarWeb.MCPRpcController do
     end
   end
 
-  # Refuse a below-minimum emisar-mcp bridge at `initialize` when enforcement
-  # is on — a structured JSON-RPC error naming the minimum + upgrade path, so
+  # Refuse a below-minimum emisar-mcp bridge at both handshake surfaces —
+  # `initialize` (legacy) and `server/discover` (2026-07-28) — when enforcement
+  # is on: a structured JSON-RPC error naming the minimum + upgrade path, so
   # the operator's LLM surfaces a clear reason rather than a cryptic failure.
   # Warn-only mode (and :unknown/:outdated/:supported) hands back :ok.
   defp enforce_bridge_version(conn) do

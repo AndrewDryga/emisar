@@ -70,6 +70,56 @@ defmodule EmisarWeb.MCPRpcVersionTest do
     end
   end
 
+  describe "server/discover — emisar-mcp bridge version enforcement" do
+    setup :mcp_key
+
+    test "enforce on: an unsupported bridge version is refused with a structured -32003",
+         %{conn: conn, raw: raw} do
+      enforce_mcp_versions(true)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("user-agent", "emisar-mcp/0.0.0 (client=test)")
+        |> rpc("server/discover")
+        |> json_response(200)
+
+      assert body["error"]["code"] == -32003
+      assert body["error"]["data"]["minimum"] == ">= 0.0.1"
+      assert body["error"]["data"]["your_version"] == "0.0.0"
+      assert body["error"]["data"]["upgrade"] =~ "emisar-mcp"
+      refute body["result"]
+    end
+
+    test "warn-only (enforcement off): an unsupported bridge version still discovers",
+         %{conn: conn, raw: raw} do
+      # Baseline test config already has mcp_enforce: false.
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("user-agent", "emisar-mcp/0.0.0 (client=test)")
+        |> rpc("server/discover")
+        |> json_response(200)
+
+      assert "2026-07-28" in body["result"]["supportedVersions"]
+      refute body["error"]
+    end
+
+    test "enforce on: a current bridge version discovers normally", %{conn: conn, raw: raw} do
+      enforce_mcp_versions(true)
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> put_req_header("user-agent", "emisar-mcp/1.0.0 (client=test)")
+        |> rpc("server/discover")
+        |> json_response(200)
+
+      assert "2026-07-28" in body["result"]["supportedVersions"]
+      refute body["error"]
+    end
+  end
+
   defp mcp_key(_ctx) do
     {:ok, user} =
       Emisar.Users.register_user(%{

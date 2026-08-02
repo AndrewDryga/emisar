@@ -54,6 +54,15 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert call(conn, "list_runbooks", %{"limit" => 10})["runbooks"] == []
   end
 
+  test "list_runbooks rejects a constructed cursor with restart guidance", %{conn: conn} do
+    stale = call(conn, "list_runbooks", %{"cursor" => "not-a-cursor"})
+
+    assert stale["error"]["code"] == "invalid_cursor"
+
+    assert stale["error"]["message"] =~
+             "call list_runbooks again with the same arguments and no cursor"
+  end
+
   test "wait_for_run rejects a cursor paired with a runbook_execution_id", %{conn: conn} do
     # The output cursor identifies exactly one run; pairing it with an execution
     # id is a client error, not a silently-ignored argument.
@@ -673,6 +682,9 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert wrong_query["error"]["code"] == "invalid_cursor"
 
+    assert wrong_query["error"]["message"] =~
+             "call recent_runs again with the same arguments and no cursor"
+
     {:ok, successor_raw, _successor} = ApiKeys.rotate_api_key(key, subject)
     successor_conn = authorize(build_conn(), successor_raw)
 
@@ -968,6 +980,9 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       })
 
     assert garbage["error"]["code"] == "invalid_cursor"
+
+    assert garbage["error"]["message"] =~
+             "call wait_for_run again with just the run_id and no cursor"
 
     # A cursor minted for `run` is bound to it and rejected against `other`.
     foreign =
