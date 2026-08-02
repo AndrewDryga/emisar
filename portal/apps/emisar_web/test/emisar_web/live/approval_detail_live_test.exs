@@ -390,6 +390,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ ~s(data-lapsed-event="expiry_lapsed")
     assert html =~ DateTime.to_iso8601(request.expires_at)
 
+    # The no-JS first paint renders from the remaining seconds Approvals
+    # projected — the page never diffs the raw timestamp itself.
+    assert html =~ ~r/Expires in 2[34]h/
+
     # Firing the lapse event re-fetches server-side; a still-future request stays in
     # the Decide panel — the server clock decides, not a (possibly skewed) client.
     lv |> element("#expiry-countdown-#{request.id}") |> render_hook("expiry_lapsed")
@@ -444,6 +448,96 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert changed =~ note
     assert changed =~ ~r/<option(?=[^>]*\bvalue="any_args")(?=[^>]*\bselected)[^>]*>/
     assert changed =~ ~r/<input(?=[^>]*\bname="max_uses")(?=[^>]*\bvalue="5")[^>]*>/
+  end
+
+  test "a crafted use cap is refused at the form, settling nothing", %{conn: conn} do
+    # The page posts raw values; Approvals owns what they mean. A cap it can't
+    # type must come back as a fixable input error — not the stale-state path,
+    # which would flip the panel to history for a request nobody decided.
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    note = "Capping this while we watch replica lag."
+
+    html =
+      lv
+      |> form("form[phx-submit='decide']", %{})
+      |> render_submit(%{
+        "decision" => "approve",
+        "reason" => note,
+        "duration" => "one_day",
+        "scope" => "any_args",
+        "max_uses" => "0"
+      })
+
+    assert html =~ "Limit to must be a whole number of uses, at least 1."
+    refute html =~ "Refresh to see the request"
+
+    # Still decidable, still holding every value the operator typed.
+    assert html =~ "Approve and send"
+    assert html =~ note
+    assert html =~ ~r/<option(?=[^>]*\bvalue="one_day")(?=[^>]*\bselected)[^>]*>/
+    assert html =~ ~r/<option(?=[^>]*\bvalue="any_args")(?=[^>]*\bselected)[^>]*>/
+    assert html =~ ~r/<input(?=[^>]*\bname="max_uses")(?=[^>]*\bvalue="0")[^>]*>/
+
+    assert %{status: :pending, decided_by_id: nil} = Repo.reload!(request)
+  end
+
+  test "a crafted reuse window is refused before any decision is recorded", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    html =
+      lv
+      |> form("form[phx-submit='decide']", %{})
+      |> render_submit(%{"decision" => "approve", "reason" => "", "duration" => "forever"})
+
+    assert html =~ "Pick a reuse window from the list."
+    assert html =~ "Approve and send"
+    assert %{status: :pending} = Repo.reload!(request)
+  end
+
+  test "a crafted match scope is refused before any decision is recorded", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    html =
+      lv
+      |> form("form[phx-submit='decide']", %{})
+      |> render_submit(%{
+        "decision" => "approve",
+        "reason" => "",
+        "duration" => "one_day",
+        "scope" => "everything"
+      })
+
+    assert html =~ "Pick how this grant matches arguments."
+    assert html =~ "Approve and send"
+    assert %{status: :pending} = Repo.reload!(request)
+  end
+
+  test "editing the form clears a previous rejection's message", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    lv
+    |> form("form[phx-submit='decide']", %{})
+    |> render_submit(%{"decision" => "approve", "duration" => "one_day", "max_uses" => "0"})
+
+    changed =
+      lv
+      |> element("form[phx-change='grant_form_changed']")
+      |> render_change(%{"duration" => "one_day", "max_uses" => "2"})
+
+    refute changed =~ "Limit to must be a whole number of uses"
   end
 
   test "a refused self-approval keeps the note so it can be reused on Deny", %{conn: conn} do

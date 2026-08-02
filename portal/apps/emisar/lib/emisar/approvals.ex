@@ -23,7 +23,7 @@ defmodule Emisar.Approvals do
   alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.ApiKeys
-  alias Emisar.Approvals.{Authorizer, Decision, Grant, Request}
+  alias Emisar.Approvals.{Authorizer, Decision, DecisionInput, Grant, Request}
   alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs, Users}
   alias Emisar.Auth.Subject
   require Logger
@@ -834,11 +834,69 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  The lifecycle facts one request presents at `now` — a fixed map so no caller
+  re-derives what a status means:
+
+    * `:status` — the EFFECTIVE status. A still-pending request whose deadline
+      has been reached reads `:expired`, matching the decide gate
+      (`Request.Query.decide_pending/5` only claims a row while
+      `expires_at > now`), because the sweep may not have flipped it yet. A
+      decided request keeps its stored status forever.
+    * `:expired?` — whether that effective status is `:expired`.
+    * `:expires_at` — the deadline, or nil when the request has none.
+    * `:expires_in_seconds` — seconds left, clamped at 0; nil with no deadline.
+
+  Pure — no permission gate, since the caller already holds an authorized row.
+  """
+  def request_facts(%Request{} = request, %DateTime{} = now) do
+    status = effective_status(request, now)
+
+    %{
+      status: status,
+      expired?: status == :expired,
+      expires_at: request.expires_at,
+      expires_in_seconds: expires_in_seconds(request.expires_at, now)
+    }
+  end
+
+  defp effective_status(%Request{status: :pending, expires_at: %DateTime{} = expires_at}, now) do
+    if DateTime.compare(expires_at, now) == :gt, do: :pending, else: :expired
+  end
+
+  defp effective_status(%Request{status: status}, _now), do: status
+
+  defp expires_in_seconds(%DateTime{} = expires_at, now),
+    do: max(DateTime.diff(expires_at, now, :second), 0)
+
+  defp expires_in_seconds(nil, _now), do: nil
+
+  @doc """
+  Changeset for the grant choices an approve carries — `:duration`, `:scope`,
+  and an optional `:max_uses`. Accepts the raw decision form (string keys) or
+  an atom-keyed map / keyword list; an unrecognized duration or scope is a
+  field error and a present cap must be a positive integer. Pure.
+  """
+  def change_decision_input(attrs \\ %{}), do: DecisionInput.changeset(attrs)
+
+  @doc """
+  The typed grant choices `approve_request/4` will apply — `{:ok,
+  %DecisionInput{}}` or `{:error, %Ecto.Changeset{}}`. Same contract the
+  authoritative approve runs, so a caller can echo exactly what was granted.
+  """
+  def decision_input(attrs \\ %{}) do
+    attrs
+    |> change_decision_input()
+    |> Ecto.Changeset.apply_action(:insert)
+  end
+
+  @doc """
   Record an approver's vote and, when the threshold is met, dispatch the
   gated run. Requires `decide` on approvals; scoped to the subject's account.
 
-  `opts` controls whether to mint a durable `Grant` alongside the FINALIZING
-  approval so future identical calls bypass the gate:
+  `attrs` — the raw decision form or a keyword list — is validated through
+  `decision_input/1` before any request work, and controls whether to mint a
+  durable `Grant` alongside the FINALIZING approval so future identical calls
+  bypass the gate:
 
     * `:duration` — `:once` (no grant), `:one_hour`, `:one_day`,
       `:thirty_days`, or `:ninety_days`. Default: `:once`.
@@ -849,11 +907,20 @@ defmodule Emisar.Approvals do
 
   Returns `{:ok, {request, run}}` when the vote finalizes + dispatches,
   `{:ok, {request, :pending}}` when recorded but below the distinct-approver
-  threshold, or `{:error, :self_approval_forbidden | :already_decided |
-  :expired | :unauthorized | :not_found | {:grant_failed, changeset}}`.
+  threshold, or `{:error, %Ecto.Changeset{} | :self_approval_forbidden |
+  :already_decided | :expired | :unauthorized | :not_found |
+  {:grant_failed, changeset}}`. Rejected input records nothing.
   """
-  def approve_request(%Request{} = request, %Subject{} = subject, reason \\ nil, opts \\ []),
-    do: record_decision(request, subject, :approve, reason, opts)
+  def approve_request(%Request{} = request, %Subject{} = subject, reason \\ nil, attrs \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.decide_approval_permission()
+           ),
+         {:ok, input} <- decision_input(attrs) do
+      record_decision(request, subject, :approve, reason, input)
+    end
+  end
 
   @doc """
   Deny a pending request — one deny finalizes DENIED, cancels the run, and no
@@ -861,39 +928,39 @@ defmodule Emisar.Approvals do
   Returns `{:ok, {request, run}}` or `{:error, :already_decided | :expired |
   :unauthorized | :not_found}`.
   """
-  def deny_request(%Request{} = request, %Subject{} = subject, reason \\ nil),
-    do: record_decision(request, subject, :deny, reason, [])
+  def deny_request(%Request{} = request, %Subject{} = subject, reason \\ nil) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.decide_approval_permission()
+           ) do
+      # A deny mints nothing, so it carries the defaults rather than any
+      # caller-supplied input — there is no grant path to bypass validation on.
+      record_decision(request, subject, :deny, reason, %DecisionInput{})
+    end
+  end
 
-  # The single decision path. Fetch the request through the subject scope before
-  # evaluating any request-derived guard: callers can hold a stale struct, and
-  # must not be able to pair another account's id with their own account_id.
-  # The Multi then re-reads the same scoped row under lock, inserts this
-  # decider's DB-unique vote, and finalizes on that locked row so concurrent
+  # The single decision path — both entry points run the decide permission gate
+  # and hand it a validated input first. Fetch the request through the subject
+  # scope before evaluating any request-derived guard: callers can hold a stale
+  # struct, and must not be able to pair another account's id with their own
+  # account_id. The Multi then re-reads the same scoped row under lock, inserts
+  # this decider's DB-unique vote, and finalizes on that locked row so concurrent
   # votes serialize. Dispatch fires only after a committed :approved transition.
   defp record_decision(
          %Request{} = supplied_request,
          %Subject{} = subject,
          decision,
          reason,
-         opts
+         %DecisionInput{} = input
        ) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.decide_approval_permission()
-           ),
-         {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
+    with {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
          :ok <- ensure_request_pending(request),
          :ok <- check_self_approval(decision, request, subject),
          :ok <- recheck_trust(decision, request),
          :ok <- check_attestation_fresh(decision, request) do
       by_user_id = Subject.actor_id(subject)
-
-      grant_attrs = %{
-        duration: Keyword.get(opts, :duration, :once),
-        scope: Keyword.get(opts, :scope, :exact_args),
-        max_uses: Keyword.get(opts, :max_uses)
-      }
+      grant_attrs = Map.from_struct(input)
 
       result =
         Multi.new()
@@ -1633,7 +1700,8 @@ defmodule Emisar.Approvals do
   @doc """
   Internal — called from `approve_request/4` (already-authorized) inside
   the same transaction that marks the request decided, to mint a grant
-  from an approval decision. `attrs` are the operator's choices:
+  from an approval decision. `attrs` are the operator's choices, already
+  validated into `DecisionInput`'s atoms:
 
     * `:duration` — `:once`, `:one_hour`, `:one_day`, `:thirty_days`,
       or `:ninety_days`. Every grant has an explicit re-confirm
@@ -1725,8 +1793,9 @@ defmodule Emisar.Approvals do
   defp duration_seconds_for(:ninety_days), do: @ninety_days_seconds
 
   # Deliberately NO catch-all: an unknown duration atom must crash, not
-  # silently mint a never-expiring grant (the web layer parses operator
-  # input down to exactly these atoms).
+  # silently mint a never-expiring grant. `DecisionInput` narrows every caller's
+  # attrs to exactly these atoms before the decision path starts, so reaching
+  # mint outside them is an internal bug, and failing loud is the safe behavior.
   defp expires_at_for(:once, _now), do: nil
   defp expires_at_for(:one_hour, now), do: DateTime.add(now, @one_hour_seconds, :second)
   defp expires_at_for(:one_day, now), do: DateTime.add(now, @one_day_seconds, :second)

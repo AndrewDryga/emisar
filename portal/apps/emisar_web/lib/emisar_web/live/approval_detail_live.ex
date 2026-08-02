@@ -26,6 +26,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:loaded?, false)
      |> assign(:page_title, "Approval")
      |> assign(:request, nil)
+     |> assign(:request_facts, nil)
      |> assign(:run, nil)
      |> assign(:execution_plan, nil)
      |> assign(:execution_request?, false)
@@ -41,7 +42,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:self_blocked?, false)
      |> assign(:unavailable_action_id, nil)
      |> assign_decision_fields(%{})
-     |> assign(:grant_duration, "once")
      |> assign(:grant_duration_options, [])}
   end
 
@@ -77,7 +77,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          socket
          |> assign(:loaded?, true)
          |> assign(:page_title, title)
-         |> assign(:request, request)
+         |> assign_request(request)
          |> assign(:run, run)
          |> assign(:execution_plan, execution_plan)
          |> assign(:execution_request?, execution_request?)
@@ -105,10 +105,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
          # top-level params (not a namespaced form) because the submit buttons
          # post `decision=approve|deny` alongside them.
          |> assign_decision_fields(%{})
-         # Tracks the duration the operator picked in the grant-reuse
-         # disclosure. "once" (the default) means "no grant" — in that
-         # mode the Match / Limit-to fields are irrelevant and hidden.
-         |> assign(:grant_duration, "once")
          # Only offer durations the account's lifetime cap allows, so an
          # approver can't pick one the server would reject (the cap is account
          # config, fixed for this session — compute it once at mount).
@@ -169,12 +165,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp target_noun(true), do: "runbook execution"
   defp target_noun(false), do: "action"
 
+  # The labels + posted values are the web's; which durations may be offered is
+  # the account's cap, owned by Approvals — so this only converts its atoms to
+  # the strings the select posts, it never interprets operator input.
   defp grant_duration_options(account_id) do
-    allowed = Approvals.allowed_grant_durations(account_id)
+    allowed = Enum.map(Approvals.allowed_grant_durations(account_id), &Atom.to_string/1)
 
-    Enum.filter(@grant_duration_options, fn {_label, value} ->
-      parse_duration(value) in allowed
-    end)
+    Enum.filter(@grant_duration_options, fn {_label, value} -> value in allowed end)
   end
 
   # Loads the recorded votes + the distinct-approve tally and derives the two
@@ -291,27 +288,27 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp visible_action_args(_run), do: %{}
 
-  defp request_expired?(%{expires_at: %DateTime{} = expires_at}),
-    do: DateTime.compare(expires_at, DateTime.utc_now()) == :lt
-
-  defp request_expired?(_), do: false
+  # The request and the lifecycle facts the page renders move together, so a
+  # broadcast, a lapse, or a decision can never leave the two disagreeing.
+  defp assign_request(socket, request) do
+    socket
+    |> assign(:request, request)
+    |> assign(:request_facts, Approvals.request_facts(request, DateTime.utc_now()))
+  end
 
   # Server-rendered fallback for the live countdown (no-JS, and the first paint
-  # before the hook mounts). Coarse on purpose — the ExpiryCountdown hook replaces
-  # it with the ticking MM:SS within a second.
-  defp countdown_fallback(%DateTime{} = expires_at) do
-    case DateTime.diff(expires_at, DateTime.utc_now(), :second) do
-      seconds when seconds <= 0 -> "Expired"
-      seconds when seconds < 3600 -> "Expires in #{div(seconds, 60)}m"
-      seconds -> "Expires in #{div(seconds, 3600)}h"
-    end
-  end
+  # before the hook mounts), from the remaining seconds Approvals projected.
+  # Coarse on purpose — the ExpiryCountdown hook replaces it with the ticking
+  # MM:SS within a second.
+  defp countdown_fallback(seconds) when seconds <= 0, do: "Expired"
+  defp countdown_fallback(seconds) when seconds < 3600, do: "Expires in #{div(seconds, 60)}m"
+  defp countdown_fallback(seconds), do: "Expires in #{div(seconds, 3600)}h"
 
   def handle_info({:approval_request_updated, %{id: id} = updated}, socket)
       when id == socket.assigns.request.id do
     {:noreply,
      socket
-     |> assign(:request, updated)
+     |> assign_request(updated)
      |> assign_decisions(updated)}
   end
 
@@ -329,16 +326,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   def handle_event("grant_form_changed", params, socket) do
-    {:noreply,
-     socket
-     |> assign(:grant_duration, params["duration"] || "once")
-     |> assign_decision_fields(params)}
+    {:noreply, assign_decision_fields(socket, params)}
   end
 
   # The live countdown reached zero client-side. Re-fetch so the terminal "Expired"
   # panel replaces the Approve form right away instead of waiting for the expiry
-  # job's broadcast. Server-authoritative: the re-fetch + render-time
-  # request_expired?/1 decide using the server clock — a skewed client clock can
+  # job's broadcast. Server-authoritative: the re-fetch and the facts Approvals
+  # projects for it decide against the server clock — a skewed client clock can
   # only trigger the re-check, never force the outcome (the decide context also
   # refuses an expired approve, IL-15).
   def handle_event("expiry_lapsed", _params, socket) do
@@ -347,7 +341,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
            socket.assigns.current_subject
          ) do
       {:ok, request} ->
-        {:noreply, socket |> assign(:request, request) |> assign_decisions(request)}
+        {:noreply, socket |> assign_request(request) |> assign_decisions(request)}
 
       {:error, _} ->
         {:noreply, socket}
@@ -366,34 +360,28 @@ defmodule EmisarWeb.ApprovalDetailLive do
       socket,
       Approvals.subject_can_decide_approval?(socket.assigns.current_subject),
       fn socket ->
-        opts = [
-          duration: parse_duration(params["duration"]),
-          scope: parse_scope(params["scope"]),
-          max_uses: parse_max_uses(params["max_uses"])
-        ]
-
-        reason = blank_or(params["reason"])
-
+        # The raw form goes to the context untouched — it owns what a duration,
+        # a match scope, and a use cap mean, and rejects anything else.
         case Approvals.approve_request(
                socket.assigns.request,
                socket.assigns.current_subject,
-               reason,
-               opts
+               blank_or(params["reason"]),
+               params
              ) do
           # Threshold met — finalized + dispatched.
           {:ok, {request, :runbook_execution}} ->
             {:noreply,
              socket
-             |> assign(:request, request)
+             |> assign_request(request)
              |> assign_decisions(request)
              |> put_flash(:info, "Runbook approved. Eligible actions are being dispatched.")}
 
           {:ok, {request, %_{} = _run}} ->
             {:noreply,
              socket
-             |> assign(:request, request)
+             |> assign_request(request)
              |> assign_decisions(request)
-             |> put_flash(:info, approval_flash(opts))}
+             |> put_flash(:info, approval_flash(params))}
 
           # Recorded but below the distinct-approver threshold — still pending.
           {:ok, {request, :pending}} ->
@@ -402,7 +390,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
             msg =
               "Recorded — #{socket.assigns.approved_count} of #{request.min_approvals} approvals."
 
-            {:noreply, socket |> assign(:request, request) |> put_flash(:info, msg)}
+            {:noreply, socket |> assign_request(request) |> put_flash(:info, msg)}
+
+          {:error, %Ecto.Changeset{} = changeset} ->
+            grant_input_failed(socket, changeset, params)
 
           {:error, reason} ->
             decision_failed(socket, reason, params)
@@ -424,7 +415,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           {:ok, {request, _run}} ->
             {:noreply,
              socket
-             |> assign(:request, request)
+             |> assign_request(request)
              |> assign_decisions(request)
              |> put_flash(:info, "Denied.")}
 
@@ -436,13 +427,39 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   # Carries the decision form's operator-entered values back into the render, so
-  # any re-render puts them where the operator left them.
+  # any re-render puts them where the operator left them — including the reuse
+  # window, which drives whether the Match / Limit-to fields show at all. Any
+  # re-entry into the form clears a previous rejection's message.
   defp assign_decision_fields(socket, params) do
     socket
     |> assign(:decision_reason, params["reason"] || "")
+    |> assign(:grant_duration, params["duration"] || "once")
     |> assign(:grant_scope, params["scope"] || "exact_args")
     |> assign(:grant_max_uses, params["max_uses"] || "")
+    |> assign(:grant_input_error, nil)
   end
+
+  # The grant choices didn't validate, so nothing was decided and the request is
+  # untouched: keep the panel live with everything the operator typed and name
+  # the control they have to fix, inline at the form.
+  defp grant_input_failed(socket, %Ecto.Changeset{} = changeset, params) do
+    {:noreply,
+     socket
+     |> assign_decision_fields(params)
+     |> assign(:grant_input_error, grant_input_error(changeset))}
+  end
+
+  defp grant_input_error(%Ecto.Changeset{} = changeset) do
+    changeset.errors |> Keyword.keys() |> List.first() |> grant_field_error()
+  end
+
+  defp grant_field_error(:duration), do: "Pick a reuse window from the list."
+  defp grant_field_error(:scope), do: "Pick how this grant matches arguments."
+
+  defp grant_field_error(:max_uses),
+    do: "Limit to must be a whole number of uses, at least 1. Leave it blank for unlimited."
+
+  defp grant_field_error(_field), do: "Check the reuse settings, then decide again."
 
   # A self-approval refusal isn't a stale-state race — leave the panel as-is
   # (don't re-fetch), just flash the cause. The form stays live so they can still
@@ -485,7 +502,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          ) do
       {:ok, request} ->
         socket
-        |> assign(:request, request)
+        |> assign_request(request)
         |> assign_decisions(request)
 
       {:error, _} ->
@@ -522,46 +539,33 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_error_message(_),
     do: "Your decision didn't record. Refresh to see the request's current state, then try again."
 
-  defp parse_max_uses(v) when is_binary(v) do
-    case Integer.parse(String.trim(v)) do
-      {n, ""} when n > 0 -> n
-      _ -> nil
+  # Echo exactly what was granted. The approve that just succeeded validated
+  # these same params, so the confirmation reads the typed choices back out of
+  # the context's own contract rather than re-reading the operator's strings.
+  defp approval_flash(params) do
+    case Approvals.decision_input(params) do
+      {:ok, input} -> grant_flash(input)
+      {:error, _changeset} -> "Approved."
     end
   end
 
-  defp parse_max_uses(_), do: nil
+  defp grant_flash(%{duration: :once}), do: "Approved for this call only."
 
-  defp parse_duration("one_hour"), do: :one_hour
-  defp parse_duration("one_day"), do: :one_day
-  defp parse_duration("thirty_days"), do: :thirty_days
-  defp parse_duration("ninety_days"), do: :ninety_days
-  defp parse_duration(_), do: :once
-
-  defp parse_scope("any_args"), do: :any_args
-  defp parse_scope(_), do: :exact_args
-
-  # Extract values via Keyword.fetch so the function doesn't depend on
-  # the exact pair-count of `opts` — a previous shape mismatched the
-  # caller's 3-key opts (`duration`, `scope`, `max_uses`) and crashed
-  # the LV on every approve click.
-  defp approval_flash(opts) do
-    scope = Keyword.fetch!(opts, :scope)
-    max_uses = Keyword.get(opts, :max_uses)
-
-    case Keyword.fetch!(opts, :duration) do
-      :once -> "Approved for this call only."
-      :one_hour -> grant_flash("the next hour", scope, max_uses)
-      :one_day -> grant_flash("the next 24 hours", scope, max_uses)
-      :thirty_days -> grant_flash("the next 30 days", scope, max_uses) <> revoke_hint()
-      :ninety_days -> grant_flash("the next 90 days", scope, max_uses) <> revoke_hint()
-    end
+  defp grant_flash(%{duration: duration} = input) do
+    "Approved. Standing grant active for #{grant_window(duration)} " <>
+      "(#{scope_label(input.scope)}#{uses_suffix(input.max_uses)})." <> revoke_hint(duration)
   end
 
-  defp grant_flash(window, scope, max_uses) do
-    "Approved. Standing grant active for #{window} (#{scope_label(scope)}#{uses_suffix(max_uses)})."
-  end
+  defp grant_window(:one_hour), do: "the next hour"
+  defp grant_window(:one_day), do: "the next 24 hours"
+  defp grant_window(:thirty_days), do: "the next 30 days"
+  defp grant_window(:ninety_days), do: "the next 90 days"
 
-  defp revoke_hint, do: " Revoke from the Approvals page."
+  # Only a long window is worth pointing at the revoke surface for.
+  defp revoke_hint(duration) when duration in [:thirty_days, :ninety_days],
+    do: " Revoke from the Approvals page."
+
+  defp revoke_hint(_duration), do: ""
 
   # Echo the reuse cap so the approver sees exactly what they granted — an
   # unlimited grant (nil) reads as the duration window alone.
@@ -682,7 +686,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                  and "Status: pending" above an "Expired — auto-denied" verdict
                  block contradicts the page. --%>
             <.meta_field label="Status">
-              <.status_badge status={verdict_status(@request)} />
+              <.status_badge status={@request_facts.status} />
             </.meta_field>
             <%!-- Never clip the action on the decision screen — an approver must read
              the full action id before deciding. `wrap` gives it the full row on
@@ -763,7 +767,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                request's expiry is moot. --%>
           </div>
 
-          <% verdict = verdict_status(@request) %>
+          <% verdict = @request_facts.status %>
 
           <%!-- Lead with the verdict — anchored to the status it elaborates
                (the run-detail correction), as an EVENT BLOCK, not a wash box:
@@ -982,6 +986,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               grant_duration={@grant_duration}
               grant_scope={@grant_scope}
               grant_max_uses={@grant_max_uses}
+              grant_input_error={@grant_input_error}
               grant_duration_options={@grant_duration_options}
               runner_state={@runner_connection}
               unavailable_action_id={@unavailable_action_id}
@@ -990,7 +995,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
               already_decided?={@already_decided?}
               approved_count={@approved_count}
               min_approvals={@request.min_approvals}
-              expires_at={@request.expires_at}
+              expires_at={@request_facts.expires_at}
+              expires_in_seconds={@request_facts.expires_in_seconds}
               request_id={@request.id}
               current_account={@current_account}
             />
@@ -1007,6 +1013,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :decision_reason, :string, default: ""
   attr :grant_scope, :string, default: "exact_args"
   attr :grant_max_uses, :string, default: ""
+  # Set when the context rejected the grant choices — nothing was decided, so
+  # the form stays live and carries the message for the control to fix.
+  attr :grant_input_error, :string, default: nil
   # Drives the reuse-window UI: the Match / Limit-to fields only show
   # once a real grant is being minted (duration != "once"). Defaulted so
   # a caller that forgets to thread it through can't crash the panel.
@@ -1031,6 +1040,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :approved_count, :integer, default: 0
   attr :min_approvals, :integer, default: 1
   attr :expires_at, :any, default: nil
+  # Seconds left on the deadline, projected by Approvals — the no-JS fallback
+  # renders from this rather than diffing the timestamp here.
+  attr :expires_in_seconds, :integer, default: nil
   attr :request_id, :string, required: true
   attr :current_account, :map, required: true
 
@@ -1058,7 +1070,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         class="mb-4 flex items-center gap-1.5 text-xs font-medium tabular-nums text-zinc-400"
       >
         <.icon name="hero-clock" class="h-3.5 w-3.5" />
-        <span data-countdown-text>{countdown_fallback(@expires_at)}</span>
+        <span data-countdown-text>{countdown_fallback(@expires_in_seconds)}</span>
       </div>
 
       <p :if={@min_approvals > 1} class="text-xs leading-relaxed text-zinc-400">
@@ -1231,6 +1243,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
               </div>
             </.disclosure>
 
+            <%!-- The rejection sits with the controls it names, not in a
+                 top-of-page flash the operator has to scroll back from —
+                 nothing was decided, so the form is still the place to fix. --%>
+            <.error :if={@grant_input_error}>{@grant_input_error}</.error>
+
             <%!-- Approve stays gated for the self-blocked requester; deny is
                  always available (denying your own request is fine). --%>
             <.button
@@ -1287,17 +1304,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp reuse_clause(_options), do: ". Your"
 
-  # The overall verdict the page leads with. A still-pending request that has
-  # lapsed past its expiry reads as :expired — the sweeper just hasn't
-  # auto-denied it yet, so a live Approve would fail and the outcome is settled.
-  defp verdict_status(%{status: :pending} = request) do
-    if request_expired?(request), do: :expired, else: :pending
-  end
-
-  defp verdict_status(%{status: status}), do: status
-
-  # Verdict presentation, keyed on the normalized status (never :pending — the
-  # callout only renders once verdict_status != :pending).
+  # Verdict presentation, keyed on the effective status Approvals projected
+  # (never :pending — the callout only renders once that status is terminal).
   defp verdict_tone(:approved), do: :brand
   defp verdict_tone(:denied), do: :rose
   defp verdict_tone(:expired), do: :rose

@@ -1383,6 +1383,162 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "request_facts/2" do
+    test "a request still inside its window is live, with the seconds left" do
+      now = DateTime.utc_now()
+      expires_at = DateTime.add(now, 90, :second)
+
+      assert Approvals.request_facts(%Request{status: :pending, expires_at: expires_at}, now) ==
+               %{
+                 status: :pending,
+                 expired?: false,
+                 expires_at: expires_at,
+                 expires_in_seconds: 90
+               }
+    end
+
+    # The decide gate claims a row only while `expires_at > now`
+    # (`Request.Query.decide_pending/5`), so the deadline instant itself is
+    # already past deciding — the projection must not read it as live.
+    test "a pending request AT its deadline already reads expired" do
+      now = DateTime.utc_now()
+
+      assert %{status: :expired, expired?: true, expires_in_seconds: 0} =
+               Approvals.request_facts(%Request{status: :pending, expires_at: now}, now)
+    end
+
+    test "a pending request past its deadline reads expired with the countdown clamped at 0" do
+      now = DateTime.utc_now()
+      expires_at = DateTime.add(now, -3600, :second)
+
+      assert Approvals.request_facts(%Request{status: :pending, expires_at: expires_at}, now) ==
+               %{
+                 status: :expired,
+                 expired?: true,
+                 expires_at: expires_at,
+                 expires_in_seconds: 0
+               }
+    end
+
+    test "a request with no deadline is live and has no countdown" do
+      now = DateTime.utc_now()
+
+      assert Approvals.request_facts(%Request{status: :pending, expires_at: nil}, now) ==
+               %{status: :pending, expired?: false, expires_at: nil, expires_in_seconds: nil}
+    end
+
+    test "a decided request keeps its own status past the deadline" do
+      now = DateTime.utc_now()
+      expires_at = DateTime.add(now, -3600, :second)
+
+      assert %{status: :approved, expired?: false} =
+               Approvals.request_facts(%Request{status: :approved, expires_at: expires_at}, now)
+
+      assert %{status: :denied, expired?: false} =
+               Approvals.request_facts(%Request{status: :denied, expires_at: expires_at}, now)
+    end
+
+    test "a swept request reads expired whatever its deadline" do
+      now = DateTime.utc_now()
+
+      assert %{status: :expired, expired?: true} =
+               Approvals.request_facts(%Request{status: :expired, expires_at: nil}, now)
+    end
+  end
+
+  describe "change_decision_input/1" do
+    test "no attrs means a single-use approval with no cap" do
+      changeset = Approvals.change_decision_input()
+
+      assert changeset.valid?
+      assert changeset.changes == %{}
+      assert {:ok, input} = Ecto.Changeset.apply_action(changeset, :insert)
+      assert input.duration == :once
+      assert input.scope == :exact_args
+      assert input.max_uses == nil
+    end
+
+    test "casts the raw decision form's strings, ignoring the fields it doesn't own" do
+      attrs = %{
+        "decision" => "approve",
+        "reason" => "lgtm",
+        "duration" => "thirty_days",
+        "scope" => "any_args",
+        "max_uses" => "5"
+      }
+
+      changeset = Approvals.change_decision_input(attrs)
+
+      assert changeset.valid?
+      assert changeset.changes == %{duration: :thirty_days, scope: :any_args, max_uses: 5}
+    end
+
+    test "accepts a keyword caller's atoms" do
+      changeset = Approvals.change_decision_input(duration: :one_hour, scope: :any_args)
+
+      assert changeset.valid?
+      assert changeset.changes == %{duration: :one_hour, scope: :any_args}
+    end
+
+    test "an unknown duration is a field error, never coerced to a default" do
+      changeset = Approvals.change_decision_input(%{"duration" => "forever"})
+
+      refute changeset.valid?
+      assert "is invalid" in errors_on(changeset).duration
+    end
+
+    test "an unknown scope is a field error" do
+      changeset = Approvals.change_decision_input(%{"scope" => "everything"})
+
+      refute changeset.valid?
+      assert "is invalid" in errors_on(changeset).scope
+    end
+
+    test "a blank cap means unlimited within the window" do
+      changeset = Approvals.change_decision_input(%{"duration" => "one_day", "max_uses" => ""})
+
+      assert changeset.valid?
+      assert changeset.changes == %{duration: :one_day}
+    end
+
+    test "a malformed cap is a field error" do
+      changeset = Approvals.change_decision_input(%{"max_uses" => "lots"})
+
+      refute changeset.valid?
+      assert "is invalid" in errors_on(changeset).max_uses
+    end
+
+    test "a zero cap is a field error" do
+      changeset = Approvals.change_decision_input(%{"max_uses" => "0"})
+
+      refute changeset.valid?
+      assert "must be greater than 0" in errors_on(changeset).max_uses
+    end
+
+    test "a negative cap is a field error" do
+      changeset = Approvals.change_decision_input(%{"max_uses" => "-3"})
+
+      refute changeset.valid?
+      assert "must be greater than 0" in errors_on(changeset).max_uses
+    end
+  end
+
+  describe "decision_input/1" do
+    test "applies valid raw attrs into the typed choices an approve will use" do
+      attrs = %{"duration" => "ninety_days", "scope" => "any_args", "max_uses" => "2"}
+
+      assert {:ok, input} = Approvals.decision_input(attrs)
+      assert input.duration == :ninety_days
+      assert input.scope == :any_args
+      assert input.max_uses == 2
+    end
+
+    test "returns the changeset for input it can't type" do
+      assert {:error, changeset} = Approvals.decision_input(%{"duration" => "forever"})
+      assert "is invalid" in errors_on(changeset).duration
+    end
+  end
+
   describe "approve_request/3" do
     setup do
       {account, run} = run_fixture()
@@ -1793,6 +1949,90 @@ defmodule Emisar.ApprovalsTest do
       refute Enum.any?(events, &(&1.event_type == "approval.approved"))
     end
 
+    test "raw decision-form attrs mint the scoped, capped grant the operator picked", %{
+      account: account,
+      user: user,
+      subject: subject,
+      key: key
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      observe_trusted_grant_action(account, user, runner, "high")
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          pack_ref: @grant_pack_ref,
+          expected_pack_hash: @grant_pack_hash,
+          api_key_id: key.id,
+          args: %{},
+          args_sha256: "abc123",
+          status: :pending_approval
+        })
+
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
+
+      # Exactly what the browser posts — the context types it, the web doesn't.
+      attrs = %{
+        "decision" => "approve",
+        "reason" => "lgtm",
+        "duration" => "thirty_days",
+        "scope" => "any_args",
+        "max_uses" => "3"
+      }
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, subject, "lgtm", attrs)
+
+      [grant] = Fixtures.Approvals.grants_for_api_key(key.id)
+      assert grant.args_sha256 == nil
+      assert grant.max_uses == 3
+      assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :day) in 29..30
+    end
+
+    test "input the context can't type settles nothing — no vote, no transition, no grant, no dispatch",
+         %{account: account, user: user, subject: subject, key: key} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      observe_trusted_grant_action(account, user, runner, "high")
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "mcp",
+          pack_ref: @grant_pack_ref,
+          expected_pack_hash: @grant_pack_hash,
+          api_key_id: key.id,
+          args: %{},
+          args_sha256: "abc123",
+          status: :pending_approval
+        })
+
+      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      attrs = %{"duration" => "forever", "scope" => "any_args", "max_uses" => "3"}
+
+      assert {:error, changeset} = Approvals.approve_request(request, subject, "ok", attrs)
+      assert "is invalid" in errors_on(changeset).duration
+
+      assert %Request{status: :pending, decided_by_id: nil} = Repo.reload!(request)
+      assert Repo.all(Decision) == []
+      assert [] = Fixtures.Approvals.grants_for_api_key(key.id)
+      assert %ActionRun{status: :pending_approval} = Repo.reload!(run)
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+
+      {:ok, events, _meta} = Audit.list_events(subject, page: [limit: 50])
+
+      refute Enum.any?(
+               events,
+               &(&1.event_type in ["approval.decision_recorded", "approval.approved"])
+             )
+    end
+
     test ":any_args scope drops args_sha256 so any args match", %{
       account: account,
       user: user,
@@ -1859,19 +2099,18 @@ defmodule Emisar.ApprovalsTest do
       assert DateTime.diff(grant.expires_at, DateTime.utc_now(), :day) in 29..30
     end
 
-    # there is deliberately NO indefinite grant. `expires_at_for/2`
-    # has no catch-all, so a duration atom outside the five whitelisted windows
-    # CRASHES on a finalizing api-key approve rather than minting a grant with a
-    # nil (never-expiring) horizon. The web layer parses operator input down to
-    # exactly these atoms; a value reaching mint outside them is a bug, and failing
-    # loud is the safe behavior. No grant is left behind.
-    test "an unknown duration atom crashes the mint instead of minting a never-expiring grant",
+    # There is deliberately NO indefinite grant. A duration outside the five
+    # whitelisted windows is refused by `DecisionInput` before the decision path
+    # opens, so it can never reach the mint and become a never-expiring horizon —
+    # the request stays pending and no grant is left behind.
+    test "a duration outside the five windows is refused before anything is decided",
          %{subject: subject, key: key, request: request} do
-      assert_raise FunctionClauseError, fn ->
-        Approvals.approve_request(request, subject, nil, duration: :forever)
-      end
+      assert {:error, changeset} =
+               Approvals.approve_request(request, subject, nil, duration: :forever)
 
+      assert "is invalid" in errors_on(changeset).duration
       assert [] = Fixtures.Approvals.grants_for_api_key(key.id)
+      assert %Request{status: :pending} = Repo.reload!(request)
     end
   end
 
