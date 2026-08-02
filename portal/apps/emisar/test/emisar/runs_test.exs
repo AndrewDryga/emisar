@@ -2510,10 +2510,12 @@ defmodule Emisar.RunsTest do
       assert {:error, :pack_untrusted} = Runs.recheck_run_pack_trust(run.id)
     end
 
-    test "passes a packless run when the runner no longer advertises the action", %{
+    test "refuses a packless run when the runner no longer advertises the action", %{
       account: account,
       runner: runner
     } do
+      # No snapshotted hash still means no current trusted contract to bind the
+      # approval to — a later same-id action is not the artifact under review.
       {:ok, run} =
         Runs.create_run(%{
           account_id: account.id,
@@ -2523,7 +2525,7 @@ defmodule Emisar.RunsTest do
           args: %{}
         })
 
-      assert :ok = Runs.recheck_run_pack_trust(run.id)
+      assert {:error, :action_not_found} = Runs.recheck_run_pack_trust(run.id)
     end
 
     test "refuses a versioned run when its advertised action disappeared", %{

@@ -6,12 +6,15 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Approvals
+  alias Emisar.Catalog
   alias Emisar.Runs
 
-  @grant_pack_ref "linux-core@1.0.0/sha256:" <> String.duplicate("a", 64)
+  @grant_pack_hash "sha256:" <> String.duplicate("a", 64)
+  @grant_pack_ref "linux-core@1.0.0/" <> @grant_pack_hash
 
   defp pending_request!(account, requester_id, reason) do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot")
 
     {:ok, run} =
       Runs.create_run(%{
@@ -33,6 +36,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   defp pending_mcp_request!(account, user, reason) do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+    observe_trusted_pack_action(account, user, runner)
 
     {:ok, run} =
       Runs.create_run(%{
@@ -41,6 +45,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         action_id: "linux.reboot",
         source: "mcp",
         pack_ref: @grant_pack_ref,
+        expected_pack_hash: @grant_pack_hash,
         api_key_id: key.id,
         args: %{},
         args_sha256: "abc123",
@@ -49,6 +54,37 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     {:ok, request} = Approvals.create_request(run, user.id, reason)
     request
+  end
+
+  # Advertise linux.reboot from a TRUSTED linux-core@1.0.0 so the approve gate
+  # can re-resolve the run's snapshotted contract before minting a grant.
+  defp observe_trusted_pack_action(account, user, runner) do
+    {:ok, _runner} =
+      Catalog.observe_state(runner, %{
+        "hostname" => runner.hostname,
+        "version" => runner.runner_version,
+        "labels" => runner.labels,
+        "packs" => %{"linux-core" => %{"version" => "1.0.0", "hash" => @grant_pack_hash}},
+        "actions" => [
+          %{
+            "id" => "linux.reboot",
+            "pack_id" => "linux-core",
+            "title" => "Reboot",
+            "kind" => "exec",
+            "risk" => "high",
+            "summary" => "Reboots the host",
+            "description" => "Reboots the host",
+            "side_effects" => [],
+            "args" => [],
+            "examples" => [],
+            "search_terms" => []
+          }
+        ]
+      })
+
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {:ok, [pack_version]} = Catalog.list_all_pack_versions_for_account(subject)
+    {:ok, _pack_version} = Catalog.trust_pack_version(pack_version.id, subject)
   end
 
   test "lists the pending request with its reason", %{conn: conn} do

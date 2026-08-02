@@ -39,6 +39,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:approved_count, 0)
      |> assign(:already_decided?, false)
      |> assign(:self_blocked?, false)
+     |> assign(:unavailable_action_id, nil)
      |> assign_decision_fields(%{})
      |> assign(:grant_duration, "once")
      |> assign(:grant_duration_options, [])}
@@ -88,6 +89,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
          # the runner's (its pinned hash, or advertised version when unpinned).
          |> assign(:executed_command, build_command_preview(action, run))
          |> assign(:runner_connection, runner_connection(run))
+         # Approve re-resolves the action's trusted contract and fails closed
+         # when it is gone, so an unresolvable action means the panel must not
+         # promise a send.
+         |> assign(
+           :unavailable_action_id,
+           unavailable_action_id(request, execution_request?, action)
+         )
          |> assign_decisions(request)
          # Every operator-entered decision field is tracked server-side. A
          # co-approver's broadcast, the expiry countdown, or a refused decision
@@ -239,6 +247,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   defp fetch_action_for(_context, _subject), do: nil
+
+  # The snapshotted action id an approve can no longer bind to a trusted
+  # contract — nil whenever the request is still approvable. A runbook
+  # execution carries its own frozen plan and re-check, so it never lands here.
+  defp unavailable_action_id(_request, true, _action), do: nil
+  defp unavailable_action_id(_request, false, %Catalog.RunnerAction{}), do: nil
+
+  defp unavailable_action_id(%{context: %{"action_id" => action_id}}, false, nil)
+       when is_binary(action_id),
+       do: action_id
+
+  defp unavailable_action_id(_request, false, _action), do: nil
 
   # Resolve the run's args into the action's command template for display —
   # gated on our compiled pack provably being the runner's (its pinned hash, or
@@ -438,6 +458,19 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> put_flash(:error, "You can't approve your own request.")}
   end
 
+  # The approve gate re-resolved the action's trusted contract and refused. The
+  # request is untouched and still deniable, so keep the panel live (and the
+  # note they wrote) and flip it to the unavailable state — the same thing a
+  # fresh mount would show now.
+  defp decision_failed(socket, reason, params)
+       when reason in [:action_not_found, :pack_untrusted, :pack_retired, :action_unavailable] do
+    {:noreply,
+     socket
+     |> assign_decision_fields(params)
+     |> assign(:unavailable_action_id, socket.assigns.request.context["action_id"])
+     |> put_flash(:error, decision_error_message(reason))}
+  end
+
   # An approve/deny that didn't take: the request expired or was decided
   # between render and this click (the live exact-request broadcast can
   # race a fast click). Re-fetch so the panel flips to decision-history, then
@@ -472,6 +505,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_error_message(:runbook_execution_not_approvable),
     do: "The runbook execution is no longer awaiting approval. Refresh to see its current state."
+
+  defp decision_error_message(reason)
+       when reason in [:action_not_found, :pack_untrusted, :pack_retired, :action_unavailable] do
+    "The trusted contract for this action is no longer available, so there's nothing left to " <>
+      "approve. Deny this request and re-issue it once the action is available again."
+  end
 
   defp decision_error_message(:attestation_stale) do
     "This signed request expired before approval — its signature is now outside the runner's " <>
@@ -953,6 +992,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               grant_max_uses={@grant_max_uses}
               grant_duration_options={@grant_duration_options}
               runner_state={@runner_connection}
+              unavailable_action_id={@unavailable_action_id}
               execution_request?={@execution_request?}
               self_blocked?={@self_blocked?}
               already_decided?={@already_decided?}
@@ -986,6 +1026,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Connection state of the target runner (:online | :offline | :unknown)
   # so the operator knows whether an approval will actually dispatch.
   attr :runner_state, :atom, default: :unknown
+  # Set to the snapshotted action id once no trusted contract resolves for it.
+  # Approve would be refused by the context, so the panel drops it and the
+  # reuse controls and leaves Deny as the way out.
+  attr :unavailable_action_id, :string, default: nil
   attr :execution_request?, :boolean, default: false
   # Server-computed UI gates. self_blocked? hides Approve when this user is the
   # requester and self-approval is forbidden; already_decided? hides both forms
@@ -1032,7 +1076,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
       </p>
 
       <.event_block
-        :if={not @execution_request? and @runner_state == :offline}
+        :if={
+          not @execution_request? and @runner_state == :offline and
+            is_nil(@unavailable_action_id)
+        }
         icon="hero-bolt-slash"
         tone={:amber}
         title="Runner offline"
@@ -1054,14 +1101,34 @@ defmodule EmisarWeb.ApprovalDetailLive do
             You've already recorded your decision on this request. Waiting on the remaining approvers.
           </p>
         <% true -> %>
+          <%!-- No trusted contract resolves for this action any more, so an
+               approve would be refused. Say which action, and point at the one
+               move left — Deny, then re-issue. --%>
+          <.event_block
+            :if={@unavailable_action_id}
+            icon="hero-exclamation-triangle"
+            tone={:rose}
+            title="Action no longer available"
+            class="mt-4"
+          >
+            <:body>
+              Emisar can't find a trusted contract for
+              <span class="font-mono text-zinc-200">{@unavailable_action_id}</span>
+              any more, so this request can't be approved. Deny it, then re-issue the request once
+              the action is available again.
+            </:body>
+          </.event_block>
           <%!-- Approve form. Hidden when this user is the requester and the
                policy forbids self-approval — the context refuses it anyway
                (IL-15), this just removes the dead button. They can still Deny
                their own request. --%>
-          <p :if={@self_blocked?} class="mt-4 text-xs leading-relaxed text-zinc-400">
+          <p
+            :if={@self_blocked? and is_nil(@unavailable_action_id)}
+            class="mt-4 text-xs leading-relaxed text-zinc-400"
+          >
             You can't approve your own request — a different operator must approve it.
           </p>
-          <p class="mt-4 text-xs leading-relaxed text-zinc-400">
+          <p :if={is_nil(@unavailable_action_id)} class="mt-4 text-xs leading-relaxed text-zinc-400">
             {decision_intro(@execution_request?, @self_blocked?, @grant_duration_options)}
             <.doc_link href={~p"/docs/policies-and-approvals"}>Approvals docs</.doc_link>
           </p>
@@ -1098,7 +1165,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <p
               :if={
                 not @execution_request? and not @self_blocked? and
-                  length(@grant_duration_options) <= 1
+                  is_nil(@unavailable_action_id) and length(@grant_duration_options) <= 1
               }
               class="text-[11px] leading-relaxed text-zinc-400"
             >
@@ -1106,7 +1173,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </p>
             <.disclosure :if={
               not @execution_request? and not @self_blocked? and
-                length(@grant_duration_options) > 1
+                is_nil(@unavailable_action_id) and length(@grant_duration_options) > 1
             }>
               <:summary>
                 <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
@@ -1175,7 +1242,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- Approve stays gated for the self-blocked requester; deny is
                  always available (denying your own request is fine). --%>
             <.button
-              :if={not @self_blocked?}
+              :if={not @self_blocked? and is_nil(@unavailable_action_id)}
               name="decision"
               value="approve"
               class="w-full"

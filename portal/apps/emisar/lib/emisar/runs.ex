@@ -1343,8 +1343,11 @@ defmodule Emisar.Runs do
   parked run directly; without this re-check a runner that re-advertised
   the pack with a tampered hash during the approval window (flipping the
   pack to `:pending`) would have the operator's approval ship the new,
-  untrusted bytes. Returns `:ok` or `{:error, :pack_untrusted |
-  :action_not_found}` — the caller refuses the approval on error.
+  untrusted bytes. Fails closed: every resolution failure propagates, so a
+  run whose advertised action has since vanished cannot be approved either.
+  Returns `:ok` or `{:error, :action_not_found | :pack_untrusted |
+  :pack_retired | :action_unavailable}` — the caller refuses the approval on
+  error.
   """
   def recheck_run_pack_trust(run_id) when is_binary(run_id) do
     run_id |> fetch_run!() |> recheck_snapshotted_pack_trust()
@@ -2109,11 +2112,6 @@ defmodule Emisar.Runs do
       # decision moved underneath the parked run.
       false ->
         {:error, :pack_untrusted}
-
-      # A pack-less run has no snapshot to re-verify; a since-vanished
-      # advertisement surfaces at delivery instead of blocking the approval.
-      {:error, :action_not_found} when is_nil(run.expected_pack_hash) ->
-        :ok
 
       {:error, reason} ->
         {:error, reason}

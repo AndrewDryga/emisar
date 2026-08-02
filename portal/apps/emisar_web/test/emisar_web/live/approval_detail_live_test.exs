@@ -32,6 +32,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       })
       |> Repo.insert()
 
+    # An ordinary approvable request: the runner still advertises the action, so
+    # the approve gate can re-resolve its trusted contract.
+    Fixtures.Catalog.create_action(runner: runner)
+
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
@@ -609,6 +613,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         "max_attestation_age_seconds" => 3600
       })
 
+    Fixtures.Catalog.create_action(runner: runner)
+
     stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
 
     {:ok, run} =
@@ -639,6 +645,53 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Re-issue it from your MCP client"
     assert Repo.reload!(request).status == :pending
     _ = approver
+  end
+
+  test "a request whose action is already gone offers only Deny", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+    runner_id = Repo.reload!(request).context["runner_id"]
+    Fixtures.Catalog.delete_actions_for_runner(runner_id)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Action no longer available"
+    assert html =~ "linux.uptime"
+    assert html =~ "re-issue the request once"
+    refute html =~ "Approve and send"
+    refute html =~ "Allow the LLM to reuse this approval"
+    assert has_element?(lv, "button", "Deny")
+  end
+
+  test "an action deleted while the page is open maps the approve refusal into the same state",
+       %{conn: conn} do
+    # The race the domain gate exists for: the page mounted against a live
+    # contract, the runner stopped advertising the action, and the operator
+    # clicked Approve. The refusal must read as the unavailable state, not a
+    # generic "didn't record", and must leave the request decidable.
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    assert html =~ "Approve and send"
+
+    runner_id = Repo.reload!(request).context["runner_id"]
+    Fixtures.Catalog.delete_actions_for_runner(runner_id)
+
+    note = "Confirmed with the on-call engineer."
+
+    html =
+      lv
+      |> form("form[phx-submit='decide']", %{})
+      |> render_submit(%{"decision" => "approve", "reason" => note})
+
+    assert html =~ "no longer available"
+    assert html =~ "Action no longer available"
+    assert html =~ note
+    refute html =~ "Approve and send"
+    assert has_element?(lv, "button", "Deny")
+    assert Repo.reload!(request).status == :pending
+    refute_receive {:cloud_to_runner, _generation, _}, 100
   end
 
   test "warns when the target runner is offline (queues on approve)", %{conn: conn} do

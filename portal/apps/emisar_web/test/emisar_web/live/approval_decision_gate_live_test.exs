@@ -33,6 +33,10 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       })
       |> Repo.insert()
 
+    # The runner still advertises the action, so the approve gate can
+    # re-resolve its trusted contract.
+    Fixtures.Catalog.create_action(runner: runner, action_id: "cassandra.repair")
+
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,

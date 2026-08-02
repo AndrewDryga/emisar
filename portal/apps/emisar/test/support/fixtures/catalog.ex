@@ -17,7 +17,9 @@ defmodule Emisar.Fixtures.Catalog do
 
   @doc """
   Inserts a catalog action row for a runner. Mirrors what
-  `Catalog.observe_state` would do when a runner advertises this action.
+  `Catalog.observe_state` would do when a runner advertises this action —
+  including its upsert, so a fixture that re-advertises the same action on a
+  reused runner refreshes the row instead of hitting the unique index.
   Defaults to `action_id: "linux.uptime"`, `risk: "low"`, `kind: "exec"`.
   """
   def create_action(attrs \\ %{}) do
@@ -47,9 +49,26 @@ defmodule Emisar.Fixtures.Catalog do
 
     {:ok, action} =
       Catalog.RunnerAction.Changeset.upsert(params)
-      |> Repo.insert()
+      |> Repo.insert(
+        on_conflict: {:replace_all_except, [:id, :first_seen_at, :inserted_at]},
+        conflict_target: [:runner_id, :action_id],
+        returning: true
+      )
 
     action
+  end
+
+  @doc """
+  Test helper: drop every action a runner advertises — the catalog state a run
+  parked behind an approval meets once its runner stops advertising it.
+  """
+  def delete_actions_for_runner(runner_id) when is_binary(runner_id) do
+    queryable =
+      Catalog.RunnerAction.Query.all()
+      |> Catalog.RunnerAction.Query.by_runner_id(runner_id)
+
+    {_count, nil} = Repo.delete_all(queryable)
+    :ok
   end
 
   @doc """

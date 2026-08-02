@@ -15,6 +15,9 @@ defmodule Emisar.ApprovalsTest do
       Keyword.get(opts, :account) || Fixtures.Accounts.create_account()
 
     runner = Keyword.get(opts, :runner) || Fixtures.Runners.create_runner(account_id: account.id)
+    # An approvable run needs a currently-advertised action: approve re-resolves
+    # the trusted contract and fails closed when it is gone.
+    Fixtures.Catalog.create_action(runner: runner)
     initiator = Fixtures.Users.create_user()
 
     initiating_membership =
@@ -101,7 +104,7 @@ defmodule Emisar.ApprovalsTest do
     |> Repo.insert!()
   end
 
-  defp observe_trusted_grant_action(account, user, runner, risk) do
+  defp observe_trusted_grant_action(account, user, runner, risk, action_id \\ "linux.uptime") do
     assert {:ok, _runner} =
              Catalog.observe_state(runner, %{
                "hostname" => runner.hostname,
@@ -112,7 +115,7 @@ defmodule Emisar.ApprovalsTest do
                },
                "actions" => [
                  %{
-                   "id" => "linux.uptime",
+                   "id" => action_id,
                    "pack_id" => "linux-core",
                    "title" => "Uptime",
                    "kind" => "exec",
@@ -148,6 +151,7 @@ defmodule Emisar.ApprovalsTest do
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
+    observe_trusted_grant_action(account, user, runner, "high")
 
     {:ok, run} =
       Runs.create_run(%{
@@ -156,6 +160,7 @@ defmodule Emisar.ApprovalsTest do
         action_id: "linux.uptime",
         source: "mcp",
         pack_ref: @grant_pack_ref,
+        expected_pack_hash: @grant_pack_hash,
         api_key_id: key.id,
         initiating_membership_id: key.created_by_membership_id,
         args: %{},
@@ -267,6 +272,7 @@ defmodule Emisar.ApprovalsTest do
   defp gated_request(opts \\ []) do
     account = Fixtures.Accounts.create_account()
     runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner)
     Emisar.Runners.subscribe_runner_transport(runner)
     initiator = Fixtures.Users.create_user()
 
@@ -1401,6 +1407,7 @@ defmodule Emisar.ApprovalsTest do
       key: key
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      observe_trusted_grant_action(account, user, runner, "high")
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1409,6 +1416,7 @@ defmodule Emisar.ApprovalsTest do
           action_id: "linux.uptime",
           source: "mcp",
           pack_ref: @grant_pack_ref,
+          expected_pack_hash: @grant_pack_hash,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
@@ -1440,6 +1448,7 @@ defmodule Emisar.ApprovalsTest do
       key: key
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      observe_trusted_grant_action(account, user, runner, "high")
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1448,6 +1457,7 @@ defmodule Emisar.ApprovalsTest do
           action_id: "linux.uptime",
           source: "mcp",
           pack_ref: @grant_pack_ref,
+          expected_pack_hash: @grant_pack_hash,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
@@ -1471,6 +1481,7 @@ defmodule Emisar.ApprovalsTest do
       key: key
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      observe_trusted_grant_action(account, user, runner, "high", "postgres.vacuum")
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1479,6 +1490,7 @@ defmodule Emisar.ApprovalsTest do
           action_id: "postgres.vacuum",
           source: "mcp",
           pack_ref: @grant_pack_ref,
+          expected_pack_hash: @grant_pack_hash,
           api_key_id: key.id,
           args: %{"table" => "users", "full" => true},
           args_sha256: "deadbeef",
@@ -1511,6 +1523,7 @@ defmodule Emisar.ApprovalsTest do
       # transaction back so the operator's intent isn't lost without a trace
       # (the error surfaces instead).
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      observe_trusted_grant_action(account, user, runner, "high")
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1519,6 +1532,7 @@ defmodule Emisar.ApprovalsTest do
           action_id: "linux.uptime",
           source: "mcp",
           pack_ref: @grant_pack_ref,
+          expected_pack_hash: @grant_pack_hash,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
@@ -1528,13 +1542,15 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request} = Approvals.create_request(run, user.id, "x")
 
       # Force create_grant to fail deterministically: blank the run's
-      # action_id (bypassing the create changeset). Grant.Changeset.create
-      # requires action_id, so the insert returns {:error, changeset} — the
-      # exact branch that must roll back rather than commit as `:once`.
+      # pack_ref (bypassing the create changeset). Grant.Changeset.create
+      # requires pack_ref, so the insert returns {:error, changeset} — the
+      # exact branch that must roll back rather than commit as `:once`. The
+      # action itself stays advertised, so the approve gate's trust re-check
+      # passes and the grant insert is what fails.
       {1, _} =
         ActionRun.Query.all()
         |> ActionRun.Query.by_id(run.id)
-        |> Repo.update_all(set: [action_id: ""])
+        |> Repo.update_all(set: [pack_ref: nil])
 
       Emisar.Runners.subscribe_runner_transport(runner)
 
@@ -1562,6 +1578,7 @@ defmodule Emisar.ApprovalsTest do
       key: key
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      observe_trusted_grant_action(account, user, runner, "high")
 
       {:ok, run} =
         Runs.create_run(%{
@@ -1570,6 +1587,7 @@ defmodule Emisar.ApprovalsTest do
           action_id: "linux.uptime",
           source: "mcp",
           pack_ref: @grant_pack_ref,
+          expected_pack_hash: @grant_pack_hash,
           api_key_id: key.id,
           args: %{},
           args_sha256: "abc123",
@@ -1639,6 +1657,7 @@ defmodule Emisar.ApprovalsTest do
     setup do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
 
       # The runner enforces signing with a 1h freshness window.
       {:ok, runner} =
@@ -1810,6 +1829,7 @@ defmodule Emisar.ApprovalsTest do
 
       subject = Fixtures.Subjects.subject_for(requester, account, role: :owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
       Emisar.Runners.subscribe_runner_transport(runner)
 
       {:ok, run} =
@@ -1884,6 +1904,7 @@ defmodule Emisar.ApprovalsTest do
     test "a nil requester is vacuously non-self; min_approvals still requires N distinct" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
       Emisar.Runners.subscribe_runner_transport(runner)
 
       initiator = Fixtures.Users.create_user()
@@ -1948,6 +1969,7 @@ defmodule Emisar.ApprovalsTest do
       owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
       Emisar.Runners.subscribe_runner_transport(runner)
 
       {:ok, run} =
@@ -2041,9 +2063,32 @@ defmodule Emisar.ApprovalsTest do
       assert %Request{status: :pending} = Repo.reload!(request)
     end
 
+    # A packless run has no snapshotted hash, but approve still has to bind the
+    # decision to a CURRENT trusted contract. Once the runner stops advertising
+    # the action there is none, so the approve fails closed — a later action
+    # minted under the same id is not the artifact the operator reviewed.
+    test "approving a packless run whose advertised action disappeared fails closed" do
+      %{account: account, runner: runner, run: run, request: request} = gated_request()
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+      operator = distinct_operator(account)
+
+      assert {:error, :action_not_found} = Approvals.approve_request(request, operator, "ok")
+
+      # Nothing shipped and the request is still decidable.
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+      assert %Request{status: :pending} = Repo.reload!(request)
+
+      # Deny needs no contract, so the stale request stays retractable.
+      assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
+               Approvals.deny_request(request, operator, "stale, re-issue it")
+
+      assert %ActionRun{status: :cancelled} = Repo.reload!(run)
+    end
+
     test "an in-flight request keeps its snapshotted threshold when the policy later changes" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
       Emisar.Runners.subscribe_runner_transport(runner)
 
       initiator = Fixtures.Users.create_user()
@@ -2095,6 +2140,7 @@ defmodule Emisar.ApprovalsTest do
     test "an in-flight request keeps its self-approval snapshot when the policy later forbids it" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
       Emisar.Runners.subscribe_runner_transport(runner)
 
       # The requester is also an owner, so they CAN decide — self-approval is the
@@ -2418,8 +2464,8 @@ defmodule Emisar.ApprovalsTest do
   describe "cancel_request_for_run_in_multi/2" do
     # gated_request already subscribes this process to the runner transport.
     setup do
-      %{account: account, run: run, request: request} = gated_request()
-      %{account: account, run: run, request: request}
+      %{account: account, runner: runner, run: run, request: request} = gated_request()
+      %{account: account, runner: runner, run: run, request: request}
     end
 
     test "cancelling a pending-approval run atomically cancels its request", %{
@@ -2431,6 +2477,22 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, %ActionRun{status: :cancelled}} =
                Runs.cancel_run(run, owner, "changed my mind")
+
+      assert %Request{status: :cancelled} = Repo.reload!(request)
+    end
+
+    # Cancellation resolves no action contract, so a run the approve gate now
+    # refuses (:action_not_found) is still cleanable — it can never be stranded.
+    test "cancelling still works once the run's advertised action is gone", %{
+      account: account,
+      runner: runner,
+      run: run,
+      request: request
+    } do
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+      owner = operator_subject(account)
+
+      assert {:ok, %ActionRun{status: :cancelled}} = Runs.cancel_run(run, owner, "stale request")
 
       assert %Request{status: :cancelled} = Repo.reload!(request)
     end
