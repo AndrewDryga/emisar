@@ -10,7 +10,7 @@ defmodule EmisarWeb.CheckoutControllerTest do
     test "renders Paddle.js with the client token and a page-scoped CSP", %{conn: conn} do
       Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
 
-      conn = get(conn, ~p"/checkout")
+      conn = get(conn, ~p"/checkout?_ptxn=txn_123")
       html = html_response(conn, 200)
 
       assert html =~ "https://cdn.paddle.com/paddle/v2/paddle.js"
@@ -36,9 +36,24 @@ defmodule EmisarWeb.CheckoutControllerTest do
     test "a test_ client token initializes the sandbox environment", %{conn: conn} do
       Emisar.Config.put_override(:emisar, :paddle_client_token, "test_tok_123")
 
-      html = conn |> get(~p"/checkout") |> html_response(200)
+      html = conn |> get(~p"/checkout?_ptxn=txn_123") |> html_response(200)
 
       assert html =~ ~s(data-sandbox="true")
+    end
+
+    test "a link without its ?_ptxn= transaction renders the expired state, not the spinner", %{
+      conn: conn
+    } do
+      # Paddle's checkout.url always carries the transaction; without it
+      # Paddle.js has nothing to open and the old page spun forever.
+      Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
+
+      html = conn |> get(~p"/checkout") |> html_response(200)
+
+      assert html =~ "This checkout link has expired"
+      assert html =~ "Back to your console"
+      refute html =~ "Opening secure checkout"
+      refute html =~ "paddle.js"
     end
 
     test "redirects to /pricing when no client token is configured", %{conn: conn} do

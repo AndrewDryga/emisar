@@ -17,13 +17,23 @@ defmodule EmisarWeb.CheckoutController do
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
 
-  def show(conn, _params) do
-    case Emisar.Config.get_env(:emisar, :paddle_client_token) do
-      nil ->
-        # No client token (stub billing / self-host) — nothing to initialize.
+  def show(conn, params) do
+    token = Emisar.Config.get_env(:emisar, :paddle_client_token)
+
+    cond do
+      # No client token (stub billing / self-host) — nothing to initialize.
+      is_nil(token) ->
         redirect(conn, to: "/pricing")
 
-      token ->
+      # Paddle's checkout.url always carries ?_ptxn=; without it Paddle.js has
+      # no transaction to open and the "Opening secure checkout…" spinner would
+      # spin forever. Render the honest dead-link state instead.
+      missing_transaction?(params["_ptxn"]) ->
+        conn
+        |> assign(:page_title, "Checkout link expired")
+        |> render(:expired)
+
+      true ->
         conn
         |> assign(:page_title, "Checkout")
         |> assign(:paddle_client_token, token)
@@ -33,6 +43,8 @@ defmodule EmisarWeb.CheckoutController do
         |> render(:show)
     end
   end
+
+  defp missing_transaction?(ptxn), do: not is_binary(ptxn) or String.trim(ptxn) == ""
 
   def success(conn, _params) do
     account = conn.assigns.current_account

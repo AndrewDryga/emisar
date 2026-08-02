@@ -151,7 +151,7 @@ defmodule EmisarWeb.UserAuth do
       assign_current_account(conn)
     else
       conn
-      |> put_flash(:error, "You must log in to access that page.")
+      |> put_flash(:error, "You must sign in to access that page.")
       |> maybe_store_return_to()
       |> redirect(to: ~p"/sign_in")
       |> halt()
@@ -446,7 +446,7 @@ defmodule EmisarWeb.UserAuth do
     else
       socket =
         socket
-        |> Phoenix.LiveView.put_flash(:error, "You must log in to access that page.")
+        |> Phoenix.LiveView.put_flash(:error, "You must sign in to access that page.")
         |> Phoenix.LiveView.redirect(to: ~p"/sign_in")
 
       {:halt, socket}

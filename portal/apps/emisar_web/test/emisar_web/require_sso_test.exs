@@ -158,6 +158,16 @@ defmodule EmisarWeb.RequireSSOTest do
       assert get_session(conn, :user_token)
     end
 
+    test "the interstitial offers no link back into the app", %{conn: conn, account: account} do
+      # The signed-in sign-in route redirects an authed session to /app, and
+      # the compliance gate bounces /app straight back here — so a "back to
+      # sign-in" link was a closed loop. The sign-out POST is the only exit.
+      html = conn |> get(~p"/app/#{account}/sso_required") |> html_response(200)
+
+      refute html =~ ~s|href="/app/#{account.slug}/sign_in"|
+      refute html =~ "Back to this team"
+    end
+
     test "session revocation requires the explicit CSRF-protected POST", %{
       conn: conn,
       account: account

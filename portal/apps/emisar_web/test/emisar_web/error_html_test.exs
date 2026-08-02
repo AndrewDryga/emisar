@@ -45,11 +45,34 @@ defmodule EmisarWeb.ErrorHTMLTest do
     end
   end
 
+  describe "403" do
+    test "renders spoken recovery copy, never the raw Forbidden" do
+      html = render_to_string(EmisarWeb.ErrorHTML, "403", "html", %{})
+
+      assert html =~ "Error 403"
+      assert html =~ "verify that request"
+      assert html =~ "Go back, refresh the page, and try again."
+      refute html =~ "Forbidden"
+    end
+
+    test "a stale-session CSRF POST comes back as the spoken 403 page", %{conn: conn} do
+      # The common way an operator meets a 403: a sign-in form left open until
+      # the session (and its CSRF token) expired, then submitted.
+      conn = Plug.Conn.put_private(conn, :plug_skip_csrf_protection, false)
+
+      {403, _headers, body} =
+        assert_error_sent(403, fn -> post(conn, ~p"/sign_in/magic/start", %{}) end)
+
+      assert body =~ "verify that request"
+      refute body =~ "Forbidden"
+    end
+  end
+
   describe "other status codes" do
     test "renders the generic page with the Phoenix status message" do
-      html = render_to_string(EmisarWeb.ErrorHTML, "403", "html", %{})
-      assert html =~ "Forbidden"
-      assert html =~ "Error 403"
+      html = render_to_string(EmisarWeb.ErrorHTML, "400", "html", %{})
+      assert html =~ "Bad Request"
+      assert html =~ "Error 400"
     end
 
     test "an unknown status code still renders a branded page via the catch-all" do

@@ -1,0 +1,19 @@
+<%!-- The dead-link state: the URL carries no ?_ptxn= transaction, so there is
+  no checkout for Paddle.js to open — say so instead of spinning forever. --%>
+<div class="mx-auto flex min-h-[60vh] w-full max-w-md flex-col items-center justify-center px-6 py-24 text-center">
+  <span class="grid h-12 w-12 place-items-center rounded-xl bg-zinc-800/60 text-zinc-400 ring-1 ring-zinc-700">
+    <.icon name="hero-clock" class="h-5 w-5" />
+  </span>
+  <h1 class="font-display mt-5 text-xl font-semibold tracking-[-0.01em] text-zinc-100">
+    This checkout link has expired
+  </h1>
+  <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+    The link is missing its checkout session — it may be incomplete or already
+    used. Start the checkout again from your billing page to pick a plan.
+  </p>
+  <p class="mt-6 text-xs text-zinc-500">
+    <.link navigate={~p"/app"} class="text-brand-300 hover:text-brand-200">
+      Back to your console
+    </.link>
+  </p>
+</div>

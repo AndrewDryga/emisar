@@ -9,6 +9,8 @@ defmodule EmisarWeb.SSORequiredHTML do
         identity provider.
       </p>
 
+      <%!-- No back link: every signed-in destination bounces straight back here
+           (the compliance gate), so the sign-out POST is the only real exit. --%>
       <.simple_form for={@form} action={~p"/app/#{@account}/sso_required"} method="post">
         <:actions>
           <.button class="w-full">
@@ -16,10 +18,6 @@ defmodule EmisarWeb.SSORequiredHTML do
           </.button>
         </:actions>
       </.simple_form>
-
-      <.auth_footer_link href={~p"/app/#{@account}/sign_in"}>
-        Back to this team's sign-in
-      </.auth_footer_link>
     </.auth_layout>
     """
   end

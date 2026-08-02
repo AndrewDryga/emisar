@@ -140,6 +140,12 @@ defmodule EmisarWeb.ActivateLive do
               operator, admin, or owner to approve it — the code from the terminal is
               all they need.
             </p>
+            <.link
+              navigate={~p"/app/#{@current_account}"}
+              class="mt-5 block w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-center text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+            >
+              Back to dashboard
+            </.link>
           </div>
         <% @decision == :approved -> %>
           <div class="px-6 py-5">

@@ -69,7 +69,7 @@ defmodule EmisarWeb.AdminGateTest do
       assert redirected_to(conn) == ~p"/sign_in"
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "You must log in to access that page."
+               "You must sign in to access that page."
     end
 
     test "the admin mount rides the :noindex pipeline (platform observability isn't crawled)",

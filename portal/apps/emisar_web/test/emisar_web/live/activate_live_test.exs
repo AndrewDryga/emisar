@@ -115,6 +115,9 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       assert html =~ "needs an operator role or above"
       refute html =~ "Approve connection"
+      # The note is honest but not a dead end — the viewer can leave.
+      assert html =~ "Back to dashboard"
+      assert html =~ ~s|href="/app/#{account.slug}"|
     end
 
     test "a single-account approver sees the named destination, not a selector", %{conn: conn} do

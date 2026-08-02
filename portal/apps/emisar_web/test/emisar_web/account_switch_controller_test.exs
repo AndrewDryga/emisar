@@ -82,7 +82,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
       conn = post(conn, ~p"/app/accounts/switch", account_id: Ecto.UUID.generate())
 
       assert redirected_to(conn) == ~p"/sign_in"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "must log in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "must sign in"
     end
 
     test "the switch persists across subsequent requests via the session", %{conn: conn} do

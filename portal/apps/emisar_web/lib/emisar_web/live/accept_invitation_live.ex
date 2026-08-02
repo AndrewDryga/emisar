@@ -26,14 +26,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
       # the copy says "no longer available" instead of guessing. Neither state
       # names the account — a stale link's bearer learns nothing.
       {:error, reason} when reason in [:not_found, :expired] ->
-        {title, body} = invitation_error_copy(reason)
-
-        {:ok,
-         socket
-         |> assign(:page_title, title)
-         |> assign(:error_title, title)
-         |> assign(:error_body, body)
-         |> assign(:state, :invitation_unavailable)}
+        {:ok, assign_invitation_unavailable(socket, reason)}
 
       {:ok, membership} ->
         {:ok,
@@ -56,6 +49,16 @@ defmodule EmisarWeb.AcceptInvitationLive do
     {"Invitation unavailable",
      "This invitation link isn't valid or is no longer available. " <>
        "Ask whoever invited you to send a fresh one."}
+  end
+
+  defp assign_invitation_unavailable(socket, reason) do
+    {title, body} = invitation_error_copy(reason)
+
+    socket
+    |> assign(:page_title, title)
+    |> assign(:error_title, title)
+    |> assign(:error_body, body)
+    |> assign(:state, :invitation_unavailable)
   end
 
   # Three possible states for the page render.
@@ -92,7 +95,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
       <p class="mb-6 text-sm text-zinc-400">
         You've been invited to join
         <span class="font-semibold text-zinc-200">{@membership.account.name}</span>
-        as <.chip>{@membership.role}</.chip>.
+        as <.chip>{Emisar.Auth.role_label(@membership.role)}</.chip>.
       </p>
 
       <%!-- On accept we flip `trigger_submit` and the form POSTs the invitee's
@@ -143,7 +146,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         You're signed in as <span class="font-mono text-zinc-200">{@membership.user.email}</span>
         — accept your invitation to join
         <span class="font-semibold text-zinc-200">{@membership.account.name}</span>
-        as <.chip>{@membership.role}</.chip>.
+        as <.chip>{Emisar.Auth.role_label(@membership.role)}</.chip>.
       </p>
 
       <.button class="w-full" phx-click="accept_existing" phx-disable-with="Accepting...">
@@ -199,6 +202,13 @@ defmodule EmisarWeb.AcceptInvitationLive do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
 
+      # The invitation was burnt, revoked, or expired between mount and this
+      # submit (a second link-holder raced us, or the window lapsed). That's
+      # terminal — transition to the unavailable state a fresh mount would
+      # render, never a 7-second flash over a form that can no longer succeed.
+      {:error, :not_found} ->
+        {:noreply, assign_invitation_unavailable(socket, :not_found)}
+
       {:error, _other} ->
         {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}
     end
@@ -216,6 +226,10 @@ defmodule EmisarWeb.AcceptInvitationLive do
          socket
          |> put_flash(:info, "Welcome to #{membership.account.name}.")
          |> push_navigate(to: ~p"/app")}
+
+      # Same race as the anonymous accept: no longer pending → terminal state.
+      {:error, :not_found} ->
+        {:noreply, assign_invitation_unavailable(socket, :not_found)}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}

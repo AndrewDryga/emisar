@@ -28,6 +28,18 @@ defmodule EmisarWeb.ErrorHTML do
     })
   end
 
+  # The common path here is a stale-session CSRF failure — a form that sat
+  # open until the session expired, then POSTed. Spoken recovery copy, not
+  # the raw "Forbidden".
+  def render("403.html", _assigns) do
+    error_page(%{
+      status: 403,
+      title: "We couldn't verify that request",
+      message:
+        "This usually happens when a page sat open long enough for your session to expire. Go back, refresh the page, and try again."
+    })
+  end
+
   def render("500.html", _assigns) do
     error_page(%{
       status: 500,

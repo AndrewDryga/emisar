@@ -73,7 +73,8 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       {:ok, lv, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
 
       assert html =~ account.name
-      assert html =~ "operator"
+      # The human role label, never the raw atom.
+      assert html =~ "Operator"
       assert html =~ "invitee-"
       # Passwordless: the join form sets a name, not a password.
       refute html =~ ~s|name="user[password]"|
@@ -93,6 +94,32 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       user = Emisar.Repo.reload!(pending_membership.user)
       assert user.full_name == "New Person"
       assert user.confirmed_at
+    end
+
+    test "an accept that lost the race to a second link-holder lands on the terminal state", %{
+      conn: conn
+    } do
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+
+      {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+
+      # A second holder of the same emailed link accepts while this tab sits
+      # on the form, burning the token.
+      {:ok, membership} = Accounts.fetch_invitation_by_token(token)
+      {:ok, _} = Accounts.accept_invitation(membership, %{"full_name" => "First Acceptor"})
+
+      html =
+        lv
+        |> form("#accept_form", %{"user" => %{"full_name" => "Second Acceptor"}})
+        |> render_submit()
+
+      # Terminal state with a recovery action — not a transient flash over a
+      # form that can never succeed.
+      assert html =~ "Invitation unavailable"
+      assert html =~ "no longer available"
+      assert html =~ "Go to sign in"
+      refute html =~ "accept_form"
     end
   end
 
@@ -160,6 +187,34 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       # Accepted: the token is burned.
       assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+    end
+
+    test "an accept whose invitation was revoked mid-session lands on the terminal state", %{
+      owner: owner,
+      account: account
+    } do
+      invitee = Fixtures.Users.create_user()
+
+      {:ok, %{invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          invitee.email,
+          "viewer",
+          Accounts.RunnerAccess.all(),
+          owner_subject(owner, account)
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(invitee) |> live(~p"/accept_invitation/#{token}")
+
+      # An admin revokes the invitation while the invitee's tab sits open.
+      {:ok, membership} = Accounts.fetch_invitation_by_token(token)
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+
+      html = render_click(lv, "accept_existing", %{})
+
+      assert html =~ "Invitation unavailable"
+      assert html =~ "Go to sign in"
+      refute html =~ "Accept invitation"
     end
 
     test "a DIFFERENT signed-in user gets the wrong-account screen, not the accept", %{
