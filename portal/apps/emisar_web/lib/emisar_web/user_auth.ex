@@ -262,22 +262,12 @@ defmodule EmisarWeb.UserAuth do
     do: put_session(conn, :current_account_id, resolved_id)
 
   @doc """
-  Public API for the switch-account controller: validates the user has
-  a non-suspended membership on `account_id` and pins it in the session.
-  Returns `{:ok, conn}` with the new session value, or `{:error, :not_found}`
-  when the user has no access to that account.
+  Pins an already-validated membership's account in the session. `membership`
+  comes from `Accounts.switch_account/2`, which owns the validation and the
+  audit row; the web boundary only carries the decision into the session.
   """
-  def switch_account(conn, account_id) when is_binary(account_id) do
-    user = conn.assigns.current_user
-
-    case Accounts.fetch_membership_for_session(user, account_id) do
-      {:ok, %{account_id: ^account_id} = membership} ->
-        {:ok, put_session(conn, :current_account_id, account_id), membership}
-
-      _ ->
-        {:error, :not_found}
-    end
-  end
+  def switch_account(conn, %Accounts.Membership{} = membership),
+    do: put_session(conn, :current_account_id, membership.account_id)
 
   @doc """
   Log the session out (delete the token, disconnect live sockets, renew the

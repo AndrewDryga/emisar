@@ -9,6 +9,7 @@ defmodule Emisar.AccountsTest do
   alias Emisar.Fixtures
   alias Emisar.Mail
   alias Emisar.Policies.Policy
+  alias Emisar.RequestContext
   alias Emisar.Runbooks.Runbook
   alias Emisar.Runs.ActionRun
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
@@ -1711,51 +1712,126 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "record_account_switched/1" do
-    test "writes the session.account_switched audit row for the switched-to account" do
-      account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+  describe "switch_account/2" do
+    setup do
+      user = Fixtures.Users.create_user()
+      current_account = Fixtures.Accounts.create_account()
+      target_account = Fixtures.Accounts.create_account()
 
-      owner_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: current_account.id,
+        user_id: user.id,
+        role: "owner"
+      )
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, account.id)
-
-      assert {:ok, _event} = Accounts.record_account_switched(membership)
-
-      {:ok, events, _} = Emisar.Audit.list_events(subject, page: [limit: 10])
-      switched = Enum.find(events, &(&1.event_type == "session.account_switched"))
-
-      assert switched
-      assert switched.actor_id == owner.id
-      assert switched.target_label == owner.email
+      %{user: user, current_account: current_account, target_account: target_account}
     end
 
-    test "writes ONLY the audit row — the membership and account rows are untouched" do
-      account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      _owner_membership =
+    test "returns the target membership and audits the switch on the target account", %{
+      user: user,
+      current_account: current_account,
+      target_account: target_account
+    } do
+      target_membership =
         Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
+          account_id: target_account.id,
+          user_id: user.id,
+          role: "operator"
         )
 
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, account.id)
+      context = %RequestContext{ip_address: "203.0.113.7", user_agent: "Mozilla/5.0"}
 
-      membership_before = Repo.reload!(membership)
-      account_before = Repo.reload!(account)
+      subject =
+        Fixtures.Subjects.subject_for(user, current_account,
+          context: context,
+          auth_method: :magic_link,
+          mfa: true
+        )
 
-      assert {:ok, _event} = Accounts.record_account_switched(membership)
+      target_membership_id = target_membership.id
+      target_account_id = target_account.id
 
-      assert Repo.reload!(membership) == membership_before
-      assert Repo.reload!(account) == account_before
+      assert {:ok, %Membership{id: ^target_membership_id} = switched} =
+               Accounts.switch_account(target_account.id, subject)
+
+      assert %Account{id: ^target_account_id} = switched.account
+      assert %User{} = switched.user
+
+      event =
+        AuditEvent.Query.all()
+        |> AuditEvent.Query.by_account_id(target_account.id)
+        |> Repo.one()
+
+      assert event.event_type == "session.account_switched"
+      assert event.actor_kind == "user"
+      assert event.actor_id == user.id
+      assert event.target_kind == "user"
+      assert event.target_id == user.id
+      assert event.target_label == user.email
+      assert event.payload["role"] == "operator"
+      assert event.ip_address == "203.0.113.7"
+      assert event.auth_method == "magic_link"
+      assert event.mfa
+    end
+
+    test "a subject without the view-own-account permission is rejected", %{
+      user: user,
+      target_account: target_account
+    } do
+      Fixtures.Memberships.create_membership(account_id: target_account.id, user_id: user.id)
+      subject = Fixtures.Subjects.build_subject(user: user)
+
+      assert Accounts.switch_account(target_account.id, subject) == {:error, :unauthorized}
+
+      refute AuditEvent.Query.all()
+             |> AuditEvent.Query.by_account_id(target_account.id)
+             |> Repo.one()
+    end
+
+    test "a user who is not a member of the target account cannot switch into it", %{
+      user: user,
+      current_account: current_account,
+      target_account: target_account
+    } do
+      Fixtures.Memberships.create_membership(account_id: target_account.id)
+      subject = Fixtures.Subjects.subject_for(user, current_account)
+
+      assert Accounts.switch_account(target_account.id, subject) == {:error, :not_found}
+
+      refute AuditEvent.Query.all()
+             |> AuditEvent.Query.by_account_id(target_account.id)
+             |> Repo.one()
+    end
+
+    test "a suspended membership on the target account cannot be switched into", %{
+      user: user,
+      current_account: current_account,
+      target_account: target_account
+    } do
+      target_membership =
+        Fixtures.Memberships.create_membership(account_id: target_account.id, user_id: user.id)
+
+      Fixtures.Memberships.suspend_membership(target_membership)
+      subject = Fixtures.Subjects.subject_for(user, current_account)
+
+      assert Accounts.switch_account(target_account.id, subject) == {:error, :not_found}
+
+      refute AuditEvent.Query.all()
+             |> AuditEvent.Query.by_account_id(target_account.id)
+             |> Repo.one()
+    end
+
+    test "a malformed account id is rejected before any audit is written", %{
+      user: user,
+      current_account: current_account
+    } do
+      subject = Fixtures.Subjects.subject_for(user, current_account)
+
+      assert Accounts.switch_account("not-a-uuid", subject) == {:error, :not_found}
+
+      refute AuditEvent.Query.all()
+             |> AuditEvent.Query.by_event_type("session.account_switched")
+             |> Repo.one()
     end
   end
 

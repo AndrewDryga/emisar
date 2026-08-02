@@ -1302,14 +1302,57 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — called by the web session boundary (`UserAuth`) when an operator
-  switches active tenant; the switch is web session state (no rows change), so
-  no `%Subject{}` is threaded, but the audit trail of it is the domain's record —
-  controllers never write audit rows. Takes the membership resolved by
-  `fetch_membership_for_session/2` (`:user` preloaded).
+  Switch the operator's active tenant to `account_id`. Requires
+  `view_own_account_permission`. Returns `{:ok, membership}` — the freshly
+  validated target membership with `:account` and `:user` preloaded, which the
+  web boundary pins in the session and redirects to — or `{:error, :not_found}`
+  when the id is malformed, names an account the subject's user has no live
+  membership on, or that membership/account/user is suspended or deleted (all
+  indistinguishable, so a switch never confirms a tenant exists).
+
+  The `session.account_switched` audit row is written in the same transaction as
+  the locked membership read, so a switch that fails validation leaves no trace
+  of having succeeded.
   """
-  def record_account_switched(%Membership{} = membership) do
-    membership |> Audit.Events.session_account_switched() |> Repo.insert()
+  def switch_account(account_id, %Subject{actor: %Users.User{id: user_id}} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_own_account_permission()
+           ) do
+      if Repo.valid_uuid?(account_id),
+        do: commit_account_switch(account_id, user_id, subject),
+        else: {:error, :not_found}
+    end
+  end
+
+  # Deliberately CROSS-account, so no `Authorizer.for_subject/2`: the subject
+  # still carries the tenant the operator is LEAVING, which would scope this
+  # lookup to the old account and reject every valid switch. Scoping by the
+  # requested account id AND the subject's own actor id is the authorization —
+  # you can only ever switch into your own membership (the same documented IL-4
+  # exception as `list_accounts_for_user/2`). The row lock orders the switch
+  # against concurrent suspension/removal: an earlier revocation makes this
+  # `:not_found`; a later revocation waits until the audited switch commits.
+  defp commit_account_switch(account_id, user_id, %Subject{} = subject) do
+    Multi.new()
+    |> Multi.run(:membership, fn repo, _changes ->
+      Membership.Query.not_deleted()
+      |> Membership.Query.not_disabled()
+      |> Membership.Query.by_account_and_user(account_id, user_id)
+      |> Membership.Query.with_preloaded_account()
+      |> Membership.Query.with_preloaded_user()
+      |> Membership.Query.lock_for_update()
+      |> repo.fetch(Membership.Query)
+    end)
+    |> Multi.insert(:audit, fn %{membership: membership} ->
+      Audit.Events.session_account_switched(subject, membership)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{membership: membership}} -> {:ok, membership}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @doc """

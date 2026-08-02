@@ -171,16 +171,23 @@ defmodule Emisar.Audit.Events do
     }
   end
 
-  # Self-service (no Subject): switching tenants is the user acting on
-  # their own session; the membership identifies both actor and subject.
-  def session_account_switched(%Accounts.Membership{user: %Users.User{} = user} = membership) do
-    Audit.changeset(membership.account_id, "session.account_switched",
-      actor_kind: "user",
-      actor_id: membership.user_id,
-      target_kind: "user",
-      target_id: membership.user_id,
-      target_label: user.email,
-      payload: %{role: membership.role}
+  # Self-service, but still subject-carried: the operator's session provenance
+  # and request context belong on the row like every other event. The target is
+  # their own membership in the account they switched INTO.
+  def session_account_switched(
+        %Subject{} = subject,
+        %Accounts.Membership{user: %Users.User{} = user} = membership
+      ) do
+    Audit.changeset(
+      membership.account_id,
+      "session.account_switched",
+      actor(subject) ++
+        [
+          target_kind: "user",
+          target_id: membership.user_id,
+          target_label: user.email,
+          payload: %{role: membership.role}
+        ]
     )
   end
 

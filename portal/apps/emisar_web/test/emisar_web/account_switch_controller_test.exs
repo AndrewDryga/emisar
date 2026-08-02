@@ -2,7 +2,8 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
   @moduledoc """
   Covers `POST /app/accounts/switch`: a member of multiple accounts
   flips the active tenant; a user attempting to switch to an account
-  they don't belong to is rejected with a flash.
+  they don't belong to — or were suspended from — is rejected with a
+  flash and leaves no switch audit on that tenant.
   """
 
   use EmisarWeb.ConnCase, async: true
@@ -27,7 +28,7 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
 
   describe "POST /app/accounts/switch" do
     test "switches the active account when the user belongs to it", %{conn: conn} do
-      {conn, user, first} = register_and_log_in(conn)
+      {conn, user, _first} = register_and_log_in(conn)
       second = second_account_for(user)
 
       conn = post(conn, ~p"/app/accounts/switch", account_id: second.id)
@@ -42,11 +43,10 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
         |> Repo.all()
 
       assert Enum.any?(audit, &(&1.event_type == "session.account_switched"))
-      _ = first
     end
 
     test "rejects switching to an account the user is NOT a member of", %{conn: conn} do
-      {conn, _user, first} = register_and_log_in(conn)
+      {conn, _user, _first} = register_and_log_in(conn)
 
       # Account belonging to someone else.
       {:ok, other_user} =
@@ -63,7 +63,30 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
       assert redirected_to(conn) == ~p"/app"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "aren't a member"
       assert get_session(conn, :current_account_id) != foreign.id
-      _ = first
+
+      refute Event.Query.all()
+             |> Event.Query.by_account_id(foreign.id)
+             |> Event.Query.by_event_type("session.account_switched")
+             |> Repo.one()
+    end
+
+    test "rejects switching into an account the user was suspended from", %{conn: conn} do
+      {conn, user, _first} = register_and_log_in(conn)
+      second = second_account_for(user)
+
+      membership = Fixtures.Memberships.fetch_membership(second.id, user.id)
+      Fixtures.Memberships.suspend_membership(membership)
+
+      conn = post(conn, ~p"/app/accounts/switch", account_id: second.id)
+
+      assert redirected_to(conn) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "aren't a member"
+      assert get_session(conn, :current_account_id) != second.id
+
+      refute Event.Query.all()
+             |> Event.Query.by_account_id(second.id)
+             |> Event.Query.by_event_type("session.account_switched")
+             |> Repo.one()
     end
 
     test "rejects a missing/invalid account_id", %{conn: conn} do
