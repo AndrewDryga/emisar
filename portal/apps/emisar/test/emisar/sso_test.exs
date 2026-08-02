@@ -17,7 +17,7 @@ defmodule Emisar.SSOTest do
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.Fixtures
   alias Emisar.SSO.{GroupRoleMapping, GroupRunnerAccessMapping}
-  alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUser, UserIdentity}
+  alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUser, SCIMUserUpdate, UserIdentity}
 
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
@@ -1803,7 +1803,9 @@ defmodule Emisar.SSOTest do
       assert adopted.scim_external_id == "shared-id"
 
       # …and the lifecycle endpoints can now find it.
-      assert {:ok, %{identity: deactivated}} = SSO.scim_deactivate_user(provider, "shared-id")
+      assert {:ok, %{identity: deactivated}} =
+               SSO.scim_update_user(provider, "shared-id", %SCIMUserUpdate{active: false})
+
       refute deactivated.scim_active
     end
 
@@ -2073,7 +2075,7 @@ defmodule Emisar.SSOTest do
       attrs = scim_attrs(%{external_id: "okta|readd", email: "readd@acme.test"})
 
       assert {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|readd")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|readd", %SCIMUserUpdate{active: false})
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       # Some IdPs re-POST rather than PATCH active:true — the re-POST restores
@@ -2132,14 +2134,17 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- scim_deactivate_user/2 (provider-scoped) ------------------------
+  # -- scim_update_user/3 (provider-scoped) ----------------------------
 
-  describe "scim_rename_user/3 tenancy" do
+  describe "scim_update_user/3 tenancy" do
     test "a rename reaches the person's own name when this is their only workspace" do
       %{provider: provider, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|solo")
 
-      assert {:ok, _} = SSO.scim_rename_user(provider, "okta|solo", "Solo Person")
+      assert {:ok, _} =
+               SSO.scim_update_user(provider, "okta|solo", %SCIMUserUpdate{
+                 name: {:replace, "Solo Person"}
+               })
 
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
       assert user.full_name == "Solo Person"
@@ -2166,7 +2171,10 @@ defmodule Emisar.SSOTest do
         role: "operator"
       )
 
-      assert {:ok, _} = SSO.scim_rename_user(provider, "okta|shared", "Renamed By Acme")
+      assert {:ok, _} =
+               SSO.scim_update_user(provider, "okta|shared", %SCIMUserUpdate{
+                 name: {:replace, "Renamed By Acme"}
+               })
 
       # This account sees the directory's name…
       membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
@@ -2193,7 +2201,10 @@ defmodule Emisar.SSOTest do
         role: "operator"
       )
 
-      assert {:ok, _} = SSO.scim_rename_user(provider, "okta|relabel", "Someone Else")
+      assert {:ok, _} =
+               SSO.scim_update_user(provider, "okta|relabel", %SCIMUserUpdate{
+                 name: {:replace, "Someone Else"}
+               })
 
       assert event =
                Enum.find(
@@ -2266,16 +2277,17 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "scim_can_deactivate_user/2" do
-    test "answers before a PATCH writes anything else" do
+  describe "scim_update_user/3 atomicity" do
+    test "a rename bundled with a refused deactivation commits neither" do
       # A PATCH may carry a rename alongside the deactivation. Committing the
       # rename and THEN answering 409 told the directory its whole operation was
-      # rejected when half of it had landed.
+      # rejected when half of it had landed — one transaction commits all of the
+      # requested changes or none.
       %{provider: provider, account: account, subject: subject} = scim_provider()
       %{identity: identity} = provision(provider, "okta|onlyowner")
 
-      # Make the synced member the account's ONLY owner — the state the guard
-      # exists for.
+      # Make the synced member the account's ONLY owner — the state the
+      # last-active-owner guard exists for.
       membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
       owner = Fixtures.Memberships.force_role(membership, "owner")
       assert owner.role == :owner
@@ -2284,24 +2296,53 @@ defmodule Emisar.SSOTest do
       |> Fixtures.Memberships.fetch_membership(subject.actor.id)
       |> Fixtures.Memberships.force_role("admin")
 
-      assert {:error, :last_owner} = SSO.scim_can_deactivate_user(provider, "okta|onlyowner")
+      update = %SCIMUserUpdate{name: {:replace, "Half Landed"}, active: false}
+      assert {:error, :last_owner} = SSO.scim_update_user(provider, "okta|onlyowner", update)
+
+      # Nothing landed: not the lifecycle, not the name, not the identity flag.
+      unchanged = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+      refute unchanged.disabled_at
+      refute unchanged.directory_display_name
+      assert Repo.reload!(identity).scim_active
     end
 
-    test "allows a member the guard does not protect" do
-      %{provider: provider} = scim_provider()
-      provision(provider, "okta|ordinary")
+    test "a rejected rename rolls the whole operation back" do
+      # The rename's own changeset can refuse (a >255-char name); the operation
+      # also carried the deactivation, and the directory is told the whole PATCH
+      # failed — so no part of it may stay.
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|badname")
 
-      assert :ok = SSO.scim_can_deactivate_user(provider, "okta|ordinary")
+      update = %SCIMUserUpdate{
+        name: {:replace, String.duplicate("x", 256)},
+        active: false
+      }
+
+      assert {:error, %Ecto.Changeset{}} = SSO.scim_update_user(provider, "okta|badname", update)
+
+      unchanged = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+      refute unchanged.disabled_at
+      refute unchanged.directory_display_name
+      assert Repo.reload!(identity).scim_active
     end
 
-    test "an unknown externalId is not found" do
-      %{provider: provider} = scim_provider()
+    test "a rename for a member an operator removed is :not_found and commits nothing" do
+      # The rename step rolls the transaction back from INSIDE
+      # `sync_member_display_name`'s own (joined) transaction — the error must
+      # surface as `{:error, :not_found}`, and the deactivation and identity
+      # flag the operation also carried must not survive it.
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity, membership: membership} = provision(provider, "okta|removed")
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+      refute Accounts.peek_sync_membership(account.id, identity.user_id)
 
-      assert {:error, :not_found} = SSO.scim_can_deactivate_user(provider, "okta|nobody")
+      update = %SCIMUserUpdate{name: {:replace, "New Name"}, active: false}
+      assert {:error, :not_found} = SSO.scim_update_user(provider, "okta|removed", update)
+      assert Repo.reload!(identity).scim_active
     end
   end
 
-  describe "scim_deactivate_user/2" do
+  describe "scim_update_user/3" do
     test "ends only this account's sessions — the person stays signed in elsewhere" do
       # A session token is per-user, not per-account, so revoking them all let one
       # tenant's directory sign someone out of a workspace it has no authority
@@ -2323,7 +2364,8 @@ defmodule Emisar.SSOTest do
 
       magic_link_session = Auth.create_session_token!(user, :magic_link, false)
 
-      assert {:ok, _} = SSO.scim_deactivate_user(provider, "okta|multi")
+      assert {:ok, _} =
+               SSO.scim_update_user(provider, "okta|multi", %SCIMUserUpdate{active: false})
 
       # The connection's own session is gone…
       assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(sso_session)
@@ -2340,7 +2382,7 @@ defmodule Emisar.SSOTest do
       {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
       assert {:ok, %{membership: membership, identity: deactivated}} =
-               SSO.scim_deactivate_user(provider, "okta|deprov")
+               SSO.scim_update_user(provider, "okta|deprov", %SCIMUserUpdate{active: false})
 
       assert membership.disabled_at
       refute deactivated.scim_active
@@ -2355,7 +2397,9 @@ defmodule Emisar.SSOTest do
       attrs = scim_attrs(%{external_id: "okta|dsusp", email: "dsusp@acme.test"})
       {:ok, _} = SSO.scim_provision_user(provider, attrs)
 
-      assert {:ok, %{membership: membership}} = SSO.scim_deactivate_user(provider, "okta|dsusp")
+      assert {:ok, %{membership: membership}} =
+               SSO.scim_update_user(provider, "okta|dsusp", %SCIMUserUpdate{active: false})
+
       assert membership.directory_suspended
 
       # An operator can't lift an IdP deactivation — the guard is judged on the
@@ -2375,7 +2419,8 @@ defmodule Emisar.SSOTest do
       Fixtures.Memberships.force_role(membership, "owner")
       demote_other_owners(account.id, except: user.id)
 
-      assert {:error, :last_owner} = SSO.scim_deactivate_user(provider, "okta|owner")
+      assert {:error, :last_owner} =
+               SSO.scim_update_user(provider, "okta|owner", %SCIMUserUpdate{active: false})
 
       # The membership stays active and the SCIM flag is left untouched, so the
       # projection still answers active.
@@ -2386,23 +2431,25 @@ defmodule Emisar.SSOTest do
 
     test "returns :not_found when no identity matches the externalId" do
       %{provider: provider} = scim_provider()
-      assert {:error, :not_found} = SSO.scim_deactivate_user(provider, "okta|nobody")
+
+      assert {:error, :not_found} =
+               SSO.scim_update_user(provider, "okta|nobody", %SCIMUserUpdate{active: false})
     end
   end
 
-  # -- scim_reactivate_user/2 (provider-scoped) ------------------------
+  # -- scim_update_user/3 reactivate ----------------------------------
 
-  describe "scim_reactivate_user/2" do
+  describe "scim_update_user/3 reactivate" do
     test "clears disabled_at on a suspended membership + flips scim_active back on" do
       %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
       attrs = scim_attrs(%{external_id: "okta|react", email: "react@acme.test"})
 
       {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|react")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|react", %SCIMUserUpdate{active: false})
       assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
 
       assert {:ok, %{membership: membership, identity: identity}} =
-               SSO.scim_reactivate_user(provider, "okta|react")
+               SSO.scim_update_user(provider, "okta|react", %SCIMUserUpdate{active: true})
 
       refute membership.disabled_at
       assert identity.scim_active
@@ -2414,7 +2461,9 @@ defmodule Emisar.SSOTest do
 
     test "returns :not_found when no identity matches the externalId" do
       %{provider: provider} = scim_provider()
-      assert {:error, :not_found} = SSO.scim_reactivate_user(provider, "okta|nobody")
+
+      assert {:error, :not_found} =
+               SSO.scim_update_user(provider, "okta|nobody", %SCIMUserUpdate{active: true})
     end
 
     test "a manual break-glass suspension survives an IdP deactivate→reactivate cycle" do
@@ -2426,8 +2475,10 @@ defmodule Emisar.SSOTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.suspend_membership(membership)
 
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|held")
-      assert {:ok, %{membership: returned}} = SSO.scim_reactivate_user(provider, "okta|held")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|held", %SCIMUserUpdate{active: false})
+
+      assert {:ok, %{membership: returned}} =
+               SSO.scim_update_user(provider, "okta|held", %SCIMUserUpdate{active: true})
 
       # The IdP never owned the suspension, so its reactivate can't lift it —
       # the member stays out until an operator reinstates locally.
@@ -2437,16 +2488,18 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- scim_rename_user/3 (provider-scoped) ----------------------------
+  # -- scim_update_user/3 rename --------------------------------------
 
-  describe "scim_rename_user/3" do
+  describe "scim_update_user/3 rename" do
     test "replaces the synced user's display name, audited to the directory" do
       %{provider: provider} = scim_provider()
       attrs = scim_attrs(%{external_id: "okta|rename", full_name: "Old Name"})
       {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
-      assert {:ok, %UserIdentity{} = returned} =
-               SSO.scim_rename_user(provider, "okta|rename", "New Name")
+      assert {:ok, %{identity: %UserIdentity{} = returned}} =
+               SSO.scim_update_user(provider, "okta|rename", %SCIMUserUpdate{
+                 name: {:replace, "New Name"}
+               })
 
       assert returned.id == identity.id
       assert Repo.reload!(user).full_name == "New Name"
@@ -2466,7 +2519,10 @@ defmodule Emisar.SSOTest do
       attrs = scim_attrs(%{external_id: "okta|same", full_name: "Keep Name"})
       {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
 
-      assert {:ok, %UserIdentity{}} = SSO.scim_rename_user(provider, "okta|same", "Keep Name")
+      assert {:ok, %{identity: %UserIdentity{}}} =
+               SSO.scim_update_user(provider, "okta|same", %SCIMUserUpdate{
+                 name: {:replace, "Keep Name"}
+               })
 
       assert Repo.reload!(user).full_name == "Keep Name"
 
@@ -2478,7 +2534,10 @@ defmodule Emisar.SSOTest do
 
     test "an unknown externalId is :not_found" do
       %{provider: provider} = scim_provider()
-      assert SSO.scim_rename_user(provider, "okta|nobody", "Anyone") == {:error, :not_found}
+
+      assert SSO.scim_update_user(provider, "okta|nobody", %SCIMUserUpdate{
+               name: {:replace, "Anyone"}
+             }) == {:error, :not_found}
     end
 
     test "is provider-scoped — provider B can't rename provider A's user" do
@@ -2487,7 +2546,10 @@ defmodule Emisar.SSOTest do
       attrs = scim_attrs(%{external_id: "okta|scoped", full_name: "A Name"})
       {:ok, %{user: user}} = SSO.scim_provision_user(provider_a, attrs)
 
-      assert SSO.scim_rename_user(provider_b, "okta|scoped", "Hijack") == {:error, :not_found}
+      assert SSO.scim_update_user(provider_b, "okta|scoped", %SCIMUserUpdate{
+               name: {:replace, "Hijack"}
+             }) == {:error, :not_found}
+
       assert Repo.reload!(user).full_name == "A Name"
     end
   end
@@ -2527,7 +2589,7 @@ defmodule Emisar.SSOTest do
     test "a deprovisioned (suspended) member reports inactive" do
       %{provider: provider} = scim_provider()
       _ = provision(provider, "okta|off")
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|off")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|off", %SCIMUserUpdate{active: false})
 
       assert {:ok, scim_user} = SSO.scim_fetch_user(provider, "okta|off")
       refute scim_user.active
@@ -2588,7 +2650,7 @@ defmodule Emisar.SSOTest do
     test "each row carries its own effective active state", %{provider: provider} do
       _ = provision(provider, "okta|on")
       _ = provision(provider, "okta|gone")
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|gone")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|gone", %SCIMUserUpdate{active: false})
 
       assert {:ok, scim_users, _meta} = SSO.scim_list_users(provider)
 

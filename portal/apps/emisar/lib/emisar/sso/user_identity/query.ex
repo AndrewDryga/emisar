@@ -57,6 +57,14 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_user_id(queryable, user_id),
     do: where(queryable, [identities: i], i.user_id == ^user_id)
 
+  @doc """
+  Row lock for the SCIM update transition (`FOR NO KEY UPDATE`): concurrent
+  directory operations on the same identity serialize here, so each one's
+  guards and name merge judge state the previous writer committed.
+  """
+  def lock_for_update(queryable),
+    do: lock(queryable, "FOR NO KEY UPDATE")
+
   # Identities whose (live) provider currently runs directory sync — the
   # "directory-managed" boundary the synced role chip and the profile-name
   # lock share. Disabling SCIM on the provider unmatches automatically.

@@ -2331,7 +2331,7 @@ defmodule Emisar.AccountsTest do
          %{account: account, provider: provider} do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      assert {:ok, %Membership{} = suspended} =
+      assert {:ok, %Membership{} = suspended, true} =
                Accounts.sync_suspend_membership(member, provider)
 
       assert Membership.disabled?(suspended)
@@ -2350,37 +2350,12 @@ defmodule Emisar.AccountsTest do
       other = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :entra)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      assert {:ok, %Membership{} = suspended} =
+      assert {:ok, %Membership{} = suspended, true} =
                Accounts.sync_suspend_membership(member, provider)
 
       assert suspended.directory_provider_id == provider.id
       assert suspended.directory_suspended
       refute suspended.directory_provider_id == other.id
-    end
-
-    test "revokes the API keys the deprovisioned member minted", %{
-      account: account,
-      provider: provider
-    } do
-      member_user = Fixtures.Users.create_user()
-
-      member =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member_user.id,
-          role: "admin"
-        )
-
-      {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member_user.id)
-
-      assert is_nil(Repo.reload!(key).revoked_at)
-
-      assert {:ok, _} = Accounts.sync_suspend_membership(member, provider)
-
-      # Mirrors suspend_membership/2: after_commit kills the keys so a
-      # deprovisioned member can't keep dispatching.
-      refute is_nil(Repo.reload!(key).revoked_at)
     end
 
     test "the last-active-owner guard still fires — a deprovision can't lock out the account",
@@ -2405,7 +2380,7 @@ defmodule Emisar.AccountsTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       suspended = Fixtures.Memberships.suspend_membership(member)
 
-      assert {:ok, %Membership{} = returned} =
+      assert {:ok, %Membership{} = returned, false} =
                Accounts.sync_suspend_membership(suspended, provider)
 
       assert Membership.disabled?(returned)
@@ -2420,9 +2395,9 @@ defmodule Emisar.AccountsTest do
       provider: provider
     } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
+      {:ok, suspended, true} = Accounts.sync_suspend_membership(member, provider)
 
-      assert {:ok, %Membership{} = returned} =
+      assert {:ok, %Membership{} = returned, false} =
                Accounts.sync_suspend_membership(suspended, provider)
 
       assert Membership.disabled?(returned)
@@ -2430,38 +2405,29 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "ensure_sync_suspend_allowed/2" do
-    setup do
+  describe "membership_suspended_effects/1" do
+    test "broadcasts the suspension and revokes the member's API keys" do
       account = Fixtures.Accounts.create_account()
-      provider = provider_fixture(account)
-      %{account: account, provider: provider}
-    end
+      member_user = Fixtures.Users.create_user()
 
-    test "refuses the last active owner before anything else is written", %{
-      account: account,
-      provider: provider
-    } do
-      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member_user.id,
+          role: "admin"
+        )
 
-      assert {:error, :last_owner} =
-               Accounts.ensure_sync_suspend_allowed(owner, provider)
-    end
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member_user.id)
 
-    test "allows an ordinary member, and an already-suspended one", %{
-      account: account,
-      provider: provider
-    } do
-      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      assert :ok = Accounts.ensure_sync_suspend_allowed(member, provider)
+      assert is_nil(Repo.reload!(key).revoked_at)
+      :ok = Accounts.subscribe_account_team(account.id)
 
-      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
-      assert :ok = Accounts.ensure_sync_suspend_allowed(suspended, provider)
-    end
+      assert :ok = Accounts.membership_suspended_effects(member)
 
-    test "refuses a membership outside the provider's account", %{provider: provider} do
-      other = Fixtures.Memberships.create_membership(role: "operator")
-
-      assert {:error, :not_found} = Accounts.ensure_sync_suspend_allowed(other, provider)
+      member_user_id = member_user.id
+      assert_receive {:list_changed, :team, "membership.suspended", ^member_user_id}
+      refute is_nil(Repo.reload!(key).revoked_at)
     end
   end
 
@@ -2477,10 +2443,10 @@ defmodule Emisar.AccountsTest do
       provider: provider
     } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
+      {:ok, suspended, true} = Accounts.sync_suspend_membership(member, provider)
       assert Membership.disabled?(suspended)
 
-      assert {:ok, %Membership{} = reinstated} =
+      assert {:ok, %Membership{} = reinstated, true} =
                Accounts.sync_reinstate_membership(suspended, provider)
 
       refute Membership.disabled?(reinstated)
@@ -2498,7 +2464,7 @@ defmodule Emisar.AccountsTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       suspended = Fixtures.Memberships.suspend_membership(member)
 
-      assert {:ok, %Membership{} = returned} =
+      assert {:ok, %Membership{} = returned, false} =
                Accounts.sync_reinstate_membership(suspended, provider)
 
       assert Membership.disabled?(returned)
@@ -2528,16 +2494,16 @@ defmodule Emisar.AccountsTest do
           directory_provider: provider
         )
 
-      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
+      {:ok, suspended, true} = Accounts.sync_suspend_membership(member, provider)
 
-      assert {:ok, %Membership{} = returned} =
+      assert {:ok, %Membership{} = returned, false} =
                Accounts.sync_reinstate_membership(suspended, other_provider)
 
       assert Membership.disabled?(returned)
       assert Membership.disabled?(Repo.reload!(member))
 
       # The connection that placed it still can.
-      assert {:ok, %Membership{} = reinstated} =
+      assert {:ok, %Membership{} = reinstated, true} =
                Accounts.sync_reinstate_membership(suspended, provider)
 
       refute Membership.disabled?(reinstated)
@@ -2549,11 +2515,24 @@ defmodule Emisar.AccountsTest do
     } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      assert {:ok, %Membership{} = returned} =
+      assert {:ok, %Membership{} = returned, false} =
                Accounts.sync_reinstate_membership(member, provider)
 
       refute Membership.disabled?(returned)
       refute Membership.disabled?(Repo.reload!(member))
+    end
+  end
+
+  describe "membership_reinstated_effects/1" do
+    test "broadcasts the reinstatement to the team page" do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      :ok = Accounts.subscribe_account_team(account.id)
+
+      assert :ok = Accounts.membership_reinstated_effects(member)
+
+      member_user_id = member.user_id
+      assert_receive {:list_changed, :team, "membership.reinstated", ^member_user_id}
     end
   end
 
@@ -2647,7 +2626,7 @@ defmodule Emisar.AccountsTest do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      {:ok, suspended} = Accounts.sync_suspend_membership(member, provider)
+      {:ok, suspended, true} = Accounts.sync_suspend_membership(member, provider)
 
       assert {:error, :deactivated_in_idp} = Accounts.reinstate_membership(suspended, subject)
 
@@ -2710,7 +2689,7 @@ defmodule Emisar.AccountsTest do
           directory_provider: provider_a
         )
 
-      {:ok, _suspended} = Accounts.sync_suspend_membership(membership, provider_a)
+      {:ok, _suspended, true} = Accounts.sync_suspend_membership(membership, provider_a)
 
       Accounts.clear_directory_managed_for_users(account.id, provider_b.id, [user.id])
 

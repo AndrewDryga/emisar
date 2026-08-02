@@ -11,7 +11,7 @@ defmodule EmisarWeb.SCIMControllerTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Accounts, ApiKeys, Repo, SSO, Users}
-  alias Emisar.SSO.IdentityProvider
+  alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate}
   alias EmisarWeb.SCIM.Resource
 
   @scim_content_type "application/scim+json"
@@ -652,6 +652,46 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
+    test "a PatchOp whose deactivation is refused commits nothing — not even the rename", %{
+      conn: conn
+    } do
+      # The rename and the lifecycle change are one transaction: the 409 the
+      # last-active-owner guard answers means the WHOLE operation was rejected,
+      # so the directory must not find half of it (the rename) applied.
+      %{token: token, provider: provider, account: account} =
+        scim_provider(%{default_role: :viewer})
+
+      {:ok, %{user: user}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|atomic",
+          email: "atomic@acme.test",
+          full_name: "Old Name"
+        })
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.force_role(membership, "owner")
+      demote_other_owners(account.id, except: user.id)
+
+      patch_body = %{
+        "Operations" => [
+          %{"op" => "replace", "path" => "displayName", "value" => "Half Landed"},
+          %{"op" => "replace", "path" => "active", "value" => false}
+        ]
+      }
+
+      body =
+        conn
+        |> scim_patch(token, ~p"/scim/v2/Users/okta|atomic", patch_body)
+        |> json_response(409)
+
+      assert body["status"] == "409"
+      assert Repo.reload!(user).full_name == "Old Name"
+
+      unchanged = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      refute unchanged.disabled_at
+      refute unchanged.directory_display_name
+    end
+
     test "a fresh displayName beats a stale name.formatted the IdP echoed back", %{
       conn: conn,
       token: token,
@@ -799,7 +839,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|re", email: "re@acme.test"})
 
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|re")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|re", %SCIMUserUpdate{active: false})
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       patch_body = %{"Operations" => [%{"op" => "replace", "path" => "active", "value" => true}]}
@@ -983,7 +1023,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       # A plain JSON boolean `active:false` (the canonical PUT replace) parses via
       # parse_active → false → apply_active deactivate → 200 User resource; the
-      # membership is suspended (R8: PUT active:false maps to scim_deactivate_user).
+      # membership is suspended (R8: PUT active:false maps to scim_update_user (active: false)).
       body =
         conn
         |> scim_put(token, ~p"/scim/v2/Users/okta|put-off-bool", %{"active" => false})
@@ -1005,7 +1045,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|put-on", email: "puton@acme.test"})
 
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|put-on")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|put-on", %SCIMUserUpdate{active: false})
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       body =
@@ -1207,7 +1247,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|susp-b", email: "sb@acme.test"})
 
-      {:ok, _} = SSO.scim_deactivate_user(provider_b, "okta|susp-b")
+      {:ok, _} = SSO.scim_update_user(provider_b, "okta|susp-b", %SCIMUserUpdate{active: false})
 
       assert conn
              |> scim_put(token_a, ~p"/scim/v2/Users/okta|susp-b", %{"active" => true})
@@ -1226,7 +1266,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|patch-b", email: "pb@acme.test"})
 
-      {:ok, _} = SSO.scim_deactivate_user(provider_b, "okta|patch-b")
+      {:ok, _} = SSO.scim_update_user(provider_b, "okta|patch-b", %SCIMUserUpdate{active: false})
 
       assert conn
              |> scim_patch(token_a, ~p"/scim/v2/Users/okta|patch-b", active_patch(true))

@@ -1073,7 +1073,13 @@ defmodule EmisarWeb.TeamLiveTest do
       # them in emisar would grant access the IdP revoked, so a crafted reinstate is
       # refused and they stay suspended — reactivation is the IdP's to make.
       synced = scim_synced_member(account)
-      {:ok, _} = Emisar.SSO.scim_deactivate_user(synced.provider, synced.external_id)
+
+      {:ok, _} =
+        Emisar.SSO.scim_update_user(
+          synced.provider,
+          synced.external_id,
+          %Emisar.SSO.SCIMUserUpdate{active: false}
+        )
 
       assert Emisar.Repo.reload!(synced.membership).disabled_at
 

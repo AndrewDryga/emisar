@@ -1560,24 +1560,6 @@ defmodule Emisar.Accounts do
   # A non-owner leaving play never threatens owner coverage.
   defp ensure_not_last_active_owner(%Membership{}), do: :ok
 
-  @doc """
-  Internal — SCIM: would `sync_suspend_membership/2` be refused? `:ok` or the
-  reason. The SCIM boundary asks before it makes any other write in the same
-  PATCH, so a refusal leaves nothing half-applied. This is advisory — the real
-  guards still run under the row lock in the write itself.
-  """
-  def ensure_sync_suspend_allowed(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
-    with :ok <- ensure_membership_in_provider_account(membership, provider),
-         :ok <- ensure_not_suspended(membership) do
-      ensure_not_last_active_owner(membership)
-    else
-      # Already suspended is a legitimate no-op, not a refusal — the write path
-      # rides it out through the same channel.
-      {:error, {:noop, %Membership{}}} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
   # A role change only threatens owner coverage when it demotes an owner.
   defp ensure_demotion_keeps_an_owner(%Membership{role: :owner} = membership, new_role)
        when new_role != :owner,
@@ -1683,13 +1665,17 @@ defmodule Emisar.Accounts do
   provider-scope is the authorization, validated at the web boundary; the
   `provider` is threaded only to attribute the audit to the directory.
 
-  Mirrors `suspend_membership/2`'s mechanics exactly — `disabled_at` under
-  the row lock, then kill sessions + revoke API keys + broadcast — and the
-  **last-active-owner guard still fires**: a directory deprovision can never
-  lock out the account's last owner (§9 N5). An already-suspended member is a
-  no-op `{:ok, membership}` — in particular a MANUAL suspension keeps manual
-  provenance, so the IdP's later reactivate cannot lift it. Returns
-  `{:ok, membership} | {:error, :last_owner | :not_found}`.
+  Mirrors `suspend_membership/2`'s row mechanics — `disabled_at` under the row
+  lock — and the **last-active-owner guard still fires**: a directory
+  deprovision can never lock out the account's last owner (§9 N5). An
+  already-suspended member is a no-op — in particular a MANUAL suspension
+  keeps manual provenance, so the IdP's later reactivate cannot lift it.
+
+  The session kill / API-key revocation / broadcast are NOT fired here: this
+  write composes into the SCIM boundary's one atomic transaction, so the
+  caller fires `membership_suspended_effects/1` after ITS commit, and only
+  when the third element says the row actually changed. Returns
+  `{:ok, membership, changed?} | {:error, :last_owner | :not_found}`.
   """
   def sync_suspend_membership(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
     Membership.Query.not_deleted()
@@ -1710,14 +1696,24 @@ defmodule Emisar.Accounts do
           {:error, reason} -> reason
         end
       end,
-      audit: &Audit.Events.membership_deprovisioned_via_scim(&1, provider),
-      after_commit: [
-        &broadcast_membership_suspended/1,
-        &end_account_sessions/1,
-        &revoke_membership_api_keys/1
-      ]
+      audit: &Audit.Events.membership_deprovisioned_via_scim(&1, provider)
     )
-    |> noop_as_ok()
+    |> noop_as_unchanged()
+  end
+
+  @doc """
+  Internal — directory sync: the post-commit side effects of a COMMITTED sync
+  suspend. Broadcast first so the team-page LV refreshes the row before the
+  member's sessions die, then end this account's sessions and revoke the
+  membership's API keys. Split from `sync_suspend_membership/2` because that
+  write joins the SCIM boundary's transaction — firing these inside it would
+  let a later rollback leave the member signed out of an account that never
+  suspended them.
+  """
+  def membership_suspended_effects(%Membership{} = membership) do
+    :ok = broadcast_membership_suspended(membership)
+    :ok = end_account_sessions(membership)
+    :ok = revoke_membership_api_keys(membership)
   end
 
   # Only the sessions THIS account authenticated. Revoking every session token the
@@ -1732,10 +1728,15 @@ defmodule Emisar.Accounts do
 
   # `{:noop, row}` rides fetch_and_update's abort channel (any non-changeset
   # `:with` return becomes `{:error, value}`) so an idempotent sync transition
-  # commits nothing — no UPDATE, no audit row, no after_commit side effects —
-  # yet still answers `{:ok, membership}` to the SCIM caller.
-  defp noop_as_ok({:error, {:noop, %Membership{} = membership}}), do: {:ok, membership}
-  defp noop_as_ok(other), do: other
+  # commits nothing — no UPDATE, no audit row — yet still answers `{:ok, …}`
+  # to the SCIM caller. The third element tells that caller whether to fire
+  # the post-commit side effects: only a row that actually changed earns them.
+  defp noop_as_unchanged({:ok, %Membership{} = membership}), do: {:ok, membership, true}
+
+  defp noop_as_unchanged({:error, {:noop, %Membership{} = membership}}),
+    do: {:ok, membership, false}
+
+  defp noop_as_unchanged(other), do: other
 
   defp ensure_not_suspended(%Membership{disabled_at: nil}), do: :ok
   defp ensure_not_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}
@@ -1743,11 +1744,13 @@ defmodule Emisar.Accounts do
   @doc """
   Internal — directory sync: reinstate a member the IdP re-provisioned
   (SCIM `active:true`). No `%Subject{}` — see `sync_suspend_membership/2`.
-  Clears `disabled_at` under the row lock + broadcasts — but ONLY a
-  `directory_suspended` row: a manually-suspended member is a no-op
-  `{:ok, membership}` that stays suspended (the local break-glass hold wins;
-  an operator lifts it via `reinstate_membership/2`). Returns
-  `{:ok, membership} | {:error, :not_found}`.
+  Clears `disabled_at` under the row lock — but ONLY a `directory_suspended`
+  row: a manually-suspended member is a no-op that stays suspended (the local
+  break-glass hold wins; an operator lifts it via `reinstate_membership/2`).
+  Like the suspend, this composes into a caller transaction, so the caller
+  fires `membership_reinstated_effects/1` after its commit when the third
+  element says the row changed. Returns
+  `{:ok, membership, changed?} | {:error, :not_found}`.
   """
   def sync_reinstate_membership(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
     Membership.Query.not_deleted()
@@ -1766,11 +1769,18 @@ defmodule Emisar.Accounts do
           {:error, reason} -> reason
         end
       end,
-      audit: &Audit.Events.membership_reprovisioned_via_scim(&1, provider),
-      after_commit: &broadcast_membership_reinstated/1
+      audit: &Audit.Events.membership_reprovisioned_via_scim(&1, provider)
     )
-    |> noop_as_ok()
+    |> noop_as_unchanged()
   end
+
+  @doc """
+  Internal — directory sync: the post-commit side effect of a COMMITTED sync
+  reinstate (the team-page broadcast). See `membership_suspended_effects/1`
+  for why it is not fired inside the write.
+  """
+  def membership_reinstated_effects(%Membership{} = membership),
+    do: broadcast_membership_reinstated(membership)
 
   defp ensure_directory_suspended(%Membership{directory_suspended: true}), do: :ok
   defp ensure_directory_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}

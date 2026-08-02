@@ -10,7 +10,7 @@ defmodule Emisar.SSOSCIMTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, ApiKeys, Crypto, Repo, SSO, Users}
   alias Emisar.Fixtures
-  alias Emisar.SSO.{IdentityProvider, UserIdentity}
+  alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate, UserIdentity}
 
   defp enterprise_owner do
     Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
@@ -206,7 +206,7 @@ defmodule Emisar.SSOSCIMTest do
       attrs = scim_attrs(%{external_id: "okta|readd", email: "readd@acme.test"})
 
       assert {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|readd")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|readd", %SCIMUserUpdate{active: false})
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       # Some IdPs re-POST rather than PATCH active:true — the re-POST restores
@@ -271,7 +271,7 @@ defmodule Emisar.SSOSCIMTest do
 
   # -- Deprovision / reprovision ---------------------------------------
 
-  describe "scim_deactivate_user/2" do
+  describe "scim_update_user/3 deactivate" do
     test "suspends the membership (disabled_at) + revokes the user's API keys + does NOT delete the user" do
       %{provider: provider, account: account} = scim_provider(%{default_role: :admin})
       attrs = scim_attrs(%{external_id: "okta|deprov", email: "deprov@acme.test"})
@@ -282,7 +282,7 @@ defmodule Emisar.SSOSCIMTest do
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
       assert {:ok, %{membership: membership, identity: deactivated}} =
-               SSO.scim_deactivate_user(provider, "okta|deprov")
+               SSO.scim_update_user(provider, "okta|deprov", %SCIMUserUpdate{active: false})
 
       # Membership suspended, the SCIM lifecycle flag flipped.
       assert membership.disabled_at
@@ -316,7 +316,8 @@ defmodule Emisar.SSOSCIMTest do
       # single remaining active owner.
       demote_other_owners(account.id, except: user.id)
 
-      assert {:error, :last_owner} = SSO.scim_deactivate_user(provider, "okta|owner")
+      assert {:error, :last_owner} =
+               SSO.scim_update_user(provider, "okta|owner", %SCIMUserUpdate{active: false})
 
       # The membership stays active and the SCIM flag is left untouched, so the
       # projection still answers active.
@@ -327,21 +328,23 @@ defmodule Emisar.SSOSCIMTest do
 
     test "returns :not_found when no identity matches the externalId" do
       %{provider: provider} = scim_provider()
-      assert {:error, :not_found} = SSO.scim_deactivate_user(provider, "okta|nobody")
+
+      assert {:error, :not_found} =
+               SSO.scim_update_user(provider, "okta|nobody", %SCIMUserUpdate{active: false})
     end
   end
 
-  describe "scim_reactivate_user/2" do
+  describe "scim_update_user/3 reactivate" do
     test "clears disabled_at on a suspended membership" do
       %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
       attrs = scim_attrs(%{external_id: "okta|react", email: "react@acme.test"})
 
       {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|react")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|react", %SCIMUserUpdate{active: false})
       assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
 
       assert {:ok, %{membership: membership, identity: identity}} =
-               SSO.scim_reactivate_user(provider, "okta|react")
+               SSO.scim_update_user(provider, "okta|react", %SCIMUserUpdate{active: true})
 
       refute membership.disabled_at
       assert identity.scim_active
@@ -433,7 +436,7 @@ defmodule Emisar.SSOSCIMTest do
       attrs = scim_attrs(%{external_id: "okta|audit", email: "audit@acme.test"})
 
       {:ok, _} = SSO.scim_provision_user(provider, attrs)
-      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|audit")
+      {:ok, _} = SSO.scim_update_user(provider, "okta|audit", %SCIMUserUpdate{active: false})
 
       events = audit_events_for(provider.account_id)
 

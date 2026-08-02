@@ -20,7 +20,8 @@ defmodule Emisar.SSO do
   alias Emisar.SSO.{Authorizer, DirectoryGroup, DirectoryGroupMember}
   alias Emisar.SSO.GroupRoleMapping
   alias Emisar.SSO.GroupRunnerAccessMapping
-  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, SCIMUser, UserIdentity}
+  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC}
+  alias Emisar.SSO.{SCIMUser, SCIMUserUpdate, UserIdentity}
   require Logger
 
   def start_link(opts),
@@ -1203,9 +1204,34 @@ defmodule Emisar.SSO do
   # active: false — the same deprovision a PATCH/DELETE performs, so a create
   # that asserts "inactive" lands the member in exactly the offboarded state.
   defp reconcile_provisioned(%IdentityProvider{} = provider, user, identity, false) do
-    with {:ok, membership} <- sync_membership(provider, identity.user_id, :deactivate),
+    with {:ok, membership} <- deactivate_sync_membership(provider, identity.user_id),
          {:ok, identity} <- Repo.update(UserIdentity.Changeset.set_scim_active(identity, false)) do
       {:ok, %{user: user, identity: identity, membership: membership}}
+    end
+  end
+
+  # The reconcile transitions run outside any transaction, so the post-commit
+  # side effects fire inline — and only when the row actually changed.
+  defp deactivate_sync_membership(%IdentityProvider{} = provider, user_id) do
+    case Accounts.peek_sync_membership(provider.account_id, user_id) do
+      %Accounts.Membership{} = membership ->
+        with {:ok, membership, changed?} <- Accounts.sync_suspend_membership(membership, provider) do
+          if changed?, do: :ok = Accounts.membership_suspended_effects(membership)
+          {:ok, membership}
+        end
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
+  defp reinstate_sync_membership(
+         %IdentityProvider{} = provider,
+         %Accounts.Membership{} = membership
+       ) do
+    with {:ok, membership, changed?} <- Accounts.sync_reinstate_membership(membership, provider) do
+      if changed?, do: :ok = Accounts.membership_reinstated_effects(membership)
+      {:ok, membership}
     end
   end
 
@@ -1225,7 +1251,7 @@ defmodule Emisar.SSO do
         if identity.scim_active do
           {:ok, membership}
         else
-          Accounts.sync_reinstate_membership(membership, provider)
+          reinstate_sync_membership(provider, membership)
         end
 
       nil ->
@@ -1241,14 +1267,19 @@ defmodule Emisar.SSO do
   end
 
   # Ensure the member has an active membership, reinstating or (re)creating one —
-  # the link-approval flow, where an admin explicitly grants access.
+  # the link-approval flow, where an admin explicitly grants access. Runs inside
+  # the approval's Multi, so a committed reinstate is TAGGED for the commit site
+  # to fire its broadcast after the transaction, never from within it.
   defp ensure_active_membership(%IdentityProvider{} = provider, user) do
     case Accounts.peek_sync_membership(provider.account_id, user.id) do
       %Accounts.Membership{disabled_at: nil} = membership ->
         {:ok, membership}
 
       %Accounts.Membership{} = membership ->
-        Accounts.sync_reinstate_membership(membership, provider)
+        with {:ok, membership, changed?} <-
+               Accounts.sync_reinstate_membership(membership, provider) do
+          {:ok, if(changed?, do: {:reinstated, membership}, else: membership)}
+        end
 
       nil ->
         Accounts.provision_sso_membership(
@@ -1372,105 +1403,71 @@ defmodule Emisar.SSO do
   defp scim_active_from(attrs), do: Map.get(attrs, :active, Map.get(attrs, "active", true))
 
   @doc """
-  Internal — SCIM deprovision (`active:false` / DELETE): suspend the member's
-  access in the provider's account, then mark the identity `scim_active: false`.
-  The last-active-owner guard fires inside `Accounts.sync_suspend_membership/2`
-  — a deprovision can never lock out the last owner. `{:error, :not_found}`
-  when no identity matches; `{:error, :last_owner}` when refused (the identity
-  flag is left untouched on a refusal).
+  Internal — SCIM update (PATCH / PUT / DELETE): apply one directory user's
+  desired name and lifecycle state (`%SCIMUserUpdate{}`) as ONE transaction.
+  The identity is re-read and locked under the provider's scope, a partial
+  name is merged against that locked state, and the rename, the membership
+  transition (whose guards — provider account, last active owner, break-glass
+  holds — judge the locked row), and the identity's `scim_active` flag commit
+  together or not at all: the IdP is never told its operation failed after
+  half of it landed. `{:error, :not_found}` when no identity matches (or a
+  reactivation has no membership left); `{:error, :last_owner}` when the
+  deprovision would lock out the account's last active owner. Session kill /
+  key revocation / broadcasts fire only after the commit. Returns
+  `{:ok, %{identity: identity, membership: membership | nil}}`.
   """
-  def scim_deactivate_user(%IdentityProvider{} = provider, external_id) do
-    with {:ok, identity} <- fetch_scim_identity(provider, external_id),
-         {:ok, membership} <- deactivate_membership(provider, identity),
-         {:ok, identity} <- Repo.update(UserIdentity.Changeset.set_scim_active(identity, false)) do
-      {:ok, %{identity: identity, membership: membership}}
+  def scim_update_user(%IdentityProvider{} = provider, external_id, %SCIMUserUpdate{} = update) do
+    multi =
+      Multi.new()
+      |> Multi.run(:identity, fn repo, _changes ->
+        lock_scim_identity(provider, external_id, repo)
+      end)
+      |> Multi.run(:rename, fn _repo, %{identity: identity} ->
+        apply_scim_rename(provider, identity, update.name)
+      end)
+      |> Multi.run(:lifecycle, fn _repo, %{identity: identity} ->
+        apply_scim_lifecycle(provider, identity, update.active)
+      end)
+      |> Multi.run(:updated_identity, fn repo, %{identity: identity} ->
+        set_identity_scim_active(repo, identity, update.active)
+      end)
+
+    with {:ok, changes} <- Repo.commit_multi(multi, after_commit: &scim_update_effects/1) do
+      {:ok, %{identity: changes.updated_identity, membership: scim_updated_membership(changes)}}
     end
   end
 
-  # An identity whose membership an operator removed locally is ALREADY as
-  # deprovisioned as this account can make it, so a deprovision succeeds with
-  # nothing to do. Answering `:not_found` told the directory the person does not
-  # exist while a read still described them — so it either retried the deactivate
-  # forever or concluded they were gone and re-created them, undoing the removal.
-  defp deactivate_membership(%IdentityProvider{} = provider, %UserIdentity{} = identity) do
-    case sync_membership(provider, identity.user_id, :deactivate) do
-      {:error, :not_found} -> {:ok, nil}
-      other -> other
+  defp lock_scim_identity(%IdentityProvider{} = provider, external_id, repo) do
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
+      |> UserIdentity.Query.lock_for_update()
+
+    case repo.one(queryable) do
+      nil -> {:error, :not_found}
+      %UserIdentity{} = identity -> {:ok, identity}
     end
   end
 
-  @doc """
-  Internal — would a deprovision be refused? `:ok`, or the reason it would fail.
+  defp apply_scim_rename(_provider, _identity, :keep), do: {:ok, :unchanged}
 
-  The SCIM boundary asks before it writes anything else, because a PATCH may
-  carry a rename alongside the deactivation and the last-active-owner guard can
-  refuse the deactivation — committing the rename and then answering 409 tells
-  the directory its whole operation was rejected when half of it landed.
-  """
-  def scim_can_deactivate_user(%IdentityProvider{} = provider, external_id) do
-    with {:ok, identity} <- fetch_scim_identity(provider, external_id) do
-      case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
-        %Accounts.Membership{} = membership ->
-          Accounts.ensure_sync_suspend_allowed(membership, provider)
-
-        # No membership to suspend — an operator already removed them. Nothing can
-        # refuse a deprovision that has nothing left to do, and answering
-        # `:not_found` here made the boundary 404 a person its own reads describe.
-        nil ->
-          :ok
-      end
+  # A component names one half, so the half this operation does not mention
+  # keeps the value it already has — a `givenName`-only correction must not
+  # drop the surname. Merged here, against the user the locked identity binds,
+  # so a concurrent rename can't slip between the read and the write.
+  defp apply_scim_rename(%IdentityProvider{} = provider, identity, {:merge, components}) do
+    with {:ok, user} <- Users.fetch_user_by_id(identity.user_id) do
+      apply_scim_rename(provider, identity, {:replace, merged_name(user, components)})
     end
   end
 
-  @doc """
-  Internal — SCIM re-provision (`active:true`): reinstate the suspended
-  membership, then mark the identity `scim_active: true`. `{:error, :not_found}`
-  when no identity matches.
-  """
-  def scim_reactivate_user(%IdentityProvider{} = provider, external_id) do
-    with {:ok, identity} <- fetch_scim_identity(provider, external_id),
-         {:ok, membership} <- sync_membership(provider, identity.user_id, :reactivate),
-         {:ok, identity} <- Repo.update(UserIdentity.Changeset.set_scim_active(identity, true)) do
-      {:ok, %{identity: identity, membership: membership}}
-    end
-  end
-
-  # The membership write owns its own transaction + side effects (the suspend
-  # kills sessions / revokes keys AFTER it commits), so it can't be wrapped in
-  # an outer Multi alongside the identity flag — fetch_and_update raises on a
-  # nested after_commit (CLAUDE.md §55). The identity flag is bookkeeping that
-  # the next reconcile self-corrects, so sequencing it after is safe.
-  defp sync_membership(%IdentityProvider{} = provider, user_id, transition) do
-    case Accounts.peek_sync_membership(provider.account_id, user_id) do
-      %Accounts.Membership{} = membership ->
-        sync_membership_transition(membership, provider, transition)
-
-      nil ->
-        {:error, :not_found}
-    end
-  end
-
-  defp sync_membership_transition(membership, provider, :deactivate),
-    do: Accounts.sync_suspend_membership(membership, provider)
-
-  defp sync_membership_transition(membership, provider, :reactivate),
-    do: Accounts.sync_reinstate_membership(membership, provider)
-
-  @doc """
-  Internal — SCIM rename (PUT full replace / PATCH `displayName`): the IdP owns
-  a synced user's display name, so the sent name replaces `full_name`. No-op
-  when it already matches (no write, no audit). Returns
-  `{:ok, %UserIdentity{}} | {:error, :not_found | %Ecto.Changeset{}}`.
-  """
-  def scim_rename_user(%IdentityProvider{} = provider, external_id, full_name)
-      when is_binary(full_name) do
-    with {:ok, identity} <- fetch_scim_identity(provider, external_id),
-         {:ok, _membership, sole_tenancy?} <-
+  defp apply_scim_rename(%IdentityProvider{} = provider, identity, {:replace, full_name}) do
+    with {:ok, membership, sole_tenancy?} <-
            Accounts.sync_member_display_name(provider.account_id, identity.user_id, full_name,
              audit: &Audit.Events.membership_renamed_via_scim(&1, provider, full_name)
            ),
          {:ok, _user} <- rename_the_person(identity, full_name, provider, sole_tenancy?) do
-      {:ok, identity}
+      {:ok, membership}
     end
   end
 
@@ -1487,6 +1484,94 @@ defmodule Emisar.SSO do
 
   defp rename_the_person(%UserIdentity{} = identity, _full_name, _provider, false),
     do: Users.fetch_user_by_id(identity.user_id)
+
+  # The stored name is one string, so split it to fill whichever half the
+  # operation left alone: everything before the first space is the given half,
+  # the rest is the family half, and a single word is a given name with no
+  # family half. That is a guess about human names, and a wrong one for plenty
+  # of them — it only decides what to KEEP when an operation names one
+  # component, never what to store when it names both.
+  defp merged_name(%Users.User{} = user, components) do
+    {current_given, current_family} = split_current_name(user)
+
+    [
+      Map.get(components, :given, current_given),
+      Map.get(components, :family, current_family)
+    ]
+    |> Enum.reject(&(is_nil(&1) or &1 == ""))
+    |> Enum.join(" ")
+  end
+
+  defp split_current_name(user) do
+    case scim_display_name(user) do
+      nil ->
+        {nil, nil}
+
+      name ->
+        case String.split(name, " ", parts: 2) do
+          [given, family] -> {given, family}
+          [only] -> {only, nil}
+        end
+    end
+  end
+
+  defp apply_scim_lifecycle(_provider, _identity, :keep), do: {:ok, :unchanged}
+
+  # An identity whose membership an operator removed locally is ALREADY as
+  # deprovisioned as this account can make it, so a deprovision succeeds with
+  # nothing to do. Answering `:not_found` told the directory the person does not
+  # exist while a read still described them — so it either retried the deactivate
+  # forever or concluded they were gone and re-created them, undoing the removal.
+  defp apply_scim_lifecycle(%IdentityProvider{} = provider, identity, false) do
+    case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
+      %Accounts.Membership{} = membership ->
+        with {:ok, membership, changed?} <- Accounts.sync_suspend_membership(membership, provider) do
+          {:ok, if(changed?, do: {:suspended, membership}, else: membership)}
+        end
+
+      nil ->
+        {:ok, :unchanged}
+    end
+  end
+
+  defp apply_scim_lifecycle(%IdentityProvider{} = provider, identity, true) do
+    case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
+      %Accounts.Membership{} = membership ->
+        with {:ok, membership, changed?} <-
+               Accounts.sync_reinstate_membership(membership, provider) do
+          {:ok, if(changed?, do: {:reinstated, membership}, else: membership)}
+        end
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
+  defp set_identity_scim_active(_repo, %UserIdentity{} = identity, :keep), do: {:ok, identity}
+
+  defp set_identity_scim_active(repo, %UserIdentity{} = identity, active)
+       when is_boolean(active),
+       do: repo.update(UserIdentity.Changeset.set_scim_active(identity, active))
+
+  # Only a lifecycle write that actually committed earns its side effects — a
+  # no-op (already suspended, break-glass hold) fires nothing.
+  defp scim_update_effects(%{lifecycle: {:suspended, membership}}),
+    do: Accounts.membership_suspended_effects(membership)
+
+  defp scim_update_effects(%{lifecycle: {:reinstated, membership}}),
+    do: Accounts.membership_reinstated_effects(membership)
+
+  defp scim_update_effects(_changes), do: :ok
+
+  # The freshest membership this transition touched, for the caller's result:
+  # the lifecycle write's row wins over the rename's, and an untouched
+  # membership is nil.
+  defp scim_updated_membership(%{lifecycle: {_transition, %Accounts.Membership{} = membership}}),
+    do: membership
+
+  defp scim_updated_membership(%{lifecycle: %Accounts.Membership{} = membership}), do: membership
+  defp scim_updated_membership(%{rename: %Accounts.Membership{} = membership}), do: membership
+  defp scim_updated_membership(_changes), do: nil
 
   @doc """
   Internal — SCIM read: the `%SCIMUser{}` projection for `(provider,
@@ -2911,7 +2996,8 @@ defmodule Emisar.SSO do
       multi = approve_link_request_multi(provider, request, access, subject)
 
       case Repo.commit_multi(multi) do
-        {:ok, %{user: user, identity: identity}} ->
+        {:ok, %{user: user, identity: identity} = changes} ->
+          :ok = link_approval_membership_effects(changes)
           broadcast_link_request_approved(request)
           {:ok, %{user: user, identity: identity}}
 
@@ -2920,6 +3006,14 @@ defmodule Emisar.SSO do
       end
     end
   end
+
+  # An approval that reinstated a directory-suspended membership owes the team
+  # page its broadcast — fired here, after the commit, like every sync side
+  # effect (the membership step tags a committed reinstate for exactly this).
+  defp link_approval_membership_effects(%{membership: {:reinstated, membership}}),
+    do: Accounts.membership_reinstated_effects(membership)
+
+  defp link_approval_membership_effects(_changes), do: :ok
 
   # Approving a MATCH binds a new IdP credential to an EXISTING person, so
   # whoever holds that credential can afterwards sign in as them. The approver is

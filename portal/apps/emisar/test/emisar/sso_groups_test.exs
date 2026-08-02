@@ -8,7 +8,7 @@ defmodule Emisar.SSOGroupsTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Auth, Repo, SSO}
   alias Emisar.Fixtures
-  alias Emisar.SSO.IdentityProvider
+  alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate}
 
   @scim_string_limit 255
   @max_group_member_ids 5_000
@@ -550,7 +550,10 @@ defmodule Emisar.SSOGroupsTest do
           member_external_ids: ["okta|runner-reactivate"]
         })
 
-      assert {:ok, _result} = SSO.scim_deactivate_user(provider, "okta|runner-reactivate")
+      assert {:ok, _result} =
+               SSO.scim_update_user(provider, "okta|runner-reactivate", %SCIMUserUpdate{
+                 active: false
+               })
 
       assert {:ok, _updated} =
                SSO.update_group_runner_access_mapping(
@@ -563,7 +566,10 @@ defmodule Emisar.SSOGroupsTest do
                  subject
                )
 
-      assert {:ok, _result} = SSO.scim_reactivate_user(provider, "okta|runner-reactivate")
+      assert {:ok, _result} =
+               SSO.scim_update_user(provider, "okta|runner-reactivate", %SCIMUserUpdate{
+                 active: true
+               })
 
       assert access_of(account.id, identity.user_id) ==
                %Accounts.RunnerAccess{mode: :restricted, groups: ["app"], runner_ids: []}
