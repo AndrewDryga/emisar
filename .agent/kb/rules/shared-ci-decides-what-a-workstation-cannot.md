@@ -1,9 +1,10 @@
 # CI decides what a workstation cannot
 
-**Rule.** Some surfaces are judged by CI and only CI. For those, a change is not
-done when the local gate is green — it is done when the CI job is green. Do not
-mark the task done, and do not fold the work into a commit you would defend,
-until you have read that job.
+**Rule.** Some surfaces are judged by CI and only CI. A green local run on those
+is iteration feedback, never a verdict, so never *claim* one of them verified on
+the strength of a workstation run — say what the local run covered and that the
+Linux matrix is what decides the rest. Finishing and committing the task does not
+wait on that job; when the matrix later finds something, fix it as its own change.
 
 Surfaces where a workstation returns a false pass:
 
@@ -31,17 +32,16 @@ was never asked.
 **✅ Good**
 
 ```
-# Push for the verdict, then finish the task.
-git push -u origin <branch> && gh pr create ...   # read the matrix
-git rebase -i origin/main                          # fold fixes into their commit
-coop tasks done <id>
+./run test packs            # 266/266 PASS on a Mac
+# "Cases pass locally; uid ownership, AppArmor and startup races are the
+#  Linux matrix's call." Then commit and finish the task.
 ```
 
 **❌ Bad**
 
 ```
 ./run test packs            # 266/266 PASS on a Mac
-coop tasks done <id>        # the class this touched was never judged
+# "Verified."               # the class this touched was never judged
 ```
 
 **Judge a CI change on the constraint that actually binds.** The shared client
@@ -72,6 +72,5 @@ at the Linux matrix. It reports the limits rather than failing, because
 iterating locally is the point; what it refuses to do is let the pass count
 stand as a verdict. `packTestHostBlindSpots` is unit-tested against a
 workstation, Docker Desktop on Linux, a roomy Linux host, and a runner-shaped
-host. Sweep signal: a task moved to `99_done/` whose commit touches one of the
-surfaces above with no CI run read for it, and a fix commit whose message
-repairs the commit immediately before it.
+host. Sweep signal: a claim that one of the surfaces above is verified, backed
+only by a workstation run.
