@@ -1,0 +1,80 @@
+schema_version: 1
+id: gcp.sql_query_insights
+title: Show the top Cloud SQL queries by Query Insights metric
+kind: script
+risk: low
+description: >
+  Show the normalized PostgreSQL queries ranked highest by one Query Insights
+  metric over a recent window — total execution, I/O or lock time, rows or
+  shared-block accesses, or p50/p95/p99 latency. This is the read that names
+  which query is spending the instance's time.
+side_effects:
+  - One gcloud token read and read-only Cloud Monitoring API pagination.
+  - Query text is returned normalized, with literals replaced by placeholders.
+  - Ranking is client-side, so ranking_complete reports whether every series was read.
+  - Uses a mode-0700 temporary directory and removes it before exit.
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: instance
+    type: string
+    required: true
+    description: Cloud SQL instance ID.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,96}[a-z0-9])?$", max_length: 98}
+  - name: database
+    type: string
+    required: false
+    default: ""
+    description: Optional database name to restrict the ranking to. Omit to rank across every database on the instance.
+    validation: {pattern: "^[A-Za-z0-9_-]*$", max_length: 63}
+  - name: metric
+    type: string
+    required: false
+    default: execution_time
+    description: Query Insights metric to rank by. Time metrics and latencies are microseconds; row and block metrics are counts.
+    validation:
+      enum:
+        - execution_time
+        - io_time
+        - lock_time
+        - row_count
+        - shared_blk_access_count
+        - latency_p50
+        - latency_p95
+        - latency_p99
+  - name: window_minutes
+    type: integer
+    required: false
+    default: 60
+    description: Recent window in minutes, aligned as a single period so each query yields one comparable value.
+    validation: {min: 5, max: 1440}
+  - name: top_n
+    type: integer
+    required: false
+    default: 10
+    description: Maximum ranked queries to return.
+    validation: {min: 1, max: 100}
+execution:
+  script: {path: scripts/cloudsql.sh, interpreter: /bin/sh}
+  argv:
+    - query-insights
+    - "{{ args.project }}"
+    - "{{ args.instance }}"
+    - "{{ args.database }}"
+    - "{{ args.metric }}"
+    - "{{ args.window_minutes }}"
+    - "{{ args.top_n }}"
+  timeout: 120s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 16384
+examples:
+  - title: Queries burning the most execution time this hour
+    args: {project: example-prod, instance: app-db, metric: execution_time, window_minutes: 60, top_n: 10}
+  - title: Worst p99 latency over the last day for one database
+    args: {project: example-prod, instance: app-db, database: app, metric: latency_p99, window_minutes: 1440, top_n: 20}

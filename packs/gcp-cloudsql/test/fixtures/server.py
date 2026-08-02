@@ -1,9 +1,33 @@
 import json
+import ssl
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 CANARY = "packtest-canary-gcp-sql-secret-da31"
 
 MUTATIONS = []
+
+# Query Insights is read from Cloud Monitoring rather than the SQL Admin API,
+# and that read enforces HTTPS, so the fixture serves TLS on a second port.
+def time_series(reducer):
+    def series(query_hash, querystring, total):
+        # REDUCE_PERCENTILE_* returns a double; the summing reducers keep INT64.
+        value = ({"doubleValue": total / 4} if reducer.startswith("REDUCE_PERCENTILE")
+                 else {"int64Value": str(total)})
+        return {
+            "metric": {"labels": {"query_hash": query_hash, "querystring": querystring}},
+            "resource": {"type": "cloudsql_instance_database"},
+            "points": [{"value": value}],
+        }
+
+    return {
+        "timeSeries": [
+            series("8811", 'SELECT count(o0."id") FROM "orders" AS o0 WHERE (o0."state" = $1)', 9000000),
+            series("2277", 'UPDATE "sessions" AS s0 SET "seen_at" = $1', 3000000),
+            series("5533", 'SELECT $1', 1500000),
+        ]
+    }
 
 
 def instance():
@@ -157,9 +181,24 @@ def response(path):
     return {"error": {"code": 404, "message": f"unhandled path {path}"}}
 
 
+def monitoring(path):
+    query = parse_qs(urlparse(path).query, keep_blank_values=True)
+    filter_value = query.get("filter", [""])[0]
+    # The ranking is only well defined when every series collapses to one point,
+    # so the fixture refuses a request that forgot to align over the window.
+    if not query.get("aggregation.alignmentPeriod", [""])[0]:
+        return {"error": {"code": 400, "message": "aggregation.alignmentPeriod is required"}}
+    if "insights/perquery/" not in filter_value:
+        return {"error": {"code": 400, "message": f"unhandled filter {filter_value}"}}
+    if "no-such-instance" in filter_value:
+        return {"timeSeries": []}
+    reducer = query.get("aggregation.crossSeriesReducer", [""])[0]
+    return time_series(reducer)
+
+
 class Handler(BaseHTTPRequestHandler):
     def reply(self, payload):
-        status = 404 if "error" in payload else 200
+        status = payload["error"].get("code", 404) if "error" in payload else 200
         body = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -168,6 +207,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if "/v3/projects/" in self.path:
+            self.reply(monitoring(self.path))
+            return
         self.reply(response(self.path))
 
     def do_POST(self):
@@ -176,5 +218,11 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+
+tls = ThreadingHTTPServer(("0.0.0.0", 8443), Handler)
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain("/fixture/server.crt", "/fixture/server.key")
+tls.socket = context.wrap_socket(tls.socket, server_side=True)
+threading.Thread(target=tls.serve_forever, daemon=True).start()
 
 ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()

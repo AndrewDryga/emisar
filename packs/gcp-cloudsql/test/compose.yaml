@@ -14,6 +14,8 @@ services:
     entrypoint: [python3, /fixture/server.py]
     volumes:
       - ${EMISAR_ROOT}/packs/gcp-cloudsql/test/fixtures/server.py:/fixture/server.py:ro
+      - ${EMISAR_ROOT}/packs/gcp-cloudsql/test/fixtures/server.crt:/fixture/server.crt:ro
+      - ${EMISAR_ROOT}/packs/gcp-cloudsql/test/fixtures/server.key:/fixture/server.key:ro
     healthcheck:
       test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 2s

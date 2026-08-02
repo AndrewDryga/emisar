@@ -2,20 +2,20 @@ schema_version: 1
 
 id: gcp-cloudsql
 name: Google Cloud SQL diagnostics and recovery
-version: 0.2.0
+version: 0.3.0
 description: >
   Cloud SQL diagnostics for instances, databases, users, backups, operations,
-  and server CA certificates, plus governed instance restart and
-  high-availability failover. Fixed projections omit passwords, replication
-  credentials, database-flag values, labels, descriptions, and certificate
-  PEM. Mutations return their operation without waiting and are polled with
-  gcp.sql_operation_describe.
+  server CA certificates, and Query Insights query rankings, plus governed
+  instance restart and high-availability failover. Fixed projections omit
+  passwords, replication credentials, database-flag values, labels,
+  descriptions, and certificate PEM. Mutations return their operation without
+  waiting and are polled with gcp.sql_operation_describe.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
 requires:
   os: [linux]
-  binaries: [gcloud, jq]
+  binaries: [gcloud, jq, curl]
 
 setup:
   summary: >
@@ -32,6 +32,8 @@ setup:
     - "Grant least privilege for the actions you enable: reads need roles/cloudsql.viewer or equivalent; restart and failover need cloudsql.instances.restart and cloudsql.instances.failover (both in roles/cloudsql.editor)."
     - "Actions use mode-0600 temporary response files so gcloud failures remain distinguishable from jq failures; files are removed before exit."
     - "Database query execution, log contents, auth tokens, client certificates, and credential retrieval are excluded."
+    - "gcp.sql_query_insights additionally needs roles/monitoring.viewer: Query Insights has no Cloud SQL Admin API surface, so it is read from the Cloud Monitoring API rather than gcloud. It returns Query Insights' own normalized query text, in which literals are already replaced by placeholders, and never executes a query or reads log contents."
+    - "Query Insights must be enabled on the instance (settings.insightsConfig, reported by gcp.sql_instance_describe) or the ranking is empty; shared-core tiers may not support it."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
   verify: gcp.sql_instances
 
@@ -46,3 +48,4 @@ actions:
   - actions/operations.yaml
   - actions/operation_describe.yaml
   - actions/server_ca_certs.yaml
+  - actions/query_insights.yaml

@@ -8,6 +8,8 @@ risk_accountability:
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
   CLOUDSDK_API_ENDPOINT_OVERRIDES_SQL: http://gcp-api:8080/
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_MONITORING: https://gcp-api:8443/
+  CURL_CA_BUNDLE: /packs/gcp-cloudsql/test/fixtures/server.crt
   CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-access-token-843c
 defaults:
   expect:
@@ -78,3 +80,41 @@ cases:
     expect:
       status: failure
       reason_contains: [must match pattern]
+  - action: gcp.sql_query_insights
+    args: {project: example-prod, instance: harness-sql, metric: execution_time, window_minutes: 60, top_n: 2}
+    expect:
+      stdout_contains:
+        - '"unit":"us"'
+        - '"ranking_complete":true'
+        - '"rank":1'
+        - '"value":9000000'
+        - 'SELECT count(o0.\"id\") FROM \"orders\"'
+      # top_n caps the ranking, so the third fixture series must not appear.
+      stdout_not_contains: ['"rank":3']
+  # A percentile comes from the cross-series reducer, not an aligner, so the
+  # value type changes with it.
+  - name: gcp.sql_query_insights-latency-percentile
+    action: gcp.sql_query_insights
+    args: {project: example-prod, instance: harness-sql, database: harness_db, metric: latency_p99, window_minutes: 180, top_n: 3}
+    expect:
+      stdout_contains: ['"metric":"latency_p99"', '"unit":"us"', '"value":2250000']
+  - name: gcp.sql_query_insights-counts-are-not-microseconds
+    action: gcp.sql_query_insights
+    args: {project: example-prod, instance: harness-sql, metric: row_count}
+    expect:
+      stdout_contains: ['"metric":"row_count"', '"unit":"count"']
+  # An empty window must not read as "no slow queries".
+  - name: gcp.sql_query_insights-names-why-a-window-is-empty
+    action: gcp.sql_query_insights
+    args: {project: example-prod, instance: no-such-instance}
+    expect:
+      stdout_contains: ['"series_count":0', query_insights_enabled]
+  - name: gcp.sql_query_insights-rejects-http-endpoint
+    action: gcp.sql_query_insights
+    env:
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_MONITORING: http://gcp-api:8080/
+    args: {project: example-prod, instance: harness-sql}
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [Monitoring API endpoint must use HTTPS]
