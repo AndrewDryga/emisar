@@ -23,7 +23,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   @behaviour WebSock
 
-  alias Emisar.{Accounts, Catalog, Compat, Crypto, RequestContext, Runners, Runs}
+  alias Emisar.{Accounts, Catalog, Crypto, RequestContext, Runners, Runs}
   require Logger
 
   @protocol_version 1
@@ -45,12 +45,11 @@ defmodule EmisarWeb.RunnerSocket do
 
     Accounts.subscribe_account_lifecycle(runner.account_id)
 
-    case Runners.connect_runner(runner) do
+    case Runners.connect_runner(runner, token.id, request_context) do
       {:ok, runner} ->
         state = connected_state(runner, token, request_context)
         Runners.subscribe_runner_transport(runner)
         Emisar.PubSub.subscribe(EmisarWeb.RunnerSocketDrain.drain_topic())
-        Runners.audit_runner_connected(runner, token.id, request_context)
         {:ok, state}
 
       {:error, :already_connected} ->
@@ -249,23 +248,16 @@ defmodule EmisarWeb.RunnerSocket do
   def terminate(_reason, %{pending_account_disabled?: true}), do: :ok
 
   def terminate(reason, state) do
-    case Runners.mark_disconnected(
-           state.runner_id,
-           state.connection_generation,
-           state.connection_lease_id,
-           format_reason(reason)
-         ) do
-      {:ok, _runner} ->
-        Runners.audit_runner_disconnected(
-          state.account_id,
-          state.runner_id,
-          format_reason(reason),
-          state.request_context
-        )
-
-      {:error, :not_found} ->
-        :ok
-    end
+    # A superseded lease is {:error, :not_found} — the successor owns the
+    # lifecycle now, so this socket's close stamps and audits nothing.
+    _ =
+      Runners.disconnect_runner(
+        state.runner_id,
+        state.connection_generation,
+        state.connection_lease_id,
+        format_reason(reason),
+        state.request_context
+      )
 
     :ok
   end
@@ -468,34 +460,27 @@ defmodule EmisarWeb.RunnerSocket do
 
   # -- Version enforcement --------------------------------------------
 
-  # Enforcement drops only a runner whose advertised version parses AND is
-  # below the configured minimum; :unknown (missing/malformed), :outdated, and
-  # :supported all proceed, as does warn-only mode — a stale-but-accepted
-  # version surfaces in the console, it does not tear the socket down.
+  # The rejection decision and its audit live in the domain
+  # (`Runners.enforce_runner_version/2`); this only maps the outcome to a
+  # shutdown frame.
   defp maybe_enforce_runner_version(%Runners.Runner{} = runner, state) do
-    if Compat.enforce_runners?() and Compat.runner_status(runner.runner_version) == :unsupported do
-      reject_runner_version(runner, state)
-    else
-      reset_heartbeat_timeout(state)
-      {:ok, refresh_heartbeat(state)}
+    case Runners.enforce_runner_version(runner, state.request_context) do
+      :ok ->
+        {:ok, refresh_heartbeat(state)}
+
+      {:error, {:unsupported_version, minimum}} ->
+        shutdown = %{
+          type: "shutdown",
+          protocol_version: @protocol_version,
+          reason: "runner_version_unsupported",
+          message:
+            "Runner version #{runner.runner_version} is below the minimum #{minimum} this " <>
+              "control plane accepts. Upgrade the runner to reconnect."
+        }
+
+        send(self(), :stop_after_drain)
+        {:push, {:text, Jason.encode!(shutdown)}, state}
     end
-  end
-
-  defp reject_runner_version(%Runners.Runner{} = runner, state) do
-    minimum = Compat.runner_minimum()
-    Runners.audit_runner_version_rejected(runner, minimum, state.request_context)
-
-    shutdown = %{
-      type: "shutdown",
-      protocol_version: @protocol_version,
-      reason: "runner_version_unsupported",
-      message:
-        "Runner version #{runner.runner_version} is below the minimum #{minimum} this control " <>
-          "plane accepts. Upgrade the runner to reconnect."
-    }
-
-    send(self(), :stop_after_drain)
-    {:push, {:text, Jason.encode!(shutdown)}, state}
   end
 
   # -- Helpers --------------------------------------------------------

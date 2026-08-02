@@ -52,14 +52,44 @@ defmodule Emisar.Fixtures.Runners do
       end
 
     if Map.get(attrs, :connected?, true) do
-      # Tracks presence from the calling (test) process and stamps
-      # last_connected_at — the runner reads "online" for the test's
-      # lifetime, then auto-untracks when the process exits.
-      {:ok, runner} = Runners.connect_runner(runner)
-      runner
+      connect_runner(runner)
     else
       runner
     end
+  end
+
+  @doc """
+  Rigs the connected state directly — claims a lease via the changeset and
+  tracks presence from the calling (test) process (auto-untracked when it
+  exits) — so arranging an online runner writes no `runner.connected` audit
+  row the way the real `Runners.connect_runner/3` transition does.
+  """
+  def connect_runner(%Runner{} = runner) do
+    lease_expires_at = DateTime.add(DateTime.utc_now(), 120, :second)
+
+    {:ok, runner} =
+      runner
+      |> Runner.Changeset.connected(Ecto.UUID.generate(), lease_expires_at)
+      |> Repo.update()
+
+    meta = %{
+      online_at: System.system_time(:second),
+      action_load: 0,
+      last_heartbeat_at: nil,
+      connection_generation: runner.connection_generation,
+      connection_lease_id: runner.connection_lease_id,
+      node: node()
+    }
+
+    {:ok, _ref} =
+      Runners.Presence.track(
+        self(),
+        Runners.Presence.topic(runner.account_id),
+        runner.id,
+        meta
+      )
+
+    runner
   end
 
   @doc """
@@ -97,6 +127,15 @@ defmodule Emisar.Fixtures.Runners do
       |> Repo.insert()
 
     key
+  end
+
+  @doc "Backdates the runner's connection-lease expiry so the next claim may take over."
+  def expire_connection_lease(%Runner{} = runner) do
+    runner
+    |> Ecto.Changeset.change(
+      connection_lease_expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
+    )
+    |> Repo.update!()
   end
 
   @doc """

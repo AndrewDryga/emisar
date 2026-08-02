@@ -129,7 +129,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     run = sent_run_for(runner, 5 * 60)
 
     assert {:ok, _} =
-             Runners.mark_disconnected(
+             Runners.disconnect_runner(
                runner.id,
                runner.connection_generation,
                runner.connection_lease_id,
@@ -152,7 +152,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     run = sent_run_for(runner, 20 * 60)
 
     assert {:ok, _} =
-             Runners.mark_disconnected(
+             Runners.disconnect_runner(
                runner.id,
                runner.connection_generation,
                runner.connection_lease_id,
@@ -213,7 +213,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     run = running_run_for(runner)
 
     assert {:ok, _} =
-             Runners.mark_disconnected(
+             Runners.disconnect_runner(
                runner.id,
                runner.connection_generation,
                runner.connection_lease_id,

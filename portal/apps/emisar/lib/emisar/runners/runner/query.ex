@@ -167,7 +167,7 @@ defmodule Emisar.Runners.Runner.Query do
   # `last_disconnected_at` columns — NOT live Presence. Drives the fleet-wide
   # ops gauge (`Runners.connection_counts/0`); the per-account UI uses Presence
   # (`by_connection/3`), which catches an ungraceful socket drop these columns
-  # only learn about on the next `mark_disconnected`/reconnect.
+  # only learn about on the next `disconnect_runner`/reconnect.
   def disabled(queryable \\ all()),
     do: where(queryable, [runners: r], not is_nil(r.disabled_at))
 

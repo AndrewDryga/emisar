@@ -922,7 +922,7 @@ seeded_execution_ids =
   after
     Enum.each(temporary_connections, fn connected ->
       {:ok, disconnected} =
-        Runners.mark_disconnected(
+        Runners.disconnect_runner(
           connected.id,
           connected.connection_generation,
           connected.connection_lease_id,

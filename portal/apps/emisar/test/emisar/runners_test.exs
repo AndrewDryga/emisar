@@ -1306,16 +1306,27 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "connect_runner/1" do
-    test "tracks presence and stamps last_connected_at" do
+  describe "connect_runner/3" do
+    test "tracks presence, stamps last_connected_at, and audits the claim" do
       runner = Fixtures.Runners.create_runner(connected?: false)
       refute Runners.online?(runner.account_id, runner.id)
+      context = %RequestContext{ip_address: "10.0.0.1"}
 
-      assert {:ok, %Runner{last_connected_at: %DateTime{}}} = Runners.connect_runner(runner)
+      assert {:ok, %Runner{last_connected_at: %DateTime{}}} =
+               Runners.connect_runner(runner, "tok-123", context)
+
       assert Runners.online?(runner.account_id, runner.id)
+
+      assert event = Repo.one(Audit.Event)
+      assert event.event_type == "runner.connected"
+      assert event.account_id == runner.account_id
+      assert event.actor_kind == "runner"
+      assert event.target_id == runner.id
+      assert event.payload["token_id"] == "tok-123"
+      assert event.ip_address == "10.0.0.1"
     end
 
-    test "refuses a second live holder of the same runner identity" do
+    test "refuses a second live holder of the same runner identity without a false audit" do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {:ok, first_claim} = Runners.connect_runner(runner)
 
@@ -1327,6 +1338,28 @@ defmodule Emisar.RunnersTest do
                first_claim.connection_generation,
                first_claim.connection_lease_id
              )
+
+      # Only the first claim audited — the refused one left no row.
+      assert [%Audit.Event{event_type: "runner.connected"}] = Repo.all(Audit.Event)
+    end
+
+    test "a presence-track failure releases the claim and audits the disconnect" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {:ok, first} = Runners.connect_runner(runner)
+      Fixtures.Runners.expire_connection_lease(first)
+
+      # The reclaim succeeds durably, but this process already tracks the
+      # runner in presence, so Presence.track returns {:error, {:already_tracked, …}}
+      # and the compensation path must release the fresh claim again.
+      assert {:error, {:presence, _reason}} = Runners.connect_runner(runner)
+
+      released = Repo.reload!(runner)
+      assert released.connection_lease_id == nil
+      assert released.last_disconnect_reason == "presence track failed"
+
+      # Two honest claims, plus the compensation disconnect for the second.
+      event_types = Repo.all(Audit.Event) |> Enum.map(& &1.event_type) |> Enum.sort()
+      assert event_types == ["runner.connected", "runner.connected", "runner.disconnected"]
     end
 
     test "an expired lease can be reclaimed even while stale Presence remains" do
@@ -1334,11 +1367,7 @@ defmodule Emisar.RunnersTest do
       {:ok, first} = Runners.connect_runner(runner)
       topic = Presence.topic(runner.account_id)
 
-      first
-      |> Ecto.Changeset.change(
-        connection_lease_expires_at: DateTime.add(DateTime.utc_now(), -1, :second)
-      )
-      |> Repo.update!()
+      Fixtures.Runners.expire_connection_lease(first)
 
       :ok = Presence.untrack(self(), topic, runner.id)
 
@@ -1365,9 +1394,10 @@ defmodule Emisar.RunnersTest do
 
     test "reports an inactive runner separately from a duplicate live connection" do
       runner = Fixtures.Runners.create_runner(connected?: false)
-      runner |> Runner.Changeset.disable() |> Repo.update!()
+      Fixtures.Runners.disable_runner(runner)
 
       assert {:error, :not_found} = Runners.connect_runner(runner)
+      assert Repo.all(Audit.Event) == []
     end
 
     test "refuses a stale connection after its account is disabled" do
@@ -1383,16 +1413,17 @@ defmodule Emisar.RunnersTest do
                )
 
       assert {:error, :account_disabled} = Runners.connect_runner(runner)
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "runner.connected"))
     end
   end
 
-  describe "mark_disconnected/4" do
-    test "a released lease cannot stamp its successor disconnected" do
+  describe "disconnect_runner/5" do
+    test "a released lease cannot stamp or audit its successor disconnected" do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {:ok, first} = Runners.connect_runner(runner)
 
       assert {:ok, _disconnected} =
-               Runners.mark_disconnected(
+               Runners.disconnect_runner(
                  first.id,
                  first.connection_generation,
                  first.connection_lease_id,
@@ -1403,7 +1434,7 @@ defmodule Emisar.RunnersTest do
       {:ok, second} = Runners.connect_runner(runner)
 
       assert {:error, :not_found} =
-               Runners.mark_disconnected(
+               Runners.disconnect_runner(
                  first.id,
                  first.connection_generation,
                  first.connection_lease_id,
@@ -1413,11 +1444,18 @@ defmodule Emisar.RunnersTest do
       current = Repo.reload!(runner)
       assert current.connection_lease_id == second.connection_lease_id
       assert current.last_disconnect_reason == nil
+
+      # Only the owned close audited — the superseded attempt left no row.
+      events = Repo.all(Audit.Event)
+
+      assert [%Audit.Event{payload: %{"reason" => "closed"}}] =
+               Enum.filter(events, &(&1.event_type == "runner.disconnected"))
     end
 
-    test "stamps disconnect history and clears the matching lease" do
+    test "stamps disconnect history, clears the lease, and audits the close reason" do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {:ok, claimed} = Runners.connect_runner(runner)
+      context = %RequestContext{ip_address: "10.0.0.9"}
 
       assert {:ok,
               %Runner{
@@ -1426,17 +1464,27 @@ defmodule Emisar.RunnersTest do
                 connection_lease_id: nil,
                 connection_lease_expires_at: nil
               }} =
-               Runners.mark_disconnected(
+               Runners.disconnect_runner(
                  claimed.id,
                  claimed.connection_generation,
                  claimed.connection_lease_id,
-                 "shutdown"
+                 "shutdown",
+                 context
                )
+
+      event = Enum.find(Repo.all(Audit.Event), &(&1.event_type == "runner.disconnected"))
+      assert event.account_id == runner.account_id
+      assert event.actor_kind == "runner"
+      assert event.target_id == runner.id
+      assert event.payload["reason"] == "shutdown"
+      assert event.ip_address == "10.0.0.9"
     end
 
-    test "returns not_found for an unknown runner" do
+    test "returns not_found for an unknown runner and audits nothing" do
       assert {:error, :not_found} =
-               Runners.mark_disconnected(Ecto.UUID.generate(), 1, Ecto.UUID.generate(), "gone")
+               Runners.disconnect_runner(Ecto.UUID.generate(), 1, Ecto.UUID.generate(), "gone")
+
+      assert Repo.all(Audit.Event) == []
     end
   end
 
@@ -1499,40 +1547,53 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "audit_runner_connected/3" do
-    test "records a runner.connected audit row carrying the token id" do
-      runner = Fixtures.Runners.create_runner(connected?: false)
-      context = %RequestContext{ip_address: "10.0.0.1"}
+  # test.exs Compat policy: < 0.0.1 unsupported, >= 0.1.0 supported. The
+  # override lives in this test process, so the file stays async-safe.
+  defp enforce_runner_versions(enforce?) do
+    previous = Emisar.Config.get_env(:emisar, Emisar.Compat)
 
-      assert {:ok, event} = Runners.audit_runner_connected(runner, "tok-123", context)
-      # Reload so the payload reads back in its persisted (string-keyed) JSON form.
-      event = Repo.reload!(event)
-      assert event.event_type == "runner.connected"
+    Emisar.Config.put_override(
+      :emisar,
+      Emisar.Compat,
+      Keyword.put(previous, :runner_enforce, enforce?)
+    )
+  end
+
+  describe "enforce_runner_version/2" do
+    test "enforce on: a below-minimum version is rejected with an audit row" do
+      enforce_runner_versions(true)
+      runner = Fixtures.Runners.create_runner(connected?: false, runner_version: "0.0.0")
+
+      assert {:error, {:unsupported_version, ">= 0.0.1"}} =
+               Runners.enforce_runner_version(runner, %RequestContext{ip_address: "10.0.0.7"})
+
+      assert event = Repo.one(Audit.Event)
+      assert event.event_type == "runner.version_rejected"
       assert event.account_id == runner.account_id
       assert event.actor_kind == "runner"
       assert event.target_id == runner.id
-      assert event.payload["token_id"] == "tok-123"
-      assert event.ip_address == "10.0.0.1"
+      assert event.payload["runner_version"] == "0.0.0"
+      assert event.payload["minimum"] == ">= 0.0.1"
+      assert event.ip_address == "10.0.0.7"
     end
-  end
 
-  describe "audit_runner_disconnected/4" do
-    test "records a runner.disconnected audit row carrying the close reason" do
-      runner = Fixtures.Runners.create_runner(connected?: false)
+    test "warn-only: a below-minimum version proceeds without audit" do
+      runner = Fixtures.Runners.create_runner(connected?: false, runner_version: "0.0.0")
 
-      assert {:ok, event} =
-               Runners.audit_runner_disconnected(
-                 runner.account_id,
-                 runner.id,
-                 "going away",
-                 %RequestContext{}
-               )
+      assert :ok = Runners.enforce_runner_version(runner, %RequestContext{})
+      assert Repo.all(Audit.Event) == []
+    end
 
-      event = Repo.reload!(event)
-      assert event.event_type == "runner.disconnected"
-      assert event.account_id == runner.account_id
-      assert event.target_id == runner.id
-      assert event.payload["reason"] == "going away"
+    test "enforce on: supported and unparseable (:unknown) versions proceed" do
+      enforce_runner_versions(true)
+      supported = Fixtures.Runners.create_runner(connected?: false, runner_version: "1.0.0")
+
+      unparseable =
+        Fixtures.Runners.create_runner(connected?: false, runner_version: "dev-abc123")
+
+      assert :ok = Runners.enforce_runner_version(supported, %RequestContext{})
+      assert :ok = Runners.enforce_runner_version(unparseable, %RequestContext{})
+      assert Repo.all(Audit.Event) == []
     end
   end
 
@@ -1555,23 +1616,6 @@ defmodule Emisar.RunnersTest do
       assert event.target_id == runner.id
       assert event.payload["code"] == "boom"
       assert event.payload["detail"] == "pack crashed"
-    end
-  end
-
-  describe "audit_runner_version_rejected/3" do
-    test "records a runner.version_rejected audit row carrying the version and minimum" do
-      runner = Fixtures.Runners.create_runner(connected?: false, runner_version: "0.0.0")
-
-      assert {:ok, event} =
-               Runners.audit_runner_version_rejected(runner, ">= 0.4.0", %RequestContext{})
-
-      event = Repo.reload!(event)
-      assert event.event_type == "runner.version_rejected"
-      assert event.account_id == runner.account_id
-      assert event.actor_kind == "runner"
-      assert event.target_id == runner.id
-      assert event.payload["runner_version"] == "0.0.0"
-      assert event.payload["minimum"] == ">= 0.4.0"
     end
   end
 

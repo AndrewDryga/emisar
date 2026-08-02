@@ -50,7 +50,7 @@ defmodule Emisar.RunsTest do
 
   defp reconnect_runner(runner) do
     assert {:ok, _} =
-             Runners.mark_disconnected(
+             Runners.disconnect_runner(
                runner.id,
                runner.connection_generation,
                runner.connection_lease_id,
@@ -3036,7 +3036,7 @@ defmodule Emisar.RunsTest do
       runner: runner
     } do
       {:ok, connected} =
-        Emisar.Runners.mark_disconnected(
+        Emisar.Runners.disconnect_runner(
           runner.id,
           runner.connection_generation,
           runner.connection_lease_id,

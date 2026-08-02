@@ -6,8 +6,8 @@ defmodule Emisar.Runners.Presence do
   runner's ephemeral state (`action_load`, last heartbeat) that dies
   with the socket.
 
-  The public read/write surface is `Emisar.Runners` (`connect_runner/1`,
-  `record_heartbeat/3`, `online?/2`, `connection_metas/1`); this module
+  The public read/write surface is `Emisar.Runners` (`connect_runner/3`,
+  `record_heartbeat/5`, `online?/2`, `connection_metas/1`); this module
   is just the tracker + its topic.
   """
   use Phoenix.Presence,

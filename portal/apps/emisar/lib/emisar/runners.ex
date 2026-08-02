@@ -11,7 +11,7 @@ defmodule Emisar.Runners do
   similar per-entity modules under `Emisar.Runners.EnrollmentKey`,
   `Token`). The public surface takes `%Subject{}` and
   routes through `Authorizer.for_subject/2`; the runner-socket-driven
-  state helpers (`apply_state`, `connect_runner`, `mark_disconnected`,
+  state helpers (`apply_state`, `connect_runner`, `disconnect_runner`,
   `record_heartbeat`) are internal
   to the runner connection process and called with the runner
   socket's own subject upstream.
@@ -22,7 +22,7 @@ defmodule Emisar.Runners do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Compat, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
   alias Emisar.Runners.{Authorizer, EnrollmentKey, Presence, Runner, Token}
@@ -896,11 +896,14 @@ defmodule Emisar.Runners do
   defp nonblank(_), do: nil
 
   @doc """
-  Internal — called by the runner socket on connect. Tracks the socket
-  process in presence (the live "online" signal) and stamps
-  `last_connected_at` for the durable "last seen" history.
+  Internal — called by the runner socket on connect. Claims the connection
+  lease (writing the `runner.connected` audit row in the same transaction, so
+  a failed claim leaves no audit), tracks the socket process in presence (the
+  live "online" signal), and stamps `last_connected_at` for the durable
+  "last seen" history. A presence-track failure releases the claim again via
+  `disconnect_runner`, so the audit trail stays an honest connect/disconnect pair.
   """
-  def connect_runner(%Runner{} = runner) do
+  def connect_runner(%Runner{} = runner, token_id \\ nil, context \\ %RequestContext{}) do
     now = DateTime.utc_now()
     lease_id = Ecto.UUID.generate()
     lease_expires_at = DateTime.add(now, @connection_lease_seconds, :second)
@@ -913,7 +916,8 @@ defmodule Emisar.Runners do
       |> Runner.Query.by_account_id(runner.account_id)
       |> Runner.Query.lease_available(now)
       |> Repo.fetch_and_update(Runner.Query,
-        with: &Runner.Changeset.connected(&1, lease_id, lease_expires_at)
+        with: &Runner.Changeset.connected(&1, lease_id, lease_expires_at),
+        audit: &Audit.Events.runner_connected(&1, token_id, context)
       )
 
     with {:ok, claimed} <- normalize_connection_claim(result, runner) do
@@ -937,7 +941,7 @@ defmodule Emisar.Runners do
 
         {:error, reason} ->
           Logger.warning("presence track failed for runner #{claimed.id}: #{inspect(reason)}")
-          _ = release_connection(claimed, "presence track failed")
+          _ = release_connection(claimed, "presence track failed", context)
           {:error, {:presence, reason}}
       end
     end
@@ -958,6 +962,39 @@ defmodule Emisar.Runners do
   end
 
   defp normalize_connection_claim(result, _runner), do: result
+
+  @doc """
+  Internal — disconnect a socket only if it still owns the active lease,
+  writing the `runner.disconnected` audit row in the same transaction. A
+  superseded lease is `{:error, :not_found}` and leaves no audit — a stale
+  socket must never stamp its successor disconnected.
+  """
+  def disconnect_runner(
+        runner_id,
+        connection_generation,
+        lease_id,
+        reason,
+        context \\ %RequestContext{}
+      )
+      when is_binary(runner_id) and is_integer(connection_generation) and is_binary(lease_id) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_id(runner_id)
+    |> Runner.Query.by_connection_lease(connection_generation, lease_id)
+    |> Repo.fetch_and_update(Runner.Query,
+      with: &Runner.Changeset.disconnected(&1, reason),
+      audit: &Audit.Events.runner_disconnected(&1.account_id, &1.id, reason, context)
+    )
+  end
+
+  defp release_connection(%Runner{} = runner, reason, context) do
+    disconnect_runner(
+      runner.id,
+      runner.connection_generation,
+      runner.connection_lease_id,
+      reason,
+      context
+    )
+  end
 
   @doc """
   Internal — renews the socket's ownership lease and refreshes its Presence
@@ -997,48 +1034,29 @@ defmodule Emisar.Runners do
     |> Repo.exists?()
   end
 
-  # Connection-lifecycle audit rows. The runner socket calls these (audit
-  # is a domain concern — the web layer never assembles audit rows); they
-  # run in the socket process; the connect `%RequestContext{}` is threaded
-  # in so the runner's lifecycle events carry its IP/UA. Fire-and-forget
-  # Audit.record/1 — there is no Multi to join (presence/PubSub aren't
-  # transactional).
-
-  @doc "Internal — runner socket: audit the WebSocket connect."
-  def audit_runner_connected(%Runner{} = runner, token_id, %RequestContext{} = context),
-    do: Audit.record(Audit.Events.runner_connected(runner, token_id, context))
-
-  @doc "Internal — runner socket: audit the WebSocket close."
-  def audit_runner_disconnected(account_id, runner_id, reason, %RequestContext{} = context),
-    do: Audit.record(Audit.Events.runner_disconnected(account_id, runner_id, reason, context))
+  @doc """
+  Internal — runner socket: judge the runner's advertised version against the
+  configured minimum. Rejection is a domain outcome carrying the minimum for
+  the operator-facing close message, with its `runner.version_rejected` audit
+  row recorded here — the transport only maps it to a shutdown frame.
+  Enforcement drops only a version that parses AND is below the minimum;
+  `:unknown` (missing/malformed), `:outdated`, and `:supported` all proceed,
+  as does warn-only mode.
+  """
+  def enforce_runner_version(%Runner{} = runner, %RequestContext{} = context) do
+    if Compat.enforce_runners?() and Compat.runner_status(runner.runner_version) == :unsupported do
+      minimum = Compat.runner_minimum()
+      # Fire-and-forget — the rejection stands even if the audit insert fails.
+      _ = Audit.record(Audit.Events.runner_version_rejected(runner, minimum, context))
+      {:error, {:unsupported_version, minimum}}
+    else
+      :ok
+    end
+  end
 
   @doc "Internal — runner socket: audit an error envelope reported by the runner."
   def audit_runner_error(account_id, runner_id, %{} = payload, %RequestContext{} = context),
     do: Audit.record(Audit.Events.runner_error(account_id, runner_id, payload, context))
-
-  @doc "Internal — runner socket: audit an enforced disconnect of a below-minimum runner version."
-  def audit_runner_version_rejected(%Runner{} = runner, minimum, %RequestContext{} = context),
-    do: Audit.record(Audit.Events.runner_version_rejected(runner, minimum, context))
-
-  @doc "Internal — disconnect a socket only if it still owns the active lease."
-  def mark_disconnected(runner_id, connection_generation, lease_id, reason)
-      when is_binary(runner_id) and is_integer(connection_generation) and is_binary(lease_id) do
-    Runner.Query.not_deleted()
-    |> Runner.Query.by_id(runner_id)
-    |> Runner.Query.by_connection_lease(connection_generation, lease_id)
-    |> Repo.fetch_and_update(Runner.Query,
-      with: &Runner.Changeset.disconnected(&1, reason)
-    )
-  end
-
-  defp release_connection(%Runner{} = runner, reason) do
-    mark_disconnected(
-      runner.id,
-      runner.connection_generation,
-      runner.connection_lease_id,
-      reason
-    )
-  end
 
   # -- Connection state reads (Phoenix.Presence) -----------------------
 
