@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,10 +40,30 @@ type Config struct {
 
 type Manager struct {
 	Config
-	// daemonLifeline is the write end of the pipe a BOXED daemon watches. It must live as long as
-	// the command that started the daemon: the daemon exits when this closes, and letting the
-	// garbage collector close it would kill the browser mid-run.
-	daemonLifeline *os.File
+}
+
+// daemonLifeline holds the write end of the pipe a BOXED daemon watches. It is a package-level
+// GC root on purpose: the daemon must die exactly when the process that started it exits — the
+// kernel closes the fd then — and no narrower home can promise that. Held on the Manager, the
+// write end died with it: a command like `./run shot` drops its last Manager reference once the
+// session is open, the collector runs the os.File finalizer mid-command, the daemon's watcher
+// reads EOF and SIGKILLs the browser group (reproduced 2026-08-02: every in-box shot failed
+// ~1.5s in with "context canceled", and GOGC=off made it pass). holdDaemonLifeline is the only
+// writer.
+var (
+	daemonLifelineMu sync.Mutex
+	daemonLifeline   *os.File
+)
+
+// holdDaemonLifeline parks keep in the package-level root above, closing the previous write end
+// (its daemon, if still alive, is being replaced and may exit).
+func holdDaemonLifeline(keep *os.File) {
+	daemonLifelineMu.Lock()
+	defer daemonLifelineMu.Unlock()
+	if daemonLifeline != nil {
+		_ = daemonLifeline.Close()
+	}
+	daemonLifeline = keep
 }
 
 func New(config Config) *Manager {
@@ -245,10 +266,7 @@ func (m *Manager) Start(ctx context.Context, binary string) (State, error) {
 		command.ExtraFiles = append(command.ExtraFiles, child) // becomes fd 3 in the daemon
 		command.Env = append(os.Environ(), daemonLifelineEnv+"=3")
 		defer child.Close()
-		if m.daemonLifeline != nil {
-			_ = m.daemonLifeline.Close()
-		}
-		m.daemonLifeline = keep
+		holdDaemonLifeline(keep)
 	}
 	if err := command.Start(); err != nil {
 		logFile.Close()

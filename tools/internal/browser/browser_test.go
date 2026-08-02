@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"image/png"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -416,6 +418,97 @@ func TestDaemonWithoutLifelineIsNeverCancelled(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("daemon with no lifeline was cancelled")
 	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// The daemon lifeline's write end must stay reachable for the whole process, not just while some
+// Manager is: `./run shot` drops its last Manager reference once the session is open, and with the
+// write end held on the Manager the os.File finalizer closed it mid-command — the daemon's watcher
+// read EOF and SIGKILLed the browser under the running command. holdDaemonLifeline parks it in a
+// package-level GC root instead; this pins that ownership contract by dropping every local
+// reference, forcing collection and finalizers, and requiring the read end to stay EOF-free.
+func TestHeldDaemonLifelineSurvivesGC(t *testing.T) {
+	keep, child, err := newLifeline()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer child.Close()
+	t.Cleanup(func() { holdDaemonLifeline(nil) })
+	holdDaemonLifeline(keep)
+	keep = nil
+	_ = keep
+	for range 3 {
+		runtime.GC()
+	}
+	time.Sleep(100 * time.Millisecond) // room for any wrongly finalizer-driven close to land
+	if err := child.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := child.Read(make([]byte, 1)); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("lifeline write end did not stay open: read err = %v", err)
+	}
+}
+
+// The bug this pins: with the daemon lifeline's write end stored on the Manager, the Manager
+// going unreachable mid-command let GC finalize the os.File — the boxed daemon's watcher read
+// EOF, SIGKILLed the browser group, and every in-box `./run shot` died ~1.5s in with "context
+// canceled". Reproduce the shape with a real spawned daemon: start it, drop the Manager, force
+// collection, and require the daemon to stay up and be reusable by a fresh Manager — exactly
+// what a second `./run shot` in the same box does.
+func TestBoxedDaemonSurvivesManagerCollection(t *testing.T) {
+	if !testInBox() {
+		t.Skip("spawned-daemon lifetime is exercised in the box (linux + bundled chromium)")
+	}
+	if _, err := ResolveChrome(); err != nil {
+		t.Skip(err)
+	}
+	root := t.TempDir()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := Config{
+		State: filepath.Join(root, "state.json"), Profile: filepath.Join(root, "profile"),
+		Marker: filepath.Join(root, "profile", "marker"), Log: filepath.Join(root, "browser.log"),
+		SPKI: base64.StdEncoding.EncodeToString(make([]byte, 32)), Out: io.Discard, Err: io.Discard,
+		InBox: true,
+	}
+	// Closing the held write end reaps the daemon and its browser tree at test end, so nothing
+	// lingers to hold the box open past the test binary.
+	t.Cleanup(func() { holdDaemonLifeline(nil) })
+	state := func() State {
+		manager := New(config)
+		started, startErr := manager.Start(context.Background(), self)
+		if startErr == nil {
+			return started
+		}
+		// Start's own wait is 10s; a cold chromium start on a shared runner can outrun it while
+		// the daemon it already spawned comes up. Keep waiting on the published state instead.
+		deadline := time.Now().Add(90 * time.Second)
+		for {
+			if started, stateErr := manager.State(); stateErr == nil {
+				return started
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("boxed daemon did not come up: %v", startErr)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}()
+	// The Manager is unreachable now — the bug's exact shape. Force collection and give a wrongly
+	// finalizer-closed lifeline time to kill the daemon, then require it still serves.
+	for range 3 {
+		runtime.GC()
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if !endpointAlive(state.WSEndpoint) {
+			t.Fatal("boxed daemon died once its Manager was collected")
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	if _, err := New(config).State(); err != nil {
+		t.Fatalf("a fresh Manager cannot reuse the daemon: %v", err)
 	}
 }
 
