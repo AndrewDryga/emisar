@@ -364,6 +364,10 @@ defmodule EmisarWeb.MarketingTest do
     for path <- ~w(okta entra jumpcloud keycloak google-workspace) do
       assert html =~ "/docs/integrations/#{path}"
     end
+
+    # The oid cross-reference goes straight to the Entra guide, not the
+    # one-line provider bullet on this same page.
+    refute html =~ "/docs/sso#entra"
   end
 
   test "each provider guide carries its own console walkthrough", %{conn: conn} do
@@ -1243,6 +1247,54 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "https://emisar.dev/api/mcp/rpc"
       assert html =~ "Authorization: Bearer"
       refute html =~ "GET /api/mcp/runners"
+    end
+
+    test "the limits and runbooks pages state the shipped output range and runbook schema bounds",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/limits") |> html_response(200)
+
+      # The published range is the real spread of per-stream caps across the
+      # shipped pack catalog — a pack moving either endpoint must move the docs.
+      packs_root = Path.expand("../../../../../packs", __DIR__)
+      cap_pattern = ~r/max_std(?:out|err)_bytes(?:_min|_max)?: *(\d+)/
+
+      caps =
+        packs_root
+        |> Path.join("*/actions/*.yaml")
+        |> Path.wildcard()
+        |> Enum.map(&File.read!/1)
+        |> Enum.flat_map(&Regex.scan(cap_pattern, &1, capture: :all_but_first))
+        |> List.flatten()
+        |> Enum.map(&String.to_integer/1)
+
+      assert Enum.min(caps) == 64
+      assert Enum.max(caps) == 16 * 1024 * 1024
+      assert html =~ "64 bytes to 16 MiB"
+      assert html =~ "separately for stdout and stderr"
+      assert html =~ "each flagged truncated on their own"
+
+      limit = &Emisar.Runbooks.Definition.limit!/1
+      assert {limit.(:min_wait_interval_seconds), limit.(:max_wait_interval_seconds)} == {5, 3600}
+      assert html =~ "every 5 seconds to 1 hour"
+      assert {limit.(:min_wait_attempts), limit.(:max_wait_attempts)} == {2, 100}
+      assert html =~ "2 to 100 attempts"
+      assert limit.(:default_stage_parallelism) == 5
+      assert html =~ "5 unless the definition sets it"
+      assert limit.(:max_frozen_plan_bytes) == 1024 * 1024
+      assert html =~ "1 MiB frozen plan"
+      assert limit.(:max_execution_seconds) == 24 * 60 * 60
+      assert html =~ "24 hours end to end, waits included"
+
+      # The reference link promises only what that page contains.
+      refute html =~ "every method, parameter, error code"
+      assert html =~ "recovery semantics"
+
+      runbooks = conn |> get(~p"/docs/runbooks") |> html_response(200)
+      assert runbooks =~ "A wait polls every 5 seconds"
+      assert runbooks =~ "to 1 hour and makes 2 to 100 attempts"
+      assert runbooks =~ "5 unless the definition sets it"
+      assert runbooks =~ "frozen execution plan is at most 1 MiB"
+      assert runbooks =~ "ends within 24 hours"
     end
 
     test "the teams-and-access page renders all four roles", %{conn: conn} do

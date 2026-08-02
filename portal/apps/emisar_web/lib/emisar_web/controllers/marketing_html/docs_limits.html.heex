@@ -24,11 +24,12 @@
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">Action output</td>
               <td class="px-4 py-3 align-top leading-6">
-                Set per action in the pack (a few KB to a few MB)
+                Set per action in the pack, separately for stdout and stderr — 64 bytes to 16 MiB
+                across the shipped catalog
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Bytes past the cap are dropped from the delivered output but counted, and the run is
-                flagged truncated.
+                Bytes past a stream's cap are dropped from the delivered output but counted, and
+                stdout and stderr are each flagged truncated on their own.
               </td>
             </tr>
             <tr>
@@ -91,11 +92,22 @@
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">Runbooks</td>
               <td class="px-4 py-3 align-top leading-6">
-                64 KiB definition; 32 inputs, 16 stages, 32 steps, 16 target refs per step,
-                and 256 resolved items
+                64 KiB definition; 32 inputs, 16 stages, 32 steps, 16 target refs per step, and 256
+                resolved items. A wait polls every 5 seconds to 1 hour for 2 to 100 attempts; a
+                parallel stage runs 1 through 16 attempts at once, 5 unless the definition sets it.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Authoring or preflight rejects the definition before an execution is created.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Runbook execution</td>
+              <td class="px-4 py-3 align-top leading-6">
+                1 MiB frozen plan; 24 hours end to end, waits included
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                Preflight rejects a plan that freezes larger; an execution still running at the
+                deadline halts as timed out.
               </td>
             </tr>
             <tr>
@@ -118,8 +130,8 @@
         </table>
       </div>
       <.docs_callout kind={:tip} title="Scripting against the API?">
-        The full MCP contract — every method, parameter, error code, and the idempotency rules that
-        make a retried dispatch safe — is in the <.link
+        The fixed tools, identifiers, and recovery semantics of the emisar MCP server — including
+        how a retried dispatch resolves to its original operation — are in the <.link
           navigate={~p"/docs/mcp-reference"}
           class="text-brand-400 hover:text-brand-300"
         >MCP reference</.link>.
