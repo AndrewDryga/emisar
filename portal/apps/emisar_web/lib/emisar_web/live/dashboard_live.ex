@@ -74,17 +74,38 @@ defmodule EmisarWeb.DashboardLive do
     subject = socket.assigns.current_subject
     # Tolerate {:error, :unauthorized} per tile — a billing_manager (or any
     # future narrow role) still gets a rendering dashboard; tiles it can't
-    # read show empty rather than crashing the landing page.
-    runners = list_or_empty(Runners.list_all_runners_for_account(subject))
+    # read show empty rather than crashing the landing page. The raw read
+    # results are kept alongside the collapsed lists: an empty list only means
+    # "genuinely empty account" when its read verifiably succeeded, and the
+    # first-run checklist refuses to activate on unverified emptiness.
+    runners_read = Runners.list_all_runners_for_account(subject)
+    api_keys_read = ApiKeys.list_api_keys_for_account(subject)
+
+    # :api_key so the source badge names the actual agent ("Claude Code -
+    # on-call"), same as the runs page — not the generic "MCP / LLM".
+    recent_runs_read =
+      Runs.list_recent_runs(subject, limit: 8, preload: [:runner, :api_key, :requested_by])
+
+    runners = list_or_empty(runners_read)
+    api_keys = list_or_empty(api_keys_read)
+    recent_runs = list_or_empty(recent_runs_read)
     pending = list_or_empty(Approvals.list_pending_approval_requests(subject))
-    api_keys = list_or_empty(ApiKeys.list_api_keys_for_account(subject))
-    visible_runner_ids = Enum.map(runners, & &1.id)
+
+    # Only a currently ONLINE runner's advertised actions are dispatchable —
+    # catalog rows left behind by an offline runner can't back the checklist's
+    # "ask your agent to run an action" step.
+    online_runner_ids = for %{online?: true} = runner <- runners, do: runner.id
+    actions_read = Catalog.action_risks_for_runner_ids(online_runner_ids, subject)
 
     actions_advertised? =
-      case Catalog.action_risks_for_runner_ids(visible_runner_ids, subject) do
+      case actions_read do
         {:ok, action_risks} -> map_size(action_risks) > 0
         _ -> false
       end
+
+    show_setup? =
+      recent_runs == [] and
+        Enum.all?([runners_read, api_keys_read, recent_runs_read, actions_read], &read_ok?/1)
 
     socket
     |> assign(:page_title, "Dashboard")
@@ -92,14 +113,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, Enum.count(runners, & &1.online?))
     |> assign(:actions_advertised?, actions_advertised?)
-    |> assign(
-      :recent_runs,
-      # :api_key so the source badge names the actual agent ("Claude Code -
-      # on-call"), same as the runs page — not the generic "MCP / LLM".
-      list_or_empty(
-        Runs.list_recent_runs(subject, limit: 8, preload: [:runner, :api_key, :requested_by])
-      )
-    )
+    |> assign(:recent_runs, recent_runs)
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
     |> assign(:pending_approvals, pending)
     |> assign(:agents, agents_summary(api_keys))
@@ -110,7 +124,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
     |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
-    |> assign_setup_state(subject)
+    |> assign_setup_state(subject, show_setup?)
   end
 
   # First-run: until the account has actually RUN something, the dashboard's job
@@ -120,10 +134,7 @@ defmodule EmisarWeb.DashboardLive do
   # connected, nothing run" phase, where its third step is the run itself, and
   # hands off to the pillars the moment a run lands.
   # Sequenced, not locked: any step stays clickable in any order.
-  defp assign_setup_state(socket, subject) do
-    %{recent_runs: recent_runs} = socket.assigns
-    show_setup? = recent_runs == []
-
+  defp assign_setup_state(socket, subject, show_setup?) do
     socket
     |> assign(:show_setup?, show_setup?)
     |> assign(:can_install_runners?, Runners.subject_can_install_runners?(subject))
@@ -131,10 +142,18 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:can_invite_members?, Accounts.subject_can_manage_team?(subject))
   end
 
+  # A read counts as verified only when it returned its ok shape — anything
+  # else (an unauthorized tile) is unavailable data, never an empty account.
+  defp read_ok?({:ok, _}), do: true
+  defp read_ok?({:ok, _, _}), do: true
+  defp read_ok?(_), do: false
+
   # The LLM-agents pillar's live facts, from the same MCP-key list the agents
   # page shows (revoked + auto-unused already excluded). "Active today" is a
   # key whose last call landed inside 24h — the "is an agent actually using
-  # this?" signal; the newest call overall carries the idle case.
+  # this?" signal; the newest call overall carries the idle case. `connected`
+  # counts keys with an observed authenticated call — an issued key someone
+  # hasn't finished wiring into an MCP client is not a connected agent.
   defp agents_summary(api_keys) do
     now = DateTime.utc_now()
 
@@ -146,6 +165,7 @@ defmodule EmisarWeb.DashboardLive do
 
     %{
       total: length(api_keys),
+      connected: Enum.count(api_keys, &(not is_nil(&1.last_used_at))),
       active_today:
         Enum.count(api_keys, fn key ->
           key.last_used_at && DateTime.diff(now, key.last_used_at, :hour) < 24
@@ -293,8 +313,10 @@ defmodule EmisarWeb.DashboardLive do
          moment anything has run. --%>
     <.setup_checklist
       :if={@show_setup?}
+      runners_connected={@runners_connected}
       runners_total={@runners_total}
       actions_advertised?={@actions_advertised?}
+      agents_connected={@agents.connected}
       agents_total={@agents.total}
       team_total={if is_map(@team_mfa), do: @team_mfa.total, else: 0}
       current_account={@current_account}
@@ -443,8 +465,15 @@ defmodule EmisarWeb.DashboardLive do
   # The zero state's onboarding: an ORDERED path to the first gated run.
   # Two required connections + one optional invite — sequenced by emphasis
   # (the current step carries the page's one brand fill), never locked.
+  # Completion is capability-based, not row-based: a step reads done only when
+  # the thing it promises actually works right now — a runner that is online
+  # (not a stored row for an offline host), a key an agent has authenticated
+  # with (not one merely issued) — so the first-action step never points at a
+  # run that cannot succeed.
+  attr :runners_connected, :integer, required: true
   attr :runners_total, :integer, required: true
   attr :actions_advertised?, :boolean, required: true
+  attr :agents_connected, :integer, required: true
   attr :agents_total, :integer, required: true
   attr :team_total, :integer, required: true
   attr :current_account, :map, required: true
@@ -453,8 +482,8 @@ defmodule EmisarWeb.DashboardLive do
   attr :can_invite_members?, :boolean, default: false
 
   defp setup_checklist(assigns) do
-    runner_done? = assigns.runners_total > 0
-    agent_done? = assigns.agents_total > 0
+    runner_done? = assigns.runners_connected > 0
+    agent_done? = assigns.agents_connected > 0
 
     both_connected? = runner_done? and agent_done?
 
@@ -462,6 +491,8 @@ defmodule EmisarWeb.DashboardLive do
       assigns
       |> assign(:runner_done?, runner_done?)
       |> assign(:agent_done?, agent_done?)
+      |> assign(:runner_offline?, not runner_done? and assigns.runners_total > 0)
+      |> assign(:agent_unused?, not agent_done? and assigns.agents_total > 0)
       |> assign(:both_connected?, both_connected?)
       # of 3: the third step is the first run itself. done_count tracks the two
       # connections (max 2) — a landed run hides the whole checklist, so it never
@@ -510,27 +541,42 @@ defmodule EmisarWeb.DashboardLive do
           done={@runner_done?}
           current={@current_step == 1}
           title="Connect a runner"
-          done_text={"#{@runners_total} #{if @runners_total == 1, do: "runner", else: "runners"} connected"}
+          done_text={"#{@runners_connected} #{if @runners_connected == 1, do: "runner", else: "runners"} connected"}
           action_label="Connect a runner"
           navigate={~p"/app/#{@current_account}/runners/install"}
           done_navigate={~p"/app/#{@current_account}/runners"}
           can_act?={@can_install_runners?}
         >
-          The emisar agent on one of your hosts — one curl command, connected in
-          about two minutes.
+          <%= if @runner_offline? do %>
+            {@runners_total} {if @runners_total == 1, do: "runner is", else: "runners are"} installed
+            but offline right now. Bring one back online, or connect another host.
+            <.link
+              navigate={~p"/app/#{@current_account}/runners"}
+              class="font-medium text-brand-400 hover:text-brand-300"
+            >See runner status</.link>
+          <% else %>
+            The emisar agent on one of your hosts — one curl command, connected in
+            about two minutes.
+          <% end %>
         </.setup_step>
         <.setup_step
           number={2}
           done={@agent_done?}
           current={@current_step == 2}
           title="Connect an LLM agent"
-          done_text={"#{@agents_total} #{if @agents_total == 1, do: "agent", else: "agents"} connected"}
+          done_text={"#{@agents_connected} #{if @agents_connected == 1, do: "agent", else: "agents"} connected"}
           action_label="Connect an agent"
           navigate={~p"/app/#{@current_account}/agents/connect"}
           done_navigate={~p"/app/#{@current_account}/agents"}
           can_act?={@can_issue_agent_key?}
         >
-          Give Claude, Cursor, or any MCP client a scoped, revocable key.
+          <%= if @agent_unused? do %>
+            {@agents_total} {if @agents_total == 1, do: "key is", else: "keys are"} issued, but no
+            agent has made an authenticated call yet. Finish the setup in your MCP client — this
+            step completes on its first call.
+          <% else %>
+            Give Claude, Cursor, or any MCP client a scoped, revocable key.
+          <% end %>
         </.setup_step>
         <%!-- Step 3 — make the first run possible, then spell out the exact
              words to send. A connected runner with no advertised actions needs

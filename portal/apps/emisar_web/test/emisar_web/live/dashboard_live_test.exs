@@ -135,6 +135,114 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "Recent runs"
     end
 
+    test "an installed but offline runner keeps step 1 incomplete with recovery copy",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "Get to your first gated run"
+      # A stored runner row is not a connected runner: the step stays
+      # incomplete and explains recovery instead of advancing the checklist
+      # toward a first action that cannot dispatch.
+      refute html =~ "1 of 3 done"
+      refute html =~ "1 runner connected"
+      assert html =~ "but offline right now"
+      assert html =~ "Bring one back online, or connect another host."
+
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/runners"}']",
+               "See runner status"
+             )
+    end
+
+    test "a runner last seen an hour ago reads offline, not connected", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Runners.mark_disconnected_at(runner, DateTime.add(DateTime.utc_now(), -3600))
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      # A host that connected once and dropped an hour ago is stale state, not
+      # a completed step — only live presence completes "Connect a runner".
+      refute html =~ "1 runner connected"
+      assert html =~ "but offline right now"
+    end
+
+    test "an issued key that never authenticated keeps the agent step incomplete",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id)
+
+      {_raw, _key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      # Minting a key proves nothing about the agent side: completion waits for
+      # an observed authenticated MCP call, and the copy says what's missing.
+      assert html =~ "1 of 3 done"
+      refute html =~ "1 agent connected"
+      assert html =~ "agent has made an authenticated call yet"
+    end
+
+    test "an authenticated agent call completes step 2 and activates the first-action step",
+         %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      Fixtures.ApiKeys.mark_used(key)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      # An online action-bearing runner + a credential an agent has actually
+      # used: both connections read done and the first-run prompt is usable.
+      assert html =~ "2 of 3 done"
+      assert html =~ "1 agent connected"
+      assert html =~ "Ask your agent to run an action"
+      assert html =~ "load, memory, disk, and any failed services"
+      refute html =~ "Install a pack from the catalog"
+    end
+
+    test "actions advertised only by an offline runner don't count as ready", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id)
+      offline_runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Catalog.create_action(runner: offline_runner)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      Fixtures.ApiKeys.mark_used(key)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      # The offline runner's leftover catalog rows can't back a dispatch — the
+      # checklist asks for a pack on the runner that is actually online.
+      assert html =~ "Install a pack from the catalog"
+      refute html =~ "load, memory, disk, and any failed services"
+    end
+
+    test "a viewer sees truthful setup state but no setup actions", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      Fixtures.Memberships.force_role(membership, "viewer")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      # A viewer can read every checklist fact, so the state is truthful — but
+      # every setup action is gated to roles that can actually perform it.
+      assert html =~ "Get to your first gated run"
+      assert html =~ "Setup needs an operator role or above"
+      refute html =~ ~p"/app/#{account}/runners/install"
+    end
+
     test "renders the operational dashboard once a run exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
@@ -278,11 +386,13 @@ defmodule EmisarWeb.DashboardLiveTest do
       subject = owner_subject(user, account)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      {:ok, _raw, _key} =
+      {:ok, _raw, key} =
         Emisar.ApiKeys.create_key(
           %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
           subject
         )
+
+      Fixtures.ApiKeys.mark_used(key)
 
       # Both connections exist, but the runner cannot execute anything yet. The
       # checklist replaces the unusable prompt with the missing setup action.

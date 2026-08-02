@@ -58,6 +58,14 @@ defmodule Emisar.Fixtures.ApiKeys do
   end
 
   @doc """
+  Stamps a key as having authenticated an MCP call (`last_used_at` set) —
+  the observed-use transition a real client's first call performs.
+  """
+  def mark_used(%ApiKeys.ApiKey{} = key) do
+    key |> ApiKeys.ApiKey.Changeset.usage() |> Repo.update!()
+  end
+
+  @doc """
   Forges a rotation back-link directly on the row — the production paths can
   only mint same-account links, so tests use this to prove the retirement
   sweep's own scoping holds even against a corrupted link.
