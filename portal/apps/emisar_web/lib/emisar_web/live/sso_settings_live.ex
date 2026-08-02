@@ -1265,26 +1265,15 @@ defmodule EmisarWeb.SSOSettingsLive do
     |> Map.put("default_runner_scope_runner_ids", access.runner_ids)
   end
 
-  defp parse_runner_access(mode, _scope, _runners) when mode in ["none", "all"] do
-    {:ok, access} = Accounts.RunnerAccess.new(mode)
-    access
-  end
-
-  defp parse_runner_access("restricted", scope, runners) do
-    case RunnerScope.parse(scope, runners) do
-      {:ok, %{groups: groups, runner_ids: runner_ids}} ->
-        case Accounts.RunnerAccess.new(:restricted, groups, runner_ids) do
-          {:ok, access} -> access
-          {:error, _reason} -> invalid_runner_access()
-        end
-
-      {:error, :invalid} ->
-        invalid_runner_access()
+  defp parse_runner_access(mode, scope, runners) do
+    case Accounts.RunnerAccess.from_selection(mode, scope, runners) do
+      {:ok, access} -> access
+      {:error, :invalid_runner_access} -> invalid_runner_access()
     end
   end
 
-  defp parse_runner_access(_mode, _scope, _runners), do: invalid_runner_access()
-
+  # A rejected selection rides on as an empty restricted scope, so the mapping
+  # changeset reports it on the field rather than silently widening reach.
   defp invalid_runner_access do
     %Accounts.RunnerAccess{mode: :restricted, groups: [], runner_ids: []}
   end

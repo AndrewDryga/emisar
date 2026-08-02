@@ -36,7 +36,7 @@ defmodule EmisarWeb.TeamLive do
          Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
        )
        |> ConfirmDialog.init()
-       |> assign_form(invite_changeset())}
+       |> assign_invite_form()}
     else
       {:ok,
        socket
@@ -144,7 +144,7 @@ defmodule EmisarWeb.TeamLive do
     mode = Map.get(params, "runner_access_mode", socket.assigns.scope_access_mode)
     scope = List.wrap(params["scope"])
 
-    case parse_runner_access(mode, scope, socket.assigns.runners) do
+    case Accounts.RunnerAccess.from_selection(mode, scope, socket.assigns.runners) do
       {:ok, %Accounts.RunnerAccess{} = access} ->
         {:noreply,
          socket
@@ -293,7 +293,7 @@ defmodule EmisarWeb.TeamLive do
     mode = params["runner_access_mode"]
     scope = List.wrap(params["scope"])
 
-    case parse_runner_access(mode, scope, socket.assigns.runners) do
+    case Accounts.RunnerAccess.from_selection(mode, scope, socket.assigns.runners) do
       {:ok, access} ->
         {:noreply,
          socket
@@ -369,7 +369,7 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
     with_membership(socket, id, fn membership ->
-      case parse_runner_access(
+      case Accounts.RunnerAccess.from_selection(
              params["runner_access_mode"],
              List.wrap(params["scope"]),
              socket.assigns.runners
@@ -410,29 +410,13 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("validate", %{"invite" => params} = event, socket) do
-    changeset = invite_changeset(params, socket.assigns.runners) |> LiveForm.on_change(event)
-    {:noreply, assign_form(socket, changeset)}
-  end
-
-  def handle_event("invite", %{"invite" => params}, socket) do
-    changeset = invite_changeset(params, socket.assigns.runners)
-
-    cond do
-      not can_manage?(socket) ->
-        {:noreply, put_flash(socket, :error, "Only owners and admins can invite members.")}
-
-      not changeset.valid? ->
-        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
-
-      :else ->
-        values = Ecto.Changeset.apply_changes(changeset)
-
-        {:ok, access} =
-          parse_runner_access(values.runner_access_mode, values.scope, socket.assigns.runners)
-
-        do_invite(socket, values.email, values.role, access)
+    case Accounts.change_invitation(params, socket.assigns.current_subject) do
+      {:ok, changeset} -> {:noreply, assign_form(socket, LiveForm.on_change(changeset, event))}
+      {:error, :unauthorized} -> {:noreply, socket}
     end
   end
+
+  def handle_event("invite", %{"invite" => params}, socket), do: do_invite(socket, params)
 
   def handle_event("invite_another", _params, socket),
     do: {:noreply, reset_invite_form(socket)}
@@ -597,28 +581,31 @@ defmodule EmisarWeb.TeamLive do
   defp error_message(_),
     do: "That change didn't apply. Refresh to see the member's current state, then try again."
 
-  # One-line capability summary per role for the invite picker. Each says what the
-  # role CAN do and where it stops, so the grant is a deliberate choice. Kept in
-  # sync with the authorizers: owner manages billing + adds owners; admin manages
-  # members/runners/policies and approves runs but only *views* billing;
-  defp do_invite(socket, email, role, %Accounts.RunnerAccess{} = access) do
+  defp do_invite(socket, params) do
     case Accounts.invite_user_to_account_and_deliver(
-           email,
-           role,
-           access,
+           params,
            socket.assigns.current_user,
            socket.assigns.current_subject
          ) do
-      {:ok, %{delivery: delivery}} ->
+      {:ok, %{user: user, delivery: delivery}} ->
         # Success is a page STATE, not a flash-and-reload: the invite view swaps
         # to a confirmation with "Invite another" / "Back to members", so the
         # inviter isn't dumped back onto the roster wondering if it worked.
         {:noreply,
          socket
-         |> assign(:invited_email, email)
+         |> assign(:invited_email, user.email)
          |> assign(:invite_delivery, delivery)}
 
+      # The domain rebuilt the form's own validation against live runners, so a
+      # bad address or a stale runner pick belongs back under its field.
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_form(socket, changeset)}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can invite members.")}
+
       {:error, :already_member} ->
+        email = params |> Map.get("email", "") |> String.trim()
         {:noreply, put_flash(socket, :error, "#{email} is already a member.")}
 
       {:error, _reason} ->
@@ -868,7 +855,9 @@ defmodule EmisarWeb.TeamLive do
       request ->
         mode = Map.get(params, "runner_access_mode", "none")
 
-        case parse_runner_access(mode, List.wrap(params["scope"]), socket.assigns.runners) do
+        scope = List.wrap(params["scope"])
+
+        case Accounts.RunnerAccess.from_selection(mode, scope, socket.assigns.runners) do
           {:ok, access} ->
             approve_request_with_access(socket, request, access)
 
@@ -969,69 +958,18 @@ defmodule EmisarWeb.TeamLive do
 
   defp pending_invitation?(_membership), do: false
 
-  # Schemaless validation changeset for the invite form. The invite itself
-  # is created by `Accounts.invite_user_to_account/3`; this only drives
-  # `phx-change` validation + inline field errors (email format, role) so
-  # bad input lands under the input instead of in a flash banner.
-  defp invite_changeset(params \\ %{}, runners \\ []) do
-    types = %{
-      email: :string,
-      role: :string,
-      runner_access_mode: :string,
-      scope: {:array, :string}
-    }
-
-    {%{role: "operator", runner_access_mode: "none", scope: []}, types}
-    |> Ecto.Changeset.cast(params, [:email, :role, :runner_access_mode, :scope])
-    |> Ecto.Changeset.update_change(:email, &String.trim/1)
-    |> Ecto.Changeset.validate_required([:email])
-    |> Ecto.Changeset.validate_format(:email, ~r/^[^\s]+@[^\s]+$/,
-      message: "must have the @ sign and no spaces"
-    )
-    |> Ecto.Changeset.validate_inclusion(:role, @roles)
-    |> Ecto.Changeset.validate_inclusion(:runner_access_mode, ~w(none all restricted))
-    |> validate_invite_runner_access(runners)
-  end
-
-  defp validate_invite_runner_access(changeset, runners) do
-    mode = Ecto.Changeset.get_field(changeset, :runner_access_mode)
-    scope = Ecto.Changeset.get_field(changeset, :scope, [])
-
-    case parse_runner_access(mode, scope, runners) do
-      {:ok, access} ->
-        Ecto.Changeset.put_change(
-          changeset,
-          :scope,
-          RunnerScope.to_values(access.groups, access.runner_ids)
-        )
-
-      {:error, :invalid_runner_access} ->
-        Ecto.Changeset.add_error(
-          changeset,
-          :runner_access_mode,
-          "requires at least one runner group or runner"
-        )
-    end
-  end
-
-  defp parse_runner_access(mode, _scope, _runners) when mode in ["none", "all"] do
-    Accounts.RunnerAccess.new(mode)
-  end
-
-  defp parse_runner_access("restricted", scope, runners) do
-    case RunnerScope.parse(scope, runners) do
-      {:ok, %{groups: groups, runner_ids: runner_ids}} ->
-        Accounts.RunnerAccess.new(:restricted, groups, runner_ids)
-
-      {:error, :invalid} ->
-        {:error, :invalid_runner_access}
-    end
-  end
-
-  defp parse_runner_access(_mode, _scope, _runners), do: {:error, :invalid_runner_access}
-
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset, as: "invite"))
+  end
+
+  # Accounts owns the invite form's defaults, role/mode sets, and runner-scope
+  # allowlist; the web only renders what it returns. A subject that can't invite
+  # gets no form — the page shows the "you can't invite members" state instead.
+  defp assign_invite_form(socket, params \\ %{}) do
+    case Accounts.change_invitation(params, socket.assigns.current_subject) do
+      {:ok, changeset} -> assign_form(socket, changeset)
+      {:error, :unauthorized} -> assign(socket, :form, nil)
+    end
   end
 
   # Fresh invite page: a clean form, back on the "compose" step (no success panel).
@@ -1040,7 +978,7 @@ defmodule EmisarWeb.TeamLive do
     |> assign(:loading?, false)
     |> assign(:invited_email, nil)
     |> assign(:invite_delivery, nil)
-    |> assign_form(invite_changeset())
+    |> assign_invite_form()
   end
 
   def render(assigns) do

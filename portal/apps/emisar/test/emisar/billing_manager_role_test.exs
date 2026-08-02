@@ -54,9 +54,11 @@ defmodule Emisar.BillingManagerRoleTest do
       assert Accounts.suspend_membership(member, subject) == {:error, :unauthorized}
 
       assert Accounts.invite_user_to_account(
-               "finance-friend@example.test",
-               "viewer",
-               Accounts.RunnerAccess.all(),
+               Fixtures.Accounts.invitation_attrs(
+                 email: "finance-friend@example.test",
+                 role: "viewer",
+                 runner_access_mode: "all"
+               ),
                subject
              ) ==
                {:error, :unauthorized}
@@ -115,9 +117,11 @@ defmodule Emisar.BillingManagerRoleTest do
                {:error, :insufficient_privileges}
 
       assert Accounts.invite_user_to_account(
-               "finance-lead@example.test",
-               "billing_manager",
-               Accounts.RunnerAccess.all(),
+               Fixtures.Accounts.invitation_attrs(
+                 email: "finance-lead@example.test",
+                 role: "billing_manager",
+                 runner_access_mode: "all"
+               ),
                admin_subject
              ) == {:error, :insufficient_privileges}
     end

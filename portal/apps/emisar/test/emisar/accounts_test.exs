@@ -3371,9 +3371,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %{membership: fresh}} =
                Accounts.invite_user_to_account(
-                 target_user.email,
-                 "viewer",
-                 Accounts.RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: target_user.email, role: "viewer"),
                  subject
                )
 
@@ -3491,7 +3489,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "invite_user_to_account/3" do
+  describe "invite_user_to_account/2" do
     test "creates a placeholder user for an unknown email" do
       inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
@@ -3513,9 +3511,11 @@ defmodule Emisar.AccountsTest do
                 invitation_token: token
               }} =
                Accounts.invite_user_to_account(
-                 email,
-                 "admin",
-                 Accounts.RunnerAccess.all(),
+                 Fixtures.Accounts.invitation_attrs(
+                   email: email,
+                   role: "admin",
+                   runner_access_mode: "all"
+                 ),
                  subject
                )
 
@@ -3534,9 +3534,11 @@ defmodule Emisar.AccountsTest do
       email = "denied-invite-#{System.unique_integer([:positive])}@example.test"
 
       assert Accounts.invite_user_to_account(
-               email,
-               "operator",
-               Accounts.RunnerAccess.all(),
+               Fixtures.Accounts.invitation_attrs(
+                 email: email,
+                 role: "operator",
+                 runner_access_mode: "all"
+               ),
                subject
              ) ==
                {:error, :unauthorized}
@@ -3557,9 +3559,11 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %{user: %User{id: id}}} =
                Accounts.invite_user_to_account(
-                 existing.email,
-                 "operator",
-                 Accounts.RunnerAccess.all(),
+                 Fixtures.Accounts.invitation_attrs(
+                   email: existing.email,
+                   role: "operator",
+                   runner_access_mode: "all"
+                 ),
                  subject
                )
 
@@ -3581,9 +3585,11 @@ defmodule Emisar.AccountsTest do
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
       assert Accounts.invite_user_to_account(
-               existing.email,
-               "operator",
-               Accounts.RunnerAccess.all(),
+               Fixtures.Accounts.invitation_attrs(
+                 email: existing.email,
+                 role: "operator",
+                 runner_access_mode: "all"
+               ),
                subject
              ) ==
                {:error, :already_member}
@@ -3604,9 +3610,11 @@ defmodule Emisar.AccountsTest do
       email = "owner-invite-#{System.unique_integer([:positive])}@example.test"
 
       assert Accounts.invite_user_to_account(
-               email,
-               "owner",
-               Accounts.RunnerAccess.all(),
+               Fixtures.Accounts.invitation_attrs(
+                 email: email,
+                 role: "owner",
+                 runner_access_mode: "all"
+               ),
                subject
              ) ==
                {:error, :insufficient_privileges}
@@ -3631,9 +3639,11 @@ defmodule Emisar.AccountsTest do
 
         assert {:ok, %{membership: %Membership{}}} =
                  Accounts.invite_user_to_account(
-                   email,
-                   "viewer",
-                   Accounts.RunnerAccess.all(),
+                   Fixtures.Accounts.invitation_attrs(
+                     email: email,
+                     role: "viewer",
+                     runner_access_mode: "all"
+                   ),
                    subject
                  )
       end
@@ -3654,9 +3664,7 @@ defmodule Emisar.AccountsTest do
       # redirect the invite into A.
       assert {:ok, %{membership: %Membership{account_id: account_id}, user: invitee}} =
                Accounts.invite_user_to_account(
-                 email,
-                 "operator",
-                 Accounts.RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
                  subject_b
                )
 
@@ -3666,16 +3674,14 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "invite_user_to_account_and_deliver/5" do
+  describe "invite_user_to_account_and_deliver/3" do
     test "emails the join link and reports it sent, without handing back the token" do
       {owner, account, subject} = Fixtures.Subjects.owner_subject()
       email = "deliver-#{System.unique_integer([:positive])}@example.test"
 
       assert {:ok, result} =
                Accounts.invite_user_to_account_and_deliver(
-                 email,
-                 "operator",
-                 Accounts.RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
                  owner,
                  subject
                )
@@ -3698,9 +3704,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, result} =
                Accounts.invite_user_to_account_and_deliver(
-                 email,
-                 "operator",
-                 Accounts.RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
                  owner,
                  subject
                )
@@ -3718,9 +3722,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, result} =
                Accounts.invite_user_to_account_and_deliver(
-                 email,
-                 "operator",
-                 Accounts.RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
                  owner,
                  subject
                )
@@ -3745,9 +3747,11 @@ defmodule Emisar.AccountsTest do
       email = "denied-deliver-#{System.unique_integer([:positive])}@example.test"
 
       assert Accounts.invite_user_to_account_and_deliver(
-               email,
-               "operator",
-               Accounts.RunnerAccess.all(),
+               Fixtures.Accounts.invitation_attrs(
+                 email: email,
+                 role: "operator",
+                 runner_access_mode: "all"
+               ),
                viewer,
                subject
              ) ==
@@ -3764,9 +3768,7 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, user: user, invitation_token: old_token}} =
         Accounts.invite_user_to_account(
-          email,
-          "operator",
-          Accounts.RunnerAccess.none(),
+          Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
           subject
         )
 
@@ -3805,9 +3807,10 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          "viewer-denied-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.none(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "viewer-denied-#{System.unique_integer([:positive])}@example.test",
+            role: "operator"
+          ),
           owner_subject
         )
 
@@ -3834,9 +3837,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          "cross-resend-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "cross-resend-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject_a
         )
 
@@ -3851,9 +3856,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, user: user}} =
         Accounts.invite_user_to_account(
-          "accepted-resend-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "accepted-resend-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -3867,9 +3874,10 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          "owner-resend-#{System.unique_integer([:positive])}@example.test",
-          "owner",
-          Accounts.RunnerAccess.none(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "owner-resend-#{System.unique_integer([:positive])}@example.test",
+            role: "owner"
+          ),
           owner_subject
         )
 
@@ -3895,9 +3903,7 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          email,
-          "operator",
-          Accounts.RunnerAccess.none(),
+          Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
           subject
         )
 
@@ -3921,9 +3927,7 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          email,
-          "operator",
-          Accounts.RunnerAccess.none(),
+          Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
           subject
         )
 
@@ -3947,9 +3951,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          "cross-resend-deliver-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "cross-resend-deliver-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject_a
         )
 
@@ -3969,9 +3975,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
-          "tok-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "tok-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -3984,9 +3992,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(
-          "tok-preload-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "tok-preload-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -3999,9 +4009,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(
-          "tok-disabled-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "tok-disabled-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -4027,9 +4039,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, user: user, invitation_token: token}} =
         Accounts.invite_user_to_account(
-          "tok-accepted-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "tok-accepted-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -4056,9 +4070,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, user: user}} =
         Accounts.invite_user_to_account(
-          email,
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -4090,9 +4106,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
-          email,
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -4110,9 +4128,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, user: user}} =
         Accounts.invite_user_to_account(
-          "mark-disabled-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "mark-disabled-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -4137,9 +4157,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, user: invitee}} =
         Accounts.invite_user_to_account(
-          "accept-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "accept-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -4165,9 +4187,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          "race-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "race-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -4190,9 +4214,11 @@ defmodule Emisar.AccountsTest do
 
       {:ok, %{membership: membership, user: invitee}} =
         Accounts.invite_user_to_account(
-          "accept-disabled-#{System.unique_integer([:positive])}@example.test",
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: "accept-disabled-#{System.unique_integer([:positive])}@example.test",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 

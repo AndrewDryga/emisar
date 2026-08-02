@@ -154,9 +154,7 @@ defmodule Emisar.Admin do
          target_subject = support_subject(account),
          {:ok, result} <-
            Accounts.invite_user_to_account_and_deliver(
-             email,
-             role,
-             Accounts.RunnerAccess.all(),
+             %{"email" => email, "role" => role, "runner_access_mode" => "all"},
              inviter(),
              target_subject
            ) do

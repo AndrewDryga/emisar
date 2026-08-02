@@ -55,36 +55,6 @@ defmodule EmisarWeb.RunnerScopeTest do
     end
   end
 
-  describe "parse/2" do
-    test "splits into groups + runner_ids, allowlisting against the real runners (IL-15)" do
-      assert {:ok, parsed} =
-               RunnerScope.parse(
-                 ["group:app-api", "runner:r1"],
-                 @runners
-               )
-
-      assert parsed == %{groups: ["app-api"], runner_ids: ["r1"]}
-    end
-
-    test "rejects unknown or malformed values instead of treating them as all runners" do
-      assert {:error, :invalid} = RunnerScope.parse(["group:ghost"], @runners)
-      assert {:error, :invalid} = RunnerScope.parse(["runner:from-another-account"], @runners)
-      assert {:error, :invalid} = RunnerScope.parse([%{"nested" => "value"}], @runners)
-      assert {:error, :invalid} = RunnerScope.parse(%{"scope" => "group:app-api"}, @runners)
-    end
-
-    test "drops a runner already covered by a selected group" do
-      assert {:ok, parsed} =
-               RunnerScope.parse(["group:edge-web", "runner:r1", "runner:r3"], @runners)
-
-      assert parsed == %{groups: ["edge-web"], runner_ids: ["r3"]}
-    end
-
-    test "empty selection parses to all-runners (both empty)" do
-      assert {:ok, %{groups: [], runner_ids: []}} = RunnerScope.parse([], @runners)
-    end
-  end
-
   describe "to_values/2" do
     test "round-trips a persisted {groups, runner_ids} scope to selection strings" do
       assert RunnerScope.to_values(["edge-web"], ["r3"]) == ["group:edge-web", "runner:r3"]

@@ -43,9 +43,11 @@ defmodule Emisar.MfaEnforcementTest do
 
       {:ok, %{user: operator_user, membership: m}} =
         Accounts.invite_user_to_account(
-          email,
-          "operator",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           owner_subject
         )
 

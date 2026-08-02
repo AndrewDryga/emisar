@@ -17,7 +17,87 @@ defmodule Emisar.InvitationTest do
     {inviter, Fixtures.Subjects.subject_for(inviter, account, role: :owner)}
   end
 
-  describe "invite_user_to_account/4" do
+  describe "change_invitation/2" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      {_inviter, subject} = inviter_subject(account)
+      %{account: account, subject: subject}
+    end
+
+    test "defaults to an operator with no runner access", %{subject: subject} do
+      assert {:ok, changeset} = Accounts.change_invitation(%{}, subject)
+
+      refute changeset.valid?
+      assert "can't be blank" in errors_on(changeset).email
+      assert Ecto.Changeset.get_field(changeset, :role) == "operator"
+      assert Ecto.Changeset.get_field(changeset, :runner_access_mode) == "none"
+      assert Ecto.Changeset.get_field(changeset, :runner_access) == RunnerAccess.none()
+    end
+
+    test "reports a malformed email and an out-of-set role on their fields", %{subject: subject} do
+      attrs = Fixtures.Accounts.invitation_attrs(email: "b ob@x.com", role: "superadmin")
+
+      assert {:ok, changeset} = Accounts.change_invitation(attrs, subject)
+
+      assert "must have the @ sign and no spaces" in errors_on(changeset).email
+      assert "is invalid" in errors_on(changeset).role
+    end
+
+    test "canonicalizes a group + runner selection, dropping the covered runner", %{
+      account: account,
+      subject: subject
+    } do
+      database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      attrs =
+        Fixtures.Accounts.invitation_attrs(
+          runner_access_mode: "restricted",
+          scope: ["group:database", "runner:#{database.id}", "runner:#{web.id}"]
+        )
+
+      assert {:ok, changeset} = Accounts.change_invitation(attrs, subject)
+
+      assert changeset.valid?
+
+      assert Ecto.Changeset.get_field(changeset, :runner_access) == %RunnerAccess{
+               mode: :restricted,
+               groups: ["database"],
+               runner_ids: [web.id]
+             }
+
+      assert Ecto.Changeset.get_field(changeset, :scope) ==
+               ["group:database", "runner:#{web.id}"]
+    end
+
+    test "rejects an empty, malformed, or foreign selection on the mode field", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      foreign_runner = Fixtures.Runners.create_runner(group: "database")
+
+      for scope <- [[], ["all-runners"], ["group:staging"], ["runner:#{foreign_runner.id}"]] do
+        attrs =
+          Fixtures.Accounts.invitation_attrs(runner_access_mode: "restricted", scope: scope)
+
+        assert {:ok, changeset} = Accounts.change_invitation(attrs, subject)
+
+        assert "requires at least one runner group or runner" in errors_on(changeset).runner_access_mode
+      end
+    end
+
+    test "a member without invite permission gets no changeset", %{account: account} do
+      viewer_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      subject = Fixtures.Subjects.membership_subject(viewer_membership)
+
+      assert Accounts.change_invitation(%{}, subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "invite_user_to_account/2" do
     setup do
       account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
@@ -32,9 +112,7 @@ defmodule Emisar.InvitationTest do
                 invitation_token: token
               }} =
                Accounts.invite_user_to_account(
-                 "new@example.test",
-                 "admin",
-                 RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: "new@example.test", role: "admin"),
                  subject
                )
 
@@ -58,9 +136,11 @@ defmodule Emisar.InvitationTest do
 
       assert {:ok, %{user: invitee}} =
                Accounts.invite_user_to_account(
-                 "alice@example.test",
-                 "operator",
-                 RunnerAccess.all(),
+                 Fixtures.Accounts.invitation_attrs(
+                   email: "alice@example.test",
+                   role: "operator",
+                   runner_access_mode: "all"
+                 ),
                  subject
                )
 
@@ -71,24 +151,31 @@ defmodule Emisar.InvitationTest do
       account: account,
       subject: subject
     } do
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      production = Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+      staging = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
 
-      {:ok, access} =
-        RunnerAccess.restricted(["production", "production"], [runner.id])
+      attrs =
+        Fixtures.Accounts.invitation_attrs(
+          email: "scoped@example.test",
+          runner_access_mode: "restricted",
+          scope: [
+            "group:production",
+            "group:production",
+            "runner:#{production.id}",
+            "runner:#{staging.id}"
+          ]
+        )
 
       assert {:ok, %{membership: membership}} =
-               Accounts.invite_user_to_account(
-                 "scoped@example.test",
-                 "operator",
-                 access,
-                 subject
-               )
+               Accounts.invite_user_to_account(attrs, subject)
 
+      # The duplicate group collapses and the production runner disappears —
+      # its group already covers it.
       assert Accounts.runner_access_for_membership(membership.account_id, membership.id) ==
                %RunnerAccess{
                  mode: :restricted,
                  groups: ["production"],
-                 runner_ids: [runner.id]
+                 runner_ids: [staging.id]
                }
 
       assert {:ok, [event], _meta} =
@@ -97,29 +184,102 @@ defmodule Emisar.InvitationTest do
       assert event.payload["runner_access"] == %{
                "mode" => "restricted",
                "groups" => ["production"],
-               "runner_ids" => [runner.id]
+               "runner_ids" => [staging.id]
              }
     end
 
-    test "rejects an individual runner from another account", %{subject: subject} do
-      foreign_runner = Fixtures.Runners.create_runner()
-      {:ok, access} = RunnerAccess.restricted([], [foreign_runner.id])
+    test "rejects a runner or group from another account, writing nothing", %{subject: subject} do
+      foreign_runner = Fixtures.Runners.create_runner(group: "foreign")
 
-      assert {:error, :invalid_runner_access} =
-               Accounts.invite_user_to_account(
-                 "foreign-scope@example.test",
-                 "operator",
-                 access,
-                 subject
-               )
+      for scope <- [["runner:#{foreign_runner.id}"], ["group:foreign"]] do
+        attrs =
+          Fixtures.Accounts.invitation_attrs(
+            email: "foreign-scope@example.test",
+            runner_access_mode: "restricted",
+            scope: scope
+          )
+
+        assert {:error, changeset} = Accounts.invite_user_to_account(attrs, subject)
+
+        assert "requires at least one runner group or runner" in errors_on(changeset).runner_access_mode
+      end
+
+      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("foreign-scope@example.test")
+      assert {:ok, [], _meta} = Emisar.Audit.list_events(subject)
+    end
+
+    test "refuses runner access beyond the inviter's current grant", %{
+      account: account,
+      subject: owner_subject
+    } do
+      database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      _web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, database_access} = RunnerAccess.restricted([], [database.id])
+      admin = Fixtures.Memberships.force_runner_access(admin, database_access)
+      admin_subject = Fixtures.Subjects.membership_subject(admin)
+
+      attrs =
+        Fixtures.Accounts.invitation_attrs(
+          email: "over-grant@example.test",
+          runner_access_mode: "restricted",
+          scope: ["group:web"]
+        )
+
+      assert Accounts.invite_user_to_account(attrs, admin_subject) ==
+               {:error, :runner_access_exceeds_subject}
+
+      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("over-grant@example.test")
+      assert {:ok, [], _meta} = Emisar.Audit.list_events(owner_subject)
+    end
+
+    test "a runner deleted after the form validated is refused at the write", %{
+      account: account,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      attrs =
+        Fixtures.Accounts.invitation_attrs(
+          email: "stale-scope@example.test",
+          runner_access_mode: "restricted",
+          scope: ["runner:#{runner.id}"]
+        )
+
+      # Advisory validation passes while the runner is live…
+      assert {:ok, changeset} = Accounts.change_invitation(attrs, subject)
+      assert changeset.valid?
+
+      # …then it is retired before the operator submits.
+      Fixtures.Runners.mark_deleted(runner)
+
+      assert {:error, changeset} = Accounts.invite_user_to_account(attrs, subject)
+
+      assert "requires at least one runner group or runner" in errors_on(changeset).runner_access_mode
+
+      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("stale-scope@example.test")
+    end
+
+    test "an invalid submission returns the form changeset with nothing written", %{
+      subject: subject
+    } do
+      attrs = Fixtures.Accounts.invitation_attrs(email: "not-an-email", role: "superadmin")
+
+      assert {:error, changeset} = Accounts.invite_user_to_account(attrs, subject)
+
+      assert changeset.action == :insert
+      assert "must have the @ sign and no spaces" in errors_on(changeset).email
+      assert "is invalid" in errors_on(changeset).role
+      assert {:ok, [], _meta} = Emisar.Audit.list_events(subject)
     end
 
     test "trims the email; the citext column owns case-insensitive identity", %{subject: subject} do
       assert {:ok, %{user: invitee}} =
                Accounts.invite_user_to_account(
-                 "  HELLO@Example.Test  ",
-                 "viewer",
-                 RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(
+                   email: "  HELLO@Example.Test  ",
+                   role: "viewer"
+                 ),
                  subject
                )
 
@@ -133,9 +293,7 @@ defmodule Emisar.InvitationTest do
 
       assert {:ok, %{user: same_user}} =
                Accounts.invite_user_to_account(
-                 "hello@example.test",
-                 "viewer",
-                 RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: "hello@example.test", role: "viewer"),
                  other_subject
                )
 
@@ -153,9 +311,7 @@ defmodule Emisar.InvitationTest do
 
       assert {:error, :already_member} =
                Accounts.invite_user_to_account(
-                 existing.email,
-                 "admin",
-                 RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: existing.email, role: "admin"),
                  subject
                )
     end
@@ -168,9 +324,7 @@ defmodule Emisar.InvitationTest do
 
       {:ok, %{membership: membership, invitation_token: token, user: invitee}} =
         Accounts.invite_user_to_account(
-          "bob@example.test",
-          "admin",
-          RunnerAccess.none(),
+          Fixtures.Accounts.invitation_attrs(email: "bob@example.test", role: "admin"),
           subject
         )
 
@@ -245,9 +399,7 @@ defmodule Emisar.InvitationTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          invitee.email,
-          "viewer",
-          RunnerAccess.none(),
+          Fixtures.Accounts.invitation_attrs(email: invitee.email, role: "viewer"),
           subject
         )
 
@@ -280,9 +432,7 @@ defmodule Emisar.InvitationTest do
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
-          "carol@example.test",
-          "operator",
-          RunnerAccess.none(),
+          Fixtures.Accounts.invitation_attrs(email: "carol@example.test", role: "operator"),
           subject
         )
 

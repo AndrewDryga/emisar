@@ -16,6 +16,23 @@ defmodule Emisar.Fixtures.Accounts do
     |> Map.merge(Map.new(overrides))
   end
 
+  @doc ~S|Valid default invitation attrs for `Accounts.change_invitation/2` and `Accounts.invite_user_to_account/2`. Override only what the test is about — `invitation_attrs(role: "admin")`, `invitation_attrs(runner_access_mode: "restricted", scope: ["group:db"])`.|
+  def invitation_attrs(overrides \\ %{}) do
+    # String keys: these stand in for browser params, and Ecto's cast refuses a
+    # map mixing string and atom keys.
+    overrides = Map.new(overrides, fn {key, value} -> {to_string(key), value} end)
+
+    Map.merge(
+      %{
+        "email" => Emisar.Fixtures.Random.unique_email(),
+        "role" => "operator",
+        "runner_access_mode" => "none",
+        "scope" => []
+      },
+      overrides
+    )
+  end
+
   @doc ~S|Persists an account. A non-"free" `:plan` mints a matching subscription (plan lives on the subscription, not the account).|
   def create_account(attrs \\ %{}) do
     {plan, attrs} = pop_plan(attrs)

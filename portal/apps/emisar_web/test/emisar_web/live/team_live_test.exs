@@ -278,17 +278,57 @@ defmodule EmisarWeb.TeamLiveTest do
                }
     end
 
+    test "a runner retired while composing fails inline, keeping the typed values", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      # Reveal the picker, then retire the runner behind the open form — its
+      # options were loaded on mount, so only the write's own revalidation can
+      # catch the stale pick.
+      lv
+      |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "restricted"}})
+      |> render_change()
+
+      Fixtures.Runners.mark_deleted(runner)
+
+      html =
+        lv
+        |> form("#invite_form", %{
+          "invite" => %{
+            "email" => "stale@example.com",
+            "role" => "operator",
+            "runner_access_mode" => "restricted",
+            "scope" => ["runner:#{runner.id}"]
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "Choose at least one runner group or runner"
+      assert html =~ "stale@example.com"
+      refute html =~ "Invitation sent"
+      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("stale@example.com")
+    end
+
     test "a viewer hitting the invite route directly is refused (IL-15)", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerInvite"}})
       {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
       _ = Fixtures.Memberships.force_role(m, "viewer")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
       # The route is reachable, but the domain-gated view refuses to compose an
       # invite for a viewer (no form) and explains who can.
       assert html =~ "Ask an owner or admin to add someone"
       refute html =~ "Send invite"
+
+      # Forging the submit event past the missing form lands on the domain gate.
+      email = "forged-#{System.unique_integer([:positive])}@example.com"
+
+      assert render_submit(lv, "invite", %{"invite" => %{"email" => email, "role" => "owner"}}) =~
+               "Only owners and admins can invite members."
+
+      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email(email)
     end
   end
 
@@ -543,9 +583,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, %{membership: m}} =
         Emisar.Accounts.invite_user_to_account(
-          email,
-          "admin",
-          Emisar.Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -588,9 +630,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, %{membership: m}} =
         Emisar.Accounts.invite_user_to_account(
-          email,
-          "admin",
-          Emisar.Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -623,9 +667,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, %{membership: membership}} =
         Emisar.Accounts.invite_user_to_account(
-          email,
-          "admin",
-          Emisar.Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -656,9 +702,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, %{membership: m}} =
         Emisar.Accounts.invite_user_to_account(
-          email,
-          "admin",
-          Emisar.Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -688,9 +736,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, %{membership: membership}} =
         Emisar.Accounts.invite_user_to_account(
-          email,
-          "admin",
-          Emisar.Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
           subject
         )
 
@@ -736,9 +786,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, %{membership: membership, invitation_token: old_token}} =
         Emisar.Accounts.invite_user_to_account(
-          email,
-          "operator",
-          Emisar.Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "operator",
+            runner_access_mode: "all"
+          ),
           subject
         )
 

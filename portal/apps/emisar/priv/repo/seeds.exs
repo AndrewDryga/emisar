@@ -318,9 +318,7 @@ invite_member = fn email, full_name, role ->
           nil ->
             {:ok, %{user: invited, membership: membership}} =
               Accounts.invite_user_to_account(
-                email,
-                role,
-                Accounts.RunnerAccess.all(),
+                %{"email" => email, "role" => role, "runner_access_mode" => "all"},
                 owner_subject
               )
 
@@ -338,9 +336,7 @@ invite_member = fn email, full_name, role ->
       {:error, :not_found} ->
         {:ok, %{user: invited, membership: membership}} =
           Accounts.invite_user_to_account(
-            email,
-            role,
-            Accounts.RunnerAccess.all(),
+            %{"email" => email, "role" => role, "runner_access_mode" => "all"},
             owner_subject
           )
 

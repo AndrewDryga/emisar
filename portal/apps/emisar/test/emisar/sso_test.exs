@@ -4301,9 +4301,7 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, _invite} =
                Accounts.invite_user_to_account(
-                 target.email,
-                 "operator",
-                 Accounts.RunnerAccess.none(),
+                 Fixtures.Accounts.invitation_attrs(email: target.email, role: "operator"),
                  other_subject
                )
 

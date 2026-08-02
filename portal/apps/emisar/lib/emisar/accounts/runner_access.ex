@@ -35,6 +35,54 @@ defmodule Emisar.Accounts.RunnerAccess do
 
   def restricted(groups, runner_ids), do: new(:restricted, groups, runner_ids)
 
+  @doc """
+  Canonical access for an explicit mode plus the raw `"group:<name>"` /
+  `"runner:<id>"` selector values a picker submitted, allowlisted against
+  `runners` — the account's current `%{id: _, group: _}` runner facts.
+
+  `none` and `all` carry no selection. `restricted` drops a runner a selected
+  group already covers, and rejects an empty, malformed, unknown, or
+  cross-account selection with `{:error, :invalid_runner_access}`, so a crafted
+  submission can never widen reach.
+  """
+  def from_selection(mode, values, runners) when is_list(values) and is_list(runners) do
+    case cast_mode(mode) do
+      {:ok, mode} -> selected_access(mode, values, runners)
+      :error -> {:error, :invalid_runner_access}
+    end
+  end
+
+  def from_selection(_mode, _values, _runners), do: {:error, :invalid_runner_access}
+
+  @doc """
+  Splits raw selector values into `{:ok, {groups, runner_ids}}` — the names an
+  authoritative lookup has to resolve, before anything is known about them. A
+  value carrying no known prefix (or an empty one) is `{:error,
+  :invalid_runner_access}`.
+  """
+  def selection_refs(values) when is_list(values) and length(values) <= @max_scopes do
+    Enum.reduce_while(values, {[], []}, fn
+      "group:" <> group, {groups, runner_ids} when group != "" ->
+        {:cont, {[group | groups], runner_ids}}
+
+      "runner:" <> runner_id, {groups, runner_ids} when runner_id != "" ->
+        {:cont, {groups, [runner_id | runner_ids]}}
+
+      _value, _acc ->
+        {:halt, :error}
+    end)
+    |> case do
+      {groups, runner_ids} -> {:ok, {unique_refs(groups), unique_refs(runner_ids)}}
+      :error -> {:error, :invalid_runner_access}
+    end
+  end
+
+  def selection_refs(_values), do: {:error, :invalid_runner_access}
+
+  @doc ~s(The `"group:<name>"` / `"runner:<id>"` selector values for a `{groups, runner_ids}` scope.)
+  def selection_values(groups, runner_ids),
+    do: Enum.map(groups, &("group:" <> &1)) ++ Enum.map(runner_ids, &("runner:" <> &1))
+
   def from_fields(%{runner_access_mode: mode}, scopes) when is_list(scopes) do
     groups = for %{scope_type: :group, scope_value: value} <- scopes, do: value
 
@@ -120,6 +168,38 @@ defmodule Emisar.Accounts.RunnerAccess do
   end
 
   def none_runner_id, do: @none_runner_id
+
+  defp selected_access(mode, _values, _runners) when mode in [:none, :all], do: new(mode)
+
+  defp selected_access(:restricted, values, runners) do
+    with {:ok, {groups, runner_ids}} <- selection_refs(values),
+         {:ok, runners_by_id} <- resolve_runner_ids(runner_ids, runners),
+         :ok <- ensure_known_groups(groups, runners) do
+      covered = MapSet.new(groups)
+      kept = Enum.reject(runner_ids, &MapSet.member?(covered, runners_by_id[&1].group))
+      new(:restricted, groups, kept)
+    end
+  end
+
+  defp resolve_runner_ids(runner_ids, runners) do
+    runners_by_id = Map.new(runners, &{&1.id, &1})
+
+    if Enum.all?(runner_ids, &Map.has_key?(runners_by_id, &1)),
+      do: {:ok, runners_by_id},
+      else: {:error, :invalid_runner_access}
+  end
+
+  defp ensure_known_groups(groups, runners) do
+    known = runners |> Enum.map(& &1.group) |> Enum.filter(&present_group?/1) |> MapSet.new()
+
+    if Enum.all?(groups, &MapSet.member?(known, &1)),
+      do: :ok,
+      else: {:error, :invalid_runner_access}
+  end
+
+  defp present_group?(group), do: is_binary(group) and group != ""
+
+  defp unique_refs(refs), do: refs |> Enum.reverse() |> Enum.uniq()
 
   defp cast_mode(mode) when mode in @modes, do: {:ok, mode}
   defp cast_mode("none"), do: {:ok, :none}

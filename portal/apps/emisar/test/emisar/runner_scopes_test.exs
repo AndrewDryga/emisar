@@ -44,6 +44,62 @@ defmodule Emisar.RunnerAccessTest do
     end
   end
 
+  describe "from_selection/3" do
+    setup do
+      database = %{id: Ecto.UUID.generate(), group: "database"}
+      web = %{id: Ecto.UUID.generate(), group: "web"}
+      ungrouped = %{id: Ecto.UUID.generate(), group: nil}
+      %{database: database, web: web, runners: [database, web, ungrouped]}
+    end
+
+    test "none and all ignore the selection", %{runners: runners} do
+      assert RunnerAccess.from_selection("none", ["group:database"], runners) ==
+               {:ok, RunnerAccess.none()}
+
+      assert RunnerAccess.from_selection(:all, [], runners) == {:ok, RunnerAccess.all()}
+    end
+
+    test "restricted drops a runner its selected group already covers", %{
+      database: database,
+      web: web,
+      runners: runners
+    } do
+      values = ["group:database", "runner:#{database.id}", "runner:#{web.id}"]
+
+      assert RunnerAccess.from_selection("restricted", values, runners) ==
+               {:ok,
+                %RunnerAccess{
+                  mode: :restricted,
+                  groups: ["database"],
+                  runner_ids: [web.id]
+                }}
+    end
+
+    test "an empty, malformed, or unknown selection fails closed", %{
+      database: database,
+      runners: runners
+    } do
+      unknown_runner_id = Ecto.UUID.generate()
+
+      for values <- [
+            [],
+            ["database"],
+            ["group:"],
+            ["group:staging"],
+            ["runner:#{unknown_runner_id}"],
+            ["runner:not-a-uuid"],
+            [%{"crafted" => "all"}]
+          ] do
+        assert RunnerAccess.from_selection("restricted", values, runners) ==
+                 {:error, :invalid_runner_access}
+      end
+
+      # An unrecognized mode is refused whatever the selection carries.
+      assert RunnerAccess.from_selection("everything", ["runner:#{database.id}"], runners) ==
+               {:error, :invalid_runner_access}
+    end
+  end
+
   describe "update_membership_runner_access/3" do
     setup do
       {account, owner, owner_subject} = account_with_owner()

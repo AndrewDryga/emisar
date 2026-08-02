@@ -5,19 +5,19 @@ defmodule EmisarWeb.RunnerScope do
   groups and runners live in one place instead of a groups list plus a separate,
   ungrouped runners list. Selecting a group covers every runner in it, so those
   runners render disabled ("via group") — picking them on top would be redundant.
-  Used by explicit restricted-access controls for team members and SSO mappings;
-  reads the selection back with `parse/2`.
+  Used by explicit restricted-access controls for team members and SSO mappings.
 
   A custom checkbox tree (not a native `<select multiple>`): full-row tap targets,
   a hierarchy rail nesting runners under their group, brand-tinted selection — and
   it works on mobile, where a multi-select cannot. Selection travels as
   `"group:<name>"` / `"runner:<id>"` strings in one `scope[]` field, so the caller
-  wraps it in a `phx-change` form and parses the checked values with `parse/2`.
-  An empty selection is invalid restricted access; the surrounding mode control
-  owns the separate no-access and all-runners choices.
+  wraps it in a `phx-change` form and hands the checked values to
+  `Emisar.Accounts.RunnerAccess.from_selection/3`, which owns what they mean and
+  what a subject may actually reach. This module renders and serializes only.
   """
   use Phoenix.Component
   import EmisarWeb.CoreComponents, only: [callout: 1, checkbox: 1, error: 1, loading_state: 1]
+  alias Emisar.Accounts
 
   attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "scope[]")
   attr :runners, :list, required: true, doc: "the account's runners (need id, name, group)"
@@ -211,59 +211,15 @@ defmodule EmisarWeb.RunnerScope do
 
   defp visible_submit_error(_field, _message), do: nil
 
-  @doc """
-  Parse the checked scope values back to `{:ok, %{groups: [name], runner_ids: [id]}}`,
-  allowlisted against `runners` (a crafted POST can't smuggle another account's
-  ids/groups — IL-15), with any runner already covered by a selected group
-  dropped (redundant). An empty list remains an empty selection; the caller's
-  explicit mode decides `none`/`all`, while `restricted` rejects it. Malformed or
-  unknown values return `{:error, :invalid}` so they cannot widen access.
-  """
-  def parse(values, runners) when is_list(values) do
-    valid_groups = runners |> Enum.map(& &1.group) |> Enum.reject(&blank?/1) |> MapSet.new()
-    by_id = Map.new(runners, &{&1.id, &1})
-
-    if valid_scope_values?(values, valid_groups, by_id) do
-      groups =
-        for "group:" <> group <- values,
-            MapSet.member?(valid_groups, group),
-            uniq: true,
-            do: group
-
-      selected_groups = MapSet.new(groups)
-
-      runner_ids =
-        for "runner:" <> id <- values,
-            Map.has_key?(by_id, id),
-            not MapSet.member?(selected_groups, by_id[id].group),
-            uniq: true,
-            do: id
-
-      {:ok, %{groups: groups, runner_ids: runner_ids}}
-    else
-      {:error, :invalid}
-    end
-  end
-
-  def parse(_values, _runners), do: {:error, :invalid}
-
-  @doc ~s(The `"group:x"`/`"runner:id"` selection strings for a persisted {groups, runner_ids} scope.)
+  @doc ~s(The `"group:x"`/`"runner:id"` selection strings for a persisted {groups, runner_ids} scope — the selector format Accounts owns and parses back.)
   def to_values(groups, runner_ids),
-    do: Enum.map(groups, &("group:" <> &1)) ++ Enum.map(runner_ids, &("runner:" <> &1))
+    do: Accounts.RunnerAccess.selection_values(groups, runner_ids)
 
   defp runners_in_group(runners, group),
     do: runners |> Enum.filter(&(&1.group == group)) |> Enum.sort_by(& &1.name)
 
   defp ungrouped_runners(runners),
     do: runners |> Enum.filter(&blank?(&1.group)) |> Enum.sort_by(& &1.name)
-
-  defp valid_scope_values?(values, valid_groups, by_id) do
-    Enum.all?(values, fn
-      "group:" <> group -> MapSet.member?(valid_groups, group)
-      "runner:" <> id -> Map.has_key?(by_id, id)
-      _ -> false
-    end)
-  end
 
   defp blank?(nil), do: true
   defp blank?(""), do: true

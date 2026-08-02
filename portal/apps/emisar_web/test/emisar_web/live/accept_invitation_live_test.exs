@@ -11,9 +11,11 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
     {:ok, %{invitation_token: token}} =
       Accounts.invite_user_to_account(
-        email,
-        "operator",
-        Accounts.RunnerAccess.all(),
+        Fixtures.Accounts.invitation_attrs(
+          email: email,
+          role: "operator",
+          runner_access_mode: "all"
+        ),
         subject
       )
 
@@ -171,9 +173,11 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(
-          invitee.email,
-          "viewer",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: invitee.email,
+            role: "viewer",
+            runner_access_mode: "all"
+          ),
           owner_subject(owner, account)
         )
 
@@ -197,9 +201,11 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(
-          invitee.email,
-          "viewer",
-          Accounts.RunnerAccess.all(),
+          Fixtures.Accounts.invitation_attrs(
+            email: invitee.email,
+            role: "viewer",
+            runner_access_mode: "all"
+          ),
           owner_subject(owner, account)
         )
 

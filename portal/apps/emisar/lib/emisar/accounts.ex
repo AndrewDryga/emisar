@@ -11,7 +11,7 @@ defmodule Emisar.Accounts do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.Accounts.{Account, Authorizer, Membership}
+  alias Emisar.Accounts.{Account, Authorizer, InvitationInput, Membership}
   alias Emisar.Accounts.{MembershipRunnerScope, RunnerAccess}
   alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
@@ -2422,56 +2422,87 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Invites a user (by email) into the account with the given role.
+  Builds the invitation changeset for one raw submission (`email`, `role`,
+  `runner_access_mode`, `scope`) — what the invite form renders and validates
+  against. Requires `invite` on memberships.
+
+  A non-empty selected-runner scope is resolved against the account's live
+  runners so a stale or foreign pick surfaces on the field; the write
+  revalidates under a row lock, so this stays advisory. Every other mode reads
+  nothing, keeping the LiveView's mount-time builder query-free.
+
+  Returns `{:ok, %Ecto.Changeset{}}` or `{:error, :unauthorized}`.
+  """
+  def change_invitation(attrs, %Subject{account: %Account{id: account_id}} = subject)
+      when is_map(attrs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.invite_member_permission()
+           ) do
+      runners = invitation_runner_facts(Repo, account_id, attrs, false)
+      {:ok, InvitationInput.changeset(attrs, runners)}
+    end
+  end
+
+  @doc """
+  Invites a user into the account from one raw invitation submission — the same
+  attrs `change_invitation/2` validates.
 
   If no user with that email exists, an unconfirmed placeholder user is
   created so we have something to hang the membership and invitation
   token off of. Returns
   `{:ok, %{membership: m, user: u, invitation_token: token}}` on success,
-  or `{:error, :already_member}` if the user already belongs to the account.
+  `{:error, %Ecto.Changeset{}}` when the submission is invalid, or
+  `{:error, :already_member | :unauthorized | :insufficient_privileges |
+  :runner_access_exceeds_subject}`.
+
+  The submission is revalidated against the account's live runner rows as the
+  transaction's first step — before the placeholder user, the membership, the
+  audit row, or any delivery — so a runner soft-deleted while the operator was
+  composing cannot slip into the grant.
 
   The caller is responsible for sending the invitation email; this
   context only persists the records and mints the token.
   """
-  def invite_user_to_account(
-        email,
-        role,
-        %RunnerAccess{} = access,
-        %Subject{account: %Account{id: account_id}} = subject
-      )
-      when is_binary(email) and is_binary(role) do
+  def invite_user_to_account(attrs, %Subject{account: %Account{id: account_id}} = subject)
+      when is_map(attrs) do
     # Team seats are intentionally NOT capped (no Billing.check_limit(:members)
     # here, unlike the runner cap): giving away collaboration is a deliberate
     # growth lever — Free's members_limit + the Team meter are aspirational, not
     # gates. Revisit only if seat-based pricing lands. (PENDING_DECISIONS, 2026-06-14.)
-    with :ok <- ensure_invite_permitted(role, subject),
-         :ok <- ensure_runner_access_grant_allowed(subject, access) do
-      # Trim only: `users.email` is citext, so lookup + uniqueness are
-      # case-insensitive without app-side normalization (and registration
-      # stores the typed casing — invites shouldn't differ).
-      email = String.trim(email)
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.invite_member_permission()
+           ) do
       {token, token_digest} = Crypto.user_invite_token()
 
       Multi.new()
-      |> Multi.run(:user, fn _repo, _changes -> Users.fetch_or_create_user_by_email(email) end)
-      |> Multi.insert(:membership, fn %{user: user} ->
+      |> Multi.run(:invitation, fn repo, _changes ->
+        validate_invitation(repo, attrs, subject)
+      end)
+      |> Multi.run(:user, fn _repo, %{invitation: invitation} ->
+        Users.fetch_or_create_user_by_email(invitation.email)
+      end)
+      |> Multi.insert(:membership, fn %{user: user, invitation: invitation} ->
         Membership.Changeset.create(%{
           account_id: account_id,
           user_id: user.id,
-          role: role,
-          runner_access_mode: access.mode,
+          role: invitation.role,
+          runner_access_mode: invitation.runner_access.mode,
           invited_by_id: subject.actor.id,
           invitation_token_digest: token_digest
         })
       end)
-      |> Multi.run(:runner_access, fn repo, %{membership: membership} ->
-        replace_runner_access_rows(repo, membership.id, access)
+      |> Multi.run(:runner_access, fn repo, %{membership: membership, invitation: invitation} ->
+        replace_runner_access_rows(repo, membership.id, invitation.runner_access)
       end)
       |> Multi.run(:retired_bindings, fn repo, %{user: user} ->
         retire_bindings_that_assumed_one_account(repo, user)
       end)
-      |> Multi.insert(:audit, fn %{user: user} ->
-        Audit.Events.user_invited(subject, user, role, access)
+      |> Multi.insert(:audit, fn %{user: user, invitation: invitation} ->
+        Audit.Events.user_invited(subject, user, invitation.role, invitation.runner_access)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -2495,7 +2526,7 @@ defmodule Emisar.Accounts do
   @doc """
   Invites a user into the account and emails them the join link.
 
-  Same authorization, persistence, and errors as `invite_user_to_account/4`;
+  Same authorization, persistence, and errors as `invite_user_to_account/2`;
   the raw token is not returned by this workflow. `inviter` is who the email
   is attributed to — passed explicitly because a support subject has no actor.
 
@@ -2504,16 +2535,78 @@ defmodule Emisar.Accounts do
   was marked spam, so nothing was sent), or `{:error, reason}`.
   """
   def invite_user_to_account_and_deliver(
-        email,
-        role,
-        %RunnerAccess{} = access,
+        attrs,
         %{} = inviter,
         %Subject{account: %Account{} = account} = subject
-      ) do
-    with {:ok, invitation} <- invite_user_to_account(email, role, access, subject) do
+      )
+      when is_map(attrs) do
+    with {:ok, invitation} <- invite_user_to_account(attrs, subject) do
       {:ok, invited_result(invitation, inviter, account)}
     end
   end
+
+  # The authoritative gate: the SAME input changeset the form uses, rebuilt
+  # against the account's live runner rows held under FOR UPDATE, so a
+  # concurrent soft-delete serializes behind this invitation rather than
+  # landing a grant on a runner that is already gone. Role coverage and
+  # nondelegation stay tagged atoms; invalid input comes back as the changeset
+  # the LiveView renders inline.
+  defp validate_invitation(repo, attrs, %Subject{account: %Account{id: account_id}} = subject) do
+    runners = invitation_runner_facts(repo, account_id, attrs, true)
+    changeset = InvitationInput.changeset(attrs, runners)
+
+    with {:ok, invitation} <- Ecto.Changeset.apply_action(changeset, :insert),
+         :ok <- ensure_invite_permitted(invitation.role, subject),
+         :ok <- ensure_runner_access_grant_allowed(subject, invitation.runner_access) do
+      {:ok, invitation}
+    end
+  end
+
+  # `none`/`all` name no runners, so the mount-time form builder reads nothing
+  # (IL-18); a malformed selection resolves nothing and the input changeset
+  # fails it closed.
+  defp invitation_runner_facts(repo, account_id, attrs, lock?) do
+    case RunnerAccess.selection_refs(invitation_scope_values(attrs)) do
+      {:ok, {[], []}} -> []
+      {:ok, {groups, runner_ids}} -> runner_facts(repo, account_id, groups, runner_ids, lock?)
+      {:error, :invalid_runner_access} -> []
+    end
+  end
+
+  defp invitation_scope_values(attrs) do
+    case Map.get(attrs, "runner_access_mode") || Map.get(attrs, :runner_access_mode) do
+      mode when mode in ["restricted", :restricted] ->
+        List.wrap(Map.get(attrs, "scope") || Map.get(attrs, :scope))
+
+      _mode ->
+        []
+    end
+  end
+
+  # Account-scoped raw SQL for the same reason `validate_runner_access_for_account/2`
+  # is: tenancy stays owned here rather than opening an Accounts -> Runners
+  # dependency. Bounded by the selection (RunnerAccess caps it at 256 scopes)
+  # and fully parameterized.
+  defp runner_facts(repo, account_id, groups, runner_ids, lock?) do
+    query = """
+    SELECT runners.id::text, runners."group"
+    FROM runners
+    WHERE runners.account_id = $1
+      AND runners.deleted_at IS NULL
+      AND (runners.id = ANY($2::uuid[]) OR runners."group" = ANY($3::text[]))
+    """
+
+    # An id that isn't a UUID resolves to nothing and fails the allowlist; it
+    # must not reach the uuid[] parameter, which would raise on the cast.
+    dumped_runner_ids = for id <- runner_ids, {:ok, dumped} <- [Ecto.UUID.dump(id)], do: dumped
+    params = [Ecto.UUID.dump!(account_id), dumped_runner_ids, groups]
+
+    %{rows: rows} = Ecto.Adapters.SQL.query!(repo, query <> lock_clause(lock?), params)
+    Enum.map(rows, fn [id, group] -> %{id: id, group: group} end)
+  end
+
+  defp lock_clause(true), do: "FOR UPDATE"
+  defp lock_clause(false), do: ""
 
   @doc """
   Resends a pending account invitation. Requires `invite` on memberships,
