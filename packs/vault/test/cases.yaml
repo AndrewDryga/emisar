@@ -32,10 +32,34 @@ cases:
   - action: vault.list_policies
     expect:
       stdout_contains: [default, root]
+  - action: vault.operator_step_down
+    probes:
+      - argv: [vault, status, -format=json]
+        expect:
+          stdout_contains: ['"sealed": false']
+        retry_for: 15s
+        retry_every: 500ms
   - action: vault.read_policy
     args: {name: default}
     expect:
       stdout_contains: [path]
+  - action: vault.revoke_lease
+    arrange:
+      - argv: [vault, secrets, enable, pki]
+      - argv: [vault, write, pki/root/generate/internal, common_name=packtest, ttl=1h]
+      - argv: [vault, write, pki/roles/packtest, allow_any_name=true, generate_lease=true, max_ttl=30m]
+      - argv: [vault, write, -field=serial_number, pki/issue/packtest, common_name=packtest.example.com, ttl=10m]
+    resolve_args:
+      lease_id:
+        argv: [/bin/sh, -c, 'keys="$(vault list sys/leases/lookup/pki/issue/packtest/)" && echo "pki/issue/packtest/$(echo "$keys" | tail -n 1)"']
+        retry_for: 10s
+        retry_every: 250ms
+    probes:
+      - argv: [/bin/sh, -c, 'vault list sys/leases/lookup/pki/issue/packtest/ >/dev/null 2>&1 || echo lease-gone']
+        expect:
+          stdout_contains: [lease-gone]
+        retry_for: 15s
+        retry_every: 500ms
   - action: vault.seal_status
     expect:
       json:
