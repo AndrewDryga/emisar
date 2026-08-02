@@ -58,6 +58,7 @@ defmodule Emisar.Billing do
         "SCIM directory sync",
         "365-day audit retention",
         "Security and procurement review",
+        "Dedicated Slack support channel",
         "Design-partner deployment planning",
         "Rollout support"
       ]

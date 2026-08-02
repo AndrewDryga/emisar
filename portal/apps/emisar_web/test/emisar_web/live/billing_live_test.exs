@@ -36,6 +36,8 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "Team members"
       # Owner sees the upgrade CTA (viewers don't — asserted below).
       assert html =~ "Upgrade to Team"
+      # The Enterprise plan card carries the same benefit the pricing page promises.
+      assert html =~ "Dedicated Slack support channel"
       assert html =~ "subject=Support%20request%20-%20Test%20Co"
       assert html =~ "Account%20ID%3A%20#{account.id}"
       assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"

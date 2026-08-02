@@ -50,6 +50,12 @@ defmodule Emisar.BillingTest do
       assert plans["team"].monthly_price_cents == 2000
       assert plans["enterprise"].runners_limit == :unlimited
     end
+
+    test "enterprise names the dedicated Slack support channel the pricing page promises" do
+      # The exact phrase the pricing card + comparison table use — the plan
+      # contract and the public promise must stay one string.
+      assert "Dedicated Slack support channel" in Billing.plans()["enterprise"].features
+    end
   end
 
   describe "plan/1" do
