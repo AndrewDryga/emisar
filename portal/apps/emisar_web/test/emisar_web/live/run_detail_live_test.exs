@@ -59,6 +59,18 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "target_id=#{run.id}"
   end
 
+  test "the header runner subtitle hides on phones; the Runner fact still names it", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    # The subtitle repeats the facts grid's Runner, so below sm it yields the
+    # header width to the long mono action id instead of wrapping under it.
+    assert html =~ ~s(<span class="hidden sm:inline">on runner-1</span>)
+    assert output_count(html, "runner-1") >= 2
+  end
+
   test "the policy panel carries the WHY, not a verdict chip (told once by status)",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)

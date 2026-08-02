@@ -224,13 +224,18 @@ defmodule EmisarWeb.RunDetailLive do
       width={:table}
     >
       <:title>
+        <%!-- On a phone the long mono action id already fills the header, so the
+             secondary runner line hides below sm — the Runner fact in the grid
+             below still names it. --%>
         <.detail_header
           back="Runs"
           navigate={~p"/app/#{@current_account}/runs"}
           title={@run.action_id}
           mono
         >
-          <:meta :if={@run.runner}>on {runner_label(@run.runner)}</:meta>
+          <:meta :if={@run.runner}>
+            <span class="hidden sm:inline">on {runner_label(@run.runner)}</span>
+          </:meta>
         </.detail_header>
       </:title>
       <:actions>
