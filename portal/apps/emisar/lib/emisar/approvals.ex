@@ -686,10 +686,10 @@ defmodule Emisar.Approvals do
   #   * Sync (tests): `notify_approvers_async?: false` runs the closure
   #     inline so the test stays inside its sandbox checkout.
   #   * Async (dev/prod): hands the closure to a supervised Task so
-  #     SIGTERM drains in-flight email blasts. The supervisor lives in
-  #     the web app's tree; if it's missing in async mode that's a real
-  #     configuration bug — `Task.Supervisor.start_child` raises and
-  #     surfaces it instead of silently orphaning the task.
+  #     SIGTERM drains in-flight email blasts. If the configured
+  #     supervisor is missing in async mode that's a real configuration
+  #     bug — `Task.Supervisor.start_child` raises and surfaces it
+  #     instead of silently orphaning the task.
   defp run_notify(fun) do
     if Application.get_env(:emisar, :notify_approvers_async?, true) do
       supervisor = Application.fetch_env!(:emisar, :task_supervisor)

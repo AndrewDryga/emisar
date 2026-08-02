@@ -22,10 +22,6 @@ defmodule EmisarWeb.Application do
       # Bounds authenticated MCP long polls per credential lineage. Leases are
       # process-monitored so abnormal request exits cannot consume capacity.
       EmisarWeb.MCP.WaitLimiter,
-      # Named Task.Supervisor for any web-layer detached work that needs
-      # supervised shutdown (currently: the MCP long-poll test's
-      # mid-poll DB flip, future async dispatch jobs).
-      {Task.Supervisor, name: EmisarWeb.TaskSupervisor},
       # Loads the pack catalog (bundled at boot, then refreshed from the
       # published URL) BEFORE the Endpoint, so the first /packs request
       # already sees a populated registry.

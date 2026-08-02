@@ -17,11 +17,11 @@ config :emisar,
   # active LiveView sockets (the broadcast struct itself lives in the
   # `phoenix` package, which emisar deliberately doesn't depend on).
   session_disconnect_handler: EmisarWeb.SessionDisconnector,
-  # Supervised Task fan-out for cross-app background work (currently
-  # approval email blasts). Lives in the web app's supervision tree so
-  # SIGTERM gracefully drains in-flight tasks instead of dropping them
-  # on the floor. Resolved by name at call-time; nil-safe.
-  task_supervisor: EmisarWeb.TaskSupervisor,
+  # Supervised Task fan-out for detached domain work (Analytics,
+  # Approvals, Marketing.Conversions). Lives in Emisar's supervision tree
+  # so SIGTERM gracefully drains in-flight tasks instead of dropping them
+  # on the floor. Resolved by name at call-time.
+  task_supervisor: Emisar.TaskSupervisor,
   # Product analytics (Mixpanel). Off by default and routed to the stub
   # client; prod with a `MIXPANEL_TOKEN` flips `mixpanel_enabled` and
   # swaps in the Live client (runtime.exs). Server-side ingestion only —

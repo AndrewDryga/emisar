@@ -8,7 +8,7 @@ defmodule Emisar.Analytics do
 
   `track/4`, `set_people/3`, and `set_group/3` build the Mixpanel payload,
   then hand it to the config-swapped `MixpanelClient` on a supervised,
-  fire-and-forget Task (`EmisarWeb.TaskSupervisor`) — analytics is
+  fire-and-forget Task (`Emisar.TaskSupervisor`) — analytics is
   best-effort and never blocks or fails the caller's request. The whole
   module is a no-op unless `:mixpanel_enabled` is true (prod with a
   `MIXPANEL_TOKEN`), so dev/test and the per-seam callers stay free.
@@ -116,7 +116,7 @@ defmodule Emisar.Analytics do
     :ok
   end
 
-  # Fire-and-forget on the shared web Task.Supervisor (drained on
+  # Fire-and-forget on the shared domain Task.Supervisor (drained on
   # SIGTERM). `:analytics_async?` is forced false in test so the
   # client's stub send/2 lands in the test process. Mirrors
   # `Approvals.run_notify/1`.

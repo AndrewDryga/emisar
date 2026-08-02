@@ -3,7 +3,6 @@ defmodule Emisar.Marketing.ConversionsTest do
   alias Emisar.{Marketing, Users}
 
   setup do
-    start_supervised!({Task.Supervisor, name: EmisarWeb.TaskSupervisor})
     parent = self()
     Emisar.Config.put_override(:emisar, :x_ads_conversions, %{})
 

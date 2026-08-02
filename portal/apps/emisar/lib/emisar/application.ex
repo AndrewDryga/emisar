@@ -19,6 +19,14 @@ defmodule Emisar.Application do
       # endpoint so the table exists when the first check arrives.
       Emisar.RateLimiter,
 
+      # Fan-out for detached domain work (analytics, approval notifications,
+      # marketing conversions). Explicit child id because the OIDC guard below
+      # also starts a Task.Supervisor, whose default id would collide.
+      Supervisor.child_spec(
+        {Task.Supervisor, name: Emisar.TaskSupervisor},
+        id: Emisar.TaskSupervisor
+      ),
+
       # BEAM clustering on GCP MIGs: libcluster's GCE strategy discovers peers via
       # the Compute API (Emisar.Cluster.GCE, which uses Emisar.Finch above). Empty
       # topologies keep local and single-node releases inert.
