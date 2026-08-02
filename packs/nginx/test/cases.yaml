@@ -88,3 +88,23 @@ cases:
   - action: nginx.test_config
     expect:
       stderr_contains: [syntax is ok, test is successful]
+  - action: nginx.reload
+    runner_user: root
+    runner_reason: nginx -s reload sends SIGHUP to the root-owned master read from its pid file; the kernel rejects the signal from the non-root runner.
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+    probes:
+      - name: master logged the reconfigure
+        argv: [grep, "signal 1 (SIGHUP) received, reconfiguring", /var/log/nginx/error.log]
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: ["signal 1 (SIGHUP) received, reconfiguring"]
+      - name: workers respawned and still serve
+        argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: [pack-test ok]

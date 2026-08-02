@@ -8,8 +8,13 @@ services:
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-nginx-tools:latest
     network_mode: service:nginx
+    # nginx -s reload reads the master pid from /var/run/nginx.pid (the shared
+    # /run volume below) and signals it, so the runner must live in the SUT's
+    # pid namespace for the kill to reach it.
+    pid: service:nginx
     volumes:
       - nginx_logs:/var/log/nginx
+      - nginx_run:/run
       - ${EMISAR_ROOT}/packs/nginx/test/fixtures/nginx.conf:/etc/nginx/nginx.conf:ro
 
   nginx:
@@ -17,12 +22,17 @@ services:
     command:
       - /bin/sh
       - -c
-      # nginx runs as root here and the log volume is shared with runner-tools,
-      # where the non-root runner also opens these files — so widen them once at
-      # creation rather than leaving root-owned 0644 files the runner cannot use.
-      - rm -f /var/log/nginx/access.log /var/log/nginx/error.log && touch /var/log/nginx/access.log /var/log/nginx/error.log && chmod 0666 /var/log/nginx/access.log /var/log/nginx/error.log && exec /docker-entrypoint.sh nginx -g 'daemon off;'
+      # nginx runs as root here and the log + /run volumes are shared with
+      # runner-tools, where the non-root runner also opens these files — so
+      # widen them once at creation rather than leaving root-owned 0644 files
+      # the runner cannot use. The pre-created 0666 pid file keeps its mode
+      # when the master truncates it in place, so the non-root runner's
+      # `nginx -t`/`-T` (which open the configured pid file read-write) keep
+      # working now that /run is shared.
+      - rm -f /var/log/nginx/access.log /var/log/nginx/error.log && touch /var/log/nginx/access.log /var/log/nginx/error.log /var/run/nginx.pid && chmod 0666 /var/log/nginx/access.log /var/log/nginx/error.log /var/run/nginx.pid && chmod 0777 /var/run && exec /docker-entrypoint.sh nginx -g 'daemon off;'
     volumes:
       - nginx_logs:/var/log/nginx
+      - nginx_run:/run
       - ${EMISAR_ROOT}/packs/nginx/test/fixtures/nginx.conf:/etc/nginx/nginx.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/nginx_status | grep -q 'Active connections'"]
@@ -33,3 +43,4 @@ services:
 
 volumes:
   nginx_logs:
+  nginx_run:
