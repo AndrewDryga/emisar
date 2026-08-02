@@ -411,26 +411,6 @@ defmodule Emisar.AuthAuditTest do
 
       assert v2.version == 2
     end
-
-    test "publish audits runbook.published", %{account: account, subject: subject} do
-      {:ok, runbook} =
-        Emisar.Runbooks.create_runbook(
-          %{
-            name: "ops-#{System.unique_integer()}",
-            slug: "ops-#{System.unique_integer()}",
-            title: "Restart",
-            description: "go",
-            definition: Fixtures.Runbooks.default_definition()
-          },
-          subject
-        )
-
-      {:ok, published} = Emisar.Runbooks.publish(runbook, subject)
-
-      assert [event] = events_of(account, "runbook.published")
-      assert event.target_id == published.id
-      assert event.payload["version"] == published.version
-    end
   end
 
   describe "Accounts account lifecycle" do

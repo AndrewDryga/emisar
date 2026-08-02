@@ -319,9 +319,10 @@ defmodule Emisar.Runbooks do
   @doc """
   Creates a runbook born `:published` — the editor's one-click publish-from-new.
   Requires `manage_runbooks`; the status is decided by this named transition,
-  never cast from client attrs, so the authorizer's "publish stays closed at
-  the domain layer" holds structurally: `create_runbook/2` can only mint drafts,
-  and this is the sole born-published path.
+  never cast from client attrs, and publication readiness is rechecked against
+  current domain state inside the transaction, so no caller can mint a
+  published runbook the current-state preflight would refuse. Returns
+  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :unauthorized}`.
   """
   def create_published_runbook(attrs, %Subject{account: account} = subject) do
     with :ok <-
@@ -329,9 +330,22 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.manage_runbooks_permission()
            ) do
-      account.id
-      |> Runbook.Changeset.create_published(Subject.user_id(subject), attrs)
-      |> insert_runbook(subject)
+      changeset = Runbook.Changeset.create_published(account.id, Subject.user_id(subject), attrs)
+      definition = Ecto.Changeset.get_field(changeset, :definition)
+
+      Multi.new()
+      |> Multi.run(:publication_readiness, fn _repo, _changes ->
+        publication_readiness(definition, subject)
+      end)
+      |> Multi.insert(:runbook, changeset)
+      |> Multi.insert(:audit, fn %{runbook: runbook} ->
+        Audit.Events.runbook_created(subject, runbook)
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_runbook_created(&1.runbook))
+      |> case do
+        {:ok, %{runbook: runbook}} -> {:ok, runbook}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -464,6 +478,12 @@ defmodule Emisar.Runbooks do
     )
   end
 
+  @doc """
+  Saves the next immutable version of a runbook family, always born a draft —
+  publication only happens through `publish/2` or `save_published_version/3`.
+  Requires `manage_runbooks` and that the subject owns the runbook's account.
+  Returns `{:ok, runbook} | {:error, changeset | :unauthorized | :not_found}`.
+  """
   def save_new_version(%Runbook{} = old, attrs, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -486,6 +506,53 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  @doc """
+  Saves the next immutable version born `:published` — the editor's
+  save-and-publish, as one transaction: publication readiness is rechecked
+  against current domain state and the new version commits published or not at
+  all, auditing both the content update and the publication. Requires
+  `manage_runbooks` and that the subject owns the runbook's account. Returns
+  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :unauthorized |
+  :not_found}`.
+  """
+  def save_published_version(%Runbook{} = old, attrs, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, old.account_id) do
+      user_id = Subject.user_id(subject)
+      changeset = Runbook.Changeset.new_published_version(old, user_id, attrs)
+      definition = Ecto.Changeset.get_field(changeset, :definition)
+
+      Multi.new()
+      |> Multi.run(:publication_readiness, fn _repo, _changes ->
+        publication_readiness(definition, subject)
+      end)
+      |> Multi.insert(:runbook, changeset)
+      |> Multi.insert(:updated_audit, fn %{runbook: runbook} ->
+        Audit.Events.runbook_updated(subject, old, runbook)
+      end)
+      |> Multi.insert(:published_audit, fn %{runbook: runbook} ->
+        Audit.Events.runbook_published(subject, runbook)
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_runbook_published(&1.runbook))
+      |> case do
+        {:ok, %{runbook: runbook}} -> {:ok, runbook}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Publishes an existing draft version in place. Readiness is rechecked inside
+  the transaction on the locked, freshly-read row — never on a caller-held
+  snapshot — so a stale editor preview or a direct context caller cannot
+  publish what the current-state preflight refuses. Requires `manage_runbooks`;
+  scoped to the subject's account. Returns `{:ok, runbook} | {:error,
+  changeset | [Definition.issue()] | :unauthorized | :not_found}`.
+  """
   def publish(%Runbook{} = runbook, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -496,10 +563,35 @@ defmodule Emisar.Runbooks do
       |> Runbook.Query.by_id(runbook.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
-        with: &Runbook.Changeset.update(&1, %{status: :published}),
+        with: &publish_when_ready(&1, subject),
         audit: &Audit.Events.runbook_published(subject, &1),
         after_commit: &broadcast_runbook_published/1
       )
+    end
+  end
+
+  defp publish_when_ready(%Runbook{} = loaded_runbook, %Subject{} = subject) do
+    case publication_readiness(loaded_runbook.definition, subject) do
+      {:ok, _definition} -> Runbook.Changeset.publish(loaded_runbook)
+      {:error, reason} -> reason
+    end
+  end
+
+  # The authoritative publish gate — the same rule the editor's preview
+  # proxies: the strict definition contract plus a full current-state compile
+  # (targets, trust, contracts, bindings, policy) using deterministic
+  # authoring-preview inputs. Runs inside the publishing transaction so its
+  # catalog reads share the commit's snapshot.
+  defp publication_readiness(definition, %Subject{} = subject) do
+    with {:ok, definition} <- Definition.validate(definition),
+         {:ok, _compiled} <-
+           Compiler.compile(
+             definition,
+             authoring_preview_inputs(definition),
+             new_target_selection_seed(),
+             subject
+           ) do
+      {:ok, definition}
     end
   end
 

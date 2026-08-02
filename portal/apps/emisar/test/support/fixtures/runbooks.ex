@@ -55,6 +55,16 @@ defmodule Emisar.Fixtures.Runbooks do
     runbook
   end
 
+  @doc """
+  Marks a persisted runbook published directly — arrangement state, bypassing
+  the context's current-state publication readiness (which needs a live
+  trusted catalog). The definition must still satisfy the strict contract.
+  """
+  def publish_runbook(%Runbook{} = runbook) do
+    {:ok, published} = runbook |> Runbook.Changeset.publish() |> Repo.update()
+    published
+  end
+
   @doc "Returns a fresh canonical minimal v1 definition for context tests."
   def default_definition, do: @default_definition
 end

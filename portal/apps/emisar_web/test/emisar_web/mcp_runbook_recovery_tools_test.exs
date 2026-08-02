@@ -1985,8 +1985,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         subject
       )
 
-    {:ok, published} = Runbooks.publish(draft, subject)
-    published
+    Emisar.Fixtures.Runbooks.publish_runbook(draft)
   end
 
   defp runbook_definition(targets, opts \\ []) do

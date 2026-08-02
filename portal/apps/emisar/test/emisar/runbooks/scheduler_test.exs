@@ -930,8 +930,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
                subject
              )
 
-    assert {:ok, published} = Runbooks.publish(runbook, subject)
-    published
+    Fixtures.Runbooks.publish_runbook(runbook)
   end
 
   defp definition(stages) do

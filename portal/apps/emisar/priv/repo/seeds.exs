@@ -421,7 +421,14 @@ morning_attrs = %{
 _morning_runbook =
   case Enum.find(runbooks, &(&1.slug == "morning-edge-readiness")) do
     nil ->
-      {:ok, runbook} = Runbooks.create_published_runbook(morning_attrs, owner_subject)
+      # Direct changeset insert: the demo runners this runbook targets are
+      # seeded further down, so the context's current-state publication
+      # readiness cannot pass yet.
+      {:ok, runbook} =
+        account.id
+        |> Runbook.Changeset.create_published(user.id, morning_attrs)
+        |> Repo.insert()
+
       IO.puts(IO.ANSI.cyan() <> "✓ Seeded empty-history sample runbook" <> IO.ANSI.reset())
       runbook
 
@@ -532,7 +539,12 @@ approval_attrs = %{
 approval_runbook =
   case Enum.find(runbooks, &(&1.slug == "edge-configuration-rollout")) do
     nil ->
-      {:ok, runbook} = Runbooks.create_published_runbook(approval_attrs, owner_subject)
+      # Same as the morning runbook: seeded before its target runners exist,
+      # so it bypasses the context's publication readiness by construction.
+      {:ok, runbook} =
+        account.id
+        |> Runbook.Changeset.create_published(user.id, approval_attrs)
+        |> Repo.insert()
 
       IO.puts(IO.ANSI.cyan() <> "✓ Seeded edge configuration rollout runbook" <> IO.ANSI.reset())
 

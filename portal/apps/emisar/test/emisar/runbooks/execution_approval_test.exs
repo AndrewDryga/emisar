@@ -438,8 +438,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
                subject
              )
 
-    assert {:ok, published} = Runbooks.publish(runbook, subject)
-    published
+    Fixtures.Runbooks.publish_runbook(runbook)
   end
 
   defp required_definition(group) do

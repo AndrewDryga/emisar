@@ -557,18 +557,13 @@ defmodule EmisarWeb.RunbookEditorLive do
       not socket.assigns.form.source.valid? ->
         {:noreply, put_flash(socket, :error, "Fix the runbook details before saving.")}
 
-      publish? and
-          (socket.assigns.definition_issues != [] or socket.assigns.preview.state != :ready) ->
-        {:noreply, put_flash(socket, :error, "Current preflight must pass before publishing.")}
-
       true ->
         attrs = %{
           "title" => socket.assigns.draft["title"],
           "name" => socket.assigns.draft["title"],
           "slug" => derive_slug(socket.assigns.draft["slug"], socket.assigns.draft["title"]),
           "description" => socket.assigns.draft["description"],
-          "definition" => definition,
-          "status" => "draft"
+          "definition" => definition
         }
 
         case persist(socket, attrs, publish?) do
@@ -583,6 +578,20 @@ defmodule EmisarWeb.RunbookEditorLive do
 
           {:error, %Ecto.Changeset{} = changeset} ->
             {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
+
+          # The domain refused publication against current state — the delayed
+          # preview was a stale courtesy; show the authoritative issues where
+          # the preview renders them.
+          {:error, issues} when is_list(issues) ->
+            {:noreply,
+             socket
+             |> assign(:preview, %{
+               state: :blocked,
+               plan: nil,
+               issues: issues,
+               checked_at: DateTime.utc_now()
+             })
+             |> put_flash(:error, "Current preflight must pass before publishing.")}
 
           {:error, _reason} ->
             {:noreply, put_flash(socket, :error, "Could not save this runbook.")}
@@ -603,14 +612,11 @@ defmodule EmisarWeb.RunbookEditorLive do
        ),
        do: Runbooks.publish(runbook, socket.assigns.current_subject)
 
-  defp persist(%{assigns: %{runbook: runbook}} = socket, attrs, publish?) do
-    with {:ok, new_version} <-
-           Runbooks.save_new_version(runbook, attrs, socket.assigns.current_subject) do
-      if publish?,
-        do: Runbooks.publish(new_version, socket.assigns.current_subject),
-        else: {:ok, new_version}
-    end
-  end
+  defp persist(%{assigns: %{runbook: runbook}} = socket, attrs, true),
+    do: Runbooks.save_published_version(runbook, attrs, socket.assigns.current_subject)
+
+  defp persist(%{assigns: %{runbook: runbook}} = socket, attrs, false),
+    do: Runbooks.save_new_version(runbook, attrs, socket.assigns.current_subject)
 
   defp draft_message(%{version: version}) when version > 1, do: "Draft v#{version} saved."
   defp draft_message(_runbook), do: "Draft saved."

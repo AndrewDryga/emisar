@@ -3,8 +3,10 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   alias Emisar.Runbooks.{Definition, Runbook}
   alias Emisar.Slug
 
-  @fields ~w[id slug title description status definition]a
-  @create_fields ~w[id slug title description definition]a
+  # Status is never cast: every status is decided by a named transition
+  # (`create`, `create_published`, `new_version`, `new_published_version`,
+  # `publish`), so a client-supplied status is ignored everywhere.
+  @fields ~w[id slug title description definition]a
 
   @doc """
   Validation-only metadata changeset for the structured editor. The definition
@@ -37,7 +39,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
 
   defp new_runbook(attrs, account_id, user_id) do
     %Runbook{}
-    |> cast(attrs, @create_fields)
+    |> cast(attrs, @fields)
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:version, 1)
@@ -45,15 +47,36 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> put_slug_from_title()
   end
 
-  @doc "Build the next immutable version from a previous runbook."
+  @doc "Build the next immutable version, always born a draft."
   def new_version(%Runbook{} = previous, user_id, attrs) do
+    previous
+    |> version_seed(user_id, attrs)
+    |> put_change(:status, :draft)
+    |> changeset()
+  end
+
+  @doc "Build the next immutable version born published through the named transition."
+  def new_published_version(%Runbook{} = previous, user_id, attrs) do
+    previous
+    |> version_seed(user_id, attrs)
+    |> put_change(:status, :published)
+    |> changeset()
+  end
+
+  @doc "Publish an existing immutable version in place through the named transition."
+  def publish(%Runbook{} = runbook) do
+    runbook
+    |> change(status: :published)
+    |> changeset()
+  end
+
+  defp version_seed(%Runbook{} = previous, user_id, attrs) do
     %Runbook{
       name: previous.name,
       slug: previous.slug,
       title: previous.title,
       description: previous.description,
-      definition: previous.definition,
-      status: previous.status
+      definition: previous.definition
     }
     |> cast(attrs, @fields)
     |> put_change(:account_id, previous.account_id)
@@ -61,7 +84,6 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> put_change(:version, previous.version + 1)
     |> put_name_from_title()
     |> put_slug_from_title()
-    |> changeset()
   end
 
   def update(%Runbook{} = runbook, attrs) do

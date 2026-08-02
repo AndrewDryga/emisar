@@ -22,8 +22,7 @@ defmodule EmisarWeb.RunbookVersionsLiveTest do
       )
 
     if opts[:published?] do
-      {:ok, runbook} = Runbooks.publish(runbook, subject)
-      runbook
+      Emisar.Fixtures.Runbooks.publish_runbook(runbook)
     else
       runbook
     end

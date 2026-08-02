@@ -301,8 +301,7 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
                subject
              )
 
-    assert {:ok, published} = Runbooks.publish(runbook, subject)
-    published
+    Fixtures.Runbooks.publish_runbook(runbook)
   end
 
   defp definition(stages) do

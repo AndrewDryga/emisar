@@ -175,8 +175,7 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
         subject
       )
 
-    assert {:ok, published} = Runbooks.publish(draft, subject)
-    published
+    Emisar.Fixtures.Runbooks.publish_runbook(draft)
   end
 
   defp action do

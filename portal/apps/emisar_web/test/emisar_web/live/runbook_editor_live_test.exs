@@ -1166,6 +1166,58 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert Repo.one!(Runbook).status == :published
     end
 
+    test "a stale ready preview cannot publish once current state breaks", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = arrange_current_action(account, user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      change(lv, valid_draft())
+      send(lv.pid, {:runbook_preview, 1})
+      assert render(lv) =~ "Ready to publish"
+
+      # The catalog the preview judged is gone by the time the operator clicks.
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+
+      html = render_click(lv, "publish", %{})
+      assert html =~ "Current preflight must pass before publishing."
+      refute html =~ "Ready to publish"
+      refute Repo.exists?(Runbook)
+    end
+
+    test "save-and-publish of an edited runbook commits nothing when readiness fails", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = arrange_current_action(account, user)
+      subject = owner_subject(user, account)
+
+      {:ok, draft} =
+        Runbooks.create_runbook(
+          %{
+            "title" => "Fleet health",
+            "slug" => "fleet-health",
+            "definition" => valid_draft() |> RunbookDraft.definition()
+          },
+          subject
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{draft.id}/edit")
+
+      change(lv, valid_draft(title: "Fleet health v2"))
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+
+      html = render_click(lv, "publish", %{})
+      assert html =~ "Current preflight must pass before publishing."
+
+      # One committed row: the original draft — no orphaned v2 from the
+      # failed save-and-publish.
+      assert [%Runbook{version: 1, status: :draft}] = Repo.all(Runbook)
+    end
+
     test "saves incomplete work as a draft while strict validation blocks publication", %{
       conn: conn,
       account: account
