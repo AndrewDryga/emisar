@@ -38,8 +38,17 @@ roles:
   fast:
     # WRITE-CAPABLE worker via coop-delegate: it may edit the worktree but never
     # commits — the lead reviews the diff, runs the touched project's gate, commits.
+    #
+    # The point of this role is that the TOP tier thinks, reviews and steers while a
+    # CHEAP, FAST model types. It was pointed at claude:opus/high — the slowest and most
+    # expensive tier — which defeated it twice over: nothing was saved when it ran, and
+    # leads abandoned it because it was slow. Measured 2026-08-02: 2 invocations in 94
+    # iterations, one killed at exit 130 after the lead waited ten minutes ("the delegate
+    # has exceeded the useful latency budget"), after which the lead wrote the diff itself.
+    # Sonnet is the cheap-and-capable rung; codex-spark is the cross-vendor failover so a
+    # claude limit does not silently push implementation back onto the lead.
     mode: delegate
-    agent: [claude:opus/high]
+    agent: [claude:sonnet/high, codex:gpt-5.3-codex-spark/high]
     when: [boilerplate, bulk-edits, test-scaffolding, repo-survey]
     commit: never
     concurrent: never

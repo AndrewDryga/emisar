@@ -30,13 +30,25 @@ before editing inside it — each has non-negotiable, per-language rules.
   format, pack manifest semantics, billing/entitlements. State the plan, the
   constraints, and ask what breaks. Another vendor's blind spots are not yours —
   when you overrule it, say why in the task log.
-- **fast** — the default implementer. Once YOU have decided the approach, write the
-  spec (files to touch, the exact behavior, the acceptance checks) and hand the
-  code-writing to fast — you orchestrate, you don't type the diff. Keep for yourself
-  only what delegation would make worse: the investigation that produces the spec,
-  a fix whose spec IS the diff (a few lines), and anything where mid-edit judgment
-  calls are the actual work (a live incident, an API you're still probing). Review
-  its handback like a stranger's PR; it never commits — you run the touched
+- **fast** — the default implementer, and a cheap fast model by design: you are the
+  expensive tier, so you think, review and steer while it types. Once YOU have decided
+  the approach, write the spec (files to touch, the exact behavior, the acceptance
+  checks) and hand the code-writing over.
+
+  **The bright line:** before you write the THIRD file of a change, or any block of
+  mechanical code longer than about fifty lines, stop and delegate the rest. Keep for
+  yourself only what delegation would make worse: the investigation that produces the
+  spec, a fix whose spec IS the diff (a few lines), and work where mid-edit judgment is
+  the actual task (a live incident, an API you are still probing). If you implement a
+  qualifying change yourself anyway, write one line in the task's `log.md` saying why —
+  an unexplained solo implementation is the failure this rule exists to catch.
+
+  **Budget its latency.** A delegate that has produced nothing after ~5 minutes is not
+  coming back usefully: interrupt it, note it in `log.md`, and implement the slice
+  yourself. Do not sit in the foreground waiting — that spends the expensive tier's time
+  to save the cheap one's.
+
+  Review its handback like a stranger's PR; it never commits — you run the touched
   project's gate and you commit. If its diff is off-spec, tighten the spec and
   re-delegate once; past that, take it over and note why in the task log.
 
