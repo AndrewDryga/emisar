@@ -28,6 +28,14 @@ defmodule Emisar.CatalogTest do
 
   defp canonical_pack_hashes(packs), do: packs
 
+  defp drain_repo_query_count(count \\ 0) do
+    receive do
+      :repo_query -> drain_repo_query_count(count + 1)
+    after
+      0 -> count
+    end
+  end
+
   defp action(id, opts \\ []) do
     %{
       "id" => id,
@@ -314,6 +322,26 @@ defmodule Emisar.CatalogTest do
 
       payload = state_payload(packs: packs, actions: actions)
 
+      # Pin the query behavior, not only the stored rows: the sandbox hides
+      # latency, so a regression back to per-action round trips (~2 queries ×
+      # 2,048 actions) would still pass on row counts alone. Fewer statements
+      # than advertised actions is only possible with batched writes. The
+      # handler fires in the process running the query, so filtering on this
+      # pid keeps concurrent async tests out of the count.
+      test_pid = self()
+      handler = make_ref()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, _metadata, _config ->
+          if self() == test_pid, do: send(test_pid, :repo_query)
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
       count_stored = fn ->
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_id(runner.id)
@@ -331,6 +359,7 @@ defmodule Emisar.CatalogTest do
       end
 
       assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+      assert drain_repo_query_count() < length(actions)
 
       # Count the table rather than a page of it — the claim is that every
       # advertised action landed, and the list read pages.
@@ -340,6 +369,7 @@ defmodule Emisar.CatalogTest do
       # Re-advertising the same catalog updates in place: no duplicate rows, and
       # first_seen_at survives while last_seen_at moves forward.
       assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+      assert drain_repo_query_count() < length(actions)
       assert count_stored.() == 2_048
 
       refreshed = peek_first.()
