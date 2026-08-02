@@ -78,9 +78,10 @@ defmodule EmisarWeb.ProfileLiveTest do
       # A wrong code is refused and the email stays put. The code boxes are
       # client-owned (CodeInput hook fills the hidden aggregate), so drive the
       # submit event directly rather than through the un-settable hidden field.
-      html = render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
+      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
 
-      assert html =~ "wrong or expired"
+      # The rejection renders inline at the code input, not in a transient flash.
+      assert lv |> element("#email_step_form") |> render() =~ "wrong or expired"
       assert Emisar.Repo.reload!(user).email == user.email
     end
 
@@ -98,6 +99,114 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "Start an email change first."
       assert Emisar.Repo.reload!(user).email == user.email
+    end
+
+    test "a resend_email_code with no step-up in progress fails closed (no LiveView crash)", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      # email_step is :idle, so pending_new_email is nil — a crafted resend over
+      # the socket must neither crash on the nil email nor claim a code was sent.
+      html = render_hook(lv, "resend_email_code", %{})
+
+      assert html =~ "Start an email change first."
+      refute html =~ "We sent a new code"
+      refute_received {:email, _}
+    end
+
+    test "a resend during the TOTP step is refused — the domain chose the authenticator factor",
+         %{
+           conn: conn,
+           user: user,
+           account: account
+         } do
+      secret = Auth.generate_mfa_secret()
+      {:ok, _user, _codes} = Fixtures.Users.enroll_mfa(secret, owner_subject(user, account))
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
+      |> render_submit()
+
+      # The step-up is :totp (no resend button rendered) — a forged resend must
+      # not mint an emailed code beside the authenticator challenge.
+      html = render_hook(lv, "resend_email_code", %{})
+
+      assert html =~ "Start an email change first."
+      refute_received {:email, _}
+    end
+
+    test "a resend during the pending step sends a fresh working code and clears a stale error",
+         %{
+           conn: conn,
+           user: user,
+           account: account
+         } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
+      |> render_submit()
+
+      assert_received {:email, _first_code_email}
+
+      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
+      assert lv |> element("#email_step_form") |> render() =~ "wrong or expired"
+
+      html = lv |> element("#email_step_form button", "Resend code") |> render_click()
+
+      # Success is claimed only after the issue call actually ran — a fresh code
+      # was emailed — and the stale rejection no longer sits under the input.
+      assert html =~ "We sent a new code to"
+      refute html =~ "wrong or expired"
+      assert_received {:email, resent_email}
+      [code] = Regex.run(~r/\d{6}/, resent_email.text_body)
+
+      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => code}})
+      assert Emisar.Repo.reload!(user).email == "fresh@example.com"
+    end
+
+    test "starting a fresh step-up clears a stale inline rejection", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "first@example.com"}})
+      |> render_submit()
+
+      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
+      assert lv |> element("#email_step_form") |> render() =~ "wrong or expired"
+
+      # The email form isn't rendered mid-step, but the event stays reachable
+      # over the socket — a restarted challenge must not open already accusing
+      # the operator of the prior challenge's wrong code.
+      render_hook(lv, "save_email", %{"email" => %{"email" => "second@example.com"}})
+
+      refute lv |> element("#email_step_form") |> render() =~ "wrong or expired"
+    end
+
+    test "a resend after the user is deleted reports failure instead of claiming success", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
+      |> render_submit()
+
+      Fixtures.Users.mark_user_as_deleted(user)
+
+      html = lv |> element("#email_step_form button", "Resend code") |> render_click()
+
+      assert html =~ "Couldn&#39;t send a new code. Try again."
+      refute html =~ "We sent a new code"
     end
 
     test "an MFA-on user confirms with a TOTP code, then the email changes", %{
@@ -527,14 +636,21 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Regenerate for a fresh set"
     end
 
-    test "a wrong OTP leaves MFA off", %{conn: conn, user: user, account: account} do
+    test "a wrong OTP leaves MFA off with the error inline at the code input", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       render_click(lv, "start_mfa", %{})
 
-      html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
+      render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
 
-      assert html =~ "Invalid code"
+      # The rejection renders inside the enrollment form (not a transient flash),
+      # and the QR stays up so the operator can retry with the next code.
+      assert lv |> element("#mfa_form") |> render() =~ "Invalid code"
+      assert has_element?(lv, "#mfa-otp")
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 

@@ -15,6 +15,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_uri, nil)
      |> assign(:mfa_qr_svg, nil)
      |> assign(:mfa_recovery_codes, nil)
+     |> assign(:mfa_error, nil)
      |> assign(:mfa_disable_step, :idle)
      |> assign(:mfa_disable_error, nil)
      |> assign(:current_session_token, session["user_token"])
@@ -175,9 +176,24 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("resend_email_code", _params, socket) do
-    user = socket.assigns.current_user
-    Auth.issue_email_change_code(socket.assigns.pending_new_email, socket.assigns.current_subject)
-    {:noreply, put_flash(socket, :info, "We sent a new code to #{user.email}.")}
+    %{email_step: step, pending_new_email: new_email} = socket.assigns
+
+    # Same fail-closed sequencing guard as confirm_email_change (IL-15): resend
+    # only makes sense while an emailed-code step-up is pending.
+    if step == :code and is_binary(new_email) do
+      case Auth.issue_email_change_code(new_email, socket.assigns.current_subject) do
+        :ok ->
+          {:noreply,
+           socket
+           |> assign(:email_step_error, nil)
+           |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
+
+        {:error, :not_found} ->
+          {:noreply, put_flash(socket, :error, "Couldn't send a new code. Try again.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Start an email change first.")}
+    end
   end
 
   def handle_event("cancel_email_change", _params, socket) do
@@ -224,6 +240,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_secret, secret)
      |> assign(:mfa_uri, uri)
      |> assign(:mfa_qr_svg, EmisarWeb.MfaQr.svg(uri))
+     |> assign(:mfa_error, nil)
      |> assign_mfa_form()}
   end
 
@@ -233,6 +250,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_secret, nil)
      |> assign(:mfa_uri, nil)
      |> assign(:mfa_qr_svg, nil)
+     |> assign(:mfa_error, nil)
      |> assign_mfa_form()}
   end
 
@@ -255,13 +273,14 @@ defmodule EmisarWeb.ProfileLive do
            |> assign(:mfa_recovery_codes, recovery_codes)
            |> assign(:mfa_secret, nil)
            |> assign(:mfa_uri, nil)
-           |> assign(:mfa_qr_svg, nil)}
+           |> assign(:mfa_qr_svg, nil)
+           |> assign(:mfa_error, nil)}
 
         {:error, :invalid_otp} ->
-          {:noreply, put_flash(socket, :error, "Invalid code — try the next one.")}
+          {:noreply, assign(socket, :mfa_error, "Invalid code — try the next one.")}
 
         {:error, _changeset} ->
-          {:noreply, put_flash(socket, :error, "Could not enable 2FA.")}
+          {:noreply, assign(socket, :mfa_error, "Could not enable 2FA. Try again.")}
       end
     end
   end
@@ -378,6 +397,7 @@ defmodule EmisarWeb.ProfileLive do
     socket
     |> assign(:email_step, :idle)
     |> assign(:pending_new_email, nil)
+    |> assign(:email_step_error, nil)
     |> assign(:email_step_form, to_form(%{"code" => ""}, as: "email_step"))
   end
 
@@ -393,10 +413,14 @@ defmodule EmisarWeb.ProfileLive do
 
       {:error, :replay} ->
         {:noreply,
-         put_flash(socket, :error, "That code was just used — wait a moment for the next one.")}
+         assign(
+           socket,
+           :email_step_error,
+           "That code was just used — wait a moment for the next one."
+         )}
 
       {:error, :invalid} ->
-        {:noreply, put_flash(socket, :error, step_up_error(step))}
+        {:noreply, assign(socket, :email_step_error, step_up_error(step))}
 
       # Step-up passed but the email itself was rejected (e.g. now taken) — the
       # one-time proof is spent, so send them back to the start.
@@ -412,7 +436,13 @@ defmodule EmisarWeb.ProfileLive do
   # re-reads it) — not `mfa_enabled?`, which is a stale mount snapshot that could
   # downgrade the challenge — and issues the emailed code on the `:code` path.
   defp start_email_step_up(socket, user, new_email) do
-    socket = assign(socket, :pending_new_email, new_email)
+    # A fresh challenge invalidates any rejection from a prior one — a stale
+    # inline error under a brand-new code input would accuse the operator of a
+    # mistake they haven't made yet.
+    socket =
+      socket
+      |> assign(:pending_new_email, new_email)
+      |> assign(:email_step_error, nil)
 
     case Auth.begin_email_change(new_email, socket.assigns.current_subject) do
       {:ok, :totp} ->
@@ -570,6 +600,7 @@ defmodule EmisarWeb.ProfileLive do
                   name="email_step[code]"
                   numeric
                   label={if step == :totp, do: "Authenticator code", else: "Confirmation code"}
+                  error={@email_step_error}
                 />
                 <:actions>
                   <.button phx-disable-with="Confirming...">Confirm change</.button>
@@ -596,17 +627,12 @@ defmodule EmisarWeb.ProfileLive do
         </section>
 
         <section>
+          <%!-- No On/off badge: the sole action ("Set up 2FA" / "Disable 2FA")
+               already states the current state unambiguously. --%>
           <.section_header title="Two-factor authentication">
             <:subtitle>
               Adds a TOTP code at sign-in, so a leaked sign-in link alone can't get in.
             </:subtitle>
-            <:actions>
-              <.chip :if={@mfa_enabled?} tone={:brand}>On</.chip>
-              <span :if={not @mfa_enabled?} class="flex items-center gap-1.5 text-xs">
-                <.status_dot tone={:neutral} size={:sm} />
-                <span class="text-zinc-400">off</span>
-              </span>
-            </:actions>
           </.section_header>
 
           <%= cond do %>
@@ -713,7 +739,13 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.simple_form>
             <% @mfa_uri -> %>
-              <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form} variant={:split}>
+              <.mfa_enrollment
+                qr_svg={@mfa_qr_svg}
+                uri={@mfa_uri}
+                form={@mfa_form}
+                variant={:split}
+                error={@mfa_error}
+              >
                 <:instructions>
                   Scan with Google Authenticator, 1Password, Authy, or similar — then enter
                   the 6-digit code to confirm.
@@ -806,7 +838,7 @@ defmodule EmisarWeb.ProfileLive do
                     id={"signout-session-#{session.id}"}
                     title="Sign out this session?"
                     confirm_label="Sign out"
-                    variant={:ghost}
+                    variant={:secondary}
                     tone={:neutral}
                     size={:sm}
                     class="shrink-0"

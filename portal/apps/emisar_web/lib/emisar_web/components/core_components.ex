@@ -5180,6 +5180,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :uri, :string, required: true, doc: "the otpauth:// provisioning URI"
   attr :form, Phoenix.HTML.Form, required: true
   attr :variant, :atom, default: :stacked, values: [:stacked, :split]
+
+  attr :error, :string,
+    default: nil,
+    doc: "a rejected-code error, rendered inline at the code input"
+
   slot :instructions
   slot :actions, required: true
 
@@ -5216,7 +5221,7 @@ defmodule EmisarWeb.CoreComponents do
         </.disclosure>
 
         <.simple_form for={@form} id="mfa_form" phx-submit="confirm_mfa">
-          <.code_input id="mfa-otp" name="mfa[otp]" numeric label="6-digit code" />
+          <.code_input id="mfa-otp" name="mfa[otp]" numeric label="6-digit code" error={@error} />
           <:actions>
             {render_slot(@actions)}
           </:actions>
