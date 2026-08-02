@@ -21,7 +21,7 @@ defmodule EmisarWeb.RunDetailLive do
   # stream evicts to the most-recent window, so paging earlier chunks in would
   # fight that eviction. A terminal run streams nothing more, so backfill is safe.
   defp can_load_earlier?(%{status: status}, more_earlier?),
-    do: Runs.ActionRun.terminal?(status) and more_earlier?
+    do: Runs.terminal_status?(status) and more_earlier?
 
   defp event_seq(nil), do: nil
   defp event_seq(%{seq: seq}), do: seq

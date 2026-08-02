@@ -196,8 +196,9 @@ defmodule Emisar.Runs.ActionRun do
 
   @doc """
   Is `status` a terminal state? The single source of truth for "this run has
-  settled" across the run engine, the staged runbook scheduler, the web, and MCP —
-  never re-list these states elsewhere. `:denied` (policy refused at creation)
+  settled" across the run engine and the staged runbook scheduler — the web and
+  MCP consume it through `Emisar.Runs.terminal_status?/1` — never re-list these
+  states elsewhere. `:denied` (policy refused at creation)
   and `:refused` (runner refused at dispatch) are terminal: the run won't
   progress, so it can't be cancelled or re-dispatched.
   """

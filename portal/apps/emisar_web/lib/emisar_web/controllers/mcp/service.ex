@@ -216,7 +216,7 @@ defmodule EmisarWeb.MCP.Service do
 
     # A terminal drain that reaches the end of persisted output still owing
     # events proves retention pruned rows mid-drain — end flagged, never clean.
-    pruned? = not more? and Runs.ActionRun.terminal?(context.run.status) and remaining > 0
+    pruned? = not more? and Runs.terminal_status?(context.run.status) and remaining > 0
 
     context.run
     |> base_run_fields(context.subject)
@@ -351,7 +351,7 @@ defmodule EmisarWeb.MCP.Service do
       # caller to long-poll for output the server already holds would block it
       # for the full window with nothing left to wake it.
       more? -> wait_next(run.id, cursor, "0")
-      not Runs.ActionRun.terminal?(run.status) -> wait_next(run.id, cursor, "60s")
+      not Runs.terminal_status?(run.status) -> wait_next(run.id, cursor, "60s")
       true -> nil
     end
   end
@@ -422,7 +422,7 @@ defmodule EmisarWeb.MCP.Service do
   end
 
   defp terminal_output_complete(%{status: status, output_complete: complete?}) do
-    if Runs.ActionRun.terminal?(status), do: complete?, else: nil
+    if Runs.terminal_status?(status), do: complete?, else: nil
   end
 
   defp fixed_approval(%{status: :pending_approval} = run, subject) do
@@ -487,7 +487,7 @@ defmodule EmisarWeb.MCP.Service do
 
   defp fixed_run_next(run, subject, _structured_output, tail_scope, preview) do
     cond do
-      not Runs.ActionRun.terminal?(run.status) ->
+      not Runs.terminal_status?(run.status) ->
         {live_snapshot_next(run.id, tail_scope), false}
 
       # A finished run whose preview left persisted output unshown is still
@@ -612,7 +612,7 @@ defmodule EmisarWeb.MCP.Service do
 
   defp run_terminal?(run_id, subject) do
     case Runs.fetch_run_by_id(run_id, subject) do
-      {:ok, %{status: status}} -> Runs.ActionRun.terminal?(status)
+      {:ok, %{status: status}} -> Runs.terminal_status?(status)
       _ -> false
     end
   end

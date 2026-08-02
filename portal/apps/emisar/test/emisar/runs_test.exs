@@ -88,6 +88,39 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "terminal_status?/1" do
+    test "classifies every status the schema defines" do
+      terminal = [
+        :success,
+        :failed,
+        :error,
+        :validation_failed,
+        :unknown_action,
+        :cancelled,
+        :timed_out,
+        :refused,
+        :denied
+      ]
+
+      in_flight = [:pending, :pending_approval, :sent, :running, :cancelling]
+
+      for status <- terminal do
+        assert Runs.terminal_status?(status), "expected #{status} to be terminal"
+      end
+
+      for status <- in_flight do
+        refute Runs.terminal_status?(status), "expected #{status} to be non-terminal"
+      end
+
+      assert Enum.sort(terminal ++ in_flight) == Enum.sort(Ecto.Enum.values(ActionRun, :status))
+    end
+
+    test "a non-atom is never terminal" do
+      refute Runs.terminal_status?(nil)
+      refute Runs.terminal_status?("success")
+    end
+  end
+
   describe "list_runs/2" do
     test "pages the subject's account only (cross-account isolation)" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()

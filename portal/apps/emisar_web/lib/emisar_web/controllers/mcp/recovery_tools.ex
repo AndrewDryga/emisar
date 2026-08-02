@@ -159,7 +159,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       rendered = render.(initial)
 
       cond do
-        timeout_ms == 0 or Runs.ActionRun.terminal?(initial.status) ->
+        timeout_ms == 0 or Runs.terminal_status?(initial.status) ->
           {:ok, %{run: rendered}}
 
         # Output is already waiting past the cursor. Return it now: it is already
@@ -222,7 +222,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     with :ok <- not_cancelled(cancellation_topic),
          {:ok, current} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
       cond do
-        Runs.ActionRun.terminal?(current.status) or run_token(current) != initial_token ->
+        Runs.terminal_status?(current.status) or run_token(current) != initial_token ->
           {:ok, %{run: render.(current)}}
 
         System.monotonic_time(:millisecond) >= deadline ->

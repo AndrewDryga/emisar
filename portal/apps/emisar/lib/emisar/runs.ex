@@ -46,6 +46,14 @@ defmodule Emisar.Runs do
   def run_filters, do: ActionRun.Query.filters()
 
   @doc """
+  Is `status` a terminal run state — settled, streaming nothing more? The
+  public lifecycle classification for the web and MCP (polling, pruning,
+  completion, pagination); delegates to `ActionRun.terminal?/1`, the engine's
+  single source of truth, so no caller re-lists the terminal set.
+  """
+  def terminal_status?(status), do: ActionRun.terminal?(status)
+
+  @doc """
   Paginated + filterable list for the Runs page. Returns
   `{:ok, [run], %Paginator.Metadata{}}` — see `Emisar.Repo.list/3`.
   Preloads the runner for each row so list templates can render names
