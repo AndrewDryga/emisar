@@ -20,7 +20,7 @@ defmodule Emisar.SSO do
   alias Emisar.SSO.{Authorizer, DirectoryGroup, DirectoryGroupMember}
   alias Emisar.SSO.GroupRoleMapping
   alias Emisar.SSO.GroupRunnerAccessMapping
-  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, UserIdentity}
+  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, SCIMUser, UserIdentity}
   require Logger
 
   def start_link(opts),
@@ -1486,17 +1486,27 @@ defmodule Emisar.SSO do
   defp rename_the_person(%UserIdentity{} = identity, _full_name, _provider, false),
     do: Users.fetch_user_by_id(identity.user_id)
 
-  @doc "Internal — SCIM read: the identity for `(provider, externalId)` (the IdP probes before create)."
-  def scim_fetch_user(%IdentityProvider{} = provider, external_id),
-    do: fetch_scim_identity(provider, external_id)
+  @doc """
+  Internal — SCIM read: the `%SCIMUser{}` projection for `(provider,
+  externalId)` (the IdP probes before create). `{:ok, %SCIMUser{}} |
+  {:error, :not_found}` — an identity whose membership an operator removed is
+  still found, and reports inactive.
+  """
+  def scim_fetch_user(%IdentityProvider{} = provider, external_id) do
+    with {:ok, identity} <- fetch_scim_identity(provider, external_id) do
+      membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
+      {:ok, scim_user(identity, identity.user, membership)}
+    end
+  end
 
   @doc """
-  Internal — SCIM read: the provider's directory identities, paginated (the
-  IdP's list/filter probe). An optional `:scim_filter` (`{:user_name, v}` |
-  `{:external_id, v}`) is applied in the query so the IdP's existence probe
-  matches a user *anywhere* in the directory, not just the fetched page —
-  without it, a `userName eq` check past the page limit would miss the user
-  and the IdP would re-provision a duplicate.
+  Internal — SCIM read: the provider's directory users as `%SCIMUser{}`
+  projections, paginated (the IdP's list/filter probe). An optional
+  `:scim_filter` (`{:user_name, v}` | `{:external_id, v}`) is applied in the
+  query so the IdP's existence probe matches a user *anywhere* in the
+  directory, not just the fetched page — without it, a `userName eq` check
+  past the page limit would miss the user and the IdP would re-provision a
+  duplicate. `{:ok, [%SCIMUser{}], %Metadata{}}`.
   """
   def scim_list_users(%IdentityProvider{} = provider, opts \\ []) do
     {scim_filter, opts} = Keyword.pop(opts, :scim_filter)
@@ -1505,16 +1515,20 @@ defmodule Emisar.SSO do
     # but this read has no `%Subject{}` — the bearer's provider-scope is the
     # authz — so scope by the explicit account too (house rule: an explicit
     # account is always filtered on, belt-and-suspenders).
-    UserIdentity.Query.not_deleted()
-    |> UserIdentity.Query.by_account_id(provider.account_id)
-    |> UserIdentity.Query.by_provider_id(provider.id)
-    |> apply_scim_filter(scim_filter)
-    # The user carries the email `userName` renders from. Without it a listed
-    # identity fell back to its opaque externalId, so the handle an IdP got back
-    # from `POST /Users` was not the one `GET /Users` showed for the same person.
-    |> UserIdentity.Query.with_preloaded_user()
-    |> UserIdentity.Query.ordered_by_recent()
-    |> Repo.list(UserIdentity.Query, opts)
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_account_id(provider.account_id)
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> apply_scim_filter(scim_filter)
+      # The user carries the email `userName` renders from. Without it a listed
+      # identity fell back to its opaque externalId, so the handle an IdP got back
+      # from `POST /Users` was not the one `GET /Users` showed for the same person.
+      |> UserIdentity.Query.with_preloaded_user()
+      |> UserIdentity.Query.ordered_by_recent()
+
+    with {:ok, identities, metadata} <- Repo.list(queryable, UserIdentity.Query, opts) do
+      {:ok, scim_users(provider, identities), metadata}
+    end
   end
 
   @doc """
@@ -1634,6 +1648,79 @@ defmodule Emisar.SSO do
       row -> {:ok, row}
     end
   end
+
+  defp scim_users(%IdentityProvider{} = provider, identities) do
+    user_ids = Enum.map(identities, & &1.user_id)
+
+    memberships =
+      Map.new(Accounts.list_sync_memberships(provider.account_id, user_ids), &{&1.user_id, &1})
+
+    Enum.map(identities, &scim_user(&1, &1.user, memberships[&1.user_id]))
+  end
+
+  # The projection's `external_id` is the IdP's externalId, not our internal
+  # UUID: SCIM `id` is server-assigned and opaque to the client, and every
+  # single-user operation keys strictly on externalId (decision 4 —
+  # `provider_identifier == scim_external_id`), so surfacing it as the canonical
+  # id lets the IdP's `GET/PATCH/DELETE /Users/{id}` round-trip without a
+  # separate UUID→externalId lookup. The internal UUID is never exposed.
+  defp scim_user(%UserIdentity{} = identity, user, membership) do
+    external_id = identity.scim_external_id || identity.provider_identifier
+
+    %SCIMUser{
+      external_id: external_id,
+      user_name: scim_user_name(identity, user),
+      display_name: scim_display_name(user),
+      active: scim_effective_active?(identity, membership)
+    }
+  end
+
+  # What the IdP is told, and it has to be the truth. Marking the identity
+  # `scim_active` is not the same as the person being usable: a directory
+  # `active: true` deliberately does NOT lift a manual break-glass hold, so
+  # reporting the identity's flag answered "active" for someone who cannot sign
+  # in. The IdP acts on that — it stops flagging them — and nobody finds out.
+  defp scim_effective_active?(%UserIdentity{} = identity, %Accounts.Membership{disabled_at: nil}),
+    do: identity.scim_active
+
+  defp scim_effective_active?(%UserIdentity{}, %Accounts.Membership{}), do: false
+
+  # No membership at all — an operator removed them from the account while the
+  # identity survived. They are not active here, and saying otherwise left the
+  # directory told "active" by a read and "no such user" by a deprovision.
+  defp scim_effective_active?(%UserIdentity{}, nil), do: false
+
+  # userName prefers the user's email (the human-readable handle IdPs expect),
+  # then a `preferred_username`/`nickname` claim if the IdP asserted one, and
+  # only then falls back to the opaque externalId/sub (decision: SCIM email is
+  # optional and the IdP may suppress it — but a readable handle is nicer).
+  defp scim_user_name(%UserIdentity{} = identity, user) do
+    scim_email(identity, user) || scim_username_claim(identity) || identity.scim_external_id ||
+      identity.provider_identifier
+  end
+
+  defp scim_email(_identity, %{email: email}) when is_binary(email) and email != "", do: email
+
+  defp scim_email(%UserIdentity{claims: %{"email" => email}}, _user) when is_binary(email),
+    do: email
+
+  defp scim_email(_identity, _user), do: nil
+
+  # The common OIDC handle claims, in preference order — a friendlier userName
+  # than the raw subject when no email was asserted.
+  defp scim_username_claim(%UserIdentity{claims: claims}) when is_map(claims) do
+    Enum.find_value(["preferred_username", "nickname"], fn key ->
+      case claims do
+        %{^key => value} when is_binary(value) and value != "" -> value
+        _ -> nil
+      end
+    end)
+  end
+
+  defp scim_username_claim(_identity), do: nil
+
+  defp scim_display_name(%{full_name: name}) when is_binary(name) and name != "", do: name
+  defp scim_display_name(_user), do: nil
 
   # -- Directory sync (SCIM) — groups → roles (internal, provider-scoped) --
 

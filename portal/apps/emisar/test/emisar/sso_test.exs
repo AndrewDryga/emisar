@@ -17,7 +17,7 @@ defmodule Emisar.SSOTest do
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.Fixtures
   alias Emisar.SSO.{GroupRoleMapping, GroupRunnerAccessMapping}
-  alias Emisar.SSO.{IdentityProvider, LinkRequest, UserIdentity}
+  alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUser, UserIdentity}
 
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
@@ -2315,7 +2315,7 @@ defmodule Emisar.SSOTest do
 
       # The user + identity survive (audit preservation) — only access is cut.
       assert {:ok, _user} = Emisar.Users.fetch_user_by_id(user.id)
-      assert {:ok, _identity} = SSO.scim_fetch_user(provider, identity.scim_external_id)
+      assert {:ok, _scim_user} = SSO.scim_fetch_user(provider, identity.scim_external_id)
     end
 
     test "marks the membership directory_suspended, so the DOMAIN refuses a manual reinstate" do
@@ -2345,10 +2345,11 @@ defmodule Emisar.SSOTest do
 
       assert {:error, :last_owner} = SSO.scim_deactivate_user(provider, "okta|owner")
 
-      # The membership stays active and the SCIM flag is left untouched.
+      # The membership stays active and the SCIM flag is left untouched, so the
+      # projection still answers active.
       refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
       assert {:ok, unchanged} = SSO.scim_fetch_user(provider, identity.scim_external_id)
-      assert unchanged.scim_active
+      assert unchanged.active
     end
 
     test "returns :not_found when no identity matches the externalId" do
@@ -2462,13 +2463,64 @@ defmodule Emisar.SSOTest do
   # -- scim_fetch_user/2 (provider-scoped) -----------------------------
 
   describe "scim_fetch_user/2" do
-    test "resolves the identity for (provider, externalId) — the IdP's pre-create probe" do
+    test "returns the directory-user projection for (provider, externalId)" do
       %{provider: provider} = scim_provider()
-      %{identity: identity} = provision(provider, "okta|fetch")
 
-      assert {:ok, fetched} = SSO.scim_fetch_user(provider, "okta|fetch")
-      assert fetched.id == identity.id
-      assert fetched.scim_external_id == "okta|fetch"
+      {:ok, _} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|fetch",
+          email: "fetch@acme.test",
+          full_name: "Fetch Person"
+        })
+
+      assert SSO.scim_fetch_user(provider, "okta|fetch") ==
+               {:ok,
+                %SCIMUser{
+                  external_id: "okta|fetch",
+                  user_name: "fetch@acme.test",
+                  display_name: "Fetch Person",
+                  active: true
+                }}
+    end
+
+    test "a no-email directory user's userName falls back to the opaque externalId" do
+      %{provider: provider} = scim_provider()
+      _ = provision(provider, "okta|nomail", %{full_name: nil})
+
+      assert {:ok, scim_user} = SSO.scim_fetch_user(provider, "okta|nomail")
+      assert scim_user.user_name == "okta|nomail"
+      refute scim_user.display_name
+    end
+
+    test "a deprovisioned (suspended) member reports inactive" do
+      %{provider: provider} = scim_provider()
+      _ = provision(provider, "okta|off")
+      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|off")
+
+      assert {:ok, scim_user} = SSO.scim_fetch_user(provider, "okta|off")
+      refute scim_user.active
+    end
+
+    test "a manual break-glass hold reports inactive while scim_active still says true" do
+      %{provider: provider} = scim_provider()
+      %{identity: identity, membership: membership} = provision(provider, "okta|held")
+      Fixtures.Memberships.suspend_membership(membership)
+
+      # The identity's own flag still says active — the directory has not
+      # deactivated them — but the person cannot sign in, and that is what the
+      # IdP has to be told: a hold is never hidden behind the directory's flag.
+      assert Repo.reload!(identity).scim_active
+      assert {:ok, scim_user} = SSO.scim_fetch_user(provider, "okta|held")
+      refute scim_user.active
+    end
+
+    test "an orphaned identity (membership removed by an operator) is found and reports inactive" do
+      %{provider: provider} = scim_provider()
+      %{membership: membership} = provision(provider, "okta|orphan")
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
+
+      assert {:ok, scim_user} = SSO.scim_fetch_user(provider, "okta|orphan")
+      refute scim_user.active
     end
 
     test "an unknown externalId is :not_found" do
@@ -2476,7 +2528,7 @@ defmodule Emisar.SSOTest do
       assert {:error, :not_found} = SSO.scim_fetch_user(provider, "okta|nobody")
     end
 
-    test "is provider-scoped — provider B can't fetch provider A's identity" do
+    test "is provider-scoped — provider B can't fetch provider A's user" do
       %{provider: provider_a} = scim_provider()
       %{provider: provider_b} = scim_provider()
       _ = provision(provider_a, "okta|onlyA")
@@ -2492,12 +2544,43 @@ defmodule Emisar.SSOTest do
       scim_provider()
     end
 
-    test "lists the provider's directory identities, paginated", %{provider: provider} do
+    test "lists the provider's directory users as projections, paginated", %{provider: provider} do
       _ = provision(provider, "okta|l1")
       _ = provision(provider, "okta|l2")
 
-      assert {:ok, identities, _meta} = SSO.scim_list_users(provider)
-      assert length(identities) == 2
+      assert {:ok, scim_users, _meta} = SSO.scim_list_users(provider)
+      assert length(scim_users) == 2
+      assert Enum.all?(scim_users, &match?(%SCIMUser{}, &1))
+    end
+
+    test "each row carries its own effective active state", %{provider: provider} do
+      _ = provision(provider, "okta|on")
+      _ = provision(provider, "okta|gone")
+      {:ok, _} = SSO.scim_deactivate_user(provider, "okta|gone")
+
+      assert {:ok, scim_users, _meta} = SSO.scim_list_users(provider)
+
+      assert Map.new(scim_users, &{&1.external_id, &1.active}) ==
+               %{"okta|on" => true, "okta|gone" => false}
+    end
+
+    test "another account's membership never decides a row's active state", %{
+      provider: provider
+    } do
+      {:ok, %{user: user}} = SSO.scim_provision_user(provider, %{external_id: "okta|two-tenant"})
+
+      # The same person is also a (suspended) member of an unrelated account —
+      # only the provider's own account may decide what its directory is told.
+      other_account = Fixtures.Accounts.create_account()
+
+      other_membership =
+        Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
+
+      Fixtures.Memberships.suspend_membership(other_membership)
+
+      assert {:ok, [scim_user], _meta} = SSO.scim_list_users(provider)
+      assert scim_user.external_id == "okta|two-tenant"
+      assert scim_user.active
     end
 
     test "a :scim_filter by external_id matches anywhere in the directory (past the page)", %{
@@ -2506,13 +2589,13 @@ defmodule Emisar.SSOTest do
       _ = provision(provider, "okta|needle")
       _ = provision(provider, "okta|hay")
 
-      assert {:ok, [identity], _meta} =
+      assert {:ok, [scim_user], _meta} =
                SSO.scim_list_users(provider, scim_filter: {:external_id, "okta|needle"})
 
-      assert identity.scim_external_id == "okta|needle"
+      assert scim_user.external_id == "okta|needle"
     end
 
-    test "is provider-scoped — provider B's list never includes provider A's identities" do
+    test "is provider-scoped — provider B's list never includes provider A's users" do
       %{provider: provider_a} = scim_provider()
       %{provider: provider_b} = scim_provider()
       _ = provision(provider_a, "okta|onlyA")

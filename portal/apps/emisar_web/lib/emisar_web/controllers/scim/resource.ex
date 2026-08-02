@@ -1,10 +1,12 @@
 defmodule EmisarWeb.SCIM.Resource do
   @moduledoc """
   The SCIM 2.0 ↔ internal translation — the one module that owns the wire
-  shape (RFC 7643/7644). Pure: serializes a `%SSO.UserIdentity{}` (or the domain
-  result map) into a SCIM User resource, parses an inbound SCIM payload into
-  the flat attrs `Emisar.SSO.scim_provision_user/2` expects, and builds the
-  SCIM ListResponse + Error envelopes.
+  shape (RFC 7643/7644). Pure: maps the `%SSO.SCIMUser{}` projection onto a
+  SCIM User resource's RFC 7643 field names (every directory fact — effective
+  active state, externalId choice, userName fallback — is decided in
+  `Emisar.SSO`), parses an inbound SCIM payload into the flat attrs
+  `Emisar.SSO.scim_provision_user/2` expects, and builds the SCIM ListResponse
+  + Error envelopes.
 
   Parsing is deliberately defensive — IdPs vary in which of `externalId` /
   `userName` / `emails` / `name.formatted` they send — and never calls
@@ -24,99 +26,34 @@ defmodule EmisarWeb.SCIM.Resource do
   def group_schema, do: @group_schema
 
   @doc """
-  Serialize a directory identity to a SCIM User resource. Accepts the
-  `%SSO.UserIdentity{}` directly or the `%{identity: ..., user: ...}` result map
-  the provision/lifecycle functions return (the user carries the email used
-  for `userName`).
+  Serialize the `%SSO.SCIMUser{}` directory-user projection to a SCIM User
+  resource. The SCIM `id` is the projection's opaque externalId — never an
+  internal UUID — so the IdP's `GET/PATCH/DELETE /Users/{id}` round-trips on
+  the identifier the domain keys every single-user operation on.
   """
-  # The lifecycle writes return `%{identity:, membership:}` with no `:user`, but
-  # the identity they carry has one preloaded. Taking the map's key alone meant a
-  # deactivate or reactivate answered with no name on it.
-  def to_user(%{identity: %SSO.UserIdentity{} = identity} = result),
-    do: to_user(identity, result[:user] || loaded_user(identity), result[:membership])
-
-  # A preloaded user is the same source the create response renders from, so the
-  # handle stays the same value across POST, GET and list.
-  def to_user(%SSO.UserIdentity{user: %{} = user} = identity), do: to_user(identity, user, nil)
-
-  def to_user(%SSO.UserIdentity{} = identity), do: to_user(identity, nil, nil)
-
-  # What the IdP is told, and it has to be the truth. Marking the identity
-  # `scim_active` is not the same as the person being usable: a directory
-  # `active: true` deliberately does NOT lift a manual break-glass hold, so
-  # reporting the identity's flag answered "active" for someone who cannot sign in.
-  # The IdP acts on that — it stops flagging them — and nobody finds out.
-  defp active?(%SSO.UserIdentity{} = identity, %{disabled_at: nil}), do: identity.scim_active
-  defp active?(%SSO.UserIdentity{}, %{disabled_at: _}), do: false
-
-  # No membership at all — an operator removed them from the account while the
-  # identity survived. They are not active here, and saying otherwise left the
-  # directory told "active" by a read and "no such user" by a deprovision.
-  defp active?(%SSO.UserIdentity{}, nil), do: false
-
-  defp loaded_user(%SSO.UserIdentity{user: %{} = user}), do: user
-  defp loaded_user(_identity), do: nil
-
-  # The SCIM resource `id` is the IdP's externalId, not our internal UUID.
-  # SCIM `id` is server-assigned and opaque to the client; the domain keys
-  # every single-user operation strictly on externalId (decision 4 —
-  # `provider_identifier == scim_external_id`), so making it the canonical
-  # `id` lets the IdP's `GET/PATCH/DELETE /Users/{id}` round-trip without a
-  # separate UUID→externalId lookup. The internal UUID is never exposed.
-  defp to_user(%SSO.UserIdentity{} = identity, user, membership) do
-    external_id = identity.scim_external_id || identity.provider_identifier
-
+  def to_user(%SSO.SCIMUser{} = scim_user) do
     # `displayName` and `name` are what the IdP wrote and expects to read back.
     # Omitting them made a rename look like it had not applied: the directory
     # pushed a new name, we stored it, and every subsequent read answered with no
     # name at all.
     %{
       "schemas" => [@user_schema],
-      "id" => external_id,
-      "externalId" => external_id,
-      "userName" => user_name(identity, user),
-      "active" => active?(identity, membership),
+      "id" => scim_user.external_id,
+      "externalId" => scim_user.external_id,
+      "userName" => scim_user.user_name,
+      "active" => scim_user.active,
       "meta" => %{"resourceType" => "User"}
     }
-    |> put_name(user)
+    |> put_name(scim_user.display_name)
   end
 
-  defp put_name(resource, %{full_name: name}) when is_binary(name) and name != "" do
+  defp put_name(resource, name) when is_binary(name) and name != "" do
     resource
     |> Map.put("displayName", name)
     |> Map.put("name", %{"formatted" => name})
   end
 
-  defp put_name(resource, _user), do: resource
-
-  # userName prefers the user's email (the human-readable handle IdPs expect),
-  # then a `preferred_username`/`nickname` claim if the IdP asserted one, and
-  # only then falls back to the opaque externalId/sub (decision: SCIM email is
-  # optional and the IdP may suppress it — but a readable handle is nicer).
-  defp user_name(%SSO.UserIdentity{} = identity, user) do
-    email_from(identity, user) || username_claim(identity) || identity.scim_external_id ||
-      identity.provider_identifier
-  end
-
-  defp email_from(_identity, %{email: email}) when is_binary(email) and email != "", do: email
-
-  defp email_from(%SSO.UserIdentity{claims: %{"email" => email}}, _user) when is_binary(email),
-    do: email
-
-  defp email_from(_identity, _user), do: nil
-
-  # The common OIDC handle claims, in preference order — a friendlier userName
-  # than the raw subject when no email was asserted.
-  defp username_claim(%SSO.UserIdentity{claims: claims}) when is_map(claims) do
-    Enum.find_value(["preferred_username", "nickname"], fn key ->
-      case claims do
-        %{^key => value} when is_binary(value) and value != "" -> value
-        _ -> nil
-      end
-    end)
-  end
-
-  defp username_claim(_identity), do: nil
+  defp put_name(resource, _name), do: resource
 
   @doc """
   Parse an inbound SCIM User payload into the flat attrs the domain expects:

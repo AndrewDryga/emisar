@@ -295,8 +295,8 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert first["id"] == second["id"]
 
-      {:ok, identities, _meta} = SSO.scim_list_users(provider)
-      assert Enum.count(identities, &(&1.scim_external_id == "okta|dup")) == 1
+      {:ok, scim_users, _meta} = SSO.scim_list_users(provider)
+      assert Enum.count(scim_users, &(&1.external_id == "okta|dup")) == 1
     end
 
     test "a payload with no externalId or userName → 400 SCIM error", %{conn: conn, token: token} do
@@ -1298,7 +1298,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
       # The user row + identity persist — DELETE deactivates, it does not hard-delete.
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
-      assert {:ok, _identity} = SSO.scim_fetch_user(provider, ext)
+      assert {:ok, _scim_user} = SSO.scim_fetch_user(provider, ext)
     end
 
     test "`scim_active` drift is self-corrected on the next reconcile (re-POST)", %{
@@ -1330,7 +1330,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["active"] == true
       {:ok, reloaded} = SSO.scim_fetch_user(provider, "okta|drift")
-      assert reloaded.scim_active
+      assert reloaded.active
     end
   end
 

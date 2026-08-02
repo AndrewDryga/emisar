@@ -294,7 +294,7 @@ defmodule Emisar.SSOSCIMTest do
 
       # The user + identity survive (audit preservation) — only access is cut.
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
-      assert {:ok, _identity} = SSO.scim_fetch_user(provider, identity.scim_external_id)
+      assert {:ok, _scim_user} = SSO.scim_fetch_user(provider, identity.scim_external_id)
 
       # Their delegated execute access (API keys) is revoked — a revoked key
       # is no longer usable, so the credential-resolution path returns nil.
@@ -318,10 +318,11 @@ defmodule Emisar.SSOSCIMTest do
 
       assert {:error, :last_owner} = SSO.scim_deactivate_user(provider, "okta|owner")
 
-      # The membership stays active and the SCIM flag is left untouched.
+      # The membership stays active and the SCIM flag is left untouched, so the
+      # projection still answers active.
       refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
       assert {:ok, unchanged} = SSO.scim_fetch_user(provider, identity.scim_external_id)
-      assert unchanged.scim_active
+      assert unchanged.active
     end
 
     test "returns :not_found when no identity matches the externalId" do

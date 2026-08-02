@@ -7,13 +7,12 @@ defmodule EmisarWeb.SCIM.UserController do
   `Emisar.SSO.scim_*` functions with it — the token's provider-scope IS the
   authorization (IL-15: re-read on every action, never trust the connection).
 
-  The SCIM resource `id` is the IdP's externalId (see `SCIM.Resource.to_user/1`),
-  so `:id` here is the externalId the domain keys on. Deprovisioning is a
+  The SCIM resource `id` is the IdP's externalId (see `SSO.SCIMUser`), so
+  `:id` here is the externalId the domain keys on. Deprovisioning is a
   SUSPEND, never a delete: both `PATCH active:false` and `DELETE` map to
   `scim_deactivate_user`, `active:true` to `scim_reactivate_user` (R8).
   """
   use EmisarWeb, :controller
-  alias Emisar.Accounts
   alias Emisar.SSO
   alias EmisarWeb.SCIM.Resource
 
@@ -33,21 +32,14 @@ defmodule EmisarWeb.SCIM.UserController do
 
       true ->
         case SSO.scim_provision_user(provider, attrs) do
-          {:ok, result} -> render_user(conn, :created, result)
+          {:ok, _result} -> render_current(conn, :created, attrs.external_id)
           {:error, reason} -> render_error(conn, reason)
         end
     end
   end
 
   # GET /scim/v2/Users/:id — fetch one by externalId.
-  def show(conn, %{"id" => external_id}) do
-    provider = conn.assigns.scim_provider
-
-    case SSO.scim_fetch_user(provider, external_id) do
-      {:ok, identity} -> render_user(conn, :ok, with_membership(provider, identity))
-      {:error, :not_found} -> not_found(conn, external_id)
-    end
-  end
+  def show(conn, %{"id" => external_id}), do: render_current(conn, :ok, external_id)
 
   # GET /scim/v2/Users — list, optionally filtered by `userName eq "x"` /
   # `externalId eq "x"`. The filter is applied in the query (not in memory over
@@ -69,8 +61,8 @@ defmodule EmisarWeb.SCIM.UserController do
 
       scim_filter ->
         case SSO.scim_list_users(provider, scim_filter: scim_filter, page: [limit: 100]) do
-          {:ok, identities, _meta} ->
-            json(conn, Resource.list_response(with_memberships(provider, identities)))
+          {:ok, scim_users, _meta} ->
+            json(conn, Resource.list_response(Enum.map(scim_users, &Resource.to_user/1)))
 
           {:error, _reason} ->
             json(conn, Resource.list_response([]))
@@ -134,8 +126,8 @@ defmodule EmisarWeb.SCIM.UserController do
   # is a guess about human names, and a wrong one for plenty of them — it only
   # decides what to KEEP when a batch names one component, never what to store
   # when it names both.
-  defp merged_name(identity, components) do
-    {current_given, current_family} = split_current_name(identity)
+  defp merged_name(%SSO.SCIMUser{} = scim_user, components) do
+    {current_given, current_family} = split_current_name(scim_user)
 
     [
       Map.get(components, :given, current_given),
@@ -145,14 +137,15 @@ defmodule EmisarWeb.SCIM.UserController do
     |> Enum.join(" ")
   end
 
-  defp split_current_name(%{user: %{full_name: name}}) when is_binary(name) and name != "" do
+  defp split_current_name(%SSO.SCIMUser{display_name: name})
+       when is_binary(name) and name != "" do
     case String.split(name, " ", parts: 2) do
       [given, family] -> {given, family}
       [only] -> {only, nil}
     end
   end
 
-  defp split_current_name(_identity), do: {nil, nil}
+  defp split_current_name(_scim_user), do: {nil, nil}
 
   # Apply the (optional) rename first, then the (optional) active flip — a
   # rename failure (e.g. :not_found) must not half-apply the lifecycle change.
@@ -191,8 +184,8 @@ defmodule EmisarWeb.SCIM.UserController do
     provider = conn.assigns.scim_provider
 
     case SSO.scim_fetch_user(provider, external_id) do
-      {:ok, identity} ->
-        apply_rename(conn, external_id, {:ok, merged_name(identity, components)})
+      {:ok, scim_user} ->
+        apply_rename(conn, external_id, {:ok, merged_name(scim_user, components)})
 
       {:error, reason} ->
         {:error, reason}
@@ -209,17 +202,9 @@ defmodule EmisarWeb.SCIM.UserController do
   defp apply_operations_active(conn, external_id, {:ok, active}),
     do: apply_active(conn, external_id, active)
 
-  # A name-only PATCH — render the (renamed) current resource state. It carries the
-  # membership like every other read: this renders the same resource, so it cannot
-  # be the one response that answers `active` from the identity's flag.
-  defp apply_operations_active(conn, external_id, :no_active_op) do
-    provider = conn.assigns.scim_provider
-
-    case SSO.scim_fetch_user(provider, external_id) do
-      {:ok, identity} -> render_user(conn, :ok, with_membership(provider, identity))
-      {:error, :not_found} -> not_found(conn, external_id)
-    end
-  end
+  # A name-only PATCH — render the (renamed) current resource state.
+  defp apply_operations_active(conn, external_id, :no_active_op),
+    do: render_current(conn, :ok, external_id)
 
   # DELETE /scim/v2/Users/:id — soft deprovision (suspend), not a hard delete
   # (R8 / decision 5). 204 No Content on success.
@@ -238,7 +223,7 @@ defmodule EmisarWeb.SCIM.UserController do
     provider = conn.assigns.scim_provider
 
     case SSO.scim_deactivate_user(provider, external_id) do
-      {:ok, result} -> render_user(conn, :ok, result)
+      {:ok, _result} -> render_current(conn, :ok, external_id)
       {:error, reason} -> render_error(conn, reason)
     end
   end
@@ -247,7 +232,7 @@ defmodule EmisarWeb.SCIM.UserController do
     provider = conn.assigns.scim_provider
 
     case SSO.scim_reactivate_user(provider, external_id) do
-      {:ok, result} -> render_user(conn, :ok, result)
+      {:ok, _result} -> render_current(conn, :ok, external_id)
       {:error, reason} -> render_error(conn, reason)
     end
   end
@@ -386,32 +371,20 @@ defmodule EmisarWeb.SCIM.UserController do
 
   # -- rendering ------------------------------------------------------
 
-  # A read has to answer what a mutation answers. `active` is derived from the
-  # member when one is in hand, and mutations always have one — so a read that
-  # served the bare identity reported `true` for someone a manual hold keeps
-  # signed out, moments after the PATCH had correctly said `false`.
-  defp with_membership(provider, identity) do
-    %{
-      identity: identity,
-      membership: Accounts.peek_sync_membership(provider.account_id, identity.user_id)
-    }
-  end
+  # Every User response body — a GET's as much as a mutation's — renders from
+  # the one projection read, so a mutation's answer can never drift from the
+  # next read's. Rendering mutation results directly is how a response once
+  # reported `active: true` for someone a manual hold keeps signed out.
+  defp render_current(conn, status, external_id) do
+    case SSO.scim_fetch_user(conn.assigns.scim_provider, external_id) do
+      {:ok, scim_user} ->
+        conn
+        |> put_status(status)
+        |> json(Resource.to_user(scim_user))
 
-  defp with_memberships(provider, identities) do
-    memberships =
-      provider.account_id
-      |> Accounts.list_sync_memberships(Enum.map(identities, & &1.user_id))
-      |> Map.new(&{&1.user_id, &1})
-
-    Enum.map(identities, fn identity ->
-      Resource.to_user(%{identity: identity, membership: memberships[identity.user_id]})
-    end)
-  end
-
-  defp render_user(conn, status, identity_or_result) do
-    conn
-    |> put_status(status)
-    |> json(Resource.to_user(identity_or_result))
+      {:error, :not_found} ->
+        not_found(conn, external_id)
+    end
   end
 
   defp render_error(conn, :not_found), do: not_found(conn, nil)
