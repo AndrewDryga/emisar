@@ -1,12 +1,17 @@
 // What this rig has left in the Entra tenant, and optionally removing it.
 //
-// The capture scripts here create enterprise applications and never had a way to
+// The capture scripts here create objects in TWO places and never had a way to
 // say so, which is how leftovers accumulated until the founder found them by hand
-// — see .agent/kb/rules/shared-capture-rigs-own-what-they-create.md.
+// — see .agent/kb/rules/shared-capture-rigs-own-what-they-create.md:
 //
-// Every application is printed with a verdict beside it. A filter that can
-// silently under-match must show what it looked at; "nothing to clean up" from a
-// filter that matched nothing is not evidence of a clean tenant.
+//   - app registrations named "emisar" (main.go's register form — seven duplicates
+//     accumulated before the list blade's failure to render made them visible),
+//   - enterprise applications such as "emisar SCIM" ("New application" →
+//     "Create your own application" in the .mjs scripts).
+//
+// Every object in both collections is printed with a verdict beside it. A filter
+// that can silently under-match must show what it looked at; "nothing to clean
+// up" from a filter that matched nothing is not evidence of a clean tenant.
 //
 //   node entra-inventory.mjs            # list only
 //   node entra-inventory.mjs --delete   # list, then remove the ones that are ours
@@ -94,41 +99,83 @@ if (!token) {
 }
 
 const graph = async (path, method = 'GET') => {
-  const response = await page.evaluate(async ({ path, method, token }) => {
-    const r = await fetch('https://graph.microsoft.com/v1.0' + path, {
+  const url = path.startsWith('https://') ? path : 'https://graph.microsoft.com/v1.0' + path
+  const response = await page.evaluate(async ({ url, method, token }) => {
+    const r = await fetch(url, {
       method,
       headers: { authorization: token, accept: 'application/json' },
     })
     return { status: r.status, body: r.status === 204 ? null : await r.json().catch(() => null) }
-  }, { path, method, token })
+  }, { url, method, token })
   return response
 }
 
-const listing = await graph("/servicePrincipals?$select=id,displayName,appId,servicePrincipalType&$top=200")
-if (listing.status !== 200) {
-  console.log(`Graph refused the listing: ${listing.status}`)
-  console.log('WITHOUT A LISTING THIS TENANT CANNOT BE CALLED CLEAN')
-  await browser.close()
-  process.exit(1)
+// Follow @odata.nextLink to the last page. A page cap under-lists exactly as
+// silently as a bad filter: 200 rows fit today's tenant, and the day they don't,
+// a truncated listing reads as a clean one.
+const listAll = async path => {
+  const rows = []
+  let next = path
+  while (next) {
+    const listing = await graph(next)
+    if (listing.status !== 200) return { status: listing.status, rows: null }
+    rows.push(...(listing.body.value || []))
+    next = listing.body['@odata.nextLink'] || null
+  }
+  return { status: 200, rows }
 }
 
-// Ours by the names these scripts use. Everything else is printed and left alone.
-const ours = app => /emisar/i.test(app.displayName || '')
+// Ours by the names these scripts use. The one keeper is identified by something
+// it carries, never by a name the filter happens to miss: the saved walkthrough
+// app registration (and its service principal) whose appId is ENTRA_CLIENT_ID —
+// main.go and entra-blades.mjs reuse that app by id instead of registering yet
+// another duplicate, so deleting it breaks the next capture run.
+const keeper = row => Boolean(env.ENTRA_CLIENT_ID) && row.appId === env.ENTRA_CLIENT_ID
+const ours = row => /emisar/i.test(row.displayName || '') && !keeper(row)
+const verdict = row => (keeper(row) ? 'keep   ' : ours(row) ? 'DELETE ' : 'spare  ')
 
-console.log('--- every enterprise application, and what this run will do with it ---')
-const apps = listing.body.value || []
-for (const app of apps) {
-  console.log(`  ${ours(app) ? 'DELETE ' : 'spare  '} ${(app.displayName || '').padEnd(44)} ${app.id}`)
+// Both halves of what the rig creates. Deleting an application also takes its
+// service principal with it, so the cleanup below removes service principals
+// FIRST — a delete against a row that just vanished reads as a failure it isn't.
+const sections = [
+  { label: 'app registrations', resource: 'applications', select: 'id,appId,displayName' },
+  { label: 'enterprise applications', resource: 'servicePrincipals', select: 'id,appId,displayName,servicePrincipalType' },
+]
+
+const collections = []
+for (const section of sections) {
+  const listing = await listAll(`/${section.resource}?$select=${section.select}&$top=200`)
+  if (listing.status !== 200) {
+    console.log(`Graph refused the ${section.label} listing: ${listing.status}`)
+    console.log('WITHOUT A LISTING THIS TENANT CANNOT BE CALLED CLEAN')
+    await browser.close()
+    process.exit(1)
+  }
+
+  console.log(`--- every ${section.label.replace(/s$/, '')}, and what this run will do with it ---`)
+  for (const row of listing.rows) {
+    console.log(`  ${verdict(row)} ${(row.displayName || '').padEnd(44)} ${row.id}`)
+  }
+  console.log('--- anything spared that this rig created is a filter gap, not a clean tenant ---')
+
+  const mine = listing.rows.filter(ours)
+  console.log(`${listing.rows.length} ${section.label}, ${mine.length} of them ours`)
+  collections.push({ ...section, mine })
 }
-console.log('--- anything spared that this rig created is a filter gap, not a clean tenant ---')
-
-const mine = apps.filter(ours)
-console.log(`${apps.length} enterprise applications, ${mine.length} of them ours`)
 
 if (remove) {
-  for (const app of mine) {
-    const deleted = await graph(`/servicePrincipals/${app.id}`, 'DELETE')
-    console.log(`  removed ${app.displayName}: ${deleted.status}`)
+  let failed = 0
+  for (const { resource, mine } of [...collections].reverse()) {
+    for (const row of mine) {
+      const deleted = await graph(`/${resource}/${row.id}`, 'DELETE')
+      if (deleted.status !== 204) failed++
+      console.log(`  removed ${row.displayName} (${resource}): ${deleted.status}`)
+    }
+  }
+  if (failed > 0) {
+    console.log(`${failed} delete(s) did not return 204 — THIS TENANT CANNOT BE CALLED CLEAN`)
+    await browser.close()
+    process.exit(1)
   }
 }
 

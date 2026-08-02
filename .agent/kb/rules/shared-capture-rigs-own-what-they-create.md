@@ -81,7 +81,11 @@ and remove what they created, both through the provider's own API rather than th
 console DOM — a virtualised list is exactly the surface that under-matches
 silently. Okta's inventory covers applications, users AND api-tokens — a
 long-lived credential is the last thing that should sit unlisted in a tenant,
-whoever created it.
+whoever created it. Entra's covers both halves of what its rig makes — app
+registrations and enterprise applications — follows Graph's paging to the last
+row (a page cap under-lists as silently as a bad filter), and spares the one
+keeper by the id it carries (the saved `ENTRA_CLIENT_ID` walkthrough app), never
+by a name the delete filter happens to miss.
 
 A rig that cannot enumerate says it cannot enumerate; "nothing to clean up" is a
 claim, and a claim needs a listing behind it.
