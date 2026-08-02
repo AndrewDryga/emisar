@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -336,5 +337,52 @@ func TestIsolatedSessionDiesWithSIGKILLedOwner(t *testing.T) {
 			t.Fatalf("isolated browser tree survived its owner's SIGKILL (baseline %d, live %d)", baseline, countIsolatedChromium(t))
 		}
 		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// The daemon's lifeline is what makes a boxed daemon die with the command that started it. It is
+// deliberately setsid'd so a workstation keeps a warm browser across runs; in an ephemeral box that
+// same detachment left the daemon holding the box open for its whole descendant drain, and the
+// handoff then un-completed the finished task and re-ran it — three times in one session.
+//
+// This exercises the mechanism directly rather than spawning a real daemon: only the devtool CLI
+// implements __browser-daemon, so a spawn test would need that binary built. What matters here is
+// that closing the write end cancels the daemon's context, and that a daemon handed NO lifeline
+// (a workstation) is never cancelled.
+func TestDaemonLifelineCancelsOnStarterExit(t *testing.T) {
+	keep, child, err := newLifeline()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer child.Close()
+	t.Setenv(daemonLifelineEnv, strconv.Itoa(int(child.Fd())))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	watchLifeline(cancel)
+	select {
+	case <-ctx.Done():
+		t.Fatal("daemon was cancelled while its starter was still alive")
+	case <-time.After(300 * time.Millisecond):
+	}
+	_ = keep.Close() // the starter exits: the kernel closes its end
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon was not cancelled after its starter closed the lifeline")
+	}
+}
+
+// A workstation daemon inherits nothing and must outlive its starter, so warm-browser reuse keeps
+// working. Never probe a bare fd number for this: RunDaemon also runs in-process, where fd 3 is
+// whatever that process happens to have open.
+func TestDaemonWithoutLifelineIsNeverCancelled(t *testing.T) {
+	t.Setenv(daemonLifelineEnv, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	watchLifeline(cancel)
+	select {
+	case <-ctx.Done():
+		t.Fatal("daemon with no lifeline was cancelled")
+	case <-time.After(500 * time.Millisecond):
 	}
 }

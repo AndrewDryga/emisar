@@ -37,7 +37,13 @@ type Config struct {
 	Err     io.Writer
 }
 
-type Manager struct{ Config }
+type Manager struct {
+	Config
+	// daemonLifeline is the write end of the pipe a BOXED daemon watches. It must live as long as
+	// the command that started the daemon: the daemon exits when this closes, and letting the
+	// garbage collector close it would kill the browser mid-run.
+	daemonLifeline *os.File
+}
 
 func New(config Config) *Manager {
 	if config.Out == nil {
@@ -224,7 +230,26 @@ func (m *Manager) Start(ctx context.Context, binary string) (State, error) {
 	}
 	command.Stdin = nil
 	command.Stdout, command.Stderr = logFile, logFile
+	// Setsid detaches the daemon so a warm browser survives the command that started it — the point
+	// on a workstation. In an ephemeral box it is the opposite of what we want: the daemon then
+	// outlives the provider, holds the box open for its whole descendant drain, and the handoff
+	// un-completes the finished task. So in a box the daemon gets a lifeline: it watches the read
+	// end of a pipe this process holds, and exits when the kernel closes it.
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if m.InBox {
+		keep, child, lifelineErr := newLifeline()
+		if lifelineErr != nil {
+			logFile.Close()
+			return State{}, lifelineErr
+		}
+		command.ExtraFiles = append(command.ExtraFiles, child) // becomes fd 3 in the daemon
+		command.Env = append(os.Environ(), daemonLifelineEnv+"=3")
+		defer child.Close()
+		if m.daemonLifeline != nil {
+			_ = m.daemonLifeline.Close()
+		}
+		m.daemonLifeline = keep
+	}
 	if err := command.Start(); err != nil {
 		logFile.Close()
 		return State{}, err
@@ -270,9 +295,52 @@ func (m *Manager) Stop(ctx context.Context) error {
 	return fmt.Errorf("browser did not stop")
 }
 
+// daemonLifelineEnv names the inherited descriptor a boxed daemon watches. The spawning process
+// sets it ONLY when it actually passed a lifeline; without it the daemon watches nothing.
+//
+// Never probe a bare fd number instead. RunDaemon also runs IN-PROCESS (the daemon test starts it
+// as a goroutine), where fd 3 is whatever that process happens to have open — stat succeeds, the
+// watcher reads EOF, and the daemon dies instantly. An explicit env var is the only signal that
+// distinguishes "a lifeline was handed to me" from "fd 3 exists".
+const daemonLifelineEnv = "EMISAR_BROWSER_LIFELINE_FD"
+
+// watchLifeline cancels ctx when the inherited lifeline reaches EOF — i.e. when the process that
+// started this daemon is gone. No-op when none was handed over (a workstation daemon is meant to
+// outlive its starter).
+func watchLifeline(cancel context.CancelFunc) {
+	raw := os.Getenv(daemonLifelineEnv)
+	if raw == "" {
+		return
+	}
+	fd, err := strconv.Atoi(raw)
+	if err != nil || fd < 3 {
+		return
+	}
+	f := os.NewFile(uintptr(fd), "browser-daemon-lifeline")
+	if f == nil {
+		return
+	}
+	go func() {
+		defer f.Close()
+		buf := make([]byte, 1)
+		for {
+			if _, readErr := f.Read(buf); readErr != nil {
+				cancel() // EOF (or error): the starter is gone
+				return
+			}
+		}
+	}()
+}
+
 func RunDaemon(ctx context.Context, config Config) error {
 	if decoded, err := base64.StdEncoding.DecodeString(config.SPKI); err != nil || len(decoded) != 32 {
 		return fmt.Errorf("TLS SPKI must be one base64-encoded SHA-256 hash")
+	}
+	if config.InBox {
+		lifelineCtx, cancelLifeline := context.WithCancel(ctx)
+		defer cancelLifeline()
+		watchLifeline(cancelLifeline)
+		ctx = lifelineCtx
 	}
 	chrome, err := ResolveChrome()
 	if err != nil {
