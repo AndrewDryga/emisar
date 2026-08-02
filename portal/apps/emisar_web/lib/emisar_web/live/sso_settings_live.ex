@@ -71,6 +71,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       )
       # The provider's synced users (identity + membership), loaded on :show.
       |> assign(:synced_members, [])
+      |> assign(:synced_members_load_error?, false)
       |> assign(:edit_form, nil)
       # Pending manual-link requests across the account — loaded on :index, where
       # the overview triages them (the detail page is config-only).
@@ -226,30 +227,35 @@ defmodule EmisarWeb.SSOSettingsLive do
   # membership (nil if the person was fully removed but the identity lingers) — so
   # the "Synced users" card can show state and act on the membership. Two reads
   # (SSO identities + Accounts memberships), zipped by user id; either failing
-  # (e.g. a viewer without manage_sso) degrades to an empty list.
+  # keeps uncertainty explicit instead of asserting that nobody was provisioned.
   defp load_synced_members(socket, provider) do
     subject = socket.assigns.current_subject
 
-    members =
-      with {:ok, identities} <- SSO.list_synced_users(provider, subject),
-           user_ids = Enum.map(identities, & &1.user_id),
-           {:ok, memberships} <-
-             Accounts.list_memberships_for_users(
-               socket.assigns.current_account,
-               user_ids,
-               subject
-             ) do
-        membership_by_user = Map.new(memberships, &{&1.user_id, &1})
+    with {:ok, identities} <- SSO.list_synced_users(provider, subject),
+         user_ids = Enum.map(identities, & &1.user_id),
+         {:ok, memberships} <-
+           Accounts.list_memberships_for_users(
+             socket.assigns.current_account,
+             user_ids,
+             subject
+           ) do
+      membership_by_user = Map.new(memberships, &{&1.user_id, &1})
 
+      members =
         Enum.map(
           identities,
           &%{identity: &1, membership: Map.get(membership_by_user, &1.user_id)}
         )
-      else
-        _ -> []
-      end
 
-    assign(socket, :synced_members, members)
+      socket
+      |> assign(:synced_members, members)
+      |> assign(:synced_members_load_error?, false)
+    else
+      _ ->
+        socket
+        |> assign(:synced_members, [])
+        |> assign(:synced_members_load_error?, true)
+    end
   end
 
   # Edit: its own page (like /new) so the form gets the full width — one
@@ -1841,7 +1847,9 @@ defmodule EmisarWeb.SSOSettingsLive do
               scim_base_url={@scim_base_url}
               scim_token={@scim_token}
             />
-            <.section_note :if={@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)}>
+            <%!-- The provider kind only says SCIM is supported; it does not mean
+                 this connection has enabled provisioning. --%>
+            <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
               Your IdP pushes users and groups over SCIM. Removing someone there removes them here.
             </.section_note>
 
@@ -1901,8 +1909,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
             <.synced_users_section
               members={@synced_members}
+              load_error?={@synced_members_load_error?}
               member_role_options={@member_role_options}
               can_manage_team?={@can_manage_team?}
+              can_configure_directory_sync?={@can_configure_directory_sync?}
               current_user_id={@current_user.id}
               scim_enabled={provider.scim_enabled}
             />
@@ -3319,8 +3329,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp members_label(count), do: "#{count} members"
 
   attr :members, :list, required: true
+  attr :load_error?, :boolean, required: true
   attr :member_role_options, :list, required: true
   attr :can_manage_team?, :boolean, required: true
+  attr :can_configure_directory_sync?, :boolean, required: true
   attr :current_user_id, :string, required: true
   attr :scim_enabled, :boolean, required: true
 
@@ -3328,11 +3340,16 @@ defmodule EmisarWeb.SSOSettingsLive do
   # approved link), with portal-based lifecycle actions per row — re-role or
   # suspend/reactivate. The controls act on the Accounts membership (manage_team,
   # which enforces owner / last-owner / self); someone removed from the account
-  # whose identity lingers shows "Removed" with no actions.
+  # whose identity lingers shows "Removed" with no actions. A failed read keeps
+  # its count off the header — "0" would assert a roster size we don't know.
   defp synced_users_section(assigns) do
     ~H"""
     <section>
-      <.section_header title="Synced users" count={length(@members)} count_tone={:neutral} />
+      <.section_header
+        title="Synced users"
+        count={if @load_error?, do: nil, else: length(@members)}
+        count_tone={:neutral}
+      />
       <ul :if={@members != []} class="mt-4 divide-y divide-zinc-800/70">
         <li
           :for={member <- @members}
@@ -3374,12 +3391,14 @@ defmodule EmisarWeb.SSOSettingsLive do
             <% else %>
               <%!-- On a directory-synced provider the role is the IdP's: a group→role
                  mapping (or the provider default) recomputes it on every sync, so a
-                 manual change here silently reverts. Read-only — set it in Role mapping above. An OIDC-only provider (no directory sync)
-                 keeps the editable select; those roles aren't recomputed. --%>
+                 manual change here silently reverts — read-only. An OIDC-only provider
+                 (no directory sync) keeps the editable select; those roles aren't
+                 recomputed. The remedy must remain available after a plan downgrade,
+                 when Role mapping is no longer rendered. --%>
               <.tooltip
                 :if={@scim_enabled}
                 id={"role-lock-#{member.membership.id}"}
-                text="Role is managed by directory sync — set it in Role mapping above"
+                text={role_lock_tip(@can_configure_directory_sync?)}
               >
                 <.chip icon="hero-lock-closed-mini">
                   {Emisar.Auth.role_label(member.membership.role)}
@@ -3443,13 +3462,29 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
-      <.empty_state :if={@members == []} variant={:hint} class="mt-4">
+      <.empty_state
+        :if={@load_error?}
+        variant={:hint}
+        tone={:danger}
+        icon="hero-exclamation-triangle"
+        title="Synced users couldn't be loaded"
+        class="mt-4"
+      >
+        Refresh the page to try again. This connection may still have provisioned users.
+      </.empty_state>
+      <.empty_state :if={@members == [] and not @load_error?} variant={:hint} class="mt-4">
         No one has been provisioned through this connection yet. Users appear here after they sign in
         through it, or after directory sync provisions them.
       </.empty_state>
     </section>
     """
   end
+
+  # "Role mapping above" only exists while the plan renders directory-sync config.
+  defp role_lock_tip(true), do: "Role is managed by directory sync — set it in Role mapping above"
+
+  defp role_lock_tip(false),
+    do: "Role is managed by directory sync — change this member's groups in your IdP"
 
   # The identity's directory id — the SCIM externalId if synced, else the OIDC sub.
   defp synced_external_id(identity),

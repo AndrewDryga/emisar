@@ -805,13 +805,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       provider: provider
     } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      {:ok, lv, sign_in_only} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      refute sign_in_only =~ "Removing someone there removes them here"
 
       html = render_click(lv, "enable_scim", %{"id" => provider.id})
 
       assert html =~ "Directory sync enabled."
       assert html =~ "shown only once"
       assert html =~ "/scim/v2"
+      assert html =~ "Removing someone there removes them here"
       # The freshly-minted ems- token is rendered exactly once, in the reveal.
       assert html =~ "ems-"
       # The IdP-side SCIM setup steps appear once sync is on.
@@ -966,6 +969,69 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       render_click(lv, "suspend_member", %{"membership_id" => membership.id})
 
       assert Emisar.Accounts.Membership.disabled?(Repo.reload!(membership))
+    end
+
+    test "a connection with nobody provisioned keeps the confident empty copy", %{
+      conn: conn,
+      account: account
+    } do
+      unsynced = insert_provider(account, %{name: "Unsynced Entra", kind: :entra})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{unsynced.id}")
+
+      assert html =~ "No one has been provisioned through this connection yet"
+      refute html =~ "Synced users couldn&#39;t be loaded"
+    end
+
+    test "a failed membership read asks for a retry instead of claiming nobody is there", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      # Drop only the membership-read permission: the provider and synced-identity
+      # reads (manage_sso) still succeed, so this fails exactly the roster read.
+      :sys.replace_state(lv.pid, fn state ->
+        update_in(
+          state.socket.assigns.current_subject.permissions,
+          &MapSet.delete(&1, Emisar.Accounts.Authorizer.view_own_account_permission())
+        )
+      end)
+
+      html = render_patch(lv, ~p"/app/#{account}/settings/sso/#{provider.id}?reload=1")
+
+      assert html =~ "Synced users couldn&#39;t be loaded"
+
+      assert html =~
+               "Refresh the page to try again. This connection may still have provisioned users."
+
+      refute html =~ "No one has been provisioned"
+      refute html =~ "Dana Sync"
+    end
+
+    test "a downgraded account's role lock points at the member's IdP groups", %{
+      conn: conn,
+      user: user,
+      account: account,
+      provider: provider
+    } do
+      owner = Fixtures.Subjects.subject_for(user, account)
+      {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
+
+      {_deleted, _} =
+        Emisar.Billing.Subscription.Query.all()
+        |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
+        |> Repo.delete_all()
+
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert html =~
+               "Role is managed by directory sync — change this member&#39;s groups in your IdP"
+
+      refute html =~ "Role mapping above"
     end
 
     test "a crafted suspend is refused for a non-admin viewer", %{
