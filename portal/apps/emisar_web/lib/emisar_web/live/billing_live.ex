@@ -11,14 +11,15 @@ defmodule EmisarWeb.BillingLive do
 
     if connected?(socket) do
       account = socket.assigns.current_account
+      subject = socket.assigns.current_subject
 
       {:ok,
        socket
        |> assign(:plans, ordered_plans())
-       |> assign(:summary, fetch_summary(account, socket.assigns.current_subject))
-       |> assign(:invoices, fetch_invoices(account, socket.assigns.current_subject))
+       |> assign(:summary, fetch_summary(account, subject))
        |> assign(:member_count, member_count(socket))
-       |> assign(:features, feature_states(account))}
+       |> assign(:features, feature_states(account))
+       |> assign_async(:invoices, fn -> fetch_invoices(account, subject) end)}
     else
       {:ok, socket}
     end
@@ -41,12 +42,14 @@ defmodule EmisarWeb.BillingLive do
     end
   end
 
-  # Recent invoices for the payment-history list — [] on any error (a Paddle
-  # hiccup shouldn't take the page down; the portal link still works).
+  # Recent invoices for the payment-history list, fetched off the mount path
+  # (IL-18) — a slow Paddle response must not hold up the first paint. A
+  # failure renders as the section's inline retry state; the rest of the
+  # page (and the portal link) still works.
   defp fetch_invoices(account, subject) do
     case Billing.list_recent_invoices(account, subject) do
-      {:ok, invoices} -> invoices
-      {:error, _} -> []
+      {:ok, invoices} -> {:ok, %{invoices: invoices}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -130,6 +133,15 @@ defmodule EmisarWeb.BillingLive do
         {:noreply,
          put_flash(socket, :error, "Couldn't open that invoice: #{humanize_reason(reason)}")}
     end
+  end
+
+  # Re-run the failed async invoice fetch in place. Authorization lives in
+  # the context read (view-billing + account scope), same as the mount fetch.
+  def handle_event("retry_invoices", _params, socket) do
+    account = socket.assigns.current_account
+    subject = socket.assigns.current_subject
+
+    {:noreply, assign_async(socket, :invoices, fn -> fetch_invoices(account, subject) end)}
   end
 
   defp ordered_plans do
@@ -394,51 +406,90 @@ defmodule EmisarWeb.BillingLive do
             <%!-- Recent invoices — a payment history inline, so operators don't
                  open the portal just to check the last charge. Manage subscription
                  still owns the full ledger + PDF downloads. A paid row is silent
-                 (no green "Paid" chip); only past-due earns a tone. --%>
-            <section :if={@invoices != []}>
-              <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Recent invoices
-              </h3>
-              <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
-                <li
-                  :for={invoice <- @invoices}
-                  class="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm"
+                 (no green "Paid" chip); only past-due earns a tone. Loaded async
+                 off the mount path (IL-18); loading/failed chrome renders only
+                 once a Paddle customer exists — a never-billed account resolves
+                 to [] instantly, and a flash of "Recent invoices" that then
+                 vanishes would just jiggle the page. --%>
+            <.async_result :let={invoices} assign={@invoices}>
+              <:loading>
+                <section :if={@current_account.paddle_customer_id}>
+                  <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Recent invoices
+                  </h3>
+                  <p class="mt-3 flex items-center gap-2 text-sm text-zinc-400">
+                    <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin" />
+                    Loading payment history…
+                  </p>
+                </section>
+              </:loading>
+              <:failed>
+                <.event_block
+                  icon="hero-exclamation-triangle"
+                  tone={:rose}
+                  title="Couldn't load recent invoices"
+                  class="max-w-prose"
                 >
-                  <.local_time
-                    :if={invoice.billed_at}
-                    id={"invoice-billed-#{invoice.id}"}
-                    value={invoice.billed_at}
-                    class="w-36 shrink-0 whitespace-nowrap text-zinc-400"
-                  />
-                  <span class="w-16 font-medium tabular-nums text-zinc-200">
-                    {format_total(invoice.amount_cents)}
-                  </span>
-                  <span :if={invoice.invoice_number} class="font-mono text-xs text-zinc-400">
-                    {invoice.invoice_number}
-                  </span>
-                  <div class="ml-auto flex items-center gap-4">
-                    <.chip
-                      :if={invoice.status != "completed"}
-                      tone={if invoice.status == "past_due", do: :rose, else: :neutral}
-                    >
-                      {invoice_status_label(invoice.status)}
-                    </.chip>
-                    <%!-- Paddle mints the PDF on demand — a phx-click, not an href,
+                  <:body>
+                    Something went wrong loading your payment history — this is on our
+                    side, not a problem with your payment.
+                  </:body>
+                  <.button
+                    variant={:secondary}
+                    size={:sm}
+                    class="mt-4"
+                    phx-click="retry_invoices"
+                    phx-disable-with="Loading…"
+                  >
+                    Try again
+                  </.button>
+                </.event_block>
+              </:failed>
+              <section :if={invoices != []}>
+                <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Recent invoices
+                </h3>
+                <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+                  <li
+                    :for={invoice <- invoices}
+                    class="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm"
+                  >
+                    <.local_time
+                      :if={invoice.billed_at}
+                      id={"invoice-billed-#{invoice.id}"}
+                      value={invoice.billed_at}
+                      class="w-36 shrink-0 whitespace-nowrap text-zinc-400"
+                    />
+                    <span class="w-16 font-medium tabular-nums text-zinc-200">
+                      {format_total(invoice.amount_cents)}
+                    </span>
+                    <span :if={invoice.invoice_number} class="font-mono text-xs text-zinc-400">
+                      {invoice.invoice_number}
+                    </span>
+                    <div class="ml-auto flex items-center gap-4">
+                      <.chip
+                        :if={invoice.status != "completed"}
+                        tone={if invoice.status == "past_due", do: :rose, else: :neutral}
+                      >
+                        {invoice_status_label(invoice.status)}
+                      </.chip>
+                      <%!-- Paddle mints the PDF on demand — a phx-click, not an href,
                          since we fetch the signed URL server-side then redirect. --%>
-                    <button
-                      type="button"
-                      phx-click="download_invoice"
-                      phx-value-id={invoice.id}
-                      phx-disable-with="Opening…"
-                      class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-                      title={"Download invoice #{invoice.invoice_number} (PDF)"}
-                    >
-                      <.icon name="hero-arrow-down-tray" class="h-3.5 w-3.5" /> PDF
-                    </button>
-                  </div>
-                </li>
-              </ul>
-            </section>
+                      <button
+                        type="button"
+                        phx-click="download_invoice"
+                        phx-value-id={invoice.id}
+                        phx-disable-with="Opening…"
+                        class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+                        title={"Download invoice #{invoice.invoice_number} (PDF)"}
+                      >
+                        <.icon name="hero-arrow-down-tray" class="h-3.5 w-3.5" /> PDF
+                      </button>
+                    </div>
+                  </li>
+                </ul>
+              </section>
+            </.async_result>
 
             <%!-- Enterprise is a custom, sales-led plan (no self-serve price), so
                plan + billing changes go through our team. The icon-caps-a-spine
@@ -540,9 +591,13 @@ defmodule EmisarWeb.BillingLive do
                           Contact sales
                         </.button>
                       <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
-                        <%!-- Quiet fact for non-owners, not a gray slab that apes a
+                        <%!-- Quiet fact for members without manage-billing (the owner
+                         and billing-manager roles hold it — keep this copy in step
+                         with Billing.Authorizer), not a gray slab that apes a
                          disabled button. --%>
-                        <p class="py-2 text-center text-xs font-medium text-zinc-400">Owners only</p>
+                        <p class="py-2 text-center text-xs font-medium text-zinc-400">
+                          Owner or billing manager only
+                        </p>
                       <% @summary.plan == "enterprise" -> %>
                         <%!-- On a custom Enterprise plan every other tier is a downgrade,
                          and there's no self-serve path off it — the note above

@@ -1,3 +1,33 @@
+defmodule EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient do
+  @moduledoc false
+  # The stub Paddle with ONLY the transaction list failing — exercises the
+  # invoice section's failed state without breaking the checkout/portal/catalog
+  # calls the rest of the page depends on.
+  @behaviour Emisar.Billing.PaddleClient
+
+  alias Emisar.Billing.PaddleClient.Stub
+
+  @impl true
+  defdelegate create_customer(attrs), to: Stub
+  @impl true
+  defdelegate update_customer(attrs), to: Stub
+  @impl true
+  defdelegate create_checkout_session(attrs), to: Stub
+  @impl true
+  defdelegate create_billing_portal_session(attrs), to: Stub
+  @impl true
+  defdelegate retrieve_subscription(id), to: Stub
+  @impl true
+  defdelegate list_products, to: Stub
+  @impl true
+  defdelegate get_transaction_invoice(id), to: Stub
+  @impl true
+  defdelegate construct_webhook_event(payload, sig, secret), to: Stub
+
+  @impl true
+  def list_transactions(_attrs), do: {:error, :paddle_unavailable}
+end
+
 defmodule EmisarWeb.BillingLiveTest do
   @moduledoc """
   The billing page (`/app/settings/billing`). The billing *context* is
@@ -6,10 +36,15 @@ defmodule EmisarWeb.BillingLiveTest do
     * an owner sees the plan + usage and the checkout/portal controls,
     * an owner's "upgrade" event starts checkout and redirects to the
       returned (stub) URL,
+    * a billing manager gets the same money controls (the role holds
+      `manage_billing`),
     * a viewer sees no upgrade controls and a crafted "upgrade" event is
-      refused by the `:manage_billing` gate (no redirect).
+      refused by the `:manage_billing` gate (no redirect),
+    * the invoice history loads async off the mount path, with explicit
+      loading and failed-with-retry states.
   """
   use EmisarWeb.ConnCase, async: true
+  alias EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient
 
   defp downgrade_to(user, role) when is_binary(role) do
     {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
@@ -289,9 +324,11 @@ defmodule EmisarWeb.BillingLiveTest do
     } do
       account = attach_customer(account, "ctm_invoices_lv_01")
 
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      # Recent invoices render (stub txn_stub_1..3), each with a PDF download.
+      # Recent invoices render once the async fetch resolves (stub
+      # txn_stub_1..3), each with a PDF download.
+      html = render_async(lv)
       assert html =~ "Recent invoices"
       assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
 
@@ -325,7 +362,8 @@ defmodule EmisarWeb.BillingLiveTest do
       user: user,
       account: account
     } do
-      # manage_billing is owner-only. An admin (who can VIEW billing) crafting the
+      # manage_billing belongs to owners + billing managers, not admins. An
+      # admin (who can VIEW billing) crafting the
       # manage_billing event is double-gated: Permissions.gated denies it in the LV
       # before the context is even called, so the result is a permission flash and
       # no portal redirect. (Customer attached, to prove the gate — not the
@@ -346,7 +384,7 @@ defmodule EmisarWeb.BillingLiveTest do
     } do
       # The Manage-subscription button is gated on subject_can_manage_billing? AND a
       # customer being present. A viewer has a customer but not the permission, so
-      # the button is suppressed (the owner-only affordance never renders for them).
+      # the button is suppressed (the manage-gated affordance never renders for them).
       downgrade_to(user, "viewer")
       account = attach_customer(account, "ctm_viewer_manage_01")
 
@@ -371,10 +409,12 @@ defmodule EmisarWeb.BillingLiveTest do
 
       # The plan/usage is visible to everyone who can view billing…
       assert html =~ "Current plan"
-      # …but the owner-only upgrade CTA + per-card upgrade buttons are
-      # replaced with the read-only affordance.
+      # …but the manage-gated upgrade CTA + per-card upgrade buttons are
+      # replaced with the read-only affordance naming BOTH roles that hold
+      # manage_billing — "Owners only" promised less access than the
+      # billing-manager role actually has.
       refute html =~ "Upgrade to Team"
-      assert html =~ "Owners only"
+      assert html =~ "Owner or billing manager only"
     end
 
     test "a crafted upgrade event is refused — flash, no redirect", %{
@@ -393,6 +433,113 @@ defmodule EmisarWeb.BillingLiveTest do
       html = render_hook(lv, "upgrade", %{"plan" => "team"})
 
       assert html =~ "have permission to do that."
+    end
+  end
+
+  describe "as a billing manager" do
+    setup %{conn: conn} do
+      # The finance seat sits BESIDE the owner (checkout needs an active owner
+      # as the Paddle billing contact) — a second member holds the role.
+      {_conn, _owner, account} = register_and_log_in(conn)
+      manager = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: manager.id,
+        role: "billing_manager"
+      )
+
+      %{conn: log_in_user(build_conn(), manager), account: account}
+    end
+
+    test "the money controls render and an upgrade starts checkout", %{
+      conn: conn,
+      account: account
+    } do
+      account = attach_customer(account, "ctm_billing_mgr_01")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # The role holds manage_billing, so it gets the same money controls an
+      # owner does — never the read-only locked copy.
+      assert html =~ "Upgrade to Team"
+      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage subscription")
+      refute html =~ "Owner or billing manager only"
+
+      # And the upgrade event passes both gates (LV + context) into checkout.
+      assert {:error, {:redirect, %{to: url}}} =
+               render_click(lv, "upgrade", %{"plan" => "team", "cycle" => "month"})
+
+      assert url =~ "stub.paddle.test/checkout"
+    end
+  end
+
+  describe "recent invoices (async)" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "the mount render is the loading state; the list arrives async", %{
+      conn: conn,
+      account: account
+    } do
+      account = attach_customer(account, "ctm_async_invoices_01")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # The connected mount paints before Paddle answers — the section shows
+      # its loading line and no invoice rows yet. (String asserts only: a
+      # `has_element?` re-render can already have processed the async result.)
+      assert html =~ "Loading payment history"
+      refute html =~ "download_invoice"
+
+      # The resolved fetch replaces the loading line with the list.
+      html = render_async(lv)
+      assert html =~ "Recent invoices"
+      assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
+      refute html =~ "Loading payment history"
+    end
+
+    test "a never-billed account renders no invoice chrome at all", %{
+      conn: conn,
+      account: account
+    } do
+      # No Paddle customer → the fetch resolves to [] with no vendor call, so
+      # neither the loading line (which would flash and vanish) nor the
+      # section heading ever renders.
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      refute html =~ "Loading payment history"
+
+      html = render_async(lv)
+      refute html =~ "Recent invoices"
+    end
+
+    test "a Paddle failure shows the inline retry state, and retry recovers", %{
+      conn: conn,
+      account: account
+    } do
+      account = attach_customer(account, "ctm_invoices_down_01")
+      Emisar.Config.put_override(:emisar, :paddle_client, InvoicesDownPaddleClient)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # The failed fetch renders the section-level failure state — with a
+      # retry — while the rest of the page stays up.
+      html = render_async(lv)
+      assert html =~ "load recent invoices"
+      assert html =~ "not a problem with your payment"
+      assert has_element?(lv, "button[phx-click='retry_invoices']", "Try again")
+      assert html =~ "Current plan"
+
+      # Paddle comes back; Try again re-runs the fetch in place.
+      Emisar.Config.put_override(:emisar, :paddle_client, Emisar.Billing.PaddleClient.Stub)
+      render_click(lv, "retry_invoices", %{})
+
+      html = render_async(lv)
+      assert html =~ "Recent invoices"
+      refute has_element?(lv, "button[phx-click='retry_invoices']")
     end
   end
 
