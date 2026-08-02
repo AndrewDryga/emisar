@@ -841,6 +841,14 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "generate_mfa_secret/0" do
+    test "returns a non-empty binary suitable for NimbleTOTP" do
+      secret = Auth.generate_mfa_secret()
+      assert is_binary(secret)
+      assert byte_size(secret) > 0
+    end
+  end
+
   describe "enable_mfa/3" do
     setup do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
@@ -940,8 +948,10 @@ defmodule Emisar.AuthTest do
 
       assert length(new_codes) == 10
       # MFA stays enabled; the old plaintext code no longer matches, a new one does.
-      assert {:error, :invalid} = Auth.consume_mfa_recovery_code(user, old_code)
-      assert :ok = Auth.consume_mfa_recovery_code(Repo.reload!(user), hd(new_codes))
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:recovery_code, old_code})
+
+      assert :ok =
+               Auth.verify_mfa_challenge(Repo.reload!(user), {:recovery_code, hd(new_codes)})
     end
 
     test "refuses when MFA is not enabled", %{subject: subject} do
@@ -949,7 +959,7 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "verify_mfa/3" do
+  describe "verify_mfa_challenge/3" do
     setup do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       %{subject: subject, secret: Auth.generate_mfa_secret()}
@@ -962,20 +972,22 @@ defmodule Emisar.AuthTest do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
       otp = NimbleTOTP.verification_code(secret)
-      assert :ok = Auth.verify_mfa(user, otp)
+      assert :ok = Auth.verify_mfa_challenge(user, {:totp, otp})
 
       user = Repo.reload!(user)
-      assert {:error, :replay} = Auth.verify_mfa(user, otp)
+      assert {:error, :replay} = Auth.verify_mfa_challenge(user, {:totp, otp})
     end
 
     test "rejects an invalid OTP", %{secret: secret, subject: subject} do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid} = Auth.verify_mfa(user, "000000")
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, "000000"})
     end
 
-    test "a non-binary OTP is the catch-all :invalid" do
-      assert {:error, :invalid} = Auth.verify_mfa(%User{}, nil)
+    test "a malformed factor is the catch-all :invalid" do
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(%User{}, {:totp, nil})
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(%User{}, {:recovery_code, nil})
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(%User{}, {:sms, "000000"})
     end
 
     # a non-numeric OTP is rejected, and because the replay guard only stamps
@@ -987,10 +999,11 @@ defmodule Emisar.AuthTest do
     } do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid} = Auth.verify_mfa(user, "abcdef")
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, "abcdef"})
 
       # The genuine current code is untouched by the failed attempt.
-      assert :ok = Auth.verify_mfa(Repo.reload!(user), NimbleTOTP.verification_code(secret))
+      otp = NimbleTOTP.verification_code(secret)
+      assert :ok = Auth.verify_mfa_challenge(Repo.reload!(user), {:totp, otp})
     end
 
     test "an OTP can't complete sign-in after MFA was disabled mid-verify (MAJOR-4)", %{
@@ -1006,7 +1019,7 @@ defmodule Emisar.AuthTest do
 
       # The old code validated against the stale struct's secret and would pass;
       # the locked verify reads the CURRENT row (MFA now disabled) and refuses.
-      assert {:error, :invalid} = Auth.verify_mfa(user, otp)
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, otp})
     end
 
     test "an OTP for a rotated secret can't complete sign-in (MAJOR-4)", %{subject: subject} do
@@ -1021,50 +1034,88 @@ defmodule Emisar.AuthTest do
 
       # `user` + `otp1` are for the OLD secret; the locked verify validates
       # against the current secret2 and refuses.
-      assert {:error, :invalid} = Auth.verify_mfa(user, otp1)
-    end
-  end
-
-  describe "consume_mfa_recovery_code/3" do
-    setup do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      %{subject: subject, secret: Auth.generate_mfa_secret()}
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, otp1})
     end
 
     # (sequential single-use; true-concurrent is out of scope) — a recovery
     # code consumes once; a second consume of the SAME code fails, while a
     # sibling code from the set is unaffected.
-    test "accepts a fresh code once, rejects reuse, leaves siblings valid", %{
+    test "accepts a fresh recovery code once, rejects reuse, leaves siblings valid", %{
       secret: secret,
       subject: subject
     } do
       {user, [code, other_code | _]} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert :ok = Auth.consume_mfa_recovery_code(user, code)
+      assert :ok = Auth.verify_mfa_challenge(user, {:recovery_code, code})
 
       user = Repo.reload!(user)
-      assert {:error, :invalid} = Auth.consume_mfa_recovery_code(user, code)
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:recovery_code, code})
 
       # Consuming one code doesn't invalidate the rest of the set.
-      assert :ok = Auth.consume_mfa_recovery_code(user, other_code)
+      assert :ok = Auth.verify_mfa_challenge(user, {:recovery_code, other_code})
     end
 
-    test "rejects an unknown code as :invalid", %{secret: secret, subject: subject} do
+    test "rejects an unknown recovery code as :invalid", %{secret: secret, subject: subject} do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid} = Auth.consume_mfa_recovery_code(user, "not-a-real-code")
+      assert {:error, :invalid} =
+               Auth.verify_mfa_challenge(user, {:recovery_code, "not-a-real-code"})
     end
 
-    test "a non-binary code is the catch-all :invalid" do
-      assert {:error, :invalid} = Auth.consume_mfa_recovery_code(%User{}, nil)
-    end
-  end
+    test "counts both factors against one per-user window and refuses the sixth attempt", %{
+      secret: secret,
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-  describe "generate_mfa_secret/0" do
-    test "returns a non-empty binary suitable for NimbleTOTP" do
-      secret = Auth.generate_mfa_secret()
-      assert is_binary(secret)
-      assert byte_size(secret) > 0
+      for _ <- 1..5 do
+        assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, "000000"})
+      end
+
+      # The window is exhausted: even the genuine current code is refused, and
+      # switching to the recovery factor doesn't buy more attempts.
+      otp = NimbleTOTP.verification_code(secret)
+      assert {:error, :rate_limited} = Auth.verify_mfa_challenge(user, {:totp, otp})
+
+      assert {:error, :rate_limited} =
+               Auth.verify_mfa_challenge(user, {:recovery_code, "not-a-real-code"})
+
+      # The capped attempt never reached verification: the genuine code was
+      # refused without being consumed (a verify would have stamped the row).
+      assert Repo.reload!(user).mfa_last_used_at == nil
+    end
+
+    test "the cap is per user — an exhausted window doesn't throttle another user", %{
+      secret: secret,
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      other_secret = Auth.generate_mfa_secret()
+      {other_user, _other_codes} = Fixtures.Users.enable_mfa!(other_secret, other_subject)
+
+      for _ <- 1..6, do: Auth.verify_mfa_challenge(user, {:totp, "000000"})
+
+      other_otp = NimbleTOTP.verification_code(other_secret)
+      assert :ok = Auth.verify_mfa_challenge(other_user, {:totp, other_otp})
+    end
+
+    test "concurrent attempts can't overshoot the window", %{secret: secret, subject: subject} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      results =
+        1..10
+        |> Enum.map(fn _ ->
+          Task.async(fn -> Auth.verify_mfa_challenge(user, {:totp, "000000"}) end)
+        end)
+        |> Enum.map(&Task.await(&1, 5_000))
+
+      assert Enum.count(results, &(&1 == {:error, :invalid})) == 5
+      assert Enum.count(results, &(&1 == {:error, :rate_limited})) == 5
     end
   end
 end

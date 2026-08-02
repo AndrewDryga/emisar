@@ -126,9 +126,9 @@ config :emisar_web, enable_telemetry_poller: false
 config :sentry, dsn: nil
 
 # Rate limiting is disabled in tests so the fast suite doesn't trip the
-# shared fixed-window counters; `EmisarWeb.RateLimiter.check/3` is unit-tested
+# shared fixed-window counters; `Emisar.RateLimiter.check/3` is unit-tested
 # directly instead (see rate_limiter_test.exs).
-config :emisar_web, rate_limit_enabled: false
+config :emisar, rate_limit_enabled: false
 
 # Dev/test metadata documents are served from loopback, which the CIMD SSRF
 # boundary refuses by default. Never set in production.

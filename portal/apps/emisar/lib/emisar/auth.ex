@@ -15,6 +15,7 @@ defmodule Emisar.Auth do
   alias Emisar.RequestContext
   alias Emisar.SSO
   alias Emisar.Telemetry
+  alias Emisar.Throttle
   alias Emisar.Users
   require Logger
 
@@ -898,22 +899,59 @@ defmodule Emisar.Auth do
     |> Enum.unzip()
   end
 
+  # The sign-in second-factor brute-force policy: five challenge attempts per
+  # user per five-minute window, shared across TOTP and recovery codes so
+  # switching factors doesn't stretch the guessing budget.
+  @mfa_challenge_attempt_limit 5
+  @mfa_challenge_attempt_window_ms 5 * 60_000
+
   @doc """
-  Verifies a second-factor TOTP code with replay protection. A bare
-  `Crypto.valid_totp?/2` accepts the same code repeatedly within its
-  30-second window, so the consume step stamps `mfa_last_used_at` on
-  the **locked** row and rejects a second claim of the same bucket —
-  two concurrent submissions of one code can't both pass. Returns `:ok`
-  on a fresh code, `{:error, :replay}` on duplicate, `{:error,
-  :invalid}` otherwise.
+  Verifies the sign-in second factor — `{:totp, otp}` or `{:recovery_code,
+  code}` — behind a per-user fixed-window attempt cap, so no challenge caller
+  can be used as an unbounded guessing oracle. The cap is keyed by user id
+  (server-side), so a page reload or a fresh socket can't reset it, and every
+  attempt counts toward the same window regardless of factor.
 
   Pre-Subject — this is the sign-in second factor, so it takes the
-  partially-authenticated `%Users.User{}` (no tenant resolved yet). Pair with
-  `consume_mfa_recovery_code/2` for the lost-device path.
+  partially-authenticated `%Users.User{}` (no tenant resolved yet). Returns
+  `:ok`, `{:error, :rate_limited}` once the window is exhausted, `{:error,
+  :replay}` on a reused TOTP, or `{:error, :invalid}` otherwise; misses are
+  audited as `user.mfa_failed`.
   """
-  def verify_mfa(user, otp, context \\ %RequestContext{})
+  def verify_mfa_challenge(user, factor, context \\ %RequestContext{})
 
-  def verify_mfa(%Users.User{} = user, otp, context) when is_binary(otp) do
+  def verify_mfa_challenge(%Users.User{} = user, {:totp, otp}, context) when is_binary(otp) do
+    with :ok <- throttle_mfa_challenge(user) do
+      verify_mfa(user, otp, context)
+    end
+  end
+
+  def verify_mfa_challenge(%Users.User{} = user, {:recovery_code, code}, context)
+      when is_binary(code) do
+    with :ok <- throttle_mfa_challenge(user) do
+      consume_mfa_recovery_code(user, code, context)
+    end
+  end
+
+  def verify_mfa_challenge(_, _, _), do: {:error, :invalid}
+
+  defp throttle_mfa_challenge(%Users.User{id: user_id}) do
+    Throttle.check(
+      :mfa_challenge,
+      user_id,
+      @mfa_challenge_attempt_limit,
+      @mfa_challenge_attempt_window_ms
+    )
+  end
+
+  # Verifies a TOTP code with replay protection. A bare `Crypto.valid_totp?/2`
+  # accepts the same code repeatedly within its 30-second window, so the
+  # consume step stamps `mfa_last_used_at` on the **locked** row and rejects a
+  # second claim of the same bucket — two concurrent submissions of one code
+  # can't both pass. Private so the sign-in path can only reach it through
+  # `verify_mfa_challenge/3`'s attempt cap; the post-auth step-ups
+  # (`disable_mfa/2`, `confirm_email_change/3`) compose it directly.
+  defp verify_mfa(%Users.User{} = user, otp, context) when is_binary(otp) do
     # The OTP is NOT validated against this (possibly stale) struct's secret —
     # `verify_and_consume_mfa` re-reads the row under a lock and validates +
     # consumes there, so a secret rotated/disabled mid-verify can't slip an old
@@ -942,18 +980,10 @@ defmodule Emisar.Auth do
     end
   end
 
-  def verify_mfa(_, _, _), do: {:error, :invalid}
-
-  @doc """
-  One-shot consume a recovery code. Returns `:ok` if it matched (and
-  removes it from the user's stored set under the row lock — concurrent
-  submissions of the same code serialize and only one wins),
-  `{:error, :invalid}` otherwise. Pre-Subject — the sign-in lost-device
-  fallback, so it takes the partially-authenticated `%Users.User{}`.
-  """
-  def consume_mfa_recovery_code(user, raw, context \\ %RequestContext{})
-
-  def consume_mfa_recovery_code(%Users.User{} = user, raw, context) when is_binary(raw) do
+  # One-shot consume of a recovery code: removes it from the user's stored set
+  # under the row lock, so concurrent submissions of the same code serialize
+  # and only one wins. Private for the same reason as `verify_mfa/3` above.
+  defp consume_mfa_recovery_code(%Users.User{} = user, raw, context) when is_binary(raw) do
     digest = Crypto.hash(String.downcase(String.trim(raw)))
 
     case Users.consume_user_mfa_recovery_code(user.id, digest,
@@ -980,6 +1010,4 @@ defmodule Emisar.Auth do
         {:error, :invalid}
     end
   end
-
-  def consume_mfa_recovery_code(_, _, _), do: {:error, :invalid}
 end

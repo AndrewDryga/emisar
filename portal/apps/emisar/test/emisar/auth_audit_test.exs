@@ -57,20 +57,20 @@ defmodule Emisar.AuthAuditTest do
       assert event.actor_id == enabled.id
     end
 
-    test "verify_mfa with bad code audits user.mfa_failed", %{
+    test "verify_mfa_challenge with bad code audits user.mfa_failed", %{
       account: account,
       secret: secret,
       subject: subject
     } do
       {:ok, enabled, _} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
-      assert {:error, :invalid} = Auth.verify_mfa(enabled, "000000")
+      assert {:error, :invalid} = Auth.verify_mfa_challenge(enabled, {:totp, "000000"})
 
       assert [event] = events_of(account, "user.mfa_failed")
       assert event.payload["reason"] == "invalid_otp"
     end
 
-    test "consume_mfa_recovery_code success audits with remaining count", %{
+    test "verify_mfa_challenge recovery success audits with remaining count", %{
       account: account,
       secret: secret,
       subject: subject
@@ -78,20 +78,21 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, codes} =
         Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
-      assert :ok = Auth.consume_mfa_recovery_code(enabled, hd(codes))
+      assert :ok = Auth.verify_mfa_challenge(enabled, {:recovery_code, hd(codes)})
 
       assert [event] = events_of(account, "user.mfa_recovery_code_used")
       assert event.payload["remaining"] == length(codes) - 1
     end
 
-    test "consume_mfa_recovery_code with bad code audits user.mfa_failed", %{
+    test "verify_mfa_challenge with bad recovery code audits user.mfa_failed", %{
       account: account,
       secret: secret,
       subject: subject
     } do
       {:ok, enabled, _} = Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
-      assert {:error, :invalid} = Auth.consume_mfa_recovery_code(enabled, "not-a-real-code")
+      assert {:error, :invalid} =
+               Auth.verify_mfa_challenge(enabled, {:recovery_code, "not-a-real-code"})
 
       assert [event] = events_of(account, "user.mfa_failed")
       assert event.payload["reason"] == "invalid_recovery_code"

@@ -10,7 +10,7 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
   defp unique_bucket, do: "test-bucket-#{System.unique_integer([:positive])}"
 
   defp enable_rate_limiting do
-    Emisar.Config.put_override(:emisar_web, :rate_limit_enabled, true)
+    Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
   end
 
   test "passes under the limit, rejects 429 + Retry-After over it", %{conn: conn} do

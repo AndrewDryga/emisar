@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MfaChallengeLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, Users}
-  alias EmisarWeb.{MfaChallengeHandoff, RequestContext, Throttle}
+  alias EmisarWeb.{MfaChallengeHandoff, RequestContext}
 
   # The second factor, after a magic link has verified email possession. The
   # partial-auth session (`:mfa_pending_user_id`) names the user but grants no
@@ -9,11 +9,9 @@ defmodule EmisarWeb.MfaChallengeLive do
   # HERE. The code is checked in handle_event (inline error, no reload); on a
   # match we redirect to `:mfa_complete` with a signed handoff the controller
   # trades — together with the still-matching pending session — for the session
-  # cookie a LiveView can't set. A brute-force cap lives in `Throttle` (server-
-  # side, so it survives a page reload), on top of TOTP replay protection.
-  @attempt_limit 5
-  @attempt_window_ms 5 * 60_000
-
+  # cookie a LiveView can't set. The brute-force cap is Auth's
+  # (`verify_mfa_challenge/3` — per-user, server-side, so it survives a page
+  # reload), on top of TOTP replay protection.
   def mount(_params, session, socket) do
     case pending_user(session) do
       {:ok, user} ->
@@ -33,13 +31,10 @@ defmodule EmisarWeb.MfaChallengeLive do
     end
   end
 
-  def handle_event("verify_totp", %{"otp" => otp}, socket) do
-    verify(socket, &Auth.verify_mfa(&1, otp, socket.assigns.request_context))
-  end
+  def handle_event("verify_totp", %{"otp" => otp}, socket), do: verify(socket, {:totp, otp})
 
-  def handle_event("verify_recovery", %{"code" => code}, socket) do
-    verify(socket, &Auth.consume_mfa_recovery_code(&1, code, socket.assigns.request_context))
-  end
+  def handle_event("verify_recovery", %{"code" => code}, socket),
+    do: verify(socket, {:recovery_code, code})
 
   # The mode toggle clears the error so a stale "didn't match" doesn't linger on
   # the other input.
@@ -49,18 +44,17 @@ defmodule EmisarWeb.MfaChallengeLive do
   def handle_event("use_totp", _params, socket),
     do: {:noreply, socket |> assign(:mode, :totp) |> assign(:error, nil)}
 
-  # One verification path for both factors: the brute-force cap first (keyed by
-  # user, so a reload can't reset it), then the caller's verify fn. A pass hands
-  # off to the controller; a failure (or a rate-limit) stays put with an inline
-  # error — `verify_mfa`/`consume_mfa_recovery_code` already audit the miss.
-  defp verify(socket, verify_fun) do
+  # One verification path for both factors. A pass hands off to the controller;
+  # a failure (or a rate-limit) stays put with an inline error — Auth audits
+  # the miss and owns the brute-force cap.
+  defp verify(socket, factor) do
     user = socket.assigns.user
 
-    with :ok <- Throttle.check(:mfa_challenge, user.id, @attempt_limit, @attempt_window_ms),
-         :ok <- verify_fun.(user) do
-      handoff = MfaChallengeHandoff.sign(user.id)
-      {:noreply, redirect(socket, to: ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")}
-    else
+    case Auth.verify_mfa_challenge(user, factor, socket.assigns.request_context) do
+      :ok ->
+        handoff = MfaChallengeHandoff.sign(user.id)
+        {:noreply, redirect(socket, to: ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")}
+
       {:error, :rate_limited} ->
         {:noreply,
          assign(socket, :error, "Too many attempts. Wait a few minutes, then try again.")}

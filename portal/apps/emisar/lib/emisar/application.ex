@@ -14,6 +14,11 @@ defmodule Emisar.Application do
       Emisar.Runners.Presence,
       {Finch, name: Emisar.Finch},
 
+      # Owns the ETS table behind Emisar.Throttle (MFA challenge cap, web
+      # request rate limiting); starts before the contexts and the web
+      # endpoint so the table exists when the first check arrives.
+      Emisar.RateLimiter,
+
       # BEAM clustering on GCP MIGs: libcluster's GCE strategy discovers peers via
       # the Compute API (Emisar.Cluster.GCE, which uses Emisar.Finch above). Empty
       # topologies keep local and single-node releases inert.

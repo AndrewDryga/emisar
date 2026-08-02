@@ -1,6 +1,6 @@
-defmodule EmisarWeb.RateLimiterTest do
+defmodule Emisar.RateLimiterTest do
   use ExUnit.Case, async: true
-  alias EmisarWeb.RateLimiter
+  alias Emisar.RateLimiter
 
   # Unique keys per test so the shared ETS table doesn't couple async tests.
   defp key(tag), do: {"test", "#{tag}-#{System.unique_integer([:positive])}"}
@@ -24,6 +24,18 @@ defmodule EmisarWeb.RateLimiterTest do
     assert RateLimiter.check(a, 1, 60_000) == {:error, :rate_limited}
     # b is untouched by a's exhaustion.
     assert RateLimiter.check(b, 1, 60_000) == :ok
+  end
+
+  test "concurrent checks admit exactly the limit — the counter bump is atomic" do
+    k = key("concurrency")
+
+    results =
+      1..20
+      |> Enum.map(fn _ -> Task.async(fn -> RateLimiter.check(k, 5, 60_000) end) end)
+      |> Enum.map(&Task.await/1)
+
+    assert Enum.count(results, &(&1 == :ok)) == 5
+    assert Enum.count(results, &(&1 == {:error, :rate_limited})) == 15
   end
 
   test "the counter resets when the window rolls over" do

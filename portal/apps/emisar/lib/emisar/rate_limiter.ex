@@ -1,4 +1,4 @@
-defmodule EmisarWeb.RateLimiter do
+defmodule Emisar.RateLimiter do
   @moduledoc """
   A small fixed-window rate limiter backed by one public ETS table.
 
@@ -8,9 +8,9 @@ defmodule EmisarWeb.RateLimiter do
   drops expired windows so the table stays bounded.
 
   This is coarse abuse prevention (a fixed window can allow a brief burst
-  across a window boundary), not a precise quota. It fronts the
-  unauthenticated OAuth endpoints and the MCP surface via
-  `EmisarWeb.Plugs.RateLimit`.
+  across a window boundary), not a precise quota. It backs the domain's MFA
+  challenge cap and, via `EmisarWeb.Plugs.RateLimit`, the unauthenticated
+  OAuth endpoints and the MCP surface — all through `Emisar.Throttle`.
   """
   use GenServer
 

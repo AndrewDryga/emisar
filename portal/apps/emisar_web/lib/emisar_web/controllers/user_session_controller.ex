@@ -11,12 +11,12 @@ defmodule EmisarWeb.UserSessionController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, Auth, Mailers, Users}
+  alias Emisar.{Accounts, Auth, Mailers, Throttle, Users}
   alias EmisarWeb.Analytics
   alias EmisarWeb.CoreComponents
   alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
   alias EmisarWeb.{RecentAccounts, RegistrationHandoff, RequestContext}
-  alias EmisarWeb.{ReturnTo, Throttle, UserAuth}
+  alias EmisarWeb.{ReturnTo, UserAuth}
 
   # The split-code magic link keeps its browser-side nonce in this signed,
   # 15-minute, http-only cookie (`token_id:nonce`); the email carries the

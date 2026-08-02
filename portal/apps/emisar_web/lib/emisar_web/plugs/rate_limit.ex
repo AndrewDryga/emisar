@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Plugs.RateLimit do
   @moduledoc """
-  Fixed-window rate limiting for a route, backed by `EmisarWeb.RateLimiter`.
+  Fixed-window rate limiting for a route, backed by `Emisar.RateLimiter`.
 
   Wire it as a route-scoped controller plug:
 
@@ -20,9 +20,9 @@ defmodule EmisarWeb.Plugs.RateLimit do
   error envelope without coupling this generic plug to that protocol.
 
   The on/off switch and the `RateLimiter` delegation live in
-  `EmisarWeb.Throttle` (shared with the LiveView send paths that can't sit
-  behind a plug); it is off in the test env so the fast suite doesn't trip
-  shared counters.
+  `Emisar.Throttle` (shared with the LiveView send paths that can't sit
+  behind a plug and the domain's MFA challenge cap); it is off in the test
+  env so the fast suite doesn't trip shared counters.
   """
   @behaviour Plug
 
@@ -48,7 +48,7 @@ defmodule EmisarWeb.Plugs.RateLimit do
         by: by,
         on_reject: on_reject
       }) do
-    case EmisarWeb.Throttle.check(bucket, key_for(conn, by), limit, window_ms) do
+    case Emisar.Throttle.check(bucket, key_for(conn, by), limit, window_ms) do
       :ok -> conn
       {:error, :rate_limited} -> reject(conn, window_ms, on_reject)
     end

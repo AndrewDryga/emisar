@@ -1,17 +1,17 @@
-defmodule EmisarWeb.ThrottleTest do
+defmodule Emisar.ThrottleTest do
   @moduledoc """
-  The shared web-layer abuse gate. The suite-wide config disables it
+  The shared abuse gate. The suite-wide config disables it
   (shared ETS counters would make unrelated tests flaky), so the tests
   that exercise the live path flip it on locally — hence `async: false`.
   """
   use ExUnit.Case, async: false
-  alias EmisarWeb.Throttle
+  alias Emisar.Throttle
 
   # Unique bucket per test so the shared ETS table doesn't couple tests.
   defp unique_bucket, do: "test-throttle-#{System.unique_integer([:positive])}"
 
   defp enable_rate_limiting do
-    Emisar.Config.put_override(:emisar_web, :rate_limit_enabled, true)
+    Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
   end
 
   test "allows up to the limit, then rate-limits" do

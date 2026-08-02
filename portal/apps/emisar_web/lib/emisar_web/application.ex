@@ -15,9 +15,6 @@ defmodule EmisarWeb.Application do
 
     children = [
       EmisarWeb.Telemetry,
-      # Owns the ETS table for request rate limiting; must start before the
-      # Endpoint so the table exists when the first request arrives.
-      EmisarWeb.RateLimiter,
       # Retains bounded, short-lived MCP cancellation tombstones on every
       # cluster node so a cancellation cannot race ahead of its request's
       # PubSub subscription.

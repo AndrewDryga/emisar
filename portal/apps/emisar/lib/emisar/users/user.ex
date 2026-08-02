@@ -14,7 +14,7 @@ defmodule Emisar.Users.User do
     field :mfa_secret, :binary, redact: true
     field :mfa_enabled_at, :utc_datetime_usec
     # Most-recent TOTP step counter the user authenticated with;
-    # `verify_mfa/2` refuses replays inside the same 30s window.
+    # `verify_and_consume_mfa/3` refuses replays inside the same 30s window.
     field :mfa_last_used_at, :utc_datetime_usec
     # Backup codes stored as `:crypto.hash(:sha256, raw)` so a DB leak
     # doesn't surface the codes themselves. Consumed on use.
