@@ -3,6 +3,8 @@ versions:
   - version: "4.14.0"
     digest: "@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
     default: true
+risk_accountability:
+  mode: complete
 secret_env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
 env:
   AWS_ACCESS_KEY_ID: packtest-canary-aws-ec2-access-6b17
@@ -115,3 +117,22 @@ cases:
           stdout_contains: [running]
     cleanup:
       - argv: [/bin/sh, -c, 'ids="$(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)"; test -z "$ids" || aws ec2 terminate-instances --instance-ids $ids >/dev/null']
+  # Terminal case: terminating the instance destroys the fixture, which is fine
+  # because the case owns its Compose project — no cleanup needed.
+  - action: ec2.terminate_instance
+    arrange:
+      - argv: [aws, ec2, run-instances, --image-id, ami-12345678, --instance-type, t3.nano, --count, "1"]
+    resolve_args:
+      instance_id:
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].InstanceId", --output, text]
+        retry_for: 20s
+        retry_every: 1s
+    expect:
+      stdout_contains: [TerminatingInstances]
+    probes:
+      - name: instance reached terminated state
+        argv: [aws, ec2, describe-instances, --query, "Reservations[0].Instances[0].State.Name", --output, text]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [terminated]
