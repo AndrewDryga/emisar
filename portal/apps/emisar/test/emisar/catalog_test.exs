@@ -3130,6 +3130,30 @@ defmodule Emisar.CatalogTest do
       version.id
     end
 
+    defp version_fact(projection, pack_id, version) do
+      pack_version =
+        Enum.find(projection.pack_versions, &(&1.pack_id == pack_id and &1.version == version))
+
+      Map.fetch!(projection.version_facts, pack_version.id)
+    end
+
+    defp group_update(projection, pack_id) do
+      %{update: update} = Enum.find(projection.groups, &(&1.id == pack_id))
+      update
+    end
+
+    # "0.0.0" sits strictly below every shipped watermark, so it is retired for
+    # whichever pack carries one.
+    defp retired_pack_id do
+      {pack_id, _watermark} = Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+      pack_id
+    end
+
+    defp outdated_pack_id do
+      pack_ids = Catalog.PackBaseline.all() |> Map.keys() |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+      List.first(pack_ids -- Map.keys(Catalog.PackBaseline.retired_below()))
+    end
+
     test "an account with no observations projects empty facts", %{subject: subject} do
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
 
@@ -3358,8 +3382,9 @@ defmodule Emisar.CatalogTest do
 
       assert large.version_count > small.version_count
       assert large_queries == small_queries
-      # One pack-version read plus one batched action read.
-      assert small_queries == 2
+      # One pack-version read, one batched action read, one bounded fleet read
+      # for the pending rows' blast radius.
+      assert small_queries == 3
 
       for pack_version <- small.pack_versions do
         {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, small_subject)
@@ -3403,6 +3428,412 @@ defmodule Emisar.CatalogTest do
       assert projection.pack_count == 1
       assert projection.version_count == 1
       assert projection.pending_count == 1
+
+      # The advertiser facts are scoped too — a foreign runner on the same pack
+      # id must never widen another account's trust blast radius.
+      fact = version_fact(projection, "other", "1.0")
+      assert Enum.map(fact.advertising.runners, & &1.id) == [other_runner.id]
+    end
+
+    test "a pending version's fact carries its review state and blast radius", %{
+      account: account,
+      subject: subject
+    } do
+      runner =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "canary", group: "staging")
+
+      {:ok, _runner} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "acme-hash"}},
+            actions: [action("acme.status", pack_id: "acme", risk: "low")]
+          )
+        )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, "acme", "1.0")
+
+      assert fact.trust_state == :pending
+      assert fact.display_state == "pending"
+      assert fact.trust_review?
+      assert fact.needs_decision?
+      assert Enum.map(fact.actions, & &1.action_id) == ["acme.status"]
+      assert fact.action_changes == %{added: [], removed: [], changed: []}
+      assert fact.retired? == false
+      assert fact.retirement_remedy == :none
+      assert fact.update_successor == nil
+      assert fact.override == nil
+
+      assert fact.advertising == %{
+               coverage: :complete,
+               runners: [%{id: runner.id, name: "canary", group: "staging"}]
+             }
+    end
+
+    test "a rejected version keeps its advertiser facts and offers no decision", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      {:ok, _rejected} = Catalog.reject_pack_version(version_id(projection, "acme"), subject)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, "acme", "1.0")
+
+      assert fact.display_state == "rejected"
+      refute fact.trust_review?
+      refute fact.needs_decision?
+      assert fact.actions == []
+      assert fact.advertising.coverage == :complete
+      assert Enum.map(fact.advertising.runners, & &1.id) == [runner.id]
+    end
+
+    test "a trusted, active version needs no advertiser lookup at all", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+
+      for pack_version <- projection.pack_versions do
+        {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+      end
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, "acme", "1.0")
+
+      assert fact.display_state == "trusted"
+      refute fact.needs_decision?
+      assert fact.advertising == %{coverage: :not_needed, runners: []}
+      assert fact.retirement_remedy == :none
+    end
+
+    test "a drifted version diffs the EXACT pending hash, not the most severe row", %{
+      account: account,
+      subject: subject,
+      runner: trusted_runner
+    } do
+      # The trap: two runners advertise `acme.run` for the same (pack, version)
+      # under DIFFERENT hashes, and the already-trusted one is the more severe.
+      # Deduping most-severe-first would hand the review the trusted row and
+      # report the pending action as REMOVED.
+      {:ok, _trusted_runner} =
+        Catalog.observe_state(
+          trusted_runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "old-hash"}},
+            actions: [action("acme.run", pack_id: "acme", risk: "critical")]
+          )
+        )
+
+      {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      {:ok, _trusted} = Catalog.trust_pack_version(version_id(projection, "acme"), subject)
+
+      drifted_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _drifted_runner} =
+        Catalog.observe_state(
+          drifted_runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "new-hash"}},
+            actions: [action("acme.run", pack_id: "acme", risk: "low")]
+          )
+        )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, "acme", "1.0")
+
+      assert [%RunnerAction{action_id: "acme.run", risk: :low}] = fact.actions
+      assert fact.action_changes.added == []
+      assert fact.action_changes.removed == []
+
+      assert [%{action_id: "acme.run", old_risk: "critical", new_risk: "low"}] =
+               fact.action_changes.changed
+    end
+
+    test "a pack advertising NO actions still names the runners it is installed on", %{
+      account: account,
+      subject: subject
+    } do
+      # Advertising presence is the runner's persisted `packs` map: an installed
+      # pack may expose zero actions, and action rows would report nobody on it.
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "quiet")
+
+      {:ok, _runner} =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"acme" => %{"version" => "1.0", "hash" => "acme-hash"}})
+        )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, "acme", "1.0")
+
+      assert fact.actions == []
+      assert Enum.map(fact.advertising.runners, & &1.name) == ["quiet"]
+    end
+
+    test "a retired trusted version with runners on it recommends update-or-override", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      pack_id = retired_pack_id()
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      Fixtures.Runners.advertise_packs(runner, %{pack_id => %{"version" => "0.0.0"}})
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, pack_id, "0.0.0")
+
+      assert fact.display_state == "retired"
+      assert fact.retired?
+      assert fact.retirement_blocked?
+      assert fact.needs_decision?
+      assert fact.retirement_successor == Catalog.PackBaseline.current_version(pack_id)
+      assert fact.retirement_successor_hash == Catalog.shipped_hash(pack_id, fact.current_version)
+      assert fact.retirement_remedy == :update_or_override
+      assert Enum.map(fact.advertising.runners, & &1.id) == [runner.id]
+      # Retirement outranks the gentle update nudge on the same row.
+      assert fact.update_successor == nil
+    end
+
+    test "a retired trusted version nobody advertises may be removed", %{
+      account: account,
+      subject: subject
+    } do
+      pack_id = retired_pack_id()
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, pack_id, "0.0.0")
+
+      assert fact.advertising == %{coverage: :complete, runners: []}
+      assert fact.retirement_remedy == :remove
+    end
+
+    test "a partial fleet read can never recommend removing a retired version", %{
+      account: account,
+      subject: subject
+    } do
+      pack_id = retired_pack_id()
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      # The setup's runner plus 100 more overflows the 100-runner cap, so the
+      # read cannot prove the version is unused — and must not offer removal.
+      for _ <- 1..100 do
+        Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      end
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, pack_id, "0.0.0")
+
+      assert fact.advertising == %{coverage: :partial, runners: []}
+      assert fact.retirement_remedy == :resolve_advertisers
+    end
+
+    test "a malformed persisted advertisement degrades coverage instead of vanishing", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      stale = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Runners.advertise_packs(stale, %{"acme" => "not-a-map"})
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, "acme", "1.0")
+
+      assert fact.advertising.coverage == :partial
+      assert Enum.map(fact.advertising.runners, & &1.id) == [runner.id]
+    end
+
+    test "a version advertised without a version field pins to the 'unknown' row", %{
+      account: account,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "vague")
+
+      {:ok, _runner} =
+        Catalog.observe_state(runner, state_payload(packs: %{"acme" => %{"hash" => "acme-hash"}}))
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, "acme", "unknown")
+
+      assert Enum.map(fact.advertising.runners, & &1.name) == ["vague"]
+      assert fact.advertising.coverage == :complete
+    end
+
+    test "a retired PENDING version wears the retired face", %{
+      subject: subject,
+      runner: runner
+    } do
+      pack_id = retired_pack_id()
+
+      {:ok, _runner} =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{pack_id => %{"version" => "0.0.0", "hash" => "lagging"}})
+        )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, pack_id, "0.0.0")
+
+      assert fact.display_state == "retired"
+      assert fact.retirement_blocked?
+      assert fact.trust_review?
+      # The remedy belongs to the trusted retired notice, not a trust review.
+      assert fact.retirement_remedy == :none
+    end
+
+    test "a retired REJECTED version stays quiet", %{
+      subject: subject,
+      runner: runner
+    } do
+      pack_id = retired_pack_id()
+
+      {:ok, _runner} =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{pack_id => %{"version" => "0.0.0", "hash" => "lagging"}})
+        )
+
+      {:ok, [pack_version]} = Catalog.list_all_pack_versions_for_account(subject)
+      {:ok, _rejected} = Catalog.reject_pack_version(pack_version.id, subject)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, pack_id, "0.0.0")
+
+      assert fact.retired?
+      refute fact.retirement_blocked?
+      assert fact.display_state == "rejected"
+      assert fact.retirement_remedy == :none
+    end
+
+    test "an overridden retirement carries who decided it, and stops blocking", %{
+      account: account,
+      subject: subject
+    } do
+      pack_id = retired_pack_id()
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      {:ok, _overridden} = Catalog.override_pack_retirement(pack_version.id, subject)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, pack_id, "0.0.0")
+
+      assert fact.retired?
+      refute fact.retirement_blocked?
+      assert fact.display_state == "trusted"
+      assert fact.retirement_remedy == :none
+      assert %{actor_id: actor_id, actor_label: "Test User"} = fact.override
+      assert actor_id == subject.actor.id
+      assert %DateTime{} = fact.override.at
+    end
+
+    test "the pack-level update nudge names the successor and its shipped hash", %{
+      account: account,
+      subject: subject
+    } do
+      pack_id = outdated_pack_id()
+      current = Catalog.PackBaseline.current_version(pack_id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+
+      assert group_update(projection, pack_id) == %{
+               version: current,
+               hash: Catalog.shipped_hash(pack_id, current)
+             }
+
+      assert version_fact(projection, pack_id, "0.0.0").update_successor == current
+    end
+
+    test "no update nudge when the current version is installed beside an older one", %{
+      account: account,
+      subject: subject
+    } do
+      pack_id = outdated_pack_id()
+      current = Catalog.PackBaseline.current_version(pack_id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: current
+      )
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      assert group_update(projection, pack_id) == nil
+    end
+
+    test "the update nudge is judged over the whole pack, not the filtered rows", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      # A filter that hides the current version must not invent a nudge to
+      # update to a version this account already runs.
+      pack_id = outdated_pack_id()
+      current = Catalog.PackBaseline.current_version(pack_id)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: current
+      )
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "#{pack_id}.old",
+        pack_id: pack_id,
+        pack_version: "0.0.0",
+        risk: "high"
+      )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{risk: "high"}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == [pack_id]
+      assert [%{version: "0.0.0"}] = Enum.find(projection.groups, &(&1.id == pack_id)).versions
+      assert group_update(projection, pack_id) == nil
     end
   end
 
@@ -3460,38 +3891,6 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [%PackVersion{pack_id: "beta"}]} =
                Catalog.list_all_pack_versions_for_account(subject_b)
-    end
-  end
-
-  describe "runner_ids_advertising_pack/3" do
-    test "returns distinct advertising runners, account-scoped" do
-      account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
-      r1 = Fixtures.Runners.create_runner(account_id: account.id)
-      r2 = Fixtures.Runners.create_runner(account_id: account.id)
-
-      pending =
-        state_payload(
-          packs: %{"linux-core" => %{"version" => "1.0", "hash" => "abc"}},
-          actions: [
-            action("linux.uptime", pack_id: "linux-core"),
-            action("linux.df", pack_id: "linux-core")
-          ]
-        )
-
-      {:ok, _} = Catalog.observe_state(r1, pending)
-      {:ok, _} = Catalog.observe_state(r2, pending)
-
-      # Same pack advertised in another account must not leak in.
-      other = Fixtures.Accounts.create_account()
-      other_runner = Fixtures.Runners.create_runner(account_id: other.id)
-      {:ok, _} = Catalog.observe_state(other_runner, pending)
-
-      {:ok, ids} = Catalog.runner_ids_advertising_pack("linux-core", "1.0", subject)
-
-      # r1 advertises two actions but appears once (distinct); the foreign
-      # account's runner is scoped out.
-      assert Enum.sort(ids) == Enum.sort([r1.id, r2.id])
     end
   end
 

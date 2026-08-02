@@ -200,6 +200,84 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "list_pack_advertisement_facts_for_account/2" do
+    test "returns each runner's identity and advertised packs, ordered by group then name" do
+      account = Fixtures.Accounts.create_account()
+
+      second =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "web-01",
+          group: "prod",
+          connected?: false
+        )
+
+      first =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "db-01",
+          group: "prod",
+          connected?: false
+        )
+
+      Fixtures.Runners.advertise_packs(first, %{"acme" => %{"version" => "1.0"}})
+
+      assert {:ok, facts, %{coverage: :complete}} =
+               Runners.list_pack_advertisement_facts_for_account(account.id, 10)
+
+      assert facts == [
+               %{
+                 id: first.id,
+                 name: "db-01",
+                 group: "prod",
+                 packs: %{"acme" => %{"version" => "1.0"}}
+               },
+               %{id: second.id, name: "web-01", group: "prod", packs: %{}}
+             ]
+    end
+
+    test "a fleet past the limit is trimmed and reported as partial" do
+      account = Fixtures.Accounts.create_account()
+
+      for _ <- 1..3 do
+        Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      end
+
+      assert {:ok, facts, %{coverage: :partial}} =
+               Runners.list_pack_advertisement_facts_for_account(account.id, 2)
+
+      assert length(facts) == 2
+
+      # Exactly at the limit is still complete — the sentinel row is what
+      # distinguishes "the fleet fits" from "there is more".
+      assert {:ok, all, %{coverage: :complete}} =
+               Runners.list_pack_advertisement_facts_for_account(account.id, 3)
+
+      assert length(all) == 3
+    end
+
+    test "a soft-deleted runner is left out" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      Fixtures.Runners.mark_deleted(runner)
+
+      assert {:ok, [], %{coverage: :complete}} =
+               Runners.list_pack_advertisement_facts_for_account(account.id, 10)
+    end
+
+    test "never returns another account's runners" do
+      account_a = Fixtures.Accounts.create_account()
+      account_b = Fixtures.Accounts.create_account()
+      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
+      Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
+
+      assert {:ok, [%{id: id}], %{coverage: :complete}} =
+               Runners.list_pack_advertisement_facts_for_account(account_a.id, 10)
+
+      assert id == runner_a.id
+    end
+  end
+
   describe "resolve_runbook_targets/2" do
     test "resolves every authored reference through current account scope" do
       {account, _user, subject} = account_with_owner_subject()

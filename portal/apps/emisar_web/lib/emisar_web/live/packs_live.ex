@@ -21,7 +21,7 @@ defmodule EmisarWeb.PacksLive do
     * Hash later changes → pending.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Catalog, Runners}
+  alias Emisar.{Accounts, Catalog}
   alias EmisarWeb.ConfirmDialog
 
   def mount(_params, _session, socket) do
@@ -67,9 +67,7 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:pack_count, 0)
        |> assign(:version_count, 0)
        |> assign(:pending_count, 0)
-       |> assign(:advertising, %{})
-       |> assign(:pack_actions, %{})
-       |> assign(:pack_diffs, %{})
+       |> assign(:version_facts, %{})
        |> stream(:packs, [])}
     end
   end
@@ -94,11 +92,11 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:pending_count, projection.pending_count)
         # Keep the sidebar badge in step after a decision on this page.
         |> assign(:pending_packs_count, projection.decision_count)
-        |> assign(
-          :advertising,
-          advertising_runners(projection.pack_versions, socket.assigns.current_subject)
-        )
-        |> assign_pending_pack_actions(projection)
+        # Every lifecycle/trust judgment a row renders — trust + retirement
+        # state, the pending decision's contents and diff, who advertises it,
+        # and the remedy each state offers — comes from the Catalog, keyed by
+        # pack-version id. The page words them; it never re-derives one.
+        |> assign(:version_facts, projection.version_facts)
         |> assign(:matched_actions, projection.matched_action_ids)
         # A filter drives what's expanded: auto-open every version it matched
         # (via risk/action) and pre-load those action lists so they render at
@@ -116,9 +114,7 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:pack_count, 0)
         |> assign(:version_count, 0)
         |> assign(:pending_count, 0)
-        |> assign(:advertising, %{})
-        |> assign(:pack_actions, %{})
-        |> assign(:pack_diffs, %{})
+        |> assign(:version_facts, %{})
         |> assign(:matched_actions, %{})
         |> stream(:packs, [], reset: true)
     end
@@ -158,67 +154,6 @@ defmodule EmisarWeb.PacksLive do
 
   defp version_actions(projection, version),
     do: Map.get(projection.actions_by_pack_ref, {version.pack_id, version.version}, [])
-
-  # What trusting each pending version authorizes, keyed by pack_version id
-  # (only pending versions are looked up). Two assigns built from the
-  # projection's batched action sets:
-  #
-  #   * `pack_actions` — the full advertised action set + risk, so "Trust new
-  #     contents" shows the capability, not just a hash.
-  #   * `pack_diffs` — when this version was trusted before (has a stored
-  #     manifest), what CHANGED vs then: added / removed / risk-or-kind
-  #     changed. An added critical action is exactly what an operator must see
-  #     before re-trusting a re-advertised hash.
-  defp assign_pending_pack_actions(socket, projection) do
-    details =
-      projection.pack_versions
-      |> Enum.filter(&(&1.trust_state == :pending))
-      |> Map.new(fn version ->
-        actions = version_actions(projection, version)
-        {version.id, {actions, Catalog.action_set_changes(version, actions)}}
-      end)
-
-    socket
-    |> assign(:pack_actions, Map.new(details, fn {id, {actions, _diff}} -> {id, actions} end))
-    |> assign(:pack_diffs, Map.new(details, fn {id, {_actions, diff}} -> {id, diff} end))
-  end
-
-  # Which runners advertise each version that needs a "who's on it" readout, so
-  # the operator sees one canary box vs the whole fleet. Keyed by pack_version
-  # id, looked up for the rows that use it: pending/rejected reviews (the trust-
-  # decision blast radius) and trusted-but-RETIRED rows (whose fix depends on
-  # whether any runner is still on the old version — see `retired_notice`).
-  defp advertising_runners(rows, subject) do
-    runners_by_id =
-      case Runners.list_runners_for_account(subject) do
-        {:ok, runners, _meta} -> Map.new(runners, &{&1.id, &1})
-        _ -> %{}
-      end
-
-    rows
-    |> Enum.filter(&advertising_lookup_needed?/1)
-    |> Map.new(fn version ->
-      ids =
-        case Catalog.runner_ids_advertising_pack(version.pack_id, version.version, subject) do
-          {:ok, ids} -> ids
-          _ -> []
-        end
-
-      {version.id, ids |> Enum.map(&Map.get(runners_by_id, &1)) |> Enum.reject(&is_nil/1)}
-    end)
-  end
-
-  # Rows that need the per-version "who advertises this" lookup: pending/rejected
-  # rows show the trust-decision blast radius, and a trusted-but-RETIRED row uses
-  # it to recommend the right fix — update the runners still on it, or (if none)
-  # just remove the dead version. A plain trusted or overridden row skips the query.
-  defp advertising_lookup_needed?(%{trust_state: state}) when state in [:pending, :rejected],
-    do: true
-
-  defp advertising_lookup_needed?(%{trust_state: :trusted} = version),
-    do: pack_version_retired?(version)
-
-  defp advertising_lookup_needed?(_), do: false
 
   defp pending_review_title(1), do: "1 pack version needs trust review."
   defp pending_review_title(count), do: "#{count} pack versions need trust review."
@@ -563,13 +498,15 @@ defmodule EmisarWeb.PacksLive do
 
   # Re-render one pack group's stream item against the current assigns (a
   # stream child is static once pushed, so the just-loaded `inspected_actions`
-  # only appears after a re-insert). Unlike `restream_pack` this doesn't
-  # recompute the pending panels — inspecting a trusted version changes nothing
-  # about what's pending.
+  # only appears after a re-insert). Unlike `restream_pack` this leaves the
+  # counts alone — inspecting a trusted version changes nothing about what's
+  # pending — but the facts must travel with the rows they render.
   defp reinsert_pack_group(socket, pack_id) do
     with {:ok, projection} <- console_projection(socket),
          group when not is_nil(group) <- find_group(projection, pack_id) do
-      stream_insert(socket, :packs, group)
+      socket
+      |> assign(:version_facts, projection.version_facts)
+      |> stream_insert(:packs, group)
     else
       _ -> socket
     end
@@ -589,11 +526,7 @@ defmodule EmisarWeb.PacksLive do
           |> assign(:version_count, projection.version_count)
           |> assign(:pending_count, projection.pending_count)
           |> assign(:pending_packs_count, projection.decision_count)
-          |> assign(
-            :advertising,
-            advertising_runners(projection.pack_versions, socket.assigns.current_subject)
-          )
-          |> assign_pending_pack_actions(projection)
+          |> assign(:version_facts, projection.version_facts)
           |> assign(:matched_actions, projection.matched_action_ids)
           |> update(:inspected_actions, &seed_action_lists(&1, projection))
 
@@ -716,68 +649,68 @@ defmodule EmisarWeb.PacksLive do
 
   attr :version, :map, required: true
   attr :pack_id, :string, required: true
-  attr :runners, :list, required: true
+  attr :fact, :map, required: true
   attr :can_manage, :boolean, required: true
 
   # A trusted version the shipped catalog RETIRED — a newer release marked every
-  # version below a watermark unsafe (a critical fix). The recommendation tracks
-  # reality: runners STILL on it → update them (or, only if you truly can't yet,
-  # override the retirement to keep them running); NO runner on it → it's dead
-  # weight the fix already routed around, so just remove it — there's nothing to
-  # update, nothing to keep running, and re-enabling it for a FUTURE runner is
-  # exactly what override must not do, so that escape hatch is gone. Rendered as
-  # the shared icon-capped rose spine — the retired marker, the ONE house face
-  # for an operational alert. An already-overridden row shows a muted, dated note
-  # instead. Renders nothing for a version that isn't retired.
+  # version below a watermark unsafe (a critical fix). The Catalog picks the ONE
+  # remedy that fits (`retirement_remedy`); this only words it. Runners still on
+  # it → update them (or, only if you truly can't yet, override the retirement).
+  # None, from a complete fleet read → it's dead weight the fix already routed
+  # around, so just remove it. None, from a PARTIAL read → we can't claim nobody
+  # is on it, so neither removal nor override is offered. Rendered as the shared
+  # icon-capped rose spine — the ONE house face for an operational alert. An
+  # already-overridden row shows a muted, dated note instead. Renders nothing for
+  # a version that isn't retired.
   defp retired_notice(assigns) do
-    {retired?, current} =
-      case Catalog.pack_version_retirement(assigns.version) do
-        {:retired, current} -> {true, current}
-        :active -> {false, nil}
-      end
-
-    assigns =
-      assigns
-      |> assign(:retired?, retired?)
-      |> assign(:current_version, current)
-      |> assign(:overridden?, not is_nil(assigns.version.retirement_overridden_at))
-      |> assign(:on_runners?, assigns.runners != [])
-
     ~H"""
     <.event_block
-      :if={@retired? and not @overridden?}
+      :if={@fact.retirement_blocked?}
       icon="hero-shield-exclamation"
       tone={:rose}
       title="Retired by a newer release"
       class="mt-3 pl-8"
     >
       <:body>
-        <span :if={@on_runners?}>
+        <span :if={@fact.retirement_remedy == :update_or_override}>
           A critical fix superseded this version. Dispatch is blocked for <code>{@pack_id}</code>
           v{@version.version} until you update the runners still on it.
         </span>
-        <span :if={not @on_runners?}>
+        <span :if={@fact.retirement_remedy == :remove}>
           A critical fix superseded this version, and no runner is on it anymore. Remove it to
           clear it from the catalog — there's nothing to update.
         </span>
+        <span :if={@fact.retirement_remedy == :resolve_advertisers}>
+          A critical fix superseded this version. This account has more runners than this page
+          reads, so we can't tell whether any is still on it — update your runners to clear it.
+        </span>
       </:body>
-      <%!-- Runners on it → the fix is to update them; name which hosts, so the
-           operator knows where to go. --%>
+      <%!-- Updating is the fix in every state that still shows this block: with
+           hosts on it, and with a fleet we couldn't read to the end. --%>
       <.install_command
-        :if={@on_runners?}
+        :if={@fact.retirement_remedy != :remove}
         id={"retired-cmd-#{@version.id}"}
         pack_id={@pack_id}
-        successor={@current_version}
-        hash={Catalog.shipped_hash(@pack_id, @current_version)}
+        successor={@fact.retirement_successor}
+        hash={@fact.retirement_successor_hash}
       />
-      <div :if={@on_runners?} class="mt-3 text-[11px] leading-relaxed text-zinc-400">
+      <%!-- Name which hosts, so the operator knows where to go. A partial fleet
+           read can only name a floor, so it says so rather than implying the
+           list is the whole of it. --%>
+      <div
+        :if={@fact.advertising.runners != []}
+        class="mt-3 text-[11px] leading-relaxed text-zinc-400"
+      >
         <p>
-          <span class="font-semibold text-zinc-300">{length(@runners)}</span>
+          <span class="font-semibold text-zinc-300">{advertiser_count(@fact.advertising)}</span>
           runner(s) still on this version:
         </p>
         <div class="mt-2 flex flex-wrap gap-1.5">
-          <.runner_tag :for={runner <- @runners} runner={runner} />
+          <.runner_tag :for={runner <- @fact.advertising.runners} runner={runner} />
         </div>
+        <p :if={@fact.advertising.coverage == :partial} class="mt-2">
+          More runners than this page reads — others may be on it too.
+        </p>
       </div>
       <div :if={@can_manage} class="mt-3 flex flex-wrap gap-2">
         <%!-- Runners on it, and you genuinely can't update yet: override to let its
@@ -786,7 +719,7 @@ defmodule EmisarWeb.PacksLive do
              no runner is on it: nothing to keep running, and re-enabling a retired
              version for a future runner is the opposite of the goal. --%>
         <.confirm_button
-          :if={@on_runners?}
+          :if={@fact.retirement_remedy == :update_or_override}
           id={"override-#{@version.id}"}
           variant={:secondary}
           tone={:rose}
@@ -806,9 +739,10 @@ defmodule EmisarWeb.PacksLive do
              re-advertises it), so it's the recommended action here — the house
              destructive face (bordered rose, never a filled "go" green). With
              runners it's futile (a runner re-inserts it), so it's dropped for
-             update/override. --%>
+             update/override; with a partial fleet read we can't promise it's
+             unused, so it's dropped there too. --%>
         <.button
-          :if={not @on_runners?}
+          :if={@fact.retirement_remedy == :remove}
           variant={:secondary}
           tone={:rose}
           size={:sm}
@@ -820,20 +754,262 @@ defmodule EmisarWeb.PacksLive do
       </div>
     </.event_block>
     <p
-      :if={@retired? and @overridden?}
+      :if={@fact.retired? and @fact.override}
       class="mt-2 flex flex-wrap items-center gap-1.5 pl-8 text-[11px] text-zinc-500"
     >
       <.icon name="hero-shield-check" class="h-3.5 w-3.5 text-zinc-500" />
-      Retired by a newer release — overridden by {overrider_name(@version)}
+      Retired by a newer release — overridden by {@fact.override.actor_label || "an admin"}
       <.local_time
         id={"pack-version-override-#{@version.id}"}
-        value={@version.retirement_overridden_at}
+        value={@fact.override.at}
         mode={:relative}
         class="inline"
       />
     </p>
     """
   end
+
+  # How many runners advertise a version, in the operator's words. A COMPLETE
+  # fleet read states the exact count; a PARTIAL one can only state a floor —
+  # and with nothing found it cannot claim the version is unused at all.
+  defp advertiser_count(%{coverage: :partial, runners: []}), do: "An unknown number of"
+
+  defp advertiser_count(%{coverage: :partial, runners: runners}),
+    do: "At least #{length(runners)}"
+
+  defp advertiser_count(%{runners: runners}), do: length(runners)
+
+  attr :version, :map, required: true
+  attr :pack_id, :string, required: true
+  attr :fact, :map, required: true
+  attr :matched, :any, default: nil, doc: "MapSet of matched action_ids, or nil when unfiltered"
+  attr :can_manage, :boolean, required: true
+
+  # The one state that earns real weight: a live trust decision, on the shared
+  # spine like every operational alert — what changed, who it unblocks, and the
+  # decision buttons inside one contained unit. A pending version that sits below
+  # a shipped pack's retirement watermark is a KNOWN pack whose bytes a security
+  # fix superseded, NOT an unknown one to trust — it wears the rose retired face
+  # and leads with the upgrade, keeping trust a labelled escape hatch.
+  defp pending_notice(assigns) do
+    ~H"""
+    <.event_block
+      icon="hero-shield-exclamation"
+      tone={(@fact.retirement_blocked? && :rose) || :amber}
+      title={(@fact.retirement_blocked? && "Retired by a newer release") || "Pending trust review"}
+      class="mt-3 pl-8"
+    >
+      <:body>
+        <span :if={@fact.retirement_blocked?}>
+          <code>{@pack_id}</code> v{@version.version} was retired by a newer release — a
+          security fix superseded it. Runners are still on the old version; update the
+          pack to clear this.
+        </span>
+        <span :if={not @fact.retirement_blocked? and is_nil(@version.hash)}>
+          A runner advertised <code>{@pack_id}</code> v{@version.version} —
+          a pack we don't ship a baseline for. Dispatch is blocked until
+          you trust its contents.
+        </span>
+        <span :if={not @fact.retirement_blocked? and not is_nil(@version.hash)}>
+          A runner is advertising a different hash. Dispatch is blocked for <code>{@pack_id}</code>
+          v{@version.version} until you decide.
+        </span>
+      </:body>
+      <.install_command
+        :if={@fact.retirement_blocked?}
+        id={"upgrade-cmd-#{@version.id}"}
+        pack_id={@pack_id}
+        successor={@fact.retirement_successor}
+        hash={@fact.retirement_successor_hash}
+      />
+      <%!-- The two-hash comparison earns its rows only on a real drift —
+           a trusted hash to diff the advertised one against. A first-seen
+           retired version was never trusted, so drop the empty
+           "trusted: (none yet)" and show just the bytes on the runner. A
+           hash is a plain identifier, so it reads neutral. --%>
+      <dl
+        :if={not is_nil(@version.hash)}
+        class="mt-3 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 text-[11px]"
+      >
+        <.kv layout={:grid} label="trusted:">{@version.hash}</.kv>
+        <.kv layout={:grid} label="advertising:">
+          <span class="text-zinc-300">{@version.pending_hash || "—"}</span>
+        </.kv>
+      </dl>
+      <%!-- Only a trust decision needs the bytes shown: an unknown pack you're
+           about to trust. A retired version's fix-it command already pins the
+           target hash (--hash), so its old bytes are noise — omit them. --%>
+      <p
+        :if={is_nil(@version.hash) and not @fact.retirement_blocked?}
+        class="mt-3 flex flex-wrap items-baseline gap-x-2 text-[11px] text-zinc-400"
+      >
+        on the runner:
+        <span class="break-all font-mono text-zinc-300">{@version.pending_hash || "—"}</span>
+      </p>
+      <%!-- Blast radius — which hosts this trust click unblocks. One canary box
+           vs the whole fleet is the difference between a safe and a scary Trust.
+           A fleet we couldn't read to the end says so: a short list is a floor,
+           and an empty one is not proof that nobody is on it. --%>
+      <div
+        :if={@fact.advertising.runners != []}
+        class="mt-3 text-[11px] leading-relaxed text-zinc-400"
+      >
+        <p>
+          <span class="font-semibold text-zinc-300">
+            {advertiser_count(@fact.advertising)}
+          </span>
+          <span :if={@fact.retirement_blocked?}>
+            runner(s) still on this retired version — update the pack on:
+          </span>
+          <span :if={not @fact.retirement_blocked?}>
+            runner(s) advertise this — trusting unblocks dispatch on:
+          </span>
+        </p>
+        <%!-- A neutral two-tone tag per runner — the group (muted, left)
+             then the runner name (brighter, right), split by a divider.
+             WHICH hosts is informative, not a warning: the retired/pending
+             context above carries the concern, so the tag stays zinc, never
+             amber. The tags wrap in a flex container (a fleet can advertise
+             dozens, and a comprehension renders them with no whitespace
+             between — an inline run would overflow the page). --%>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          <.runner_tag :for={runner <- @fact.advertising.runners} runner={runner} />
+        </div>
+        <p :if={@fact.advertising.coverage == :partial} class="mt-2">
+          More runners than this page reads — others may advertise it too.
+        </p>
+      </div>
+      <p
+        :if={@fact.advertising.coverage == :partial and @fact.advertising.runners == []}
+        class="mt-3 text-[11px] leading-relaxed text-zinc-400"
+      >
+        This account has more runners than this page reads, so we can't say how many advertise
+        this version.
+      </p>
+      <%!-- What CHANGED since this hash was last trusted — diffed
+           against the action set snapshotted at that Trust
+           (`trusted_manifest`). Only shown when a manifest exists
+           (a re-advertised hash, not a first-time pending). An added
+           critical action or a low→critical escalation is the
+           headline danger an operator must see before re-trusting. --%>
+      <div :if={diff_has_changes?(@fact.action_changes)} class="mt-3">
+        <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-300">
+          <.icon name="hero-arrows-right-left" class="h-3.5 w-3.5" />
+          Changes since you last trusted this pack:
+        </div>
+        <ul class="mt-2 space-y-1">
+          <li :for={a <- @fact.action_changes.added} class="flex items-center gap-2 text-[11px]">
+            <span class="w-12 flex-none font-semibold uppercase tracking-wide text-rose-300">
+              + added
+            </span>
+            <.risk_pill risk={a.risk} class="flex-none" />
+            <span class="truncate font-mono text-zinc-200">{a.action_id}</span>
+          </li>
+          <li :for={c <- @fact.action_changes.changed} class="flex items-center gap-2 text-[11px]">
+            <span class={[
+              "w-12 flex-none font-semibold uppercase tracking-wide",
+              if(c.risk_escalated?, do: "text-rose-300", else: "text-amber-300")
+            ]}>
+              ~ changed
+            </span>
+            <span class="flex items-center gap-1">
+              <.risk_pill risk={c.old_risk} class="flex-none opacity-60" />
+              <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
+              <.risk_pill risk={c.new_risk} class="flex-none" />
+            </span>
+            <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
+            <span :if={c.old_kind != c.new_kind} class="flex-none text-zinc-500">
+              {c.old_kind} → {c.new_kind}
+            </span>
+          </li>
+          <li
+            :for={r <- @fact.action_changes.removed}
+            class="flex items-center gap-2 text-[11px] text-zinc-500"
+          >
+            <span class="w-12 flex-none font-semibold uppercase tracking-wide">
+              − removed
+            </span>
+            <.risk_pill risk={r.risk} class="flex-none opacity-50" />
+            <span class="truncate font-mono line-through">{r.action_id}</span>
+          </li>
+        </ul>
+      </div>
+      <%!-- What trusting this authorizes — the FULL action set advertised under
+           the exact hash awaiting review (the diff above shows only what moved),
+           so "Trust new contents" isn't a blind click. --%>
+      <div :if={@fact.actions != []} class="mt-3">
+        <div class="text-[11px] font-semibold text-zinc-300">
+          Trusting authorizes {length(@fact.actions)} action(s):
+        </div>
+        <.pack_action_list actions={@fact.actions} matched={@matched} class="mt-1" />
+      </div>
+      <%!-- Trust/Reject mutate authorization state — owner/admin
+           only. The context gate (manage_catalog) is defense in
+           depth; hide the buttons for viewers/operators too so
+           they aren't offered an action that always denies. The
+           pending spine above stays visible to everyone — it
+           explains WHY dispatch is blocked. --%>
+      <div :if={@can_manage} class="mt-3 flex flex-wrap gap-2">
+        <%!-- Trust adopts code fleet-wide — a caution-approve (amber),
+             not a destruction, so the modal is amber. On a RETIRED
+             version trust is the wrong default (upgrade the runner
+             instead), so it recedes to a rose "Trust anyway" escape
+             hatch — the confirm body spells out the override. --%>
+        <.confirm_button
+          id={"trust-#{@version.id}"}
+          variant={(@fact.retirement_blocked? && :secondary) || :primary}
+          tone={(@fact.retirement_blocked? && :rose) || :amber}
+          size={:sm}
+          title={trust_confirm_title(@fact, @pack_id, @version)}
+          confirm_label={trust_confirm_label(@fact, @version)}
+          on_confirm={JS.push("trust", value: %{id: @version.id})}
+        >
+          <:body>
+            Cloud will allow its actions to run on {advertiser_count(@fact.advertising)} advertising
+            runner(s). Trusting adopts this exact code fleet-wide.
+            <span :if={@fact.retired?} class="text-rose-300">
+              This version was retired by a newer release — trusting it also overrides
+              that retirement, so its actions run despite the fix.
+            </span>
+          </:body>
+          {trust_confirm_label(@fact, @version)}
+        </.confirm_button>
+        <%!-- IRREVERSIBLE-feeling — typed-confirm modal instead of
+             data-confirm. The button only OPENS the page-level dialog
+             (stashing this version as the target); `reject` still fires
+             from Confirm and stays server-authz-gated (manage_catalog). --%>
+        <.button
+          variant={:secondary}
+          size={:sm}
+          type="button"
+          phx-click={
+            JS.push("open_reject",
+              value: %{id: @version.id, pack_id: @pack_id, version: @version.version}
+            )
+            |> show_confirm_dialog("reject-pack")
+          }
+        >
+          Reject
+        </.button>
+      </div>
+    </.event_block>
+    """
+  end
+
+  # Trusting a retired version is an override, not an adoption — say so; a
+  # never-trusted pack is a plain trust; anything else adopts a new hash.
+  defp trust_confirm_title(%{retirement_blocked?: true}, pack_id, version),
+    do: "Trust the retired #{pack_id} v#{version.version} anyway?"
+
+  defp trust_confirm_title(_fact, pack_id, %{hash: nil} = version),
+    do: "Trust #{pack_id} v#{version.version}?"
+
+  defp trust_confirm_title(_fact, pack_id, version),
+    do: "Adopt the new hash for #{pack_id} v#{version.version}?"
+
+  defp trust_confirm_label(%{retirement_blocked?: true}, _version), do: "Trust anyway"
+  defp trust_confirm_label(_fact, %{hash: nil}), do: "Trust pack"
+  defp trust_confirm_label(_fact, _version), do: "Trust new contents"
 
   # A neutral two-tone tag for one advertising runner — the group (muted, left)
   # then the runner name (brighter, right), split by a divider. WHICH hosts is
@@ -850,76 +1026,39 @@ defmodule EmisarWeb.PacksLive do
   end
 
   attr :pack_id, :string, required: true
-  attr :versions, :list, required: true
+  attr :update, :map, default: nil, doc: "the Catalog's pack-level %{version, hash}, or nil"
 
-  # ONE pack-level "update available" nudge, shown once when the pack has a
-  # trusted, non-retired version below the shipped current AND is NOT already
-  # running that current version somewhere. The successor (the pack's current
-  # shipped version) and its install command are pack-level — `newer_version`
-  # returns that same current version for every outdated row — so the heads-up is
-  # said ONCE per pack, never repeated on each stale version (a note on every
-  # version was the correction). A convenience, never a warning: a security fix
-  # RETIRES a version (packs retire only on security/critical fixes), so an
-  # outdated-but-not-retired version is safe by construction and still dispatches
-  # — the weakest, quietest tier, a neutral spine below the version rows.
-  # Retirement takes precedence (`pack_version_outdated` returns `:current` for a
-  # retired version), so this never stacks on a row's rose retired block. Renders
-  # nothing when every shown version is retired, or when the current version is
-  # already installed beside the older ones.
+  # ONE pack-level "update available" nudge, said once per pack — the Catalog
+  # decides whether the pack has one (a trusted, non-retired version below the
+  # shipped current, with that current version not already installed beside it),
+  # so it is never repeated on each stale version. A convenience, never a
+  # warning: a security fix RETIRES a version (packs retire only on
+  # security/critical fixes), so an outdated-but-not-retired version is safe by
+  # construction and still dispatches — the weakest, quietest tier, a neutral
+  # spine below the version rows.
   defp update_available_note(assigns) do
-    assigns = assign(assigns, :successor, pack_update_successor(assigns.versions))
-
     ~H"""
     <%!-- The same icon-capped spine as a row's retired block, but NEUTRAL and
          pack-level: a newer version shipped, yet what's installed still runs and
          dispatches — a heads-up, not a warning, so it never wears rose. --%>
     <.event_block
-      :if={@successor}
+      :if={@update}
       icon="hero-arrow-up-circle"
       tone={:neutral}
       title="Update available"
       class="mt-4"
     >
       <:body>
-        v{@successor} has shipped. Your installed versions still run and dispatch fine — update your runners when you can.
+        v{@update.version} has shipped. Your installed versions still run and dispatch fine — update your runners when you can.
       </:body>
       <.install_command
         id={"update-cmd-#{@pack_id}"}
         pack_id={@pack_id}
-        successor={@successor}
-        hash={Catalog.shipped_hash(@pack_id, @successor)}
+        successor={@update.version}
+        hash={@update.hash}
       />
     </.event_block>
     """
-  end
-
-  # The version to nudge toward, or nil. The pack's current shipped version when
-  # some trusted version is below it — UNLESS a trusted, non-retired version is
-  # already at (or ahead of) that current version, i.e. you're running the latest
-  # on a runner. A fresh install sitting beside an older one (the seeded postgres
-  # 0.2.11 + 0.2.9 was the case that exposed this) is up to date at the pack
-  # level, so nudging you to "update" to a version you already run would be wrong;
-  # stay silent. Retired versions carry their own rose block and never count as
-  # up to date here.
-  defp pack_update_successor(versions) do
-    states =
-      for %{trust_state: :trusted} = version <- versions,
-          do: {version, Catalog.pack_version_outdated(version)}
-
-    successor =
-      Enum.find_value(states, fn {_version, state} ->
-        case state do
-          {:outdated, successor} -> successor
-          :current -> nil
-        end
-      end)
-
-    already_current? =
-      Enum.any?(states, fn {version, state} ->
-        state == :current and not pack_version_retired?(version)
-      end)
-
-    if successor && not already_current?, do: successor
   end
 
   # The "fix it" command as a compact, copyable row — never a code panel (the
@@ -951,42 +1090,6 @@ defmodule EmisarWeb.PacksLive do
 
   defp install_command_string(pack_id, hash),
     do: "emisar pack install #{pack_id} --hash #{hash}"
-
-  # Retirement is an overlay on a trusted row (release-frozen `PackBaseline`),
-  # not a trust_state — so it's a pure per-row check, not a row field.
-  defp pack_version_retired?(version),
-    do: match?({:retired, _}, Catalog.pack_version_retirement(version))
-
-  # A version the shipped catalog RETIRED and no admin has overridden — the one
-  # row state the "retired" badge marks (replacing the trust badge, which would
-  # contradict it). Covers a trusted row a watermark bump retired AND a
-  # first-seen retired version a lagging runner still advertises (pending, never
-  # trusted — a KNOWN pack whose bytes a security fix superseded, not an unknown
-  # one to trust). A rejected row stays quiet.
-  defp retired_blocked?(version) do
-    version.trust_state != :rejected and is_nil(version.retirement_overridden_at) and
-      pack_version_retired?(version)
-  end
-
-  # The version that superseded a retired one (nil if not retired) — the upgrade
-  # target named in the "emisar pack install" guidance.
-  defp retirement_successor(version) do
-    case Catalog.pack_version_retirement(version) do
-      {:retired, current} -> current
-      :active -> nil
-    end
-  end
-
-  # The admin who overrode a retirement, human-first (name, then email). The
-  # user is preloaded; a soft-deleted overrider reads as "an admin".
-  defp overrider_name(%{retirement_overridden_by: %{full_name: name}})
-       when is_binary(name) and name != "",
-       do: name
-
-  defp overrider_name(%{retirement_overridden_by: %{email: email}}) when is_binary(email),
-    do: email
-
-  defp overrider_name(_), do: "an admin"
 
   def render(assigns) do
     ~H"""
@@ -1177,7 +1280,7 @@ defmodule EmisarWeb.PacksLive do
                        pair them — then last-seen + the row menu at the end. --%>
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <button
-                      :if={v.trust_state == :trusted}
+                      :if={@version_facts[v.id].trust_state == :trusted}
                       type="button"
                       phx-click="inspect_pack"
                       phx-value-id={v.id}
@@ -1193,7 +1296,7 @@ defmodule EmisarWeb.PacksLive do
                       />
                     </button>
                     <span
-                      :if={v.trust_state != :trusted}
+                      :if={@version_facts[v.id].trust_state != :trusted}
                       class="w-5 shrink-0"
                       aria-hidden="true"
                     ></span>
@@ -1204,10 +1307,7 @@ defmodule EmisarWeb.PacksLive do
                          steady to scan. A blocked row reads "retired" INSTEAD of
                          "trusted" (side by side they contradicted); an overridden
                          row is trusted again (the note below says why). --%>
-                    <.status_badge
-                      status={(retired_blocked?(v) && "retired") || to_string(v.trust_state)}
-                      class="text-xs"
-                    />
+                    <.status_badge status={@version_facts[v.id].display_state} class="text-xs" />
                     <%!-- The hash said nothing at browse altitude — the full hash
                          lives in the contents expansion; last-seen trails like
                          timestamps everywhere else in the console. --%>
@@ -1225,7 +1325,10 @@ defmodule EmisarWeb.PacksLive do
                       class="ml-auto flex shrink-0 items-center gap-2"
                     >
                       <.button
-                        :if={v.trust_state == :rejected and (v.pending_hash || v.hash) != nil}
+                        :if={
+                          @version_facts[v.id].trust_state == :rejected and
+                            (v.pending_hash || v.hash) != nil
+                        }
                         variant={:secondary}
                         tone={:amber}
                         size={:sm}
@@ -1235,7 +1338,7 @@ defmodule EmisarWeb.PacksLive do
                         Trust
                       </.button>
                       <.button
-                        :if={v.trust_state == :trusted}
+                        :if={@version_facts[v.id].trust_state == :trusted}
                         variant={:secondary}
                         size={:sm}
                         type="button"
@@ -1260,7 +1363,10 @@ defmodule EmisarWeb.PacksLive do
                        server-authz-gated (IL-15). --%>
                   <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
                     <.confirm_dialog
-                      :if={v.trust_state == :rejected and (v.pending_hash || v.hash) != nil}
+                      :if={
+                        @version_facts[v.id].trust_state == :rejected and
+                          (v.pending_hash || v.hash) != nil
+                      }
                       id={"trust-#{v.id}"}
                       tone={:amber}
                       title={"Trust #{pack.id} v#{v.version}?"}
@@ -1271,22 +1377,22 @@ defmodule EmisarWeb.PacksLive do
                     >
                       <:body>
                         <span :if={not is_nil(v.pending_hash)}>
-                          Adopts the refused contents — its actions may run on {length(
-                            @advertising[v.id] || []
+                          Adopts the refused contents — its actions may run on {advertiser_count(
+                            @version_facts[v.id].advertising
                           )} advertising runner(s).
                         </span>
                         <span :if={is_nil(v.pending_hash)}>
                           Restores trust in the previously recorded contents — its actions may
                           dispatch again.
                         </span>
-                        <span :if={pack_version_retired?(v)} class="text-rose-300">
+                        <span :if={@version_facts[v.id].retired?} class="text-rose-300">
                           This version was retired by a newer release — trusting it also
                           overrides that retirement, so its actions run despite the fix.
                         </span>
                       </:body>
                     </.confirm_dialog>
                     <.confirm_dialog
-                      :if={v.trust_state == :trusted}
+                      :if={@version_facts[v.id].trust_state == :trusted}
                       id={"revoke-#{v.id}"}
                       title={"Revoke trust in #{pack.id} v#{v.version}?"}
                       confirm_label="Revoke trust"
@@ -1318,262 +1424,41 @@ defmodule EmisarWeb.PacksLive do
                   <% end %>
 
                   <.version_contents
-                    :if={v.trust_state == :trusted and MapSet.member?(@open_versions, v.id)}
+                    :if={
+                      @version_facts[v.id].trust_state == :trusted and
+                        MapSet.member?(@open_versions, v.id)
+                    }
                     version={v}
                     inspected={@inspected_actions[v.id]}
                     matched={@matched_actions[v.id]}
                   />
 
                   <.retired_notice
-                    :if={v.trust_state == :trusted}
+                    :if={@version_facts[v.id].trust_state == :trusted}
                     version={v}
                     pack_id={pack.id}
-                    runners={@advertising[v.id] || []}
+                    fact={@version_facts[v.id]}
                     can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
                   />
 
                   <%!-- A rejected version stays listed quietly — no alert, no
                        pending count; the row menu carries Trust, the
                        fix-admin-mistake path. --%>
-                  <p :if={v.trust_state == :rejected} class="mt-1.5 pl-8 text-xs text-zinc-500">
+                  <p
+                    :if={@version_facts[v.id].trust_state == :rejected}
+                    class="mt-1.5 pl-8 text-xs text-zinc-500"
+                  >
                     Rejected — dispatch refuses this version until you trust it again.
                   </p>
 
-                  <%!-- The one state that earns real weight: a live trust
-                       decision, on the shared spine like every operational
-                       alert — what changed, who it unblocks, and the decision
-                       buttons inside one contained unit. A pending version that
-                       sits below a shipped pack's retirement watermark is a KNOWN
-                       pack whose bytes a security fix superseded, NOT an unknown
-                       one to trust — it wears the rose retired face and leads
-                       with the upgrade, keeping trust a labelled escape hatch. --%>
-                  <.event_block
-                    :if={v.trust_state == :pending}
-                    icon="hero-shield-exclamation"
-                    tone={(retired_blocked?(v) && :rose) || :amber}
-                    title={
-                      (retired_blocked?(v) && "Retired by a newer release") || "Pending trust review"
-                    }
-                    class="mt-3 pl-8"
-                  >
-                    <:body>
-                      <span :if={retired_blocked?(v)}>
-                        <code>{pack.id}</code> v{v.version} was retired by a newer release — a
-                        security fix superseded it. The runners below are still on the old
-                        version; update the pack to clear this.
-                      </span>
-                      <span :if={not retired_blocked?(v) and is_nil(v.hash)}>
-                        A runner advertised <code>{pack.id}</code> v{v.version} —
-                        a pack we don't ship a baseline for. Dispatch is blocked until
-                        you trust its contents.
-                      </span>
-                      <span :if={not retired_blocked?(v) and not is_nil(v.hash)}>
-                        A runner is advertising a different hash. Dispatch is blocked for
-                        <code>{pack.id}</code>
-                        v{v.version} until you decide.
-                      </span>
-                    </:body>
-                    <.install_command
-                      :if={retired_blocked?(v)}
-                      id={"upgrade-cmd-#{v.id}"}
-                      pack_id={pack.id}
-                      successor={retirement_successor(v)}
-                      hash={Catalog.shipped_hash(pack.id, retirement_successor(v))}
-                    />
-                    <%!-- The two-hash comparison earns its rows only on a real drift —
-                         a trusted hash to diff the advertised one against. A first-seen
-                         retired version was never trusted, so drop the empty
-                         "trusted: (none yet)" and show just the bytes on the runner. A
-                         hash is a plain identifier, so it reads neutral. --%>
-                    <dl
-                      :if={not is_nil(v.hash)}
-                      class="mt-3 grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 text-[11px]"
-                    >
-                      <.kv layout={:grid} label="trusted:">{v.hash}</.kv>
-                      <.kv layout={:grid} label="advertising:">
-                        <span class="text-zinc-300">{v.pending_hash || "—"}</span>
-                      </.kv>
-                    </dl>
-                    <%!-- Only a trust decision needs the bytes shown: an unknown pack you're
-                         about to trust. A retired version's fix-it command already pins the
-                         target hash (--hash), so its old bytes are noise — omit them. --%>
-                    <p
-                      :if={is_nil(v.hash) and not retired_blocked?(v)}
-                      class="mt-3 flex flex-wrap items-baseline gap-x-2 text-[11px] text-zinc-400"
-                    >
-                      on the runner:
-                      <span class="break-all font-mono text-zinc-300">{v.pending_hash || "—"}</span>
-                    </p>
-                    <%!-- Blast radius — which hosts this trust click unblocks.
-                         One canary box vs the whole fleet is the difference
-                         between a safe and a scary Trust. --%>
-                    <div
-                      :if={@advertising[v.id] not in [nil, []]}
-                      class="mt-3 text-[11px] leading-relaxed text-zinc-400"
-                    >
-                      <p>
-                        <span class="font-semibold text-zinc-300">
-                          {length(@advertising[v.id])}
-                        </span>
-                        <span :if={retired_blocked?(v)}>
-                          runner(s) still on this retired version — update the pack on:
-                        </span>
-                        <span :if={not retired_blocked?(v)}>
-                          runner(s) advertise this — trusting unblocks dispatch on:
-                        </span>
-                      </p>
-                      <%!-- A neutral two-tone tag per runner — the group (muted, left)
-                           then the runner name (brighter, right), split by a divider.
-                           WHICH hosts is informative, not a warning: the retired/pending
-                           context above carries the concern, so the tag stays zinc, never
-                           amber. The tags wrap in a flex container (a fleet can advertise
-                           dozens, and a comprehension renders them with no whitespace
-                           between — an inline run would overflow the page). --%>
-                      <div class="mt-2 flex flex-wrap gap-1.5">
-                        <.runner_tag :for={r <- @advertising[v.id]} runner={r} />
-                      </div>
-                    </div>
-                    <%!-- What CHANGED since this hash was last trusted — diffed
-                         against the action set snapshotted at that Trust
-                         (`trusted_manifest`). Only shown when a manifest exists
-                         (a re-advertised hash, not a first-time pending). An added
-                         critical action or a low→critical escalation is the
-                         headline danger an operator must see before re-trusting. --%>
-                    <div :if={diff_has_changes?(@pack_diffs[v.id])} class="mt-3">
-                      <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-300">
-                        <.icon name="hero-arrows-right-left" class="h-3.5 w-3.5" />
-                        Changes since you last trusted this pack:
-                      </div>
-                      <ul class="mt-2 space-y-1">
-                        <li
-                          :for={a <- @pack_diffs[v.id].added}
-                          class="flex items-center gap-2 text-[11px]"
-                        >
-                          <span class="w-12 flex-none font-semibold uppercase tracking-wide text-rose-300">
-                            + added
-                          </span>
-                          <.risk_pill risk={a.risk} class="flex-none" />
-                          <span class="truncate font-mono text-zinc-200">{a.action_id}</span>
-                        </li>
-                        <li
-                          :for={c <- @pack_diffs[v.id].changed}
-                          class="flex items-center gap-2 text-[11px]"
-                        >
-                          <span class={[
-                            "w-12 flex-none font-semibold uppercase tracking-wide",
-                            if(c.risk_escalated?, do: "text-rose-300", else: "text-amber-300")
-                          ]}>
-                            ~ changed
-                          </span>
-                          <span class="flex items-center gap-1">
-                            <.risk_pill risk={c.old_risk} class="flex-none opacity-60" />
-                            <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
-                            <.risk_pill risk={c.new_risk} class="flex-none" />
-                          </span>
-                          <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
-                          <span :if={c.old_kind != c.new_kind} class="flex-none text-zinc-500">
-                            {c.old_kind} → {c.new_kind}
-                          </span>
-                        </li>
-                        <li
-                          :for={r <- @pack_diffs[v.id].removed}
-                          class="flex items-center gap-2 text-[11px] text-zinc-500"
-                        >
-                          <span class="w-12 flex-none font-semibold uppercase tracking-wide">
-                            − removed
-                          </span>
-                          <.risk_pill risk={r.risk} class="flex-none opacity-50" />
-                          <span class="truncate font-mono line-through">{r.action_id}</span>
-                        </li>
-                      </ul>
-                    </div>
-                    <%!-- What trusting this authorizes — the FULL advertised action
-                         set + risk (the diff above shows only what moved), so
-                         "Trust new contents" isn't a blind click. --%>
-                    <div :if={@pack_actions[v.id] not in [nil, []]} class="mt-3">
-                      <div class="text-[11px] font-semibold text-zinc-300">
-                        Trusting authorizes {length(@pack_actions[v.id])} action(s):
-                      </div>
-                      <.pack_action_list
-                        actions={@pack_actions[v.id]}
-                        matched={@matched_actions[v.id]}
-                        class="mt-1"
-                      />
-                    </div>
-                    <%!-- Trust/Reject mutate authorization state — owner/admin
-                         only. The context gate (manage_catalog) is defense in
-                         depth; hide the buttons for viewers/operators too so
-                         they aren't offered an action that always denies. The
-                         pending spine above stays visible to everyone — it
-                         explains WHY dispatch is blocked. --%>
-                    <div
-                      :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                      class="mt-3 flex flex-wrap gap-2"
-                    >
-                      <%!-- Trust adopts code fleet-wide — a caution-approve (amber),
-                           not a destruction, so the modal is amber. On a RETIRED
-                           version trust is the wrong default (upgrade the runner
-                           instead), so it recedes to a rose "Trust anyway" escape
-                           hatch — the confirm body spells out the override. --%>
-                      <.confirm_button
-                        id={"trust-#{v.id}"}
-                        variant={(retired_blocked?(v) && :secondary) || :primary}
-                        tone={(retired_blocked?(v) && :rose) || :amber}
-                        size={:sm}
-                        title={
-                          cond do
-                            retired_blocked?(v) ->
-                              "Trust the retired #{pack.id} v#{v.version} anyway?"
-
-                            is_nil(v.hash) ->
-                              "Trust #{pack.id} v#{v.version}?"
-
-                            true ->
-                              "Adopt the new hash for #{pack.id} v#{v.version}?"
-                          end
-                        }
-                        confirm_label={
-                          cond do
-                            retired_blocked?(v) -> "Trust anyway"
-                            is_nil(v.hash) -> "Trust pack"
-                            true -> "Trust new contents"
-                          end
-                        }
-                        on_confirm={JS.push("trust", value: %{id: v.id})}
-                      >
-                        <:body>
-                          Cloud will allow its actions to run on {length(@advertising[v.id] || [])} advertising
-                          runner(s). Trusting adopts this exact code fleet-wide.
-                          <span :if={pack_version_retired?(v)} class="text-rose-300">
-                            This version was retired by a newer release — trusting it also overrides
-                            that retirement, so its actions run despite the fix.
-                          </span>
-                        </:body>
-                        {cond do
-                          retired_blocked?(v) -> "Trust anyway"
-                          is_nil(v.hash) -> "Trust pack"
-                          true -> "Trust new contents"
-                        end}
-                      </.confirm_button>
-                      <%!-- IRREVERSIBLE-feeling — typed-confirm modal instead of
-                           data-confirm. The button only OPENS the page-level dialog
-                           (stashing this version as the target); `reject` still fires
-                           from Confirm and stays server-authz-gated (manage_catalog). --%>
-                      <.button
-                        variant={:secondary}
-                        size={:sm}
-                        type="button"
-                        phx-click={
-                          JS.push("open_reject",
-                            value: %{id: v.id, pack_id: pack.id, version: v.version}
-                          )
-                          |> show_confirm_dialog("reject-pack")
-                        }
-                      >
-                        Reject
-                      </.button>
-                    </div>
-                  </.event_block>
+                  <.pending_notice
+                    :if={@version_facts[v.id].trust_state == :pending}
+                    version={v}
+                    pack_id={pack.id}
+                    fact={@version_facts[v.id]}
+                    matched={@matched_actions[v.id]}
+                    can_manage={Catalog.subject_can_manage_packs?(@current_subject)}
+                  />
                 </li>
               </ul>
 
@@ -1582,7 +1467,7 @@ defmodule EmisarWeb.PacksLive do
                    version for every outdated row), not repeated per version.
                    Retirement takes precedence per row, so this stays silent
                    under a rose retired block. --%>
-              <.update_available_note pack_id={pack.id} versions={pack.versions} />
+              <.update_available_note pack_id={pack.id} update={pack.update} />
             </li>
           </ul>
 

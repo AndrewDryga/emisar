@@ -29,7 +29,7 @@ defmodule Emisar.Catalog do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Repo, Runners}
+  alias Emisar.{Accounts, Audit, Auth, Repo, Runners, Users}
   alias Emisar.Auth.Subject
   alias Emisar.Catalog.{ActionSetDiff, Authorizer, MCPProjection, PackBaseline}
   alias Emisar.Catalog.{PackVersion, RunnerAction, TrustedManifest}
@@ -77,6 +77,11 @@ defmodule Emisar.Catalog do
   # The console Packs page renders its whole inventory at once, so the read is
   # bounded rather than paged — well above the 80 packs the 1.0 catalog ships.
   @console_pack_version_limit 500
+
+  # How many runners the page reads to answer "who is on this version". Above
+  # this the answer is explicitly partial, so the console never turns a short
+  # list into "no runner is on it".
+  @console_advertising_runner_limit 100
 
   @doc """
   Observe the full `runner_state` payload: upsert pack_versions and
@@ -1992,14 +1997,27 @@ defmodule Emisar.Catalog do
 
   Advertised actions are read only when a filter is active or a pending version
   needs its contents, so an unfiltered, nothing-pending page pays for no action
-  read and keeps its per-disclosure lazy loading (`list_pack_actions/3`).
+  read and keeps its per-disclosure lazy loading (`list_pack_actions/3`). The
+  fleet's advertisement facts are read once, and only when some row's lifecycle
+  actually depends on who is running it.
 
   Returns `{:ok, projection}` — `pack_versions` (every account row, bounded,
-  ordered by pack id then version), `groups` (`%{id: pack_id, versions: [...]}`
-  over the visible rows, packs ascending and versions newest-seen first),
-  `actions_by_pack_ref`, `matched_action_ids` keyed by pack-version id, the
-  visible `pack_count`/`version_count`, and the account-wide
+  ordered by pack id then version), `groups` (`%{id: pack_id, versions: [...],
+  update: nil | %{version, hash}}` over the visible rows, packs ascending and
+  versions newest-seen first), `actions_by_pack_ref`, `matched_action_ids` and
+  `version_facts` (see `list_console_packs/2`'s fact map) keyed by pack-version
+  id, the visible `pack_count`/`version_count`, and the account-wide
   `pending_count`/`decision_count` — or `{:error, :unauthorized}`.
+
+  `version_facts` carries every lifecycle and trust judgment the console
+  renders, so no caller re-derives one from raw row fields: `trust_state` and
+  the `display_state` a retirement block replaces it with, `trust_review?` /
+  `needs_decision?`, the pending decision's `actions` + `action_changes`
+  (selected on the row's exact `pending_hash`), `advertising`
+  (`%{coverage: :not_needed | :complete | :partial, runners: [...]}`),
+  `current_version`, `retired?` / `retirement_blocked?` /
+  `retirement_successor` (+ `_hash`) / `retirement_remedy`, `update_successor`
+  (+ `_hash`), and the `override` attribution.
   """
   def list_console_packs(filters, %Subject{} = subject) when is_map(filters) do
     with :ok <-
@@ -2016,40 +2034,230 @@ defmodule Emisar.Catalog do
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      actions_by_pack_ref = console_pack_actions(pack_versions, name, risk, subject)
-      {visible, matched_ids} = console_filter(pack_versions, name, risk, actions_by_pack_ref)
-      groups = console_groups(visible)
+      action_rows = console_action_rows(pack_versions, name, risk, subject)
 
-      {:ok,
-       %{
-         pack_versions: pack_versions,
-         groups: groups,
-         actions_by_pack_ref: actions_by_pack_ref,
-         matched_action_ids: matched_ids,
-         pack_count: length(groups),
-         version_count: length(visible),
-         pending_count: Enum.count(pack_versions, &(&1.trust_state == :pending)),
-         decision_count: Enum.count(pack_versions, &pack_version_needs_decision?/1)
-       }}
+      actions_by_pack_ref =
+        Map.new(action_rows, fn {pack_ref, actions} ->
+          {pack_ref, most_severe_actions_by_id(actions)}
+        end)
+
+      with {:ok, advertising} <- console_advertising(pack_versions, subject) do
+        version_facts = console_version_facts(pack_versions, action_rows, advertising)
+        {visible, matched_ids} = console_filter(pack_versions, name, risk, actions_by_pack_ref)
+        groups = console_groups(visible, pack_versions)
+
+        {:ok,
+         %{
+           pack_versions: pack_versions,
+           groups: groups,
+           actions_by_pack_ref: actions_by_pack_ref,
+           matched_action_ids: matched_ids,
+           version_facts: version_facts,
+           pack_count: length(groups),
+           version_count: length(visible),
+           pending_count: Enum.count(pack_versions, &(&1.trust_state == :pending)),
+           decision_count: Enum.count(pack_versions, &pack_version_needs_decision?/1)
+         }}
+      end
     end
   end
 
-  # One account-wide action read, keyed by `{pack_id, version}` and deduped to
-  # the most severe row per action id — taken only when the page actually needs
-  # it: a live filter, or a pending version whose trust card must show what
-  # trusting would authorize.
-  defp console_pack_actions(pack_versions, name, risk, %Subject{} = subject) do
+  # One account-wide action read, grouped by `{pack_id, version}` — taken only
+  # when the page actually needs it: a live filter, or a pending version whose
+  # trust card must show what trusting would authorize. Kept as RAW rows so a
+  # pending review can select its exact hash BEFORE the most-severe dedupe
+  # collapses two hashes' rows for the same action id into one.
+  defp console_action_rows(pack_versions, name, risk, %Subject{} = subject) do
     if name != "" or risk != "" or Enum.any?(pack_versions, &(&1.trust_state == :pending)) do
       RunnerAction.Query.all()
       |> RunnerAction.Query.ordered_by_action()
       |> Authorizer.for_subject(subject)
       |> Repo.all()
       |> Enum.group_by(&{&1.pack_id, &1.pack_version})
-      |> Map.new(fn {pack_ref, actions} -> {pack_ref, most_severe_actions_by_id(actions)} end)
     else
       %{}
     end
   end
+
+  # Which runners advertise each `(pack_id, version)`, from ONE bounded fleet
+  # read — and only when some row's lifecycle actually turns on it (a trust
+  # decision's blast radius, or a retired row whose remedy depends on whether
+  # any host is still running it). A plain trusted row pays for nothing.
+  defp console_advertising(pack_versions, %Subject{account: %{id: account_id}}) do
+    if Enum.any?(pack_versions, &advertiser_facts_needed?/1) do
+      {:ok, facts, %{coverage: coverage}} =
+        Runners.list_pack_advertisement_facts_for_account(
+          account_id,
+          @console_advertising_runner_limit
+        )
+
+      {index, malformed?} = advertising_index(facts)
+      # A fact we couldn't read is a runner we can't rule out, so it degrades
+      # coverage rather than vanishing from the answer.
+      {:ok, {index, (malformed? && :partial) || coverage}}
+    else
+      {:ok, :not_needed}
+    end
+  end
+
+  # Rows whose rendering needs to know WHO is on the version: a pending or
+  # rejected review (the trust decision's blast radius) and a trusted row the
+  # shipped catalog retired (its remedy differs when hosts are still on it).
+  defp advertiser_facts_needed?(%PackVersion{trust_state: state})
+       when state in [:pending, :rejected],
+       do: true
+
+  defp advertiser_facts_needed?(%PackVersion{} = pack_version), do: retired?(pack_version)
+
+  defp advertising_index(facts) do
+    Enum.reduce(facts, {%{}, false}, fn runner, {index, malformed?} ->
+      identity = Map.take(runner, [:id, :name, :group])
+
+      case runner.packs do
+        packs when is_map(packs) ->
+          Enum.reduce(packs, {index, malformed?}, fn entry, {index, malformed?} ->
+            case advertised_pack_ref(entry) do
+              {:ok, pack_ref} ->
+                {Map.update(index, pack_ref, [identity], &[identity | &1]), malformed?}
+
+              :error ->
+                {index, true}
+            end
+          end)
+
+        _malformed ->
+          {index, true}
+      end
+    end)
+  end
+
+  # Mirrors `observe_pack/3`'s `info["version"] || "unknown"` so an
+  # advertisement resolves to the very row that pin created; anything else is
+  # reported as malformed, never silently dropped.
+  defp advertised_pack_ref({pack_id, info}) when is_binary(pack_id) and is_map(info) do
+    case Map.get(info, "version") do
+      version when is_binary(version) -> {:ok, {pack_id, version}}
+      nil -> {:ok, {pack_id, "unknown"}}
+      _malformed -> :error
+    end
+  end
+
+  defp advertised_pack_ref(_entry), do: :error
+
+  defp console_version_facts(pack_versions, action_rows, advertising) do
+    Map.new(pack_versions, fn pack_version ->
+      {pack_version.id, console_version_fact(pack_version, action_rows, advertising)}
+    end)
+  end
+
+  defp console_version_fact(%PackVersion{} = pack_version, action_rows, advertising) do
+    {retired?, successor} =
+      case pack_version_retirement(pack_version) do
+        {:retired, successor} -> {true, successor}
+        :active -> {false, nil}
+      end
+
+    # A rejected row is already dispatch-blocked and an overridden one was
+    # decided, so neither wears the retirement face.
+    blocked? =
+      retired? and pack_version.trust_state != :rejected and
+        is_nil(pack_version.retirement_overridden_at)
+
+    actions = pending_decision_actions(pack_version, action_rows)
+    advertising_fact = advertising_fact(pack_version, advertising)
+    update_successor = update_successor(pack_version)
+
+    %{
+      trust_state: pack_version.trust_state,
+      display_state: (blocked? && "retired") || to_string(pack_version.trust_state),
+      trust_review?: pack_version.trust_state == :pending,
+      needs_decision?: pack_version_needs_decision?(pack_version),
+      actions: actions,
+      action_changes: action_set_changes(pack_version, actions),
+      advertising: advertising_fact,
+      current_version: PackBaseline.current_version(pack_version.pack_id),
+      retired?: retired?,
+      retirement_blocked?: blocked?,
+      retirement_successor: successor,
+      retirement_successor_hash: shipped_hash(pack_version.pack_id, successor),
+      retirement_remedy: retirement_remedy(pack_version, blocked?, advertising_fact),
+      update_successor: update_successor,
+      update_successor_hash: shipped_hash(pack_version.pack_id, update_successor),
+      override: override_attribution(pack_version)
+    }
+  end
+
+  # What trusting THIS decision would authorize: the rows carrying the exact
+  # hash awaiting review, selected before the most-severe dedupe so a row
+  # bearing the already-trusted hash can never stand in for the pending one and
+  # skew the manifest diff.
+  defp pending_decision_actions(%PackVersion{trust_state: :pending} = pack_version, action_rows) do
+    action_rows
+    |> Map.get({pack_version.pack_id, pack_version.version}, [])
+    |> Enum.filter(&(&1.pack_hash == pack_version.pending_hash))
+    |> most_severe_actions_by_id()
+  end
+
+  defp pending_decision_actions(%PackVersion{}, _action_rows), do: []
+
+  defp advertising_fact(%PackVersion{} = pack_version, {index, coverage}) do
+    if advertiser_facts_needed?(pack_version) do
+      pack_ref = {pack_version.pack_id, pack_version.version}
+      %{coverage: coverage, runners: index |> Map.get(pack_ref, []) |> Enum.reverse()}
+    else
+      %{coverage: :not_needed, runners: []}
+    end
+  end
+
+  defp advertising_fact(%PackVersion{}, :not_needed),
+    do: %{coverage: :not_needed, runners: []}
+
+  # The ONE fix a retired version's notice offers. Hosts we know are still on it
+  # → update them (override only if you genuinely can't yet). None, from a
+  # COMPLETE fleet read → the version is dead weight and removal is clean. None,
+  # from a PARTIAL read → we cannot claim nobody is on it, so neither removing
+  # nor overriding is honest; the operator resolves who is advertising it first.
+  defp retirement_remedy(%PackVersion{trust_state: :trusted}, true, %{runners: [_ | _]}),
+    do: :update_or_override
+
+  defp retirement_remedy(%PackVersion{trust_state: :trusted}, true, %{coverage: :complete}),
+    do: :remove
+
+  defp retirement_remedy(%PackVersion{trust_state: :trusted}, true, %{coverage: :partial}),
+    do: :resolve_advertisers
+
+  defp retirement_remedy(%PackVersion{}, _blocked?, _advertising), do: :none
+
+  defp update_successor(%PackVersion{trust_state: :trusted} = pack_version) do
+    case pack_version_outdated(pack_version) do
+      {:outdated, successor} -> successor
+      :current -> nil
+    end
+  end
+
+  defp update_successor(%PackVersion{}), do: nil
+
+  defp override_attribution(%PackVersion{retirement_overridden_at: nil}), do: nil
+
+  defp override_attribution(%PackVersion{} = pack_version) do
+    %{
+      at: pack_version.retirement_overridden_at,
+      actor_id: pack_version.retirement_overridden_by_id,
+      actor_label: override_actor_label(pack_version.retirement_overridden_by)
+    }
+  end
+
+  # Human-first: the name, then the email. A soft-deleted (or unloaded)
+  # overrider has no label at all — the web words that absence.
+  defp override_actor_label(%Users.User{full_name: full_name})
+       when is_binary(full_name) and full_name != "",
+       do: full_name
+
+  defp override_actor_label(%Users.User{email: email}) when is_binary(email), do: email
+  defp override_actor_label(_absent), do: nil
+
+  defp retired?(%PackVersion{} = pack_version),
+    do: match?({:retired, _}, pack_version_retirement(pack_version))
 
   defp console_filter(pack_versions, "", "", _actions_by_pack_ref), do: {pack_versions, %{}}
 
@@ -2092,14 +2300,43 @@ defmodule Emisar.Catalog do
     if Enum.empty?(matched_ids), do: matched, else: Map.put(matched, version_id, matched_ids)
   end
 
-  defp console_groups(visible) do
+  defp console_groups(visible, pack_versions) do
+    account_versions = Enum.group_by(pack_versions, & &1.pack_id)
+
     visible
     |> Enum.group_by(& &1.pack_id)
     |> Enum.map(fn {pack_id, versions} ->
-      %{id: pack_id, versions: Enum.sort_by(versions, & &1.last_seen_at, {:desc, DateTime})}
+      %{
+        id: pack_id,
+        versions: Enum.sort_by(versions, & &1.last_seen_at, {:desc, DateTime}),
+        update: pack_update(pack_id, Map.fetch!(account_versions, pack_id))
+      }
     end)
     |> Enum.sort_by(& &1.id)
   end
+
+  # The pack-level "a newer version shipped" nudge, said once per pack: a
+  # trusted, non-retired version below the current shipped one, and nothing
+  # trusted already AT (or ahead of) it. Judged over the account's WHOLE set for
+  # the pack rather than the filtered rows — a filter that hides the current
+  # version must not invent a nudge to update to a version you already run.
+  defp pack_update(pack_id, versions) do
+    states =
+      for %PackVersion{trust_state: :trusted} = version <- versions,
+          do: {version, pack_version_outdated(version)}
+
+    successor = Enum.find_value(states, fn {_version, state} -> outdated_successor(state) end)
+
+    already_current? =
+      Enum.any?(states, fn {version, state} -> state == :current and not retired?(version) end)
+
+    if successor && not already_current? do
+      %{version: successor, hash: shipped_hash(pack_id, successor)}
+    end
+  end
+
+  defp outdated_successor({:outdated, successor}), do: successor
+  defp outdated_successor(:current), do: nil
 
   @doc "Returns every pack-version row in the subject's account after the view-catalog gate."
   @spec list_all_pack_versions_for_account(Subject.t()) ::
@@ -2125,25 +2362,6 @@ defmodule Emisar.Catalog do
       :retirement_overridden_by, queryable ->
         PackVersion.Query.with_preloaded_retirement_overridden_by(queryable)
     end)
-  end
-
-  @doc """
-  Runner ids currently advertising `pack_id` at `pack_version` — the blast
-  radius of trusting that version (which hosts will be allowed to run it).
-  Account-scoped via the subject. Returns `{:ok, [runner_id]}`.
-  """
-  def runner_ids_advertising_pack(pack_id, pack_version, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      runner_ids =
-        RunnerAction.Query.all()
-        |> RunnerAction.Query.by_pack(pack_id, pack_version)
-        |> RunnerAction.Query.distinct_runner_ids()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      {:ok, runner_ids}
-    end
   end
 
   @doc """

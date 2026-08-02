@@ -47,6 +47,12 @@ defmodule Emisar.Runners.Runner.Query do
   def select_scope_facts(queryable),
     do: select(queryable, [runners: r], %{id: r.id, group: r.group})
 
+  # The durable pack advertisement a runner last sent, plus the identity the
+  # console names it by. `packs` is the whole runner_state map, so a pack that
+  # advertises no actions still counts as installed.
+  def select_pack_advertisement_facts(queryable),
+    do: select(queryable, [runners: r], %{id: r.id, name: r.name, group: r.group, packs: r.packs})
+
   def with_active_account(queryable) do
     join(
       queryable,
@@ -86,6 +92,8 @@ defmodule Emisar.Runners.Runner.Query do
 
   def ordered_by_group_name(queryable),
     do: order_by(queryable, [runners: r], asc: r.group, asc: r.name)
+
+  def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
   @doc """
   Filter by derived connection state. `online_ids` is the set of runner

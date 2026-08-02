@@ -101,11 +101,6 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def lock_for_update(queryable),
     do: lock(queryable, "FOR NO KEY UPDATE")
 
-  # Distinct runner ids advertising the filtered actions — the blast radius
-  # of trusting a pack (which hosts will run it).
-  def distinct_runner_ids(queryable),
-    do: queryable |> distinct(true) |> select([runner_actions: a], a.runner_id)
-
   # Distinct pack ids in the scoped actions — the option set for the runner
   # detail page's Pack filter (the packs THAT runner advertises).
   def distinct_pack_ids(queryable),

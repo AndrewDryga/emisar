@@ -159,6 +159,36 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Internal — bounded pack-advertisement facts for `account_id`: every
+  non-deleted runner's `%{id, name, group, packs}`, ordered by group then name.
+  The Catalog composes it to answer which hosts are on a pack version from the
+  durable runner_state advertisement (an installed pack may advertise no
+  actions, so action rows cannot answer it).
+
+  `limit` is required and caps the read. Returns
+  `{:ok, facts, %{coverage: :complete | :partial}}` — `:partial` when the
+  account has more runners than `limit`, so a caller can never read a short
+  list as "no runner is on it".
+  """
+  def list_pack_advertisement_facts_for_account(account_id, limit)
+      when is_binary(account_id) and is_integer(limit) and limit > 0 do
+    # One row past the cap is the sentinel that says the fleet overflows it.
+    facts =
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_account_id(account_id)
+      |> Runner.Query.ordered_by_group_name()
+      |> Runner.Query.select_pack_advertisement_facts()
+      |> Runner.Query.limit_to(limit + 1)
+      |> Repo.all()
+
+    if length(facts) > limit do
+      {:ok, Enum.take(facts, limit), %{coverage: :partial}}
+    else
+      {:ok, facts, %{coverage: :complete}}
+    end
+  end
+
+  @doc """
   Resolves one strict runbook target against the caller's complete current
   runner scope. Every returned runner is enabled and online; every authored ref
   must resolve, so a partial target never silently shrinks the blast radius.

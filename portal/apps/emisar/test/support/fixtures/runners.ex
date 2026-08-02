@@ -129,6 +129,18 @@ defmodule Emisar.Fixtures.Runners do
     key
   end
 
+  @doc """
+  Rigs the runner's advertised `packs` map — the durable runner_state fact the
+  catalog reads to answer which hosts are on a pack version — without replaying
+  a whole runner_state payload. `packs` is the wire shape:
+  `%{pack_id => %{"version" => v, "hash" => h}}`.
+  """
+  def advertise_packs(%Runner{} = runner, packs) when is_map(packs) do
+    runner
+    |> Runner.Changeset.apply_state(%{packs: packs})
+    |> Repo.update!()
+  end
+
   @doc "Backdates the runner's connection-lease expiry so the next claim may take over."
   def expire_connection_lease(%Runner{} = runner) do
     runner

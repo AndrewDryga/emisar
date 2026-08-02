@@ -596,9 +596,10 @@ defmodule EmisarWeb.PacksLiveTest do
       # stamp — and a runner is STILL advertising the old version. The trust API
       # can't arrange trusted+retired (trusting a retired version IS the
       # override), so the fixture inserts the row directly against a real shipped
-      # watermark ("0.0.0" sits strictly below every one); the RunnerAction row
-      # is what makes a runner "still on it". The fix is to update those runners;
-      # override is the escape hatch only for when you genuinely can't yet.
+      # watermark ("0.0.0" sits strictly below every one); the runner's own
+      # advertised `packs` map is what makes it "still on it". The fix is to
+      # update those runners; override is the escape hatch only for when you
+      # genuinely can't yet.
       {pack_id, _watermark} =
         Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
 
@@ -611,7 +612,7 @@ defmodule EmisarWeb.PacksLiveTest do
           version: "0.0.0"
         )
 
-      Fixtures.Catalog.create_action(runner: runner, pack_id: pack_id, pack_version: "0.0.0")
+      Fixtures.Runners.advertise_packs(runner, %{pack_id => %{"version" => "0.0.0"}})
 
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
@@ -648,6 +649,72 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "Remove version"
       refute html =~ "Override retirement"
       refute has_element?(lv, "#override-#{pack_version.id}")
+    end
+
+    test "a fleet too large to read whole offers neither Remove nor Override",
+         %{conn: conn, account: account} do
+      # The page reads 100 runners; past that it cannot prove the retired
+      # version is unused, so "no runner is on it — remove it" would be a lie.
+      # It says the fleet is only partly read and offers updating instead.
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      for _ <- 1..101 do
+        Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      end
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "Retired by a newer release"
+      assert html =~ "more runners than this page"
+      assert html =~ "emisar pack install #{pack_id}"
+      refute html =~ "no runner is on it"
+      refute html =~ "Remove version"
+      refute html =~ "Override retirement"
+      refute has_element?(lv, "#override-#{pack_version.id}")
+    end
+
+    test "a partly-read fleet states a floor, never an exact advertiser count",
+         %{conn: conn, account: account} do
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      # Named first in group/name order, so it survives the 100-runner cap.
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "aaa-canary",
+          group: "aaa",
+          connected?: false
+        )
+
+      Fixtures.Runners.advertise_packs(runner, %{pack_id => %{"version" => "0.0.0"}})
+
+      for _ <- 1..101 do
+        Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      end
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "At least 1"
+      assert html =~ "aaa-canary"
+      assert html =~ "others may be on it too"
+      assert html =~ "Override retirement"
     end
 
     test "a first-seen retired version reads as retired (upgrade the runner), not an unknown pack",
@@ -705,7 +772,7 @@ defmodule EmisarWeb.PacksLiveTest do
           version: "0.0.0"
         )
 
-      Fixtures.Catalog.create_action(runner: runner, pack_id: pack_id, pack_version: "0.0.0")
+      Fixtures.Runners.advertise_packs(runner, %{pack_id => %{"version" => "0.0.0"}})
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
