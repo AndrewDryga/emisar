@@ -22,6 +22,7 @@ defmodule EmisarWeb.CoreComponents do
     router: EmisarWeb.Router,
     statics: EmisarWeb.static_paths()
 
+  alias Emisar.{Accounts, Runs}
   alias EmisarWeb.{MailTo, TimeHelpers, UrlHelpers}
   alias Phoenix.LiveView.JS
 
@@ -2198,15 +2199,15 @@ defmodule EmisarWeb.CoreComponents do
           aria-label="Open profile settings"
         >
           <.avatar
-            name={TimeHelpers.member_display_name(@current_membership, @current_user)}
+            name={Accounts.member_display_name(@current_membership, @current_user)}
             size={:sm}
           />
           <div class="min-w-0 flex-1">
             <div class="truncate font-medium">
-              {TimeHelpers.member_display_name(@current_membership, @current_user)}
+              {Accounts.member_display_name(@current_membership, @current_user)}
             </div>
             <div
-              :if={email = TimeHelpers.secondary_user_email(@current_user)}
+              :if={email = Accounts.secondary_user_email(@current_user)}
               class="truncate text-xs text-zinc-400"
             >
               {email}
@@ -2364,10 +2365,10 @@ defmodule EmisarWeb.CoreComponents do
   # "via portal" is the default channel and says nothing, so it's dropped;
   # the MCP agent name IS the signal (human vs agent origin) and stays. A run
   # with no recorded human (legacy rows, the runbook engine) shows only its
-  # channel; nil hides the segment entirely. TimeHelpers.run_who_via/1 is the
-  # shared who/via primitive (also feeds the runs list + run detail).
+  # channel; nil hides the segment entirely. Runs.run_who_via/1 is the shared
+  # who/via projection (also feeds the runs list + run detail).
   defp run_attribution(run) do
-    case TimeHelpers.run_who_via(run) do
+    case Runs.run_who_via(run) do
       {nil, nil} -> nil
       {who, nil} -> "by #{who}"
       {nil, channel} -> "via #{channel}"
@@ -2411,12 +2412,12 @@ defmodule EmisarWeb.CoreComponents do
   or a schedule, so agent-origin is pre-attentive without spending the
   emerald-means-allowed semantic on it (who dispatched is metadata, not an
   outcome). The canonical origin shape — reuse it instead of re-pairing an icon
-  with `run_actor/1`. The caller caps the width (`max-w-*`) where the column is
+  with an actor label. The caller caps the width (`max-w-*`) where the column is
   tight; the label always stays one line.
 
       <.source_badge
         source={run.source}
-        label={run_actor(run)}
+        label={accountable_actor_label(Runs.run_who_via(run))}
         class="max-w-[12rem] text-xs"
       />
   """
@@ -2424,7 +2425,10 @@ defmodule EmisarWeb.CoreComponents do
     required: true,
     doc: "the run's `source` enum — :operator/:mcp/:runbook/:scheduled"
 
-  attr :label, :string, required: true, doc: "the actor label, e.g. from `run_actor/1`"
+  attr :label, :string,
+    required: true,
+    doc: "the actor label, e.g. `accountable_actor_label(Runs.run_who_via(run))`"
+
   attr :class, :string, default: nil
 
   def source_badge(assigns) do
@@ -2520,7 +2524,7 @@ defmodule EmisarWeb.CoreComponents do
   (the shell user block, the team roster), `:square` for workspaces (the
   account switcher rows).
 
-      <.avatar name={TimeHelpers.user_display_name(@current_user)} size={:sm} />
+      <.avatar name={Accounts.user_display_name(@current_user)} size={:sm} />
       <.avatar name={account.name} shape={:square} size={:xs} />
   """
   attr :name, :string, required: true

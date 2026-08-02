@@ -55,33 +55,6 @@ defmodule Emisar.Users do
     |> Repo.fetch(User.Query)
   end
 
-  @doc """
-  Internal — label resolver for Audit/dispatch: batch resolver returning
-  `%{user_id => display_name}` for the supplied ids (falls back to email
-  when full_name is blank). Takes ids, not a subject — the caller (Audit's
-  reference resolver) already authorized an account-scoped listing and only
-  projects labels for ids it trusts.
-  """
-  def user_labels_for_ids(ids, account_id) when is_list(ids) and is_binary(account_id) do
-    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
-
-    case ids do
-      [] ->
-        %{}
-
-      ids ->
-        # The name THIS account knows them by. A directory can rename the same
-        # person differently per account and `users.full_name` is cross-account, so
-        # an approval in one workspace was labelled with a name only another uses.
-        # Same query audit resolves its actor labels through, so the two agree.
-        User.Query.not_deleted()
-        |> User.Query.members_of_account(account_id)
-        |> User.Query.select_labels(ids, :display_name)
-        |> Repo.all()
-        |> Map.new()
-    end
-  end
-
   # -- Registration + sign-in (pre-Subject boundary) ----------------------
 
   @doc "Internal — registration: the auth boundary creates the user before any subject/tenant exists (pre-auth)."

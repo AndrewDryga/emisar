@@ -2,6 +2,9 @@ defmodule EmisarWeb.TimeHelpers do
   @moduledoc """
   Shared view formatters — timestamps, durations, JSON, audit labels,
   and changeset errors. One place so every page renders the same way.
+  Formatting only: it takes scalars and plain tuples, never a domain struct
+  or a loaded/unloaded association (attribution facts come from
+  `Emisar.Runs.run_who_via/1` and `Emisar.Runbooks.execution_who_via/1`).
 
       <span>{relative_time(@run.inserted_at)}</span>     # "3m ago"
       <span>{absolute_time(@run.inserted_at)}</span>     # "May 21, 14:03 UTC"
@@ -219,99 +222,17 @@ defmodule EmisarWeb.TimeHelpers do
   defp to_datetime(%NaiveDateTime{} = ndt), do: DateTime.from_naive!(ndt, "Etc/UTC")
 
   @doc """
-  User-first run attribution as `{who, via}` — the accountable HUMAN by name
-  (email fallback) and the secondary channel. `who` is the requesting user, or
-  an MCP run's API-key owner; `nil` when no human is recorded (legacy rows, the
-  runbook engine). `via` is the channel that adds signal — the API-key name,
-  "LLM agent", "runbook", "schedule" — and `nil` for a plain operator run,
-  where "via portal" says nothing. An unloaded association falls through the
-  same clauses as `nil` (`%Ecto.Association.NotLoaded{}` has no `:email` key).
+  The single-line accountable actor label for `source_badge`, from the
+  `{who, via}` a domain projection returns (`Emisar.Runs.run_who_via/1`,
+  `Emisar.Runbooks.execution_who_via/1`): the human when one resolved, else the
+  dispatch channel, else the em-dash placeholder. The icon beside it already
+  communicates the channel, so a resolved human is never followed by redundant
+  `via <channel>` text. Formatting only — who counts as the accountable human
+  is the domain's call, never this module's.
   """
-  def run_who_via(run), do: {run_who(run), run_via(run)}
-
-  # Match on :email presence, not a bare %{} — %Ecto.Association.NotLoaded{} is
-  # a struct (so a map) and would match %{}, swallowing the api_key fallback.
-  # The name THIS account knows them by. `users.full_name` is cross-account, so a
-  # person in two synced workspaces was attributed under whichever name the other
-  # one uses. The query joins the requester's membership for the run's account.
-  defp run_who(%{requested_by: %{email: _} = user}), do: account_local_name(user)
-
-  defp run_who(%{api_key: %{created_by: %{email: _} = user} = api_key}),
-    do: api_key_owner_name(api_key, user)
-
-  defp run_who(_run), do: nil
-
-  # One membership is preloaded when the read scoped it to an account; anything
-  # else (an unscoped read, a key owner we did not join) falls back to the
-  # person's own name.
-  defp account_local_name(%{memberships: [membership | _]} = user),
-    do: member_display_name(membership, user)
-
-  defp account_local_name(user), do: user_display_name(user)
-
-  defp api_key_owner_name(%{created_by_membership: membership}, user)
-       when is_struct(membership, Emisar.Accounts.Membership),
-       do: member_display_name(membership, user)
-
-  # A historical or revoked membership must not make a cross-account global
-  # name visible. The email belongs to the key owner, so it remains safe audit
-  # attribution when no current membership was preloaded.
-  defp api_key_owner_name(_api_key, user), do: user.email
-
-  defp run_via(%{source: :mcp, api_key: %{name: name}}) when is_binary(name) and name != "",
-    do: name
-
-  defp run_via(%{source: :mcp}), do: "LLM agent"
-  defp run_via(%{source: :runbook}), do: "runbook"
-  defp run_via(%{source: :scheduled}), do: "schedule"
-  defp run_via(_run), do: nil
-
-  @doc """
-  A member's name inside ONE account: the directory's name for them if this
-  account's IdP set one, else their own.
-
-  `users.full_name` is cross-account, so a workspace whose directory renamed
-  someone who also belongs elsewhere holds that name on the membership instead.
-  """
-  def member_display_name(%{directory_display_name: name}, _user)
-      when is_binary(name) and name != "",
-      do: name
-
-  def member_display_name(_membership, user), do: user_display_name(user)
-
-  @doc "Returns a user's nonblank full name, falling back to their email."
-  def user_display_name(%{full_name: name, email: email}) when is_binary(name) do
-    if String.trim(name) == "", do: email, else: name
-  end
-
-  def user_display_name(%{email: email}), do: email
-  def user_display_name(_user), do: nil
-
-  @doc "Returns a user's email only when it is distinct from their display name."
-  def secondary_user_email(%{email: email} = user) when is_binary(email) do
-    if user_display_name(user) == email, do: nil, else: email
-  end
-
-  def secondary_user_email(_user), do: nil
-
-  @doc """
-  The single-line accountable actor label for `source_badge`: a nonblank human
-  name, falling back to email. When no human resolves (runbook, schedule, or a
-  deleted key owner), the dispatch channel is the useful fallback. The icon
-  already communicates the source, so a resolved human is never followed by
-  redundant `via <channel>` text.
-  """
-  def run_actor(run) do
-    case run_who_via(run) do
-      {nil, nil} -> "—"
-      {nil, via} -> via
-      {who, _via} -> who
-    end
-  end
-
-  @doc "The MCP client version snapshotted on a run, if any (e.g. \"1.2.3\")."
-  def client_version(%{client_info: %{"version" => v}}) when is_binary(v) and v != "", do: v
-  def client_version(_), do: nil
+  def accountable_actor_label({nil, nil}), do: "—"
+  def accountable_actor_label({nil, via}), do: via
+  def accountable_actor_label({who, _via}), do: who
 
   @doc "Humanized run source (`:mcp` → `LLM agent`, …) — the sidebar/filter noun."
   def format_source(:operator), do: "Operator"

@@ -49,21 +49,6 @@ defmodule EmisarWeb.TimeHelpersTest do
     end
   end
 
-  describe "user identity labels" do
-    test "uses a nonblank name and only returns a distinct secondary email" do
-      named = %{full_name: "Maya Chen", email: "maya@example.test"}
-      unnamed = %{full_name: nil, email: "owner@example.test"}
-      blank = %{full_name: "  ", email: "blank@example.test"}
-
-      assert user_display_name(named) == "Maya Chen"
-      assert secondary_user_email(named) == "maya@example.test"
-      assert user_display_name(unnamed) == "owner@example.test"
-      assert secondary_user_email(unnamed) == nil
-      assert user_display_name(blank) == "blank@example.test"
-      assert secondary_user_email(blank) == nil
-    end
-  end
-
   describe "format_json/1" do
     test "pretty-prints maps; nil is an empty object" do
       assert format_json(nil) == "{}"
@@ -82,132 +67,11 @@ defmodule EmisarWeb.TimeHelpersTest do
     end
   end
 
-  describe "run_who_via/1" do
-    test "the HUMAN leads; the requesting operator beats the agent name" do
-      # An operator run: the person leads, no channel ("via portal" says nothing).
-      assert run_who_via(%{
-               source: :operator,
-               requested_by: %{full_name: "Maya Chen", email: "m@x.co"}
-             }) == {"Maya Chen", nil}
-
-      # full_name falls back to email.
-      assert run_who_via(%{source: :operator, requested_by: %{full_name: nil, email: "m@x.co"}}) ==
-               {"m@x.co", nil}
-    end
-
-    test "the account's own name for the person wins over their global one" do
-      # A directory can call the same person something different in each account,
-      # and users.full_name is cross-account — so a run in THIS workspace was
-      # attributed under the name only the other workspace uses. The query joins
-      # the requester's membership for the run's account; this is what reads it.
-      assert run_who_via(%{
-               source: :operator,
-               requested_by: %{
-                 full_name: "Maya Chen",
-                 email: "m@x.co",
-                 memberships: [%{directory_display_name: "Maya C. (Contractor)"}]
-               }
-             }) == {"Maya C. (Contractor)", nil}
-
-      # No directory name on the membership: their own name stands.
-      assert run_who_via(%{
-               source: :operator,
-               requested_by: %{
-                 full_name: "Maya Chen",
-                 email: "m@x.co",
-                 memberships: [%{directory_display_name: nil}]
-               }
-             }) == {"Maya Chen", nil}
-    end
-
-    test "an MCP run names the accountable human (the key owner) + the key as via" do
-      # A human requested it: they lead, the API key is the channel.
-      assert run_who_via(%{
-               source: :mcp,
-               requested_by: %{full_name: "Jordan", email: "j@x.co"},
-               api_key: %{
-                 name: "Claude Code",
-                 created_by: %{full_name: "Jordan", email: "j@x.co"}
-               }
-             }) == {"Jordan", "Claude Code"}
-
-      # No requester recorded → the key's OWNER is the accountable human.
-      assert run_who_via(%{
-               source: :mcp,
-               requested_by: nil,
-               api_key: %{name: "Claude Code", created_by: %{full_name: nil, email: "owner@x.co"}}
-             }) == {"owner@x.co", "Claude Code"}
-    end
-
-    test "an MCP run uses the key owner's account-local name" do
-      assert run_who_via(%{
-               source: :mcp,
-               requested_by: nil,
-               api_key: %{
-                 name: "Claude Code",
-                 created_by: %{full_name: "Maya Chen", email: "m@x.co"},
-                 created_by_membership: %Emisar.Accounts.Membership{
-                   directory_display_name: "Maya C. (Contractor)"
-                 }
-               }
-             }) == {"Maya C. (Contractor)", "Claude Code"}
-
-      assert run_who_via(%{
-               source: :mcp,
-               requested_by: nil,
-               api_key: %{
-                 name: "Claude Code",
-                 created_by: %{full_name: "Maya Chen", email: "m@x.co"}
-               }
-             }) == {"m@x.co", "Claude Code"}
-    end
-
-    test "an MCP run with no resolvable human shows only its channel" do
-      # Missing/deleted user on both sides: who is nil, the key name is via.
-      assert run_who_via(%{source: :mcp, requested_by: nil, api_key: %{name: "ci-bot"}}) ==
-               {nil, "ci-bot"}
-
-      # An unloaded assoc (%Ecto.Association.NotLoaded{}) falls through like nil.
-      assert run_who_via(%{source: :mcp, requested_by: %Ecto.Association.NotLoaded{}}) ==
-               {nil, "LLM agent"}
-    end
-
-    test "a legacy/system row with no human and no signal channel is {nil, nil}" do
-      assert run_who_via(%{source: :operator, requested_by: nil}) == {nil, nil}
-      assert run_who_via(%{}) == {nil, nil}
-      assert run_who_via(%{source: :runbook}) == {nil, "runbook"}
-    end
-  end
-
-  describe "run_actor/1" do
-    test "returns only the accountable person's name, falling back to email" do
-      assert run_actor(%{
-               source: :mcp,
-               requested_by: %{full_name: "Jordan", email: "j@x.co"},
-               api_key: %{name: "Claude Code", created_by: %{email: "j@x.co"}}
-             }) == "Jordan"
-
-      assert run_actor(%{source: :operator, requested_by: %{full_name: "Maya", email: "m@x.co"}}) ==
-               "Maya"
-
-      assert run_actor(%{
-               source: :mcp,
-               requested_by: nil,
-               api_key: %{
-                 name: "Claude Code",
-                 created_by: %{full_name: "  ", email: "owner@x.co"}
-               }
-             }) == "owner@x.co"
-
-      assert run_actor(%{source: :mcp, requested_by: nil, api_key: %{name: "ci-bot"}}) == "ci-bot"
-      assert run_actor(%{}) == "—"
-    end
-  end
-
-  describe "client_version/1" do
-    test "reads the snapshotted version" do
-      assert client_version(%{client_info: %{"version" => "1.2.3"}}) == "1.2.3"
-      assert client_version(%{client_info: %{}}) == nil
+  describe "accountable_actor_label/1" do
+    test "prefers the human, then the channel, then the placeholder" do
+      assert accountable_actor_label({"Maya", "Claude Code"}) == "Maya"
+      assert accountable_actor_label({nil, "Claude Code"}) == "Claude Code"
+      assert accountable_actor_label({nil, nil}) == "—"
     end
   end
 

@@ -311,6 +311,32 @@ defmodule Emisar.Approvals do
     end
   end
 
+  # A page of approval rows references at most a few dozen humans (requester,
+  # decider, each voter, each grant's granter). The ceiling keeps a crafted
+  # id list from turning one render into an unbounded `IN (…)` scan.
+  @max_actor_label_ids 256
+
+  @doc """
+  Account-local display labels for the humans an approval surface names —
+  `{:ok, %{user_id => label}}`. Requires `view` on approvals and resolves ids
+  only within the subject's own account, so an id from another account (or one
+  whose membership is gone) simply has no label and the caller renders its
+  own former-member text. At most #{@max_actor_label_ids} ids may be supplied;
+  anything longer, or a non-list, is `{:error, :too_many_ids}` with no DB work.
+  """
+  def actor_labels_for_ids(ids, %Subject{} = subject)
+      when is_list(ids) and length(ids) <= @max_actor_label_ids do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_approvals_permission()
+           ) do
+      {:ok, Accounts.user_labels_for_ids(ids, subject.account.id)}
+    end
+  end
+
+  def actor_labels_for_ids(_ids, %Subject{}), do: {:error, :too_many_ids}
+
   # Default window for a pending approval to sit before the
   # ApprovalExpiry worker auto-rejects it. Anything past this is
   # almost certainly an on-call who lost the page / left the company —

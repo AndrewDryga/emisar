@@ -506,6 +506,42 @@ defmodule Emisar.RunbooksTest do
                api_key: nil
              }) == {nil, "LLM agent"}
     end
+
+    test "unloaded attribution stays unknown instead of impersonating a former member" do
+      user = Fixtures.Users.create_user(full_name: "Global Name")
+
+      execution = %RunbookExecution{
+        requested_by: nil,
+        api_key_id: Repo.generate_id(),
+        api_key: %Emisar.ApiKeys.ApiKey{name: "Claude Code", created_by: user}
+      }
+
+      assert Runbooks.execution_who_via(execution) == {nil, "Claude Code"}
+    end
+
+    test "a foreign membership never supplies its directory name" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user(full_name: "Global Name")
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: user.id,
+          role: "operator"
+        )
+
+      membership = Fixtures.Memberships.sync_display_name(membership, "Foreign Directory Name")
+
+      execution = %RunbookExecution{
+        account_id: account.id,
+        initiating_membership_id: membership.id,
+        initiating_membership: membership,
+        requested_by: user
+      }
+
+      assert Runbooks.execution_who_via(execution) == {user.email, nil}
+    end
   end
 
   describe "fetch_runbook_for_execution/2" do

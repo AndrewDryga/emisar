@@ -722,20 +722,63 @@ defmodule Emisar.Accounts do
   @doc """
   The name this account knows a member by: the directory-synced membership
   display name when this account's IdP set one, else the user's own nonblank
-  full name, else their email. Pass `nil` for the membership when no current
-  membership is in scope to fall back to the user's own name. Pure — attribution
-  surfaces render its result verbatim instead of re-deriving naming rules.
+  full name, else their email. Without a current `%Membership{}`, only the
+  email remains safe: a former member's cross-account `users.full_name` is not
+  this tenant's naming fact. Pure — attribution surfaces render its result
+  verbatim instead of re-deriving naming rules.
   """
   def member_display_name(%Membership{directory_display_name: name}, _user)
       when is_binary(name) and name != "",
       do: name
 
-  def member_display_name(_membership, %Users.User{full_name: name, email: email})
-      when is_binary(name) do
+  def member_display_name(%Membership{}, %Users.User{} = user), do: user_display_name(user)
+  def member_display_name(_membership, %Users.User{email: email}), do: email
+
+  @doc """
+  A person's own name: their nonblank full name, else their email. Cross-account
+  identity, so an account-scoped surface reaches for `member_display_name/2`
+  first. Pure; `nil` for a shape carrying neither field.
+  """
+  def user_display_name(%{full_name: name, email: email}) when is_binary(name) do
     if String.trim(name) == "", do: email, else: name
   end
 
-  def member_display_name(_membership, %Users.User{email: email}), do: email
+  def user_display_name(%{email: email}), do: email
+  def user_display_name(_user), do: nil
+
+  @doc """
+  A person's email when it is distinct from their display name, else `nil` —
+  the secondary identity line that must not repeat the primary one. Pure.
+  """
+  def secondary_user_email(%{email: email} = user) when is_binary(email) do
+    if user_display_name(user) == email, do: nil, else: email
+  end
+
+  def secondary_user_email(_user), do: nil
+
+  @doc """
+  Internal — label resolver for approval attribution: batch
+  `%{user_id => label}` for the supplied ids, each named the way THIS account
+  knows the person (directory name → nonblank full name → email). Takes ids and
+  an explicit already-authorized `account_id` rather than a `%Subject{}`; an id
+  belonging to no current member of the account resolves to no label, so a
+  mis-stamped or cross-account id can never surface a name.
+  """
+  def user_labels_for_ids(ids, account_id) when is_list(ids) and is_binary(account_id) do
+    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    case ids do
+      [] ->
+        %{}
+
+      ids ->
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.select_user_labels(ids)
+        |> Repo.all()
+        |> Map.new()
+    end
+  end
 
   @doc """
   Internal — Audit's user-event fan-out: EVERY active (not-deleted, not-suspended)

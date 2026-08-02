@@ -1286,11 +1286,11 @@ defmodule Emisar.AccountsTest do
       assert Accounts.member_display_name(membership, user) == "Directory Name"
     end
 
-    test "without a directory name the user's nonblank full name is used" do
+    test "a current member without a directory name uses their own full name" do
       user = %User{full_name: "Own Name", email: "person@example.com"}
 
       assert Accounts.member_display_name(%Membership{}, user) == "Own Name"
-      assert Accounts.member_display_name(nil, user) == "Own Name"
+      assert Accounts.member_display_name(nil, user) == "person@example.com"
     end
 
     test "a blank or absent full name falls back to the email" do
@@ -1299,6 +1299,60 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.member_display_name(nil, blank) == "blank@example.com"
       assert Accounts.member_display_name(nil, unnamed) == "unnamed@example.com"
+    end
+  end
+
+  describe "user_display_name/1" do
+    test "uses a nonblank full name and falls back to email" do
+      named = %User{full_name: "Maya Chen", email: "maya@example.com"}
+      blank = %User{full_name: "  ", email: "blank@example.com"}
+      unnamed = %User{full_name: nil, email: "unnamed@example.com"}
+
+      assert Accounts.user_display_name(named) == "Maya Chen"
+      assert Accounts.user_display_name(blank) == "blank@example.com"
+      assert Accounts.user_display_name(unnamed) == "unnamed@example.com"
+      assert Accounts.user_display_name(%{}) == nil
+    end
+  end
+
+  describe "secondary_user_email/1" do
+    test "returns an email only when the primary display name differs" do
+      named = %User{full_name: "Maya Chen", email: "maya@example.com"}
+      unnamed = %User{full_name: nil, email: "unnamed@example.com"}
+
+      assert Accounts.secondary_user_email(named) == "maya@example.com"
+      assert Accounts.secondary_user_email(unnamed) == nil
+      assert Accounts.secondary_user_email(%{}) == nil
+    end
+  end
+
+  describe "user_labels_for_ids/2" do
+    test "returns deduplicated account-local labels and skips non-members" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      named = Fixtures.Users.create_user(full_name: "Maya Chen")
+      unnamed = Fixtures.Users.create_user(full_name: nil)
+      outsider = Fixtures.Users.create_user(full_name: "Not A Member")
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: named.id)
+
+      _other_membership =
+        Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: named.id)
+
+      _unnamed_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: unnamed.id)
+
+      _membership = Fixtures.Memberships.sync_display_name(membership, "Directory Maya")
+
+      ids = [named.id, unnamed.id, outsider.id, nil, named.id]
+
+      assert Accounts.user_labels_for_ids(ids, account.id) == %{
+               named.id => "Directory Maya",
+               unnamed.id => unnamed.email
+             }
+
+      assert Accounts.user_labels_for_ids([], account.id) == %{}
     end
   end
 

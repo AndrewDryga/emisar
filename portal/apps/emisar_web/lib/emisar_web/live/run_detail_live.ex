@@ -29,7 +29,7 @@ defmodule EmisarWeb.RunDetailLive do
   def mount(%{"id" => id}, _session, socket) do
     subject = socket.assigns.current_subject
 
-    case Runs.fetch_run_by_id(id, subject, preload: [:runner, :api_key, :requested_by]) do
+    case Runs.fetch_run_by_id(id, subject, preload: [:runner, :attribution]) do
       # A denied role and a missing run are indistinguishable — never leak
       # existence, never crash on {:error, :unauthorized}.
       {:error, _} ->
@@ -326,14 +326,16 @@ defmodule EmisarWeb.RunDetailLive do
               />
             </.meta_field>
             <.meta_field label="Dispatched by">
-              <% {who, via} = run_who_via(@run) %>
+              <% {who, via} = Runs.run_who_via(@run) %>
               <span class="block truncate">
                 <span :if={who} class="text-zinc-200">{who}</span>
                 <span :if={via} class={if who, do: "text-zinc-400", else: "text-zinc-200"}>
                   {if who, do: "via #{via}", else: via}
                 </span>
                 <span :if={!who && !via} class="text-zinc-500">—</span>
-                <span :if={client_version(@run)} class="text-zinc-400">{client_version(@run)}</span>
+                <span :if={version = Runs.client_version(@run)} class="text-zinc-400">
+                  {version}
+                </span>
               </span>
             </.meta_field>
             <%!-- Empty Duration / Exit code render the same muted em-dash placeholder

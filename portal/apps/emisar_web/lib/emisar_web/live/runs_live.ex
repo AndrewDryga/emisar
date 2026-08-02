@@ -68,7 +68,7 @@ defmodule EmisarWeb.RunsLive do
   defp load_runs(socket, params, filters) do
     subject = socket.assigns.current_subject
     opts = LiveTable.params_to_opts(params, filters)
-    run_opts = Keyword.put(opts, :preload, [:runner, :api_key, :requested_by])
+    run_opts = Keyword.put(opts, :preload, [:runner, :attribution])
 
     case Runs.list_runs(subject, run_opts) do
       {:ok, runs, meta} ->
@@ -284,7 +284,11 @@ defmodule EmisarWeb.RunsLive do
             <.status_badge status={run.status} class="shrink-0" />
           </div>
           <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-zinc-400">
-            <.source_badge source={run.source} label={run_actor(run)} class="max-w-[60vw] text-xs" />
+            <.source_badge
+              source={run.source}
+              label={accountable_actor_label(Runs.run_who_via(run))}
+              class="max-w-[60vw] text-xs"
+            />
             <span aria-hidden="true">·</span>
             <span :if={run.runner}>{run.runner.name}</span>
             <.removed_runner :if={is_nil(run.runner)} runner_id={run.runner_id} />
@@ -313,7 +317,7 @@ defmodule EmisarWeb.RunsLive do
                agent run still reads distinctly from a human one (the product's point). --%>
           <.source_badge
             source={run.source}
-            label={run_actor(run)}
+            label={accountable_actor_label(Runs.run_who_via(run))}
             class="mt-0.5 max-w-[44vw] text-[11px] lg:hidden"
           />
         </:col>
@@ -333,7 +337,7 @@ defmodule EmisarWeb.RunsLive do
         <:col :let={run} label="Dispatched by" class="w-40 hidden lg:table-cell">
           <.source_badge
             source={run.source}
-            label={run_actor(run)}
+            label={accountable_actor_label(Runs.run_who_via(run))}
             class="max-w-[10rem] text-xs"
           />
         </:col>

@@ -14,7 +14,7 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Approvals, Catalog, Runners, Users}
+  alias Emisar.{Accounts, Approvals, Catalog, Runners}
   alias EmisarWeb.{LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -102,12 +102,7 @@ defmodule EmisarWeb.ApprovalsLive do
       list_or_empty(
         Approvals.list_grants_for_account(
           subject,
-          Keyword.put(grants_opts, :preload, [
-            :api_key,
-            :runner,
-            :granted_by,
-            :approval_request_run
-          ])
+          Keyword.put(grants_opts, :preload, [:api_key, :runner, :approval_request_run])
         )
       )
 
@@ -132,7 +127,7 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:decided_metadata, decided_meta)
     |> assign(:filter_params, params)
     |> assign(:runner_labels, runner_labels_for(pending ++ decided))
-    |> assign(:user_labels, user_labels_for(pending ++ decided, subject.account.id))
+    |> assign(:user_labels, user_labels_for(pending ++ decided, grants, subject))
     # Risk tier per pending request so the queue is triageable at a glance — an
     # approver shouldn't have to open each card to see if it's a scary one.
     |> assign(:risk_labels, risk_labels_for(pending, subject))
@@ -155,13 +150,19 @@ defmodule EmisarWeb.ApprovalsLive do
     |> Runners.runner_labels_for_ids()
   end
 
-  defp user_labels_for(requests, account_id) do
+  # One account-local label lookup for every human this page names — the
+  # requesters and deciders of the listed requests, plus whoever minted each
+  # standing grant. A denied or oversized read degrades to no labels, which the
+  # renderer already shows as "Former member".
+  defp user_labels_for(requests, grants, subject) do
     ids =
-      Enum.flat_map(requests, fn r ->
-        [r.requested_by_id, r.decided_by_id]
-      end)
+      Enum.flat_map(requests, fn r -> [r.requested_by_id, r.decided_by_id] end) ++
+        Enum.map(grants, & &1.granted_by_id)
 
-    Users.user_labels_for_ids(ids, account_id)
+    case Approvals.actor_labels_for_ids(ids, subject) do
+      {:ok, labels} -> labels
+      {:error, _reason} -> %{}
+    end
   end
 
   defp runner_id_from(%{context: %{"runner_id" => id}}) when is_binary(id), do: id
@@ -578,8 +579,8 @@ defmodule EmisarWeb.ApprovalsLive do
                        scans for). Line 2 = lifetime + usage. --%>
                     <.meta_line class="mt-1">
                       <:seg>via {grant_key_label(g)}</:seg>
-                      <:seg :if={g.granted_by}>
-                        granted by {user_display_name(g.granted_by)}
+                      <:seg :if={g.granted_by_id}>
+                        granted by {user_label(g.granted_by_id, @user_labels)}
                         <.local_time
                           id={"grant-created-#{g.id}"}
                           value={g.inserted_at}

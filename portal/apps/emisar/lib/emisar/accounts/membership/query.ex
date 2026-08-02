@@ -161,6 +161,30 @@ defmodule Emisar.Accounts.Membership.Query do
     |> select([user: u], u.email)
   end
 
+  @doc """
+  Narrow to the given member user ids and project `{user_id, label}` tuples —
+  the name THIS account knows each person by. Plain SQL composition for label
+  fan-out; not paginated.
+  """
+  # The membership's directory name wins: a directory can call the same person
+  # something different in each account, and `users.full_name` is cross-account,
+  # so a label taken from it showed one workspace a name only another uses.
+  # `distinct` guards against a user holding several memberships in one account.
+  def select_user_labels(queryable, ids) do
+    queryable
+    |> with_joined_user()
+    |> where([user: u], u.id in ^ids)
+    |> distinct([user: u], u.id)
+    |> select(
+      [memberships: m, user: u],
+      {u.id,
+       coalesce(
+         fragment("NULLIF(BTRIM(?), '')", m.directory_display_name),
+         coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)
+       )}
+    )
+  end
+
   # -- Pagination + preloads -------------------------------------------
 
   @impl Emisar.Repo.Query

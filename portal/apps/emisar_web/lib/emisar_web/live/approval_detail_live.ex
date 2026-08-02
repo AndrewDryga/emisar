@@ -1,6 +1,6 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Approvals, Catalog, Runners, Runs, Users}
+  alias Emisar.{Approvals, Catalog, Runners, Runs}
   alias EmisarWeb.{CommandPreview, PacksRegistry, Permissions, RunbookWorkflowComponents}
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.RunnerPresence
@@ -123,7 +123,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   defp fetch_action_run(%{run_id: run_id}, subject) when is_binary(run_id) do
-    case Runs.fetch_run_by_id(run_id, subject, preload: [:runner, :api_key]) do
+    case Runs.fetch_run_by_id(run_id, subject, preload: [:runner, :attribution]) do
       {:ok, run} -> run
       {:error, _} -> nil
     end
@@ -221,7 +221,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
     socket
     |> assign(:decisions, decisions)
-    |> assign(:user_labels, user_labels_for(request, decisions, subject.account.id))
+    |> assign(:user_labels, user_labels_for(request, decisions, subject))
     |> assign(:approved_count, approved_count)
     |> assign(:already_decided?, Enum.any?(decisions, &(&1.decider_id == actor_id)))
     |> assign(
@@ -230,11 +230,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
     )
   end
 
-  defp user_labels_for(request, decisions, account_id) do
+  defp user_labels_for(request, decisions, subject) do
     decision_ids = Enum.map(decisions, & &1.decider_id)
+    ids = [request.requested_by_id, request.decided_by_id | decision_ids]
 
-    [request.requested_by_id, request.decided_by_id | decision_ids]
-    |> Users.user_labels_for_ids(account_id)
+    case Approvals.actor_labels_for_ids(ids, subject) do
+      {:ok, labels} -> labels
+      {:error, _reason} -> %{}
+    end
   end
 
   defp fetch_action_for(%{"action_id" => action_id, "runner_id" => runner_id}, subject)
@@ -588,13 +591,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp dispatch_source_title(:scheduled), do: "Dispatched by a schedule"
   defp dispatch_source_title(_), do: nil
 
-  # The dispatch channel qualifier: name the actual MCP client (its API-key
-  # name, e.g. "Claude Code") when we have it, so an agent's request reads as
-  # who it was, not a generic "LLM agent" — the attribution house rule. Falls
-  # back to the source noun for non-MCP dispatch or an unnamed/absent key.
-  defp approval_channel(%{source: :mcp, api_key: %{name: name}})
-       when is_binary(name) and name != "",
-       do: name
+  # The dispatch channel qualifier comes from Runs' attribution projection, so
+  # approval never reinterprets API-key ownership or association load state.
+  defp approval_channel(%{source: :mcp} = run) do
+    {_who, via} = Runs.run_who_via(run)
+    via
+  end
 
   defp approval_channel(%{source: source}), do: format_source(source)
 

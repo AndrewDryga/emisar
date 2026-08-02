@@ -25,7 +25,7 @@ defmodule EmisarWeb.AgentsLive do
   every MCP request.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{ApiKeys, Compat}
+  alias Emisar.{Accounts, ApiKeys, Compat}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
@@ -378,7 +378,7 @@ defmodule EmisarWeb.AgentsLive do
 
   # The issuing human — the grouping key for the list. Falls back to "Auto"
   # for system-minted keys with no creator.
-  defp owner_label(%{created_by: %{} = user}), do: user_display_name(user)
+  defp owner_label(%{created_by: %{} = user}), do: Accounts.user_display_name(user)
   defp owner_label(_), do: "Auto-minted"
 
   # Pre-sort by owner so each `group_by={&owner_label/1}` cluster is one

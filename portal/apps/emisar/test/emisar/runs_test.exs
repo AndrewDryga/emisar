@@ -121,6 +121,113 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "run_who_via/1" do
+    test "names an operator through only the run account's initiating membership" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      requester = Fixtures.Users.create_user(full_name: "Global Name")
+
+      local_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: requester.id,
+          role: "operator"
+        )
+
+      other_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: requester.id,
+          role: "operator"
+        )
+
+      _local_membership =
+        Fixtures.Memberships.sync_display_name(local_membership, "Local Directory Name")
+
+      _other_membership =
+        Fixtures.Memberships.sync_display_name(other_membership, "Foreign Directory Name")
+
+      attrs = %{
+        requested_by_id: requester.id,
+        initiating_membership_id: local_membership.id
+      }
+
+      assert {:ok, _run} = Runs.create_run(base_attrs(account.id, runner.id, attrs))
+      assert {:ok, [run], _metadata} = Runs.list_runs(subject, preload: [:attribution])
+      assert Runs.run_who_via(run) == {"Local Directory Name", nil}
+
+      foreign_run = %ActionRun{
+        account_id: account.id,
+        initiating_membership_id: other_membership.id,
+        source: :operator,
+        requested_by: %{requester | memberships: [other_membership]}
+      }
+
+      assert Runs.run_who_via(foreign_run) == {requester.email, nil}
+    end
+
+    test "names an MCP key owner, then degrades deleted attribution safely" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      key_owner = Fixtures.Users.create_user(full_name: "Global Key Owner")
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: key_owner.id,
+          role: "owner"
+        )
+
+      membership = Fixtures.Memberships.sync_display_name(membership, "Local Key Owner")
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: key_owner.id,
+          name: "Claude Code"
+        )
+
+      attrs = %{
+        source: "mcp",
+        requested_by_id: nil,
+        api_key_id: key.id,
+        initiating_membership_id: membership.id
+      }
+
+      assert {:ok, _run} = Runs.create_run(base_attrs(account.id, runner.id, attrs))
+      assert {:ok, [run], _metadata} = Runs.list_runs(subject, preload: [:attribution])
+      assert Runs.run_who_via(run) == {"Local Key Owner", "Claude Code"}
+
+      _membership = Fixtures.Memberships.mark_membership_as_deleted(membership)
+
+      assert {:ok, [former], _metadata} = Runs.list_runs(subject, preload: [:attribution])
+      assert Runs.run_who_via(former) == {key_owner.email, "Claude Code"}
+
+      _user = Fixtures.Users.mark_user_as_deleted(key_owner)
+
+      assert {:ok, [deleted], _metadata} = Runs.list_runs(subject, preload: [:attribution])
+      assert Runs.run_who_via(deleted) == {nil, "Claude Code"}
+    end
+
+    test "does not reinterpret unloaded or legacy associations" do
+      key = %ApiKeys.ApiKey{name: "Claude Code"}
+      unloaded = %ActionRun{source: :mcp, api_key: key}
+      legacy = %ActionRun{source: :operator, requested_by: nil}
+
+      assert Runs.run_who_via(unloaded) == {nil, "Claude Code"}
+      assert Runs.run_who_via(legacy) == {nil, nil}
+    end
+  end
+
+  describe "client_version/1" do
+    test "returns only a nonblank snapshotted version" do
+      assert Runs.client_version(%ActionRun{client_info: %{"version" => "1.2.3"}}) == "1.2.3"
+      assert Runs.client_version(%ActionRun{client_info: %{}}) == nil
+      assert Runs.client_version(%ActionRun{client_info: %{"version" => ""}}) == nil
+    end
+  end
+
   describe "list_runs/2" do
     test "pages the subject's account only (cross-account isolation)" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -210,7 +317,14 @@ defmodule Emisar.RunsTest do
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: key_owner.id)
 
       {:ok, _run} =
-        Runs.create_run(base_attrs(account.id, runner.id, %{source: "mcp", api_key_id: key.id}))
+        Runs.create_run(
+          base_attrs(account.id, runner.id, %{
+            source: "mcp",
+            requested_by_id: nil,
+            api_key_id: key.id,
+            initiating_membership_id: local_membership.id
+          })
+        )
 
       assert {:ok, [listed], _meta} = Runs.list_runs(subject, preload: [:api_key])
       assert listed.api_key.created_by.id == key_owner.id

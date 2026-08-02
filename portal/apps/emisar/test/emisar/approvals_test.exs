@@ -875,6 +875,49 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "actor_labels_for_ids/2" do
+    test "returns bounded account-local labels and omits cross-account ids" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user(full_name: "Global Name")
+      outsider = Fixtures.Users.create_user(full_name: "Other Account Name")
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      _other_membership =
+        Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: outsider.id)
+
+      _membership = Fixtures.Memberships.sync_display_name(membership, "Directory Name")
+
+      ids = [user.id, outsider.id, nil, user.id]
+
+      assert Approvals.actor_labels_for_ids(ids, subject) ==
+               {:ok, %{user.id => "Directory Name"}}
+    end
+
+    test "denies a principal without approval visibility" do
+      account = Fixtures.Accounts.create_account()
+
+      subject =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          role: :viewer,
+          permissions: MapSet.new()
+        )
+
+      assert Approvals.actor_labels_for_ids([], subject) == {:error, :unauthorized}
+    end
+
+    test "rejects an oversized id set before querying" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      ids = List.duplicate(Ecto.UUID.generate(), 257)
+
+      assert Approvals.actor_labels_for_ids(ids, subject) == {:error, :too_many_ids}
+      assert Approvals.actor_labels_for_ids(:not_a_list, subject) == {:error, :too_many_ids}
+    end
+  end
+
   describe "create_request/4" do
     test "creates an approval request in :pending status" do
       {_account, run} = run_fixture()

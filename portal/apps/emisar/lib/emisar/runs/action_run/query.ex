@@ -236,6 +236,7 @@ defmodule Emisar.Runs.ActionRun.Query do
         membership in ^Accounts.Membership.Query.not_deleted(),
         on:
           membership.id == api_key.created_by_membership_id and
+            membership.id == r.initiating_membership_id and
             membership.user_id == created_by.id and membership.account_id == r.account_id,
         as: ^binding
       )
@@ -266,17 +267,20 @@ defmodule Emisar.Runs.ActionRun.Query do
         as: ^binding
       )
     end)
-    # The requester's membership IN THIS RUN'S ACCOUNT rides along, because a
-    # directory can call the same person something different in each account and
-    # `users.full_name` is cross-account. Runs reads are account-scoped, so one
-    # join answers it for the whole page rather than a lookup per row.
+    # The run's OWN initiating membership rides along, because a directory can
+    # call the same person something different in each account and
+    # `users.full_name` is cross-account. Pinning the join to the recorded
+    # `initiating_membership_id` (not merely to the account) means the row that
+    # names the requester is the one this run was actually dispatched under.
     |> with_named_binding(:requested_by_membership, fn queryable, binding ->
       join(
         queryable,
         :left,
         [runs: r, requested_by: requested_by],
         membership in ^Accounts.Membership.Query.not_deleted(),
-        on: membership.user_id == requested_by.id and membership.account_id == r.account_id,
+        on:
+          membership.id == r.initiating_membership_id and
+            membership.user_id == requested_by.id and membership.account_id == r.account_id,
         as: ^binding
       )
     end)
@@ -284,6 +288,18 @@ defmodule Emisar.Runs.ActionRun.Query do
       [requested_by: requested_by, requested_by_membership: membership],
       requested_by: {requested_by, memberships: membership}
     )
+  end
+
+  @doc """
+  Everything the accountable-actor projection reads — the requesting user with
+  the run's initiating membership, plus the API key with its creator and that
+  creator's membership. Compose it once instead of pairing the two preloads by
+  hand at every call site (`Emisar.Runs.run_who_via/1` consumes exactly this).
+  """
+  def with_attribution(queryable) do
+    queryable
+    |> with_preloaded_requested_by()
+    |> with_preloaded_api_key()
   end
 
   @doc """

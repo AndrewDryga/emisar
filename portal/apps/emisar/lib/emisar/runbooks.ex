@@ -933,39 +933,54 @@ defmodule Emisar.Runbooks do
 
   `who` is the accountable human this account knows — the requesting operator,
   or an MCP execution's API-key owner — named through the initiating membership
-  so directory renames stay account-local; `nil` when no human row survives.
-  `via` is the secondary channel: the API-key name (falling back to
+  so directory renames stay account-local; `nil` when the attribution
+  associations were not loaded (unknown is never guessed at) or no human row
+  survives. `via` is the secondary channel: the API-key name (falling back to
   "LLM agent" when the key row is gone) for a key-dispatched execution, `nil`
-  for a plain operator dispatch. Pure — reads the attribution associations the
-  execution reads in this module already preload.
+  for a plain operator dispatch. Pure — reads what
+  `RunbookExecution.Query.with_attribution/1` loads.
   """
   def execution_who_via(%RunbookExecution{} = execution),
     do: {execution_who(execution), execution_via(execution)}
 
+  # An unloaded requester is UNKNOWN, never a fall-through to the key owner:
+  # only an explicit `nil` means no operator asked for this execution, which is
+  # when the key's owner IS the accountable human.
   defp execution_who(%RunbookExecution{requested_by: %Users.User{} = user} = execution),
-    do: Accounts.member_display_name(execution_membership(execution), user)
+    do: accountable_name(execution, user)
 
   defp execution_who(
-         %RunbookExecution{api_key: %ApiKeys.ApiKey{created_by: %Users.User{} = user}} =
-           execution
+         %RunbookExecution{
+           requested_by: nil,
+           api_key: %ApiKeys.ApiKey{created_by: %Users.User{} = user}
+         } = execution
        ),
-       do: api_key_owner_name(execution_membership(execution), user)
+       do: accountable_name(execution, user)
 
-  defp execution_who(_execution), do: nil
+  defp execution_who(%RunbookExecution{}), do: nil
 
-  defp api_key_owner_name(%Accounts.Membership{} = membership, user),
-    do: Accounts.member_display_name(membership, user)
+  # The membership is the account-local naming authority, so it only names
+  # anyone once it is provably THIS execution's, in THIS account, for THIS
+  # person. An absent (or mismatched) membership degrades to the email, which
+  # still identifies the accountable human without exposing the cross-account
+  # `users.full_name` or a directory name another workspace owns; an unloaded
+  # one names nobody.
+  defp accountable_name(
+         %RunbookExecution{initiating_membership: %Accounts.Membership{} = membership} = execution,
+         %Users.User{} = user
+       ) do
+    if membership.id == execution.initiating_membership_id and
+         membership.account_id == execution.account_id and membership.user_id == user.id do
+      Accounts.member_display_name(membership, user)
+    else
+      user.email
+    end
+  end
 
-  # A gone membership must not surface the key owner's cross-account global
-  # name; the email still identifies the accountable human.
-  defp api_key_owner_name(nil, user), do: user.email
+  defp accountable_name(%RunbookExecution{initiating_membership: nil}, %Users.User{} = user),
+    do: user.email
 
-  defp execution_membership(%RunbookExecution{
-         initiating_membership: %Accounts.Membership{} = membership
-       }),
-       do: membership
-
-  defp execution_membership(_execution), do: nil
+  defp accountable_name(%RunbookExecution{}, %Users.User{}), do: nil
 
   defp execution_via(%RunbookExecution{api_key_id: nil}), do: nil
 

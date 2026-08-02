@@ -54,6 +54,89 @@ defmodule Emisar.Runs do
   def terminal_status?(status), do: ActionRun.terminal?(status)
 
   @doc """
+  Human-first run attribution as `{who, via}`, for a run read with
+  `preload: [:attribution]`.
+
+  `who` is the accountable human this account knows — the requesting operator,
+  or an MCP run's API-key owner — named through the membership the run was
+  dispatched under, so a directory rename stays account-local. It is `nil` when
+  the attribution associations were not loaded (unknown is never guessed at) or
+  no human row survives. `via` is the secondary channel that adds signal: the
+  API-key name (falling back to "LLM agent") for an MCP run, "runbook" /
+  "schedule" for engine dispatch, and `nil` for a plain operator run, where
+  "via portal" says nothing. Pure.
+  """
+  def run_who_via(%ActionRun{} = run), do: {run_who(run), run_via(run)}
+
+  # An unloaded requester is UNKNOWN, never a fall-through to the key owner: a
+  # run read without its attribution preloads must not be attributed to whoever
+  # minted a credential it happens to carry. Only an explicit `nil` requester
+  # means "no operator asked for this", which is when the key's owner IS the
+  # accountable human.
+  defp run_who(%ActionRun{requested_by: %Users.User{} = user} = run),
+    do: accountable_name(run, user, requester_membership(user))
+
+  defp run_who(%ActionRun{requested_by: nil, api_key: %ApiKeys.ApiKey{} = api_key} = run),
+    do: key_owner_name(run, api_key)
+
+  defp run_who(%ActionRun{}), do: nil
+
+  defp key_owner_name(
+         %ActionRun{} = run,
+         %ApiKeys.ApiKey{created_by: %Users.User{} = user} = api_key
+       ),
+       do: accountable_name(run, user, loaded_membership(api_key.created_by_membership))
+
+  defp key_owner_name(_run, %ApiKeys.ApiKey{}), do: nil
+
+  defp requester_membership(%Users.User{memberships: memberships}) when is_list(memberships),
+    do: memberships |> List.first() |> loaded_membership()
+
+  defp requester_membership(%Users.User{}), do: :unknown
+
+  defp loaded_membership(%Accounts.Membership{} = membership), do: membership
+  defp loaded_membership(nil), do: nil
+  defp loaded_membership(_not_loaded), do: :unknown
+
+  # The membership is the account-local naming authority, so it only names
+  # anyone once it is provably THIS run's, in THIS account, for THIS person.
+  # An absent (or mismatched) membership degrades to the email, which still
+  # identifies the accountable human without exposing the cross-account
+  # `users.full_name` or a directory name another workspace owns.
+  defp accountable_name(_run, _user, :unknown), do: nil
+
+  defp accountable_name(
+         %ActionRun{} = run,
+         %Users.User{} = user,
+         %Accounts.Membership{} = membership
+       ) do
+    if membership.id == run.initiating_membership_id and
+         membership.account_id == run.account_id and membership.user_id == user.id do
+      Accounts.member_display_name(membership, user)
+    else
+      user.email
+    end
+  end
+
+  defp accountable_name(_run, %Users.User{} = user, nil), do: user.email
+
+  defp run_via(%ActionRun{source: :mcp, api_key: %ApiKeys.ApiKey{name: name}})
+       when is_binary(name) and name != "",
+       do: name
+
+  defp run_via(%ActionRun{source: :mcp}), do: "LLM agent"
+  defp run_via(%ActionRun{source: :runbook}), do: "runbook"
+  defp run_via(%ActionRun{source: :scheduled}), do: "schedule"
+  defp run_via(%ActionRun{}), do: nil
+
+  @doc "The MCP client version snapshotted on a run, if any (e.g. \"1.2.3\"). Pure."
+  def client_version(%ActionRun{client_info: %{"version" => version}})
+      when is_binary(version) and version != "",
+      do: version
+
+  def client_version(%ActionRun{}), do: nil
+
+  @doc """
   Paginated + filterable list for the Runs page. Returns
   `{:ok, [run], %Paginator.Metadata{}}` — see `Emisar.Repo.list/3`.
   Preloads the runner for each row so list templates can render names
@@ -466,6 +549,7 @@ defmodule Emisar.Runs do
       :runner, queryable -> ActionRun.Query.with_preloaded_runner(queryable)
       :api_key, queryable -> ActionRun.Query.with_preloaded_api_key(queryable)
       :requested_by, queryable -> ActionRun.Query.with_preloaded_requested_by(queryable)
+      :attribution, queryable -> ActionRun.Query.with_attribution(queryable)
     end)
   end
 
