@@ -46,11 +46,11 @@ defmodule EmisarWeb.PacksLive do
 
     # Two filters narrow the list. `name_filter` searches pack id AND action id
     # (so "postgres.activity" surfaces the postgres pack); `risk_filter` keeps
-    # only packs advertising an action at that tier. Both filter on the account's
-    # action index, loaded (once) only while a filter is active — see `load_packs`.
+    # only packs advertising an action at that tier. Both are just form state
+    # here — `Catalog.list_console_packs/2` owns the matching, the grouping, and
+    # which actions each version matched.
     socket = assign(socket, :name_filter, "")
     socket = assign(socket, :risk_filter, "")
-    socket = assign(socket, :pack_action_index, %{})
     socket = assign(socket, :matched_actions, %{})
     socket = assign(socket, :refresh_queued?, false)
 
@@ -80,36 +80,33 @@ defmodule EmisarWeb.PacksLive do
   # after a mutation reload; targeted Trust/Reject updates a single group
   # via `stream_insert`/`stream_delete` (see `restream_pack/2`).
   defp load_packs(socket) do
-    case fetch_rows(socket) do
-      {:ok, rows} ->
+    case console_projection(socket) do
+      {:ok, projection} ->
+        socket
+        |> assign(:load_error?, false)
+        |> assign(:pack_count, projection.pack_count)
+        |> assign(:version_count, projection.version_count)
         # Pending counts + the sidebar badge reflect the ACCOUNT, not the
         # current filter — only the rendered groups narrow. The badge counts
         # every decision (pending reviews + retired-blocked); the page's
         # amber callout stays trust-review-only — retired versions carry
         # their own rose notice per row.
-        pending = Enum.count(rows, &(&1.trust_state == :pending))
-        index = load_action_index(socket)
-        socket = assign(socket, :pack_action_index, index)
-        {visible_rows, matched} = filter_view(rows, socket)
-        groups = group_by_pack(visible_rows)
-
-        socket
-        |> assign(:load_error?, false)
-        |> assign(:pack_count, count_packs(visible_rows))
-        |> assign(:version_count, length(visible_rows))
-        |> assign(:pending_count, pending)
+        |> assign(:pending_count, projection.pending_count)
         # Keep the sidebar badge in step after a decision on this page.
-        |> assign(:pending_packs_count, Enum.count(rows, &Catalog.pack_version_needs_decision?/1))
-        |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
-        |> assign_pending_pack_actions(rows)
-        |> assign(:matched_actions, matched)
+        |> assign(:pending_packs_count, projection.decision_count)
+        |> assign(
+          :advertising,
+          advertising_runners(projection.pack_versions, socket.assigns.current_subject)
+        )
+        |> assign_pending_pack_actions(projection)
+        |> assign(:matched_actions, projection.matched_action_ids)
         # A filter drives what's expanded: auto-open every version it matched
         # (via risk/action) and pre-load those action lists so they render at
         # once. A manual open (`inspect_pack`) then adds to this set until the
         # next filter change re-seeds it.
-        |> assign(:open_versions, MapSet.new(Map.keys(matched)))
-        |> update(:inspected_actions, &seed_action_lists(&1, visible_rows, index, matched))
-        |> stream(:packs, groups, reset: true)
+        |> assign(:open_versions, MapSet.new(Map.keys(projection.matched_action_ids)))
+        |> update(:inspected_actions, &seed_action_lists(&1, projection))
+        |> stream(:packs, projection.groups, reset: true)
 
       # A failed read must read as an error, not an empty inventory — "No packs
       # reported yet" would wrongly imply the fleet advertises nothing.
@@ -122,7 +119,6 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:advertising, %{})
         |> assign(:pack_actions, %{})
         |> assign(:pack_diffs, %{})
-        |> assign(:pack_action_index, %{})
         |> assign(:matched_actions, %{})
         |> stream(:packs, [], reset: true)
     end
@@ -132,92 +128,40 @@ defmodule EmisarWeb.PacksLive do
   defp normalize_risk(risk) when risk in @risk_tiers, do: risk
   defp normalize_risk(_), do: ""
 
-  defp filter_active?(socket),
-    do: socket.assigns.name_filter != "" or socket.assigns.risk_filter != ""
+  # Everything the page renders, from one Catalog read: the account's rows, the
+  # filtered groups, the actions each version advertises, and the counts.
+  # Rejected rows stay listed (quietly — no review alert) so an admin mistake is
+  # visible and reversible: the row offers Trust to adopt the refused bytes or
+  # restore revoked trust. Dispatch fails closed on them either way.
+  defp console_projection(socket) do
+    filters = %{name: socket.assigns.name_filter, risk: socket.assigns.risk_filter}
 
-  # The account's whole pack→action index — one read, only while a filter is
-  # live (an unfiltered page keeps the lazy per-disclosure loading it always had).
-  defp load_action_index(socket) do
-    if filter_active?(socket) do
-      case Catalog.pack_actions_index(socket.assigns.current_subject) do
-        {:ok, index} -> index
-        _ -> %{}
-      end
-    else
-      %{}
+    case Catalog.list_console_packs(filters, socket.assigns.current_subject) do
+      {:ok, projection} -> {:ok, projection}
+      {:error, _} -> :error
     end
   end
 
-  # Apply the active filters to freshly-read rows using the cached index:
-  # `{visible_rows, matched}` where `matched` is `%{version_id => MapSet of the
-  # action_ids that matched}` (the reason a version is shown, for auto-open +
-  # highlight). With no filter active every row survives and nothing is matched.
-  defp filter_view(rows, socket) do
-    apply_filters(
-      rows,
-      socket.assigns.name_filter,
-      socket.assigns.risk_filter,
-      socket.assigns.pack_action_index
-    )
-  end
-
-  defp apply_filters(rows, "", "", _index), do: {rows, %{}}
-
-  defp apply_filters(rows, name, risk, index) do
-    needle = String.downcase(name)
-    name? = name != ""
-    risk? = risk != ""
-
-    {kept, matched} =
-      Enum.reduce(rows, {[], %{}}, fn v, {kept, matched} ->
-        actions = Map.get(index, {v.pack_id, v.version}, [])
-        pack_hit? = name? and String.contains?(String.downcase(v.pack_id), needle)
-        action_hit? = &String.contains?(String.downcase(&1.action_id), needle)
-
-        name_ok = not name? or pack_hit? or Enum.any?(actions, action_hit?)
-        risk_ok = not risk? or Enum.any?(actions, &(to_string(&1.risk) == risk))
-
-        if name_ok and risk_ok do
-          # An action is a "match" — it drives auto-open + the matched-only
-          # contents view — when it satisfies every ACTIVE axis at the ACTION
-          # level: its risk is the filtered tier, and its id carries the needle.
-          # A pack matched only by its id (no action carries the needle) has no
-          # matched action, so it stays collapsed — nothing specific to surface.
-          matched_ids =
-            for a <- actions,
-                not risk? or to_string(a.risk) == risk,
-                not name? or action_hit?.(a),
-                into: MapSet.new(),
-                do: a.action_id
-
-          matched =
-            if Enum.empty?(matched_ids), do: matched, else: Map.put(matched, v.id, matched_ids)
-
-          {[v | kept], matched}
-        else
-          {kept, matched}
-        end
-      end)
-
-    {Enum.reverse(kept), matched}
-  end
-
-  defp count_packs(rows), do: rows |> Enum.map(& &1.pack_id) |> Enum.uniq() |> length()
+  defp find_group(projection, pack_id), do: Enum.find(projection.groups, &(&1.id == pack_id))
 
   # Pre-load the action list for each matched version so its auto-opened
-  # disclosure renders immediately (the index already holds them) — merged over
-  # whatever `inspect_pack` lazily cached.
-  defp seed_action_lists(inspected, visible_rows, index, matched) do
-    visible_rows
-    |> Enum.filter(&Map.has_key?(matched, &1.id))
-    |> Enum.reduce(inspected, fn v, acc ->
-      Map.put(acc, v.id, Map.get(index, {v.pack_id, v.version}, []))
+  # disclosure renders immediately (the projection already holds them) — merged
+  # over whatever `inspect_pack` lazily cached.
+  defp seed_action_lists(inspected, projection) do
+    projection.groups
+    |> Enum.flat_map(& &1.versions)
+    |> Enum.filter(&Map.has_key?(projection.matched_action_ids, &1.id))
+    |> Enum.reduce(inspected, fn version, acc ->
+      Map.put(acc, version.id, version_actions(projection, version))
     end)
   end
 
+  defp version_actions(projection, version),
+    do: Map.get(projection.actions_by_pack_ref, {version.pack_id, version.version}, [])
+
   # What trusting each pending version authorizes, keyed by pack_version id
-  # (only pending versions are looked up). Two assigns built from one read of
-  # the advertised actions:
+  # (only pending versions are looked up). Two assigns built from the
+  # projection's batched action sets:
   #
   #   * `pack_actions` — the full advertised action set + risk, so "Trust new
   #     contents" shows the capability, not just a hash.
@@ -225,19 +169,12 @@ defmodule EmisarWeb.PacksLive do
   #     manifest), what CHANGED vs then: added / removed / risk-or-kind
   #     changed. An added critical action is exactly what an operator must see
   #     before re-trusting a re-advertised hash.
-  defp assign_pending_pack_actions(socket, rows) do
-    subject = socket.assigns.current_subject
-
+  defp assign_pending_pack_actions(socket, projection) do
     details =
-      rows
+      projection.pack_versions
       |> Enum.filter(&(&1.trust_state == :pending))
       |> Map.new(fn version ->
-        actions =
-          case Catalog.list_pack_actions(version.pack_id, version.version, subject) do
-            {:ok, actions} -> actions
-            _ -> []
-          end
-
+        actions = version_actions(projection, version)
         {version.id, {actions, Catalog.action_set_changes(version, actions)}}
       end)
 
@@ -282,22 +219,6 @@ defmodule EmisarWeb.PacksLive do
     do: pack_version_retired?(version)
 
   defp advertising_lookup_needed?(_), do: false
-
-  defp fetch_rows(socket) do
-    case Catalog.list_pack_versions(socket.assigns.current_subject,
-           order_by: [{:packs, :asc, :pack_id}, {:packs, :asc, :version}],
-           # The retirement-override note names who re-trusted a retired version.
-           preload: [:retirement_overridden_by],
-           page: [limit: 500]
-         ) do
-      # Rejected rows stay listed (quietly — no review alert) so an admin
-      # mistake is visible and reversible: the row offers Trust to adopt the
-      # refused bytes or restore revoked trust. Dispatch fails closed on them
-      # either way.
-      {:ok, rows, _meta} -> {:ok, rows}
-      {:error, _} -> :error
-    end
-  end
 
   defp pending_review_title(1), do: "1 pack version needs trust review."
   defp pending_review_title(count), do: "#{count} pack versions need trust review."
@@ -642,23 +563,15 @@ defmodule EmisarWeb.PacksLive do
 
   # Re-render one pack group's stream item against the current assigns (a
   # stream child is static once pushed, so the just-loaded `inspected_actions`
-  # only appears after a re-insert). One query for the group's versions; unlike
-  # `restream_pack` this doesn't recompute the pending panels — inspecting a
-  # trusted version changes nothing about what's pending.
+  # only appears after a re-insert). Unlike `restream_pack` this doesn't
+  # recompute the pending panels — inspecting a trusted version changes nothing
+  # about what's pending.
   defp reinsert_pack_group(socket, pack_id) do
-    case fetch_rows(socket) do
-      {:ok, rows} ->
-        {visible_rows, _matched} = filter_view(rows, socket)
-        versions = visible_rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
-
-        if versions == [] do
-          socket
-        else
-          stream_insert(socket, :packs, %{id: pack_id, versions: versions})
-        end
-
-      :error ->
-        socket
+    with {:ok, projection} <- console_projection(socket),
+         group when not is_nil(group) <- find_group(projection, pack_id) do
+      stream_insert(socket, :packs, group)
+    else
+      _ -> socket
     end
   end
 
@@ -668,33 +581,25 @@ defmodule EmisarWeb.PacksLive do
   # `stream_insert` the regrouped versions. The `pending_count` (and sidebar
   # badge) are recomputed from the full set.
   defp restream_pack(socket, pack_id) do
-    case fetch_rows(socket) do
-      {:ok, rows} ->
-        pending = Enum.count(rows, &(&1.trust_state == :pending))
-        {visible_rows, matched} = filter_view(rows, socket)
-        versions = visible_rows |> Enum.filter(&(&1.pack_id == pack_id)) |> sort_versions()
-
+    case console_projection(socket) do
+      {:ok, projection} ->
         socket =
           socket
-          |> assign(:pack_count, count_packs(visible_rows))
-          |> assign(:version_count, length(visible_rows))
-          |> assign(:pending_count, pending)
+          |> assign(:pack_count, projection.pack_count)
+          |> assign(:version_count, projection.version_count)
+          |> assign(:pending_count, projection.pending_count)
+          |> assign(:pending_packs_count, projection.decision_count)
           |> assign(
-            :pending_packs_count,
-            Enum.count(rows, &Catalog.pack_version_needs_decision?/1)
+            :advertising,
+            advertising_runners(projection.pack_versions, socket.assigns.current_subject)
           )
-          |> assign(:advertising, advertising_runners(rows, socket.assigns.current_subject))
-          |> assign_pending_pack_actions(rows)
-          |> assign(:matched_actions, matched)
-          |> update(
-            :inspected_actions,
-            &seed_action_lists(&1, visible_rows, socket.assigns.pack_action_index, matched)
-          )
+          |> assign_pending_pack_actions(projection)
+          |> assign(:matched_actions, projection.matched_action_ids)
+          |> update(:inspected_actions, &seed_action_lists(&1, projection))
 
-        if versions == [] do
-          stream_delete(socket, :packs, %{id: pack_id})
-        else
-          stream_insert(socket, :packs, %{id: pack_id, versions: versions})
+        case find_group(projection, pack_id) do
+          nil -> stream_delete(socket, :packs, %{id: pack_id})
+          group -> stream_insert(socket, :packs, group)
         end
 
       # The mutation committed but the re-read failed — surface the error rather
@@ -1791,16 +1696,6 @@ defmodule EmisarWeb.PacksLive do
     </.dashboard_shell>
     """
   end
-
-  defp group_by_pack(rows) do
-    rows
-    |> Enum.group_by(& &1.pack_id)
-    |> Enum.map(fn {pack_id, vs} -> %{id: pack_id, versions: sort_versions(vs)} end)
-    |> Enum.sort_by(& &1.id)
-  end
-
-  defp sort_versions(versions),
-    do: Enum.sort_by(versions, & &1.last_seen_at, {:desc, DateTime})
 
   defp version_count_label(versions) do
     n = length(versions)

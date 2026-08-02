@@ -3096,6 +3096,316 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "list_console_packs/2" do
+    setup do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      %{account: account, subject: subject, runner: runner}
+    end
+
+    # `acme` carries a low and a high action, both named after their pack;
+    # `zeta`'s single action is named after neither its pack nor a tier above
+    # low. That's what lets one filter hit through a pack id alone, another
+    # through an action id, and the two axes land on different actions.
+    defp observe_console_catalog(runner) do
+      {:ok, _runner} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "acme" => %{"version" => "1.0", "hash" => "acme-hash"},
+              "zeta" => %{"version" => "1.0", "hash" => "zeta-hash"}
+            },
+            actions: [
+              action("acme.status", pack_id: "acme", risk: "low"),
+              action("acme.kill_backend", pack_id: "acme", risk: "high"),
+              action("web.reload", pack_id: "zeta", risk: "low")
+            ]
+          )
+        )
+    end
+
+    defp version_id(projection, pack_id) do
+      %{versions: [version]} = Enum.find(projection.groups, &(&1.id == pack_id))
+      version.id
+    end
+
+    test "an account with no observations projects empty facts", %{subject: subject} do
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+
+      assert projection.pack_versions == []
+      assert projection.groups == []
+      assert projection.actions_by_pack_ref == %{}
+      assert projection.matched_action_ids == %{}
+      assert projection.pack_count == 0
+      assert projection.version_count == 0
+      assert projection.pending_count == 0
+      assert projection.decision_count == 0
+    end
+
+    test "with no filters every version is kept and nothing is matched", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["acme", "zeta"]
+      assert projection.matched_action_ids == %{}
+      assert projection.pack_count == 2
+      assert projection.version_count == 2
+      # Neither custom pack matches a shipped baseline, so both await a decision.
+      assert projection.pending_count == 2
+      assert projection.decision_count == 2
+    end
+
+    test "a name that only matches the pack id keeps the version and highlights no action", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{name: "zeta"}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["zeta"]
+      # No action id carries "zeta", so the page has nothing specific to open.
+      assert projection.matched_action_ids == %{}
+      assert projection.pack_count == 1
+      assert projection.version_count == 1
+      # The counts beside the list stay account-wide, not filter-narrowed.
+      assert projection.pending_count == 2
+      assert projection.decision_count == 2
+    end
+
+    test "a name matching an action id surfaces its pack and highlights that action", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      # Case-insensitive substring — an operator types neither the full id nor
+      # its exact casing.
+      assert {:ok, projection} = Catalog.list_console_packs(%{name: "WEB.rel"}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["zeta"]
+
+      assert projection.matched_action_ids == %{
+               version_id(projection, "zeta") => MapSet.new(["web.reload"])
+             }
+    end
+
+    test "the risk axis keeps versions advertising an action at that tier", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{risk: "high"}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["acme"]
+
+      assert projection.matched_action_ids == %{
+               version_id(projection, "acme") => MapSet.new(["acme.kill_backend"])
+             }
+    end
+
+    test "both axes satisfied by ONE action highlight that action", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      assert {:ok, projection} =
+               Catalog.list_console_packs(%{name: "kill", risk: "high"}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["acme"]
+
+      assert projection.matched_action_ids == %{
+               version_id(projection, "acme") => MapSet.new(["acme.kill_backend"])
+             }
+    end
+
+    test "both axes satisfied by DIFFERENT actions keep the version but highlight none", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      # "status" hits the low action and "high" hits the other one: the version
+      # stays visible, but no single action satisfies both, so nothing is
+      # highlighted and the page leaves its contents collapsed.
+      assert {:ok, projection} =
+               Catalog.list_console_packs(%{name: "status", risk: "high"}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["acme"]
+      assert projection.matched_action_ids == %{}
+    end
+
+    test "a filter nothing matches empties the groups without touching the counts", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{risk: "critical"}, subject)
+
+      assert projection.groups == []
+      assert projection.matched_action_ids == %{}
+      assert projection.pack_count == 0
+      assert projection.version_count == 0
+      assert projection.pending_count == 2
+      assert length(projection.pack_versions) == 2
+    end
+
+    test "groups sort by pack id, versions by last seen, and counts follow what shows", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      later_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _later_runner} =
+        Catalog.observe_state(
+          later_runner,
+          state_payload(packs: %{"acme" => %{"version" => "2.0", "hash" => "acme-2-hash"}})
+        )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+
+      assert [%{id: "acme", versions: acme_versions}, %{id: "zeta", versions: [_zeta]}] =
+               projection.groups
+
+      # Newest-seen first within the pack — v2.0 was advertised second.
+      assert Enum.map(acme_versions, & &1.version) == ["2.0", "1.0"]
+      assert projection.pack_count == 2
+      assert projection.version_count == 3
+    end
+
+    test "actions are read only when a filter is live or a version is pending", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      assert {:ok, pending} = Catalog.list_console_packs(%{}, subject)
+      assert Map.has_key?(pending.actions_by_pack_ref, {"acme", "1.0"})
+
+      for pack_version <- pending.pack_versions do
+        {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+      end
+
+      # Nothing pending and no filter: the disclosures stay lazy, so the page
+      # pays for no action read at all.
+      assert {:ok, trusted} = Catalog.list_console_packs(%{}, subject)
+      assert trusted.actions_by_pack_ref == %{}
+      assert trusted.pending_count == 0
+
+      assert {:ok, filtered} = Catalog.list_console_packs(%{risk: "high"}, subject)
+      assert Map.has_key?(filtered.actions_by_pack_ref, {"acme", "1.0"})
+    end
+
+    test "the read cost is constant, not per pack version", %{
+      subject: small_subject,
+      runner: small_runner
+    } do
+      observe_console_catalog(small_runner)
+
+      {large_account, large_subject} = account_with_owner()
+      large_runner = Fixtures.Runners.create_runner(account_id: large_account.id)
+      observe_console_catalog(large_runner)
+
+      {:ok, _large_runner} =
+        Catalog.observe_state(
+          large_runner,
+          state_payload(
+            packs:
+              Map.new(1..8, fn n ->
+                {"bulk-#{n}", %{"version" => "1.0", "hash" => "bulk-#{n}-hash"}}
+              end),
+            actions:
+              Enum.map(1..8, fn n ->
+                action("bulk#{n}.run", pack_id: "bulk-#{n}", risk: "high")
+              end)
+          )
+        )
+
+      # The sandbox hides latency, so only the statement count can prove the
+      # projection didn't fall back to a query per version. The handler runs in
+      # the querying process, so filtering on this pid keeps concurrent async
+      # tests out of the count.
+      test_pid = self()
+      handler = make_ref()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, _metadata, _config ->
+          if self() == test_pid, do: send(test_pid, :repo_query)
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      _ = drain_repo_query_count()
+      assert {:ok, small} = Catalog.list_console_packs(%{risk: "high"}, small_subject)
+      small_queries = drain_repo_query_count()
+
+      assert {:ok, large} = Catalog.list_console_packs(%{risk: "high"}, large_subject)
+      large_queries = drain_repo_query_count()
+
+      assert large.version_count > small.version_count
+      assert large_queries == small_queries
+      # One pack-version read plus one batched action read.
+      assert small_queries == 2
+
+      for pack_version <- small.pack_versions do
+        {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, small_subject)
+      end
+
+      _ = drain_repo_query_count()
+      assert {:ok, lazy} = Catalog.list_console_packs(%{}, small_subject)
+
+      # With no filter and nothing pending, only the pack-version query remains;
+      # action contents stay lazy until the operator opens a disclosure.
+      assert drain_repo_query_count() == 1
+      assert lazy.actions_by_pack_ref == %{}
+    end
+
+    test "denies a subject without view-catalog permission" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.build_subject(account: account, role: :billing_manager)
+
+      assert Catalog.list_console_packs(%{}, subject) == {:error, :unauthorized}
+    end
+
+    test "never projects another account's packs, actions, or counts", %{runner: runner} do
+      observe_console_catalog(runner)
+
+      {other_account, other_subject} = account_with_owner()
+      other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
+
+      {:ok, _other_runner} =
+        Catalog.observe_state(
+          other_runner,
+          state_payload(
+            packs: %{"other" => %{"version" => "1.0", "hash" => "other-hash"}},
+            actions: [action("acme.kill_backend", pack_id: "other", risk: "high")]
+          )
+        )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{name: "acme"}, other_subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["other"]
+      assert Map.keys(projection.actions_by_pack_ref) == [{"other", "1.0"}]
+      assert projection.pack_count == 1
+      assert projection.version_count == 1
+      assert projection.pending_count == 1
+    end
+  end
+
   describe "list_all_pack_versions_for_account/1" do
     test "returns the complete account-scoped set in deterministic pack order" do
       {account, subject} = account_with_owner()
@@ -3220,65 +3530,6 @@ defmodule Emisar.CatalogTest do
       # Another account sees none of this account's pack actions.
       {_account, other_subject} = account_with_owner()
       assert {:ok, []} = Catalog.list_pack_actions("acme", "2.0", other_subject)
-    end
-  end
-
-  describe "pack_actions_index/1" do
-    test "keys every pack version's deduped actions by {pack_id, pack_version}" do
-      {account, subject} = account_with_owner()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      other_runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      {:ok, _} =
-        Catalog.observe_state(
-          runner,
-          state_payload(
-            packs: %{
-              "acme" => %{"version" => "2.0", "hash" => "h"},
-              "linux" => %{"version" => "1.0", "hash" => "h2"}
-            },
-            actions: [
-              action("acme.reload", pack_id: "acme", risk: "high"),
-              action("acme.status", pack_id: "acme", risk: "low"),
-              action("linux.reboot", pack_id: "linux", risk: "critical")
-            ]
-          )
-        )
-
-      {:ok, _} =
-        Catalog.observe_state(
-          other_runner,
-          state_payload(
-            packs: %{"acme" => %{"version" => "2.0", "hash" => "h"}},
-            actions: [action("acme.reload", pack_id: "acme", risk: "critical")]
-          )
-        )
-
-      assert {:ok, index} = Catalog.pack_actions_index(subject)
-
-      assert index |> Map.keys() |> Enum.sort() == [{"acme", "2.0"}, {"linux", "1.0"}]
-      # Deduped + ordered by action_id within a pack version.
-      assert Enum.map(index[{"acme", "2.0"}], & &1.action_id) == ["acme.reload", "acme.status"]
-      assert Enum.map(index[{"acme", "2.0"}], & &1.risk) == [:critical, :low]
-      assert Enum.map(index[{"linux", "1.0"}], & &1.risk) == [:critical]
-    end
-
-    test "another account's actions never leak into the index" do
-      {account, _subject} = account_with_owner()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      {:ok, _} =
-        Catalog.observe_state(
-          runner,
-          state_payload(
-            packs: %{"acme" => %{"version" => "2.0", "hash" => "h"}},
-            actions: [action("acme.reload", pack_id: "acme", risk: "high")]
-          )
-        )
-
-      {_other, other_subject} = account_with_owner()
-      assert {:ok, index} = Catalog.pack_actions_index(other_subject)
-      assert index == %{}
     end
   end
 

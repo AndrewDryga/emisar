@@ -74,6 +74,10 @@ defmodule Emisar.Catalog do
   # runner+action risks, and each pair costs its own OR term in the query.
   @max_risk_pairs 64
 
+  # The console Packs page renders its whole inventory at once, so the read is
+  # bounded rather than paged — well above the 80 packs the 1.0 catalog ships.
+  @console_pack_version_limit 500
+
   @doc """
   Observe the full `runner_state` payload: upsert pack_versions and
   the runner's actions, prune actions that disappeared from the
@@ -1974,6 +1978,129 @@ defmodule Emisar.Catalog do
     end
   end
 
+  @doc """
+  The console Packs page's whole projection in one bounded read.
+
+  Requires `view_catalog`. `filters` narrows only what the page RENDERS —
+  `:name` is a case-insensitive substring over the pack id OR an advertised
+  action id, `:risk` keeps versions advertising an action at that tier, and an
+  empty (or missing) value turns the axis off. A version survives when every
+  active axis matches, even when two different actions satisfy them;
+  `matched_action_ids` is stricter — an action id appears only when that single
+  action satisfies every active action-level axis, so a version matched by its
+  pack id alone contributes none and the page leaves it collapsed.
+
+  Advertised actions are read only when a filter is active or a pending version
+  needs its contents, so an unfiltered, nothing-pending page pays for no action
+  read and keeps its per-disclosure lazy loading (`list_pack_actions/3`).
+
+  Returns `{:ok, projection}` — `pack_versions` (every account row, bounded,
+  ordered by pack id then version), `groups` (`%{id: pack_id, versions: [...]}`
+  over the visible rows, packs ascending and versions newest-seen first),
+  `actions_by_pack_ref`, `matched_action_ids` keyed by pack-version id, the
+  visible `pack_count`/`version_count`, and the account-wide
+  `pending_count`/`decision_count` — or `{:error, :unauthorized}`.
+  """
+  def list_console_packs(filters, %Subject{} = subject) when is_map(filters) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      name = filters |> Map.get(:name, "") |> String.downcase()
+      risk = Map.get(filters, :risk, "")
+
+      pack_versions =
+        PackVersion.Query.all()
+        |> PackVersion.Query.ordered_by_pack()
+        # The retirement-override note names who re-trusted a retired version.
+        |> PackVersion.Query.with_preloaded_retirement_overridden_by()
+        |> PackVersion.Query.limit_to(@console_pack_version_limit)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      actions_by_pack_ref = console_pack_actions(pack_versions, name, risk, subject)
+      {visible, matched_ids} = console_filter(pack_versions, name, risk, actions_by_pack_ref)
+      groups = console_groups(visible)
+
+      {:ok,
+       %{
+         pack_versions: pack_versions,
+         groups: groups,
+         actions_by_pack_ref: actions_by_pack_ref,
+         matched_action_ids: matched_ids,
+         pack_count: length(groups),
+         version_count: length(visible),
+         pending_count: Enum.count(pack_versions, &(&1.trust_state == :pending)),
+         decision_count: Enum.count(pack_versions, &pack_version_needs_decision?/1)
+       }}
+    end
+  end
+
+  # One account-wide action read, keyed by `{pack_id, version}` and deduped to
+  # the most severe row per action id — taken only when the page actually needs
+  # it: a live filter, or a pending version whose trust card must show what
+  # trusting would authorize.
+  defp console_pack_actions(pack_versions, name, risk, %Subject{} = subject) do
+    if name != "" or risk != "" or Enum.any?(pack_versions, &(&1.trust_state == :pending)) do
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.ordered_by_action()
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+      |> Enum.group_by(&{&1.pack_id, &1.pack_version})
+      |> Map.new(fn {pack_ref, actions} -> {pack_ref, most_severe_actions_by_id(actions)} end)
+    else
+      %{}
+    end
+  end
+
+  defp console_filter(pack_versions, "", "", _actions_by_pack_ref), do: {pack_versions, %{}}
+
+  defp console_filter(pack_versions, name, risk, actions_by_pack_ref) do
+    name? = name != ""
+    risk? = risk != ""
+    name_hit? = &String.contains?(String.downcase(&1.action_id), name)
+    risk_hit? = &(to_string(&1.risk) == risk)
+
+    {visible, matched} =
+      Enum.reduce(pack_versions, {[], %{}}, fn version, {visible, matched} ->
+        actions = Map.get(actions_by_pack_ref, {version.pack_id, version.version}, [])
+
+        name_ok? =
+          not name? or String.contains?(String.downcase(version.pack_id), name) or
+            Enum.any?(actions, name_hit?)
+
+        risk_ok? = not risk? or Enum.any?(actions, risk_hit?)
+
+        if name_ok? and risk_ok? do
+          matched_ids =
+            for action <- actions,
+                not risk? or risk_hit?.(action),
+                not name? or name_hit?.(action),
+                into: MapSet.new(),
+                do: action.action_id
+
+          {[version | visible], track_matched(matched, version.id, matched_ids)}
+        else
+          {visible, matched}
+        end
+      end)
+
+    {Enum.reverse(visible), matched}
+  end
+
+  # A version whose only hit was its pack id has nothing specific to surface, so
+  # it stays out of the map entirely rather than carrying an empty set.
+  defp track_matched(matched, version_id, matched_ids) do
+    if Enum.empty?(matched_ids), do: matched, else: Map.put(matched, version_id, matched_ids)
+  end
+
+  defp console_groups(visible) do
+    visible
+    |> Enum.group_by(& &1.pack_id)
+    |> Enum.map(fn {pack_id, versions} ->
+      %{id: pack_id, versions: Enum.sort_by(versions, & &1.last_seen_at, {:desc, DateTime})}
+    end)
+    |> Enum.sort_by(& &1.id)
+  end
+
   @doc "Returns every pack-version row in the subject's account after the view-catalog gate."
   @spec list_all_pack_versions_for_account(Subject.t()) ::
           {:ok, [PackVersion.t()]} | {:error, :unauthorized}
@@ -2037,28 +2164,6 @@ defmodule Emisar.Catalog do
         |> most_severe_actions_by_id()
 
       {:ok, actions}
-    end
-  end
-
-  @doc """
-  Every pack version's advertised actions across the account in ONE read, keyed
-  by `{pack_id, pack_version}` and deduped to one row per `action_id`. The Packs
-  page uses it to filter packs by risk tier or action name without a per-version
-  query. Account-scoped via the subject. Returns
-  `{:ok, %{{pack_id, pack_version} => [%RunnerAction{}]}}`.
-  """
-  def pack_actions_index(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      index =
-        RunnerAction.Query.all()
-        |> RunnerAction.Query.ordered_by_action()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-        |> Enum.group_by(&{&1.pack_id, &1.pack_version})
-        |> Map.new(fn {key, actions} -> {key, most_severe_actions_by_id(actions)} end)
-
-      {:ok, index}
     end
   end
 

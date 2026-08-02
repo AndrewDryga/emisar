@@ -1556,9 +1556,9 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
 
       # The pack id "postgres" doesn't contain "postgres.activity" — the ACTION does.
-      html = filter(lv, "postgres.activity", "")
-      assert html =~ "postgres.activity"
-      refute html =~ "nginx.reload"
+      filter(lv, "postgres.activity", "")
+      assert has_element?(lv, "li", "postgres.activity")
+      refute has_element?(lv, "h2", "nginx")
     end
 
     test "search still matches a pack id (and drops non-matches)", %{conn: conn, account: account} do
@@ -1567,6 +1567,59 @@ defmodule EmisarWeb.PacksLiveTest do
       html = filter(lv, "nginx", "")
       assert html =~ "nginx.reload"
       refute html =~ "postgres.kill_backend"
+    end
+
+    test "a combined filter one action satisfies expands the pack on that action alone", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      html = filter(lv, "kill", "high")
+
+      assert has_element?(lv, "h2", "postgres")
+      refute has_element?(lv, "h2", "nginx")
+      # The disclosure auto-opens and lists only what matched — one action, not
+      # the pack's other (low) one.
+      assert has_element?(lv, ~s(button[aria-expanded="true"]))
+      assert html =~ "postgres.kill_backend"
+      assert html =~ "1 matching action"
+    end
+
+    test "a combined filter two DIFFERENT actions satisfy keeps the pack collapsed", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      # "activity" hits the low action, "high" hits the other one — the pack
+      # stays listed, but no single action satisfies both, so there's nothing
+      # specific to open.
+      html = filter(lv, "activity", "high")
+
+      assert has_element?(lv, "h2", "postgres")
+      refute has_element?(lv, "h2", "nginx")
+      refute has_element?(lv, ~s(button[aria-expanded="true"]))
+      refute html =~ "matching action"
+      refute html =~ "postgres.kill_backend"
+    end
+
+    test "clearing the filter restores every pack and re-collapses the disclosures", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      filter(lv, "", "high")
+      assert has_element?(lv, ~s(button[aria-expanded="true"]))
+
+      html = filter(lv, "", "")
+
+      assert has_element?(lv, "h2", "postgres")
+      assert has_element?(lv, "h2", "nginx")
+      refute has_element?(lv, ~s(button[aria-expanded="true"]))
+      refute html =~ "postgres.kill_backend"
+      assert html =~ "2 packs · 2 versions"
     end
 
     test "a filter with no matches shows the filtered-empty line, not the account-empty state", %{
