@@ -16,7 +16,7 @@ args:
     required: true
     description: Queue ID, or the literal "ALL".
     validation:
-      pattern: "^([A-F0-9]{8,20}|ALL)$"
+      pattern: "^([A-F0-9]{6,20}|ALL)$"
 execution:
   command:
     binary: postsuper

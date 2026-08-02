@@ -15,7 +15,7 @@ args:
     required: true
     description: Queue ID.
     validation:
-      pattern: "^[A-F0-9]{8,20}$"
+      pattern: "^[A-F0-9]{6,20}$"
 execution:
   command:
     binary: postsuper
