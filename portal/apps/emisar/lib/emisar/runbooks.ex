@@ -12,9 +12,14 @@ defmodule Emisar.Runbooks do
   alias Ecto.Multi
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Crypto, MCPOperations, Repo, Runs}
   alias Emisar.Auth.Subject
+  alias Emisar.Catalog
   alias Emisar.Runbooks.{Authorizer, Compiler, Definition, Runbook, RunbookExecution, Scheduler}
   alias Emisar.Runbooks.ExecutionItem
   alias Emisar.Users
+
+  # One runbook list page is 35 rows; 64 bounds the batch without capping the
+  # page it serves.
+  @max_risk_runbook_ids 64
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -94,6 +99,65 @@ defmodule Emisar.Runbooks do
       {:ok, Map.new(runbooks, &{&1.slug, &1})}
     end
   end
+
+  @doc """
+  `%{runbook_id => most-severe step risk}` for at most #{@max_risk_runbook_ids}
+  runbook ids — the risk tier each list row shows, resolved for the whole page
+  in one catalog read rather than a query per row. Requires `view_runbooks`;
+  the rows are re-read by id under the caller's account, so a deleted or
+  cross-account runbook is simply absent from the map.
+
+  Every visible runbook IS a key: one whose steps include an action no runner
+  the caller can reach advertises maps to `nil`, so the row shows no pill
+  rather than the worst of the steps we happened to resolve. Returns
+  `{:ok, %{runbook_id => risk | nil}}`, `{:error, :unauthorized}`, or
+  `{:error, :too_many_runbook_ids}`.
+  """
+  def risk_by_runbook_ids(runbook_ids, %Subject{} = subject)
+      when is_list(runbook_ids) and length(runbook_ids) <= @max_risk_runbook_ids do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      runbooks = list_visible_runbooks_by_ids(runbook_ids, subject)
+
+      action_ids =
+        runbooks |> Enum.flat_map(&step_action_ids/1) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+      risk_by_action =
+        case Catalog.risk_by_action_ids(action_ids, subject) do
+          {:ok, risks} -> risks
+          {:error, _reason} -> %{}
+        end
+
+      {:ok, Map.new(runbooks, &{&1.id, runbook_risk(&1, risk_by_action)})}
+    end
+  end
+
+  def risk_by_runbook_ids(_runbook_ids, %Subject{}), do: {:error, :too_many_runbook_ids}
+
+  defp list_visible_runbooks_by_ids(runbook_ids, %Subject{} = subject) do
+    ids = Enum.filter(runbook_ids, &Repo.valid_uuid?/1)
+
+    Runbook.Query.not_deleted()
+    |> Runbook.Query.by_ids(ids)
+    |> Authorizer.for_subject(subject)
+    |> Repo.all()
+  end
+
+  defp runbook_risk(%Runbook{} = runbook, risk_by_action) do
+    runbook
+    |> step_action_ids()
+    |> Enum.map(&Map.get(risk_by_action, &1))
+    |> Catalog.max_risk()
+  end
+
+  # Steps name their action as `action_id` or `action` interchangeably, same as
+  # the dispatch path; a step naming neither stays unresolved.
+  defp step_action_ids(%Runbook{} = runbook),
+    do: runbook |> expand() |> Enum.map(&step_action_id/1)
+
+  defp step_action_id(%{"action_id" => action_id}) when is_binary(action_id), do: action_id
+  defp step_action_id(%{"action" => action}) when is_binary(action), do: action
+  defp step_action_id(_step), do: nil
 
   @doc "Lists every runbook visible to the subject for bounded in-memory MCP projection."
   def list_all_runbooks(%Subject{} = subject) do

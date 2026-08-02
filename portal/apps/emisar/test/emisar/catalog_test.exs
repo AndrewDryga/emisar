@@ -1,6 +1,6 @@
 defmodule Emisar.CatalogTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Catalog, Repo, Runners}
+  alias Emisar.{Accounts, Audit, Catalog, Repo, Runners}
   alias Emisar.Catalog.{PackVersion, RunnerAction}
   alias Emisar.Fixtures
 
@@ -64,6 +64,14 @@ defmodule Emisar.CatalogTest do
       )
 
     {account, Fixtures.Subjects.subject_for(user, account, role: :owner)}
+  end
+
+  # Runner access is re-read from the membership on every catalog risk read, so
+  # the caller keeps using the same subject after it narrows.
+  defp force_runner_access(account, subject, access) do
+    account.id
+    |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+    |> Fixtures.Memberships.force_runner_access(access)
   end
 
   describe "observe_state/2 — packs" do
@@ -2507,12 +2515,170 @@ defmodule Emisar.CatalogTest do
       assert {:ok, %{}} = Catalog.risk_by_action_ids(["secret.op"], other_subject)
     end
 
+    test "sees only the risks advertised by runners the caller's access reaches", %{
+      account: account,
+      subject: subject
+    } do
+      db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      {:ok, _} =
+        Catalog.observe_state(
+          db_runner,
+          state_payload(actions: [action("shared.op", risk: "low")])
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          web_runner,
+          state_payload(actions: [action("shared.op", risk: "critical")])
+        )
+
+      {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
+      force_runner_access(account, subject, database_only)
+
+      # The critical advertisement lives on a runner this member cannot reach,
+      # so it must not raise the tier they see.
+      assert Catalog.risk_by_action_ids(["shared.op"], subject) == {:ok, %{"shared.op" => :low}}
+
+      force_runner_access(account, subject, Accounts.RunnerAccess.none())
+      assert Catalog.risk_by_action_ids(["shared.op"], subject) == {:ok, %{}}
+    end
+
     test "a subject without view_catalog is denied", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
       assert {:error, :unauthorized} = Catalog.risk_by_action_ids(["x"], no_view)
       # The empty-list clause gates too — no DB-free bypass of the permission check.
       assert {:error, :unauthorized} = Catalog.risk_by_action_ids([], no_view)
+    end
+  end
+
+  describe "risk_by_runner_action_pairs/2" do
+    setup do
+      {account, subject} = account_with_owner()
+      %{account: account, subject: subject}
+    end
+
+    test "answers each exact pair with that runner's own advertised risk", %{
+      account: account,
+      subject: subject
+    } do
+      calm_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      risky_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          calm_runner,
+          state_payload(actions: [action("shared.op", risk: "low")])
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          risky_runner,
+          state_payload(
+            actions: [action("shared.op", risk: "critical"), action("solo.op", risk: "medium")]
+          )
+        )
+
+      # The PAIR is the question, not the action id: one action_id answers low
+      # on one runner and critical on the other, and a pair whose runner never
+      # advertised that action stays absent rather than borrowing a peer's risk.
+      assert {:ok, risks} =
+               Catalog.risk_by_runner_action_pairs(
+                 [
+                   {calm_runner.id, "shared.op"},
+                   {risky_runner.id, "shared.op"},
+                   {calm_runner.id, "solo.op"}
+                 ],
+                 subject
+               )
+
+      assert risks == %{
+               {calm_runner.id, "shared.op"} => :low,
+               {risky_runner.id, "shared.op"} => :critical
+             }
+    end
+
+    test "answers only for runners the caller's current access reaches", %{
+      account: account,
+      subject: subject
+    } do
+      db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      {:ok, _} =
+        Catalog.observe_state(
+          db_runner,
+          state_payload(actions: [action("shared.op", risk: "high")])
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          web_runner,
+          state_payload(actions: [action("shared.op", risk: "critical")])
+        )
+
+      {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
+      force_runner_access(account, subject, database_only)
+
+      pairs = [{db_runner.id, "shared.op"}, {web_runner.id, "shared.op"}]
+
+      assert Catalog.risk_by_runner_action_pairs(pairs, subject) ==
+               {:ok, %{{db_runner.id, "shared.op"} => :high}}
+
+      force_runner_access(account, subject, Accounts.RunnerAccess.none())
+      assert Catalog.risk_by_runner_action_pairs(pairs, subject) == {:ok, %{}}
+    end
+
+    test "omits cross-account, unobserved, and malformed pairs", %{
+      account: account,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(actions: [action("secret.op", risk: "critical")])
+        )
+
+      {_other_account, other_subject} = account_with_owner()
+
+      assert Catalog.risk_by_runner_action_pairs([{runner.id, "secret.op"}], other_subject) ==
+               {:ok, %{}}
+
+      malformed = [
+        {runner.id, "never.advertised"},
+        {Ecto.UUID.generate(), "secret.op"},
+        {"not-a-uuid", "secret.op"},
+        {runner.id, :secret_op},
+        "junk"
+      ]
+
+      assert Catalog.risk_by_runner_action_pairs(malformed, subject) == {:ok, %{}}
+    end
+
+    test "denies a subject without view_catalog, including for an empty list", %{
+      account: account
+    } do
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Catalog.risk_by_runner_action_pairs([], no_view) == {:error, :unauthorized}
+
+      assert Catalog.risk_by_runner_action_pairs([{Ecto.UUID.generate(), "x"}], no_view) ==
+               {:error, :unauthorized}
+    end
+
+    test "accepts a full batch and refuses anything larger or unbounded", %{subject: subject} do
+      pair = {Ecto.UUID.generate(), "shared.op"}
+
+      assert Catalog.risk_by_runner_action_pairs(List.duplicate(pair, 64), subject) == {:ok, %{}}
+
+      assert Catalog.risk_by_runner_action_pairs(List.duplicate(pair, 65), subject) ==
+               {:error, :too_many_pairs}
+
+      assert Catalog.risk_by_runner_action_pairs(%{}, subject) == {:error, :too_many_pairs}
     end
   end
 
@@ -2550,16 +2716,19 @@ defmodule Emisar.CatalogTest do
       assert Catalog.max_risk([:high]) == :high
     end
 
-    test "ignores an unresolved (nil) risk without lowering the result" do
-      # A step whose action no runner advertises is nil — it must NOT drag a
-      # critical runbook down to low. The worst known risk still wins.
-      assert Catalog.max_risk([nil, :critical]) == :critical
-      assert Catalog.max_risk([:low, nil, :high]) == :high
+    test "normalizes the string tiers a frozen plan stores to atoms" do
+      assert Catalog.max_risk(["low", "critical", "medium"]) == :critical
+      assert Catalog.max_risk([:medium, "high"]) == :high
+      assert Catalog.max_risk(["low"]) == :low
     end
 
-    test "is nil when every risk is unresolved (all-unknown ≠ low)" do
-      # A runbook whose every step is unobserved reads as "unknown" (no pill),
-      # never as a falsely-low risk.
+    test "is nil when any member is unresolved (an incomplete answer is no answer)" do
+      # A step whose action no reachable runner advertises, or whose frozen
+      # risk we don't recognize, makes the whole fold unknown: showing the
+      # worst of the RESOLVED part would understate the work as a whole.
+      assert Catalog.max_risk([nil, :critical]) == nil
+      assert Catalog.max_risk([:low, nil, :high]) == nil
+      assert Catalog.max_risk([:critical, "bogus"]) == nil
       assert Catalog.max_risk([nil, nil]) == nil
     end
   end

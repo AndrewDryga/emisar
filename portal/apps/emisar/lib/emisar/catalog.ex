@@ -70,6 +70,10 @@ defmodule Emisar.Catalog do
   # each one keeps well clear of the limit.
   @upsert_chunk_size 500
 
+  # One page of approval cards is the largest batch that asks for exact
+  # runner+action risks, and each pair costs its own OR term in the query.
+  @max_risk_pairs 64
+
   @doc """
   Observe the full `runner_state` payload: upsert pack_versions and
   the runner's actions, prune actions that disappeared from the
@@ -1644,10 +1648,11 @@ defmodule Emisar.Catalog do
   account scoping as the other catalog reads; returns `{:ok, %{}}` for an
   empty id list without touching the DB.
 
-  Only `action_id`s a connected runner advertises appear in the map — an
-  unobserved step is simply absent, which `max_risk/1` treats conservatively
-  (no false-low). Folds the rows through `most_severe_risk_by_action/1`, so an
-  action advertised by several runners at mixed risk keeps the worst.
+  Only `action_id`s a runner the caller may reach advertises appear in the map —
+  an unobserved or out-of-scope step is simply absent, which `max_risk/1` treats
+  conservatively (no false-low). Folds the rows through
+  `most_severe_risk_by_action/1`, so an action advertised by several runners at
+  mixed risk keeps the worst.
   """
   def risk_by_action_ids([], %Subject{} = subject) do
     with :ok <-
@@ -1668,10 +1673,72 @@ defmodule Emisar.Catalog do
       actions =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_action_ids(action_ids)
+        |> scope_actions_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
       {:ok, most_severe_risk_by_action(actions)}
+    end
+  end
+
+  @doc """
+  `%{{runner_id, action_id} => risk}` for at most #{@max_risk_pairs} exact
+  runner/action pairs, in ONE query — the approvals queue resolves every
+  pending request's own frozen action without a read per card. Requires
+  `view_catalog`; rows are scoped to the caller's CURRENT membership runner
+  access and their account.
+
+  A pair whose runner or action is unknown, malformed, out of the caller's
+  runner scope, or in another account is simply absent, so a caller shows no
+  risk rather than a wrong one. An empty list still runs the permission gate.
+  Returns `{:ok, %{{runner_id, action_id} => risk}}`, `{:error, :unauthorized}`,
+  or `{:error, :too_many_pairs}`.
+  """
+  def risk_by_runner_action_pairs(pairs, %Subject{} = subject)
+      when is_list(pairs) and length(pairs) <= @max_risk_pairs do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ) do
+      {:ok, pairs |> Enum.filter(&resolvable_pair?/1) |> risk_by_pair(subject)}
+    end
+  end
+
+  def risk_by_runner_action_pairs(_pairs, %Subject{}), do: {:error, :too_many_pairs}
+
+  defp resolvable_pair?({runner_id, action_id}),
+    do: Repo.valid_uuid?(runner_id) and is_binary(action_id)
+
+  defp resolvable_pair?(_pair), do: false
+
+  defp risk_by_pair([], _subject), do: %{}
+
+  defp risk_by_pair(pairs, %Subject{} = subject) do
+    rows =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_runner_action_pairs(pairs)
+      |> scope_actions_to_subject_membership(subject)
+      |> RunnerAction.Query.select_action_risk_rows()
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+
+    Map.new(rows, fn {runner_id, action_id, risk} -> {{runner_id, action_id}, risk} end)
+  end
+
+  # Membership runner access is current authorization data, not session state:
+  # resolve it on every risk read so a narrowed scope takes effect immediately
+  # on open sessions and old API keys.
+  defp scope_actions_to_subject_membership(queryable, %Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :none} ->
+        RunnerAction.Query.none(queryable)
+
+      %Accounts.RunnerAccess{mode: :all} ->
+        queryable
+
+      %Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups} ->
+        RunnerAction.Query.by_runner_scope_values(queryable, runner_ids, groups)
     end
   end
 
@@ -1706,23 +1773,40 @@ defmodule Emisar.Catalog do
       else: current
   end
 
-  @doc """
-  The single most-severe risk across a list of risks (atoms, or `nil` for an
-  unresolved step), using the same `@risk_rank` as `most_severe_risk_by_action/1`.
-  Returns that worst risk, or `nil` when the list is empty.
+  # The tiers `max_risk/1` accepts, keyed by both the `RunnerAction.risk`
+  # Ecto.Enum atom and the string form a frozen runbook plan stores. Anything
+  # else is unresolved — never coerced into a tier.
+  @risk_tiers %{
+    "low" => :low,
+    "medium" => :medium,
+    "high" => :high,
+    "critical" => :critical,
+    low: :low,
+    medium: :medium,
+    high: :high,
+    critical: :critical
+  }
 
-  Conservative on the unknown: an unresolvable risk in the list (a step whose
-  action no connected runner advertises, so it's `nil`) sorts at the bottom of
-  the rank and never *lowers* the result — but if EVERY risk is unknown the
-  result is `nil`, so the caller shows no pill rather than a falsely-low one.
-  This is a security product: a critical step must never be under-flagged, and
-  a runbook of all-unknown steps must not read as "low".
+  @doc """
+  The single most-severe risk across a COMPLETE list of tiers — atoms or their
+  string forms — using the same `@risk_rank` as `most_severe_risk_by_action/1`.
+
+  Returns `nil` when the list is empty OR any member is unresolved (`nil`, or a
+  value that is not one of the four tiers), and otherwise the worst tier as an
+  atom. This is a security product, so an incomplete answer is reported as no
+  answer: a runbook or frozen plan whose steps we cannot fully resolve must
+  read as "unknown" (no pill) rather than as the worst of the part we happened
+  to resolve, which would understate the whole.
   """
+  def max_risk([]), do: nil
+
   def max_risk(risks) when is_list(risks) do
-    case Enum.reject(risks, &is_nil/1) do
-      [] -> nil
-      [first | rest] -> Enum.reduce(rest, first, &most_severe(&2, &1))
-    end
+    Enum.reduce_while(risks, :low, fn risk, worst ->
+      case Map.get(@risk_tiers, risk) do
+        nil -> {:halt, nil}
+        tier -> {:cont, most_severe(worst, tier)}
+      end
+    end)
   end
 
   @doc """

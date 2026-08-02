@@ -58,6 +58,30 @@ defmodule Emisar.ApprovalsTest do
     Fixtures.Subjects.subject_for(operator, account, role: :owner)
   end
 
+  # A frozen execution plan carrying exactly the risk tiers under test — `nil`
+  # stands for an item whose tier the plan never recorded.
+  defp execution_stage_plan(risks) do
+    items =
+      Enum.with_index(risks, fn risk, index ->
+        %{
+          "action" => "postgres.config_validate",
+          "step_id" => "validate-#{index}",
+          "runner_ref" => "db-0#{index}~" <> String.duplicate("1", 64),
+          "pack_ref" => "postgres@1.4.2/sha256:" <> String.duplicate("a", 64),
+          "risk" => risk,
+          "args" => %{}
+        }
+      end)
+
+    %{
+      "id" => "apply",
+      "title" => "Apply database change",
+      "mode" => "parallel",
+      "max_parallel" => 2,
+      "items" => items
+    }
+  end
+
   defp subject_with_runner_access(subject, access) do
     membership = Fixtures.Memberships.fetch_membership(subject.account.id, subject.actor.id)
     Fixtures.Memberships.force_runner_access(membership, access)
@@ -702,6 +726,116 @@ defmodule Emisar.ApprovalsTest do
       other_account = Fixtures.Accounts.create_account()
       other_subject = operator_subject(other_account)
       assert Approvals.list_requests_for_runbook_executions([], other_subject) == {:ok, []}
+    end
+  end
+
+  describe "risk_by_request_ids/2" do
+    test "answers an action request with the risk its exact runner advertises" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {_account, run} = run_fixture(account: account, runner: runner)
+      Fixtures.Catalog.create_action(runner: runner, risk: "high")
+      subject = operator_subject(account)
+
+      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, nil)
+
+      assert Approvals.risk_by_request_ids([request.id], subject) ==
+               {:ok, %{request.id => :high}}
+    end
+
+    test "folds a frozen execution plan's string tiers to its worst" do
+      {requester, account, subject} = Fixtures.Subjects.owner_subject()
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, requester,
+          stage_plan: execution_stage_plan(["medium", "critical", "low"])
+        )
+
+      assert Approvals.risk_by_request_ids([request.id], subject) ==
+               {:ok, %{request.id => :critical}}
+    end
+
+    test "keeps a visible request whose risk cannot be resolved, at nil" do
+      {requester, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {_account, run} = run_fixture(account: account, runner: runner)
+
+      {:ok, action_request} = Approvals.create_request(run, requester.id, nil)
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+
+      # One unresolved item makes the whole plan unknown — the readable
+      # remainder would understate the execution.
+      execution_request =
+        Fixtures.Approvals.create_execution_request(account, requester,
+          stage_plan: execution_stage_plan(["critical", nil])
+        )
+
+      assert Approvals.risk_by_request_ids([action_request.id, execution_request.id], subject) ==
+               {:ok, %{action_request.id => nil, execution_request.id => nil}}
+    end
+
+    test "answers only for requests the caller's current runner access reaches" do
+      account = Fixtures.Accounts.create_account()
+      db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      {_account, db_run} = run_fixture(account: account, runner: db_runner)
+      {_account, web_run} = run_fixture(account: account, runner: web_runner)
+      Fixtures.Catalog.create_action(runner: db_runner, risk: "high")
+      Fixtures.Catalog.create_action(runner: web_runner, risk: "critical")
+
+      {:ok, db_request} = Approvals.create_request(db_run, Fixtures.Users.create_user().id, nil)
+
+      {:ok, _web_request} =
+        Approvals.create_request(web_run, Fixtures.Users.create_user().id, nil)
+
+      {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
+
+      subject =
+        account
+        |> operator_subject()
+        |> subject_with_runner_access(database_access)
+
+      {:ok, [%Request{id: visible_id}], _metadata} =
+        Approvals.list_pending_approval_requests(subject)
+
+      assert visible_id == db_request.id
+
+      assert Approvals.risk_by_request_ids([db_request.id], subject) ==
+               {:ok, %{db_request.id => :high}}
+    end
+
+    test "omits another account's request and ids that resolve to nothing" do
+      {_account_a, run_a} = run_fixture()
+      {:ok, request_a} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, nil)
+      {account_b, _run_b} = run_fixture()
+
+      ids = [request_a.id, Ecto.UUID.generate(), "not-a-uuid"]
+
+      assert Approvals.risk_by_request_ids(ids, operator_subject(account_b)) == {:ok, %{}}
+    end
+
+    test "denies a subject without view permission, including for an empty list" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert Approvals.risk_by_request_ids([], subject) == {:error, :unauthorized}
+
+      assert Approvals.risk_by_request_ids([Ecto.UUID.generate()], subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "accepts a full batch and refuses anything larger or unbounded" do
+      {account, _run} = run_fixture()
+      subject = operator_subject(account)
+      id = Ecto.UUID.generate()
+
+      assert Approvals.risk_by_request_ids(List.duplicate(id, 64), subject) == {:ok, %{}}
+
+      assert Approvals.risk_by_request_ids(List.duplicate(id, 65), subject) ==
+               {:error, :too_many_request_ids}
+
+      assert Approvals.risk_by_request_ids(%{}, subject) == {:error, :too_many_request_ids}
     end
   end
 

@@ -24,9 +24,13 @@ defmodule Emisar.Approvals do
   alias Emisar.Accounts
   alias Emisar.ApiKeys
   alias Emisar.Approvals.{Authorizer, Decision, Grant, Request}
-  alias Emisar.{Audit, Auth, Repo, Runbooks, Runners, Runs, Users}
+  alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs, Users}
   alias Emisar.Auth.Subject
   require Logger
+
+  # The approvals queue renders at most one 15-row page at a time; 64 leaves
+  # room for a fuller page without letting a caller ask for an unbounded batch.
+  @max_risk_request_ids 64
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -219,6 +223,90 @@ defmodule Emisar.Approvals do
       {:ok, requests}
     end
   end
+
+  @doc """
+  `%{request_id => risk}` for at most #{@max_risk_request_ids} approval request
+  ids — the risk tier each pending card shows, resolved for the whole page in
+  one catalog read. Requires `view_approvals`; the rows are re-read by id under
+  the caller's runner access and account, so a request they cannot see is
+  simply absent from the map.
+
+  Every visible request IS a key: an ordinary action request whose frozen
+  runner+action is no longer advertised, and a runbook execution whose frozen
+  plan carries an unresolved step risk, both map to `nil` — the caller shows no
+  pill rather than an understated one. An empty list still runs the permission
+  gate. Returns `{:ok, %{request_id => risk | nil}}`, `{:error, :unauthorized}`,
+  or `{:error, :too_many_request_ids}`.
+  """
+  def risk_by_request_ids(request_ids, %Subject{} = subject)
+      when is_list(request_ids) and length(request_ids) <= @max_risk_request_ids do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_approvals_permission()
+           ) do
+      requests = list_visible_requests_by_ids(request_ids, subject)
+      pairs = Enum.flat_map(requests, &request_action_pair/1)
+
+      risk_by_pair =
+        case Catalog.risk_by_runner_action_pairs(pairs, subject) do
+          {:ok, risks} -> risks
+          {:error, _reason} -> %{}
+        end
+
+      {:ok, Map.new(requests, &{&1.id, request_risk(&1, risk_by_pair)})}
+    end
+  end
+
+  def risk_by_request_ids(_request_ids, %Subject{}), do: {:error, :too_many_request_ids}
+
+  defp list_visible_requests_by_ids(request_ids, %Subject{} = subject) do
+    ids = Enum.filter(request_ids, &Repo.valid_uuid?/1)
+
+    Request.Query.all()
+    |> Request.Query.by_ids(ids)
+    |> scope_requests_to_subject(subject)
+    |> Authorizer.for_subject(subject)
+    |> Repo.all()
+  end
+
+  defp request_action_pair(%Request{
+         context: %{"runner_id" => runner_id, "action_id" => action_id}
+       })
+       when is_binary(runner_id) and is_binary(action_id),
+       do: [{runner_id, action_id}]
+
+  defp request_action_pair(%Request{}), do: []
+
+  defp request_risk(
+         %Request{context: %{"kind" => "runbook_execution", "plan" => plan}},
+         _risk_by_pair
+       ),
+       do: Catalog.max_risk(plan_item_risks(plan))
+
+  defp request_risk(
+         %Request{context: %{"runner_id" => runner_id, "action_id" => action_id}},
+         risk_by_pair
+       )
+       when is_binary(runner_id) and is_binary(action_id),
+       do: Map.get(risk_by_pair, {runner_id, action_id})
+
+  defp request_risk(%Request{}, _risk_by_pair), do: nil
+
+  defp plan_item_risks(%{"stages" => stages}) when is_list(stages),
+    do: Enum.flat_map(stages, &stage_item_risks/1)
+
+  defp plan_item_risks(_plan), do: []
+
+  # A stage we cannot read contributes one unresolved risk rather than nothing,
+  # so a malformed plan reads as unknown instead of as its readable remainder.
+  defp stage_item_risks(%{"items" => items}) when is_list(items),
+    do: Enum.map(items, &plan_item_risk/1)
+
+  defp stage_item_risks(_stage), do: [nil]
+
+  defp plan_item_risk(%{"risk" => risk}), do: risk
+  defp plan_item_risk(_item), do: nil
 
   @doc """
   Reads the approval attached to an already-authorized visible run.

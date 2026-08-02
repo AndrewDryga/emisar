@@ -42,6 +42,44 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_action_ids(queryable, action_ids) when is_list(action_ids),
     do: where(queryable, [runner_actions: a], a.action_id in ^action_ids)
 
+  @doc """
+  Restrict to an exact bounded set of `{runner_id, action_id}` pairs — the
+  approvals queue resolves each frozen request's own runner+action, and a
+  cross-product `runner_id in ... and action_id in ...` would answer for pairs
+  nobody asked about. The caller bounds the list.
+  """
+  def by_runner_action_pairs(queryable, pairs) when is_list(pairs) do
+    predicate =
+      Enum.reduce(pairs, dynamic(false), fn {runner_id, action_id}, predicate ->
+        dynamic(
+          [runner_actions: a],
+          ^predicate or (a.runner_id == ^runner_id and a.action_id == ^action_id)
+        )
+      end)
+
+    where(queryable, ^predicate)
+  end
+
+  @doc """
+  Restrict to the actions advertised by the runners a membership scope grants —
+  matched by runner id or by the runner's group, which needs the runner row.
+  The caller resolves the none/all modes before calling.
+  """
+  def by_runner_scope_values(queryable, runner_ids, groups) do
+    queryable
+    |> with_named_binding(:scope_runner, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [runner_actions: a],
+        runner in ^Emisar.Runners.Runner.Query.not_deleted(),
+        on: a.runner_id == runner.id,
+        as: ^binding
+      )
+    end)
+    |> where([scope_runner: r], r.id in ^runner_ids or r.group in ^groups)
+  end
+
   def select_action_risk_rows(queryable),
     do: select(queryable, [runner_actions: a], {a.runner_id, a.action_id, a.risk})
 

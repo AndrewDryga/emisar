@@ -6,7 +6,7 @@ defmodule EmisarWeb.RunbooksLive do
   a Run button that opens the parameterized dispatch form for it.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Catalog, Runbooks, Runs}
+  alias Emisar.{Runbooks, Runs}
   alias EmisarWeb.{LiveTable, RunbookWorkflowComponents}
 
   def mount(_params, _session, socket) do
@@ -73,34 +73,15 @@ defmodule EmisarWeb.RunbooksLive do
     end
   end
 
-  # `%{runbook_id => most-severe step risk}` for the whole page in ONE catalog
-  # read — gather every step's action across all listed runbooks, resolve their
-  # risks in a single account-scoped query, then fold each runbook's worst from
-  # that map (no per-runbook DB call — IL-1). A runbook whose steps' actions
-  # aren't in the catalog yet is absent from the map, so its row shows no pill
-  # (max_risk never returns a false low for unresolved steps).
+  # `%{runbook_id => most-severe step risk}` for the whole page in ONE read. A
+  # runbook with any step the catalog can't resolve is nil there, so its row
+  # shows no pill rather than a false low.
   defp resolve_max_risks(runbooks, subject) do
-    action_ids =
-      runbooks
-      |> Enum.flat_map(&runbook_action_ids/1)
-      |> Enum.uniq()
-
-    case Catalog.risk_by_action_ids(action_ids, subject) do
-      {:ok, risk_by_action} ->
-        Map.new(runbooks, fn runbook ->
-          risks = Enum.map(runbook_action_ids(runbook), &Map.get(risk_by_action, &1))
-          {runbook.id, Catalog.max_risk(risks)}
-        end)
-
-      {:error, _} ->
-        %{}
+    case Runbooks.risk_by_runbook_ids(Enum.map(runbooks, & &1.id), subject) do
+      {:ok, risk_by_runbook} -> risk_by_runbook
+      {:error, _reason} -> %{}
     end
   end
-
-  # The action id of each of a runbook's steps (steps use `action`/`action_id`
-  # interchangeably, same as the dispatch path).
-  defp runbook_action_ids(runbook),
-    do: runbook |> Runbooks.expand() |> Enum.map(&(&1["action_id"] || &1["action"]))
 
   # `%{slug => latest published version}` for the page's families in ONE read —
   # a family whose head is a draft still runs its newest published version.

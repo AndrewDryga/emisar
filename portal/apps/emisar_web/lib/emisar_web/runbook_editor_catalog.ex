@@ -7,7 +7,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   remains authoritative for trust, contract compatibility, and publication.
   """
 
-  alias Emisar.Runners
+  alias Emisar.{Catalog, Runners}
   alias EmisarWeb.RunbookDraft
 
   @doc "Build the editor projection from the two complete, account-scoped reads."
@@ -343,7 +343,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
          pack_id: representative.pack_id,
          action_id: representative.action_id,
          title: representative.title,
-         risk: Enum.max_by(Enum.map(rows, & &1.risk), &risk_rank/1),
+         risk: Catalog.max_risk(Enum.map(rows, & &1.risk)),
          args: Map.get(representative.args_schema, "args", []),
          runner_ids: MapSet.new(rows, & &1.runner_id)
        }}
@@ -401,12 +401,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       blank?(argument["type"]) or blank?(argument["required"]) or blank?(argument["sensitive"])
     end)
   end
-
-  defp risk_rank(:critical), do: 4
-  defp risk_rank(:high), do: 3
-  defp risk_rank(:medium), do: 2
-  defp risk_rank(:low), do: 1
-  defp risk_rank(_risk), do: 0
 
   defp blank?(nil), do: true
   defp blank?(""), do: true

@@ -167,6 +167,70 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "risk_by_runbook_ids/2" do
+    test "maps each runbook to the worst risk across its steps" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "critical")
+
+      mixed =
+        create_runbook(subject, definition: risk_definition(["linux.uptime", "linux.reboot"]))
+
+      calm = create_runbook(subject, definition: risk_definition(["linux.uptime"]))
+
+      assert Runbooks.risk_by_runbook_ids([mixed.id, calm.id], subject) ==
+               {:ok, %{mixed.id => :critical, calm.id => :low}}
+    end
+
+    test "an unobserved step leaves the whole runbook unresolved" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "critical")
+
+      partial =
+        create_runbook(subject, definition: risk_definition(["linux.uptime", "linux.reboot"]))
+
+      # Nobody advertises linux.reboot — answering `critical` from the one step
+      # we can resolve would understate a runbook whose rest is unknown.
+      assert Runbooks.risk_by_runbook_ids([partial.id], subject) == {:ok, %{partial.id => nil}}
+    end
+
+    test "omits deleted, cross-account, and unknown ids" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      deleted = create_runbook(subject) |> delete(subject)
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      other = create_runbook(other_subject)
+
+      ids = [deleted.id, other.id, Ecto.UUID.generate(), "not-a-uuid"]
+
+      assert Runbooks.risk_by_runbook_ids(ids, subject) == {:ok, %{}}
+    end
+
+    test "denies a principal without view permission, including for an empty list" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert Runbooks.risk_by_runbook_ids([], subject) == {:error, :unauthorized}
+
+      assert Runbooks.risk_by_runbook_ids([Ecto.UUID.generate()], subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "accepts a full batch and refuses anything larger or unbounded" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      id = Ecto.UUID.generate()
+
+      assert Runbooks.risk_by_runbook_ids(List.duplicate(id, 64), subject) == {:ok, %{}}
+
+      assert Runbooks.risk_by_runbook_ids(List.duplicate(id, 65), subject) ==
+               {:error, :too_many_runbook_ids}
+
+      assert Runbooks.risk_by_runbook_ids(%{}, subject) == {:error, :too_many_runbook_ids}
+    end
+  end
+
   describe "list_all_runbooks/1" do
     test "returns every visible non-deleted version" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
@@ -1444,6 +1508,17 @@ defmodule Emisar.RunbooksTest do
       ["stages", Access.at(0), "steps", Access.at(0), "args"],
       %{"seconds" => %{"source" => "input", "ref" => "seconds"}}
     )
+  end
+
+  # A definition whose single stage runs exactly the named actions, one step
+  # each — the shape the list page's risk fold reads.
+  defp risk_definition(action_ids) do
+    steps =
+      Enum.with_index(action_ids, fn action_id, index ->
+        "step-#{index}" |> step("database") |> Map.put("action", action_id)
+      end)
+
+    definition([stage("inspect", steps)])
   end
 
   defp stage(id, steps) do

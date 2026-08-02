@@ -14,7 +14,7 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Approvals, Catalog, Runners}
+  alias Emisar.{Accounts, Approvals, Runners}
   alias EmisarWeb.{LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -169,38 +169,11 @@ defmodule EmisarWeb.ApprovalsLive do
   defp runner_id_from(_), do: nil
 
   defp risk_labels_for(requests, subject) do
-    for request <- requests, into: %{}, do: {request.id, risk_for_request(request, subject)}
-  end
-
-  defp risk_for_request(
-         %{context: %{"action_id" => action_id, "runner_id" => runner_id}},
-         subject
-       )
-       when is_binary(action_id) and is_binary(runner_id) do
-    case Catalog.fetch_action_by_id(action_id, runner_id, subject) do
-      {:ok, action} -> action.risk
-      _ -> nil
+    case Approvals.risk_by_request_ids(Enum.map(requests, & &1.id), subject) do
+      {:ok, risks} -> risks
+      {:error, _reason} -> %{}
     end
   end
-
-  defp risk_for_request(
-         %{context: %{"kind" => "runbook_execution", "plan" => plan}},
-         _subject
-       ) do
-    plan
-    |> Map.get("stages", [])
-    |> Enum.flat_map(&Map.get(&1, "items", []))
-    |> Enum.map(& &1["risk"])
-    |> Enum.max_by(&risk_rank/1, fn -> nil end)
-  end
-
-  defp risk_for_request(_request, _subject), do: nil
-
-  defp risk_rank("critical"), do: 4
-  defp risk_rank("high"), do: 3
-  defp risk_rank("medium"), do: 2
-  defp risk_rank("low"), do: 1
-  defp risk_rank(_risk), do: 0
 
   # A labels miss means the runner row is gone — an honest label beats an id
   # fragment; the detail page still carries the frozen runner id in full.

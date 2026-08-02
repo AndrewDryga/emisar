@@ -68,8 +68,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
         title = "Approval · " <> request_title(request)
 
-        # Risk + the plain-English "what this does" are the approver's headline
-        # signals but aren't on the request — look the action up from the catalog
+        # The plain-English "what this does", the command preview, and whether
+        # the action is still advertised all need the catalog row itself
         # (display-only, connected pass; nil if it's no longer advertised).
         action = fetch_action_for(request.context, socket.assigns.current_subject)
 
@@ -82,7 +82,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:execution_plan, execution_plan)
          |> assign(:execution_request?, execution_request?)
          |> assign(:action_args, visible_action_args(run))
-         |> assign(:action_risk, (action && action.risk) || execution_risk(execution_plan))
+         |> assign(:action_risk, request_risk(request, subject))
          |> assign(:action_description, action && action.description)
          # The exact command the runner will execute, arguments resolved into
          # the action's template — shown only when our compiled pack is provably
@@ -144,20 +144,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp request_title(%{context: context, id: id}), do: context["action_id"] || id
 
-  defp execution_risk(%{"stages" => stages}) when is_list(stages) do
-    stages
-    |> Enum.flat_map(&Map.get(&1, "items", []))
-    |> Enum.map(& &1["risk"])
-    |> Enum.max_by(&risk_rank/1, fn -> nil end)
+  # One tier for either shape — a direct action's advertised risk or the worst
+  # across a frozen execution plan — owned by the Approvals context.
+  defp request_risk(request, subject) do
+    case Approvals.risk_by_request_ids([request.id], subject) do
+      {:ok, risks} -> risks[request.id]
+      {:error, _reason} -> nil
+    end
   end
-
-  defp execution_risk(_plan), do: nil
-
-  defp risk_rank("critical"), do: 4
-  defp risk_rank("high"), do: 3
-  defp risk_rank("medium"), do: 2
-  defp risk_rank("low"), do: 1
-  defp risk_rank(_risk), do: 0
 
   defp execution_work_label(%{"stages" => stages}) when is_list(stages) do
     items = Enum.flat_map(stages, &Map.get(&1, "items", []))
