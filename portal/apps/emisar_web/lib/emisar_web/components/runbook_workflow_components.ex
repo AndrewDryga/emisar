@@ -391,39 +391,25 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp step_editor(assigns) do
     choice = RunbookEditorCatalog.action_value(assigns.step["pack_id"], assigns.step["action"])
+    refs = assigns.step["target_refs"]
+    selection = assigns.step["target_selection"]
 
     targets_resolved? =
-      RunbookEditorCatalog.targets_resolved?(
-        assigns.catalog,
-        assigns.step["target_refs"],
-        assigns.step["target_selection"]
-      )
+      RunbookEditorCatalog.targets_resolved?(assigns.catalog, refs, selection)
 
     action_available? =
-      RunbookEditorCatalog.action_available?(
-        assigns.catalog,
-        assigns.step["target_refs"],
-        choice
-      )
+      RunbookEditorCatalog.action_available?(assigns.catalog, refs, selection, choice)
 
     assigns =
       assigns
       |> assign(:action_choice, choice)
       |> assign(
         :action_options,
-        RunbookEditorCatalog.action_options(
-          assigns.catalog,
-          assigns.step["target_refs"],
-          choice
-        )
+        RunbookEditorCatalog.action_options(assigns.catalog, refs, selection, choice)
       )
       |> assign(
         :target_options,
-        RunbookEditorCatalog.target_options(
-          assigns.catalog,
-          assigns.step["target_refs"],
-          assigns.step["target_selection"]
-        )
+        RunbookEditorCatalog.target_options(assigns.catalog, refs, selection)
       )
       |> assign(:targets_resolved?, targets_resolved?)
       |> assign(
@@ -434,6 +420,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         :risk,
         RunbookEditorCatalog.risk(
           assigns.catalog,
+          refs,
+          selection,
           assigns.step["pack_id"],
           assigns.step["action"]
         )
@@ -626,7 +614,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp target_picker(assigns) do
     refs = assigns.step["target_refs"] || []
     selection = assigns.step["target_selection"] || "all"
-    unavailable = Enum.count(refs, &(not Map.has_key?(assigns.catalog.target_runner_ids, &1)))
+
+    unavailable =
+      Enum.count(refs, &(not RunbookEditorCatalog.target_available?(assigns.catalog, &1)))
 
     assigns =
       assigns
@@ -639,7 +629,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       |> assign(:searchable?, Enum.count(assigns.options, &(&1.kind != :group)) > 8)
       |> assign(
         :disabled?,
-        assigns.read_only? or (refs == [] and assigns.catalog.target_options == [])
+        assigns.read_only? or
+          (refs == [] and RunbookEditorCatalog.targets_empty?(assigns.catalog))
       )
 
     ~H"""
@@ -878,11 +869,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     """
   end
 
-  defp target_selection_label(%{target_options: []}, [], _selection, _unavailable),
-    do: "No online runners available"
-
-  defp target_selection_label(_catalog, [], _selection, _unavailable),
-    do: "Choose runners or groups…"
+  defp target_selection_label(catalog, [], _selection, _unavailable),
+    do: empty_target_selection_label(catalog)
 
   defp target_selection_label(catalog, refs, selection, unavailable) do
     labels = Enum.map(refs, &target_preview_label(catalog, &1, selection))
@@ -893,18 +881,18 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     if unavailable > 0, do: "#{summary} · #{unavailable} unavailable", else: summary
   end
 
-  defp target_selection_title(catalog, refs, selection, unavailable),
-    do: target_selection_title(catalog.target_options, catalog, refs, selection, unavailable)
+  defp target_selection_title(catalog, [], _selection, _unavailable),
+    do: empty_target_selection_label(catalog)
 
-  defp target_selection_title([], _catalog, [], _selection, _unavailable),
-    do: "No online runners available"
-
-  defp target_selection_title(_options, _catalog, [], _selection, _unavailable),
-    do: "Choose runners or groups…"
-
-  defp target_selection_title(_options, catalog, refs, selection, unavailable) do
+  defp target_selection_title(catalog, refs, selection, unavailable) do
     summary = Enum.map_join(refs, ", ", &target_preview_label(catalog, &1, selection))
     if unavailable > 0, do: "#{summary} · #{unavailable} unavailable", else: summary
+  end
+
+  defp empty_target_selection_label(catalog) do
+    if RunbookEditorCatalog.targets_empty?(catalog),
+      do: "No online runners available",
+      else: "Choose runners or groups…"
   end
 
   defp target_preview_label(_catalog, "group:" <> group, "random_one"),

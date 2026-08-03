@@ -74,6 +74,60 @@ defmodule Emisar.CatalogTest do
     |> Fixtures.Memberships.force_runner_access(access)
   end
 
+  # One connected runner advertising one exact `demo` deployment, with every
+  # resulting pack version trusted — the state an editor projection reads.
+  defp advertise_editor_action(account, subject, opts) do
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        connected?: Keyword.get(opts, :connected?, true)
+      )
+
+    version = Keyword.get(opts, :version, "1.0.0")
+
+    {:ok, _observed} =
+      Catalog.observe_state(
+        runner,
+        state_payload(
+          packs: %{"demo" => %{"version" => version, "hash" => "demo-#{version}"}},
+          actions: [
+            action("demo.inspect",
+              pack_id: "demo",
+              risk: Keyword.get(opts, :risk, "low"),
+              args: Keyword.get(opts, :args, [])
+            )
+          ]
+        )
+      )
+
+    {:ok, pack_versions} = Catalog.list_all_pack_versions_for_account(subject)
+
+    Enum.each(pack_versions, fn pack_version ->
+      if pack_version.trust_state != :trusted,
+        do: {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+    end)
+
+    runner
+  end
+
+  defp editor_candidate(version, opts \\ []) do
+    hash = Fixtures.Catalog.pack_hash("demo-#{version}")
+
+    %{
+      runner_id: "runner-#{version}",
+      runner_ref: "runner~#{version}",
+      pack_id: "demo",
+      version: version,
+      hash: hash,
+      pack_ref: "demo@#{version}/#{hash}",
+      descriptor: %{
+        "action_id" => "demo.inspect",
+        "risk" => "low",
+        "args_schema" => %{"args" => Keyword.get(opts, :args, [])}
+      }
+    }
+  end
+
   defp advertise_pack(runner, pack_id, opts \\ []) do
     hash = Keyword.get(opts, :hash, pack_id <> "-bytes")
 
@@ -2889,6 +2943,185 @@ defmodule Emisar.CatalogTest do
                [runner],
                subject
              ) == {:error, :fan_out_too_large}
+    end
+  end
+
+  describe "build_editor_projection/2" do
+    test "projects only trusted manifest-matching deployments as exact candidates" do
+      {account, subject} = account_with_owner()
+      trusted = advertise_editor_action(account, subject, [])
+      untrusted = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:ok, _observed} =
+               Catalog.observe_state(
+                 untrusted,
+                 state_payload(
+                   packs: %{"other" => %{"version" => "1.0.0", "hash" => "other-1.0.0"}},
+                   actions: [action("other.inspect", pack_id: "other")]
+                 )
+               )
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
+
+      assert Map.keys(projection.candidates) == [{"demo", "demo.inspect"}]
+
+      assert [%{version: "1.0.0", pack_ref: pack_ref, descriptor: descriptor}] =
+               projection.candidates[{"demo", "demo.inspect"}][trusted.id]
+
+      assert pack_ref =~ "demo@1.0.0/sha256:"
+      assert descriptor["action_id"] == "demo.inspect"
+    end
+
+    test "an offline runner contributes no candidate" do
+      {account, subject} = account_with_owner()
+      online = advertise_editor_action(account, subject, [])
+      _offline = advertise_editor_action(account, subject, connected?: false)
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
+
+      assert Map.keys(projection.candidates[{"demo", "demo.inspect"}]) == [online.id]
+    end
+
+    test "an empty runner list returns an empty projection" do
+      {_account, subject} = account_with_owner()
+
+      assert Catalog.build_editor_projection([], subject) ==
+               {:ok, %Catalog.EditorProjection{}}
+    end
+
+    test "a runner outside the subject's account fails closed" do
+      {account, subject} = account_with_owner()
+      advertise_editor_action(account, subject, [])
+
+      {_other_account, other_subject} = account_with_owner()
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+
+      assert Catalog.build_editor_projection(runners, other_subject) == {:error, :not_found}
+    end
+
+    test "a same-account runner outside the subject's current scope is denied" do
+      {account, subject} = account_with_owner()
+      allowed = advertise_editor_action(account, subject, version: "1.0.0")
+      restricted = advertise_editor_action(account, subject, version: "1.1.0")
+      assert {:ok, allowed_only} = Accounts.RunnerAccess.restricted([], [allowed.id])
+      force_runner_access(account, subject, allowed_only)
+
+      assert Catalog.build_editor_projection([allowed, restricted], subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "a subject without view_catalog is denied" do
+      {account, _subject} = account_with_owner()
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Catalog.build_editor_projection([], no_view) == {:error, :unauthorized}
+    end
+  end
+
+  describe "common_actions/2" do
+    test "keeps an action every runner exposes, even at different exact versions" do
+      {account, subject} = account_with_owner()
+      first = advertise_editor_action(account, subject, version: "1.0.0")
+      second = advertise_editor_action(account, subject, version: "1.2.0")
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
+
+      assert [common] = Catalog.common_actions(projection, [first.id, second.id])
+
+      assert common == %{
+               pack_id: "demo",
+               action_id: "demo.inspect",
+               title: "demo.inspect",
+               risk: "low",
+               args: []
+             }
+    end
+
+    test "drops an action whose runners expose different risk" do
+      {account, subject} = account_with_owner()
+      first = advertise_editor_action(account, subject, version: "1.0.0")
+      second = advertise_editor_action(account, subject, version: "2.0.0", risk: "critical")
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
+
+      assert Catalog.common_actions(projection, [first.id]) != []
+      assert Catalog.common_actions(projection, [second.id]) != []
+      assert Catalog.common_actions(projection, [first.id, second.id]) == []
+    end
+
+    test "drops an action one selected runner does not expose" do
+      {account, subject} = account_with_owner()
+      advertising = advertise_editor_action(account, subject, [])
+      bare = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
+
+      assert Catalog.common_actions(projection, [advertising.id]) != []
+      assert Catalog.common_actions(projection, [advertising.id, bare.id]) == []
+    end
+
+    test "no selected runners resolve to no actions" do
+      assert Catalog.common_actions(%Catalog.EditorProjection{}, []) == []
+    end
+  end
+
+  describe "select_common_action/1" do
+    test "selects the newest exact candidate per runner and their shared contract" do
+      older = editor_candidate("1.0.0")
+      newer = editor_candidate("1.4.0")
+
+      assert {:ok, %{candidates: [selected], contract: contract}} =
+               Catalog.select_common_action([{:runner_a, [older, newer]}])
+
+      assert selected.version == "1.4.0"
+      assert selected.runner == :runner_a
+      assert contract["risk"] == "low"
+    end
+
+    test "orders every accepted version string without raising" do
+      opaque_older = editor_candidate("release-1")
+      opaque_newer = editor_candidate("release-2")
+      semantic = editor_candidate("1.0.0")
+
+      assert {:ok, %{candidates: [selected]}} =
+               Catalog.select_common_action([
+                 {:runner_a, [opaque_newer, semantic, opaque_older]}
+               ])
+
+      assert selected.version == "1.0.0"
+
+      assert {:ok, %{candidates: [selected]}} =
+               Catalog.select_common_action([{:runner_a, [opaque_older, opaque_newer]}])
+
+      assert selected.version == "release-2"
+    end
+
+    test "reports the runner whose exact version advertises conflicting hashes" do
+      conflicting = %{editor_candidate("1.0.0") | hash: "sha256:" <> String.duplicate("f", 64)}
+
+      assert Catalog.select_common_action([{:runner_a, [editor_candidate("1.0.0"), conflicting]}]) ==
+               {:error, [{:runner_a, :ambiguous_pack_version}]}
+    end
+
+    test "reports every runner with no candidate at all" do
+      assert Catalog.select_common_action([
+               {:runner_a, [editor_candidate("1.0.0")]},
+               {:runner_b, []}
+             ]) == {:error, [{:runner_b, :pack_unavailable}]}
+    end
+
+    test "rejects runners whose complete normalized contracts differ" do
+      typed = editor_candidate("2.0.0", args: [%{"name" => "path", "type" => "path"}])
+
+      assert Catalog.select_common_action([
+               {:runner_a, [editor_candidate("1.0.0")]},
+               {:runner_b, [typed]}
+             ]) == {:error, :incompatible_action_contracts}
     end
   end
 

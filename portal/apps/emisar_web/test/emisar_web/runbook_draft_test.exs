@@ -1,6 +1,6 @@
 defmodule EmisarWeb.RunbookDraftTest do
   use ExUnit.Case, async: true
-  alias Emisar.Runbooks
+  alias Emisar.{Fixtures, Runbooks}
   alias Emisar.Runbooks.Definition
   alias EmisarWeb.{RunbookDraft, RunbookEditorCatalog}
 
@@ -145,13 +145,25 @@ defmodule EmisarWeb.RunbookDraftTest do
     assert loaded["required"] == ""
     assert loaded["sensitive"] == ""
 
-    catalog = %{
-      actions: %{
-        "linux-core|linux.tail" => %{
-          args: [%{"name" => "path", "type" => "path", "required" => true, "sensitive" => false}]
-        }
-      }
-    }
+    catalog =
+      Fixtures.Runbooks.build_editor_projection(
+        [%{group: "default"}],
+        [
+          %{
+            pack_id: "linux-core",
+            action_id: "linux.tail",
+            descriptor: %{
+              "title" => "Tail",
+              "risk" => "low",
+              "args_schema" => %{
+                "args" => [
+                  %{"name" => "path", "type" => "path", "required" => true, "sensitive" => false}
+                ]
+              }
+            }
+          }
+        ]
+      )
 
     synced = hd(RunbookEditorCatalog.sync_step(step, step, catalog)["args"])
 

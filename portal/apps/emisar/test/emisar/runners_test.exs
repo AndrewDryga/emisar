@@ -365,6 +365,57 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "available_runbook_targets/1" do
+    test "offers only enabled, online runners with a representable ref" do
+      {account, _user, subject} = account_with_owner_subject()
+      online = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      offline = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      disabled = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.disable_runner(disabled)
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+
+      assert [target] = Runners.available_runbook_targets(runners)
+      assert target.id == online.id
+      assert target.name == online.name
+      assert target.group == "database"
+      assert {:ok, target.runner_ref} == Runners.public_ref(online)
+
+      refute Enum.any?([offline.id, disabled.id], &(&1 == target.id))
+    end
+  end
+
+  describe "select_runbook_target_runners/2" do
+    test "resolves group and runner refs, and fails the whole set on an unknown ref" do
+      {account, _user, subject} = account_with_owner_subject()
+      first = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      second = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      available = Runners.available_runbook_targets(runners)
+      assert {:ok, second_ref} = Runners.public_ref(second)
+
+      assert {:ok, [%{id: selected_id}]} =
+               Runners.select_runbook_target_runners(["group:database"], available)
+
+      assert selected_id == first.id
+
+      assert {:ok, both} =
+               Runners.select_runbook_target_runners(
+                 ["group:database", "runner:" <> second_ref],
+                 available
+               )
+
+      assert Enum.map(both, & &1.id) |> Enum.sort() == Enum.sort([first.id, second.id])
+
+      assert Runners.select_runbook_target_runners(["group:database", "group:absent"], available) ==
+               {:error, :unknown_target}
+
+      assert Runners.select_runbook_target_runners(["nonsense"], available) ==
+               {:error, :unknown_target}
+    end
+  end
+
   describe "fetch_fleet_health/1" do
     test "counts the scoped fleet states without materializing runner rows" do
       {account, _user, subject} = account_with_owner_subject()

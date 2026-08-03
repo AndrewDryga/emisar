@@ -73,4 +73,52 @@ defmodule Emisar.Fixtures.Runbooks do
 
   @doc "Returns a fresh canonical minimal v1 definition for context tests."
   def default_definition, do: @default_definition
+
+  @doc """
+  Builds one typed editor projection without a database — the shape
+  `Emisar.Runbooks.editor_projection/1` returns. `targets` are
+  `%{name, group}` maps and `actions` are
+  `%{pack_id, action_id, descriptor}` maps advertised by every target, so a
+  pure view-formatting test can skip the fleet and trust flow that
+  `Emisar.Catalog.observe_state/2` exercises.
+  """
+  def build_editor_projection(targets, actions) do
+    targets =
+      Enum.map(targets, fn target ->
+        name = target[:name] || "runner-#{Fixtures.Random.unique_int()}"
+
+        %{
+          id: Repo.generate_id(),
+          runner_ref: name <> "~" <> String.duplicate("a", 32),
+          name: name,
+          group: target[:group]
+        }
+      end)
+
+    candidates =
+      Map.new(actions, fn action ->
+        {{action.pack_id, action.action_id},
+         Map.new(targets, &{&1.id, [editor_candidate(action, &1)]})}
+      end)
+
+    %Emisar.Runbooks.EditorProjection{
+      targets: targets,
+      catalog: %Emisar.Catalog.EditorProjection{candidates: candidates}
+    }
+  end
+
+  defp editor_candidate(action, target) do
+    version = action[:version] || "1.0.0"
+    hash = Fixtures.Catalog.pack_hash("#{action.pack_id}-#{version}")
+
+    %{
+      runner_id: target.id,
+      runner_ref: target.runner_ref,
+      pack_id: action.pack_id,
+      version: version,
+      hash: hash,
+      pack_ref: "#{action.pack_id}@#{version}/#{hash}",
+      descriptor: Map.put(action.descriptor, "action_id", action.action_id)
+    }
+  end
 end

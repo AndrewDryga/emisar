@@ -1,33 +1,23 @@
 defmodule EmisarWeb.RunbookEditorCatalog do
   @moduledoc """
-  The runbook editor's bounded projection of the current fleet catalog.
+  View formatting for the runbook editor's domain projection.
 
-  Targets are selected first. The action picker then exposes only pack/action
-  pairs advertised by every resolved runner in that target set. The compiler
-  remains authoritative for trust, contract compatibility, and publication.
+  `Emisar.Runbooks` owns target resolution, trust, pack-version choice, common
+  action contracts, risk, and descriptor semantics. This module only turns that
+  projection into picker headings, labels, search text, and the stable form
+  encoding — and keeps a saved value that no longer resolves named, marked
+  unavailable, and removable.
   """
 
-  alias Emisar.{Catalog, Runbooks, Runners}
+  alias Emisar.Runbooks
   alias EmisarWeb.RunbookDraft
 
-  @doc "Build the editor projection from the two complete, account-scoped reads."
-  def build(runner_actions, runners) when is_list(runner_actions) and is_list(runners) do
-    targets = eligible_targets(runners)
-
-    %{
-      actions: action_index(runner_actions, targets.runner_ids),
-      target_labels: targets.labels,
-      target_options: targets.options,
-      target_runner_ids: targets.runner_ids
-    }
-  end
-
   @doc "Return the target picker choices, including unavailable selected refs."
-  def target_options(catalog, selected_refs, selection) do
+  def target_options(projection, selected_refs, selection) do
     selected = MapSet.new(selected_refs)
 
     options =
-      Enum.map(catalog.target_options, fn option ->
+      Enum.map(eligible_target_options(projection), fn option ->
         %{option | selected: option.value in selected_refs and option.selection == selection}
       end)
 
@@ -43,7 +33,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         %{
           value: ref,
           selection: selection,
-          label: target_label(catalog, ref, selection),
+          label: target_label(projection, ref, selection),
           kind: target_kind(ref, selection),
           description: unavailable_target_description(ref),
           disabled: false,
@@ -73,94 +63,86 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   end
 
   @doc "Human label for one tagged target reference."
-  def target_label(catalog, ref, selection \\ "all"),
-    do: catalog.target_labels[{selection, ref}] || fallback_target_label(ref, selection)
+  def target_label(projection, ref, selection \\ "all")
 
-  @doc "Action choices available on every runner resolved from the selected targets."
-  def action_options(catalog, selected_refs, selected_value) do
-    targets_resolved? = targets_resolved?(catalog, selected_refs, "all")
-    runner_ids = selected_runner_ids(catalog, selected_refs)
+  def target_label(projection, "group:" <> group = ref, "all") do
+    case Enum.count(projection.targets, &(&1.group == group)) do
+      0 -> fallback_target_label(ref, "all")
+      count -> "#{group} — all online runners (#{count})"
+    end
+  end
 
+  def target_label(projection, "group:" <> group = ref, "random_one") do
+    if Enum.any?(projection.targets, &(&1.group == group)),
+      do: "#{group} — one online runner",
+      else: fallback_target_label(ref, "random_one")
+  end
+
+  def target_label(projection, "runner:" <> runner_ref = ref, "all") do
+    case Enum.find(projection.targets, &(&1.runner_ref == runner_ref)) do
+      nil -> fallback_target_label(ref, "all")
+      target -> target.name
+    end
+  end
+
+  def target_label(_projection, ref, selection), do: fallback_target_label(ref, selection)
+
+  @doc "Whether the editor currently offers any target at all."
+  def targets_empty?(projection), do: projection.targets == []
+
+  @doc "Whether one saved target ref still resolves to current eligible runners."
+  def target_available?(projection, ref),
+    do: match?({:ok, _targets}, Runbooks.editor_target_runners(projection, [ref], "all"))
+
+  @doc "Whether every selected target currently resolves to one or more eligible runners."
+  def targets_resolved?(projection, refs, selection),
+    do: match?({:ok, _targets}, Runbooks.editor_target_runners(projection, refs, selection))
+
+  @doc "Action choices the domain reports as eligible on every selected target."
+  def action_options(projection, refs, selection, selected_value) do
     options =
-      catalog.actions
-      |> Enum.filter(fn {_value, action} ->
-        runner_ids != [] and Enum.all?(runner_ids, &MapSet.member?(action.runner_ids, &1))
-      end)
-      |> Enum.map(fn {value, action} ->
-        %{
-          value: value,
-          label: action.action_id,
-          description: action_description(action),
-          search: action_search(action),
-          pack_id: action.pack_id,
-          disabled: false,
-          selected: value == selected_value
-        }
-      end)
+      projection
+      |> Runbooks.editor_actions(refs, selection)
+      |> Enum.map(&action_option(&1, selected_value))
       |> Enum.sort_by(& &1.label)
 
     if selected_value in [nil, ""] or Enum.any?(options, &(&1.value == selected_value)) do
       options
     else
       [
-        %{
-          value: selected_value,
-          label: saved_action_label(selected_value),
-          description:
-            if(targets_resolved?,
-              do: "Unavailable on one or more selected runners",
-              else: "Saved action"
-            ),
-          search: selected_value,
-          pack_id: elem(split_action_value(selected_value), 0),
-          unavailable: targets_resolved?,
-          disabled: true,
-          selected: true
-        }
+        unavailable_action_option(selected_value, targets_resolved?(projection, refs, selection))
         | options
       ]
     end
   end
 
-  @doc "Whether every selected target currently resolves to one or more eligible runners."
-  def targets_resolved?(_catalog, [], _selection), do: false
+  @doc "Whether the current pack/action choice is eligible on every selected target."
+  def action_available?(projection, refs, selection, value) do
+    {pack_id, action_id} = split_action_value(value)
 
-  def targets_resolved?(catalog, refs, "all") do
-    Enum.all?(refs, &Map.has_key?(catalog.target_runner_ids, &1))
-  end
-
-  def targets_resolved?(catalog, [ref = "group:" <> _group], "random_one"),
-    do: Map.has_key?(catalog.target_runner_ids, ref)
-
-  def targets_resolved?(_catalog, _refs, _selection), do: false
-
-  @doc "Whether the current pack/action choice is available on every selected runner."
-  def action_available?(catalog, selected_refs, selected_value) do
-    Enum.any?(action_options(catalog, selected_refs, selected_value), fn option ->
-      option.value == selected_value and not option.disabled
-    end)
+    match?(
+      {:ok, _action},
+      Runbooks.editor_action(projection, refs, selection, pack_id, action_id)
+    )
   end
 
   @doc "Align descriptor-backed argument rows after an action choice changes or loads."
-  def sync_step(step, previous, catalog) do
+  def sync_step(step, previous, projection) do
     choice = action_value(step["pack_id"], step["action"])
     previous_choice = action_value(previous["pack_id"], previous["action"])
-    action = catalog.actions[choice]
 
-    if action && (choice != previous_choice or argument_metadata_missing?(step["args"])) do
-      existing = Map.new(step["args"], &{&1["name"], &1})
-
-      Map.put(step, "args", Enum.map(action.args, &synced_argument(&1, existing[&1["name"]])))
+    if choice != previous_choice or argument_metadata_missing?(step["args"]) do
+      sync_step_arguments(step, projection)
     else
       step
     end
   end
 
-  @doc "Worst risk for the selected pack/action choice."
-  def risk(catalog, pack_id, action_id) do
-    case catalog.actions[action_value(pack_id, action_id)] do
-      nil -> nil
-      action -> action.risk
+  @doc "Risk of the selected pack/action choice on the selected targets."
+  def risk(projection, refs, selection, pack_id, action_id) do
+    case Runbooks.editor_action(projection, refs, selection, pack_id, action_id) do
+      {:ok, action} -> action.risk
+      {:error, :not_found} -> nil
     end
   end
 
@@ -181,27 +163,60 @@ defmodule EmisarWeb.RunbookEditorCatalog do
 
   def split_action_value(_value), do: {"", ""}
 
-  defp eligible_targets(runners) do
-    runners =
-      Enum.flat_map(runners, fn runner ->
-        with nil <- runner.disabled_at,
-             :online <- Runners.connection_state(runner),
-             {:ok, ref} <- Runners.public_ref(runner) do
-          [
-            %{
-              id: runner.id,
-              ref: ref,
-              name: runner.name,
-              group: runner.group
-            }
-          ]
-        else
-          _unavailable -> []
-        end
-      end)
+  defp sync_step_arguments(step, projection) do
+    case Runbooks.editor_action(
+           projection,
+           step["target_refs"],
+           step["target_selection"],
+           step["pack_id"],
+           step["action"]
+         ) do
+      {:ok, action} ->
+        existing = Map.new(step["args"], &{&1["name"], &1})
+
+        Map.put(step, "args", Enum.map(action.args, &synced_argument(&1, existing[&1["name"]])))
+
+      {:error, :not_found} ->
+        step
+    end
+  end
+
+  defp action_option(action, selected_value) do
+    value = action_value(action.pack_id, action.action_id)
+
+    %{
+      value: value,
+      label: action.action_id,
+      description: action_description(action),
+      search: action_search(action),
+      pack_id: action.pack_id,
+      disabled: false,
+      selected: value == selected_value
+    }
+  end
+
+  defp unavailable_action_option(value, targets_resolved?) do
+    %{
+      value: value,
+      label: saved_action_label(value),
+      description:
+        if(targets_resolved?,
+          do: "Unavailable on one or more selected runners",
+          else: "Saved action"
+        ),
+      search: value,
+      pack_id: elem(split_action_value(value), 0),
+      unavailable: targets_resolved?,
+      disabled: true,
+      selected: true
+    }
+  end
+
+  defp eligible_target_options(projection) do
+    targets = projection.targets
 
     groups =
-      runners
+      targets
       |> Enum.map(& &1.group)
       |> Enum.reject(&blank?/1)
       |> Enum.uniq()
@@ -211,14 +226,12 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       Enum.flat_map(groups, fn group ->
         group_ref = "group:" <> group
 
-        count = Enum.count(runners, &(&1.group == group))
-
         group_heading = %{
           value: "",
           selection: nil,
           label: group,
           kind: :group,
-          online_count: count,
+          online_count: Enum.count(targets, &(&1.group == group)),
           disabled: true,
           selected: false
         }
@@ -242,7 +255,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         }
 
         runner_options =
-          runners
+          targets
           |> Enum.filter(&(&1.group == group))
           |> Enum.sort_by(& &1.name)
           |> Enum.map(&runner_option/1)
@@ -251,60 +264,35 @@ defmodule EmisarWeb.RunbookEditorCatalog do
       end)
 
     ungrouped =
-      runners
+      targets
       |> Enum.filter(&blank?(&1.group))
       |> Enum.sort_by(& &1.name)
 
-    ungrouped_options =
-      case ungrouped do
-        [] ->
-          []
-
-        rows ->
-          [
-            %{
-              value: "",
-              selection: nil,
-              label: "Ungrouped",
-              kind: :group,
-              online_count: length(rows),
-              disabled: true,
-              selected: false
-            }
-            | Enum.map(rows, &runner_option/1)
-          ]
-      end
-
-    group_runner_ids =
-      Map.new(groups, fn group ->
-        {"group:" <> group, for(runner <- runners, runner.group == group, do: runner.id)}
-      end)
-
-    runner_ids = Map.new(runners, &{"runner:" <> &1.ref, [&1.id]})
-
-    labels =
-      Enum.reduce(groups, %{}, fn group, labels ->
-        count = Enum.count(runners, &(&1.group == group))
-        ref = "group:" <> group
-
-        labels
-        |> Map.put({"all", ref}, "#{group} — all online runners (#{count})")
-        |> Map.put({"random_one", ref}, "#{group} — one online runner")
-      end)
-      |> Map.merge(Map.new(runners, &{{"all", "runner:" <> &1.ref}, &1.name}))
-
-    %{
-      options: grouped_options ++ ungrouped_options,
-      labels: labels,
-      runner_ids: Map.merge(group_runner_ids, runner_ids)
-    }
+    grouped_options ++ ungrouped_options(ungrouped)
   end
 
-  defp runner_option(runner) do
+  defp ungrouped_options([]), do: []
+
+  defp ungrouped_options(targets) do
+    [
+      %{
+        value: "",
+        selection: nil,
+        label: "Ungrouped",
+        kind: :group,
+        online_count: length(targets),
+        disabled: true,
+        selected: false
+      }
+      | Enum.map(targets, &runner_option/1)
+    ]
+  end
+
+  defp runner_option(target) do
     %{
-      value: "runner:" <> runner.ref,
+      value: "runner:" <> target.runner_ref,
       selection: "all",
-      label: runner.name,
+      label: target.name,
       kind: :runner,
       disabled: false,
       selected: false
@@ -320,51 +308,6 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     do: "Saved group is no longer available"
 
   defp unavailable_target_description(_ref), do: "Saved runner is no longer available"
-
-  defp action_index(runner_actions, target_runner_ids) do
-    eligible_runner_ids =
-      target_runner_ids
-      |> Map.values()
-      |> List.flatten()
-      |> MapSet.new()
-
-    runner_actions
-    |> Enum.filter(&MapSet.member?(eligible_runner_ids, &1.runner_id))
-    |> Enum.group_by(&action_value(&1.pack_id, &1.action_id))
-    |> Map.new(fn {value, rows} ->
-      representative = latest_action(rows)
-
-      {value,
-       %{
-         pack_id: representative.pack_id,
-         action_id: representative.action_id,
-         title: representative.title,
-         risk: Catalog.max_risk(Enum.map(rows, & &1.risk)),
-         args: Map.get(representative.args_schema, "args", []),
-         runner_ids: MapSet.new(rows, & &1.runner_id)
-       }}
-    end)
-  end
-
-  defp latest_action(actions) do
-    Enum.max_by(actions, fn action ->
-      case Version.parse(action.pack_version || "") do
-        {:ok, version} -> {version.major, version.minor, version.patch, version.pre}
-        :error -> {-1, -1, -1, []}
-      end
-    end)
-  end
-
-  defp selected_runner_ids(catalog, refs) do
-    refs
-    |> Enum.reduce_while([], fn ref, ids ->
-      case Map.fetch(catalog.target_runner_ids, ref) do
-        {:ok, selected} -> {:cont, selected ++ ids}
-        :error -> {:halt, []}
-      end
-    end)
-    |> Enum.uniq()
-  end
 
   defp action_description(action) when action.title in [nil, ""], do: action.pack_id
   defp action_description(action), do: "#{action.title} · #{action.pack_id}"

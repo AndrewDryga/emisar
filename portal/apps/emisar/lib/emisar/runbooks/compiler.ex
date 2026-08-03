@@ -344,36 +344,51 @@ defmodule Emisar.Runbooks.Compiler do
   end
 
   defp select_step_candidates(indexed, target_set, candidates, selection_seed) do
-    runners = target_set.runners
-
-    {selected, issues} =
-      Enum.reduce(runners, {[], []}, fn runner, {selected, issues} ->
+    runner_candidates =
+      Enum.map(target_set.runners, fn runner ->
         key = {runner.id, indexed.step["pack"]["id"], indexed.step["action"]}
-        available = Map.get(candidates, key, [])
-
-        case select_exact_candidate(available) do
-          {:ok, candidate} ->
-            {[Map.put(candidate, :runner, runner) | selected], issues}
-
-          {:error, code, message} ->
-            {selected, [issue(code, "#{indexed.path}/pack", message) | issues]}
-        end
+        {runner, Map.get(candidates, key, [])}
       end)
 
-    with [] <- issues,
-         selected <- Enum.reverse(selected),
-         :ok <- validate_common_contract(indexed, selected) do
-      {:ok,
-       %{
-         indexed: indexed,
-         candidates: select_target_candidates(selected, target_set, indexed, selection_seed),
-         target_selection: target_set.selection,
-         target_group: target_set.group
-       }}
-    else
-      [_ | _] = issues -> {:error, issues}
-      {:error, issues} -> {:error, issues}
+    case Catalog.select_common_action(runner_candidates) do
+      {:ok, %{candidates: selected}} ->
+        {:ok,
+         %{
+           indexed: indexed,
+           candidates: select_target_candidates(selected, target_set, indexed, selection_seed),
+           target_selection: target_set.selection,
+           target_group: target_set.group
+         }}
+
+      {:error, :incompatible_action_contracts} ->
+        {:error,
+         [
+           issue(
+             "incompatible_action_contracts",
+             "#{indexed.path}/action",
+             "The selected runners expose incompatible action contracts."
+           )
+         ]}
+
+      {:error, failures} ->
+        {:error, Enum.map(failures, &candidate_issue(&1, indexed))}
     end
+  end
+
+  defp candidate_issue({_runner, :ambiguous_pack_version}, indexed) do
+    issue(
+      "ambiguous_pack_version",
+      "#{indexed.path}/pack",
+      "A compatible pack version has conflicting hashes."
+    )
+  end
+
+  defp candidate_issue({_runner, :pack_unavailable}, indexed) do
+    issue(
+      "pack_unavailable",
+      "#{indexed.path}/pack",
+      "This pack and action are not available on the runner."
+    )
   end
 
   defp select_target_candidates(candidates, %{selection: "all"}, _indexed, _seed),
@@ -384,46 +399,6 @@ defmodule Emisar.Runbooks.Compiler do
     digest = Crypto.hash_hex(seed <> "\0" <> indexed.path <> "\0" <> pool_identity)
     index = digest |> binary_part(0, 16) |> String.to_integer(16) |> rem(length(candidates))
     [Enum.at(candidates, index)]
-  end
-
-  defp select_exact_candidate(candidates) do
-    ambiguous? =
-      candidates
-      |> Enum.group_by(& &1.version, & &1.hash)
-      |> Enum.any?(fn {_version, hashes} -> length(Enum.uniq(hashes)) > 1 end)
-
-    cond do
-      ambiguous? ->
-        {:error, "ambiguous_pack_version", "A compatible pack version has conflicting hashes."}
-
-      candidates == [] ->
-        {:error, "pack_unavailable", "This pack and action are not available on the runner."}
-
-      true ->
-        {:ok,
-         Enum.max_by(
-           candidates,
-           &Version.parse!(&1.version),
-           &(Version.compare(&1, &2) != :lt)
-         )}
-    end
-  end
-
-  defp validate_common_contract(indexed, candidates) do
-    contracts = candidates |> Enum.map(&ActionContract.snapshot(&1.descriptor)) |> Enum.uniq()
-
-    if length(contracts) == 1 do
-      :ok
-    else
-      {:error,
-       [
-         issue(
-           "incompatible_action_contracts",
-           "#{indexed.path}/action",
-           "The selected runners expose incompatible action contracts."
-         )
-       ]}
-    end
   end
 
   defp compile_items(selected_steps, inputs, definition) do

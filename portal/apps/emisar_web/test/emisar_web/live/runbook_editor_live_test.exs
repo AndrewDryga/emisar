@@ -82,7 +82,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   defp arrange_current_action(account, user, opts \\ []) do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    hash = Fixtures.Catalog.pack_hash("linux-core-1.4.3")
+    version = Keyword.get(opts, :version, "1.4.3")
+    hash = Fixtures.Catalog.pack_hash("linux-core-#{version}")
 
     assert {:ok, runner} =
              Catalog.observe_state(runner, %{
@@ -90,14 +91,14 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                "version" => runner.runner_version,
                "labels" => runner.labels,
                "enforce_signatures" => false,
-               "packs" => %{"linux-core" => %{"version" => "1.4.3", "hash" => hash}},
+               "packs" => %{"linux-core" => %{"version" => version, "hash" => hash}},
                "actions" => [
                  %{
                    "id" => "linux.uptime",
                    "pack_id" => "linux-core",
                    "title" => "Uptime",
                    "kind" => "exec",
-                   "risk" => "low",
+                   "risk" => Keyword.get(opts, :risk, "low"),
                    "summary" => "Reports uptime",
                    "description" => "Reports uptime",
                    "side_effects" => [],
@@ -1037,6 +1038,62 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
 
       refute has_element?(lv, "#runbook-stage-0-step-0-overview > p")
+    end
+
+    test "a stale saved action stays named without lending risk or arguments", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user,
+        args: [%{"name" => "path", "type" => "path", "required" => true, "sensitive" => false}]
+      )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      draft =
+        valid_draft()
+        |> put_in(["stages", Access.at(0), "steps", Access.at(0), "action"], "linux.retired")
+
+      html = change(lv, draft)
+
+      assert html =~ "Unavailable · linux.retired"
+      refute html =~ "Low — read-only or trivially reversible"
+
+      refute has_element?(
+               lv,
+               ~s(input[type=hidden][name="draft[stages][0][steps][0][args][0][name]"])
+             )
+    end
+
+    test "selected runners with incompatible contracts make the action unavailable", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+      arrange_current_action(account, user, version: "2.0.0", risk: "critical")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+      html = change(lv, valid_draft())
+
+      assert html =~ "Unavailable · linux.uptime"
+      refute html =~ "Low — read-only or trivially reversible"
+      refute html =~ "Critical — data loss or irreversible"
+
+      assert has_element?(
+               lv,
+               "#runbook-stage-0-step-0-action-error[role=\"tooltip\"]",
+               "This action is not available on every selected runner. Choose another action or update the targets."
+             )
+
+      # The saved choice stays named and selectable-looking nowhere: it is the
+      # one disabled option, so the operator can still see what was authored.
+      assert has_element?(
+               lv,
+               ~s(button[data-combobox-option][data-value="linux-core|linux.uptime"][disabled]),
+               "linux.uptime"
+             )
     end
 
     test "target-first action selection renders descriptor-owned typed bindings", %{

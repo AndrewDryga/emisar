@@ -6,7 +6,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   preflight, and MCP all reach the same Runbooks validator/compiler.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Catalog, Runbooks, Runners}
+  alias Emisar.Runbooks
   alias EmisarWeb.{LiveForm, Permissions, RunbookDraft, RunbookEditorCatalog}
 
   @preview_delay_ms 350
@@ -115,37 +115,23 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp assign_empty_catalog(socket) do
     socket
-    |> assign(:catalog, %{
-      actions: %{},
-      target_labels: %{},
-      target_options: [],
-      target_runner_ids: %{}
-    })
+    |> assign(:catalog, %Runbooks.EditorProjection{})
     |> assign(:catalog_load_error?, false)
   end
 
   defp load_catalog_and_validate(socket) do
-    subject = socket.assigns.current_subject
-
-    {runner_actions, actions_loaded?} =
-      case Catalog.list_all_actions_for_account(subject) do
-        {:ok, actions} -> {actions, true}
-        {:error, _reason} -> {[], false}
+    {catalog, loaded?} =
+      case Runbooks.editor_projection(socket.assigns.current_subject) do
+        {:ok, projection} -> {projection, true}
+        {:error, _reason} -> {%Runbooks.EditorProjection{}, false}
       end
 
-    {runners, runners_loaded?} =
-      case Runners.list_all_runners_for_account(subject) do
-        {:ok, rows} -> {rows, true}
-        {:error, _reason} -> {[], false}
-      end
-
-    catalog = RunbookEditorCatalog.build(runner_actions, runners)
     draft = sync_draft_catalog(socket.assigns.draft, socket.assigns.draft, catalog)
 
     socket
     |> assign(:draft, draft)
     |> assign(:catalog, catalog)
-    |> assign(:catalog_load_error?, not actions_loaded? or not runners_loaded?)
+    |> assign(:catalog_load_error?, not loaded?)
     |> validate_and_preview()
   end
 
@@ -263,8 +249,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         },
         socket
       ) do
-    if Map.has_key?(socket.assigns.catalog.target_runner_ids, target) and
-         valid_target_selection?(target, selection) do
+    if RunbookEditorCatalog.targets_resolved?(socket.assigns.catalog, [target], selection) do
       mutate_step(socket, stage_index, step_index, fn step ->
         refs = step["target_refs"] || []
 
@@ -470,10 +455,6 @@ defmodule EmisarWeb.RunbookEditorLive do
       _ -> 1_000_000_000
     end
   end
-
-  defp valid_target_selection?(_target, "all"), do: true
-  defp valid_target_selection?("group:" <> _group, "random_one"), do: true
-  defp valid_target_selection?(_target, _selection), do: false
 
   defp toggle_panel(panels, key) do
     if MapSet.member?(panels, key), do: MapSet.delete(panels, key), else: MapSet.put(panels, key)

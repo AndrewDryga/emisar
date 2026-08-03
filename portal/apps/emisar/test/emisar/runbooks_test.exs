@@ -11,7 +11,7 @@ defmodule Emisar.RunbooksTest do
   alias Emisar.Runners
   alias Emisar.Runs
 
-  @pack_hash "sha256:" <> String.duplicate("a", 64)
+  @pack_hash Emisar.Fixtures.Catalog.pack_hash("linux-core-1.4.2")
 
   describe "runbook_filters/0" do
     test "carries the Runbooks table's filters" do
@@ -1457,6 +1457,205 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "editor_projection/1" do
+    test "projects the online fleet and the trusted actions it can execute" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+      _offline = trusted_runner(account, subject, connected?: false, group: "cold")
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+
+      assert [target] = projection.targets
+
+      assert target == %{
+               id: runner.id,
+               runner_ref: runner_ref,
+               name: runner.name,
+               group: "database"
+             }
+
+      assert Map.keys(projection.catalog.candidates) == [{"linux-core", "linux.uptime"}]
+    end
+
+    test "another account's fleet and catalog stay out of the projection" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, subject)
+
+      {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, projection} = Runbooks.editor_projection(other_subject)
+      assert projection.targets == []
+      assert projection.catalog.candidates == %{}
+    end
+
+    test "a subject without view_runbooks is denied" do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Runbooks.editor_projection(no_view) == {:error, :unauthorized}
+    end
+  end
+
+  describe "editor_target_runners/3" do
+    test "resolves a group, an exact runner, and one random group member" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      first = trusted_runner(account, subject, group: "workers")
+      second = trusted_runner(account, subject, group: "workers")
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+      assert {:ok, first_ref} = Runners.public_ref(first)
+
+      assert {:ok, all} = Runbooks.editor_target_runners(projection, ["group:workers"], "all")
+      assert Enum.map(all, & &1.id) |> Enum.sort() == Enum.sort([first.id, second.id])
+
+      assert {:ok, [exact]} =
+               Runbooks.editor_target_runners(projection, ["runner:" <> first_ref], "all")
+
+      assert exact.id == first.id
+
+      # The whole possible group is the target set — the member is sampled at
+      # dispatch, so the editor must judge every one of them.
+      assert {:ok, random} =
+               Runbooks.editor_target_runners(projection, ["group:workers"], "random_one")
+
+      assert Enum.map(random, & &1.id) |> Enum.sort() == Enum.sort([first.id, second.id])
+    end
+
+    test "an offline, unknown, or malformed selection does not resolve" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      offline = trusted_runner(account, subject, connected?: false)
+      assert {:ok, offline_ref} = Runners.public_ref(offline)
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+
+      for {refs, selection} <- [
+            {["group:database"], "all"},
+            {["runner:" <> offline_ref], "all"},
+            {["group:absent"], "all"},
+            {[], "all"},
+            {["group:database", "group:database"], "random_one"},
+            {["runner:" <> offline_ref], "random_one"},
+            {["group:database"], "sideways"}
+          ] do
+        assert Runbooks.editor_target_runners(projection, refs, selection) ==
+                 {:error, :unknown_target}
+      end
+    end
+  end
+
+  describe "editor_actions/3" do
+    test "offers an action every selected runner supports at its own exact version" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      trusted_runner(account, subject, group: "workers", version: "1.4.2")
+      trusted_runner(account, subject, group: "workers", version: "1.5.0")
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+
+      assert [action] = Runbooks.editor_actions(projection, ["group:workers"], "all")
+      assert action.pack_id == "linux-core"
+      assert action.action_id == "linux.uptime"
+      assert action.risk == "low"
+
+      # The compiler agrees the same authored step is currently dispatchable.
+      assert {:ok, _preview} =
+               Runbooks.preview_definition_plan(definition("workers"), subject)
+    end
+
+    test "runners exposing different risk make the action unavailable, as the compiler does" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      trusted_runner(account, subject, group: "workers", version: "1.4.2")
+      trusted_runner(account, subject, group: "workers", version: "2.0.0", risk: "critical")
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+
+      assert Runbooks.editor_actions(projection, ["group:workers"], "all") == []
+
+      assert {:error, issues} =
+               Runbooks.preview_definition_plan(definition("workers"), subject)
+
+      assert Enum.any?(issues, &(&1.code == "incompatible_action_contracts"))
+    end
+
+    test "runners exposing different arguments make the action unavailable" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, subject, group: "workers", version: "1.4.2")
+
+      trusted_runner(account, subject,
+        group: "workers",
+        version: "2.0.0",
+        args: [arg("seconds", "integer")]
+      )
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+      assert Runbooks.editor_actions(projection, ["group:workers"], "all") == []
+    end
+
+    test "an untrusted deployment on one selected runner makes the action unavailable" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      trusted = trusted_runner(account, subject, group: "workers", version: "1.4.2")
+
+      untrusted =
+        trusted_runner(account, subject, group: "workers", version: "9.9.9", trust?: false)
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+      assert {:ok, trusted_ref} = Runners.public_ref(trusted)
+      assert {:ok, untrusted_ref} = Runners.public_ref(untrusted)
+
+      assert [_action] =
+               Runbooks.editor_actions(projection, ["runner:" <> trusted_ref], "all")
+
+      assert Runbooks.editor_actions(projection, ["runner:" <> untrusted_ref], "all") == []
+      assert Runbooks.editor_actions(projection, ["group:workers"], "all") == []
+    end
+
+    test "unresolved targets offer no action at all" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, subject)
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+      assert Runbooks.editor_actions(projection, [], "all") == []
+      assert Runbooks.editor_actions(projection, ["group:absent"], "all") == []
+    end
+  end
+
+  describe "editor_action/5" do
+    test "carries the trusted descriptor's arguments and risk" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, subject, args: [arg("seconds", "integer")])
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+
+      assert {:ok, action} =
+               Runbooks.editor_action(
+                 projection,
+                 ["group:database"],
+                 "all",
+                 "linux-core",
+                 "linux.uptime"
+               )
+
+      assert action.risk == "low"
+      assert [%{"name" => "seconds", "type" => "integer"}] = action.args
+    end
+
+    test "a stale saved choice resolves to nothing, so it carries no risk or arguments" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, subject)
+
+      assert {:ok, projection} = Runbooks.editor_projection(subject)
+
+      assert Runbooks.editor_action(
+               projection,
+               ["group:database"],
+               "all",
+               "linux-core",
+               "linux.retired"
+             ) == {:error, :not_found}
+    end
+  end
+
   describe "validate_definition/2" do
     test "returns the canonical definition and rejects malformed stages before preflight" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
@@ -1767,7 +1966,8 @@ defmodule Emisar.RunbooksTest do
     runner =
       Fixtures.Runners.create_runner(
         account_id: account.id,
-        group: Keyword.get(opts, :group, "database")
+        group: Keyword.get(opts, :group, "database"),
+        connected?: Keyword.get(opts, :connected?, true)
       )
 
     assert {:ok, runner} =
@@ -1776,14 +1976,22 @@ defmodule Emisar.RunbooksTest do
                "version" => runner.runner_version,
                "labels" => runner.labels,
                "enforce_signatures" => false,
-               "packs" => %{"linux-core" => %{"version" => "1.4.2", "hash" => @pack_hash}},
+               "packs" => %{
+                 "linux-core" => %{
+                   "version" => Keyword.get(opts, :version, "1.4.2"),
+                   "hash" =>
+                     Fixtures.Catalog.pack_hash(
+                       "linux-core-#{Keyword.get(opts, :version, "1.4.2")}"
+                     )
+                 }
+               },
                "actions" => [
                  %{
                    "id" => "linux.uptime",
                    "pack_id" => "linux-core",
                    "title" => "Uptime",
                    "kind" => "exec",
-                   "risk" => "low",
+                   "risk" => Keyword.get(opts, :risk, "low"),
                    "summary" => "Reports uptime",
                    "description" => "Reports uptime",
                    "side_effects" => [],
@@ -1795,6 +2003,12 @@ defmodule Emisar.RunbooksTest do
                ]
              })
 
+    if Keyword.get(opts, :trust?, true), do: trust_pack_versions(subject)
+
+    runner
+  end
+
+  defp trust_pack_versions(subject) do
     assert {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
 
     Enum.each(versions, fn version ->
@@ -1802,8 +2016,6 @@ defmodule Emisar.RunbooksTest do
         assert {:ok, _trusted} = Catalog.trust_pack_version(version.id, subject)
       end
     end)
-
-    runner
   end
 
   defp api_client_subject(account, owner, name) do

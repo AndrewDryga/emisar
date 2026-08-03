@@ -209,17 +209,14 @@ defmodule Emisar.Runners do
   @doc "Resolves several strict targets through one bounded, scoped fleet read."
   def resolve_runbook_target_sets(targets, %Subject{} = subject) when is_list(targets) do
     with {:ok, runners} <- list_all_runners_for_account(subject) do
-      available =
-        runners
-        |> Enum.filter(&(connection_state(&1) == :online))
-        |> Enum.flat_map(&runbook_runner/1)
+      available = available_runbook_targets(runners)
 
       targets
       |> Enum.with_index()
       |> Enum.reduce_while({:ok, []}, fn
         {%{"selection" => selection, "refs" => refs}, index}, {:ok, selected}
         when selection in ["all", "random_one"] and is_list(refs) ->
-          case select_runbook_targets(refs, available) do
+          case select_runbook_target_runners(refs, available) do
             {:ok, target_runners} ->
               target_set = %{
                 selection: selection,
@@ -258,27 +255,25 @@ defmodule Emisar.Runners do
 
   def public_ref(_runner), do: {:error, :invalid_runner}
 
-  defp runbook_runner(%Runner{disabled_at: nil} = runner) do
-    case public_ref(runner) do
-      {:ok, runner_ref} ->
-        [
-          %{
-            id: runner.id,
-            runner_ref: runner_ref,
-            group: runner.group,
-            enforce_signatures: runner.enforce_signatures,
-            runner: runner
-          }
-        ]
-
-      {:error, :invalid_runner} ->
-        []
-    end
+  @doc """
+  Internal — the pure target facts an already-scoped runner list currently
+  offers a runbook: every enabled, online runner with a representable public
+  ref. Both dispatch resolution and the authoring editor project targets from
+  this one list, so an offline or unrepresentable runner is never selectable in
+  either.
+  """
+  def available_runbook_targets(runners) when is_list(runners) do
+    runners
+    |> Enum.filter(&(connection_state(&1) == :online))
+    |> Enum.flat_map(&runbook_runner/1)
   end
 
-  defp runbook_runner(%Runner{}), do: []
-
-  defp select_runbook_targets(refs, available) do
+  @doc """
+  Internal — resolves tagged `group:` / `runner:` refs against available target
+  facts. Every ref must resolve, so a partial target never silently shrinks the
+  blast radius. Returns `{:ok, [target]} | {:error, :unknown_target}`.
+  """
+  def select_runbook_target_runners(refs, available) when is_list(refs) and is_list(available) do
     grouped = Enum.group_by(available, & &1.group)
     by_ref = Map.new(available, &{&1.runner_ref, &1})
 
@@ -313,6 +308,27 @@ defmodule Emisar.Runners do
         {:ok, selected}
     end
   end
+
+  defp runbook_runner(%Runner{disabled_at: nil} = runner) do
+    case public_ref(runner) do
+      {:ok, runner_ref} ->
+        [
+          %{
+            id: runner.id,
+            runner_ref: runner_ref,
+            name: runner.name,
+            group: runner.group,
+            enforce_signatures: runner.enforce_signatures,
+            runner: runner
+          }
+        ]
+
+      {:error, :invalid_runner} ->
+        []
+    end
+  end
+
+  defp runbook_runner(%Runner{}), do: []
 
   defp selected_group("random_one", ["group:" <> group]), do: group
   defp selected_group(_selection, _refs), do: nil

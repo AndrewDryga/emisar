@@ -29,9 +29,9 @@ defmodule Emisar.Catalog do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Repo, Runners, Users}
+  alias Emisar.{Accounts, ActionContract, Audit, Auth, Repo, Runners, Users}
   alias Emisar.Auth.Subject
-  alias Emisar.Catalog.{ActionSetDiff, Authorizer, MCPProjection, PackBaseline}
+  alias Emisar.Catalog.{ActionSetDiff, Authorizer, EditorProjection, MCPProjection, PackBaseline}
   alias Emisar.Catalog.{PackRetentionInput, PackVersion, PublishedRegistry}
   alias Emisar.Catalog.{RunnerAction, TrustedManifest}
   require Logger
@@ -1695,8 +1695,8 @@ defmodule Emisar.Catalog do
              Authorizer.view_catalog_permission()
            ),
          deployments = requested_deployments(requests, runners),
-         {:ok, actions} <- runbook_deployment_actions(deployments, subject),
-         {:ok, pack_versions} <- runbook_pack_versions(deployments, subject) do
+         {:ok, actions} <- deployment_actions(deployments, subject),
+         {:ok, pack_versions} <- deployment_pack_versions(deployments, subject) do
       requested_runner_ids = MapSet.new(requests, & &1.runner_id)
       requested_runners = Enum.filter(runners, &MapSet.member?(requested_runner_ids, &1.id))
       snapshot = MCPProjection.build(pack_versions, actions, requested_runners)
@@ -1729,7 +1729,191 @@ defmodule Emisar.Catalog do
     |> Enum.uniq()
   end
 
-  defp runbook_deployment_actions(deployments, subject) do
+  @doc """
+  Builds the runbook editor's trusted candidate projection for an already
+  scoped, eligible runner list.
+
+  The caller owns runner eligibility; this context rechecks current runner
+  scope and owns trust. Every candidate comes from the same trusted-manifest
+  projection dispatch resolves against, so untrusted, retired, drifted,
+  disconnected, and incomplete deployments are absent. Requires `view_catalog`
+  and fails closed when a supplied runner is outside the subject's account or
+  current runner scope. Returns `{:ok, %EditorProjection{}}` or
+  `{:error, :unauthorized | :not_found | :candidate_catalog_too_large}`.
+  """
+  @spec build_editor_projection([Runners.Runner.t()], Subject.t()) ::
+          {:ok, EditorProjection.t()}
+          | {:error, :unauthorized | :not_found | :candidate_catalog_too_large}
+  def build_editor_projection(runners, %Subject{} = subject) when is_list(runners) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ),
+         :ok <- ensure_runners_in_account(runners, subject),
+         {:ok, scoped_runners} <- Runners.list_all_runners_for_account(subject),
+         :ok <- ensure_runners_in_scope(runners, scoped_runners),
+         [_deployment | _rest] = deployments <- runner_deployments(runners),
+         {:ok, actions} <- deployment_actions(deployments, subject),
+         {:ok, pack_versions} <- deployment_pack_versions(deployments, subject) do
+      snapshot = MCPProjection.build(pack_versions, actions, runners)
+      {:ok, EditorProjection.build(snapshot)}
+    else
+      [] -> {:ok, %EditorProjection{}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Actions every one of `runner_ids` can execute from an editor projection under
+  one complete common action contract.
+
+  Selection is the compiler's: one exact trusted candidate per runner, then
+  identical normalized `ActionContract` snapshots across them. An action whose
+  runners disagree on risk, arguments, or output shape is absent rather than
+  reconciled. Returns the ordered
+  `[%{pack_id, action_id, title, risk, args}]`.
+  """
+  @spec common_actions(EditorProjection.t(), [String.t()]) :: [map()]
+  def common_actions(%EditorProjection{}, []), do: []
+
+  def common_actions(%EditorProjection{} = projection, runner_ids) when is_list(runner_ids) do
+    projection.candidates
+    |> Enum.flat_map(fn {{pack_id, action_id}, by_runner} ->
+      runner_candidates = Enum.map(runner_ids, &{&1, Map.get(by_runner, &1, [])})
+
+      case select_common_action(runner_candidates) do
+        {:ok, selected} -> [common_action(pack_id, action_id, selected)]
+        {:error, _reason} -> []
+      end
+    end)
+    |> Enum.sort_by(&{&1.action_id, &1.pack_id})
+  end
+
+  @doc """
+  Selects one exact trusted candidate per already-scoped runner and requires one
+  complete common action contract across them.
+
+  `runner_candidates` is an ordered `[{runner, candidates}]` list; each selected
+  candidate carries its `runner`. Returns
+  `{:ok, %{candidates: [candidate], contract: contract}}`,
+  `{:error, [{runner, :ambiguous_pack_version | :pack_unavailable}]}` when one or
+  more runners cannot supply an exact candidate, or
+  `{:error, :incompatible_action_contracts}` when they can but their normalized
+  contracts differ.
+  """
+  @spec select_common_action([{term(), [map()]}]) ::
+          {:ok, %{candidates: [map()], contract: map()}}
+          | {:error, [{term(), atom()}] | :incompatible_action_contracts}
+  def select_common_action(runner_candidates) when is_list(runner_candidates) do
+    {selected, failures} =
+      Enum.reduce(runner_candidates, {[], []}, fn {runner, candidates}, {selected, failures} ->
+        case select_exact_candidate(candidates) do
+          {:ok, candidate} -> {[Map.put(candidate, :runner, runner) | selected], failures}
+          {:error, reason} -> {selected, [{runner, reason} | failures]}
+        end
+      end)
+
+    selected = Enum.reverse(selected)
+    contracts = selected |> Enum.map(&ActionContract.snapshot(&1.descriptor)) |> Enum.uniq()
+
+    cond do
+      failures != [] -> {:error, Enum.reverse(failures)}
+      length(contracts) == 1 -> {:ok, %{candidates: selected, contract: hd(contracts)}}
+      true -> {:error, :incompatible_action_contracts}
+    end
+  end
+
+  defp common_action(pack_id, action_id, %{candidates: [candidate | _rest], contract: contract}) do
+    %{
+      pack_id: pack_id,
+      action_id: action_id,
+      title: candidate.descriptor["title"],
+      risk: contract["risk"],
+      args: get_in(contract, ["args_schema", "args"]) || []
+    }
+  end
+
+  defp select_exact_candidate(candidates) do
+    ambiguous? =
+      candidates
+      |> Enum.group_by(& &1.version, & &1.hash)
+      |> Enum.any?(fn {_version, hashes} -> length(Enum.uniq(hashes)) > 1 end)
+
+    cond do
+      ambiguous? ->
+        {:error, :ambiguous_pack_version}
+
+      candidates == [] ->
+        {:error, :pack_unavailable}
+
+      true ->
+        {:ok, Enum.reduce(candidates, &newer_candidate/2)}
+    end
+  end
+
+  defp newer_candidate(candidate, selected) do
+    if compare_versions(candidate.version, selected.version) == :gt,
+      do: candidate,
+      else: selected
+  end
+
+  defp compare_versions(left, right) do
+    case {Version.parse(left), Version.parse(right)} do
+      {{:ok, left_version}, {:ok, right_version}} ->
+        compare_semantic_versions(left_version, right_version, left, right)
+
+      {{:ok, _left_version}, :error} ->
+        :gt
+
+      {:error, {:ok, _right_version}} ->
+        :lt
+
+      {:error, :error} ->
+        compare_version_text(left, right)
+    end
+  end
+
+  defp compare_semantic_versions(left_version, right_version, left, right) do
+    case Version.compare(left_version, right_version) do
+      :eq -> compare_version_text(left, right)
+      ordering -> ordering
+    end
+  end
+
+  defp compare_version_text(left, right) when left > right, do: :gt
+  defp compare_version_text(left, right) when left < right, do: :lt
+  defp compare_version_text(_left, _right), do: :eq
+
+  defp ensure_runners_in_account(runners, %Subject{} = subject) do
+    if Enum.all?(runners, &Subject.in_account?(subject, &1.account_id)),
+      do: :ok,
+      else: {:error, :not_found}
+  end
+
+  defp ensure_runners_in_scope(runners, scoped_runners) do
+    scoped_ids = MapSet.new(scoped_runners, & &1.id)
+
+    if Enum.all?(runners, &MapSet.member?(scoped_ids, &1.id)),
+      do: :ok,
+      else: {:error, :unauthorized}
+  end
+
+  defp runner_deployments(runners) do
+    runners
+    |> Enum.flat_map(fn runner ->
+      Enum.flat_map(runner.packs || %{}, fn
+        {pack_id, %{"version" => version, "hash" => hash}} ->
+          [{runner.id, pack_id, version, hash}]
+
+        _invalid ->
+          []
+      end)
+    end)
+    |> Enum.uniq()
+  end
+
+  defp deployment_actions(deployments, subject) do
     max_actions = length(deployments) * TrustedManifest.max_actions()
 
     actions =
@@ -1751,7 +1935,7 @@ defmodule Emisar.Catalog do
       else: {:error, :candidate_catalog_too_large}
   end
 
-  defp runbook_pack_versions(deployments, subject) do
+  defp deployment_pack_versions(deployments, subject) do
     pack_refs =
       deployments
       |> Enum.map(fn {_runner_id, pack_id, version, _hash} -> {pack_id, version} end)

@@ -12,9 +12,9 @@ defmodule Emisar.Runbooks do
   alias Ecto.Multi
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Crypto, MCPOperations, Repo, Runs}
   alias Emisar.Auth.Subject
-  alias Emisar.Catalog
+  alias Emisar.{Catalog, Runners}
   alias Emisar.Runbooks.{Authorizer, Compiler, Definition, Runbook, RunbookExecution, Scheduler}
-  alias Emisar.Runbooks.ExecutionItem
+  alias Emisar.Runbooks.{EditorProjection, ExecutionItem}
   alias Emisar.Users
 
   # One runbook list page is 35 rows; 64 bounds the batch without capping the
@@ -985,6 +985,97 @@ defmodule Emisar.Runbooks do
 
   @doc "Returns a fresh server-side seed for one stable preflight and dispatch pair."
   def new_target_selection_seed, do: Crypto.random_secret()
+
+  @doc """
+  The structured editor's current authoring projection: the target runners a
+  step may select, and the trusted catalog those runners can execute.
+
+  Requires `view_runbooks`, plus the fleet and catalog gates the domain reads
+  apply. Returns `{:ok, %EditorProjection{}}` or
+  `{:error, :unauthorized | :not_found | :candidate_catalog_too_large}`.
+  """
+  @spec editor_projection(Subject.t()) ::
+          {:ok, EditorProjection.t()}
+          | {:error, :unauthorized | :not_found | :candidate_catalog_too_large}
+  def editor_projection(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runbooks_permission()
+           ),
+         {:ok, runners} <- Runners.list_all_runners_for_account(subject),
+         available = Runners.available_runbook_targets(runners),
+         {:ok, catalog} <-
+           Catalog.build_editor_projection(Enum.map(available, & &1.runner), subject) do
+      {:ok, %EditorProjection{targets: Enum.map(available, &editor_target/1), catalog: catalog}}
+    end
+  end
+
+  defp editor_target(target) do
+    %{id: target.id, runner_ref: target.runner_ref, name: target.name, group: target.group}
+  end
+
+  @doc """
+  Resolves one editor step's saved target refs and selection into the runners it
+  currently covers.
+
+  `random_one` must name exactly one group, and every ref must resolve — the
+  whole possible group is the target set, because the sampled member is only
+  chosen at dispatch. Returns `{:ok, [target]} | {:error, :unknown_target}`.
+  """
+  @spec editor_target_runners(EditorProjection.t(), [String.t()], String.t()) ::
+          {:ok, [EditorProjection.target()]} | {:error, :unknown_target}
+  def editor_target_runners(projection, refs, selection)
+
+  def editor_target_runners(%EditorProjection{}, [], _selection),
+    do: {:error, :unknown_target}
+
+  def editor_target_runners(%EditorProjection{} = projection, refs, "all") when is_list(refs),
+    do: Runners.select_runbook_target_runners(refs, projection.targets)
+
+  def editor_target_runners(
+        %EditorProjection{} = projection,
+        ["group:" <> _group = ref],
+        "random_one"
+      ),
+      do: Runners.select_runbook_target_runners([ref], projection.targets)
+
+  def editor_target_runners(%EditorProjection{}, _refs, _selection),
+    do: {:error, :unknown_target}
+
+  @doc """
+  The actions every runner covered by one editor step's targets can execute
+  under one complete common action contract.
+
+  Returns `[]` while the targets do not resolve — an unresolved scope cannot
+  narrow behavior, so the editor offers nothing rather than guessing.
+  """
+  @spec editor_actions(EditorProjection.t(), [String.t()], String.t()) :: [
+          EditorProjection.action()
+        ]
+  def editor_actions(%EditorProjection{} = projection, refs, selection) do
+    case editor_target_runners(projection, refs, selection) do
+      {:ok, targets} -> Catalog.common_actions(projection.catalog, Enum.map(targets, & &1.id))
+      {:error, :unknown_target} -> []
+    end
+  end
+
+  @doc """
+  One eligible editor action for a step's current targets. Returns
+  `{:ok, action} | {:error, :not_found}`; a stale, untrusted, or contract-
+  incompatible choice is never found, so it contributes no risk or arguments.
+  """
+  @spec editor_action(EditorProjection.t(), [String.t()], String.t(), String.t(), String.t()) ::
+          {:ok, EditorProjection.action()} | {:error, :not_found}
+  def editor_action(%EditorProjection{} = projection, refs, selection, pack_id, action_id) do
+    projection
+    |> editor_actions(refs, selection)
+    |> Enum.find(&(&1.pack_id == pack_id and &1.action_id == action_id))
+    |> case do
+      nil -> {:error, :not_found}
+      action -> {:ok, action}
+    end
+  end
 
   @doc "Validates one unsaved definition through the context-owned strict contract."
   def validate_definition(definition, %Subject{} = subject) do
