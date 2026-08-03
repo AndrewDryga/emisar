@@ -8,7 +8,7 @@ defmodule EmisarWeb.UserAuth do
   use EmisarWeb, :verified_routes
   import Plug.Conn
   import Phoenix.Controller
-  alias Emisar.{Accounts, Auth, Marketing, SSO}
+  alias Emisar.{Accounts, Auth, Marketing}
   alias Emisar.Auth.Subject
   alias EmisarWeb.{Analytics, MarketingAttribution, RunnerPresence}
   alias EmisarWeb.RequestContext
@@ -288,82 +288,6 @@ defmodule EmisarWeb.UserAuth do
 
   defp signed_in_path(_conn), do: ~p"/app"
 
-  # -- Account compliance (require_sso / require_mfa) -----------------
-
-  @doc """
-  The shared require_sso / require_mfa decision for a resolved account and
-  session — the ONE predicate the LiveView `on_mount` hooks below AND the
-  controller-route plug (`EmisarWeb.Plugs.EnsureAccountCompliance`) both call, so
-  the two enforcement paths can't drift. Returns:
-
-    * `:sso_required` — the account mandates SSO and this session did not
-      authenticate via THAT account's own SSO (a password/magic session, or an
-      SSO session for a different account); the caller bounces to the
-      account's `/sso_required` step-up shim.
-    * `:mfa_required` — the account mandates MFA and the user is neither enrolled
-      nor on an MFA-satisfying IdP; the caller funnels to `/app/mfa_setup`.
-    * `:ok` — compliant, or the account mandates neither control.
-
-  SSO precedence mirrors the hook order (`:ensure_sso_compliant` runs before
-  `:ensure_mfa_compliant`). `auth` is the session provenance — a `%UserToken{}`,
-  `@no_auth`, or any map exposing `:auth_method` + `:user_identity_id`. LOCATION
-  exemptions (the sso_required shim, the mfa_setup interstitial, the profile
-  page) are the caller's to layer on — they turn on WHERE the request lands, not
-  on whether the account is compliant.
-  """
-  def account_compliance(account, auth, user) do
-    cond do
-      sso_step_up_required?(account, auth) -> :sso_required
-      mfa_enrollment_required?(account, auth, user) -> :mfa_required
-      true -> :ok
-    end
-  end
-
-  # require_sso: an enabled-SSO account this session did NOT authenticate via.
-  # Defensive fail-OPEN when require_sso is on but no usable provider remains (an
-  # out-of-band removal) — recoverable, not a brick, and the provider write paths
-  # guard the UI path in.
-  defp sso_step_up_required?(account, auth) do
-    auth = auth || @no_auth
-
-    cond do
-      is_nil(account) or not account.settings.require_sso -> false
-      sso_session_for_account?(auth, account) -> false
-      SSO.list_enabled_providers_for_account(account.id) == [] -> false
-      true -> true
-    end
-  end
-
-  defp sso_session_for_account?(auth, account) do
-    auth.auth_method == :sso and
-      SSO.identity_belongs_to_account?(auth.user_identity_id, account.id)
-  end
-
-  # require_mfa: an enforcing account whose user hasn't enrolled. An SSO session
-  # is exempt ONLY when its provider satisfies MFA (the IdP enforces the second
-  # factor); a provider marked satisfies_mfa: false still funnels the user into
-  # emisar TOTP.
-  defp mfa_enrollment_required?(account, auth, user) do
-    auth = auth || @no_auth
-
-    cond do
-      is_nil(user) or is_nil(account) -> false
-      not account.settings.require_mfa -> false
-      user.mfa_enabled_at != nil -> false
-      sso_session_satisfies_mfa?(auth, account) -> false
-      true -> true
-    end
-  end
-
-  # Account-scoped: the SSO identity must belong to THIS account AND its provider
-  # must satisfy MFA. A session SSO-authed via a DIFFERENT account's IdP inherits
-  # no MFA exemption here — it never proved a second factor to THIS account.
-  defp sso_session_satisfies_mfa?(auth, account) do
-    auth.auth_method == :sso and
-      SSO.identity_belongs_to_account?(auth.user_identity_id, account.id) and
-      SSO.identity_satisfies_mfa?(auth.user_identity_id)
-  end
-
   # -- LiveView on_mount hooks ----------------------------------------
 
   # Flags that this render needs the full `app.js` (LiveSocket + hooks).
@@ -482,48 +406,39 @@ defmodule EmisarWeb.UserAuth do
   end
 
   # require_sso enforcement (approach B). Composed AFTER :ensure_account_slug, so
-  # current_account + the session's auth provenance are set. Delegates the
-  # decision to `account_compliance/3` (shared with the controller-route plug);
-  # on a step-up it bounces to the /sso_required shim, which logs the session out
-  # and lands on the account's branded sign-in (a LiveView on_mount can't clear
-  # the plug session itself).
+  # current_account + the subject carrying the session's auth provenance are set.
+  # Delegates the decision to `Accounts.ensure_account_compliant/2` (shared with
+  # the controller-route plug); on a step-up it bounces to the /sso_required
+  # shim, which logs the session out and lands on the account's branded sign-in
+  # (a LiveView on_mount can't clear the plug session itself).
   def on_mount(:ensure_sso_compliant, _params, _session, socket) do
     account = socket.assigns[:current_account]
-    auth = socket.assigns[:current_auth]
-    user = socket.assigns[:current_user]
 
-    case account_compliance(account, auth, user) do
-      :sso_required ->
+    case Accounts.ensure_account_compliant(account, socket.assigns.current_subject) do
+      {:error, :sso_required} ->
         {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
 
-      _ ->
+      result when result in [:ok, {:error, :mfa_required}] ->
         {:cont, socket}
+
+      {:error, reason} when reason in [:not_found, :unauthorized] ->
+        raise EmisarWeb.NotFoundError
     end
   end
 
   # Account-wide MFA enforcement. Composed AFTER :ensure_authenticated so
-  # current_account is mounted. Delegates to `account_compliance/3` (shared with
-  # the controller-route plug); a non-enrolled member of a require_mfa account is
-  # funnelled to /app/mfa_setup with no error flash (the setup page explains the
-  # enforcement and walks them through enrollment). The profile page is the one
-  # exception — the voluntary MFA setup UI lives there, so a member must be able
-  # to LOAD it while still un-enrolled (a LOCATION exemption, layered here rather
-  # than in the shared predicate).
+  # current_account is mounted. Delegates to `Accounts.ensure_account_compliant/2`
+  # (shared with the controller-route plug); a non-enrolled member of a
+  # require_mfa account is funnelled to /app/mfa_setup with no error flash (the
+  # setup page explains the enforcement and walks them through enrollment). The
+  # profile page is the one exception — the voluntary MFA setup UI lives there,
+  # so a member must be able to LOAD it while still un-enrolled (a LOCATION
+  # exemption, layered here rather than in the shared policy).
   def on_mount(:ensure_mfa_compliant, _params, _session, socket) do
     account = socket.assigns[:current_account]
-    auth = socket.assigns[:current_auth]
-    user = socket.assigns[:current_user]
+    subject = socket.assigns[:current_subject]
 
-    cond do
-      socket.view == EmisarWeb.ProfileLive ->
-        {:cont, socket}
-
-      account_compliance(account, auth, user) == :mfa_required ->
-        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
-
-      true ->
-        {:cont, socket}
-    end
+    ensure_mfa_compliant(socket, account, subject)
   end
 
   # Tracks the account's pending-approval count, pending-pack-trust count, AND
@@ -602,6 +517,25 @@ defmodule EmisarWeb.UserAuth do
        :handle_event,
        &resend_confirmation_email/3
      )}
+  end
+
+  defp ensure_mfa_compliant(%{view: EmisarWeb.ProfileLive} = socket, _account, _subject),
+    do: {:cont, socket}
+
+  defp ensure_mfa_compliant(socket, account, subject) do
+    case Accounts.ensure_account_compliant(account, subject) do
+      {:error, :mfa_required} ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
+
+      {:error, :sso_required} ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
+
+      :ok ->
+        {:cont, socket}
+
+      {:error, reason} when reason in [:not_found, :unauthorized] ->
+        raise EmisarWeb.NotFoundError
+    end
   end
 
   defp subscribe_and_refetch_account(socket, user, account_ref, membership) do

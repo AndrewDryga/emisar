@@ -25,7 +25,6 @@ defmodule EmisarWeb.OAuthController do
   use EmisarWeb, :controller
   alias Emisar.{Accounts, OAuth}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.MCP.Auth, as: MCPAuth
   alias EmisarWeb.UserAuth
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
@@ -75,88 +74,75 @@ defmodule EmisarWeb.OAuthController do
   #
   # Per OAuth 2.1: errors caused by a bad `client_id`/`redirect_uri`
   # MUST NOT redirect (we can't trust where they'd land) — show an error
-  # page instead. Everything else redirects back with `error=...`.
+  # page instead. Everything else redirects back with `error=...`, on the
+  # callback the domain proved against the client's registration.
   def authorize(conn, params) do
     with {:ok, client} <- OAuth.fetch_client(params["client_id"]),
-         :ok <- check_redirect(client, params["redirect_uri"]) do
-      case validate_request(params) do
-        :ok ->
-          render_consent(conn, client, params)
-
-        {:error, code} ->
-          redirect_error(conn, params["redirect_uri"], code, params["state"])
-      end
+         {:ok, _redirect_uri} <- OAuth.validate_authorization_request(client, params) do
+      render_consent(conn, client, params)
     else
-      _ -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
+      {:error, {:oauth, code, redirect_uri}} ->
+        redirect_error(conn, redirect_uri, code, params["state"])
+
+      _ ->
+        render_invalid(conn, "Unknown client or unregistered redirect URI.")
     end
   end
 
   # POST /oauth/authorize — the operator approved or denied.
   def authorize_submit(conn, params) do
-    redirect_uri = params["redirect_uri"]
+    case OAuth.fetch_client(params["client_id"]) do
+      {:ok, client} -> submit_decision(conn, client, params)
+      {:error, :not_found} -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
+    end
+  end
+
+  # `issue_code/3` re-validates the request against the client's own locked row
+  # and enforces the CHOSEN account's role + require_sso / require_mfa controls,
+  # so approval hands it the request whole and maps what comes back. Rendering
+  # consent mints nothing, which is why nothing here is gated on the SESSION
+  # account — that would block granting a DIFFERENT, compliant account.
+  defp submit_decision(conn, client, %{"decision" => "approve"} = params) do
+    case consent_subject(conn, params) do
+      {:ok, subject} ->
+        approve_consent(conn, client, params, subject)
+
+      # A tampered/blank form value or a membership revoked between render
+      # and submit — no code, no redirect to the client, and no hint the
+      # account exists.
+      {:error, :not_found} ->
+        render_invalid(
+          conn,
+          "That account isn't available to your user. Reload the page and try again."
+        )
+    end
+  end
+
+  # Deny still proves the callback before bouncing to it: an unregistered
+  # redirect_uri is an error page, and a malformed request reports its own
+  # protocol error rather than a denial the client never asked about.
+  defp submit_decision(conn, client, params) do
+    case OAuth.validate_authorization_request(client, params) do
+      {:ok, redirect_uri} ->
+        redirect_error(conn, redirect_uri, "access_denied", params["state"])
+
+      {:error, {:oauth, code, redirect_uri}} ->
+        redirect_error(conn, redirect_uri, code, params["state"])
+
+      {:error, :invalid_redirect_uri} ->
+        render_invalid(conn, "Unknown client or unregistered redirect URI.")
+    end
+  end
+
+  defp approve_consent(conn, client, params, %Subject{} = subject) do
     state = params["state"]
 
-    with {:ok, client} <- OAuth.fetch_client(params["client_id"]),
-         :ok <- check_redirect(client, redirect_uri),
-         :ok <- validate_request(params) do
-      case params["decision"] do
-        "approve" ->
-          case consent_subject(conn, params) do
-            {:ok, subject} ->
-              approve_if_compliant(conn, client, params, subject, redirect_uri, state)
-
-            # A tampered/blank form value or a membership revoked between render
-            # and submit — no code, no redirect to the client, and no hint the
-            # account exists.
-            {:error, :not_found} ->
-              render_invalid(
-                conn,
-                "That account isn't available to your user. Reload the page and try again."
-              )
-          end
-
-        _ ->
-          redirect_error(conn, redirect_uri, "access_denied", state)
-      end
-    else
-      {:error, code} when is_binary(code) -> redirect_error(conn, redirect_uri, code, state)
-      _ -> render_invalid(conn, "Unknown client or unregistered redirect URI.")
-    end
-  end
-
-  # The mint is the ONLY place require_sso / require_mfa is enforced for OAuth:
-  # rendering the consent screen mints nothing, and gating that render on the
-  # SESSION account would wrongly block granting a DIFFERENT, compliant account
-  # the operator belongs to. `subject.account` is the CHOSEN account (the picker),
-  # so the shared predicate runs against it with this session's provenance — a
-  # non-compliant grant mints no bearer.
-  defp approve_if_compliant(conn, client, params, %Subject{} = subject, redirect_uri, state) do
-    auth = %{auth_method: subject.auth_method, user_identity_id: subject.user_identity_id}
-
-    case UserAuth.account_compliance(subject.account, auth, subject.actor) do
-      :ok ->
-        approve_consent(conn, client, params, subject, redirect_uri, state)
-
-      :sso_required ->
-        render_invalid(
-          conn,
-          "This team requires single sign-on. Sign in to it with your identity provider " <>
-            "before connecting an MCP client."
-        )
-
-      :mfa_required ->
-        render_invalid(
-          conn,
-          "This team requires two-factor authentication. Enroll from the team's console " <>
-            "before connecting an MCP client."
-        )
-    end
-  end
-
-  defp approve_consent(conn, client, params, subject, redirect_uri, state) do
     case OAuth.issue_code(client, params, subject) do
-      {:ok, code} ->
+      {:ok, code, redirect_uri} ->
         redirect_back(conn, redirect_uri, %{code: code, state: state})
+
+      {:error, {:oauth, error_code, redirect_uri}} ->
+        redirect_error(conn, redirect_uri, error_code, state)
 
       {:error, :unauthorized} ->
         render_invalid(
@@ -165,8 +151,30 @@ defmodule EmisarWeb.OAuthController do
             "which requires key-issue permission — ask an account admin to connect it."
         )
 
+      {:error, :sso_required} ->
+        render_invalid(
+          conn,
+          "This team requires single sign-on. Sign in to it with your identity provider " <>
+            "before connecting an MCP client."
+        )
+
+      {:error, :mfa_required} ->
+        render_invalid(
+          conn,
+          "This team requires two-factor authentication. Enroll from the team's console " <>
+            "before connecting an MCP client."
+        )
+
+      {:error, :invalid_redirect_uri} ->
+        render_invalid(conn, "Unknown client or unregistered redirect URI.")
+
+      # A revoked seat, or a write that failed for a reason we can't shape into
+      # an OAuth error — never bounce to a callback the domain didn't hand back.
       {:error, _reason} ->
-        redirect_error(conn, redirect_uri, "server_error", state)
+        render_invalid(
+          conn,
+          "That connection couldn't be authorized. Reload the page and try again."
+        )
     end
   end
 
@@ -297,27 +305,6 @@ defmodule EmisarWeb.OAuthController do
   defp csp_port(%URI{scheme: "http", port: port}) when port in [nil, 80], do: ""
   defp csp_port(%URI{port: port}) when is_integer(port), do: ":" <> Integer.to_string(port)
   defp csp_port(_), do: ""
-
-  # -- Validation -----------------------------------------------------
-
-  # redirect_uri must EXACTLY match one the client registered.
-  defp check_redirect(client, redirect_uri) when is_binary(redirect_uri) do
-    if redirect_uri in (client.redirect_uris || []), do: :ok, else: :error
-  end
-
-  defp check_redirect(_client, _), do: :error
-
-  defp validate_request(params) do
-    cond do
-      params["response_type"] != "code" -> {:error, "unsupported_response_type"}
-      not is_binary(params["code_challenge"]) -> {:error, "invalid_request"}
-      params["code_challenge"] == "" -> {:error, "invalid_request"}
-      # MCP mandates S256; reject "plain" (absent defaults to S256).
-      params["code_challenge_method"] not in [nil, "S256"] -> {:error, "invalid_request"}
-      params["resource"] != MCPAuth.resource() -> {:error, "invalid_target"}
-      true -> :ok
-    end
-  end
 
   # -- Token response shaping -----------------------------------------
 

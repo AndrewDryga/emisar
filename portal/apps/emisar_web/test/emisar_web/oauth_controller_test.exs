@@ -34,22 +34,8 @@ defmodule EmisarWeb.OAuthControllerTest do
   # Mint a live access token end-to-end through the context (the browser
   # consent step is covered separately).
   defp mint_access_token(user, account) do
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    client = register_client!()
     {verifier, challenge} = pkce()
-
-    {:ok, code} =
-      OAuth.issue_code(
-        client,
-        %{
-          "redirect_uri" => @redirect,
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256",
-          "scope" => "mcp offline_access",
-          "resource" => @resource
-        },
-        subject
-      )
+    {client, code} = issue_code!(user, account, %{"code_challenge" => challenge})
 
     {:ok, tokens} =
       OAuth.exchange_code(%{
@@ -62,27 +48,26 @@ defmodule EmisarWeb.OAuthControllerTest do
     tokens.access_token
   end
 
-  # Issue a code through the context with arbitrary params (lets a test set a
-  # non-S256 method, or a verifier==challenge "plain" pairing the HTTP token
-  # path must still refuse).
+  # Issue a code through the context. The domain refuses a malformed request, so
+  # a test that needs a non-conformant stored code (a "plain" method the HTTP
+  # token path must still refuse) rewrites the row after issuance.
   defp issue_code!(user, account, params) do
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
     client = register_client!()
 
-    {:ok, code} =
-      OAuth.issue_code(
-        client,
-        Map.merge(
-          %{
-            "redirect_uri" => @redirect,
-            "code_challenge_method" => "S256",
-            "scope" => "mcp offline_access",
-            "resource" => @resource
-          },
-          params
-        ),
-        subject
+    request =
+      Map.merge(
+        %{
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "code_challenge_method" => "S256",
+          "scope" => "mcp offline_access",
+          "resource" => @resource
+        },
+        params
       )
+
+    {:ok, code, @redirect} = OAuth.issue_code(client, request, subject)
 
     {client, code}
   end
@@ -758,9 +743,8 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html =~ "requiring approval still waits for a human"
     end
 
-    # code_challenge_method may be omitted; it defaults to
-    # S256 (the validate_request nil clause), so the consent still renders rather
-    # than redirecting back with invalid_request.
+    # code_challenge_method may be omitted; the domain defaults it to S256, so
+    # consent still renders rather than redirecting back with invalid_request.
     test "an absent code_challenge_method defaults to S256 and renders consent", %{
       conn: conn,
       user: user,
@@ -1098,8 +1082,8 @@ defmodule EmisarWeb.OAuthControllerTest do
       refute csp =~ "form-action 'self' https:"
     end
 
-    # an absent redirect_uri hits check_redirect's
-    # non-binary clause → :error → error page (never a redirect to nowhere).
+    # An absent redirect_uri leaves the domain with no trusted callback, so the
+    # boundary renders an error page rather than redirecting to nowhere.
     test "a missing redirect_uri shows an error page", %{
       conn: conn,
       user: user,
@@ -1599,6 +1583,61 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html_response(conn, 400) =~ "Authorization error"
       assert get_resp_header(conn, "location") == []
     end
+
+    # Denial goes through the same callback gate: refusing a grant is no reason
+    # to bounce the operator to an origin the client never registered.
+    test "an unregistered redirect_uri on deny shows an error page, not a redirect", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => "https://attacker.example/cb",
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "decision" => "deny"
+        })
+
+      assert html_response(conn, 400) =~ "Authorization error"
+      assert get_resp_header(conn, "location") == []
+    end
+
+    # A malformed request reports its own protocol error even on deny — the
+    # client asked for something this AS can't grant, which is not access_denied.
+    test "deny on a malformed request redirects the protocol error", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => "https://other.example/mcp",
+          "decision" => "deny"
+        })
+
+      location = redirected_to(conn, 302)
+      assert location =~ "error=invalid_target"
+      refute location =~ "access_denied"
+    end
   end
 
   describe "POST /oauth/token" do
@@ -1615,22 +1654,8 @@ defmodule EmisarWeb.OAuthControllerTest do
     end
 
     test "exchanges an authorization code for tokens", %{conn: conn, user: user, account: account} do
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-      client = register_client!()
       {verifier, challenge} = pkce()
-
-      {:ok, code} =
-        OAuth.issue_code(
-          client,
-          %{
-            "redirect_uri" => @redirect,
-            "code_challenge" => challenge,
-            "code_challenge_method" => "S256",
-            "scope" => "mcp offline_access",
-            "resource" => @resource
-          },
-          subject
-        )
+      {client, code} = issue_code!(user, account, %{"code_challenge" => challenge})
 
       body =
         conn
@@ -1688,11 +1713,16 @@ defmodule EmisarWeb.OAuthControllerTest do
       verifier = "plain_method_verifier_aaaaaaaaaaaaaaaaaaaaaa"
       assert byte_size(verifier) in 43..128
 
-      {client, code} =
-        issue_code!(user, account, %{
-          "code_challenge" => verifier,
-          "code_challenge_method" => "plain"
-        })
+      {_stale_verifier, challenge} = pkce()
+      {client, code} = issue_code!(user, account, %{"code_challenge" => challenge})
+
+      # Issuance refuses `plain`, so rewrite the stored code into the shape a
+      # legacy/hostile row would have: challenge == verifier under method=plain,
+      # which WOULD pass a plain comparison. The S256-only exchange still won't.
+      {1, _} =
+        OAuth.AuthorizationCode.Query.all()
+        |> OAuth.AuthorizationCode.Query.by_code_hash(Crypto.hash(code))
+        |> Repo.update_all(set: [code_challenge: verifier, code_challenge_method: "plain"])
 
       body =
         conn

@@ -54,20 +54,26 @@ defmodule Emisar.OAuthTest do
   end
 
   defp issue!(subject, client, challenge, opts \\ []) do
-    {:ok, code} =
-      OAuth.issue_code(
-        client,
-        %{
-          "redirect_uri" => @redirect,
-          "code_challenge" => challenge,
-          "code_challenge_method" => "S256",
-          "scope" => opts[:scope] || "mcp offline_access",
-          "resource" => @resource
-        },
-        subject
-      )
+    params = authorization_params(challenge, %{"scope" => opts[:scope] || "mcp offline_access"})
+    {:ok, code, @redirect} = OAuth.issue_code(client, params, subject)
 
     code
+  end
+
+  # A well-formed authorization request; `overrides` breaks exactly the field a
+  # validation test is about.
+  defp authorization_params(challenge, overrides \\ %{}) do
+    Map.merge(
+      %{
+        "redirect_uri" => @redirect,
+        "response_type" => "code",
+        "code_challenge" => challenge,
+        "code_challenge_method" => "S256",
+        "scope" => "mcp offline_access",
+        "resource" => @resource
+      },
+      overrides
+    )
   end
 
   describe "register_client/1" do
@@ -169,6 +175,82 @@ defmodule Emisar.OAuthTest do
     end
   end
 
+  describe "validate_authorization_request/2" do
+    test "a well-formed request returns the callback proven against the registration" do
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert OAuth.validate_authorization_request(client, authorization_params(challenge)) ==
+               {:ok, @redirect}
+    end
+
+    test "an absent method means S256" do
+      client = register!()
+      {_verifier, challenge} = pkce()
+      params = authorization_params(challenge) |> Map.delete("code_challenge_method")
+
+      assert OAuth.validate_authorization_request(client, params) == {:ok, @redirect}
+    end
+
+    test "an unregistered or missing callback has nowhere safe to report to" do
+      client = register!()
+      {_verifier, challenge} = pkce()
+      unregistered = authorization_params(challenge, %{"redirect_uri" => "https://evil.test/cb"})
+      missing = authorization_params(challenge) |> Map.delete("redirect_uri")
+
+      assert OAuth.validate_authorization_request(client, unregistered) ==
+               {:error, :invalid_redirect_uri}
+
+      assert OAuth.validate_authorization_request(client, missing) ==
+               {:error, :invalid_redirect_uri}
+    end
+
+    test "the callback is checked before the protocol params" do
+      # Both are wrong; the callback must decide, so the caller never learns it
+      # may redirect an error to an origin the client never registered.
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      params =
+        authorization_params(challenge, %{
+          "redirect_uri" => "https://evil.test/cb",
+          "response_type" => "token"
+        })
+
+      assert OAuth.validate_authorization_request(client, params) ==
+               {:error, :invalid_redirect_uri}
+    end
+
+    test "a protocol error rides back on the trusted callback" do
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      bad_requests = %{
+        "unsupported_response_type" => %{"response_type" => "token"},
+        "invalid_request" => %{"code_challenge_method" => "plain"},
+        "invalid_target" => %{"resource" => "https://other.example/mcp"}
+      }
+
+      for {error_code, overrides} <- bad_requests do
+        params = authorization_params(challenge, overrides)
+
+        assert OAuth.validate_authorization_request(client, params) ==
+                 {:error, {:oauth, error_code, @redirect}}
+      end
+    end
+
+    test "validating writes nothing" do
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert {:ok, @redirect} =
+               OAuth.validate_authorization_request(client, authorization_params(challenge))
+
+      refute Repo.exists?(AuthorizationCode.Query.all())
+      assert Repo.reload!(client).last_authorized_at == nil
+    end
+  end
+
   describe "issue_code/3 authorization gate" do
     test "a successful consent announces the backing key on the agents topic" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -191,17 +273,7 @@ defmodule Emisar.OAuthTest do
       viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
       assert {:error, :unauthorized} =
-               OAuth.issue_code(
-                 client,
-                 %{
-                   "redirect_uri" => @redirect,
-                   "code_challenge" => challenge,
-                   "code_challenge_method" => "S256",
-                   "scope" => "mcp offline_access",
-                   "resource" => @resource
-                 },
-                 viewer
-               )
+               OAuth.issue_code(client, authorization_params(challenge), viewer)
     end
 
     test "a suspended membership cannot mint a backing key from a stale subject" do
@@ -212,17 +284,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
 
       assert {:error, :not_found} =
-               OAuth.issue_code(
-                 client,
-                 %{
-                   "redirect_uri" => @redirect,
-                   "code_challenge" => challenge,
-                   "code_challenge_method" => "S256",
-                   "scope" => "mcp offline_access",
-                   "resource" => @resource
-                 },
-                 subject
-               )
+               OAuth.issue_code(client, authorization_params(challenge), subject)
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -237,17 +299,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
 
       assert {:error, :not_found} =
-               OAuth.issue_code(
-                 client,
-                 %{
-                   "redirect_uri" => @redirect,
-                   "code_challenge" => challenge,
-                   "code_challenge_method" => "S256",
-                   "scope" => "mcp offline_access",
-                   "resource" => @resource
-                 },
-                 subject
-               )
+               OAuth.issue_code(client, authorization_params(challenge), subject)
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -261,17 +313,175 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
 
       assert {:error, :unauthorized} =
-               OAuth.issue_code(
-                 client,
-                 %{
-                   "redirect_uri" => @redirect,
-                   "code_challenge" => challenge,
-                   "code_challenge_method" => "S256",
-                   "scope" => "mcp offline_access",
-                   "resource" => @resource
-                 },
-                 subject
-               )
+               OAuth.issue_code(client, authorization_params(challenge), subject)
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "a membership held by another operator mints nothing" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      peer = Fixtures.Users.create_user()
+
+      peer_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: peer.id,
+          role: "owner"
+        )
+
+      client = register!()
+      {_verifier, challenge} = pkce()
+      # The consent form's snapshot naming someone else's seat: the mint must
+      # land on the ACTING operator's membership or not at all.
+      borrowed = %{subject | membership_id: peer_membership.id}
+
+      assert {:error, :not_found} =
+               OAuth.issue_code(client, authorization_params(challenge), borrowed)
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "a membership in another account mints nothing" do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+
+      other_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      client = register!()
+      {_verifier, challenge} = pkce()
+      borrowed = %{subject | membership_id: other_membership.id}
+
+      assert {:error, :not_found} =
+               OAuth.issue_code(client, authorization_params(challenge), borrowed)
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "an unregistered redirect_uri is refused with no trusted callback to report on" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      params = authorization_params(challenge, %{"redirect_uri" => "https://attacker.example/cb"})
+
+      assert {:error, :invalid_redirect_uri} = OAuth.issue_code(client, params, subject)
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "a caller cannot widen a persisted client's redirect registration" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      unregistered = "https://attacker.example/cb"
+      stale_client = %{client | redirect_uris: [unregistered]}
+      params = authorization_params(challenge, %{"redirect_uri" => unregistered})
+
+      assert {:error, :invalid_redirect_uri} = OAuth.issue_code(stale_client, params, subject)
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "a missing redirect_uri is refused" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      params = authorization_params(challenge) |> Map.delete("redirect_uri")
+
+      assert {:error, :invalid_redirect_uri} = OAuth.issue_code(client, params, subject)
+
+      refute Repo.exists?(ApiKey.Query.all())
+    end
+
+    test "a response_type other than code is refused on the trusted callback" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      params = authorization_params(challenge, %{"response_type" => "token"})
+
+      assert OAuth.issue_code(client, params, subject) ==
+               {:error, {:oauth, "unsupported_response_type", @redirect}}
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "a missing or malformed PKCE challenge is refused" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      # Absent, empty, truncated, and outside the base64url alphabet — each is a
+      # challenge no conformant S256 client would send.
+      for bad <- [nil, "", String.slice(challenge, 0, 42), String.duplicate("+", 43)] do
+        params = authorization_params(challenge, %{"code_challenge" => bad})
+
+        assert OAuth.issue_code(client, params, subject) ==
+                 {:error, {:oauth, "invalid_request", @redirect}},
+               "expected invalid_request for #{inspect(bad)}"
+      end
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "a non-S256 challenge method is refused (MCP mandates S256)" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      params = authorization_params(challenge, %{"code_challenge_method" => "plain"})
+
+      assert OAuth.issue_code(client, params, subject) ==
+               {:error, {:oauth, "invalid_request", @redirect}}
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "a resource other than this MCP endpoint is refused" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      client = register!()
+      {_verifier, challenge} = pkce()
+      params = authorization_params(challenge, %{"resource" => "https://other.example/mcp"})
+
+      assert OAuth.issue_code(client, params, subject) ==
+               {:error, {:oauth, "invalid_target", @redirect}}
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "an account that requires SSO refuses a magic-link session" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.SSO.create_identity_provider(account_id: account.id)
+      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+               {:error, :sso_required}
+
+      refute Repo.exists?(ApiKey.Query.all())
+      refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "an account that requires MFA refuses an un-enrolled operator" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+               {:error, :mfa_required}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -282,18 +492,8 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert {:ok, _code} =
-               OAuth.issue_code(
-                 client,
-                 %{
-                   "redirect_uri" => @redirect,
-                   "code_challenge" => challenge,
-                   "code_challenge_method" => "S256",
-                   "scope" => "mcp offline_access",
-                   "resource" => @resource
-                 },
-                 subject
-               )
+      assert {:ok, _code, @redirect} =
+               OAuth.issue_code(client, authorization_params(challenge), subject)
 
       assert Repo.exists?(ApiKey.Query.all())
       assert Repo.exists?(AuthorizationCode.Query.all())

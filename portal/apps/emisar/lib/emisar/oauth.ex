@@ -23,7 +23,7 @@ defmodule Emisar.OAuth do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, ApiKeys, Audit, Crypto, Repo}
+  alias Emisar.{Accounts, ApiKeys, Audit, Crypto, PublicUrl, Repo, Users}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
   alias Emisar.OAuth.{AuthorizationCode, Client, ClientMetadataDocument, Jobs, Token}
@@ -169,74 +169,165 @@ defmodule Emisar.OAuth do
   # -- Authorization (consent → code) ---------------------------------
 
   @doc """
-  Called from the consent POST once a logged-in operator approves. Mints
-  the backing MCP key for their membership and a single-use code bound
-  to the PKCE challenge + redirect_uri + resource. Returns the raw code
-  to hand back via the redirect.
+  Internal — the consent GET's request check (pre-auth as to the client; the
+  operator's session is the web boundary's concern). Writes nothing, so the
+  consent screen can render for a request the operator may still deny.
 
-  `subject` is the consenting operator; `client` the requesting client.
+  The callback is checked FIRST, against the client's own registration: an
+  unregistered or absent `redirect_uri` returns `{:error, :invalid_redirect_uri}`
+  and the caller must render the failure locally — we have no trusted place to
+  send the operator. Once the callback is proven, a protocol error rides back on
+  it as `{:error, {:oauth, error_code, trusted_redirect_uri}}`. A well-formed
+  request returns `{:ok, trusted_redirect_uri}`.
+  """
+  @spec validate_authorization_request(Client.t(), map()) ::
+          {:ok, String.t()}
+          | {:error, :invalid_redirect_uri | {:oauth, String.t(), String.t()}}
+  def validate_authorization_request(%Client{} = client, params) do
+    with {:ok, redirect_uri} <- trusted_redirect_uri(client, params["redirect_uri"]) do
+      case ensure_request_supported(params) do
+        :ok -> {:ok, redirect_uri}
+        {:error, error_code} -> {:error, {:oauth, error_code, redirect_uri}}
+      end
+    end
+  end
+
+  @doc """
+  Called from the consent POST once a logged-in operator approves. Mints the
+  backing MCP key for their membership and a single-use code bound to the PKCE
+  challenge + redirect_uri + resource. Returns the raw code together with the
+  callback it may be delivered to, proven against the client's registration.
+
+  `client` and `subject` are consent-screen SNAPSHOTS, never the authority: the
+  request is validated against the locked client row, and the account,
+  membership, user, and role are re-read under row locks, so a role change, a
+  revoked seat, or an account security control that landed since the screen
+  rendered blocks the mint before anything is written. Returns
+  `{:error, :unauthorized}` when the current role can't issue keys,
+  `{:error, :sso_required | :mfa_required}` when the account's controls aren't
+  satisfied, and `{:error, :not_found}` when the seat is gone or isn't the
+  operator's.
   """
   @spec issue_code(Client.t(), map(), Subject.t()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t(), String.t()} | {:error, term()}
   def issue_code(%Client{} = client, params, %Subject{} = subject) do
-    # The backing key carries actions:read + actions:execute, so consenting
-    # is exactly as privileged as minting an API key. Gate it on the same
-    # permission the manual key-issue path requires — otherwise a read-only
-    # viewer could walk the consent flow into an execute-capable token they
-    # could never mint in-product (privilege escalation).
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             ApiKeys.Authorizer.issue_quick_key_permission()
-           ) do
-      account = subject.account
-      user_id = Subject.actor_id(subject)
-      membership_id = subject.membership_id
-      key_name = "#{client.client_name || "MCP client"} (OAuth)"
+    # IL-3's pre-DB gate. The backing key carries actions:read + actions:execute,
+    # so consenting is exactly as privileged as minting an API key — otherwise a
+    # read-only viewer could walk the consent flow into an execute-capable token
+    # they could never mint in-product (privilege escalation). The locked-row
+    # re-check below is what makes it authoritative.
+    with :ok <- ensure_can_issue_backing_key(subject) do
       raw = "emoc-" <> Crypto.random_secret()
 
       Multi.new()
+      |> Multi.run(:client, fn repo, _changes ->
+        fetch_and_lock_client(client.id, repo)
+      end)
+      |> Multi.run(:redirect_uri, fn _repo, %{client: client} ->
+        validate_authorization_request(client, params)
+      end)
       |> Multi.run(:account, fn repo, _changes ->
-        Accounts.fetch_and_lock_account(account.id, repo: repo)
+        Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
       end)
       |> Multi.run(:membership, fn repo, %{account: account} ->
-        with {:ok, membership} <-
-               Accounts.fetch_and_lock_membership(account.id, membership_id, repo: repo),
-             :ok <- ensure_membership_can_issue_key(membership) do
-          {:ok, membership}
-        end
+        fetch_and_lock_consenting_membership(account.id, subject, repo)
       end)
-      |> Multi.run(:key, fn _repo, %{account: account, membership: membership} ->
-        ApiKeys.create_backing_key(account.id, user_id, membership.id, key_name)
+      |> Multi.run(:user, fn repo, %{membership: membership} ->
+        Users.fetch_and_lock_user_by_id(membership.user_id, repo)
       end)
-      |> Multi.insert(:code, fn %{key: key} ->
-        AuthorizationCode.Changeset.create(%{
-          code_hash: Crypto.hash(raw),
-          client_id: client.id,
-          account_id: account.id,
-          membership_id: membership_id,
-          api_key_id: key.id,
-          redirect_uri: params["redirect_uri"],
-          code_challenge: params["code_challenge"],
-          code_challenge_method: params["code_challenge_method"] || "S256",
-          scope: narrow_scope(params["scope"]),
-          resource: params["resource"],
-          expires_at: secs_from_now(@code_ttl_s)
-        })
+      |> Multi.run(:subject, fn _repo, changes ->
+        rebuild_consenting_subject(changes, subject)
       end)
-      |> Multi.insert(:audit, fn %{key: key} ->
+      |> Multi.run(:key, fn _repo, changes ->
+        mint_backing_key(changes)
+      end)
+      |> Multi.insert(:code, &authorization_code_changeset(&1, params, raw))
+      |> Multi.insert(:audit, fn %{subject: subject, client: client, key: key} ->
         Audit.Events.oauth_consent_granted(subject, client, key)
       end)
       # Stamp the client so it's never swept as an abandoned registration.
-      |> Multi.update(:client, Client.Changeset.mark_authorized(client, DateTime.utc_now()))
+      |> Multi.update(:authorized_client, fn %{client: client} ->
+        Client.Changeset.mark_authorized(client, DateTime.utc_now())
+      end)
       # Announce the new backing key so an open agents list reflows to show the
       # connection the moment consent lands, not on the next 5s tick.
       |> Repo.commit_multi(after_commit: &ApiKeys.broadcast_backing_key_created(&1.key))
       |> case do
-        {:ok, _changes} -> {:ok, raw}
+        {:ok, %{redirect_uri: redirect_uri}} -> {:ok, raw, redirect_uri}
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  defp fetch_and_lock_client(client_id, repo) do
+    Client.Query.all()
+    |> Client.Query.by_id(client_id)
+    |> Client.Query.lock_for_update()
+    |> repo.fetch(Client.Query, [])
+  end
+
+  # The consenting operator's OWN seat under the locked account. The subject is a
+  # snapshot, so the membership it names must still be live AND still belong to
+  # that operator — a swapped `membership_id` must never mint a key on someone
+  # else's seat, and a gone seat is indistinguishable from one that never was.
+  defp fetch_and_lock_consenting_membership(account_id, %Subject{} = subject, repo) do
+    with {:ok, membership} <-
+           Accounts.fetch_and_lock_membership(account_id, subject.membership_id, repo: repo),
+         :ok <- check(membership.user_id == Subject.actor_id(subject), :not_found) do
+      {:ok, membership}
+    end
+  end
+
+  # Rebuild the caller from the locked rows, carrying this request's provenance
+  # (context + how the operator signed in) so the audit row stays accurate. The
+  # key-issue permission and the account's require_sso / require_mfa controls are
+  # then judged on the CURRENT role and settings, not the consent screen's.
+  defp rebuild_consenting_subject(
+         %{user: user, account: account, membership: membership},
+         %Subject{} = subject
+       ) do
+    fresh =
+      Subject.for_user(user, account, membership, subject.context,
+        auth_method: subject.auth_method,
+        mfa: subject.mfa,
+        user_identity_id: subject.user_identity_id
+      )
+
+    with :ok <- ensure_can_issue_backing_key(fresh),
+         :ok <- Accounts.ensure_account_compliant(account, fresh) do
+      {:ok, fresh}
+    end
+  end
+
+  defp ensure_can_issue_backing_key(%Subject{} = subject) do
+    Auth.Authorizer.ensure_has_permissions(
+      subject,
+      ApiKeys.Authorizer.issue_quick_key_permission()
+    )
+  end
+
+  defp mint_backing_key(%{account: account, membership: membership, client: client}) do
+    name = "#{client.client_name || "MCP client"} (OAuth)"
+
+    ApiKeys.create_backing_key(account.id, membership.user_id, membership.id, name)
+  end
+
+  defp authorization_code_changeset(changes, params, raw) do
+    %{account: account, membership: membership, client: client, key: key} = changes
+
+    AuthorizationCode.Changeset.create(%{
+      code_hash: Crypto.hash(raw),
+      client_id: client.id,
+      account_id: account.id,
+      membership_id: membership.id,
+      api_key_id: key.id,
+      redirect_uri: changes.redirect_uri,
+      code_challenge: params["code_challenge"],
+      code_challenge_method: params["code_challenge_method"] || "S256",
+      scope: narrow_scope(params["scope"]),
+      resource: params["resource"],
+      expires_at: secs_from_now(@code_ttl_s)
+    })
   end
 
   # -- Token endpoint -------------------------------------------------
@@ -558,6 +649,39 @@ defmodule Emisar.OAuth do
     byte_size(verifier) in 43..128 and verifier =~ ~r/\A[A-Za-z0-9._~-]+\z/
   end
 
+  # The callback the code may be delivered to must EXACTLY match one the client
+  # registered — an unregistered or missing value has no trusted destination.
+  defp trusted_redirect_uri(%Client{redirect_uris: redirect_uris}, redirect_uri)
+       when is_binary(redirect_uri) do
+    if redirect_uri in (redirect_uris || []),
+      do: {:ok, redirect_uri},
+      else: {:error, :invalid_redirect_uri}
+  end
+
+  defp trusted_redirect_uri(%Client{}, _redirect_uri), do: {:error, :invalid_redirect_uri}
+
+  # The OAuth-shaped protocol checks, in the order the errors are reported.
+  # MCP mandates S256, so `plain` (and any other named method) is refused; an
+  # absent method means S256. `resource` is RFC 8707 audience binding: this AS
+  # issues tokens for exactly one MCP endpoint.
+  defp ensure_request_supported(params) do
+    cond do
+      params["response_type"] != "code" -> {:error, "unsupported_response_type"}
+      not s256_code_challenge?(params["code_challenge"]) -> {:error, "invalid_request"}
+      params["code_challenge_method"] not in [nil, "S256"] -> {:error, "invalid_request"}
+      params["resource"] != PublicUrl.url("/api/mcp/rpc") -> {:error, "invalid_target"}
+      true -> :ok
+    end
+  end
+
+  # RFC 7636 §4.2 — an S256 challenge is the unpadded base64url encoding of a
+  # 32-byte digest, so exactly 43 characters of that alphabet. Anything else is
+  # a malformed or entropy-downgraded challenge, refused before it's stored.
+  defp s256_code_challenge?(challenge) when is_binary(challenge),
+    do: byte_size(challenge) == 43 and challenge =~ ~r/\A[A-Za-z0-9_-]+\z/
+
+  defp s256_code_challenge?(_challenge), do: false
+
   defp list_param(params, key, default \\ []) do
     case params[key] do
       v when is_list(v) -> v
@@ -608,17 +732,6 @@ defmodule Emisar.OAuth do
   # (not revoked / deleted / expired) — the same liveness gate the access
   # token's resolve path uses.
   defp backing_key_usable?(api_key_id), do: not is_nil(ApiKeys.peek_api_key_by_id(api_key_id))
-
-  defp ensure_membership_can_issue_key(%Emisar.Accounts.Membership{role: role}) do
-    if MapSet.member?(
-         Auth.Permissions.for_role(role),
-         ApiKeys.Authorizer.issue_quick_key_permission()
-       ) do
-      :ok
-    else
-      {:error, :unauthorized}
-    end
-  end
 
   # Every access token carries the `mcp` scope: that scope IS the capability to
   # reach the MCP resource, and the resource server rejects a token without it

@@ -12,31 +12,34 @@ defmodule EmisarWeb.MfaSetupLive do
   regenerate codes) stays on the profile page.
   """
   use EmisarWeb, :live_view
-  alias Emisar.Auth
-  alias EmisarWeb.{MfaQr, UserAuth}
+  alias Emisar.{Accounts, Auth}
+  alias EmisarWeb.MfaQr
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
     account = socket.assigns.current_account
 
-    # Delegate the enroll-or-leave decision to the shared predicate so this
+    # Delegate the enroll-or-leave decision to the shared domain policy so this
     # interstitial can't drift from the on_mount hooks / the controller plug —
     # in particular the MFA exemption stays ACCOUNT-SCOPED (a session SSO-authed
     # via another account's IdP is NOT exempt here and enrolls).
-    case UserAuth.account_compliance(account, socket.assigns[:current_auth], user) do
-      :mfa_required ->
+    case Accounts.ensure_account_compliant(account, socket.assigns.current_subject) do
+      {:error, :mfa_required} ->
         mount_enrollment(socket, user)
 
-      :sso_required ->
+      {:error, :sso_required} ->
         # The :ensure_sso_compliant on_mount already bounced a non-SSO session on
         # a require_sso+require_mfa account; never enroll a factor before SSO is
         # satisfied — belt and suspenders.
         {:ok, push_navigate(socket, to: ~p"/app/#{account}/sso_required")}
 
+      # Already compliant (enrolled, not enforcing, or an MFA-satisfying SSO
+      # session FOR THIS account) — don't strand the user in enrollment.
       :ok ->
-        # Already compliant (enrolled, not enforcing, or an MFA-satisfying SSO
-        # session FOR THIS account) — don't strand the user in enrollment.
         {:ok, push_navigate(socket, to: ~p"/app")}
+
+      {:error, reason} when reason in [:not_found, :unauthorized] ->
+        raise EmisarWeb.NotFoundError
     end
   end
 

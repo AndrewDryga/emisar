@@ -223,6 +223,40 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       refute Repo.one(OAuth.AuthorizationCode)
     end
 
+    test "approving a require_mfa account without an enrolled factor mints nothing", %{conn: conn} do
+      {conn, user, session_account} = register_and_log_in(conn)
+
+      chosen = Fixtures.Accounts.create_account()
+      require_mfa!(chosen)
+
+      Fixtures.Memberships.create_membership(
+        account_id: chosen.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      conn = put_session(conn, :current_account_id, session_account.id)
+      client = register_client!()
+
+      conn =
+        post(conn, ~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => code_challenge(),
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => chosen.id,
+          "decision" => "approve"
+        })
+
+      assert html_response(conn, 400) =~ "two-factor authentication"
+      refute Repo.one(Emisar.ApiKeys.ApiKey)
+      refute Repo.one(OAuth.AuthorizationCode)
+    end
+
     test "a session whose CURRENT account requires SSO can still grant a NON-enforcing account",
          %{conn: conn} do
       # Regression guard: enforcement is on the CHOSEN account, not the session

@@ -8,6 +8,7 @@ defmodule EmisarWeb.SSORequiredController do
   re-trigger the gate — no redirect loop.
   """
   use EmisarWeb, :controller
+  alias Emisar.Accounts
   alias EmisarWeb.UserAuth
 
   def show(conn, _params) do
@@ -16,12 +17,8 @@ defmodule EmisarWeb.SSORequiredController do
     # Re-check compliance on GET: a compliant session — or one whose account no
     # longer mandates SSO — reaching this shim from a stale/copied link must not
     # be shown a false "SSO required" state and pushed to sign out.
-    case UserAuth.account_compliance(
-           account,
-           conn.assigns[:current_auth],
-           conn.assigns[:current_user]
-         ) do
-      :sso_required ->
+    case Accounts.ensure_account_compliant(account, conn.assigns.current_subject) do
+      {:error, :sso_required} ->
         form = Phoenix.Component.to_form(%{}, as: "sso_required")
         render(conn, :show, account: account, form: form)
 

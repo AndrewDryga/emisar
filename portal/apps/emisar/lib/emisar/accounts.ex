@@ -117,6 +117,86 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  The account's `require_sso` / `require_mfa` decision for one caller — the ONE
+  policy the LiveView hooks, the controller plug, and the OAuth consent mint all
+  run, so the enforcement paths can't drift. `account` is the account being
+  entered (the OAuth grant's CHOSEN account, not necessarily the session's), and
+  it must be the subject's own. Returns:
+
+    * `{:error, :sso_required}` — the account mandates SSO and this session did
+      not authenticate via THAT account's own SSO (a magic-link session, or an
+      SSO session for a different account); the caller sends the operator to the
+      account's step-up.
+    * `{:error, :mfa_required}` — the account mandates MFA and the user is
+      neither enrolled nor on an MFA-satisfying IdP of this account; the caller
+      funnels them into enrollment.
+    * `{:error, :unauthorized}` — the subject cannot view its account.
+    * `{:error, :not_found}` — `account` is not the subject's account.
+    * `:ok` — compliant, or the account mandates neither control.
+
+  SSO precedence mirrors the hook order (SSO is satisfied before MFA is asked
+  for). LOCATION exemptions (the sso_required shim, the MFA interstitial, the
+  profile page) are the caller's to layer on — they turn on WHERE the request
+  lands, not on whether the account is compliant.
+  """
+  def ensure_account_compliant(%Account{} = account, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_own_account_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account.id) do
+      cond do
+        sso_step_up_required?(account, subject) -> {:error, :sso_required}
+        mfa_enrollment_required?(account, subject) -> {:error, :mfa_required}
+        true -> :ok
+      end
+    end
+  end
+
+  # require_sso: an enabled-SSO account this session did NOT authenticate via.
+  # Defensive fail-OPEN when require_sso is on but no usable provider remains (an
+  # out-of-band removal) — recoverable, not a brick, and the provider write paths
+  # guard the UI path in.
+  defp sso_step_up_required?(%Account{} = account, %Subject{} = subject) do
+    cond do
+      not account.settings.require_sso -> false
+      sso_session_for_account?(subject, account) -> false
+      SSO.list_enabled_providers_for_account(account.id) == [] -> false
+      true -> true
+    end
+  end
+
+  defp sso_session_for_account?(%Subject{} = subject, %Account{} = account) do
+    subject.auth_method == :sso and
+      SSO.identity_belongs_to_account?(subject.user_identity_id, account.id)
+  end
+
+  # require_mfa: an enforcing account whose user hasn't enrolled. An SSO session
+  # is exempt ONLY when its provider satisfies MFA (the IdP enforces the second
+  # factor); a provider marked satisfies_mfa: false still funnels the user into
+  # emisar TOTP.
+  defp mfa_enrollment_required?(%Account{} = account, %Subject{} = subject) do
+    cond do
+      not account.settings.require_mfa -> false
+      mfa_enrolled?(subject.actor) -> false
+      sso_session_satisfies_mfa?(subject, account) -> false
+      true -> true
+    end
+  end
+
+  defp mfa_enrolled?(%Users.User{mfa_enabled_at: %DateTime{}}), do: true
+  defp mfa_enrolled?(_actor), do: false
+
+  # Account-scoped: the SSO identity must belong to THIS account AND its provider
+  # must satisfy MFA. A session SSO-authed via a DIFFERENT account's IdP inherits
+  # no MFA exemption here — it never proved a second factor to THIS account.
+  defp sso_session_satisfies_mfa?(%Subject{} = subject, %Account{} = account) do
+    sso_session_for_account?(subject, account) and
+      SSO.identity_satisfies_mfa?(subject.user_identity_id)
+  end
+
+  @doc """
   Internal — pre-auth: the web session boundary (`UserAuth`) resolves an
   `/app/:account_id_or_slug` segment before anyone is authenticated, so no
   subject exists yet. The segment is a UUID (API / SSO / redirects) or the slug

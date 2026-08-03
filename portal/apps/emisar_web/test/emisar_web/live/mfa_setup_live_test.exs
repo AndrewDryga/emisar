@@ -91,6 +91,21 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
   end
 
+  test "a subject without account-view permission fails closed", %{
+    user: user,
+    account: account
+  } do
+    subject = Fixtures.Subjects.build_subject(user: user, account: account)
+
+    socket = %Phoenix.LiveView.Socket{
+      assigns: %{current_user: user, current_account: account, current_subject: subject}
+    }
+
+    assert_raise EmisarWeb.NotFoundError, fn ->
+      EmisarWeb.MfaSetupLive.mount(%{}, %{}, socket)
+    end
+  end
+
   test "the secret is minted once on the connected mount and the QR matches it", %{conn: conn} do
     # the secret MUST be generated on the connected mount
     # (the static render runs in a separate process, so a QR generated there

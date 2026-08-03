@@ -8,33 +8,36 @@ defmodule EmisarWeb.Plugs.EnsureAccountCompliance do
   OAuth consent screen (which mints a persistent MCP bearer).
 
   Composed after `:require_authenticated_user` (which resolves
-  `current_account` + the session's auth provenance into assigns), it runs the
-  SAME `EmisarWeb.UserAuth.account_compliance/3` predicate the LiveView hooks
-  use — so the two enforcement paths can't drift — and bounces a non-compliant
-  session to the matching step-up (the SSO shim / the MFA setup interstitial)
-  before the action runs, mirroring the hooks' redirects.
+  `current_account` + the subject carrying the session's auth provenance into
+  assigns), it runs the SAME `Emisar.Accounts.ensure_account_compliant/2` policy
+  the LiveView hooks use — so the two enforcement paths can't drift — and bounces
+  a non-compliant session to the matching step-up (the SSO shim / the MFA setup
+  interstitial) before the action runs, mirroring the hooks' redirects.
   """
   use EmisarWeb, :verified_routes
   import Plug.Conn
   import Phoenix.Controller
-  alias EmisarWeb.UserAuth
+  alias Emisar.Accounts
 
   def init(opts), do: opts
 
   def call(conn, _opts) do
     account = conn.assigns[:current_account]
-    auth = conn.assigns[:current_auth]
-    user = conn.assigns[:current_user]
 
-    case UserAuth.account_compliance(account, auth, user) do
-      :sso_required ->
-        conn |> redirect(to: ~p"/app/#{account}/sso_required") |> halt()
-
-      :mfa_required ->
-        conn |> redirect(to: ~p"/app/mfa_setup") |> halt()
-
+    case Accounts.ensure_account_compliant(account, conn.assigns[:current_subject]) do
       :ok ->
         conn
+
+      {:error, :sso_required} ->
+        conn |> redirect(to: ~p"/app/#{account}/sso_required") |> halt()
+
+      {:error, :mfa_required} ->
+        conn |> redirect(to: ~p"/app/mfa_setup") |> halt()
+
+      # The pipeline resolves the account and subject together. Treat an
+      # inconsistent or unauthorized pair like every other tenant-scope miss.
+      {:error, reason} when reason in [:not_found, :unauthorized] ->
+        raise EmisarWeb.NotFoundError
     end
   end
 end

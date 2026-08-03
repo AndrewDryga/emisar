@@ -21,11 +21,12 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
     verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
     challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
 
-    {:ok, _code} =
+    {:ok, _code, _redirect_uri} =
       OAuth.issue_code(
         client,
         %{
           "redirect_uri" => @redirect,
+          "response_type" => "code",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "scope" => "mcp",
@@ -42,11 +43,12 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
     verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
     challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
 
-    {:ok, code} =
+    {:ok, code, _redirect_uri} =
       OAuth.issue_code(
         client,
         %{
           "redirect_uri" => @redirect,
+          "response_type" => "code",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "scope" => "mcp offline_access",
@@ -169,11 +171,12 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
     verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
     challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
 
-    {:ok, _} =
+    {:ok, _code, _redirect_uri} =
       OAuth.issue_code(
         client,
         %{
           "redirect_uri" => @redirect,
+          "response_type" => "code",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "scope" => "mcp",

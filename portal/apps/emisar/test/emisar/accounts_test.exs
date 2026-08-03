@@ -5,6 +5,7 @@ defmodule Emisar.AccountsTest do
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Audit
   alias Emisar.Audit.Event, as: AuditEvent
+  alias Emisar.Auth
   alias Emisar.Crypto
   alias Emisar.Fixtures
   alias Emisar.Mail
@@ -334,6 +335,123 @@ defmodule Emisar.AccountsTest do
     test "an unknown or malformed id is :not_found" do
       assert Accounts.fetch_account_settings(Ecto.UUID.generate()) == {:error, :not_found}
       assert Accounts.fetch_account_settings("not-a-uuid") == {:error, :not_found}
+    end
+  end
+
+  describe "ensure_account_compliant/2" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: user, account: account, subject: subject}
+    end
+
+    test "an account mandating neither control is compliant", %{
+      account: account,
+      subject: subject
+    } do
+      assert Accounts.ensure_account_compliant(account, subject) == :ok
+    end
+
+    test "require_sso rejects a session that did not authenticate through it", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.SSO.create_identity_provider(account_id: account.id)
+      account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+      assert Accounts.ensure_account_compliant(account, subject) == {:error, :sso_required}
+    end
+
+    test "require_sso fails open while the account has no enabled provider left", %{
+      account: account,
+      subject: subject
+    } do
+      # An out-of-band provider removal must leave the account recoverable, not
+      # bricked behind a step-up nobody can complete.
+      account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+      assert Accounts.ensure_account_compliant(account, subject) == :ok
+    end
+
+    test "require_sso is not satisfied by another account's identity provider", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
+      Fixtures.SSO.create_identity_provider(account_id: account.id)
+      account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+      other_account = Fixtures.Accounts.create_account()
+      other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
+
+      foreign_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: other_account.id,
+          provider_id: other_provider.id,
+          user_id: user.id
+        )
+
+      foreign_sso_subject = %{
+        subject
+        | auth_method: :sso,
+          user_identity_id: foreign_identity.id
+      }
+
+      assert Accounts.ensure_account_compliant(account, foreign_sso_subject) ==
+               {:error, :sso_required}
+    end
+
+    test "require_mfa rejects an operator who has not enrolled", %{
+      account: account,
+      subject: subject
+    } do
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+
+      assert Accounts.ensure_account_compliant(account, subject) == {:error, :mfa_required}
+    end
+
+    test "an enrolled operator satisfies require_mfa", %{account: account, subject: subject} do
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+      {user, _recovery_codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      assert Accounts.ensure_account_compliant(account, %{subject | actor: user}) == :ok
+    end
+
+    test "this account's MFA-satisfying SSO identity clears both controls", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: true)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      account =
+        Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
+
+      sso_subject = %{subject | auth_method: :sso, user_identity_id: identity.id}
+
+      assert Accounts.ensure_account_compliant(account, sso_subject) == :ok
+    end
+
+    test "a subject without account-view permission is unauthorized", %{
+      user: user,
+      account: account
+    } do
+      subject = Fixtures.Subjects.build_subject(user: user, account: account)
+
+      assert Accounts.ensure_account_compliant(account, subject) == {:error, :unauthorized}
+    end
+
+    test "an account the subject doesn't belong to is :not_found", %{subject: subject} do
+      other_account = Fixtures.Accounts.create_account()
+
+      assert Accounts.ensure_account_compliant(other_account, subject) == {:error, :not_found}
     end
   end
 
