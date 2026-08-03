@@ -1,13 +1,12 @@
 defmodule EmisarWeb.PostmarkWebhookControllerTest do
   @moduledoc """
-  Postmark bounce/complaint ingest: a permanent bounce or spam complaint
-  suppresses the address; transient bounces don't; the endpoint is gated by
-  the Basic-Auth shared secret.
+  The Postmark boundary: the Basic-Auth shared secret gates the endpoint, a
+  recognized event maps onto the domain's deliverability command, and anything
+  else is acknowledged without touching the suppression list. What a report
+  DOES to that list is `Emisar.Mail`'s policy and is tested there.
   """
   use EmisarWeb.ConnCase, async: true
-  import ExUnit.CaptureLog
   alias Emisar.Mail
-  alias Emisar.Mail.Suppression
   alias Emisar.Repo
 
   # Matches config/test.exs :postmark_webhook_secret.
@@ -65,6 +64,24 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("slow@example.com")
   end
 
+  # An over-long Description is advisory prose the command bounds, so a real
+  # bounce still lands instead of failing the write.
+  test "an over-long bounce description still suppresses", %{conn: conn} do
+    conn =
+      conn
+      |> auth()
+      |> post_json(%{
+        "RecordType" => "Bounce",
+        "Type" => "HardBounce",
+        "Email" => "verbose@example.com",
+        "Inactive" => true,
+        "Description" => String.duplicate("x", 5000)
+      })
+
+    assert json_response(conn, 200)["suppressed"] == true
+    assert Mail.suppressed?("verbose@example.com")
+  end
+
   test "a missing Basic-Auth header is rejected", %{conn: conn} do
     conn = post_json(conn, %{"RecordType" => "SpamComplaint", "Email" => "x@example.com"})
 
@@ -82,9 +99,9 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("y@example.com")
   end
 
-  # an event type the webhook doesn't act on (Delivery,
-  # Open, Click, …) is acknowledged and changes nothing.
-  test "an unknown RecordType is a 200 no-op", %{conn: conn} do
+  # An event type the webhook doesn't act on (Delivery, Open, Click, …) is
+  # acknowledged and never reaches the domain.
+  test "an unsupported RecordType is a 200 no-op", %{conn: conn} do
     conn =
       conn
       |> auth()
@@ -94,70 +111,9 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("delivered@example.com")
   end
 
-  # bounce_detail formats the stored `detail` as
-  # "Type: Description" when both are present, "Type" when only Type is, and nil
-  # when neither is (each a separate guarded clause).
-  test "bounce_detail formats Type/Description into the stored detail", %{conn: conn} do
-    conn
-    |> auth()
-    |> post_json(%{
-      "RecordType" => "Bounce",
-      "Type" => "HardBounce",
-      "Description" => "no such mailbox",
-      "Email" => "both@example.com",
-      "Inactive" => true
-    })
-    |> json_response(200)
-
-    assert Repo.get_by!(Suppression, email: "both@example.com").detail ==
-             "HardBounce: no such mailbox"
-
-    conn
-    |> auth()
-    |> post_json(%{
-      "RecordType" => "Bounce",
-      "Type" => "HardBounce",
-      "Email" => "typeonly@example.com",
-      "Inactive" => true
-    })
-    |> json_response(200)
-
-    assert Repo.get_by!(Suppression, email: "typeonly@example.com").detail == "HardBounce"
-
-    conn
-    |> auth()
-    |> post_json(%{
-      "RecordType" => "Bounce",
-      "Email" => "neither@example.com",
-      "Inactive" => true
-    })
-    |> json_response(200)
-
-    assert Repo.get_by!(Suppression, email: "neither@example.com").detail == nil
-  end
-
-  # replaying the same permanent bounce is idempotent: both
-  # POSTs are 200, and the address ends up suppressed in exactly one row (suppress/3
-  # upserts on the email).
-  test "a replayed permanent bounce is idempotent", %{conn: conn} do
-    payload = %{
-      "RecordType" => "Bounce",
-      "Type" => "HardBounce",
-      "Email" => "dup@example.com",
-      "Inactive" => true,
-      "Description" => "no such mailbox"
-    }
-
-    assert conn |> auth() |> post_json(payload) |> json_response(200)
-    assert conn |> auth() |> post_json(payload) |> json_response(200)
-
-    assert Mail.suppressed?("dup@example.com")
-    assert Repo.aggregate(Suppression.Query.by_email("dup@example.com"), :count) == 1
-  end
-
-  # a permanent bounce with no Email falls through the
-  # guarded clause (the `Email` pattern requires a binary): 200 no-op, nothing
-  # suppressed.
+  # A recognized event whose fields don't build a command — no address, or a
+  # bounce that never says whether Postmark deactivated it — is acknowledged so
+  # Postmark stops retrying a payload it can't fix.
   test "a bounce missing Email is a 200 no-op", %{conn: conn} do
     conn =
       conn
@@ -167,8 +123,76 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert json_response(conn, 200) == %{"received" => true}
   end
 
-  # an arbitrary/malformed JSON payload doesn't match any
-  # event clause: 200 no-op, no crash, no suppression.
+  test "a bounce with a missing or non-boolean Inactive is a 200 no-op", %{conn: conn} do
+    missing =
+      conn
+      |> auth()
+      |> post_json(%{"RecordType" => "Bounce", "Email" => "no-flag@example.com"})
+
+    assert json_response(missing, 200) == %{"received" => true}
+    refute Mail.suppressed?("no-flag@example.com")
+
+    non_boolean =
+      conn
+      |> auth()
+      |> post_json(%{
+        "RecordType" => "Bounce",
+        "Email" => "string-flag@example.com",
+        "Inactive" => "true"
+      })
+
+    assert json_response(non_boolean, 200) == %{"received" => true}
+    refute Mail.suppressed?("string-flag@example.com")
+  end
+
+  # A provider identity we can't recognize as an address never reaches the
+  # suppression list — a NUL especially, which Postgres cannot carry as a text
+  # parameter at all and would fail the write at the wire protocol, turning a
+  # broken payload into a permanent Postmark retry loop.
+  test "a bounce whose Email is malformed is a 200 no-op", %{conn: conn} do
+    for email <- ["no-at-sign", "nul\0@example.com", "bell\a@example.com"] do
+      response =
+        conn
+        |> auth()
+        |> post_json(%{
+          "RecordType" => "Bounce",
+          "Type" => "HardBounce",
+          "Email" => email,
+          "Inactive" => true
+        })
+
+      assert json_response(response, 200) == %{"received" => true}
+    end
+
+    refute Repo.one(Mail.Suppression)
+  end
+
+  # The endpoint bounds this unsigned, publicly-POSTable route at 64 KiB, so an
+  # over-large body never reaches the controller: `Plug.Parsers` renders 413 and
+  # re-raises, which `assert_error_sent` captures.
+  test "a body over the endpoint's 64 KiB bound is refused and writes nothing", %{conn: conn} do
+    body =
+      Jason.encode!(%{
+        "RecordType" => "Bounce",
+        "Type" => "HardBounce",
+        "Email" => "huge@example.com",
+        "Inactive" => true,
+        "Description" => String.duplicate("x", 70 * 1024)
+      })
+
+    assert byte_size(body) > 64 * 1024
+
+    assert {413, _headers, _body} =
+             assert_error_sent(413, fn ->
+               conn
+               |> auth()
+               |> put_req_header("content-type", "application/json")
+               |> post(~p"/webhooks/postmark", body)
+             end)
+
+    refute Repo.one(Mail.Suppression)
+  end
+
   test "a malformed payload is a 200 no-op", %{conn: conn} do
     conn =
       conn
@@ -178,8 +202,8 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert json_response(conn, 200) == %{"received" => true}
   end
 
-  # only the password is part of the shared secret; a
-  # different Basic-Auth username with the correct password still verifies (200).
+  # Only the password is part of the shared secret; a different Basic-Auth
+  # username with the correct password still verifies.
   test "the Basic-Auth username is ignored, only the password matters", %{conn: conn} do
     conn =
       conn
@@ -190,8 +214,6 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     assert Mail.suppressed?("user@example.com")
   end
 
-  # with no shared secret configured the endpoint is
-  # disabled: every request is 503, nothing is suppressed.
   test "the webhook is disabled (503) when no secret is configured", %{conn: conn} do
     Emisar.Config.put_override(:emisar, :postmark_webhook_secret, nil)
 
@@ -204,60 +226,12 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("x@example.com")
   end
 
-  # a failed suppression write is a 500 so Postmark
-  # retries. Force the changeset to fail with a >1000-char detail (the bounce
-  # Description flows into `detail`, which the Suppression changeset caps at
-  # 1000) — no production code change needed.
-  @tag capture_log: true
-  test "a suppression write failure is a 500", %{conn: conn} do
-    conn =
-      conn
-      |> auth()
-      |> post_json(%{
-        "RecordType" => "Bounce",
-        "Type" => "HardBounce",
-        "Email" => "fails@example.com",
-        "Inactive" => true,
-        "Description" => String.duplicate("x", 1001)
-      })
-
-    assert json_response(conn, 500) == %{"error" => "suppress_failed"}
-    refute Mail.suppressed?("fails@example.com")
-  end
-
-  # the 500 suppress-failure log line carries `reason=`
-  # only: the email address (PII) and the changeset are kept OUT of the drain.
-  # Same forced-failure path as the 500 test (an over-1000-char detail).
-  test "the suppress-failure log keeps the email address out of the drain", %{conn: conn} do
-    email = "pii-leak@example.com"
-
-    log =
-      capture_log(fn ->
-        conn
-        |> auth()
-        |> post_json(%{
-          "RecordType" => "Bounce",
-          "Type" => "HardBounce",
-          "Email" => email,
-          "Inactive" => true,
-          "Description" => String.duplicate("x", 1001)
-        })
-        |> json_response(500)
-      end)
-
-    assert log =~ "postmark webhook suppress failed"
-    assert log =~ "reason=hard_bounce"
-    # The address (PII) and the raw changeset are never echoed into logs.
-    refute log =~ email
-    refute log =~ "changeset"
-  end
-
-  # the webhook rides the CSRF-free `:api` pipeline:
-  # Postmark POSTs cross-origin and doesn't sign, so the Basic-Auth shared secret
-  # is the only authenticity guarantee — a valid-secret POST with no CSRF token
-  # succeeds. We clear `plug_skip_csrf_protection` (ConnTest sets it) to run the
-  # real pipeline; `:api` carries no `:protect_from_forgery`, so the tokenless
-  # POST is accepted on the secret alone (correct for a machine webhook, NOT a vuln).
+  # The webhook rides the CSRF-free `:api` pipeline: Postmark POSTs cross-origin
+  # and doesn't sign, so the Basic-Auth shared secret is the only authenticity
+  # guarantee — a valid-secret POST with no CSRF token succeeds. We clear
+  # `plug_skip_csrf_protection` (ConnTest sets it) to run the real pipeline;
+  # `:api` carries no `:protect_from_forgery`, so the tokenless POST is accepted
+  # on the secret alone (correct for a machine webhook, NOT a vuln).
   test "a valid-secret cross-origin POST with no CSRF token succeeds", %{conn: conn} do
     conn =
       conn

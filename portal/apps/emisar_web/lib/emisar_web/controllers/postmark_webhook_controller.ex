@@ -5,12 +5,11 @@ defmodule EmisarWeb.PostmarkWebhookController do
   secret as the webhook password in Postmark and as `POSTMARK_WEBHOOK_SECRET`
   here; the password is constant-time compared.
 
-  A permanent bounce (Postmark flips `Inactive` to true once it stops
-  delivering to the address) or a spam complaint adds the address to
-  `Emisar.Mail`'s suppression list, so the transactional mailer stops sending
-  to it. Transient bounces and every other event type are acknowledged and
-  ignored. Always replies 200 on a verified request — Postmark retries any
-  non-2xx, which would re-suppress the same address harmlessly anyway.
+  This is the provider boundary and nothing more: it verifies the caller and
+  maps Postmark's payload onto `Emisar.Mail`'s provider-neutral deliverability
+  command, which owns what a report does to the suppression list. An event type
+  we don't act on, or a recognized one whose fields don't map, is acknowledged
+  and dropped — Postmark retries any non-2xx and has nothing here to fix.
   """
   use EmisarWeb, :controller
   alias Emisar.{Crypto, Mail}
@@ -43,38 +42,43 @@ defmodule EmisarWeb.PostmarkWebhookController do
     end
   end
 
-  # A permanent bounce — Postmark sets `Inactive: true` once it deactivates
-  # the address — suppresses it.
-  defp handle_event(conn, %{"RecordType" => "Bounce", "Email" => email, "Inactive" => true} = p)
-       when is_binary(email) do
-    suppress_and_ack(conn, email, :hard_bounce, bounce_detail(p))
-  end
-
-  defp handle_event(conn, %{"RecordType" => "SpamComplaint", "Email" => email} = p)
-       when is_binary(email) do
-    suppress_and_ack(conn, email, :spam_complaint, bounce_detail(p))
-  end
-
-  # A transient bounce (`Inactive: false`), a delivery/open/click event, or a
-  # malformed payload: ack so Postmark stops retrying, change nothing.
-  defp handle_event(conn, _params), do: json(conn, %{received: true})
-
-  defp suppress_and_ack(conn, email, reason, detail) do
-    case Mail.suppress(email, reason, detail) do
-      {:ok, _suppression} ->
-        json(conn, %{received: true, suppressed: true})
-
-      {:error, _changeset} ->
-        # Don't echo the address or changeset into the drain — the email is PII.
-        Logger.error("postmark webhook suppress failed reason=#{reason}")
-        conn |> put_status(:internal_server_error) |> json(%{error: "suppress_failed"})
+  defp handle_event(conn, params) do
+    case deliverability_event(params) do
+      {:ok, event} -> ack(conn, event.kind, Mail.handle_deliverability_event(event))
+      {:ignore, :unsupported} -> json(conn, %{received: true})
+      {:error, :invalid_deliverability_event} -> json(conn, %{received: true})
     end
   end
 
-  defp bounce_detail(%{"Type" => type, "Description" => desc})
-       when is_binary(type) and is_binary(desc),
-       do: "#{type}: #{desc}"
+  # Postmark's payload mapped onto the domain command. A delivery/open/click or
+  # any other type we don't act on is unsupported; a bounce or complaint whose
+  # fields don't validate carries the command's own error.
+  defp deliverability_event(%{"RecordType" => "Bounce"} = params) do
+    Mail.DeliverabilityEvent.new(:bounce, %{
+      email: params["Email"],
+      inactive: params["Inactive"],
+      type: params["Type"],
+      description: params["Description"]
+    })
+  end
 
-  defp bounce_detail(%{"Type" => type}) when is_binary(type), do: type
-  defp bounce_detail(_), do: nil
+  defp deliverability_event(%{"RecordType" => "SpamComplaint"} = params) do
+    Mail.DeliverabilityEvent.new(:spam_complaint, %{
+      email: params["Email"],
+      type: params["Type"],
+      description: params["Description"]
+    })
+  end
+
+  defp deliverability_event(_params), do: {:ignore, :unsupported}
+
+  defp ack(conn, _kind, {:ok, :suppressed}), do: json(conn, %{received: true, suppressed: true})
+  defp ack(conn, _kind, {:ok, :ignored}), do: json(conn, %{received: true})
+
+  defp ack(conn, kind, {:error, _changeset}) do
+    # `kind` is one of the command's finite atoms; the address (PII), the
+    # command, and the changeset stay out of the drain.
+    Logger.error("postmark webhook suppress failed kind=#{kind}")
+    conn |> put_status(:internal_server_error) |> json(%{error: "suppress_failed"})
+  end
 end

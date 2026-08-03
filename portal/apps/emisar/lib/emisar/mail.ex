@@ -1,16 +1,20 @@
 defmodule Emisar.Mail do
   @moduledoc """
   Email deliverability: the suppression list of addresses that hard-bounced
-  or filed a spam complaint, fed by the Postmark webhook. The transactional
-  mailer checks it before every send and skips suppressed addresses so
-  repeated sends to a dead address don't burn sender reputation.
+  or filed a spam complaint, fed by a provider's deliverability webhook. The
+  transactional mailer checks it before every send and skips suppressed
+  addresses so repeated sends to a dead address don't burn sender reputation.
+
+  What a reported bounce or complaint means is decided here, on the
+  provider-neutral `DeliverabilityEvent` command — a webhook boundary only
+  maps its provider's payload onto that command.
 
   System-side — these functions take no `%Subject{}`: the mailer is an
   internal choke point and the webhook is an unauthenticated provider
   callback (verified by shared secret in the controller). Email suppression
   is global (an address, not an account), like identity in `Emisar.Users`.
   """
-  alias Emisar.Mail.Suppression
+  alias Emisar.Mail.{DeliverabilityEvent, Suppression}
   alias Emisar.Repo
 
   @doc "Internal — true if `email` is suppressed. Called by the mailer before each send."
@@ -59,7 +63,25 @@ defmodule Emisar.Mail do
   end
 
   @doc """
-  Internal — records `email` as suppressed (from the Postmark webhook).
+  Internal — applies one deliverability report (from a provider webhook).
+
+  A bounce the provider deactivated the address for, and every spam complaint,
+  suppresses the address; a transient bounce changes nothing. Returns
+  `{:ok, :suppressed}`, `{:ok, :ignored}`, or `{:error, changeset}` when the
+  write fails.
+  """
+  def handle_deliverability_event(%DeliverabilityEvent{kind: :bounce, inactive: false}),
+    do: {:ok, :ignored}
+
+  def handle_deliverability_event(%DeliverabilityEvent{kind: :bounce} = event),
+    do: suppress_reported(event, :hard_bounce)
+
+  def handle_deliverability_event(%DeliverabilityEvent{kind: :spam_complaint} = event),
+    do: suppress_reported(event, :spam_complaint)
+
+  @doc """
+  Internal — records `email` as suppressed. The storage seam behind
+  `handle_deliverability_event/1`, and the way a manual suppression is written.
   Upserts by email: a later bounce/complaint refreshes the reason + detail
   rather than racing on the unique index. Returns `{:ok, suppression}` or
   `{:error, changeset}`.
@@ -73,4 +95,20 @@ defmodule Emisar.Mail do
       returning: true
     )
   end
+
+  defp suppress_reported(%DeliverabilityEvent{} = event, reason) do
+    case suppress(event.email, reason, detail(event)) do
+      {:ok, _suppression} -> {:ok, :suppressed}
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  defp detail(%DeliverabilityEvent{type: nil}), do: nil
+  defp detail(%DeliverabilityEvent{type: type, description: nil}), do: type
+
+  # Two diagnostics are each bounded, but together they can outgrow what
+  # `Suppression.detail` holds — bound the derived line through the command's
+  # own helper so advisory provider prose can never fail a real suppression.
+  defp detail(%DeliverabilityEvent{type: type, description: description}),
+    do: DeliverabilityEvent.bound_diagnostic("#{type}: #{description}")
 end

@@ -14,12 +14,20 @@ defmodule EmisarWeb.CachedBodyReader do
     "/webhooks/paddle" => 1024 * 1024
   }
 
-  # Bodies we bound WITHOUT caching. SCIM is unauthenticated until the controller
-  # pipeline runs, so Plug's ~8 MB default was parsed before the bearer was even
-  # looked at — the rate limiter's per-request allowance multiplied by that is a
-  # lot of bytes an anonymous caller can make us hold. The largest legitimate
-  # SCIM body is a group replace, which the domain already caps at 5,000 member
-  # ids; 2 MB clears that with room to spare.
+  # Bodies we bound WITHOUT caching — the route verifies no bytes, so retaining
+  # a copy would double the request's memory for nothing.
+  #
+  # Postmark authenticates with Basic Auth, not a body signature, and its
+  # bounce/complaint events are a few hundred bytes; 64 KiB is generous headroom
+  # for an unsigned endpoint anyone on the internet can POST to.
+  @bounded_body_limits %{"/webhooks/postmark" => 64 * 1024}
+
+  # SCIM is unauthenticated until the controller pipeline runs, so Plug's ~8 MB
+  # default was parsed before the bearer was even looked at — the rate limiter's
+  # per-request allowance multiplied by that is a lot of bytes an anonymous
+  # caller can make us hold. The largest legitimate SCIM body is a group
+  # replace, which the domain already caps at 5,000 member ids; 2 MB clears that
+  # with room to spare.
   @bounded_body_prefixes %{"/scim/v2/" => 2 * 1024 * 1024}
 
   def read_body(conn, opts) do
@@ -50,6 +58,13 @@ defmodule EmisarWeb.CachedBodyReader do
 
   defp body_limit(path) do
     case Map.get(@cached_body_limits, path) do
+      nil -> bounded_limit(path)
+      limit -> limit
+    end
+  end
+
+  defp bounded_limit(path) do
+    case Map.get(@bounded_body_limits, path) do
       nil -> prefix_limit(path)
       limit -> limit
     end

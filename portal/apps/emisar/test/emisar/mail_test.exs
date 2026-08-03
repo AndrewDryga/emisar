@@ -60,6 +60,95 @@ defmodule Emisar.MailTest do
     end
   end
 
+  describe "handle_deliverability_event/1" do
+    test "a deactivating bounce is suppressed as a hard bounce, with the reported detail" do
+      {:ok, event} =
+        Mail.DeliverabilityEvent.new(:bounce, %{
+          email: "dead@example.com",
+          inactive: true,
+          type: "HardBounce",
+          description: "no such mailbox"
+        })
+
+      assert Mail.handle_deliverability_event(event) == {:ok, :suppressed}
+
+      suppression = Repo.one(Mail.Suppression)
+      assert suppression.email == "dead@example.com"
+      assert suppression.reason == :hard_bounce
+      assert suppression.detail == "HardBounce: no such mailbox"
+    end
+
+    test "a spam complaint is suppressed as a complaint" do
+      {:ok, event} = Mail.DeliverabilityEvent.new(:spam_complaint, %{email: "angry@example.com"})
+
+      assert Mail.handle_deliverability_event(event) == {:ok, :suppressed}
+
+      suppression = Repo.one(Mail.Suppression)
+      assert suppression.reason == :spam_complaint
+      assert is_nil(suppression.detail)
+    end
+
+    test "a transient bounce is ignored and stores nothing" do
+      {:ok, event} =
+        Mail.DeliverabilityEvent.new(:bounce, %{
+          email: "slow@example.com",
+          inactive: false,
+          type: "SoftBounce"
+        })
+
+      assert Mail.handle_deliverability_event(event) == {:ok, :ignored}
+      refute Mail.suppressed?("slow@example.com")
+      refute Repo.one(Mail.Suppression)
+    end
+
+    test "a replayed bounce leaves exactly one row" do
+      {:ok, event} =
+        Mail.DeliverabilityEvent.new(:bounce, %{
+          email: "dup@example.com",
+          inactive: true,
+          type: "HardBounce"
+        })
+
+      assert Mail.handle_deliverability_event(event) == {:ok, :suppressed}
+      assert Mail.handle_deliverability_event(event) == {:ok, :suppressed}
+
+      # Repo.one raises on a second row — the upsert refreshed the same one.
+      assert Repo.one(Mail.Suppression).email == "dup@example.com"
+    end
+
+    test "an over-long description is trimmed to fit, and still suppresses" do
+      {:ok, event} =
+        Mail.DeliverabilityEvent.new(:bounce, %{
+          email: "verbose@example.com",
+          inactive: true,
+          type: "HardBounce",
+          description: String.duplicate("x", 5_000)
+        })
+
+      assert Mail.handle_deliverability_event(event) == {:ok, :suppressed}
+      assert length(String.to_charlist(Repo.one(Mail.Suppression).detail)) == 1_000
+    end
+
+    # The derived "type: description" line is bounded by the same code-point
+    # helper the command uses, so combining marks — which fold into a single
+    # grapheme — cannot walk past the detail bound on the way out.
+    test "a combining-mark description cannot outgrow the derived detail" do
+      {:ok, event} =
+        Mail.DeliverabilityEvent.new(:bounce, %{
+          email: "marks@example.com",
+          inactive: true,
+          type: "HardBounce",
+          description: "a" <> String.duplicate("\u0301", 3_000)
+        })
+
+      assert Mail.handle_deliverability_event(event) == {:ok, :suppressed}
+
+      detail = Repo.one(Mail.Suppression).detail
+      assert String.length(detail) < 1_000
+      assert length(String.to_charlist(detail)) == 1_000
+    end
+  end
+
   describe "suppress/3" do
     test "records a suppression and returns it" do
       assert {:ok, suppression} = Mail.suppress("new@example.com", :hard_bounce, "HardBounce")

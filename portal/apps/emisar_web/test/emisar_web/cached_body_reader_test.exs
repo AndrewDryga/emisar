@@ -31,6 +31,22 @@ defmodule EmisarWeb.CachedBodyReaderTest do
     refute Map.has_key?(conn.assigns, :raw_body)
   end
 
+  test "reads a Postmark body at exactly 64 KiB without caching it" do
+    body = String.duplicate("x", 64 * 1024)
+    conn = build_conn(:post, "/webhooks/postmark", body)
+
+    assert {:ok, ^body, conn} = CachedBodyReader.read_body(conn, [])
+    refute Map.has_key?(conn.assigns, :raw_body)
+  end
+
+  test "refuses a Postmark body above 64 KiB" do
+    body = String.duplicate("x", 64 * 1024 + 1)
+    conn = build_conn(:post, "/webhooks/postmark", body)
+
+    assert {:more, _partial, conn} = CachedBodyReader.read_body(conn, [])
+    refute Map.has_key?(conn.assigns, :raw_body)
+  end
+
   test "does not cache bodies for other routes" do
     conn = build_conn(:post, "/api/other", "{}")
 
