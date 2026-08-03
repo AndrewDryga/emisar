@@ -164,8 +164,9 @@ func TestDispatch_MaxLengthIsBytes(t *testing.T) {
 // (the break-glass action's sole arg). is the same row for that
 // action specifically.
 //
-// Also `script` is bounded by max_length: 65536: a value
-// at exactly 64 KiB passes, +1 byte is rejected.
+// Also `script` is bounded by max_length: 5459 so the worst-case JSON-escaped
+// argument map fits the shared 32 KiB control-plane envelope: the exact limit
+// passes and one byte more is rejected.
 func TestDispatch_ShellRunScript_RequiredAndMaxLength(t *testing.T) {
 	reg := loadRealLibrary(t)
 	const id = "shell.run_script"
@@ -175,9 +176,9 @@ func TestDispatch_ShellRunScript_RequiredAndMaxLength(t *testing.T) {
 	// A present value passes.
 	accepted(t, dispatchValidate(t, reg, id, map[string]any{"script": "uptime"}))
 
-	// max_length: 65536 boundary.
-	at := strings.Repeat("x", 65536)
-	over := strings.Repeat("x", 65537)
+	// max_length: 5459 boundary.
+	at := strings.Repeat("x", 5459)
+	over := strings.Repeat("x", 5460)
 	accepted(t, dispatchValidate(t, reg, id, map[string]any{"script": at}))
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"script": over}), "script", "max_length")
 }
