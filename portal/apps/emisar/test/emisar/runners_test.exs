@@ -1726,28 +1726,6 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "audit_runner_error/4" do
-    test "records a runner.error audit row carrying the reported payload" do
-      runner = Fixtures.Runners.create_runner(connected?: false)
-      payload = %{"code" => "boom", "detail" => "pack crashed"}
-
-      assert {:ok, event} =
-               Runners.audit_runner_error(
-                 runner.account_id,
-                 runner.id,
-                 payload,
-                 %RequestContext{}
-               )
-
-      event = Repo.reload!(event)
-      assert event.event_type == "runner.error"
-      assert event.account_id == runner.account_id
-      assert event.target_id == runner.id
-      assert event.payload["code"] == "boom"
-      assert event.payload["detail"] == "pack crashed"
-    end
-  end
-
   describe "online?/2" do
     test "true while a socket is tracked, false once untracked" do
       account = Fixtures.Accounts.create_account()

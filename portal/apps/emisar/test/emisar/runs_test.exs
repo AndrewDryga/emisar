@@ -4097,8 +4097,8 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "handle_runner_error/3" do
-    test "returns a cap-refused dispatch to pending and redelivers it after a slot opens" do
+  describe "handle_runner_error/1" do
+    test "requeues a cap-refused dispatch, audits it, and redelivers it after a slot opens" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       Runners.subscribe_runner_transport(runner)
@@ -4112,15 +4112,27 @@ defmodule Emisar.RunsTest do
 
       sent = Runs.peek_run_by_id(run.id)
 
-      assert {:ok, %ActionRun{status: :pending, sent_at: nil} = pending} =
-               Runs.handle_runner_error(account.id, runner.id, %{
-                 "code" => "concurrency_cap_reached",
-                 "request_id" => run.request_id
-               })
+      command =
+        Runs.RunnerError.new(
+          account.id,
+          runner.id,
+          %{code: "concurrency_cap_reached", request_id: run.request_id},
+          %RequestContext{}
+        )
 
+      assert {:ok, :requeued} = Runs.handle_runner_error(command)
+
+      pending = Runs.peek_run_by_id(run.id)
+      assert pending.status == :pending
+      assert pending.sent_at == nil
       assert pending.runner_connection_generation == nil
       assert DateTime.compare(pending.queued_at, sent.queued_at) == :gt
-      refute ActionRun.terminal?(pending.status)
+
+      event = Repo.one(Audit.Event)
+      assert event.event_type == "runner.error"
+      assert event.target_id == runner.id
+      assert event.payload["code"] == "concurrency_cap_reached"
+      assert event.payload["request_id"] == run.request_id
 
       assert :ok = Runs.dispatch_queued_for_runner(runner.id)
       assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}, 500
@@ -4128,10 +4140,38 @@ defmodule Emisar.RunsTest do
       redelivered = Runs.peek_run_by_id(run.id)
       assert redelivered.status == :sent
       assert DateTime.compare(redelivered.sent_at, sent.sent_at) == :gt
-      refute redelivered.status == :error
     end
 
-    test "does not correlate a cap refusal outside the runner's account" do
+    test "audits an unrelated code, or a cap error with no correlation, and nothing else" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.dispatch_to_runner(run)
+
+      unrelated =
+        Runs.RunnerError.new(
+          account.id,
+          runner.id,
+          %{code: "exec_failed", message: "binary not found", request_id: run.request_id},
+          %RequestContext{}
+        )
+
+      uncorrelated =
+        Runs.RunnerError.new(
+          account.id,
+          runner.id,
+          %{code: "concurrency_cap_reached"},
+          %RequestContext{}
+        )
+
+      assert {:ok, :not_applicable} = Runs.handle_runner_error(unrelated)
+      assert {:ok, :not_applicable} = Runs.handle_runner_error(uncorrelated)
+
+      assert Runs.peek_run_by_id(run.id).status == :sent
+      assert length(Repo.all(Audit.Event)) == 2
+    end
+
+    test "does not correlate a cap refusal outside the runner's account, but still audits" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       other_account = Fixtures.Accounts.create_account()
@@ -4139,12 +4179,138 @@ defmodule Emisar.RunsTest do
 
       assert :ok = Runs.dispatch_to_runner(run)
 
-      assert {:error, :unknown_request_id} =
-               Runs.handle_runner_error(other_account.id, runner.id, %{
-                 "code" => "concurrency_cap_reached",
-                 "request_id" => run.request_id
-               })
+      command =
+        Runs.RunnerError.new(
+          other_account.id,
+          runner.id,
+          %{code: "concurrency_cap_reached", request_id: run.request_id},
+          %RequestContext{}
+        )
 
+      assert {:ok, :request_not_found} = Runs.handle_runner_error(command)
+
+      assert Runs.peek_run_by_id(run.id).status == :sent
+
+      event = Repo.one(Audit.Event)
+      assert event.account_id == other_account.id
+      assert event.event_type == "runner.error"
+    end
+
+    test "does not correlate another runner's request in the same account, but still audits" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      peer = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.dispatch_to_runner(run)
+
+      command =
+        Runs.RunnerError.new(
+          account.id,
+          peer.id,
+          %{code: "concurrency_cap_reached", request_id: run.request_id},
+          %RequestContext{}
+        )
+
+      assert {:ok, :request_not_found} = Runs.handle_runner_error(command)
+
+      assert Runs.peek_run_by_id(run.id).status == :sent
+
+      event = Repo.one(Audit.Event)
+      assert event.account_id == account.id
+      assert event.target_id == peer.id
+    end
+
+    test "is idempotent for a duplicate cap error once the run is pending" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.dispatch_to_runner(run)
+
+      command =
+        Runs.RunnerError.new(
+          account.id,
+          runner.id,
+          %{code: "concurrency_cap_reached", request_id: run.request_id},
+          %RequestContext{}
+        )
+
+      assert {:ok, :requeued} = Runs.handle_runner_error(command)
+      requeued = Runs.peek_run_by_id(run.id)
+
+      assert {:ok, :already_pending} = Runs.handle_runner_error(command)
+
+      duplicate = Runs.peek_run_by_id(run.id)
+      assert duplicate.status == :pending
+      assert duplicate.queued_at == requeued.queued_at
+      assert length(Repo.all(Audit.Event)) == 2
+    end
+
+    test "reports the status of a run that is no longer dispatchable" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.dispatch_to_runner(run)
+
+      {:ok, _running} =
+        Runs.mark_started_from_connection(
+          account.id,
+          runner.id,
+          runner.connection_generation,
+          runner.connection_lease_id,
+          run.request_id
+        )
+
+      command =
+        Runs.RunnerError.new(
+          account.id,
+          runner.id,
+          %{code: "concurrency_cap_reached", request_id: run.request_id},
+          %RequestContext{}
+        )
+
+      assert {:ok, {:not_dispatchable, :running}} = Runs.handle_runner_error(command)
+
+      assert Runs.peek_run_by_id(run.id).status == :running
+      assert Repo.one(Audit.Event).event_type == "runner.error"
+    end
+
+    test "bounds the runner-controlled code and message it stores" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      command =
+        Runs.RunnerError.new(
+          account.id,
+          runner.id,
+          %{code: String.duplicate("c", 500), message: String.duplicate("m", 5_000)},
+          %RequestContext{}
+        )
+
+      assert {:ok, :not_applicable} = Runs.handle_runner_error(command)
+
+      event = Repo.one(Audit.Event)
+      assert String.length(event.payload["code"]) == 100
+      assert String.length(event.payload["message"]) == 500
+    end
+
+    test "returns the error and persists nothing when the audit row cannot be written" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      assert :ok = Runs.dispatch_to_runner(run)
+
+      command =
+        Runs.RunnerError.new(
+          account.id,
+          "not-a-runner-id",
+          %{code: "exec_failed"},
+          %RequestContext{}
+        )
+
+      assert {:error, changeset} = Runs.handle_runner_error(command)
+      assert "is invalid" in errors_on(changeset).target_id
+
+      refute Repo.one(Audit.Event)
       assert Runs.peek_run_by_id(run.id).status == :sent
     end
   end

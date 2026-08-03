@@ -70,7 +70,7 @@ defmodule Emisar.Audit do
   hand-assembles them). Use an `Audit.Events.<event>` builder inside a
   `Multi.insert(:audit, …)` when the row must commit with a parent mutation;
   use this only for standalone socket/presence events that have no transaction
-  to join (runner connect/disconnect/error). Like `log/3`, it does not
+  to join (runner connect/disconnect). Like `log/3`, it does not
   broadcast — presence already drives the live runner UI.
   """
   def record(%Ecto.Changeset{} = event_changeset), do: Repo.insert(event_changeset)

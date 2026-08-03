@@ -1100,10 +1100,6 @@ defmodule Emisar.Runners do
     end
   end
 
-  @doc "Internal — runner socket: audit an error envelope reported by the runner."
-  def audit_runner_error(account_id, runner_id, %{} = payload, %RequestContext{} = context),
-    do: Audit.record(Audit.Events.runner_error(account_id, runner_id, payload, context))
-
   # -- Connection state reads (Phoenix.Presence) -----------------------
 
   @doc "True when the runner currently has a live socket tracked in presence."

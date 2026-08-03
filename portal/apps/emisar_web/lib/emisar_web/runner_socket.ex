@@ -431,22 +431,32 @@ defmodule EmisarWeb.RunnerSocket do
   end
 
   defp handle_envelope("error", msg, state) do
-    Runners.audit_runner_error(
-      state.account_id,
-      state.runner_id,
-      %{code: msg["code"], message: msg["message"], request_id: msg["request_id"]},
-      state.request_context
-    )
+    runner_error =
+      Runs.RunnerError.new(
+        state.account_id,
+        state.runner_id,
+        %{code: msg["code"], message: msg["message"], request_id: msg["request_id"]},
+        state.request_context
+      )
 
-    _ = Runs.handle_runner_error(state.account_id, state.runner_id, msg)
+    case Runs.handle_runner_error(runner_error) do
+      {:ok, _outcome} ->
+        {:ok, state}
 
-    {:ok, state}
+      {:error, reason} ->
+        failure = runner_error_failure(reason)
+        Logger.error("handle_runner_error failed for #{state.runner_id}: #{failure}")
+        {:stop, {:runner_error_persist_failed, failure}, state}
+    end
   end
 
   defp handle_envelope(type, _msg, state) do
     Logger.debug("runner_socket unknown envelope type #{type}")
     {:ok, state}
   end
+
+  defp runner_error_failure(%Ecto.Changeset{}), do: :invalid_audit_event
+  defp runner_error_failure(_reason), do: :persistence_error
 
   defp valid_envelope_request_id?(type, msg)
        when type in @required_request_id_message_types,

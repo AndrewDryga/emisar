@@ -19,7 +19,7 @@ defmodule Emisar.Runs do
   alias Emisar.MCPOperations
   alias Emisar.Repo
   alias Emisar.RequestContext
-  alias Emisar.Runs.{ActionRun, Attestation, Authorizer, RunEvent}
+  alias Emisar.Runs.{ActionRun, Attestation, Authorizer, RunEvent, RunnerError}
   alias Emisar.Users
   require Logger
 
@@ -614,50 +614,88 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Internal — runner socket: return a dispatch refused at the runner's
-  concurrency cap to the pending queue. The runner checks its active-run
-  count before spawning a handler, so this refusal proves the action never
-  started. The runner and account filters keep the request correlation inside
-  the authenticated socket's scope.
+  Internal — runner socket: record one runner-reported error envelope and apply
+  its dispatch consequence in a single transaction.
 
-  Duplicate cap errors are idempotent once the run is pending; a result or a
-  terminal transition that won the race is left authoritative.
+  A dispatch refused at the runner's concurrency cap returns to the pending
+  queue: the runner checks its active-run count before spawning a handler, so
+  the refusal proves the action never started. The account and runner filters
+  keep the request correlation inside the authenticated socket's scope, and a
+  duplicate cap error is idempotent once the run is pending — a result or a
+  terminal transition that won the race stays authoritative.
+
+  The `runner.error` audit row carries the bounded diagnostics and commits with
+  the requeue, so an envelope naming an unknown, foreign, or already-settled
+  request still leaves its trail.
+
+  Returns `{:ok, :requeued | :already_pending | {:not_dispatchable, status} |
+  :request_not_found | :not_applicable}`, or `{:error, reason}` when nothing was
+  persisted.
   """
-  def handle_runner_error(
-        account_id,
-        runner_id,
-        %{
-          "code" => "concurrency_cap_reached",
-          "request_id" => request_id
-        }
-      )
-      when is_binary(account_id) and is_binary(runner_id) and is_binary(request_id) do
-    queryable =
-      ActionRun.Query.all()
-      |> ActionRun.Query.by_account_id(account_id)
-      |> ActionRun.Query.by_runner_id(runner_id)
-      |> ActionRun.Query.by_request_id(request_id)
-
-    case Repo.fetch(queryable, ActionRun.Query) do
-      {:error, :not_found} ->
-        {:error, :unknown_request_id}
-
-      {:ok, %ActionRun{status: :pending} = run} ->
-        {:ok, run}
-
-      {:ok, %ActionRun{status: :sent} = run} ->
-        transition_from(run, :sent, :pending, %{
-          queued_at: DateTime.utc_now(),
-          sent_at: nil,
-          runner_connection_generation: nil
-        })
-
-      {:ok, %ActionRun{} = run} ->
-        {:error, {:not_dispatchable, run.status}}
+  def handle_runner_error(%RunnerError{} = runner_error) do
+    Multi.new()
+    |> Multi.run(:run, fn repo, _changes -> apply_runner_error(repo, runner_error) end)
+    |> Multi.insert(:audit, fn _changes -> runner_error_audit_event(runner_error) end)
+    |> Repo.commit_multi(
+      after_commit: fn
+        %{run: {:requeued, run}} -> after_run_committed(run)
+        %{run: _outcome} -> :ok
+      end
+    )
+    |> case do
+      {:ok, %{run: {:requeued, _run}}} -> {:ok, :requeued}
+      {:ok, %{run: outcome}} -> {:ok, outcome}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  def handle_runner_error(_account_id, _runner_id, _payload), do: :ok
+  defp apply_runner_error(
+         repo,
+         %RunnerError{code: "concurrency_cap_reached", request_id: request_id} = runner_error
+       )
+       when is_binary(request_id) do
+    queryable =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_account_id(runner_error.account_id)
+      |> ActionRun.Query.by_runner_id(runner_error.runner_id)
+      |> ActionRun.Query.by_request_id(request_id)
+      |> ActionRun.Query.lock_for_update()
+
+    case repo.fetch(queryable, ActionRun.Query) do
+      # The audit fact stands on its own — an envelope we cannot correlate
+      # must not abort the row that records it.
+      {:error, :not_found} -> {:ok, :request_not_found}
+      {:ok, %ActionRun{status: :pending}} -> {:ok, :already_pending}
+      {:ok, %ActionRun{status: :sent} = run} -> requeue_cap_refused_run(repo, run)
+      {:ok, %ActionRun{} = run} -> {:ok, {:not_dispatchable, run.status}}
+    end
+  end
+
+  defp apply_runner_error(_repo, %RunnerError{}), do: {:ok, :not_applicable}
+
+  defp requeue_cap_refused_run(repo, %ActionRun{} = run) do
+    changeset =
+      ActionRun.Changeset.transition(run, :pending, %{
+        queued_at: DateTime.utc_now(),
+        sent_at: nil,
+        runner_connection_generation: nil
+      })
+
+    with {:ok, requeued} <- repo.update(changeset), do: {:ok, {:requeued, requeued}}
+  end
+
+  defp runner_error_audit_event(%RunnerError{} = runner_error) do
+    Audit.Events.runner_error(
+      runner_error.account_id,
+      runner_error.runner_id,
+      %{
+        code: runner_error.code,
+        message: runner_error.message,
+        request_id: runner_error.request_id
+      },
+      runner_error.context
+    )
+  end
 
   # -- Creation ---------------------------------------------------------
 

@@ -874,6 +874,43 @@ defmodule EmisarWeb.RunnerSocketTest do
                runner_connection_generation: nil
              } = Repo.get!(ActionRun, run.id)
     end
+
+    test "a refusal the cloud cannot correlate keeps the socket and the run", %{
+      state: state,
+      run: run
+    } do
+      unknown =
+        runner_frame(%{
+          "type" => "error",
+          "code" => "concurrency_cap_reached",
+          "request_id" => Emisar.Crypto.run_request_id()
+        })
+
+      uncorrelated = runner_frame(%{"type" => "error", "code" => "concurrency_cap_reached"})
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({unknown, text()}, state)
+      assert {:ok, ^state} = RunnerSocket.handle_in({uncorrelated, text()}, state)
+
+      assert Repo.get!(ActionRun, run.id).status == :sent
+    end
+
+    test "a duplicate refusal leaves the requeued run pending", %{state: state, run: run} do
+      raw =
+        runner_frame(%{
+          "type" => "error",
+          "code" => "concurrency_cap_reached",
+          "request_id" => run.request_id
+        })
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      requeued = Repo.get!(ActionRun, run.id)
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      duplicate = Repo.get!(ActionRun, run.id)
+      assert duplicate.status == :pending
+      assert duplicate.queued_at == requeued.queued_at
+    end
   end
 
   describe "handle_in/2 — action_started" do
