@@ -1745,6 +1745,223 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "cast_form_inputs/2" do
+    test "applies a declared default to both the typed and the rendered values" do
+      definition =
+        definition_with_inputs([input("window", type: "integer", extra: %{"default" => 30})])
+
+      assert {:ok, %{values: values, form_values: form_values}} =
+               Runbooks.cast_form_inputs(definition, %{})
+
+      assert values == %{"window" => 30}
+      assert form_values == %{"window" => "30"}
+    end
+
+    test "omits a blank optional input while the form keeps what was supplied" do
+      definition = definition_with_inputs([input("note", required: false)])
+
+      assert {:ok, %{values: values, form_values: form_values}} =
+               Runbooks.cast_form_inputs(definition, %{"note" => ""})
+
+      assert values == %{}
+      assert form_values == %{"note" => ""}
+    end
+
+    test "names a missing required input at its own path and field" do
+      definition = definition_with_inputs([input("token")])
+
+      assert {:error, %{issues: issues, field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"token" => ""})
+
+      assert issues == [
+               %{
+                 code: "invalid_input",
+                 path: "/input_values/token",
+                 message: "Required input is missing."
+               }
+             ]
+
+      assert field_errors == %{"token" => "Required input is missing."}
+    end
+
+    test "casts an integer only from a fully consumed string" do
+      definition = definition_with_inputs([input("window", type: "integer")])
+
+      assert {:ok, %{values: %{"window" => 30}}} =
+               Runbooks.cast_form_inputs(definition, %{"window" => "30"})
+
+      assert {:error, %{field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"window" => "30 seconds"})
+
+      assert field_errors == %{"window" => "Enter a whole number."}
+    end
+
+    test "casts a number only from a fully consumed string" do
+      definition = definition_with_inputs([input("ratio", type: "number")])
+
+      assert {:ok, %{values: %{"ratio" => 1.5}}} =
+               Runbooks.cast_form_inputs(definition, %{"ratio" => "1.5"})
+
+      assert {:error, %{field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"ratio" => "1.5x"})
+
+      assert field_errors == %{"ratio" => "Enter a number."}
+    end
+
+    test "rejects a magnitude no float can hold" do
+      definition = definition_with_inputs([input("ratio", type: "number")])
+
+      assert {:error, %{field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"ratio" => "1e400"})
+
+      assert field_errors == %{"ratio" => "Enter a number."}
+    end
+
+    test "an unreadable value never falls back to the declared default" do
+      definition =
+        definition_with_inputs([input("window", type: "integer", extra: %{"default" => 30})])
+
+      assert {:error, %{field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"window" => "soon"})
+
+      assert field_errors == %{"window" => "Enter a whole number."}
+    end
+
+    test "casts a boolean from the two options the control renders" do
+      definition = definition_with_inputs([input("verbose", type: "boolean")])
+
+      assert {:ok, %{values: %{"verbose" => true}}} =
+               Runbooks.cast_form_inputs(definition, %{"verbose" => "true"})
+
+      assert {:ok, %{values: %{"verbose" => false}}} =
+               Runbooks.cast_form_inputs(definition, %{"verbose" => "false"})
+
+      assert {:error, %{field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"verbose" => "yes"})
+
+      assert field_errors == %{"verbose" => "Choose true or false."}
+    end
+
+    test "casts an enum from its declared members only" do
+      definition =
+        definition_with_inputs([
+          input("mode", type: "enum", extra: %{"enum" => ["fast", "safe"]})
+        ])
+
+      assert {:ok, %{values: %{"mode" => "safe"}}} =
+               Runbooks.cast_form_inputs(definition, %{"mode" => "safe"})
+
+      assert {:error, %{field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"mode" => "reckless"})
+
+      assert field_errors == %{"mode" => "Choose an allowed value."}
+    end
+
+    test "carries a sensitive value into the typed values and never into an error" do
+      definition =
+        definition_with_inputs([
+          input("token", sensitive: true),
+          input("window", type: "integer")
+        ])
+
+      assert {:ok, %{values: values}} =
+               Runbooks.cast_form_inputs(definition, %{"token" => "s3cr3t", "window" => "30"})
+
+      assert values == %{"token" => "s3cr3t", "window" => 30}
+
+      assert {:error, %{issues: issues, field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"token" => "s3cr3t", "window" => "soon"})
+
+      assert field_errors == %{"window" => "Enter a whole number."}
+      refute inspect({issues, field_errors}) =~ "s3cr3t"
+    end
+
+    test "rejects an undeclared key and leaves it out of the rendered values" do
+      definition = definition_with_inputs([input("note", required: false)])
+      supplied = %{"note" => "checked", "sneaky" => "x"}
+
+      assert {:error, %{issues: issues, field_errors: field_errors, form_values: form_values}} =
+               Runbooks.cast_form_inputs(definition, supplied)
+
+      assert issues == [
+               %{
+                 code: "invalid_input",
+                 path: "/input_values/sneaky",
+                 message: "Input is not declared by this runbook."
+               }
+             ]
+
+      assert field_errors == %{}
+      assert form_values == %{"note" => "checked"}
+    end
+
+    test "rejects a non-object form without raising" do
+      definition = definition_with_inputs([input("window", type: "integer")])
+
+      assert {:error, %{issues: issues, field_errors: %{}, form_values: form_values}} =
+               Runbooks.cast_form_inputs(definition, "not-an-object")
+
+      assert issues == [
+               %{
+                 code: "invalid_input",
+                 path: "/input_values",
+                 message: "Input values must be an object."
+               }
+             ]
+
+      assert form_values == %{"window" => nil}
+    end
+
+    test "keeps nested hostile values out of the rendered form" do
+      definition = definition_with_inputs([input("window", type: "integer")])
+
+      assert {:error, %{field_errors: field_errors, form_values: form_values}} =
+               Runbooks.cast_form_inputs(definition, %{"window" => %{"nested" => "value"}})
+
+      assert field_errors == %{
+               "window" => "Input does not satisfy its declared type and constraints."
+             }
+
+      assert form_values == %{"window" => nil}
+    end
+
+    test "inherits the compiler's declared constraints" do
+      definition = definition_with_inputs([input("name", extra: %{"min_length" => 4})])
+
+      assert {:error, %{field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"name" => "ab"})
+
+      assert field_errors == %{
+               "name" => "Input does not satisfy its declared type and constraints."
+             }
+    end
+
+    test "reports an invalid definition with no field errors or rendered values" do
+      assert {:error, %{issues: [issue | _], field_errors: %{}, form_values: %{}}} =
+               Runbooks.cast_form_inputs(%{"schema_version" => 1}, %{})
+
+      assert issue.code == "invalid_definition"
+    end
+
+    test "orders issues by path and addresses each failing field" do
+      definition =
+        definition_with_inputs([
+          input("beta", type: "integer"),
+          input("alpha", type: "integer")
+        ])
+
+      assert {:error, %{issues: issues, field_errors: field_errors}} =
+               Runbooks.cast_form_inputs(definition, %{"beta" => "b", "alpha" => "a"})
+
+      assert Enum.map(issues, & &1.path) == ["/input_values/alpha", "/input_values/beta"]
+
+      assert field_errors == %{
+               "alpha" => "Enter a whole number.",
+               "beta" => "Enter a whole number."
+             }
+    end
+  end
+
   describe "editor_projection/1" do
     test "projects the online fleet and the trusted actions it can execute" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -2205,6 +2422,21 @@ defmodule Emisar.RunbooksTest do
     |> put_in(
       ["stages", Access.at(0), "steps", Access.at(0), "args"],
       %{"seconds" => %{"source" => "input", "ref" => "seconds"}}
+    )
+  end
+
+  defp definition_with_inputs(inputs), do: Map.put(definition(), "inputs", inputs)
+
+  defp input(id, opts \\ []) do
+    Map.merge(
+      %{
+        "id" => id,
+        "description" => "A run-time value",
+        "type" => Keyword.get(opts, :type, "string"),
+        "required" => Keyword.get(opts, :required, true),
+        "sensitive" => Keyword.get(opts, :sensitive, false)
+      },
+      Keyword.get(opts, :extra, %{})
     )
   end
 

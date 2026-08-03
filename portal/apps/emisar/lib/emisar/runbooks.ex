@@ -997,6 +997,18 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  @doc """
+  Casts one browser form's raw input strings against a canonical definition.
+
+  Pure — it reads no rows and needs no `%Subject{}`; the returned typed values
+  are exactly what `dispatch_runbook/4` and `resolve_plan/4` compile. Returns
+  `{:ok, %{values: typed_values, form_values: form_values}}` or
+  `{:error, %{issues: issues, field_errors: %{input_id => message},
+  form_values: form_values}}`.
+  """
+  def cast_form_inputs(definition, form_input),
+    do: Compiler.cast_form_inputs(definition, form_input)
+
   @doc "Returns a fresh server-side seed for one stable preflight and dispatch pair."
   def new_target_selection_seed, do: Crypto.random_secret()
 

@@ -2,7 +2,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   use EmisarWeb.ConnCase, async: true
   import EmisarWeb.MCPContractAssertions
   alias Emisar.{Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
-  alias Emisar.Runbooks.RunbookExecution
+  alias Emisar.Runbooks.{ExecutionItem, RunbookExecution}
   alias EmisarWeb.MCP.RunbookTools
 
   @hash "sha256:" <> String.duplicate("c", 64)
@@ -88,19 +88,33 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         end
 
     inputs =
-      if Keyword.get(opts, :sensitive_input, false) do
-        [
-          %{
-            "id" => "token",
-            "description" => "One-time incident token",
-            "type" => "string",
-            "required" => true,
-            "sensitive" => true,
-            "min_length" => 4
-          }
-        ]
-      else
-        []
+      cond do
+        Keyword.get(opts, :sensitive_input, false) ->
+          [
+            %{
+              "id" => "token",
+              "description" => "One-time incident token",
+              "type" => "string",
+              "required" => true,
+              "sensitive" => true,
+              "min_length" => 4
+            }
+          ]
+
+        Keyword.get(opts, :typed_input, false) ->
+          [
+            %{
+              "id" => "window",
+              "description" => "Observation window in seconds",
+              "type" => "integer",
+              "required" => true,
+              "sensitive" => false,
+              "default" => 30
+            }
+          ]
+
+        true ->
+          []
       end
 
     title = "Fleet recovery #{System.unique_integer([:positive])}"
@@ -133,9 +147,16 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
   defp step(id, group, opts) do
     bindings =
-      if Keyword.get(opts, :sensitive_input, false),
-        do: %{"token" => %{"source" => "input", "ref" => "token"}},
-        else: %{}
+      cond do
+        Keyword.get(opts, :sensitive_input, false) ->
+          %{"token" => %{"source" => "input", "ref" => "token"}}
+
+        Keyword.get(opts, :typed_input, false) ->
+          %{"window" => %{"source" => "input", "ref" => "window"}}
+
+        true ->
+          %{}
+      end
 
     outputs =
       if Keyword.get(opts, :extract_ready, false) do
@@ -312,6 +333,72 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                lv,
                "#runbook-run-form[phx-submit=start] button[type=submit]:not([disabled])"
              )
+    end
+
+    test "browser strings freeze as typed values and a bad one names its own field", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      args = [
+        %{
+          "name" => "window",
+          "type" => "integer",
+          "required" => true,
+          "sensitive" => false
+        }
+      ]
+
+      runner = trusted_runner(account, subject, args: args)
+      runbook = published_runbook(subject, runner, typed_input: true)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+      assert html =~ ~s(value="30")
+
+      render_change(lv, "run_form_changed", %{
+        "_target" => ["inputs", "window"],
+        "reason" => "Investigate incident INC-42",
+        "inputs" => %{"window" => "45 seconds"}
+      })
+
+      send(lv.pid, {:run_preflight, 2})
+      html = render(lv)
+      assert html =~ "Enter a whole number."
+      assert has_element?(lv, "#start-runbook-button[disabled]")
+
+      render_change(lv, "run_form_changed", %{
+        "_target" => ["inputs", "window"],
+        "reason" => "Investigate incident INC-42",
+        "inputs" => %{"window" => "45"}
+      })
+
+      send(lv.pid, {:run_preflight, 3})
+      refute render(lv) =~ "Enter a whole number."
+
+      render_click(lv, "start", %{})
+
+      assert Jason.decode!(Repo.one!(ExecutionItem).args_raw) == %{"window" => 45}
+    end
+
+    test "a hostile non-object input payload returns a bounded form error", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      render_change(lv, "run_form_changed", %{
+        "_target" => ["inputs"],
+        "reason" => "Investigate incident INC-42",
+        "inputs" => "not-an-object"
+      })
+
+      html = render(lv)
+
+      assert html =~ "Input values must be an object."
+      assert has_element?(lv, "#start-runbook-button[disabled]")
     end
 
     test "untouched required inputs stay neutral until touched or submitted", %{

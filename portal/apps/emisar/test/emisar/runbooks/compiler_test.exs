@@ -264,6 +264,34 @@ defmodule Emisar.Runbooks.CompilerTest do
     assert issue.path == "/stages/0/steps/0/pack"
   end
 
+  test "browser strings freeze the same inputs as the typed values a model supplies", %{
+    account: account,
+    subject: subject
+  } do
+    runner = trusted_runner(account, subject, args: [arg("note", "string", [])])
+
+    definition =
+      definition(runner.group,
+        inputs: [
+          input("note", type: "string"),
+          input("window", type: "integer"),
+          input("verbose", type: "boolean")
+        ],
+        args: %{"note" => %{"source" => "input", "ref" => "note"}}
+      )
+
+    form = %{"note" => "check", "window" => "30", "verbose" => "true"}
+    typed = %{"note" => "check", "window" => 30, "verbose" => true}
+
+    assert {:ok, %{values: values}} = Compiler.cast_form_inputs(definition, form)
+    assert values == typed
+
+    assert {:ok, from_form} = compile(definition, values, subject)
+    assert {:ok, from_typed} = compile(definition, typed, subject)
+    assert from_form.inputs_raw == from_typed.inputs_raw
+    assert from_form.plan == from_typed.plan
+  end
+
   defp trusted_runner(account, subject, opts \\ []) do
     version = Keyword.get(opts, :version, "1.4.2")
     hash = Keyword.get(opts, :hash, @pack_hash)

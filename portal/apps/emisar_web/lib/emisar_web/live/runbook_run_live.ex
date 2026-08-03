@@ -124,12 +124,15 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   def handle_event("run_form_changed", params, socket) do
-    {:noreply,
-     socket
-     |> mark_input_touched(params)
-     |> assign(:reason, params["reason"] || "")
-     |> assign(:input_raw, params["inputs"] || %{})
-     |> schedule_preflight()}
+    form_result =
+      Runbooks.cast_form_inputs(socket.assigns.runbook.definition, params["inputs"] || %{})
+
+    socket =
+      socket
+      |> mark_input_touched(params)
+      |> assign(:reason, params["reason"] || "")
+
+    {:noreply, apply_form_result(socket, form_result)}
   end
 
   def handle_event("start", _params, socket) do
@@ -190,68 +193,72 @@ defmodule EmisarWeb.RunbookRunLive do
   defp start_execution(socket) do
     socket = touch_all_inputs(socket)
 
-    {input_values, input_errors} =
-      parse_input_values(socket.assigns.runbook.definition, socket.assigns.input_raw)
+    case Runbooks.cast_form_inputs(socket.assigns.runbook.definition, socket.assigns.input_raw) do
+      {:ok, %{values: input_values}} ->
+        socket
+        |> assign(:input_errors, %{})
+        |> start_with_reason(input_values)
 
-    cond do
-      input_errors != %{} ->
+      {:error, %{field_errors: field_errors}} ->
         {:noreply,
          socket
-         |> assign(:input_errors, input_errors)
+         |> assign(:input_errors, field_errors)
          |> put_flash(:error, "Fix the input values before starting.")}
+    end
+  end
 
-      String.trim(socket.assigns.reason) == "" ->
-        {:noreply, put_flash(socket, :error, "Add a reason before starting.")}
+  defp start_with_reason(socket, input_values) do
+    if String.trim(socket.assigns.reason) == "" do
+      {:noreply, put_flash(socket, :error, "Add a reason before starting.")}
+    else
+      dispatch_runbook(socket, input_values)
+    end
+  end
 
-      true ->
-        case Runbooks.dispatch_runbook(
-               socket.assigns.runbook,
-               socket.assigns.reason,
-               socket.assigns.current_subject,
-               input_values: input_values,
-               target_selection_seed: socket.assigns.target_selection_seed
-             ) do
-          {:ok, %{execution_id: execution_id}} ->
-            {:noreply,
-             push_patch(socket,
-               to:
-                 ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/runs/#{execution_id}"
-             )}
+  defp dispatch_runbook(socket, input_values) do
+    case Runbooks.dispatch_runbook(
+           socket.assigns.runbook,
+           socket.assigns.reason,
+           socket.assigns.current_subject,
+           input_values: input_values,
+           target_selection_seed: socket.assigns.target_selection_seed
+         ) do
+      {:ok, %{execution_id: execution_id}} ->
+        {:noreply,
+         push_patch(socket,
+           to:
+             ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/runs/#{execution_id}"
+         )}
 
-          {:error, issues} when is_list(issues) ->
-            {:noreply,
-             assign(socket, :preflight, %{
-               state: :error,
-               plan: nil,
-               issues: issues,
-               checked_at: DateTime.utc_now()
-             })}
+      {:error, issues} when is_list(issues) ->
+        {:noreply,
+         assign(socket, :preflight, %{
+           state: :error,
+           plan: nil,
+           issues: issues,
+           checked_at: DateTime.utc_now()
+         })}
 
-          {:error, :not_published} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Publish this runbook before running it.")
-             |> push_navigate(
-               to:
-                 ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/edit"
-             )}
+      {:error, :not_published} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Publish this runbook before running it.")
+         |> push_navigate(
+           to:
+             ~p"/app/#{socket.assigns.current_account}/runbooks/#{socket.assigns.runbook.id}/edit"
+         )}
 
-          {:error, :runbook_capacity_exceeded} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "This account already has 1,024 active runbook items. Wait for an execution to finish or cancel one, then try again."
-             )}
+      {:error, :runbook_capacity_exceeded} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This account already has 1,024 active runbook items. Wait for an execution to finish or cancel one, then try again."
+         )}
 
-          {:error, _reason} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "The runbook did not start. Re-run preflight and try again."
-             )}
-        end
+      {:error, _reason} ->
+        {:noreply,
+         put_flash(socket, :error, "The runbook did not start. Re-run preflight and try again.")}
     end
   end
 
@@ -281,55 +288,78 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp schedule_preflight(socket), do: socket
 
+  defp apply_form_result(socket, {:ok, %{form_values: form_values}}) do
+    socket
+    |> assign(:input_raw, form_values)
+    |> assign(:input_errors, %{})
+    |> schedule_preflight()
+  end
+
+  defp apply_form_result(
+         socket,
+         {:error, %{form_values: form_values, field_errors: field_errors, issues: issues}}
+       ) do
+    socket
+    |> assign(:input_raw, form_values)
+    |> assign(:input_errors, field_errors)
+    |> assign(:preflight_generation, socket.assigns.preflight_generation + 1)
+    |> assign(:preflight, %{
+      state: :error,
+      plan: nil,
+      issues: issues,
+      checked_at: DateTime.utc_now()
+    })
+  end
+
   defp run_preflight(socket) do
-    {input_values, input_errors} =
-      parse_input_values(socket.assigns.runbook.definition, socket.assigns.input_raw)
+    case Runbooks.cast_form_inputs(socket.assigns.runbook.definition, socket.assigns.input_raw) do
+      {:ok, %{values: input_values}} ->
+        socket
+        |> assign(:input_errors, %{})
+        |> resolve_preflight_plan(input_values)
 
-    socket = assign(socket, :input_errors, input_errors)
+      {:error, %{issues: issues, field_errors: field_errors}} ->
+        socket
+        |> assign(:input_errors, field_errors)
+        |> assign(:preflight, %{
+          state: :error,
+          plan: nil,
+          issues: issues,
+          checked_at: DateTime.utc_now()
+        })
+    end
+  end
 
-    if input_errors == %{} do
-      case Runbooks.resolve_plan(
-             socket.assigns.runbook,
-             input_values,
-             socket.assigns.target_selection_seed,
-             socket.assigns.current_subject
-           ) do
-        {:ok, %{plan: plan}} ->
-          assign(socket, :preflight, %{
-            state: :ready,
-            plan: plan,
-            issues: [],
-            checked_at: DateTime.utc_now()
-          })
+  defp resolve_preflight_plan(socket, input_values) do
+    case Runbooks.resolve_plan(
+           socket.assigns.runbook,
+           input_values,
+           socket.assigns.target_selection_seed,
+           socket.assigns.current_subject
+         ) do
+      {:ok, %{plan: plan}} ->
+        assign(socket, :preflight, %{
+          state: :ready,
+          plan: plan,
+          issues: [],
+          checked_at: DateTime.utc_now()
+        })
 
-        {:error, issues} when is_list(issues) ->
-          assign(socket, :preflight, %{
-            state: :error,
-            plan: nil,
-            issues: issues,
-            checked_at: DateTime.utc_now()
-          })
+      {:error, issues} when is_list(issues) ->
+        assign(socket, :preflight, %{
+          state: :error,
+          plan: nil,
+          issues: issues,
+          checked_at: DateTime.utc_now()
+        })
 
-        {:error, _reason} ->
-          assign(socket, :preflight, %{
-            state: :error,
-            plan: nil,
-            issues: [issue("dispatch_failed", "", "Current preflight could not be completed.")],
-            checked_at: DateTime.utc_now()
-          })
-      end
-    else
-      issues =
-        Enum.map(input_errors, fn {id, message} ->
-          issue("invalid_input", "/input_values/#{id}", message)
-        end)
-
-      assign(socket, :preflight, %{
-        state: :error,
-        plan: nil,
-        issues: issues,
-        checked_at: DateTime.utc_now()
-      })
+      {:error, _reason} ->
+        assign(socket, :preflight, %{
+          state: :error,
+          plan: nil,
+          issues: [issue("dispatch_failed", "", "Current preflight could not be completed.")],
+          checked_at: DateTime.utc_now()
+        })
     end
   end
 
@@ -459,64 +489,17 @@ defmodule EmisarWeb.RunbookRunLive do
     assign(socket, :subscribed_execution_id, nil)
   end
 
-  defp initial_input_raw(%{"inputs" => inputs}) when is_list(inputs) do
-    Map.new(inputs, fn input ->
-      value = if Map.has_key?(input, "default"), do: input_value_to_string(input["default"])
-      {input["id"], value}
-    end)
-  end
+  # The domain owns the canonical form values, so a first paint and a reset both
+  # render the declared defaults it stringifies — a blank form is not an error
+  # yet, and both branches carry those values.
+  defp initial_input_raw(definition), do: form_input_values(definition, %{})
 
-  defp initial_input_raw(_definition), do: %{}
-
-  defp parse_input_values(%{"inputs" => declarations}, raw) when is_list(declarations) do
-    Enum.reduce(declarations, {%{}, %{}}, fn declaration, {values, errors} ->
-      id = declaration["id"]
-
-      case parse_input_value(declaration, Map.get(raw, id)) do
-        {:ok, :missing} -> {values, errors}
-        {:ok, value} -> {Map.put(values, id, value), errors}
-        {:error, message} -> {values, Map.put(errors, id, message)}
-      end
-    end)
-  end
-
-  defp parse_input_values(_definition, _raw), do: {%{}, %{}}
-
-  # A blank control supplied nothing, whatever its type: an optional blank is
-  # simply omitted, and a required blank surfaces as the compiler's own
-  # missing-input issue instead of a per-type parse accusation under the field.
-  defp parse_input_value(_declaration, value) when value in [nil, ""], do: {:ok, :missing}
-
-  defp parse_input_value(%{"type" => "string"}, value), do: {:ok, value}
-
-  defp parse_input_value(%{"type" => "integer"}, value) when is_binary(value) do
-    case Integer.parse(value) do
-      {integer, ""} -> {:ok, integer}
-      _ -> {:error, "Enter a whole number."}
+  defp form_input_values(definition, form_input) do
+    case Runbooks.cast_form_inputs(definition, form_input) do
+      {:ok, %{form_values: form_values}} -> form_values
+      {:error, %{form_values: form_values}} -> form_values
     end
   end
-
-  defp parse_input_value(%{"type" => "number"}, value) when is_binary(value) do
-    case Float.parse(value) do
-      {number, ""} -> {:ok, number}
-      _ -> {:error, "Enter a number."}
-    end
-  end
-
-  defp parse_input_value(%{"type" => "boolean"}, "true"), do: {:ok, true}
-  defp parse_input_value(%{"type" => "boolean"}, "false"), do: {:ok, false}
-  defp parse_input_value(%{"type" => "boolean"}, _value), do: {:error, "Choose true or false."}
-
-  defp parse_input_value(%{"type" => "enum", "enum" => values}, value) do
-    if value in values, do: {:ok, value}, else: {:error, "Choose an allowed value."}
-  end
-
-  defp parse_input_value(_declaration, _value), do: {:ok, :missing}
-
-  defp input_value_to_string(value) when is_binary(value), do: value
-  defp input_value_to_string(value) when is_boolean(value), do: to_string(value)
-  defp input_value_to_string(value) when is_number(value), do: to_string(value)
-  defp input_value_to_string(_value), do: nil
 
   defp input_type(%{"type" => "boolean"}), do: "select"
   defp input_type(%{"type" => "enum"}), do: "select"
@@ -598,31 +581,33 @@ defmodule EmisarWeb.RunbookRunLive do
       assigns.input_errors == %{}
   end
 
-  # The RENDERED preflight: identical to the raw result except that a required
-  # input's missing-value issue stays invisible until its field was touched or
-  # a start was attempted — on first paint those blanks are guidance, not
-  # errors. When only untouched blanks remain, the whole error state renders
-  # as neutral :awaiting_input guidance instead of a rose block.
-  defp preflight_view(%{state: :error} = preflight, definition, input_raw, touched_inputs) do
-    pending = pending_input_paths(definition, input_raw, touched_inputs)
-    {hidden, visible} = Enum.split_with(preflight.issues, &(&1.path in pending))
+  # The RENDERED preflight: identical to the raw result except that a pending
+  # input's missing-value issue stays invisible. When only those remain, the
+  # whole error state renders as neutral :awaiting_input guidance instead of a
+  # rose block.
+  defp preflight_view(%{state: :error} = preflight, pending_inputs) do
+    pending_paths = Enum.map(pending_inputs, &"/input_values/#{&1}")
+    {hidden, visible} = Enum.split_with(preflight.issues, &(&1.path in pending_paths))
 
     if visible == [] and hidden != [],
       do: %{preflight | state: :awaiting_input, issues: []},
       else: %{preflight | issues: visible}
   end
 
-  defp preflight_view(preflight, _definition, _input_raw, _touched_inputs), do: preflight
+  defp preflight_view(preflight, _pending_inputs), do: preflight
 
-  defp pending_input_paths(%{"inputs" => declarations}, input_raw, touched_inputs)
+  # An input the operator has not reached — still blank and never touched — is
+  # guidance rather than an error: on first paint neither its plan issue nor its
+  # field message renders, until the field is touched or a start is attempted.
+  defp pending_input_ids(%{"inputs" => declarations}, input_raw, touched_inputs)
        when is_list(declarations) do
     for %{"id" => id} <- declarations,
         Map.get(input_raw, id) in [nil, ""],
         not MapSet.member?(touched_inputs, id),
-        do: "/input_values/#{id}"
+        do: id
   end
 
-  defp pending_input_paths(_definition, _input_raw, _touched_inputs), do: []
+  defp pending_input_ids(_definition, _input_raw, _touched_inputs), do: []
 
   defp output_rows(outputs), do: Enum.sort_by(outputs, &elem(&1, 0))
 
@@ -748,17 +733,17 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :recent_executions, :list, required: true
 
   defp run_form(assigns) do
-    assigns =
-      assign(
-        assigns,
-        :preflight_view,
-        preflight_view(
-          assigns.preflight,
-          assigns.runbook.definition,
-          assigns.input_raw,
-          assigns.touched_inputs
-        )
+    pending_inputs =
+      pending_input_ids(
+        assigns.runbook.definition,
+        assigns.input_raw,
+        assigns.touched_inputs
       )
+
+    assigns =
+      assigns
+      |> assign(:preflight_view, preflight_view(assigns.preflight, pending_inputs))
+      |> assign(:visible_input_errors, Map.drop(assigns.input_errors, pending_inputs))
 
     ~H"""
     <div class="grid min-w-0 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -806,8 +791,8 @@ defmodule EmisarWeb.RunbookRunLive do
                     {input["description"]}
                     <span :if={input["sensitive"]} class="text-amber-300"> · sensitive</span>
                   </p>
-                  <p :if={@input_errors[input["id"]]} class="mt-1 text-xs text-rose-300">
-                    {@input_errors[input["id"]]}
+                  <p :if={@visible_input_errors[input["id"]]} class="mt-1 text-xs text-rose-300">
+                    {@visible_input_errors[input["id"]]}
                   </p>
                 </div>
               </div>

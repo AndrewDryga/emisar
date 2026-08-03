@@ -66,6 +66,170 @@ defmodule Emisar.Runbooks.Compiler do
     end
   end
 
+  @doc """
+  Casts one browser form's raw input strings against a canonical definition.
+
+  Pure: it resolves no runners, packs, or policy. Declared scalars are converted
+  from their posted strings, then every authoritative rule — defaults, required
+  and optional inputs, constraints, structural budgets, sensitive handling, and
+  undeclared keys — is decided by the same typed input compiler dispatch uses.
+
+  Returns `{:ok, %{values: typed_values, form_values: form_values}}` or
+  `{:error, %{issues: issues, field_errors: %{input_id => message},
+  form_values: form_values}}`.
+  """
+  @spec cast_form_inputs(term(), term()) ::
+          {:ok, %{values: map(), form_values: map()}}
+          | {:error, %{issues: [issue()], field_errors: map(), form_values: map()}}
+  def cast_form_inputs(definition, form_input) do
+    case Definition.validate(definition) do
+      {:ok, definition} when is_map(form_input) ->
+        cast_declared_inputs(definition, form_input)
+
+      {:ok, definition} ->
+        {:error,
+         %{
+           issues: compile_input_issues(definition, form_input),
+           field_errors: %{},
+           form_values: form_values(definition["inputs"], %{})
+         }}
+
+      {:error, issues} ->
+        {:error, %{issues: issues, field_errors: %{}, form_values: %{}}}
+    end
+  end
+
+  defp compile_input_issues(definition, supplied) do
+    {:error, issues} = compile_inputs(definition, supplied)
+    issues
+  end
+
+  defp cast_declared_inputs(definition, form_input) do
+    declarations = definition["inputs"]
+    {declared, parse_messages} = cast_declared_values(declarations, form_input)
+    supplied = Map.merge(undeclared_values(declarations, form_input), declared)
+    form_values = form_values(declarations, form_input)
+
+    case compile_inputs(definition, supplied) do
+      {:ok, inputs} ->
+        {:ok, %{values: inputs.values, form_values: form_values}}
+
+      {:error, issues} ->
+        issues = precise_input_issues(issues, parse_messages)
+
+        {:error,
+         %{
+           issues: issues,
+           field_errors: field_errors(declarations, issues),
+           form_values: form_values
+         }}
+    end
+  end
+
+  # An unparsable value keeps its raw string in the candidate so the compiler
+  # still rejects that field, rather than reading it as absent and silently
+  # applying the declared default.
+  defp cast_declared_values(declarations, form_input) do
+    Enum.reduce(declarations, {%{}, %{}}, fn declaration, {values, messages} ->
+      id = declaration["id"]
+      raw = Map.get(form_input, id)
+
+      case cast_form_value(declaration, raw) do
+        {:ok, value} -> {Map.put(values, id, value), messages}
+        :missing -> {values, messages}
+        {:error, message} -> {Map.put(values, id, raw), Map.put(messages, id, message)}
+      end
+    end)
+  end
+
+  # A blank control supplied nothing, whatever its type: the compiler then
+  # applies the default, omits an optional input, or names a missing required
+  # one — never a per-type parse accusation the operator has not earned.
+  defp cast_form_value(_declaration, value) when value in [nil, ""], do: :missing
+
+  defp cast_form_value(%{"type" => "string"}, value), do: {:ok, value}
+
+  defp cast_form_value(%{"type" => "integer"}, value) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} -> {:ok, integer}
+      _partial_or_invalid -> {:error, "Enter a whole number."}
+    end
+  end
+
+  # `Float.parse/1` answers `:error` for a magnitude no float can hold, so an
+  # enormous literal is rejected here rather than raising.
+  defp cast_form_value(%{"type" => "number"}, value) when is_binary(value) do
+    case Float.parse(value) do
+      {number, ""} -> {:ok, number}
+      _partial_or_invalid -> {:error, "Enter a number."}
+    end
+  end
+
+  defp cast_form_value(%{"type" => "boolean"}, "true"), do: {:ok, true}
+  defp cast_form_value(%{"type" => "boolean"}, "false"), do: {:ok, false}
+  defp cast_form_value(%{"type" => "boolean"}, _value), do: {:error, "Choose true or false."}
+
+  defp cast_form_value(%{"type" => "enum", "enum" => allowed}, value) when is_list(allowed) do
+    if value in allowed, do: {:ok, value}, else: {:error, "Choose an allowed value."}
+  end
+
+  defp cast_form_value(_declaration, value), do: {:ok, value}
+
+  defp undeclared_values(declarations, form_input),
+    do: Map.drop(form_input, Enum.map(declarations, & &1["id"]))
+
+  # The rendered form keeps every declared field and nothing else: an untouched
+  # field shows its declared default, and anything the operator supplied —
+  # including a blank — wins.
+  defp form_values(declarations, form_input) do
+    Map.new(declarations, fn declaration ->
+      id = declaration["id"]
+
+      case Map.fetch(form_input, id) do
+        {:ok, value} -> {id, renderable_form_value(value)}
+        :error -> {id, default_form_value(declaration)}
+      end
+    end)
+  end
+
+  defp default_form_value(%{"default" => default}), do: form_string(default)
+  defp default_form_value(_declaration), do: nil
+
+  defp form_string(value) when is_binary(value), do: value
+  defp form_string(value) when is_boolean(value) or is_number(value), do: to_string(value)
+  defp form_string(_value), do: nil
+
+  defp renderable_form_value(value) when is_binary(value), do: value
+  defp renderable_form_value(_value), do: nil
+
+  # The compiler can only say a value failed its declared type and constraints;
+  # the adapter knows which browser string it could not read, so it replaces
+  # that one message with the precise correction.
+  defp precise_input_issues(issues, parse_messages) do
+    messages = Map.new(parse_messages, fn {id, message} -> {input_path(id), message} end)
+
+    issues |> Enum.map(&precise_input_issue(&1, messages)) |> sort_issues()
+  end
+
+  defp precise_input_issue(%{code: "invalid_input", path: path} = issue, messages) do
+    case Map.fetch(messages, path) do
+      {:ok, message} -> %{issue | message: message}
+      :error -> issue
+    end
+  end
+
+  defp precise_input_issue(issue, _messages), do: issue
+
+  defp field_errors(declarations, issues) do
+    ids_by_path = Map.new(declarations, &{input_path(&1["id"]), &1["id"]})
+
+    issues
+    |> Enum.filter(&Map.has_key?(ids_by_path, &1.path))
+    |> Map.new(&{Map.fetch!(ids_by_path, &1.path), &1.message})
+  end
+
+  defp input_path(id), do: "/input_values/#{escape(id)}"
+
   defp resolve_targets(steps, subject) do
     targets = Enum.map(steps, & &1.step["targets"])
 
