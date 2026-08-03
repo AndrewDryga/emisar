@@ -507,7 +507,7 @@ func retryPackTestPull(ctx context.Context, backoff time.Duration, log io.Writer
 	return err
 }
 
-func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage string, job packTestJob) error {
+func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage string, job packTestJob) (err error) {
 	packCompose := filepath.Join(filepath.Dir(job.Plan.Path), "compose.yaml")
 	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
 	env := packTestComposeEnv(
@@ -520,6 +520,22 @@ func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage stri
 		job.Case.RunnerUser,
 	)
 	fmt.Fprintf(a.Out, "Resolved images:\n%s\n", job.Images)
+
+	// Compose owns containers, networks and volumes on the host, so teardown is
+	// registered before anything can create them and runs on every in-process
+	// exit path — success, setup or run failure, a canceled run, and panic
+	// unwinding. Its own context is why a canceled caller still tears down
+	// instead of leaving a project behind for the next invocation to collide with.
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		cleanupErr := a.run(cleanupCtx, a.Root, env, "docker", append(compose, "down", "-v", "--remove-orphans")...)
+		if cleanupErr == nil {
+			return
+		}
+		a.capturePackTestEvidence(cleanupCtx, compose, env, job.Plan.Services)
+		err = errors.Join(err, fmt.Errorf("cleanup: %w", cleanupErr))
+	}()
 
 	setupArgs := append(append(compose, "up", "-d", "--wait"), job.Plan.Services...)
 	setupErr := a.run(ctx, a.Root, env, "docker", setupArgs...)
@@ -534,15 +550,7 @@ func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage stri
 	if runErr != nil {
 		a.capturePackTestEvidence(ctx, compose, env, job.Plan.Services)
 	}
-
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	cleanupErr := a.run(cleanupCtx, a.Root, env, "docker", append(compose, "down", "-v", "--remove-orphans")...)
-	if cleanupErr != nil {
-		cleanupErr = fmt.Errorf("cleanup: %w", cleanupErr)
-		a.capturePackTestEvidence(cleanupCtx, compose, env, job.Plan.Services)
-	}
-	return errors.Join(runErr, cleanupErr)
+	return runErr
 }
 
 type packTestComposeFile struct {

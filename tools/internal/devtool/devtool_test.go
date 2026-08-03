@@ -656,6 +656,161 @@ func TestRetryPackTestPullStopsWhenTheRunIsCancelled(t *testing.T) {
 	}
 }
 
+// packTestDockerLog puts a fake docker on PATH that records the Compose project
+// and the arguments of every invocation. FAIL_RUN makes the case's own `compose
+// run` fail, the way a failing behavior case does.
+func packTestDockerLog(t *testing.T, root string) string {
+	t.Helper()
+	bin := filepath.Join(root, "fake-bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(root, "commands.log")
+	script := "#!/bin/sh\n" +
+		"printf '%s|%s\\n' \"$COMPOSE_PROJECT_NAME\" \"$*\" >> \"$COMMAND_LOG\"\n" +
+		"if [ -n \"$BLOCK_RUN\" ]; then case \" $* \" in *\" run \"*) while :; do :; done ;; esac; fi\n" +
+		"if [ -n \"$FAIL_RUN\" ]; then case \" $* \" in *\" run \"*) exit 1 ;; esac; fi\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("COMMAND_LOG", log)
+	return log
+}
+
+// panicOnWrite stands in for anything that can abandon a case between the run
+// and the teardown — here, the first write after a run fails.
+type panicOnWrite struct {
+	io.Writer
+	trigger string
+}
+
+func (w panicOnWrite) Write(data []byte) (int, error) {
+	if strings.Contains(string(data), w.trigger) {
+		panic("writing " + w.trigger)
+	}
+	return w.Writer.Write(data)
+}
+
+// A case owns containers, networks and volumes named after its Compose project,
+// so every in-process exit path — including panic unwinding — has to tear that
+// project down exactly once, and last.
+func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
+	const runnerImage = "emisar-runner-tools:abc123456789"
+	baseCompose := filepath.Join("dev", "test-packs", "compose.yaml")
+	job := packTestJob{
+		InvocationID: "run-1",
+		Plan: packtest.PlanRef{
+			Name:     "postgres",
+			Path:     filepath.Join("packs", "postgres", "test", "cases.yaml"),
+			Services: []string{"postgres"},
+		},
+		Case: packtest.CaseRef{ID: "uptime"},
+	}
+	compose := "compose -f " + baseCompose + " -f " + filepath.Join("packs", "postgres", "test", "compose.yaml") + " "
+	up := compose + "up -d --wait postgres"
+	run := compose + "run --rm --no-deps --entrypoint /opt/emisar/bin/packtest runner-tools " +
+		"--pack postgres --case uptime --reports /tmp/packtest-reports"
+	down := compose + "down -v --remove-orphans"
+
+	tests := []struct {
+		name         string
+		failRun      string
+		interruptRun bool
+		panicOn      string
+		want         []string
+		wantErr      string
+	}{
+		{name: "a passing case tears down once", want: []string{up, run, down}},
+		{name: "an interrupted run still tears down", interruptRun: true, want: []string{up, run, down}, wantErr: "docker compose"},
+		{
+			name:    "a panic tears down while unwinding",
+			failRun: "1",
+			panicOn: "failure evidence",
+			want:    []string{up, run, down},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			log := packTestDockerLog(t, root)
+			t.Setenv("FAIL_RUN", test.failRun)
+			if test.interruptRun {
+				t.Setenv("BLOCK_RUN", "1")
+			}
+			var output bytes.Buffer
+			app := New(root, strings.NewReader(""), &output, &output)
+			if test.panicOn != "" {
+				app.Out = panicOnWrite{Writer: &output, trigger: test.panicOn}
+			}
+			ctx := t.Context()
+			var interrupted <-chan bool
+			if test.interruptRun {
+				interruptCtx, cancel := context.WithCancel(ctx)
+				ctx = interruptCtx
+				result := make(chan bool, 1)
+				interrupted = result
+				go func() {
+					deadline := time.NewTimer(time.Second)
+					defer deadline.Stop()
+					ticker := time.NewTicker(time.Millisecond)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-ticker.C:
+							data, _ := os.ReadFile(log)
+							if strings.Contains(string(data), " run ") {
+								cancel()
+								result <- true
+								return
+							}
+						case <-deadline.C:
+							cancel()
+							result <- false
+							return
+						}
+					}
+				}()
+			}
+
+			var err error
+			func() {
+				defer func() {
+					if recovered := recover(); (recovered != nil) != (test.panicOn != "") {
+						t.Errorf("recovered = %v, want a panic: %t", recovered, test.panicOn != "")
+					}
+				}()
+				err = app.runPackTestCase(ctx, baseCompose, runnerImage, job)
+			}()
+			if interrupted != nil && !<-interrupted {
+				t.Fatal("fake docker run did not start before cancellation")
+			}
+			if test.panicOn == "" {
+				if test.wantErr == "" && err != nil {
+					t.Fatalf("err = %v", err)
+				}
+				if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+					t.Fatalf("err = %v, want %q", err, test.wantErr)
+				}
+			}
+
+			data, readErr := os.ReadFile(log)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			project := packTestComposeEnv(root, job.InvocationID, runnerImage, job.Plan, job.Case.ID, nil, "")["COMPOSE_PROJECT_NAME"]
+			want := make([]string, len(test.want))
+			for i, command := range test.want {
+				want[i] = project + "|" + command
+			}
+			got := strings.Split(strings.TrimSpace(string(data)), "\n")
+			if !slices.Equal(got, want) {
+				t.Fatalf("commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+		})
+	}
+}
+
 func TestWritePackTestFailureReportsIncludesRowAndError(t *testing.T) {
 	dir := t.TempDir()
 	plan := packtest.PlanRef{
