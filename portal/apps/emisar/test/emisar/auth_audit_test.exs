@@ -90,7 +90,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, codes} =
         Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
-      assert :ok = Auth.verify_mfa_challenge(enabled, {:recovery_code, hd(codes)})
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(enabled, {:recovery_code, hd(codes)})
 
       assert [event] = events_of(account, "user.mfa_recovery_code_used")
       assert event.payload["remaining"] == length(codes) - 1
@@ -202,8 +202,8 @@ defmodule Emisar.AuthAuditTest do
     setup do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
       # Mint two sessions for the user.
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      keep = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       %{user: user, account: account, keep: keep, subject: subject}
     end
 

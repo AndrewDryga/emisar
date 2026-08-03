@@ -76,15 +76,26 @@ defmodule Emisar.Users do
   def record_sign_in(%User{} = user, method, context \\ %RequestContext{})
       when is_binary(method) do
     Multi.new()
-    |> Multi.update(:user, User.Changeset.sign_in(user))
-    |> Audit.Multi.log_for_user(:audit, user, "user.signed_in",
-      extra: [payload: %{method: method}, context: context]
-    )
+    |> put_sign_in(user, method, context)
     |> Repo.commit_multi()
     |> case do
-      {:ok, %{user: user}} -> {:ok, user}
+      {:ok, %{sign_in: user}} -> {:ok, user}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc """
+  Internal — compose the sign-in user update and audit row into a caller's
+  transaction. Auth uses this when session insertion must commit atomically
+  with `user.signed_in`; the caller owns the single final `Repo.commit_multi/1`.
+  """
+  def put_sign_in(%Multi{} = multi, %User{} = user, method, %RequestContext{} = context)
+      when is_binary(method) do
+    multi
+    |> Multi.update(:sign_in, User.Changeset.sign_in(user))
+    |> Audit.Multi.log_for_user(:sign_in_audit, user, "user.signed_in",
+      extra: [payload: %{method: method}, context: context]
+    )
   end
 
   # -- Self-service mutations ---------------------------------------------
@@ -268,17 +279,15 @@ defmodule Emisar.Users do
   30-second bucket, and stamp `mfa_last_used_at`. Validating here (not against a
   possibly-stale caller struct) closes the rotate/disable-mid-verify race — an
   OTP from a just-disabled or just-rotated secret can't complete sign-in, and
-  two concurrent submissions of one code can't both pass. Returns
-  `:ok | {:error, :replay | :invalid | :not_found}`.
+  two concurrent submissions of one code can't both pass. Returns `{:ok, user}`
+  — the row as it stands AFTER the consume, so the caller can bind a proof to
+  the exact enrollment it verified against — or `{:error, :replay | :invalid |
+  :not_found}`.
   """
   def verify_and_consume_mfa(user_id, otp, %DateTime{} = at) when is_binary(otp) do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query, with: &mfa_verify_and_consume(&1, otp, at))
-    |> case do
-      {:ok, _user} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   # Runs on the LOCKED row — any non-changeset return aborts `fetch_and_update`

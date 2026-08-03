@@ -1658,7 +1658,9 @@ defmodule Emisar.SSOTest do
     test "disabling revokes a linked member's sessions", %{provider: provider, subject: subject} do
       %{identity: identity} = provision(provider, "okta|live")
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
-      _token = Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+
+      _token =
+        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
 
       assert {:ok, _} = SSO.update_provider(provider, %{enabled: false}, subject)
 
@@ -1672,7 +1674,9 @@ defmodule Emisar.SSOTest do
     test "deleting revokes them too", %{provider: provider, subject: subject} do
       %{identity: identity} = provision(provider, "okta|gone")
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
-      _token = Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+
+      _token =
+        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
 
       assert {:ok, _} = SSO.delete_provider(provider, subject)
 
@@ -2360,9 +2364,9 @@ defmodule Emisar.SSOTest do
       )
 
       sso_session =
-        Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
 
-      magic_link_session = Auth.create_session_token!(user, :magic_link, false)
+      magic_link_session = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert {:ok, _} =
                SSO.scim_update_user(provider, "okta|multi", %SCIMUserUpdate{active: false})

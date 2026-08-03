@@ -1,5 +1,6 @@
 defmodule EmisarWeb.UserAuthTest do
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.{Auth, RequestContext}
   alias EmisarWeb.UserAuth
 
   # Session provenance for an unauthenticated request — the miss/anonymous
@@ -163,16 +164,21 @@ defmodule EmisarWeb.UserAuthTest do
     end
   end
 
-  describe "log_in_user/5" do
+  describe "log_in_magic_link_user/4" do
     test "persists the session token + its live-socket topic, writes no other cookie", %{
       conn: conn
     } do
-      conn = UserAuth.log_in_user(conn, Fixtures.Users.create_user(), :magic_link, false)
+      user = Fixtures.Users.create_user()
+
+      assert {:ok, signed_in, token, :no_target} =
+               Auth.complete_magic_link_sign_in(user.id, nil, %RequestContext{})
+
+      conn = UserAuth.log_in_magic_link_user(conn, signed_in, token, false)
 
       assert Plug.Conn.get_session(conn, :user_token)
       assert Plug.Conn.get_session(conn, :live_socket_id)
       # Sign-in is passwordless/SSO — there is no "keep me signed in" control, so
-      # only the session cookie ever carries auth; log_in_user writes no other.
+      # only the session cookie ever carries auth; the install writes no other.
       assert conn.resp_cookies == %{}
     end
   end

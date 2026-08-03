@@ -245,6 +245,31 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert signed_in.id == user.id
     end
 
+    test "a branded account disabled after the link was issued mints nothing", %{
+      conn: conn,
+      user: user
+    } do
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      {conn, token_id, secret} = request_magic_link(conn, user.email)
+      Fixtures.Accounts.disable_account(account)
+
+      conn =
+        get(
+          conn,
+          ~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: "/app/#{account.slug}"]}"
+        )
+
+      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
+    end
+
     test "one login audits user.signed_in exactly once per account", %{conn: conn, user: user} do
       # Regression: verify_magic_link used to ALSO audit success, double-writing
       # every login (session establishment is the one writer). The audit row is
@@ -446,8 +471,15 @@ defmodule EmisarWeb.UserSessionControllerTest do
       )
 
       secret = Auth.generate_mfa_secret()
-      {user, _codes} = Fixtures.Users.enable_mfa!(secret, owner_subject(user, account))
-      %{user: user, account: account}
+      {user, codes} = Fixtures.Users.enable_mfa!(secret, owner_subject(user, account))
+      %{user: user, account: account, secret: secret, codes: codes}
+    end
+
+    defp verified_handoff(user, secret) do
+      {:ok, proof} =
+        Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+      MfaChallengeHandoff.sign(proof)
     end
 
     test "an mfa-enrolled user lands on the challenge, not a full session (email link)", %{
@@ -491,8 +523,8 @@ defmodule EmisarWeb.UserSessionControllerTest do
     test "mfa_complete with a valid handoff + matching pending session signs in with mfa:true", %{
       conn: conn
     } do
-      %{user: user} = enrolled_mfa_user()
-      handoff = MfaChallengeHandoff.sign(user.id)
+      %{user: user, secret: secret} = enrolled_mfa_user()
+      handoff = verified_handoff(user, secret)
 
       conn =
         conn
@@ -510,8 +542,8 @@ defmodule EmisarWeb.UserSessionControllerTest do
     test "mfa completion rechecks a disabled branded account before minting a session", %{
       conn: conn
     } do
-      %{user: user, account: account} = enrolled_mfa_user()
-      handoff = MfaChallengeHandoff.sign(user.id)
+      %{user: user, account: account, secret: secret} = enrolled_mfa_user()
+      handoff = verified_handoff(user, secret)
 
       assert {:ok, _account} =
                Accounts.set_account_disabled_for_support(
@@ -536,8 +568,8 @@ defmodule EmisarWeb.UserSessionControllerTest do
     test "mfa_complete with a handoff but NO pending session is refused (the bypass)", %{
       conn: conn
     } do
-      %{user: user} = enrolled_mfa_user()
-      handoff = MfaChallengeHandoff.sign(user.id)
+      %{user: user, secret: secret} = enrolled_mfa_user()
+      handoff = verified_handoff(user, secret)
 
       conn = get(init_test_session(conn, %{}), ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
 
@@ -547,7 +579,8 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "mfa_complete refuses a handoff that doesn't match the pending user", %{conn: conn} do
       %{user: user} = enrolled_mfa_user()
-      other_handoff = MfaChallengeHandoff.sign(Ecto.UUID.generate())
+      %{user: other_user, secret: other_secret} = enrolled_mfa_user()
+      other_handoff = verified_handoff(other_user, other_secret)
 
       conn =
         conn
@@ -558,16 +591,37 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert redirected_to(conn) == ~p"/sign_in/magic"
     end
 
-    test "mfa_complete refuses a forged/garbage handoff", %{conn: conn} do
-      %{user: user} = enrolled_mfa_user()
+    test "mfa_complete refuses a proof whose enrollment changed since the challenge", %{
+      conn: conn
+    } do
+      %{user: user, account: account, secret: secret, codes: [code | _]} = enrolled_mfa_user()
+      handoff = verified_handoff(user, secret)
+
+      assert {:ok, _user} = Auth.disable_mfa(code, owner_subject(user, account))
 
       conn =
         conn
         |> init_test_session(%{mfa_pending_user_id: user.id})
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: "not-a-real-token"]}")
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
 
       refute get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/sign_in/magic"
+    end
+
+    test "mfa_complete refuses a forged/garbage handoff, or one naming only a user", %{
+      conn: conn
+    } do
+      %{user: user} = enrolled_mfa_user()
+
+      for handoff <- ["not-a-real-token", MfaChallengeHandoff.sign(user.id)] do
+        conn =
+          conn
+          |> init_test_session(%{mfa_pending_user_id: user.id})
+          |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+
+        refute get_session(conn, :user_token)
+        assert redirected_to(conn) == ~p"/sign_in/magic"
+      end
     end
 
     test "a partial (mfa-pending) session cannot reach an app route", %{conn: conn} do

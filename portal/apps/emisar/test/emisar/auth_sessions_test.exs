@@ -17,9 +17,9 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "returns the caller's rows newest-first", %{user: user, subject: subject} do
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject)
       assert length(sessions) == 3
@@ -28,8 +28,8 @@ defmodule Emisar.AuthSessionsTest do
 
     test "only returns the subject's own tokens", %{user: mine, subject: my_subject} do
       theirs = Fixtures.Users.create_user()
-      _ = Auth.create_session_token!(mine, :magic_link, false)
-      _ = Auth.create_session_token!(theirs, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(mine, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(theirs, :magic_link, false)
 
       assert {:ok, [_], _meta} = Auth.list_sessions_for_user(my_subject)
     end
@@ -38,7 +38,7 @@ defmodule Emisar.AuthSessionsTest do
       user: user,
       subject: subject
     } do
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       assert {:ok, _} = Auth.request_magic_link(user, %RequestContext{})
 
       assert {:ok, [token], _meta} = Auth.list_sessions_for_user(subject)
@@ -49,7 +49,7 @@ defmodule Emisar.AuthSessionsTest do
   describe "revoke_session/2" do
     test ":ok and the row goes away" do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       assert {:ok, [session], _} = Auth.list_sessions_for_user(subject)
 
       assert :ok = Auth.revoke_session(session.id, subject)
@@ -59,7 +59,7 @@ defmodule Emisar.AuthSessionsTest do
     test "refuses to revoke another user's session via id" do
       {_mine, _account_a, my_subject} = Fixtures.Subjects.owner_subject()
       {theirs, _account_b, their_subject} = Fixtures.Subjects.owner_subject()
-      _ = Auth.create_session_token!(theirs, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(theirs, :magic_link, false)
       assert {:ok, [their_session], _} = Auth.list_sessions_for_user(their_subject)
 
       assert {:error, :not_found} = Auth.revoke_session(their_session.id, my_subject)
@@ -79,9 +79,9 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "keeps the caller's current session", %{user: user, subject: subject} do
-      keep = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_other_sessions!(user, keep) == 2
       assert {:ok, [survivor], _} = Auth.list_sessions_for_user(subject)
@@ -89,8 +89,8 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "with nil, kills every session including the caller's", %{user: user, subject: subject} do
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_other_sessions!(user, nil) == 2
       assert {:ok, [], _} = Auth.list_sessions_for_user(subject)

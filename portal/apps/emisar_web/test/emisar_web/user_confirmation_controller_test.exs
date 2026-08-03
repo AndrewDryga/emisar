@@ -76,7 +76,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
       # confirms nothing — same uniform error as a bad token, and the user stays
       # unconfirmed. No cross-endpoint token reuse.
       user = unconfirmed_user()
-      session_token = Auth.create_session_token!(user, :magic_link, false)
+      session_token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       conn = get(conn, ~p"/confirm/#{session_token}")
 

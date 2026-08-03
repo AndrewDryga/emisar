@@ -83,11 +83,10 @@ defmodule EmisarWeb.SSOController do
         |> put_default_return_to(~p"/app/#{account}")
         |> RecentAccounts.put(%{slug: account.slug, name: account.name})
 
-      case UserAuth.log_in_user_for_account(
+      case UserAuth.log_in_sso_user_for_account(
              conn,
              user,
              account.id,
-             :sso,
              SSO.provider_satisfies_mfa?(provider),
              user_identity_id: identity.id,
              registered?: created?

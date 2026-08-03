@@ -140,79 +140,40 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "create_session_token!/5" do
-    setup do
-      %{user: Fixtures.Users.create_user()}
-    end
-
-    test "mints a raw session token that round-trips on lookup", %{user: user} do
-      token = Auth.create_session_token!(user, :magic_link, false)
-      assert is_binary(token)
-
-      assert {:ok, %User{id: id}, %{auth_method: :magic_link, mfa: false, user_identity_id: nil}} =
-               Auth.fetch_user_and_token_by_session_token(token)
-
-      assert id == user.id
-    end
-
-    test "stamps the auth_method + mfa provenance onto the row", %{user: user} do
-      token = Auth.create_session_token!(user, :magic_link, true)
-
-      assert {:ok, %User{}, %{auth_method: :magic_link, mfa: true, user_identity_id: nil}} =
-               Auth.fetch_user_and_token_by_session_token(token)
-    end
-
-    test "metadata's ip + user_agent ride onto the row for the device list", %{user: user} do
-      token =
-        Auth.create_session_token!(user, :magic_link, false, %{
-          ip_address: "203.0.113.9",
-          user_agent: "ExUnit/1.0"
-        })
-
-      {:ok, _user, %UserToken{} = stored} = Auth.fetch_user_and_token_by_session_token(token)
-      # ip + user_agent ride in the token's `metadata` jsonb (string-keyed once persisted).
-      assert stored.metadata["ip_address"] == "203.0.113.9"
-      assert stored.metadata["user_agent"] == "ExUnit/1.0"
-    end
-
-    test "bounds session display metadata before persisting it", %{user: user} do
-      token =
-        Auth.create_session_token!(user, :magic_link, false, %{
-          user_agent: String.duplicate("x", 500)
-        })
-
-      assert {:ok, _user, %UserToken{} = stored} =
-               Auth.fetch_user_and_token_by_session_token(token)
-
-      assert String.length(stored.metadata["user_agent"]) == 255
-    end
-  end
-
-  describe "complete_account_sign_in/6" do
+  describe "complete_sso_account_sign_in/5" do
     setup do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject, user: user}
     end
 
-    test "records the sign-in and mints the session while the account is active", %{
+    test "records the sign-in and mints an :sso session while the account is active", %{
       account: account,
       user: user
     } do
       context = RequestContext.new(%{ip_address: "203.0.113.9"})
 
-      assert {:ok, token} =
-               Auth.complete_account_sign_in(
-                 user,
-                 account.id,
-                 :magic_link,
-                 false,
-                 context
-               )
+      assert {:ok, token} = Auth.complete_sso_account_sign_in(user, account.id, true, context)
 
-      assert {:ok, %User{id: id}, %UserToken{metadata: %{"ip_address" => "203.0.113.9"}}} =
+      assert {:ok, %User{id: id}, %UserToken{auth_method: :sso, mfa: true} = stored} =
                Auth.fetch_user_and_token_by_session_token(token)
 
       assert id == user.id
+      # ip + user_agent ride in the token's `metadata` jsonb (string-keyed once persisted).
+      assert stored.metadata["ip_address"] == "203.0.113.9"
+    end
+
+    test "bounds session display metadata before persisting it", %{
+      account: account,
+      user: user
+    } do
+      context = RequestContext.new(%{user_agent: String.duplicate("x", 500)})
+
+      assert {:ok, token} = Auth.complete_sso_account_sign_in(user, account.id, false, context)
+
+      assert {:ok, _user, %UserToken{} = stored} =
+               Auth.fetch_user_and_token_by_session_token(token)
+
+      assert String.length(stored.metadata["user_agent"]) == 255
     end
 
     test "does not mint a session after the account is disabled", %{
@@ -229,13 +190,9 @@ defmodule Emisar.AuthTest do
                )
 
       assert {:error, :account_disabled} =
-               Auth.complete_account_sign_in(
-                 user,
-                 account.id,
-                 :magic_link,
-                 false,
-                 %RequestContext{}
-               )
+               Auth.complete_sso_account_sign_in(user, account.id, false, %RequestContext{})
+
+      refute Repo.one(UserToken.Query.by_context("session"))
     end
   end
 
@@ -245,7 +202,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "resolves a live session to {:ok, user, token}", %{user: user} do
-      token = Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert {:ok, %User{id: id}, %UserToken{context: "session"}} =
                Auth.fetch_user_and_token_by_session_token(token)
@@ -259,7 +216,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "a session past its validity window no longer resolves", %{user: user} do
-      token = Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       # 61 days is past the 60-day session window.
       age_tokens(user.id, 61 * 24 * 60)
 
@@ -269,7 +226,7 @@ defmodule Emisar.AuthTest do
     test "a soft-deleted user's token reads as :not_found (preload scoped to live users)", %{
       user: user
     } do
-      token = Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
 
       assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
@@ -278,7 +235,7 @@ defmodule Emisar.AuthTest do
     test "a session holding a removed auth_method fails closed, never raising on load", %{
       user: user
     } do
-      token = Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       # A legacy `password` session from before the passwordless rework dropped
       # that enum value. Written at the DB layer to bypass the enum cast —
       # exactly how it lands in a real DB after the enum narrows. Loading it
@@ -292,7 +249,7 @@ defmodule Emisar.AuthTest do
   describe "delete_session_token/1" do
     test "drops the session row backing the cookie" do
       user = Fixtures.Users.create_user()
-      token = Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert :ok = Auth.delete_session_token(token)
       assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
@@ -323,8 +280,8 @@ defmodule Emisar.AuthTest do
   describe "delete_all_session_tokens/1" do
     test "removes every session token for the user and returns the count" do
       user = Fixtures.Users.create_user()
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert {:ok, 2} = Auth.delete_all_session_tokens(user)
 
@@ -337,8 +294,8 @@ defmodule Emisar.AuthTest do
     test "only touches the given user's sessions" do
       user = Fixtures.Users.create_user()
       other = Fixtures.Users.create_user()
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      keep = Auth.create_session_token!(other, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(other, :magic_link, false)
 
       assert {:ok, 1} = Auth.delete_all_session_tokens(user)
       # The other user's session is untouched.
@@ -359,8 +316,10 @@ defmodule Emisar.AuthTest do
           user_id: user.id
         )
 
-      sso = Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
-      magic_link = Auth.create_session_token!(user, :magic_link, false)
+      sso =
+        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+
+      magic_link = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert :ok = Auth.revoke_identity_sessions(user, [identity.id])
 
@@ -370,7 +329,7 @@ defmodule Emisar.AuthTest do
 
     test "an empty identity list revokes nothing" do
       user = Fixtures.Users.create_user()
-      token = Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert :ok = Auth.revoke_identity_sessions(user, [])
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
@@ -380,8 +339,8 @@ defmodule Emisar.AuthTest do
   describe "disconnect_and_revoke_all_sessions/1" do
     test "revokes every session for the user (and best-effort disconnects sockets)" do
       user = Fixtures.Users.create_user()
-      t1 = Auth.create_session_token!(user, :magic_link, false)
-      t2 = Auth.create_session_token!(user, :magic_link, false)
+      t1 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      t2 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert :ok = Auth.disconnect_and_revoke_all_sessions(user)
 
@@ -401,9 +360,9 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      keep = Auth.create_session_token!(user, :magic_link, false)
-      _other1 = Auth.create_session_token!(user, :magic_link, false)
-      _other2 = Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _other1 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _other2 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 2
 
@@ -414,7 +373,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "with only the current session, revokes nothing", %{user: user, subject: subject} do
-      keep = Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 0
       assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(keep)
@@ -428,7 +387,7 @@ defmodule Emisar.AuthTest do
     # observable contract here is the `:ok` and that the DB is untouched.
     test "is a best-effort :ok that deletes no token rows" do
       user = Fixtures.Users.create_user()
-      token = Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert :ok = Auth.broadcast_disconnect_for_user(user)
       assert :ok = Auth.broadcast_disconnect_for_user(user, except: Crypto.hash(token))
@@ -468,9 +427,9 @@ defmodule Emisar.AuthTest do
     end
 
     test "returns the caller's session rows, newest-first", %{user: user, subject: subject} do
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject)
       assert length(sessions) == 3
@@ -481,9 +440,9 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       request_magic_link(user)
-      _ = Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, false)
 
       assert {:ok, [token], _meta} = Auth.list_sessions_for_user(subject)
       assert token.context == "session"
@@ -497,8 +456,8 @@ defmodule Emisar.AuthTest do
     end
 
     test "removes one of the caller's own sessions by id", %{user: user, subject: subject} do
-      _t1 = Auth.create_session_token!(user, :magic_link, false)
-      _t2 = Auth.create_session_token!(user, :magic_link, false)
+      _t1 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _t2 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       {:ok, [session | _], _} = Auth.list_sessions_for_user(subject)
 
       assert :ok = Auth.revoke_session(session.id, subject)
@@ -508,7 +467,7 @@ defmodule Emisar.AuthTest do
 
     test "can't kill another user's session — scoped to the caller", %{subject: subject} do
       {other, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
-      _ = Auth.create_session_token!(other, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(other, :magic_link, false)
       {:ok, [other_session], _} = Auth.list_sessions_for_user(other_subject)
 
       assert {:error, :not_found} = Auth.revoke_session(other_session.id, subject)
@@ -528,9 +487,9 @@ defmodule Emisar.AuthTest do
     end
 
     test "keeps the named session, revokes the rest", %{user: user, subject: subject} do
-      keep = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_other_sessions!(user, keep) == 2
       assert {:ok, [survivor], _} = Auth.list_sessions_for_user(subject)
@@ -538,8 +497,8 @@ defmodule Emisar.AuthTest do
     end
 
     test "with nil, kills every session including the caller's", %{user: user, subject: subject} do
-      _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_other_sessions!(user, nil) == 2
       assert {:ok, [], _} = Auth.list_sessions_for_user(subject)
@@ -762,6 +721,212 @@ defmodule Emisar.AuthTest do
 
       # Locked: the correct (nonce, secret) no longer works.
       assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
+    end
+  end
+
+  describe "complete_magic_link_sign_in/3" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject, user: user}
+    end
+
+    test "an unbranded completion mints a magic_link session with no second factor", %{
+      user: user
+    } do
+      assert {:ok, %User{} = signed_in, token, :no_target} =
+               Auth.complete_magic_link_sign_in(user.id, nil, %RequestContext{})
+
+      assert signed_in.id == user.id
+
+      assert {:ok, %User{id: id}, %UserToken{auth_method: :magic_link, mfa: false}} =
+               Auth.fetch_user_and_token_by_session_token(token)
+
+      assert id == user.id
+    end
+
+    # The returned user carries the sign-in the minting transaction just stamped,
+    # so a boundary that installs it can't render a pre-sign-in snapshot.
+    test "the returned user is the row the sign-in stamped", %{user: user} do
+      assert {:ok, signed_in, _token, :no_target} =
+               Auth.complete_magic_link_sign_in(user.id, nil, %RequestContext{})
+
+      refute user.last_sign_in_at
+      assert %DateTime{} = signed_in.last_sign_in_at
+    end
+
+    test "a branded completion lands the member on that account", %{
+      account: account,
+      user: user
+    } do
+      assert {:ok, _user, token, {:member, landed}} =
+               Auth.complete_magic_link_sign_in(user.id, account.slug, %RequestContext{})
+
+      assert landed.id == account.id
+
+      assert {:ok, _user, %UserToken{auth_method: :magic_link, mfa: false}} =
+               Auth.fetch_user_and_token_by_session_token(token)
+    end
+
+    test "a branded completion for a non-member still signs them in, without the target", %{
+      user: user
+    } do
+      other_account = Fixtures.Accounts.create_account()
+
+      assert {:ok, _user, token, :not_member} =
+               Auth.complete_magic_link_sign_in(user.id, other_account.slug, %RequestContext{})
+
+      assert {:ok, _user, %UserToken{}} = Auth.fetch_user_and_token_by_session_token(token)
+    end
+
+    test "an enrollment made since the link was issued still owes a second factor", %{
+      subject: subject,
+      user: user
+    } do
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      assert Auth.complete_magic_link_sign_in(user.id, nil, %RequestContext{}) ==
+               {:error, :mfa_required}
+
+      refute Repo.one(UserToken.Query.by_context("session"))
+    end
+
+    test "a disabled branded account mints nothing and hands back the account", %{
+      account: account,
+      subject: subject,
+      user: user
+    } do
+      {:ok, _account} =
+        Accounts.set_account_disabled_for_support(account.id, true, "support incident", subject)
+
+      assert {:error, {:account_disabled, disabled}} =
+               Auth.complete_magic_link_sign_in(user.id, account.slug, %RequestContext{})
+
+      assert disabled.id == account.id
+      refute Repo.one(UserToken.Query.by_context("session"))
+    end
+
+    test "a user that no longer resolves is :not_found" do
+      assert Auth.complete_magic_link_sign_in(Ecto.UUID.generate(), nil, %RequestContext{}) ==
+               {:error, :not_found}
+    end
+  end
+
+  describe "complete_magic_link_mfa_sign_in/3" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      secret = Auth.generate_mfa_secret()
+      {user, codes} = Fixtures.Users.enable_mfa!(secret, subject)
+      %{account: account, codes: codes, secret: secret, subject: subject, user: user}
+    end
+
+    test "a verified TOTP proof mints a magic_link session stamped mfa: true", %{
+      secret: secret,
+      user: user
+    } do
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+      assert {:ok, %User{} = signed_in, token, :no_target} =
+               Auth.complete_magic_link_mfa_sign_in(proof, nil, %RequestContext{})
+
+      assert signed_in.id == user.id
+
+      assert {:ok, %User{id: id}, %UserToken{auth_method: :magic_link, mfa: true}} =
+               Auth.fetch_user_and_token_by_session_token(token)
+
+      assert id == user.id
+    end
+
+    test "a verified recovery-code proof mints the same session", %{
+      codes: [code | _],
+      user: user
+    } do
+      assert {:ok, proof} = Auth.verify_mfa_challenge(user, {:recovery_code, code})
+
+      assert {:ok, _user, token, :no_target} =
+               Auth.complete_magic_link_mfa_sign_in(proof, nil, %RequestContext{})
+
+      assert {:ok, _user, %UserToken{auth_method: :magic_link, mfa: true}} =
+               Auth.fetch_user_and_token_by_session_token(token)
+    end
+
+    test "a completed proof cannot be replayed into a second session", %{
+      secret: secret,
+      user: user
+    } do
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+      assert {:ok, _user, _token, :no_target} =
+               Auth.complete_magic_link_mfa_sign_in(proof, nil, %RequestContext{})
+
+      assert Auth.complete_magic_link_mfa_sign_in(proof, nil, %RequestContext{}) ==
+               {:error, :mfa_proof_stale}
+
+      # `Repo.one` raises on a second row, so this asserts the replay minted none.
+      assert Repo.one(UserToken.Query.by_context("session"))
+    end
+
+    test "a branded completion lands the member on that account", %{
+      account: account,
+      secret: secret,
+      user: user
+    } do
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+      assert {:ok, _user, _token, {:member, landed}} =
+               Auth.complete_magic_link_mfa_sign_in(proof, account.slug, %RequestContext{})
+
+      assert landed.id == account.id
+    end
+
+    test "a proof no longer matches once MFA was disabled after the challenge", %{
+      codes: [code | _],
+      secret: secret,
+      subject: subject,
+      user: user
+    } do
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+      assert {:ok, _user} = Auth.disable_mfa(code, subject)
+
+      assert Auth.complete_magic_link_mfa_sign_in(proof, nil, %RequestContext{}) ==
+               {:error, :mfa_proof_stale}
+
+      refute Repo.one(UserToken.Query.by_context("session"))
+    end
+
+    test "a proof no longer matches once the secret was rotated (disable, re-enable)", %{
+      codes: [code | _],
+      secret: secret,
+      subject: subject,
+      user: user
+    } do
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+      assert {:ok, _user} = Auth.disable_mfa(code, subject)
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      assert Auth.complete_magic_link_mfa_sign_in(proof, nil, %RequestContext{}) ==
+               {:error, :mfa_proof_stale}
+
+      refute Repo.one(UserToken.Query.by_context("session"))
+    end
+
+    test "current user fields are not an MFA proof", %{user: user} do
+      forged = %{
+        user_id: user.id,
+        mfa_enabled_at: user.mfa_enabled_at,
+        updated_at: user.updated_at
+      }
+
+      assert Auth.complete_magic_link_mfa_sign_in(forged, nil, %RequestContext{}) ==
+               {:error, :not_found}
+
+      refute Repo.one(UserToken.Query.by_context("session"))
     end
   end
 
@@ -1150,7 +1315,7 @@ defmodule Emisar.AuthTest do
       # MFA stays enabled; the old plaintext code no longer matches, a new one does.
       assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:recovery_code, old_code})
 
-      assert :ok =
+      assert {:ok, _proof} =
                Auth.verify_mfa_challenge(Repo.reload!(user), {:recovery_code, hd(new_codes)})
     end
 
@@ -1172,7 +1337,7 @@ defmodule Emisar.AuthTest do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
       otp = NimbleTOTP.verification_code(secret)
-      assert :ok = Auth.verify_mfa_challenge(user, {:totp, otp})
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:totp, otp})
 
       user = Repo.reload!(user)
       assert {:error, :replay} = Auth.verify_mfa_challenge(user, {:totp, otp})
@@ -1203,7 +1368,7 @@ defmodule Emisar.AuthTest do
 
       # The genuine current code is untouched by the failed attempt.
       otp = NimbleTOTP.verification_code(secret)
-      assert :ok = Auth.verify_mfa_challenge(Repo.reload!(user), {:totp, otp})
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(Repo.reload!(user), {:totp, otp})
     end
 
     test "an OTP can't complete sign-in after MFA was disabled mid-verify (MAJOR-4)", %{
@@ -1246,13 +1411,13 @@ defmodule Emisar.AuthTest do
     } do
       {user, [code, other_code | _]} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert :ok = Auth.verify_mfa_challenge(user, {:recovery_code, code})
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:recovery_code, code})
 
       user = Repo.reload!(user)
       assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:recovery_code, code})
 
       # Consuming one code doesn't invalidate the rest of the set.
-      assert :ok = Auth.verify_mfa_challenge(user, {:recovery_code, other_code})
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:recovery_code, other_code})
     end
 
     test "rejects an unknown recovery code as :invalid", %{secret: secret, subject: subject} do
@@ -1300,7 +1465,7 @@ defmodule Emisar.AuthTest do
       for _ <- 1..6, do: Auth.verify_mfa_challenge(user, {:totp, "000000"})
 
       other_otp = NimbleTOTP.verification_code(other_secret)
-      assert :ok = Auth.verify_mfa_challenge(other_user, {:totp, other_otp})
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(other_user, {:totp, other_otp})
     end
 
     test "concurrent attempts can't overshoot the window", %{secret: secret, subject: subject} do
@@ -1316,6 +1481,43 @@ defmodule Emisar.AuthTest do
 
       assert Enum.count(results, &(&1 == {:error, :invalid})) == 5
       assert Enum.count(results, &(&1 == {:error, :rate_limited})) == 5
+    end
+  end
+
+  describe "mfa_proof_user_id/1" do
+    test "names the user a verified proof was minted for" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      secret = Auth.generate_mfa_secret()
+      {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+      assert Auth.mfa_proof_user_id(proof) == user.id
+    end
+
+    test "anything that isn't a proof names no one" do
+      assert Auth.mfa_proof_user_id(Ecto.UUID.generate()) == nil
+      assert Auth.mfa_proof_user_id(%{user_id: 42}) == nil
+      assert Auth.mfa_proof_user_id(nil) == nil
+    end
+
+    test "a hand-assembled map carrying a user id is not a proof" do
+      user = Fixtures.Users.create_user()
+
+      assert Auth.mfa_proof_user_id(%{user_id: user.id}) == nil
+
+      assert Auth.mfa_proof_user_id(%{
+               user_id: user.id,
+               mfa_enabled_at: nil,
+               updated_at: DateTime.utc_now()
+             }) == nil
+
+      assert Auth.mfa_proof_user_id(%{
+               user_id: user.id,
+               mfa_enabled_at: DateTime.utc_now(),
+               updated_at: nil
+             }) == nil
     end
   end
 end

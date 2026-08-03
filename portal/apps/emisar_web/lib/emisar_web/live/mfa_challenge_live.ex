@@ -51,8 +51,8 @@ defmodule EmisarWeb.MfaChallengeLive do
     user = socket.assigns.user
 
     case Auth.verify_mfa_challenge(user, factor, socket.assigns.request_context) do
-      :ok ->
-        handoff = MfaChallengeHandoff.sign(user.id)
+      {:ok, proof} ->
+        handoff = MfaChallengeHandoff.sign(proof)
         {:noreply, redirect(socket, to: ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")}
 
       {:error, :rate_limited} ->

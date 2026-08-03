@@ -31,7 +31,7 @@ defmodule EmisarWeb.RoleChangeSessionRefreshTest do
       )
 
     # A live session for the member → the socket topic a disconnect targets.
-    token = Auth.create_session_token!(member, :magic_link, false)
+    token = Fixtures.Auth.create_session_token!(member, :magic_link, false)
     topic = Auth.live_socket_topic_for_session(token)
     EmisarWeb.Endpoint.subscribe(topic)
 

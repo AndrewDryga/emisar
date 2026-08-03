@@ -21,55 +21,51 @@ defmodule EmisarWeb.UserAuth do
   # -- Public surface -------------------------------------------------
 
   @doc """
-  Logs in `user`, persisting the session token in the cookie. Always renews the
-  session ID (CSRF defence in depth) and redirects. `auth_method` (how they
-  signed in) and `mfa` (was a second factor verified) are stamped onto the
-  persisted token so they reach every audit row; `opts` carry the SSO-only
-  `:user_identity_id`.
+  Installs the magic-link session `Emisar.Auth` already minted — factor one
+  only, so the analytics provenance is fixed here at `:magic_link` / `mfa:
+  false` and no caller can widen it. `user` and `token` are the pair the domain
+  returned from one locked transaction; the boundary only puts the token in the
+  cookie, renews the session ID (CSRF defence in depth), and redirects.
+  `registered?` is true for the FIRST sign-in after a registration, which fires
+  sign_up_completed.
   """
-  def log_in_user(conn, user, auth_method, mfa, opts \\ []) do
-    # `registered?` rides in opts (not params/conn) so the FIRST sign-in after a
-    # registration — magic-link round-trip or SSO JIT — fires sign_up_completed.
-    {registered?, opts} = Keyword.pop(opts, :registered?, false)
-    context = RequestContext.from_conn(conn)
-    attribution = MarketingAttribution.current(conn)
-
-    token =
-      Auth.create_session_token!(
-        user,
-        auth_method,
-        mfa,
-        %{ip_address: context.ip_address, user_agent: context.user_agent},
-        opts
-      )
-
-    finish_log_in(conn, user, token, auth_method, mfa, registered?, attribution)
-  end
+  def log_in_magic_link_user(conn, user, token, registered?),
+    do: finish_log_in(conn, user, token, :magic_link, false, registered?)
 
   @doc """
-  Completes a branded account sign-in under the account lifecycle lock. Returns
+  Installs the magic-link session `Emisar.Auth` minted after the second factor
+  passed — same as `log_in_magic_link_user/4` but with `mfa: true` provenance,
+  fixed here so no caller can claim a factor it didn't verify.
+  """
+  def log_in_magic_link_mfa_user(conn, user, token, registered?),
+    do: finish_log_in(conn, user, token, :magic_link, true, registered?)
+
+  @doc """
+  Completes an SSO sign-in under the account lifecycle lock. `mfa` says whether
+  the IdP satisfies the second factor; `opts` carry the `:user_identity_id` the
+  session is bound to plus the JIT-provisioning `:registered?` flag. Returns
   `{:error, :account_disabled}` when support disabled the account before the
   session credential could be inserted.
   """
-  def log_in_user_for_account(conn, user, account_id, auth_method, mfa, opts \\ []) do
+  def log_in_sso_user_for_account(conn, user, account_id, mfa, opts \\ []) do
     {registered?, opts} = Keyword.pop(opts, :registered?, false)
     context = RequestContext.from_conn(conn)
-    attribution = MarketingAttribution.current(conn)
 
-    case Auth.complete_account_sign_in(user, account_id, auth_method, mfa, context, opts) do
+    case Auth.complete_sso_account_sign_in(user, account_id, mfa, context, opts) do
       {:ok, token} ->
-        {:ok, finish_log_in(conn, user, token, auth_method, mfa, registered?, attribution)}
+        {:ok, finish_log_in(conn, user, token, :sso, mfa, registered?)}
 
       {:error, :account_disabled} = error ->
         error
 
       {:error, reason} ->
-        raise "could not complete account sign-in: #{inspect(reason)}"
+        raise "could not complete SSO sign-in: #{inspect(reason)}"
     end
   end
 
-  defp finish_log_in(conn, user, token, auth_method, mfa, registered?, attribution) do
+  defp finish_log_in(conn, user, token, auth_method, mfa, registered?) do
     user_return_to = get_session(conn, :user_return_to)
+    attribution = MarketingAttribution.current(conn)
     if registered?, do: Marketing.Conversions.account_signed_up(user, attribution)
 
     conn

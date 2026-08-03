@@ -491,8 +491,8 @@ defmodule Emisar.AccountsTest do
       outsider = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
-      member_token = Emisar.Auth.create_session_token!(member, :magic_link, false)
-      outsider_token = Emisar.Auth.create_session_token!(outsider, :magic_link, false)
+      member_token = Fixtures.Auth.create_session_token!(member, :magic_link, false)
+      outsider_token = Fixtures.Auth.create_session_token!(outsider, :magic_link, false)
 
       assert {:ok, _account} =
                Accounts.set_account_disabled_for_support(
@@ -3173,7 +3173,7 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
-      token = Emisar.Auth.create_session_token!(target, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(target, :magic_link, false)
       assert {:ok, %User{}, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
 
       assert :ok = Accounts.end_all_sessions_for(membership, subject)
@@ -3329,7 +3329,7 @@ defmodule Emisar.AccountsTest do
           role: "admin"
         )
 
-      session_token = Emisar.Auth.create_session_token!(member, :magic_link, false)
+      session_token = Fixtures.Auth.create_session_token!(member, :magic_link, false)
 
       assert {:ok, %User{}, _token} =
                Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
@@ -4867,7 +4867,7 @@ defmodule Emisar.AccountsTest do
           role: "admin"
         )
 
-      token = Emisar.Auth.create_session_token!(user, :sso, true)
+      token = Fixtures.Auth.create_session_token!(user, :sso, true)
 
       assert :ok = Accounts.refresh_directory_authorization_sessions(membership)
       assert {:ok, %User{}, _session} = Emisar.Auth.fetch_user_and_token_by_session_token(token)

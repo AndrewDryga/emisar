@@ -188,18 +188,10 @@ defmodule EmisarWeb.UserSessionController do
   def magic_link_complete(conn, %{"handoff" => handoff}) do
     with {:ok, {user_id, registered?, token_id}} <- MagicLinkHandoff.verify(handoff),
          {:ok, cookie_token_id, _nonce, _flag} <- read_magic_cookie(conn),
-         true <- cookie_token_id == token_id,
-         {:ok, user} <- Users.fetch_user_by_id(user_id) do
-      complete_magic_sign_in(conn, user, registered?, RequestContext.from_conn(conn))
+         true <- cookie_token_id == token_id do
+      complete_magic_sign_in(conn, user_id, registered?, RequestContext.from_conn(conn))
     else
-      _ ->
-        conn
-        |> delete_resp_cookie(@magic_cookie)
-        |> put_flash(
-          :error,
-          "That sign-in couldn't be completed. Enter the code again or resend."
-        )
-        |> redirect(to: ~p"/sign_in/magic?sent=1")
+      _ -> conn |> delete_resp_cookie(@magic_cookie) |> restart_magic_sign_in()
     end
   end
 
@@ -207,29 +199,42 @@ defmodule EmisarWeb.UserSessionController do
 
   @doc """
   Completes an MFA sign-in challenge (the second factor `MfaChallengeLive` just
-  verified). Requires BOTH the signed handoff (proof the LiveView ran the
-  verification) AND a matching `:mfa_pending_user_id` session marker (the browser
-  that passed factor one) — a handoff alone can't manufacture a session. On
-  success, establishes the full session with `mfa: true`; otherwise restarts.
+  verified). Requires BOTH the signed handoff — carrying the opaque proof, which
+  `Auth` re-checks against the locked user row — AND a matching
+  `:mfa_pending_user_id` session marker (the browser that passed factor one), so
+  a handoff alone can't manufacture a session. The proof's user id is only that
+  browser binding; `Auth` reads the credential state itself, mints the session,
+  and hands back the user it signed in. This installs it, or restarts the
+  sign-in fail-closed.
   """
   def mfa_complete(conn, %{"handoff" => handoff}) do
-    with {:ok, user_id} <- MfaChallengeHandoff.verify(handoff),
-         ^user_id <- get_session(conn, :mfa_pending_user_id),
-         {:ok, user} <- Users.fetch_user_by_id(user_id) do
+    with {:ok, proof} <- MfaChallengeHandoff.verify(handoff),
+         user_id when is_binary(user_id) <- Auth.mfa_proof_user_id(proof),
+         ^user_id <- get_session(conn, :mfa_pending_user_id) do
       registered? = get_session(conn, :mfa_pending_registered?) || false
       context = RequestContext.from_conn(conn)
+      conn = clear_mfa_pending(conn)
+      account_ref = branded_account_ref(get_session(conn, :user_return_to))
 
-      conn
-      |> clear_mfa_pending()
-      |> complete_branded_sign_in(user, fn conn, account ->
-        log_in_magic_user(conn, user, account, true, registered?, context)
-      end)
+      case Auth.complete_magic_link_mfa_sign_in(proof, account_ref, context) do
+        {:ok, user, token, target} ->
+          install_magic_link_session(
+            conn,
+            target,
+            user,
+            token,
+            registered?,
+            &UserAuth.log_in_magic_link_mfa_user/4
+          )
+
+        {:error, {:account_disabled, account}} ->
+          redirect_to_disabled_account(conn, account)
+
+        {:error, _reason} ->
+          restart_mfa_sign_in(conn)
+      end
     else
-      _ ->
-        conn
-        |> clear_mfa_pending()
-        |> put_flash(:error, "That sign-in couldn't be completed. Start again below.")
-        |> redirect(to: ~p"/sign_in/magic")
+      _ -> conn |> clear_mfa_pending() |> restart_mfa_sign_in()
     end
   end
 
@@ -264,7 +269,7 @@ defmodule EmisarWeb.UserSessionController do
 
       conn
       |> prep.()
-      |> complete_magic_sign_in(user, registered?, context)
+      |> complete_magic_sign_in(user.id, registered?, context)
     else
       _ ->
         conn
@@ -358,29 +363,41 @@ defmodule EmisarWeb.UserSessionController do
   # slug-probing path.
   @branded_denied_message "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
 
-  # After the magic link verifies factor one (email), branch on MFA enrollment:
-  # a user with no second factor is signed straight in; an `mfa_enabled_at` user
-  # is NOT — we stash a partial-auth marker (which grants no access: it mints no
-  # `:user_token`, so `require_authenticated_user` blocks every /app route) and
-  # send them to the challenge. `record_sign_in` moves to `mfa_complete` — a
-  # sign-in is only complete once both factors pass.
-  defp complete_magic_sign_in(conn, user, registered?, context) do
+  # Factor one is verified (the magic link proved inbox possession); `Auth`
+  # decides everything else from the CURRENT user row — whether a second factor
+  # is still owed, which account to land on, and whether a session may be minted
+  # at all — and hands back the user it signed in, which is what gets installed.
+  # The verified id is only a name for the partial-auth marker, which grants no
+  # access: it mints no `:user_token`, so `require_authenticated_user` blocks
+  # every /app route.
+  defp complete_magic_sign_in(conn, user_id, registered?, context) when is_binary(user_id) do
     conn = delete_resp_cookie(conn, @magic_cookie)
+    account_ref = branded_account_ref(get_session(conn, :user_return_to))
 
-    if mfa_required_at_sign_in?(user) do
-      conn
-      |> put_session(:mfa_pending_user_id, user.id)
-      |> put_session(:mfa_pending_registered?, registered?)
-      |> redirect(to: ~p"/sign_in/mfa")
-    else
-      complete_branded_sign_in(conn, user, fn conn, account ->
-        log_in_magic_user(conn, user, account, false, registered?, context)
-      end)
+    case Auth.complete_magic_link_sign_in(user_id, account_ref, context) do
+      {:ok, user, token, target} ->
+        install_magic_link_session(
+          conn,
+          target,
+          user,
+          token,
+          registered?,
+          &UserAuth.log_in_magic_link_user/4
+        )
+
+      {:error, :mfa_required} ->
+        conn
+        |> put_session(:mfa_pending_user_id, user_id)
+        |> put_session(:mfa_pending_registered?, registered?)
+        |> redirect(to: ~p"/sign_in/mfa")
+
+      {:error, {:account_disabled, account}} ->
+        redirect_to_disabled_account(conn, account)
+
+      {:error, _reason} ->
+        restart_magic_sign_in(conn)
     end
   end
-
-  defp mfa_required_at_sign_in?(%Users.User{mfa_enabled_at: %DateTime{}}), do: true
-  defp mfa_required_at_sign_in?(%Users.User{}), do: false
 
   defp clear_mfa_pending(conn) do
     conn
@@ -388,33 +405,41 @@ defmodule EmisarWeb.UserSessionController do
     |> delete_session(:mfa_pending_registered?)
   end
 
-  defp complete_branded_sign_in(conn, %Users.User{} = user, log_in) do
-    account_ref = branded_account_ref(get_session(conn, :user_return_to))
+  # `log_in` installs the session token `Auth` already minted — the two captures
+  # (`log_in_magic_link_user/4`, `log_in_magic_link_mfa_user/4`) are what fix the
+  # `mfa` provenance, so nothing here decides it.
+  defp install_magic_link_session(conn, {:member, account}, user, token, registered?, log_in) do
+    # Cookie write is a resp_cookie — separate from the session, so the session
+    # renewal inside `log_in` keeps it (same as the SSO callback).
+    conn
+    |> RecentAccounts.put(%{slug: account.slug, name: account.name})
+    |> log_in.(user, token, registered?)
+  end
 
-    case Auth.resolve_post_auth_account(user, account_ref) do
-      {:member, account} ->
-        # Cookie write is a resp_cookie — separate from the session, so
-        # `log_in_user`'s session renewal keeps it (same as the SSO callback).
-        conn
-        |> RecentAccounts.put(%{slug: account.slug, name: account.name})
-        |> finish_sign_in(account, log_in)
+  defp install_magic_link_session(conn, :not_member, user, token, registered?, log_in) do
+    # The flash is set AFTER `log_in` — its `renew_session` clears the session
+    # (flash included); the flash plug's before_send re-persists this.
+    conn =
+      conn
+      |> delete_session(:user_return_to)
+      |> log_in.(user, token, registered?)
 
-      {:disabled, account} ->
-        redirect_to_disabled_account(conn, account)
+    put_flash(conn, :info, @branded_denied_message)
+  end
 
-      :not_member ->
-        # The flash is set AFTER `log_in_user` — its `renew_session` clears the
-        # session (flash included); the flash plug's before_send re-persists this.
-        conn =
-          conn
-          |> delete_session(:user_return_to)
-          |> finish_sign_in(nil, log_in)
+  defp install_magic_link_session(conn, :no_target, user, token, registered?, log_in),
+    do: log_in.(conn, user, token, registered?)
 
-        put_flash(conn, :info, @branded_denied_message)
+  defp restart_magic_sign_in(conn) do
+    conn
+    |> put_flash(:error, "That sign-in couldn't be completed. Enter the code again or resend.")
+    |> redirect(to: ~p"/sign_in/magic?sent=1")
+  end
 
-      :no_target ->
-        finish_sign_in(conn, nil, log_in)
-    end
+  defp restart_mfa_sign_in(conn) do
+    conn
+    |> put_flash(:error, "That sign-in couldn't be completed. Start again below.")
+    |> redirect(to: ~p"/sign_in/magic")
   end
 
   defp branded_account_ref("/app/" <> path) do
@@ -425,25 +450,6 @@ defmodule EmisarWeb.UserSessionController do
   end
 
   defp branded_account_ref(_return_to), do: nil
-
-  defp log_in_magic_user(conn, user, nil, mfa, registered?, context) do
-    Users.record_sign_in(user, "magic_link", context)
-
-    {:ok, UserAuth.log_in_user(conn, user, :magic_link, mfa, registered?: registered?)}
-  end
-
-  defp log_in_magic_user(conn, user, account, mfa, registered?, _context) do
-    UserAuth.log_in_user_for_account(conn, user, account.id, :magic_link, mfa,
-      registered?: registered?
-    )
-  end
-
-  defp finish_sign_in(conn, account, log_in) do
-    case log_in.(conn, account) do
-      {:ok, conn} -> conn
-      {:error, :account_disabled} -> redirect_to_disabled_account(conn, account)
-    end
-  end
 
   defp redirect_to_disabled_account(conn, account) do
     conn

@@ -64,31 +64,18 @@ defmodule Emisar.Auth do
   # -- Session tokens ---------------------------------------------------
 
   @doc """
-  Internal — `EmisarWeb.UserAuth` mints the session row right after verifying
-  credentials; the session token IS the credential, so there's no Subject yet.
-  Returns the raw token for the cookie. `auth_method` (how the session was
-  authenticated) and `mfa` (was a second factor verified) are required
-  provenance — stamped onto the token so every later request resolves how it
-  signed in; `opts` carry the SSO-only `:user_identity_id`. `metadata`
-  (optional) carries `ip_address` + `user_agent` for the Profile sessions
-  list; missing keys are tolerated.
+  Internal — SSO sign-in completion, the only remaining generic session minter
+  and fixed to `:sso` provenance so no other flow can borrow it. Holds the
+  active account row lock while recording the sign-in and inserting the
+  user-global session credential, so a concurrent account disable either
+  revokes this session afterward or prevents it from being minted. `mfa` says
+  whether the IdP satisfies the second factor; `opts` carry the
+  `:user_identity_id` the session is bound to. Returns `{:ok, token}` (the raw
+  cookie value) or `{:error, :account_disabled | reason}`.
   """
-  def create_session_token!(%Users.User{} = user, auth_method, mfa, metadata \\ %{}, opts \\ []) do
-    {token, digest} = Crypto.session_token()
-    Repo.insert!(UserToken.Changeset.session(user, digest, metadata, auth_method, mfa, opts))
-    token
-  end
-
-  @doc """
-  Internal branded sign-in completion. Holds the active account row lock while
-  recording the sign-in and inserting the user-global session credential, so a
-  concurrent account disable either revokes this session afterward or prevents
-  it from being minted.
-  """
-  def complete_account_sign_in(
+  def complete_sso_account_sign_in(
         %Users.User{} = user,
         account_id,
-        auth_method,
         mfa,
         %RequestContext{} = context,
         opts \\ []
@@ -113,13 +100,12 @@ defmodule Emisar.Auth do
         {:error, reason} -> {:error, reason}
       end
     end)
-    |> Multi.run(:sign_in, fn _repo, _changes ->
-      Users.record_sign_in(user, Atom.to_string(auth_method), context)
+    |> Multi.merge(fn _changes ->
+      Users.put_sign_in(Multi.new(), user, "sso", context)
     end)
-    |> Multi.insert(
-      :token,
-      UserToken.Changeset.session(user, digest, metadata, auth_method, mfa, opts)
-    )
+    |> Multi.insert(:token, fn %{sign_in: signed_in_user} ->
+      UserToken.Changeset.session(signed_in_user, digest, metadata, :sso, mfa, opts)
+    end)
     |> Repo.commit_multi()
     |> case do
       {:ok, _changes} -> {:ok, token}
@@ -695,6 +681,164 @@ defmodule Emisar.Auth do
       else: {:error, :invalid_or_expired}
   end
 
+  # -- Magic-link sign-in completion ------------------------------------
+
+  @mfa_sign_in_proof_salt "mfa sign-in proof"
+  @mfa_sign_in_proof_max_age_seconds 120
+
+  @doc """
+  Internal — factor one is done (a magic link verified inbox possession) and the
+  boundary asks the domain to finish the sign-in; the session token IS the
+  credential being minted, so there's no Subject yet. `account_ref` is the
+  already-validated branded `/app/:account_id_or_slug` target, or `nil`.
+
+  The user is re-read HERE, never taken from the caller, so an enrollment that
+  landed since the link was issued still forces the second factor; the same
+  check runs again on the locked row inside the minting transaction. The
+  session's provenance is fixed — `:magic_link` with `mfa: false` — so no caller
+  can claim a factor it didn't verify.
+
+  Returns `{:ok, user, token, target}` — `user` is the row the minting
+  transaction locked and stamped, so the boundary installs the session for the
+  state the domain actually signed in rather than its own earlier snapshot, and
+  `target` is `{:member, account}`, `:not_member`, or `:no_target` (what the
+  boundary routes on). `{:error, :mfa_required}` when the second factor is still
+  owed, `{:error, {:account_disabled, account}}` when the branded account is on
+  hold, or `{:error, :not_found}` when the user no longer resolves.
+  """
+  def complete_magic_link_sign_in(user_id, account_ref, %RequestContext{} = context) do
+    with {:ok, user} <- Users.fetch_user_by_id(user_id),
+         :ok <- ensure_mfa_state_current(user, nil) do
+      target = resolve_post_auth_account(user, account_ref)
+
+      complete_sign_in_for_target(target, &insert_magic_link_session(user, &1, nil, context))
+    end
+  end
+
+  @doc """
+  Internal — factor two is done: `proof` is the opaque term `verify_mfa_challenge/3`
+  returned, and this mints the full session for it. `account_ref` is the
+  already-validated branded target, or `nil`.
+
+  The proof is re-checked against the LOCKED user row before anything is
+  written, so it is only good for the enrollment it was minted against: a
+  disable, a re-enable, a secret rotation, or any other credential write since
+  the challenge fails closed with no token. Provenance is fixed to `:magic_link`
+  with `mfa: true`.
+
+  Same `{:ok, user, token, target}` success shape as
+  `complete_magic_link_sign_in/3`; `{:error, :mfa_proof_stale}` when the proof no
+  longer matches the row — including a replay of a proof that already completed,
+  since minting stamps the sign-in and moves `updated_at` on — `{:error,
+  {:account_disabled, account}}`, or `{:error, :not_found}`.
+  """
+  def complete_magic_link_mfa_sign_in(proof, account_ref, %RequestContext{} = context) do
+    with {:ok, user} <- Users.fetch_user_by_id(mfa_proof_user_id(proof)) do
+      target = resolve_post_auth_account(user, account_ref)
+
+      complete_sign_in_for_target(target, &insert_magic_link_session(user, &1, proof, context))
+    end
+  end
+
+  # A disabled branded account never mints a session — its members are sent to
+  # that account's own sign-in page, so the boundary needs the account back.
+  defp complete_sign_in_for_target({:disabled, %Accounts.Account{} = account}, _mint),
+    do: {:error, {:account_disabled, account}}
+
+  defp complete_sign_in_for_target({:member, %Accounts.Account{} = account} = target, mint) do
+    case mint.(account) do
+      {:ok, user, token} -> {:ok, user, token, target}
+      {:error, :account_disabled} -> {:error, {:account_disabled, account}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp complete_sign_in_for_target(target, mint) do
+    case mint.(nil) do
+      {:ok, user, token} -> {:ok, user, token, target}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The ONE magic-link session minter. `proof` is `nil` for a factor-one
+  # completion and a verified MFA proof for factor two — it fixes BOTH the
+  # re-check on the locked user row AND the `mfa` provenance stamped on the
+  # token, so the two can't disagree and no caller supplies either.
+  #
+  # Locks the branded account first and the user row second — one ordering for
+  # both factors, so concurrent completions can't deadlock — and holds both
+  # across the insert, so a disable committed mid-sign-in either revokes this
+  # session afterward or prevents it from being minted.
+  #
+  # Returns the sign-in-stamped row from that transaction, never the caller's
+  # snapshot: the boundary installs the session against the state the domain
+  # actually signed in.
+  defp insert_magic_link_session(
+         %Users.User{} = user,
+         account,
+         proof,
+         %RequestContext{} = context
+       ) do
+    {token, digest} = Crypto.session_token()
+    metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
+
+    Multi.new()
+    |> lock_sign_in_account(account)
+    |> Multi.run(:user, fn repo, _changes ->
+      lock_signing_in_user(user.id, proof, repo)
+    end)
+    |> Multi.merge(fn %{user: loaded_user} ->
+      Users.put_sign_in(Multi.new(), loaded_user, "magic_link", context)
+    end)
+    |> Multi.insert(:token, fn %{sign_in: signed_in_user} ->
+      UserToken.Changeset.session(
+        signed_in_user,
+        digest,
+        metadata,
+        :magic_link,
+        not is_nil(proof)
+      )
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{sign_in: signed_in_user}} -> {:ok, signed_in_user, token}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp lock_sign_in_account(multi, nil), do: multi
+
+  defp lock_sign_in_account(multi, %Accounts.Account{id: account_id}) do
+    Multi.run(multi, :account, fn repo, _changes ->
+      case Accounts.fetch_and_lock_account(account_id, repo: repo) do
+        {:ok, account} -> {:ok, account}
+        {:error, :not_found} -> {:error, :account_disabled}
+      end
+    end)
+  end
+
+  defp lock_signing_in_user(user_id, proof, repo) do
+    with {:ok, loaded_user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         :ok <- ensure_mfa_state_current(loaded_user, proof) do
+      {:ok, loaded_user}
+    end
+  end
+
+  # Factor one against an enrolled user is unfinished business, not a session.
+  defp ensure_mfa_state_current(%Users.User{mfa_enabled_at: %DateTime{}}, nil),
+    do: {:error, :mfa_required}
+
+  defp ensure_mfa_state_current(%Users.User{}, nil), do: :ok
+
+  defp ensure_mfa_state_current(%Users.User{} = user, proof) do
+    with {:ok, payload} <- verify_mfa_proof(proof),
+         true <- payload == mfa_proof_payload(user) do
+      :ok
+    else
+      _ -> {:error, :mfa_proof_stale}
+    end
+  end
+
   # -- Email-change step-up --------------------------------------------
 
   # Online-guess budget for the 6-digit email-change step-up code.
@@ -832,7 +976,7 @@ defmodule Emisar.Auth do
          code,
          subject
        ) do
-    with :ok <- verify_mfa(user, code, subject.context), do: {:ok, new_email}
+    with {:ok, _verified} <- verify_mfa(user, code, subject.context), do: {:ok, new_email}
   end
 
   defp verify_email_change_step_up(%Users.User{}, _new_email, code, subject) do
@@ -937,7 +1081,7 @@ defmodule Emisar.Auth do
     code = String.trim(code)
 
     with {:ok, user} <- Users.fetch_user_by_id(id),
-         :ok <- verify_disable_mfa_factor(user, code, subject.context) do
+         {:ok, _verified} <- verify_disable_mfa_factor(user, code, subject.context) do
       Users.update_user_mfa(id, nil, nil, [],
         audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
       )
@@ -1002,26 +1146,76 @@ defmodule Emisar.Auth do
 
   Pre-Subject — this is the sign-in second factor, so it takes the
   partially-authenticated `%Users.User{}` (no tenant resolved yet). Returns
-  `:ok`, `{:error, :rate_limited}` once the window is exhausted, `{:error,
-  :replay}` on a reused TOTP, or `{:error, :invalid}` otherwise; misses are
-  audited as `user.mfa_failed`.
+  `{:ok, proof}` — an opaque term bound to the enrollment that was just
+  verified, which `complete_magic_link_mfa_sign_in/3` re-checks against the
+  locked row before minting anything — `{:error, :rate_limited}` once the window
+  is exhausted, `{:error, :replay}` on a reused TOTP, or `{:error, :invalid}`
+  otherwise; misses are audited as `user.mfa_failed`.
   """
   def verify_mfa_challenge(user, factor, context \\ %RequestContext{})
 
   def verify_mfa_challenge(%Users.User{} = user, {:totp, otp}, context) when is_binary(otp) do
-    with :ok <- throttle_mfa_challenge(user) do
-      verify_mfa(user, otp, context)
+    with :ok <- throttle_mfa_challenge(user),
+         {:ok, verified} <- verify_mfa(user, otp, context) do
+      {:ok, mfa_proof(verified)}
     end
   end
 
   def verify_mfa_challenge(%Users.User{} = user, {:recovery_code, code}, context)
       when is_binary(code) do
-    with :ok <- throttle_mfa_challenge(user) do
-      consume_mfa_recovery_code(user, code, context)
+    with :ok <- throttle_mfa_challenge(user),
+         {:ok, verified} <- consume_mfa_recovery_code(user, code, context) do
+      {:ok, mfa_proof(verified)}
     end
   end
 
   def verify_mfa_challenge(_, _, _), do: {:error, :invalid}
+
+  @doc """
+  Internal — the user a verified MFA proof was minted for, so the sign-in
+  boundary can bind completion to the browser that passed factor one without
+  learning the proof's shape. Only the complete proof shape names anyone, so a
+  bare `%{user_id: id}` a caller assembled itself is `nil` here and never reaches
+  completion; `nil` likewise for anything else that isn't a proof.
+  """
+  def mfa_proof_user_id(proof) when is_binary(proof) do
+    case verify_mfa_proof(proof) do
+      {:ok, {:mfa_sign_in, user_id, %DateTime{}, %DateTime{}}} when is_binary(user_id) ->
+        user_id
+
+      _ ->
+        nil
+    end
+  end
+
+  def mfa_proof_user_id(_proof), do: nil
+
+  # The domain signs the person, enrollment, and post-verification row version.
+  # A caller can read those fields but cannot turn them into a proof without the
+  # portal signing secret. Completion verifies the MAC before rebuilding and
+  # comparing the payload from the locked row.
+  defp mfa_proof(%Users.User{} = user) do
+    Phoenix.Token.sign(
+      mfa_proof_secret(),
+      @mfa_sign_in_proof_salt,
+      mfa_proof_payload(user)
+    )
+  end
+
+  defp mfa_proof_payload(%Users.User{} = user),
+    do: {:mfa_sign_in, user.id, user.mfa_enabled_at, user.updated_at}
+
+  defp verify_mfa_proof(proof) when is_binary(proof) do
+    Phoenix.Token.verify(mfa_proof_secret(), @mfa_sign_in_proof_salt, proof,
+      max_age: @mfa_sign_in_proof_max_age_seconds
+    )
+  end
+
+  defp verify_mfa_proof(_proof), do: {:error, :invalid}
+
+  # Runtime derives this from the portal secret key base. Salt separation keeps
+  # MFA proofs independent from the emailed-link signatures sharing the key.
+  defp mfa_proof_secret, do: Application.fetch_env!(:emisar, :email_link_secret)
 
   defp throttle_mfa_challenge(%Users.User{id: user_id}) do
     Throttle.check(
@@ -1045,8 +1239,8 @@ defmodule Emisar.Auth do
     # consumes there, so a secret rotated/disabled mid-verify can't slip an old
     # code through. We only AUDIT here from the caller's user.
     case Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now()) do
-      :ok ->
-        :ok
+      {:ok, %Users.User{} = verified} ->
+        {:ok, verified}
 
       {:error, :replay} ->
         Audit.log_for_user(user, "user.mfa_failed",
@@ -1082,8 +1276,8 @@ defmodule Emisar.Auth do
              })
            end
          ) do
-      {:ok, _} ->
-        :ok
+      {:ok, %Users.User{} = consumed} ->
+        {:ok, consumed}
 
       {:error, :invalid} ->
         # No DB mutation on a wrong code — just an audit row standalone.

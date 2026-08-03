@@ -32,7 +32,7 @@ defmodule EmisarWeb.RequireSSOTest do
   # A real signed-in session whose token records SSO provenance for `identity`.
   defp sso_session(user, identity) do
     token =
-      Emisar.Auth.create_session_token!(user, :sso, true, %{}, user_identity_id: identity.id)
+      Fixtures.Auth.create_session_token!(user, :sso, true, %{}, user_identity_id: identity.id)
 
     build_conn() |> init_test_session(%{}) |> put_session(:user_token, token)
   end
@@ -115,7 +115,7 @@ defmodule EmisarWeb.RequireSSOTest do
       _ = enabled_provider(account)
       require_sso!(account)
 
-      magic_token = Emisar.Auth.create_session_token!(user, :magic_link, false)
+      magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       magic_conn =
         build_conn() |> init_test_session(%{}) |> put_session(:user_token, magic_token)

@@ -224,7 +224,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       # proves email control, not a second factor). So on a require_mfa account the
       # member is still un-enrolled, and the first /app mount's :ensure_mfa_compliant
       # gate funnels them into TOTP setup — the magic link is not an MFA bypass.
-      magic_token = Auth.create_session_token!(user, :magic_link, false)
+      magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       conn =
         Phoenix.ConnTest.build_conn()

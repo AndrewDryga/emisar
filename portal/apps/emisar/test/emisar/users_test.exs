@@ -107,6 +107,25 @@ defmodule Emisar.UsersTest do
     end
   end
 
+  describe "put_sign_in/4" do
+    test "composes the sign-in update and audit into the caller's transaction" do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %{caller_step: :kept, sign_in: updated}} =
+               Ecto.Multi.new()
+               |> Ecto.Multi.run(:caller_step, fn _repo, _changes -> {:ok, :kept} end)
+               |> Users.put_sign_in(user, "magic_link", %Emisar.RequestContext{})
+               |> Repo.commit_multi()
+
+      assert %DateTime{} = updated.last_sign_in_at
+
+      assert {:ok, [event], _} =
+               Audit.list_events(subject, filter: [event_type: ["user.signed_in"]])
+
+      assert event.payload["method"] == "magic_link"
+    end
+  end
+
   describe "update_user_profile/2 (self-service)" do
     setup do
       %{account: Fixtures.Accounts.create_account()}
@@ -478,7 +497,7 @@ defmodule Emisar.UsersTest do
     test "a valid OTP verifies and stamps the consumed bucket", %{user: user, secret: secret} do
       otp = NimbleTOTP.verification_code(secret)
 
-      assert :ok = Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now())
+      assert {:ok, %User{}} = Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now())
       assert %DateTime{} = Repo.reload!(user).mfa_last_used_at
     end
 
@@ -489,7 +508,7 @@ defmodule Emisar.UsersTest do
       at = DateTime.utc_now()
       otp = NimbleTOTP.verification_code(secret, time: at)
 
-      assert :ok = Users.verify_and_consume_mfa(user.id, otp, at)
+      assert {:ok, %User{}} = Users.verify_and_consume_mfa(user.id, otp, at)
       # Same code, same 30-second bucket → the locked replay guard rejects it.
       assert {:error, :replay} = Users.verify_and_consume_mfa(user.id, otp, at)
     end
