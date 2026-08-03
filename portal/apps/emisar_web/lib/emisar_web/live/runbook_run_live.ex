@@ -41,6 +41,8 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:preflight_generation, 0)
      |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
      |> assign(:result, nil)
+     |> assign(:projection, nil)
+     |> assign(:item_facts, %{})
      |> assign(:attempts_by_item, %{})
      |> assign(:events_by_attempt, %{})
      |> assign(:approval_request, nil)
@@ -74,6 +76,8 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:preflight_generation, 0)
           |> assign(:preflight, %{state: :idle, plan: nil, issues: [], checked_at: nil})
           |> assign(:result, nil)
+          |> assign(:projection, nil)
+          |> assign(:item_facts, %{})
           |> assign(:attempts_by_item, %{})
           |> assign(:events_by_attempt, %{})
           |> assign(:approval_request, nil)
@@ -332,9 +336,13 @@ defmodule EmisarWeb.RunbookRunLive do
   defp load_execution(socket, execution_id) do
     case Runbooks.fetch_execution_result(execution_id, socket.assigns.current_subject) do
       {:ok, result} when result.execution.runbook_id == socket.assigns.runbook.id ->
+        projection = Runbooks.execution_projection(result)
+
         socket =
           socket
           |> assign(:result, result)
+          |> assign(:projection, projection)
+          |> assign(:item_facts, item_facts_by_id(projection))
           |> assign(
             :attempts_by_item,
             Map.new(result.latest_attempts, &{&1.runbook_execution_item_id, &1})
@@ -343,7 +351,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> load_attempt_output_previews(result.latest_attempts)
           |> assign(:recent_executions, [])
 
-        if result.execution.status in [:active, :pending_approval],
+        if projection.execution.waitable?,
           do: socket,
           else: unsubscribe_execution(socket)
 
@@ -365,10 +373,16 @@ defmodule EmisarWeb.RunbookRunLive do
     end
   end
 
+  # Each item's rendered row pairs the durable row with its projected facts.
+  defp item_facts_by_id(projection),
+    do: projection.stages |> Enum.flat_map(& &1.items) |> Map.new(&{&1.id, &1})
+
   defp reset_run_form(socket) do
     socket
     |> unsubscribe_execution()
     |> assign(:result, nil)
+    |> assign(:projection, nil)
+    |> assign(:item_facts, %{})
     |> assign(:attempts_by_item, %{})
     |> assign(:events_by_attempt, %{})
     |> assign(:approval_request, nil)
@@ -539,20 +553,6 @@ defmodule EmisarWeb.RunbookRunLive do
     if MapSet.member?(set, id), do: MapSet.delete(set, id), else: MapSet.put(set, id)
   end
 
-  defp projected_item_status(item, stage, execution) do
-    case item.status do
-      :pending when stage.status == :halted or execution.status == :halted -> :halted
-      :pending when stage.status == :cancelled or execution.status == :cancelled -> :cancelled
-      :pending -> :queued
-      # A halt (e.g. a denied approval) marks undispatched items :failed with
-      # zero attempts. Eight rose "failed" rows for actions that never touched
-      # a host drown the one real cause — the operator's question is exactly
-      # "did anything execute?", so say what happened: it did not run.
-      :failed when item.attempt_count == 0 -> :not_run
-      status -> status
-    end
-  end
-
   defp execution_duration_ms(%{completed_at: %DateTime{} = completed_at} = execution),
     do: DateTime.diff(completed_at, execution.inserted_at, :millisecond)
 
@@ -638,20 +638,17 @@ defmodule EmisarWeb.RunbookRunLive do
       not is_nil(item.next_attempt_at)
   end
 
-  defp evidence_label(%{"kind" => "condition", "output" => output, "operator" => operator}),
-    do: "#{output} · #{String.replace(operator, "_", " ")}"
+  defp evidence_label(%{kind: "condition", output: output, operator: operator})
+       when is_binary(output) and is_binary(operator),
+       do: "#{output} · #{String.replace(operator, "_", " ")}"
 
-  defp evidence_label(%{"output" => output}) when is_binary(output), do: output
-  defp evidence_label(%{"kind" => kind}) when is_binary(kind), do: String.replace(kind, "_", " ")
+  defp evidence_label(%{output: output}) when is_binary(output), do: output
+  defp evidence_label(%{kind: kind}) when is_binary(kind), do: String.replace(kind, "_", " ")
   defp evidence_label(_evidence), do: "Evidence"
 
-  defp evidence_kind(%{"kind" => "condition"}), do: "Success condition"
-  defp evidence_kind(%{"kind" => "extraction"}), do: "Output extraction"
+  defp evidence_kind(%{kind: "condition"}), do: "Success condition"
+  defp evidence_kind(%{kind: "extraction"}), do: "Output extraction"
   defp evidence_kind(_evidence), do: "Execution evidence"
-
-  defp evidence_status(%{"status" => "failed"}, :waiting), do: "not met"
-  defp evidence_status(%{"status" => status}, _item_status), do: status
-  defp evidence_status(_evidence, _item_status), do: "pending"
 
   defp evidence_tone(status) when status in ["passed", "extracted"], do: :brand
   defp evidence_tone("failed"), do: :rose
@@ -684,7 +681,7 @@ defmodule EmisarWeb.RunbookRunLive do
       </:title>
       <:actions>
         <.button
-          :if={@result && @result.execution.status in [:active, :pending_approval]}
+          :if={@projection && not @projection.execution.terminal?}
           variant={:secondary}
           tone={:rose}
           phx-click="cancel_execution"
@@ -693,7 +690,7 @@ defmodule EmisarWeb.RunbookRunLive do
           Cancel execution
         </.button>
         <.button
-          :if={@result && @result.execution.status not in [:active, :pending_approval]}
+          :if={@projection && @projection.execution.terminal?}
           variant={:secondary}
           phx-click="run_again"
         >
@@ -713,6 +710,7 @@ defmodule EmisarWeb.RunbookRunLive do
         <.execution_result
           :if={@loaded? && @result}
           result={@result}
+          item_facts={@item_facts}
           attempts_by_item={@attempts_by_item}
           events_by_attempt={@events_by_attempt}
           approval_request={@approval_request}
@@ -1065,6 +1063,7 @@ defmodule EmisarWeb.RunbookRunLive do
     do: field |> String.replace("_", " ") |> String.capitalize()
 
   attr :result, :map, required: true
+  attr :item_facts, :map, required: true
   attr :attempts_by_item, :map, required: true
   attr :events_by_attempt, :map, required: true
   attr :approval_request, :any, default: nil
@@ -1216,7 +1215,7 @@ defmodule EmisarWeb.RunbookRunLive do
           <:step :for={item <- visible_items(stage_items, expanded?)}>
             <.execution_item
               item={item}
-              stage={stage}
+              fact={@item_facts[item.id]}
               execution={@result.execution}
               attempt={@attempts_by_item[item.id]}
               events={
@@ -1246,7 +1245,7 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   attr :item, :map, required: true
-  attr :stage, :map, required: true
+  attr :fact, :map, required: true
   attr :execution, :map, required: true
   attr :attempt, :any, default: nil
   attr :events, :list, required: true
@@ -1254,24 +1253,24 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp execution_item(assigns) do
     assigns =
-      assigns
-      |> assign(
-        :projected_status,
-        projected_item_status(assigns.item, assigns.stage, assigns.execution)
+      assign(
+        assigns,
+        :has_details?,
+        item_detail?(assigns.item, assigns.attempt, assigns.execution)
       )
-      |> assign(:has_details?, item_detail?(assigns.item, assigns.attempt, assigns.execution))
 
     ~H"""
     <div id={"execution-item-#{@item.id}"} class="min-w-0">
       <.execution_item_summary
         item={@item}
-        projected_status={@projected_status}
+        projected_status={@fact.status}
         attempt={@attempt}
         current_account={@current_account}
       />
       <.execution_item_details
         :if={@has_details?}
         item={@item}
+        fact={@fact}
         execution={@execution}
         attempt={@attempt}
         events={@events}
@@ -1324,6 +1323,7 @@ defmodule EmisarWeb.RunbookRunLive do
   end
 
   attr :item, :map, required: true
+  attr :fact, :map, required: true
   attr :execution, :map, required: true
   attr :attempt, :any, default: nil
   attr :events, :list, required: true
@@ -1392,13 +1392,13 @@ defmodule EmisarWeb.RunbookRunLive do
         </dl>
       </div>
 
-      <div :if={@item.success_evidence != []}>
+      <div :if={@fact.evidence != []}>
         <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           Success evidence
         </p>
         <ul class="mt-2 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
           <li
-            :for={evidence <- @item.success_evidence}
+            :for={evidence <- @fact.evidence}
             class="flex items-start justify-between gap-4 py-2.5"
           >
             <div class="min-w-0">
@@ -1407,10 +1407,9 @@ defmodule EmisarWeb.RunbookRunLive do
               </p>
               <p class="mt-0.5 text-[11px] text-zinc-400">{evidence_kind(evidence)}</p>
             </div>
-            <% evidence_status = evidence_status(evidence, @item.status) %>
             <.status_badge
-              status={evidence_status}
-              tone={evidence_tone(evidence_status)}
+              status={evidence.status}
+              tone={evidence_tone(evidence.status)}
               class="shrink-0"
             />
           </li>

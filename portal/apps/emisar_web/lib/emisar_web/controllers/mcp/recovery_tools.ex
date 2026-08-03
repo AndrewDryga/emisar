@@ -248,7 +248,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     subject = conn.assigns.current_subject
 
     with {:ok, initial} <- execution_state(conn, execution_id) do
-      if timeout_ms == 0 or terminal_execution?(initial.payload.status) do
+      if timeout_ms == 0 or not initial.waitable? do
         {:ok, %{execution: initial.payload}}
       else
         :ok = Runbooks.subscribe_execution(subject.account.id, execution_id)
@@ -273,7 +273,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     with :ok <- not_cancelled(cancellation_topic),
          {:ok, current} <- execution_state(conn, execution_id) do
       cond do
-        terminal_execution?(current.payload.status) or current.token != initial_token ->
+        not current.waitable? or current.token != initial_token ->
           {:ok, %{execution: current.payload}}
 
         System.monotonic_time(:millisecond) >= deadline ->
@@ -295,7 +295,8 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     subject = conn.assigns.current_subject
 
     with {:ok, result} <- Runbooks.fetch_execution_result(execution_id, subject),
-         {:ok, payload} <- RunbookTools.project_execution(result, subject) do
+         projection = Runbooks.execution_projection(result),
+         {:ok, payload} <- RunbookTools.project_execution(result, projection, subject) do
       execution = result.execution
 
       token =
@@ -304,7 +305,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          Enum.map(execution.items, &{&1.id, &1.status, &1.updated_at}),
          Enum.map(result.latest_attempts, &{&1.id, &1.status, &1.updated_at})}
 
-      {:ok, %{payload: payload, token: token}}
+      {:ok, %{payload: payload, waitable?: projection.execution.waitable?, token: token}}
     end
   end
 
@@ -435,7 +436,6 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   # incidental side effect. The `wait_for_run tail wakes on a new output chunk`
   # test guards this: a chunk must move the token.
   defp run_token(run), do: {run.status, run.progress_event_count}
-  defp terminal_execution?(status), do: status != "active"
 
   defp error(code, message) do
     %{

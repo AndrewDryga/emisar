@@ -14,7 +14,7 @@ defmodule Emisar.Runbooks do
   alias Emisar.Auth.Subject
   alias Emisar.{Catalog, Runners}
   alias Emisar.Runbooks.{Authorizer, Compiler, Definition, Runbook, RunbookExecution, Scheduler}
-  alias Emisar.Runbooks.{EditorProjection, ExecutionItem}
+  alias Emisar.Runbooks.{EditorProjection, ExecutionItem, ExecutionProjection}
   alias Emisar.Users
 
   # One runbook list page is 35 rows; 64 bounds the batch without capping the
@@ -296,6 +296,20 @@ defmodule Emisar.Runbooks do
       other -> other
     end
   end
+
+  @doc """
+  Projects one `fetch_execution_result/2` result into ordered execution, stage,
+  and item facts.
+
+  Pure — the caller's fetch already authorized and scoped these rows, so this
+  runs no query and takes no `%Subject{}`. It resolves the status an item
+  inherits from its stage or execution, states the one blocking cause, and
+  redacts every value the frozen output plan does not prove public, so no
+  caller can render, hash, or size a sensitive one.
+  """
+  @spec execution_projection(map()) :: ExecutionProjection.t()
+  def execution_projection(%{execution: %RunbookExecution{}} = result),
+    do: ExecutionProjection.build(result)
 
   @doc "Fetches the immutable runbook row retained by an execution, including soft-deleted families."
   def fetch_runbook_for_execution(%RunbookExecution{} = execution, %Subject{} = subject) do

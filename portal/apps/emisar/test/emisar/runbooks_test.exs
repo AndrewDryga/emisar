@@ -7,7 +7,7 @@ defmodule Emisar.RunbooksTest do
   alias Emisar.MCPOperations
   alias Emisar.Repo
   alias Emisar.Runbooks
-  alias Emisar.Runbooks.{ExecutionItem, RunbookExecution}
+  alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, RunbookExecution}
   alias Emisar.Runners
   alias Emisar.Runs
 
@@ -463,6 +463,294 @@ defmodule Emisar.RunbooksTest do
 
       assert Runbooks.fetch_execution_result(fixture.execution_id, other_subject) ==
                {:error, :not_found}
+    end
+  end
+
+  describe "execution_projection/1" do
+    test "projects a dispatched execution's durable rows and latest attempt" do
+      fixture = mcp_execution_fixture()
+
+      assert {:ok, result} =
+               Runbooks.fetch_execution_result(fixture.execution_id, fixture.subject)
+
+      projection = Runbooks.execution_projection(result)
+
+      assert projection.execution.status == :active
+      assert projection.execution.waitable?
+      refute projection.execution.terminal?
+
+      assert [%{stage_id: "inspect", position: 0, status: :active, items: [item]}] =
+               projection.stages
+
+      assert item.step_id == "uptime"
+      assert item.status == :running
+      assert [attempt] = result.latest_attempts
+      assert item.latest_attempt.id == attempt.id
+    end
+
+    test "states waitable and terminal for every execution status" do
+      for {status, waitable?, terminal?} <- [
+            {:pending_approval, true, false},
+            {:active, true, false},
+            {:succeeded, false, true},
+            {:halted, false, true},
+            {:cancelled, false, true},
+            {:unrecognized, false, false}
+          ] do
+        projection = Runbooks.execution_projection(projected_result(status: status))
+
+        assert projection.execution.status == status
+        assert projection.execution.waitable? == waitable?
+        assert projection.execution.terminal? == terminal?
+      end
+    end
+
+    test "resolves every item status branch, halt before cancellation" do
+      for {item_status, attempt_count, stage_status, execution_status, expected} <- [
+            {:pending, 0, :halted, :active, :halted},
+            {:pending, 0, :active, :halted, :halted},
+            {:pending, 0, :cancelled, :halted, :halted},
+            {:pending, 0, :cancelled, :active, :cancelled},
+            {:pending, 0, :active, :cancelled, :cancelled},
+            {:pending, 0, :active, :active, :queued},
+            {:failed, 0, :active, :active, :not_run},
+            {:failed, 2, :halted, :halted, :failed},
+            {:running, 1, :active, :active, :running},
+            {:waiting, 2, :active, :active, :waiting},
+            {:succeeded, 1, :succeeded, :succeeded, :succeeded},
+            {:cancelled, 1, :cancelled, :cancelled, :cancelled}
+          ] do
+        stage = projected_stage(status: stage_status)
+        item = projected_item(stage, status: item_status, attempt_count: attempt_count)
+
+        result =
+          projected_result(status: execution_status, stages: [%{stage | items: [item]}])
+
+        projection = Runbooks.execution_projection(result)
+
+        assert [%{items: [projected]}] = projection.stages
+        assert projected.status == expected
+      end
+    end
+
+    test "blocks on the terminal item cause a halted execution recorded" do
+      stage = projected_stage(status: :halted)
+
+      items = [
+        projected_item(stage, status: :succeeded, step_position: 0, attempt_count: 1),
+        projected_item(stage,
+          status: :failed,
+          step_position: 1,
+          step_id: "apply",
+          runner_ref: "db-two~" <> String.duplicate("2", 32),
+          attempt_count: 1,
+          terminal_code: "action_failed",
+          terminal_message: "The action attempt did not succeed."
+        )
+      ]
+
+      result =
+        projected_result(
+          status: :halted,
+          terminal_code: "step_failed",
+          terminal_message: "Execution stopped.",
+          stages: [%{stage | items: items}]
+        )
+
+      assert Runbooks.execution_projection(result).execution.blocking == %{
+               code: "action_failed",
+               message: "The action attempt did not succeed.",
+               stage_id: "inspect",
+               step_id: "apply",
+               runner_ref: "db-two~" <> String.duplicate("2", 32)
+             }
+    end
+
+    test "falls back to the execution cause when no item recorded one" do
+      stage = projected_stage(status: :halted)
+      item = projected_item(stage, status: :pending)
+
+      result =
+        projected_result(
+          status: :halted,
+          terminal_code: "approval_denied",
+          stages: [%{stage | items: [item]}]
+        )
+
+      assert Runbooks.execution_projection(result).execution.blocking == %{
+               code: "approval_denied",
+               message: "Execution halted.",
+               stage_id: "inspect",
+               step_id: nil,
+               runner_ref: nil
+             }
+    end
+
+    test "blocks on approval, then on the first waiting item, then not at all" do
+      stage = projected_stage(status: :active)
+      waiting = projected_item(stage, status: :waiting, attempt_count: 1)
+      queued = projected_item(stage, status: :pending, step_position: 1, step_id: "apply")
+      stage = %{stage | items: [waiting, queued]}
+
+      held = Runbooks.execution_projection(projected_result(status: :pending_approval))
+
+      assert held.execution.blocking == %{
+               code: "approval_required",
+               message: "Runbook execution approval is required.",
+               stage_id: nil,
+               step_id: nil,
+               runner_ref: nil
+             }
+
+      waiting_projection =
+        Runbooks.execution_projection(projected_result(status: :active, stages: [stage]))
+
+      assert waiting_projection.execution.blocking == %{
+               code: "waiting",
+               message: "A success condition is waiting for another observation.",
+               stage_id: "inspect",
+               step_id: "uptime",
+               runner_ref: waiting.runner_ref
+             }
+
+      running = %{stage | items: [%{waiting | status: :running}, queued]}
+
+      running_projection =
+        Runbooks.execution_projection(projected_result(status: :active, stages: [running]))
+
+      assert running_projection.execution.blocking == nil
+    end
+
+    test "orders stages by position and items by stage, step, and runner" do
+      first = projected_stage(stage_id: "inspect", position: 0)
+      second = projected_stage(stage_id: "apply", position: 1)
+
+      first_items = [
+        projected_item(first, step_position: 1, step_id: "uptime", runner_ref: runner_ref("b")),
+        projected_item(first, step_position: 0, step_id: "disk", runner_ref: runner_ref("d")),
+        projected_item(first, step_position: 1, step_id: "uptime", runner_ref: runner_ref("a"))
+      ]
+
+      second_items = [projected_item(second, step_position: 0, step_id: "restart")]
+
+      result =
+        projected_result(stages: [%{second | items: second_items}, %{first | items: first_items}])
+
+      projection = Runbooks.execution_projection(result)
+
+      assert Enum.map(projection.stages, & &1.stage_id) == ["inspect", "apply"]
+
+      assert [inspect_stage, apply_stage] = projection.stages
+
+      assert Enum.map(inspect_stage.items, &{&1.step_id, &1.runner_ref}) == [
+               {"disk", runner_ref("d")},
+               {"uptime", runner_ref("a")},
+               {"uptime", runner_ref("b")}
+             ]
+
+      assert Enum.map(apply_stage.items, & &1.step_id) == ["restart"]
+    end
+
+    test "shows a value only where exactly one declaration proves it public" do
+      secret = "billing-api-token"
+
+      output_plan = [
+        %{"id" => "ready", "source" => "structured_output", "sensitive" => false},
+        %{"id" => "token", "source" => "stdout", "sensitive" => true},
+        %{"id" => "host", "source" => "stdout", "sensitive" => "false"},
+        %{"id" => "port", "source" => "stdout"},
+        %{"id" => "region", "source" => "stdout", "sensitive" => nil},
+        %{"id" => "shard", "source" => "stdout", "sensitive" => false},
+        %{"id" => "shard", "source" => "stdout", "sensitive" => true}
+      ]
+
+      success_plan = [
+        %{"output" => "ready", "operator" => "equals", "value" => true},
+        %{"output" => "token", "operator" => "equals", "value" => secret},
+        %{"output" => "absent", "operator" => "equals", "value" => secret}
+      ]
+
+      outputs = %{
+        "ready" => true,
+        "token" => secret,
+        "host" => secret,
+        "port" => secret,
+        "region" => secret,
+        "shard" => secret
+      }
+
+      stage = projected_stage(status: :active)
+
+      item =
+        projected_item(stage,
+          status: :succeeded,
+          attempt_count: 1,
+          output_plan: output_plan,
+          success_plan: success_plan,
+          outputs: outputs,
+          success_evidence: [
+            %{"kind" => "extraction", "output" => "ready", "status" => "extracted"},
+            %{"kind" => "condition", "output" => "ready", "status" => "passed"}
+          ]
+        )
+
+      result = projected_result(stages: [%{stage | items: [item]}])
+      assert [%{items: [projected]}] = Runbooks.execution_projection(result).stages
+
+      assert Enum.map(projected.outputs, &{&1.output_id, &1.sensitive, &1.status, &1.value}) == [
+               {"ready", false, "extracted", true},
+               {"token", true, "pending", "[REDACTED]"},
+               {"host", true, "pending", "[REDACTED]"},
+               {"port", true, "pending", "[REDACTED]"},
+               {"region", true, "pending", "[REDACTED]"},
+               {"shard", true, "pending", "[REDACTED]"},
+               {"shard", true, "pending", "[REDACTED]"}
+             ]
+
+      assert Enum.map(projected.conditions, &{&1.output, &1.sensitive, &1.expected, &1.status}) ==
+               [
+                 {"ready", false, true, "passed"},
+                 {"token", true, "[REDACTED]", "pending"},
+                 {"absent", true, "[REDACTED]", "pending"}
+               ]
+
+      assert projected.output_count == 7
+      assert projected.condition_count == 3
+      refute inspect(projected.outputs) =~ secret
+      refute inspect(projected.conditions) =~ secret
+      refute inspect(projected.evidence) =~ secret
+    end
+
+    test "carries evidence status only, naming an unmet condition during a wait" do
+      evidence = [
+        %{
+          "kind" => "condition",
+          "output" => "ready",
+          "operator" => "equals",
+          "actual" => "still-booting",
+          "expected" => true,
+          "status" => "failed"
+        },
+        %{"kind" => "extraction", "output" => "ready", "value" => "still-booting"}
+      ]
+
+      stage = projected_stage(status: :active)
+
+      waiting =
+        projected_item(stage, status: :waiting, attempt_count: 1, success_evidence: evidence)
+
+      result = projected_result(stages: [%{stage | items: [waiting]}])
+      assert [%{items: [projected]}] = Runbooks.execution_projection(result).stages
+
+      assert projected.evidence == [
+               %{kind: "condition", output: "ready", operator: "equals", status: "not met"},
+               %{kind: "extraction", output: "ready", operator: nil, status: "pending"}
+             ]
+
+      failed = %{waiting | status: :failed}
+      failed_result = projected_result(stages: [%{stage | items: [failed]}])
+      assert [%{items: [settled]}] = Runbooks.execution_projection(failed_result).stages
+      assert Enum.map(settled.evidence, & &1.status) == ["failed", "pending"]
     end
   end
 
@@ -2062,6 +2350,57 @@ defmodule Emisar.RunbooksTest do
       subject: subject
     }
   end
+
+  # The projection is pure, so unpersisted rows reach every branch without a
+  # dispatch per case.
+  defp projected_result(opts) do
+    stages = Keyword.get(opts, :stages, [])
+
+    execution = %RunbookExecution{
+      id: Ecto.UUID.generate(),
+      status: Keyword.get(opts, :status, :active),
+      terminal_code: Keyword.get(opts, :terminal_code),
+      terminal_message: Keyword.get(opts, :terminal_message),
+      stages: stages,
+      items: Enum.flat_map(stages, & &1.items)
+    }
+
+    %{execution: execution, latest_attempts: Keyword.get(opts, :latest_attempts, [])}
+  end
+
+  defp projected_stage(opts) do
+    %ExecutionStage{
+      id: Ecto.UUID.generate(),
+      stage_id: Keyword.get(opts, :stage_id, "inspect"),
+      title: "Inspect",
+      position: Keyword.get(opts, :position, 0),
+      mode: :sequential,
+      max_parallel: 1,
+      status: Keyword.get(opts, :status, :active),
+      items: []
+    }
+  end
+
+  defp projected_item(%ExecutionStage{} = stage, opts) do
+    %ExecutionItem{
+      id: Ecto.UUID.generate(),
+      runbook_execution_stage_id: stage.id,
+      stage_position: stage.position,
+      step_id: Keyword.get(opts, :step_id, "uptime"),
+      step_position: Keyword.get(opts, :step_position, 0),
+      runner_ref: Keyword.get(opts, :runner_ref, runner_ref("a")),
+      status: Keyword.get(opts, :status, :pending),
+      attempt_count: Keyword.get(opts, :attempt_count, 0),
+      output_plan: Keyword.get(opts, :output_plan, []),
+      success_plan: Keyword.get(opts, :success_plan, []),
+      outputs: Keyword.get(opts, :outputs, %{}),
+      success_evidence: Keyword.get(opts, :success_evidence, []),
+      terminal_code: Keyword.get(opts, :terminal_code),
+      terminal_message: Keyword.get(opts, :terminal_message)
+    }
+  end
+
+  defp runner_ref(name), do: "db-#{name}~" <> String.duplicate("f", 32)
 
   defp fetch_execution(id) do
     RunbookExecution.Query.by_id(id)

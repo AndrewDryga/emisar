@@ -223,20 +223,27 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   @doc false
+  def project_execution(%{execution: execution, runbook: runbook} = result, %Subject{} = subject) do
+    projection = Runbooks.execution_projection(result)
+
+    project_execution(execution, runbook, projection, subject)
+  end
+
+  @doc false
   def project_execution(
-        %{
-          execution: execution,
-          runbook: runbook,
-          latest_attempts: latest_attempts
-        },
+        %{execution: execution, runbook: runbook},
+        projection,
         %Subject{} = subject
       ) do
-    attempts_by_item = Map.new(latest_attempts, &{&1.runbook_execution_item_id, &1})
+    project_execution(execution, runbook, projection, subject)
+  end
+
+  defp project_execution(execution, runbook, projection, subject) do
     approval = execution_approval(execution, subject)
 
     [:full, :summary, :minimal]
     |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
-      payload = execution_projection(execution, runbook, attempts_by_item, approval, mode)
+      payload = execution_projection(execution.id, runbook, projection, approval, mode)
 
       if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
         {:halt, {:ok, payload}}
@@ -255,38 +262,38 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp execution_approval(_execution, _subject), do: nil
 
-  defp execution_projection(execution, runbook, attempts_by_item, approval, mode) do
-    items_by_stage = Enum.group_by(execution.items, & &1.runbook_execution_stage_id)
-
+  defp execution_projection(execution_id, runbook, projection, approval, mode) do
     %{
-      runbook_execution_id: execution.id,
+      runbook_execution_id: execution_id,
       runbook_ref: runbook_ref(runbook),
-      status: to_string(execution.status),
-      blocking: blocking(execution),
-      stages:
-        Enum.map(execution.stages, fn stage ->
-          stage_items = Map.get(items_by_stage, stage.id, [])
-          stage_projection(stage, stage_items, attempts_by_item, mode)
-        end),
+      status: to_string(projection.execution.status),
+      blocking: blocking(projection.execution.blocking),
+      stages: Enum.map(projection.stages, &stage_projection(&1, mode)),
       runs_next: %{
         tool: "recent_runs",
-        arguments: %{runbook_execution_id: execution.id, limit: 15}
+        arguments: %{runbook_execution_id: execution_id, limit: 15}
       }
     }
     |> maybe_put(:approval, approval)
     |> maybe_put(:wait_until, approval[:expires_at])
-    |> maybe_put(
-      :next,
-      if(execution.status in [:active, :pending_approval],
-        do: %{
-          tool: "wait_for_run",
-          arguments: %{runbook_execution_id: execution.id, timeout: "60s"}
-        }
-      )
-    )
+    |> maybe_put(:next, wait_next(execution_id, projection.execution.waitable?))
   end
 
-  defp stage_projection(stage, items, attempts_by_item, mode) do
+  defp wait_next(_execution_id, false), do: nil
+
+  defp wait_next(execution_id, true),
+    do: %{tool: "wait_for_run", arguments: %{runbook_execution_id: execution_id, timeout: "60s"}}
+
+  defp blocking(nil), do: nil
+
+  defp blocking(cause) do
+    %{code: cause.code, message: cause.message}
+    |> maybe_put(:stage_id, cause.stage_id)
+    |> maybe_put(:step_id, cause.step_id)
+    |> maybe_put(:runner_ref, cause.runner_ref)
+  end
+
+  defp stage_projection(stage, mode) do
     %{
       stage_id: stage.stage_id,
       title: stage.title,
@@ -294,66 +301,64 @@ defmodule EmisarWeb.MCP.RunbookTools do
       mode: to_string(stage.mode),
       max_parallel: stage.max_parallel,
       status: to_string(stage.status),
-      items:
-        Enum.map(items, fn item ->
-          item_projection(item, Map.get(attempts_by_item, item.id), mode)
-        end)
+      items: Enum.map(stage.items, &item_projection(&1, mode))
     }
   end
 
-  defp item_projection(item, attempt, mode) do
+  defp item_projection(item, mode) do
     %{
       item_id: item.id,
       step_id: item.step_id,
       runner_ref: item.runner_ref,
       target_selection: item.target_selection,
       target_group: item.target_group,
-      status: to_string(item.status),
+      status: wire_status(item.status),
       action_id: item.action_id,
       pack_ref: item.pack_ref,
       pack_hash: item.pack_hash,
       risk: item.risk,
       attempt_count: item.attempt_count,
       wait: wait_projection(item),
-      outputs: output_results(item, mode),
-      output_count: length(item.output_plan),
+      outputs: output_results(item.outputs, mode),
+      output_count: item.output_count,
       output_values_omitted: mode != :full,
-      conditions: condition_results(item, mode),
-      condition_count: length(item.success_plan),
+      conditions: condition_results(item.conditions, mode),
+      condition_count: item.condition_count,
       error: item_error(item),
-      latest_attempt: attempt_projection(attempt)
+      latest_attempt: attempt_projection(item.latest_attempt)
     }
   end
 
-  defp output_results(_item, :minimal), do: []
+  # The domain names an item's effective status for operators; the published
+  # enum is frozen, so an inherited or never-dispatched status reports as the
+  # persisted state it stands for.
+  defp wire_status(:queued), do: "pending"
+  defp wire_status(:halted), do: "pending"
+  defp wire_status(:not_run), do: "failed"
+  defp wire_status(status), do: to_string(status)
 
-  defp output_results(item, mode) do
-    evidence =
-      item.success_evidence
-      |> Enum.filter(&(&1["kind"] == "extraction"))
-      |> Map.new(&{&1["output"], &1})
+  defp output_results(_outputs, :minimal), do: []
 
-    Enum.map(item.output_plan, fn declaration ->
-      id = declaration["id"]
-      row = Map.get(evidence, id, %{})
-      value = Map.get(item.outputs, id)
-
+  defp output_results(outputs, mode) do
+    Enum.map(outputs, fn output ->
       %{
-        output_id: id,
-        source: declaration["source"],
-        sensitive: declaration["sensitive"],
-        status: row["status"] || "pending",
-        value: output_value(value, declaration["sensitive"], mode)
+        output_id: output.output_id,
+        source: output.source,
+        sensitive: output.sensitive,
+        status: output.status,
+        value: output_value(output, mode)
       }
     end)
   end
 
-  defp output_value(value, _sensitive, :full), do: value
-  defp output_value("[REDACTED]", true, :summary), do: "[REDACTED]"
-  defp output_value(nil, _sensitive, :summary), do: nil
+  # Every value the domain could not prove public already reads `[REDACTED]`,
+  # so a downgrade only ever hashes or sizes a value this caller may read.
+  defp output_value(output, :full), do: output.value
+  defp output_value(%{sensitive: true} = output, :summary), do: output.value
+  defp output_value(%{value: nil}, :summary), do: nil
 
-  defp output_value(value, _sensitive, :summary) do
-    encoded = Jason.encode!(value)
+  defp output_value(output, :summary) do
+    encoded = Jason.encode!(output.value)
 
     %{
       omitted: true,
@@ -362,33 +367,22 @@ defmodule EmisarWeb.MCP.RunbookTools do
     }
   end
 
-  defp condition_results(_item, :minimal), do: []
+  defp condition_results(_conditions, :minimal), do: []
 
-  defp condition_results(item, mode) do
-    evidence = Enum.filter(item.success_evidence, &(&1["kind"] == "condition"))
-
-    item.success_plan
-    |> Enum.with_index()
-    |> Enum.map(fn {condition, index} ->
-      row = Enum.at(evidence, index, %{})
-      sensitive? = output_sensitive?(item.output_plan, condition["output"])
-
+  defp condition_results(conditions, mode) do
+    Enum.map(conditions, fn condition ->
       %{
-        output: condition["output"],
-        operator: condition["operator"],
-        expected: expected_value(condition["value"], sensitive?, mode),
-        status: row["status"] || "pending"
+        output: condition.output,
+        operator: condition.operator,
+        expected: expected_value(condition, mode),
+        status: condition.status
       }
     end)
   end
 
-  defp expected_value(_value, true, _mode), do: "[REDACTED]"
-  defp expected_value(value, false, :full), do: value
-  defp expected_value(_value, false, :summary), do: nil
-
-  defp output_sensitive?(output_plan, output_id) do
-    Enum.any?(output_plan, &(&1["id"] == output_id and &1["sensitive"]))
-  end
+  defp expected_value(condition, :full), do: condition.expected
+  defp expected_value(%{sensitive: true} = condition, :summary), do: condition.expected
+  defp expected_value(_condition, :summary), do: nil
 
   defp wait_projection(%{wait: nil}), do: nil
 
@@ -418,59 +412,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
       started_at: attempt.started_at,
       finished_at: attempt.finished_at
     }
-  end
-
-  defp blocking(%{terminal_code: code} = execution) when is_binary(code) do
-    stage = Enum.find(execution.stages, &(&1.status in [:halted, :cancelled]))
-
-    execution.items
-    |> Enum.find(&(&1.status in [:failed, :cancelled]))
-    |> blocking_from_terminal(execution, stage)
-  end
-
-  defp blocking(%{status: :pending_approval}),
-    do: %{code: "approval_required", message: "Runbook execution approval is required."}
-
-  defp blocking(execution), do: waiting_block(execution)
-
-  defp blocking_from_terminal(nil, execution, stage) do
-    %{
-      code: execution.terminal_code,
-      message: execution.terminal_message || "Execution halted."
-    }
-    |> maybe_put(:stage_id, stage && stage.stage_id)
-  end
-
-  defp blocking_from_terminal(item, _execution, stage) do
-    %{
-      code: item.terminal_code || "action_failed",
-      message: item.terminal_message || "A runbook item did not succeed.",
-      step_id: item.step_id,
-      runner_ref: item.runner_ref
-    }
-    |> maybe_put(:stage_id, stage && stage.stage_id)
-  end
-
-  defp waiting_block(execution) do
-    case Enum.find(execution.items, &(&1.status == :waiting)) do
-      nil ->
-        nil
-
-      item ->
-        stage =
-          Enum.find(
-            execution.stages,
-            &(&1.id == item.runbook_execution_stage_id)
-          )
-
-        %{
-          code: "waiting",
-          message: "A success condition is waiting for another observation.",
-          step_id: item.step_id,
-          runner_ref: item.runner_ref
-        }
-        |> maybe_put(:stage_id, stage && stage.stage_id)
-    end
   end
 
   defp published_summaries(conn, query) do

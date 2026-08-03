@@ -3,6 +3,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   import EmisarWeb.MCPContractAssertions
   alias Emisar.{ApiKeys, Approvals, Audit, Catalog, Crypto, Repo, Runbooks, Runners, Runs}
   alias Emisar.MCPOperations.Operation
+  alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Runbook, RunbookExecution}
   alias Emisar.Runs.ActionRun
   alias EmisarWeb.MCP.{ResponseBudget, RunbookTools}
 
@@ -258,6 +259,16 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert waited_execution["execution"]["status"] == "succeeded"
     refute Map.has_key?(waited_execution["execution"], "next")
 
+    # A settled execution never spends its wait window: terminal is a domain
+    # fact, not something the deadline discovers.
+    started_at = System.monotonic_time(:millisecond)
+
+    settled =
+      call(conn, "wait_for_run", %{"runbook_execution_id" => execution_id, "timeout" => "5s"})
+
+    assert settled["execution"]["status"] == "succeeded"
+    assert System.monotonic_time(:millisecond) - started_at < 5_000
+
     rejected_wait =
       call(
         conn,
@@ -425,6 +436,136 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
                "status" => "passed"
              }
            ]
+  end
+
+  test "a full projection shows a value only where the frozen plan proves it public", %{
+    subject: subject
+  } do
+    secret = "billing-api-token"
+
+    result =
+      projected_result(
+        item_status: :succeeded,
+        attempt_count: 1,
+        output_plan: [
+          %{"id" => "ready", "source" => "structured_output", "sensitive" => false},
+          %{"id" => "token", "source" => "stdout", "sensitive" => true}
+        ],
+        success_plan: [
+          %{"output" => "ready", "operator" => "equals", "value" => true},
+          %{"output" => "token", "operator" => "equals", "value" => secret}
+        ],
+        # A stored value is never the authority — the declaration is.
+        outputs: %{"ready" => true, "token" => secret},
+        success_evidence: [
+          %{"kind" => "extraction", "output" => "ready", "status" => "extracted"},
+          %{"kind" => "extraction", "output" => "token", "status" => "extracted"},
+          %{"kind" => "condition", "output" => "ready", "status" => "passed", "actual" => true},
+          %{"kind" => "condition", "output" => "token", "status" => "passed", "actual" => secret}
+        ]
+      )
+
+    assert {:ok, payload} = RunbookTools.project_execution(result, subject)
+    refute Jason.encode!(payload) =~ secret
+
+    item = payload.stages |> hd() |> Map.fetch!(:items) |> hd()
+    refute item.output_values_omitted
+
+    assert item.outputs == [
+             %{
+               output_id: "ready",
+               source: "structured_output",
+               sensitive: false,
+               status: "extracted",
+               value: true
+             },
+             %{
+               output_id: "token",
+               source: "stdout",
+               sensitive: true,
+               status: "extracted",
+               value: "[REDACTED]"
+             }
+           ]
+
+    assert item.conditions == [
+             %{output: "ready", operator: "equals", expected: true, status: "passed"},
+             %{output: "token", operator: "equals", expected: "[REDACTED]", status: "passed"}
+           ]
+
+    assert_valid_tool_result("execute_runbook", wire_execution(payload))
+  end
+
+  test "a downgraded projection hashes the public value and keeps the redacted one", %{
+    subject: subject
+  } do
+    secret = "billing-api-token"
+    oversized = String.duplicate("a", 600_000)
+
+    result =
+      projected_result(
+        item_status: :succeeded,
+        attempt_count: 1,
+        output_plan: [
+          %{"id" => "public", "source" => "stdout", "sensitive" => false},
+          %{"id" => "token", "source" => "stdout", "sensitive" => true}
+        ],
+        success_plan: [
+          %{"output" => "public", "operator" => "contains", "value" => "a"},
+          %{"output" => "token", "operator" => "equals", "value" => secret}
+        ],
+        outputs: %{"public" => oversized, "token" => secret},
+        success_evidence: [
+          %{"kind" => "extraction", "output" => "public", "status" => "extracted"},
+          %{"kind" => "extraction", "output" => "token", "status" => "extracted"}
+        ]
+      )
+
+    assert {:ok, payload} = RunbookTools.project_execution(result, subject)
+    encoded = Jason.encode!(payload)
+    refute encoded =~ secret
+    refute encoded =~ oversized
+
+    item = payload.stages |> hd() |> Map.fetch!(:items) |> hd()
+    assert item.output_values_omitted
+
+    assert [
+             %{output_id: "public", value: %{omitted: true, encoded_bytes: bytes, sha256: sha}},
+             %{output_id: "token", value: "[REDACTED]"}
+           ] = item.outputs
+
+    assert bytes == byte_size(Jason.encode!(oversized))
+    assert sha == Crypto.hash_hex(Jason.encode!(oversized))
+    assert [%{expected: nil}, %{expected: "[REDACTED]"}] = item.conditions
+    assert_valid_tool_result("execute_runbook", wire_execution(payload))
+  end
+
+  test "inherited and never-dispatched item statuses stay inside the published enum", %{
+    subject: subject
+  } do
+    for {execution_status, stage_status, item_status, attempt_count, wire_status} <- [
+          {:active, :active, :pending, 0, "pending"},
+          {:halted, :halted, :pending, 0, "pending"},
+          {:cancelled, :cancelled, :pending, 0, "cancelled"},
+          {:halted, :halted, :failed, 0, "failed"},
+          {:active, :active, :waiting, 1, "waiting"},
+          {:succeeded, :succeeded, :succeeded, 1, "succeeded"}
+        ] do
+      result =
+        projected_result(
+          status: execution_status,
+          stage_status: stage_status,
+          item_status: item_status,
+          attempt_count: attempt_count
+        )
+
+      assert {:ok, payload} = RunbookTools.project_execution(result, subject)
+      item = payload.stages |> hd() |> Map.fetch!(:items) |> hd()
+
+      assert item.status == wire_status
+      assert payload.status == to_string(execution_status)
+      assert_valid_tool_result("execute_runbook", wire_execution(payload))
+    end
   end
 
   test "a group runbook stays listable when one member is offline", %{
@@ -1810,6 +1951,22 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert waited["execution"]["status"] == "pending_approval"
     assert waited["execution"]["next"] == wait_next
+
+    # A held execution is still waitable, so a real window stays open instead
+    # of returning immediately as though approval were a terminal state.
+    started_at = System.monotonic_time(:millisecond)
+
+    held =
+      call(conn, "wait_for_run", %{
+        "runbook_execution_id" => execution_id,
+        "timeout" => "500ms"
+      })
+
+    elapsed = System.monotonic_time(:millisecond) - started_at
+
+    assert held["execution"]["status"] == "pending_approval"
+    assert held["execution"]["next"] == wait_next
+    assert elapsed >= 300
   end
 
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
@@ -1913,6 +2070,61 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       nil -> {seen, page_count + 1}
       next_cursor -> walk_recent_pages(conn, next_cursor, seen, page_count + 1)
     end
+  end
+
+  # The projection is pure, so unpersisted rows reach the value-safety and
+  # status-mapping branches a dispatched execution cannot reproduce.
+  defp projected_result(opts) do
+    stage = %ExecutionStage{
+      id: Ecto.UUID.generate(),
+      stage_id: "inspect",
+      title: "Inspect",
+      position: 0,
+      mode: :parallel,
+      max_parallel: 16,
+      status: Keyword.get(opts, :stage_status, :active)
+    }
+
+    item = %ExecutionItem{
+      id: Ecto.UUID.generate(),
+      runbook_execution_stage_id: stage.id,
+      stage_position: 0,
+      step_id: "check",
+      step_position: 0,
+      runner_ref: "db-primary~" <> String.duplicate("a", 32),
+      target_selection: "all",
+      action_id: "operations.health",
+      pack_ref: @pack_ref,
+      pack_hash: @hash,
+      risk: "low",
+      status: Keyword.get(opts, :item_status, :pending),
+      attempt_count: Keyword.get(opts, :attempt_count, 0),
+      output_plan: Keyword.get(opts, :output_plan, []),
+      success_plan: Keyword.get(opts, :success_plan, []),
+      outputs: Keyword.get(opts, :outputs, %{}),
+      success_evidence: Keyword.get(opts, :success_evidence, [])
+    }
+
+    execution = %RunbookExecution{
+      id: Ecto.UUID.generate(),
+      status: Keyword.get(opts, :status, :active),
+      stages: [%{stage | items: [item]}],
+      items: [item]
+    }
+
+    %{
+      execution: execution,
+      runbook: %Runbook{slug: "database-health", version: 1},
+      latest_attempts: []
+    }
+  end
+
+  # A synthetic projection carries no MCP operation, so a schema-valid
+  # placeholder stands in for the id when checking the wire contract.
+  defp wire_execution(payload) do
+    %{"ok" => true, "operation_id" => "op_01J0E11D8Q1W7SM4R5T3Y6V9PA", "execution" => payload}
+    |> Jason.encode!()
+    |> Jason.decode!()
   end
 
   defp setup_runner!(account, subject, name, opts \\ []) do
