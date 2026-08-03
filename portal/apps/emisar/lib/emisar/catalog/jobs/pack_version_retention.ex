@@ -1,9 +1,9 @@
 defmodule Emisar.Catalog.Jobs.PackVersionRetention do
   @moduledoc """
   Daily sweep that deletes pack versions no runner has advertised within an
-  account's configured window (`settings.pack_unseen_retention_days`).
-  Accounts without the setting are skipped; the per-account sweep audits
-  itself only when it removed something.
+  account's configured window. `Catalog.pack_retention_days/1` decides what
+  each account's stored setting means, so accounts with cleanup off are
+  skipped; the per-account sweep audits itself only when it removed something.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,
@@ -46,16 +46,12 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetention do
     end
   end
 
-  defp sweep_account(
-         %Accounts.Account{settings: %{pack_unseen_retention_days: days}} = account,
-         deleted_total
-       )
-       when is_integer(days) and days > 0 do
-    case Catalog.delete_unseen_pack_versions(account.id, days) do
-      {:ok, deleted} -> deleted_total + deleted
+  defp sweep_account(%Accounts.Account{} = account, deleted_total) do
+    with {:ok, days} <- Catalog.pack_retention_days(account),
+         {:ok, deleted} <- Catalog.delete_unseen_pack_versions(account.id, days) do
+      deleted_total + deleted
+    else
       {:error, _reason} -> deleted_total
     end
   end
-
-  defp sweep_account(%Accounts.Account{}, deleted_total), do: deleted_total
 end

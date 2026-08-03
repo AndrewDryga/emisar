@@ -32,7 +32,7 @@ defmodule Emisar.Catalog do
   alias Emisar.{Accounts, Audit, Auth, Repo, Runners, Users}
   alias Emisar.Auth.Subject
   alias Emisar.Catalog.{ActionSetDiff, Authorizer, MCPProjection, PackBaseline}
-  alias Emisar.Catalog.{PackVersion, RunnerAction, TrustedManifest}
+  alias Emisar.Catalog.{PackRetentionInput, PackVersion, RunnerAction, TrustedManifest}
   require Logger
 
   def start_link(opts) do
@@ -820,6 +820,60 @@ defmodule Emisar.Catalog do
   # -- Retention ---------------------------------------------------------
 
   @doc """
+  Changeset for the account's pack-cleanup settings — the raw `days` period,
+  where a blank value means automatic cleanup is off. Accepts the rail form's
+  string keys or an atom-keyed map / keyword list; a malformed or non-positive
+  period is a field error. Pure.
+  """
+  def change_pack_retention_settings(attrs \\ %{}), do: PackRetentionInput.changeset(attrs)
+
+  @doc """
+  Set how long a pack version may go unadvertised before the daily sweep
+  removes it. Requires `manage_catalog`, and `account` must be the subject's
+  own. `attrs` is validated through `change_pack_retention_settings/1` before
+  anything is written, so an invalid period never reaches the stored setting;
+  a blank period turns automatic cleanup off. Returns
+  `{:ok, %Accounts.Account{}}` or
+  `{:error, %Ecto.Changeset{} | :unauthorized | :not_found}`.
+  """
+  def update_pack_retention_settings(%Accounts.Account{} = account, attrs, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_catalog_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account.id),
+         {:ok, %PackRetentionInput{days: days}} <- pack_retention_input(attrs) do
+      Accounts.put_account_pack_retention_days(account.id, days, subject)
+    end
+  end
+
+  @doc """
+  What the account's stored cleanup setting means right now — `{:ok, days}`
+  while automatic cleanup is on, `{:error, :retention_disabled}` when it is
+  off or the stored period is not a usable positive number. Takes the account
+  (the job sweep's row) or its settings (the operator sweep's fresh read).
+  Both sweeps read the setting through here, so one contract decides when a
+  destructive sweep may run.
+  """
+  def pack_retention_days(%Accounts.Account{settings: settings}),
+    do: pack_retention_days(settings)
+
+  def pack_retention_days(%Accounts.Account.Settings{} = settings) do
+    case pack_retention_input(%{days: settings.pack_unseen_retention_days}) do
+      {:ok, %PackRetentionInput{days: days}} when is_integer(days) -> {:ok, days}
+      {:ok, %PackRetentionInput{}} -> {:error, :retention_disabled}
+      {:error, %Ecto.Changeset{}} -> {:error, :retention_disabled}
+    end
+  end
+
+  defp pack_retention_input(attrs) do
+    attrs
+    |> change_pack_retention_settings()
+    |> Ecto.Changeset.apply_action(:insert)
+  end
+
+  @doc """
   Run the pack-retention sweep for the subject's account right now — the
   packs page "Clean up now" button. Uses the account's configured window
   (`settings.pack_unseen_retention_days`); `{:error, :retention_disabled}`
@@ -839,15 +893,8 @@ defmodule Emisar.Catalog do
 
   # The subject's account struct is a socket snapshot — read the setting fresh.
   defp fetch_retention_days(%Subject{account: %{id: account_id}}) do
-    case Accounts.fetch_account_settings(account_id) do
-      {:ok, %{pack_unseen_retention_days: days}} when is_integer(days) and days > 0 ->
-        {:ok, days}
-
-      {:ok, _settings} ->
-        {:error, :retention_disabled}
-
-      {:error, :not_found} ->
-        {:error, :not_found}
+    with {:ok, settings} <- Accounts.fetch_account_settings(account_id) do
+      pack_retention_days(settings)
     end
   end
 

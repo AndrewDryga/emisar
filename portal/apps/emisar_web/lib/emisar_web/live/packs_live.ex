@@ -21,7 +21,7 @@ defmodule EmisarWeb.PacksLive do
     * Hash later changes → pending.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Catalog}
+  alias Emisar.Catalog
   alias EmisarWeb.ConfirmDialog
 
   def mount(_params, _session, socket) do
@@ -292,8 +292,32 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
-  def handle_event("set_pack_retention", %{"days" => raw}, socket) do
-    apply_pack_retention(socket, parse_retention_days(raw))
+  # Catalog owns the cleanup contract — it re-checks manage_catalog (IL-15) and
+  # validates the raw period, so a crafted event from a viewer denies and a
+  # malformed one is a changeset error rather than a stored setting.
+  def handle_event("set_pack_retention", %{"days" => _raw} = attrs, socket) do
+    case Catalog.update_pack_retention_settings(
+           socket.assigns.current_account,
+           attrs,
+           socket.assigns.current_subject
+         ) do
+      {:ok, account} ->
+        days = account.settings.pack_unseen_retention_days
+
+        {:noreply,
+         socket
+         |> assign(:current_account, account)
+         |> put_flash(:info, retention_set_flash(days))}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
+    end
   end
 
   def handle_event("cleanup_now", _params, socket) do
@@ -431,38 +455,6 @@ defmodule EmisarWeb.PacksLive do
 
   defp prose_names([first, second]), do: "#{first} and #{second}"
   defp prose_names(names), do: Enum.join(names, ", ")
-
-  defp apply_pack_retention(socket, :error),
-    do: {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
-
-  defp apply_pack_retention(socket, {:ok, days_or_nil}) do
-    case Accounts.update_account(
-           socket.assigns.current_account,
-           %{settings: %{pack_unseen_retention_days: days_or_nil}},
-           socket.assigns.current_subject
-         ) do
-      {:ok, account} ->
-        {:noreply,
-         socket
-         |> assign(:current_account, account)
-         |> put_flash(:info, retention_set_flash(days_or_nil))}
-
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
-    end
-  end
-
-  defp parse_retention_days(""), do: {:ok, nil}
-
-  defp parse_retention_days(raw) when is_binary(raw) do
-    case Integer.parse(raw) do
-      {days, ""} when days > 0 -> {:ok, days}
-      _ -> :error
-    end
-  end
 
   defp retention_set_flash(nil), do: "Automatic cleanup turned off — pack versions are kept."
 
@@ -1513,7 +1505,7 @@ defmodule EmisarWeb.PacksLive do
                 again re-inserts it as a fresh trust decision. Versions a connected runner
                 still advertises are never removed.
               </p>
-              <%= if Accounts.subject_can_manage_account?(@current_subject) do %>
+              <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
                 <form id="pack-retention-form" phx-change="set_pack_retention" class="mt-3">
                   <.select
                     name="days"

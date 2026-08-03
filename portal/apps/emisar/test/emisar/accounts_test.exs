@@ -1142,6 +1142,63 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "put_account_pack_retention_days/3" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      %{account: account, subject: subject}
+    end
+
+    test "writes the canonical window Catalog validated", %{account: account, subject: subject} do
+      assert {:ok, updated} = Accounts.put_account_pack_retention_days(account.id, 30, subject)
+      assert updated.settings.pack_unseen_retention_days == 30
+      assert Enum.map(Repo.all(Audit.Event), & &1.event_type) == ["account.updated"]
+    end
+
+    test "nil turns automatic cleanup off", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      assert {:ok, updated} = Accounts.put_account_pack_retention_days(account.id, nil, subject)
+      assert updated.settings.pack_unseen_retention_days == nil
+    end
+
+    test "leaves every other setting alone", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_account_settings(account, %{
+        require_mfa: true,
+        monthly_report_opt_out: true
+      })
+
+      assert {:ok, updated} = Accounts.put_account_pack_retention_days(account.id, 7, subject)
+      assert updated.settings.require_mfa
+      assert updated.settings.monthly_report_opt_out
+      assert updated.settings.pack_unseen_retention_days == 7
+    end
+
+    test "a deleted account is :not_found", %{account: account, subject: subject} do
+      Fixtures.Accounts.mark_account_as_deleted(account)
+
+      assert Accounts.put_account_pack_retention_days(account.id, 30, subject) ==
+               {:error, :not_found}
+    end
+
+    test "a malformed id is :not_found, never a query", %{subject: subject} do
+      assert Accounts.put_account_pack_retention_days("not-a-uuid", 30, subject) ==
+               {:error, :not_found}
+    end
+
+    test "another account's subject is :not_found", %{account: account} do
+      other_account = Fixtures.Accounts.create_account()
+
+      other_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
+
+      assert Accounts.put_account_pack_retention_days(account.id, 30, other_subject) ==
+               {:error, :not_found}
+
+      assert Repo.reload!(account).settings.pack_unseen_retention_days == nil
+    end
+  end
+
   describe "suggest_unique_slug/1" do
     test "returns the slugified base when free" do
       assert Accounts.suggest_unique_slug("Acme Co!") =~ ~r/^acme-co/

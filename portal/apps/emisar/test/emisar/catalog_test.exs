@@ -1732,6 +1732,152 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "change_pack_retention_settings/1" do
+    test "no attrs means automatic cleanup is off" do
+      changeset = Catalog.change_pack_retention_settings()
+
+      assert changeset.valid?
+      assert changeset.changes == %{}
+      assert {:ok, input} = Ecto.Changeset.apply_action(changeset, :insert)
+      assert input.days == nil
+    end
+
+    test "casts the rail form's string period" do
+      changeset = Catalog.change_pack_retention_settings(%{"days" => "30"})
+
+      assert changeset.valid?
+      assert changeset.changes == %{days: 30}
+    end
+
+    test "a blank period turns cleanup off" do
+      changeset = Catalog.change_pack_retention_settings(%{"days" => ""})
+
+      assert changeset.valid?
+      assert changeset.changes == %{}
+    end
+
+    test "a malformed period is a field error" do
+      changeset = Catalog.change_pack_retention_settings(%{"days" => "soon"})
+
+      refute changeset.valid?
+      assert "is invalid" in errors_on(changeset).days
+    end
+
+    test "a zero period is a field error" do
+      changeset = Catalog.change_pack_retention_settings(%{"days" => "0"})
+
+      refute changeset.valid?
+      assert "must be greater than 0" in errors_on(changeset).days
+    end
+
+    test "a negative period is a field error" do
+      changeset = Catalog.change_pack_retention_settings(days: -7)
+
+      refute changeset.valid?
+      assert "must be greater than 0" in errors_on(changeset).days
+    end
+  end
+
+  describe "update_pack_retention_settings/3" do
+    setup do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: user, account: account, subject: subject}
+    end
+
+    test "an owner turns cleanup on with the raw form period", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
+      attrs = %{"days" => "30"}
+
+      assert {:ok, updated} = Catalog.update_pack_retention_settings(account, attrs, subject)
+      assert updated.settings.pack_unseen_retention_days == 30
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == 30
+
+      {:ok, events, _} = Audit.list_events(subject)
+      assert [audit] = Enum.filter(events, &(&1.event_type == "account.updated"))
+      assert audit.target_kind == "account"
+      assert audit.target_id == account.id
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+    end
+
+    test "a blank period turns cleanup off", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      assert {:ok, updated} =
+               Catalog.update_pack_retention_settings(account, %{"days" => ""}, subject)
+
+      assert updated.settings.pack_unseen_retention_days == nil
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == nil
+    end
+
+    test "an invalid period is a field error and writes nothing", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      assert {:error, changeset} =
+               Catalog.update_pack_retention_settings(account, %{"days" => "0"}, subject)
+
+      assert "must be greater than 0" in errors_on(changeset).days
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == 30
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "account.updated"))
+    end
+
+    test "a viewer is denied and writes nothing", %{account: account} do
+      viewer = Fixtures.Users.create_user()
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+
+      assert {:error, :unauthorized} =
+               Catalog.update_pack_retention_settings(account, %{"days" => "7"}, viewer_subject)
+
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == nil
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "account.updated"))
+    end
+
+    test "another account's admin gets :not_found and writes nothing", %{account: account} do
+      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, :not_found} =
+               Catalog.update_pack_retention_settings(account, %{"days" => "7"}, other_subject)
+
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == nil
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "account.updated"))
+    end
+  end
+
+  describe "pack_retention_days/1" do
+    test "a positive stored period is the sweep's window" do
+      account = Fixtures.Accounts.create_account()
+      account = Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 14})
+
+      assert Catalog.pack_retention_days(account) == {:ok, 14}
+      assert Catalog.pack_retention_days(account.settings) == {:ok, 14}
+    end
+
+    test "no stored period means cleanup is disabled" do
+      account = Fixtures.Accounts.create_account()
+
+      assert Catalog.pack_retention_days(account) == {:error, :retention_disabled}
+      assert Catalog.pack_retention_days(account.settings) == {:error, :retention_disabled}
+    end
+
+    test "an unusable stored period means disabled, so no destructive sweep runs" do
+      account = Fixtures.Accounts.create_account()
+      settings = %{account.settings | pack_unseen_retention_days: 0}
+
+      assert Catalog.pack_retention_days(settings) == {:error, :retention_disabled}
+    end
+  end
+
   describe "sweep_unseen_pack_versions/1" do
     setup do
       {user, account, subject} = Fixtures.Subjects.owner_subject()

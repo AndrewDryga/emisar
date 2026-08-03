@@ -1469,6 +1469,43 @@ defmodule EmisarWeb.PacksLiveTest do
 
       assert html =~ "Automatic cleanup on — pack versions unseen for 30 days are removed daily."
       assert has_element?(lv, ~s(#packs-cleanup option[value="30"][selected]))
+
+      assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == 30
+    end
+
+    test "an owner turns the retention window back off", %{conn: conn, account: account} do
+      _account =
+        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      html =
+        lv
+        |> element("#packs-cleanup form")
+        |> render_change(%{"days" => ""})
+
+      assert html =~ "Automatic cleanup turned off — pack versions are kept."
+      assert has_element?(lv, ~s(#packs-cleanup option[value=""][selected]))
+
+      assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == nil
+    end
+
+    test "a malformed period is refused and the stored window stands", %{
+      conn: conn,
+      account: account
+    } do
+      _account =
+        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      assert render_click(lv, "set_pack_retention", %{"days" => "soon"}) =~
+               "Pick a valid cleanup period."
+
+      assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == 30
     end
 
     test "the 1-day window is offered and reads in the singular", %{
@@ -1539,8 +1576,10 @@ defmodule EmisarWeb.PacksLiveTest do
 
       assert render_click(lv, "cleanup_now", %{}) =~ "Admin required to clean up the catalog."
 
-      # The stale row survived both crafted attempts.
+      # The stale row survived both crafted attempts, and the window is untouched.
       assert Emisar.Repo.reload(stale)
+      assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == 30
     end
   end
 
