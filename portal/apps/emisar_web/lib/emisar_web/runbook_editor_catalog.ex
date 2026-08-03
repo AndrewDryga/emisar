@@ -7,7 +7,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   remains authoritative for trust, contract compatibility, and publication.
   """
 
-  alias Emisar.{Catalog, Runners}
+  alias Emisar.{Catalog, Runbooks, Runners}
   alias EmisarWeb.RunbookDraft
 
   @doc "Build the editor projection from the two complete, account-scoped reads."
@@ -150,11 +150,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     if action && (choice != previous_choice or argument_metadata_missing?(step["args"])) do
       existing = Map.new(step["args"], &{&1["name"], &1})
 
-      Map.put(
-        step,
-        "args",
-        Enum.map(action.args, &RunbookDraft.sync_argument(&1, existing[&1["name"]]))
-      )
+      Map.put(step, "args", Enum.map(action.args, &synced_argument(&1, existing[&1["name"]])))
     else
       step
     end
@@ -393,6 +389,14 @@ defmodule EmisarWeb.RunbookEditorCatalog do
   end
 
   defp fallback_target_label(ref, _selection), do: ref
+
+  defp synced_argument(spec, existing) do
+    command = RunbookDraft.argument_command(existing)
+
+    spec
+    |> Runbooks.Authoring.sync_argument(command)
+    |> RunbookDraft.argument_from_command()
+  end
 
   defp argument_metadata_missing?([]), do: true
 

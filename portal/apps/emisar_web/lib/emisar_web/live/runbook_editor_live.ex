@@ -11,6 +11,15 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   @preview_delay_ms 350
 
+  @input_fields ~w[id description type required sensitive default minimum maximum
+                   min_length max_length]
+  @stage_fields ~w[id title mode max_parallel]
+  @step_fields ~w[id target_selection]
+  @wait_fields ~w[enabled interval_seconds timeout_seconds max_attempts]
+  @argument_fields ~w[name type required sensitive source value ref]
+  @output_fields ~w[id source sensitive extract_type expression capture]
+  @success_fields ~w[output operator value]
+
   def mount(params, _session, socket) do
     if connected?(socket),
       do: apply_action(socket, socket.assigns.live_action, params),
@@ -471,7 +480,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp validate_and_preview(socket) do
-    definition = RunbookDraft.definition(socket.assigns.draft)
+    definition = canonical_definition(socket.assigns.draft)
 
     case Runbooks.validate_definition(definition, socket.assigns.current_subject) do
       {:ok, _definition} ->
@@ -510,7 +519,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp run_preview(socket) do
-    definition = RunbookDraft.definition(socket.assigns.draft)
+    definition = canonical_definition(socket.assigns.draft)
 
     case Runbooks.preview_definition_plan(definition, socket.assigns.current_subject) do
       {:ok, %{plan: plan}} ->
@@ -539,6 +548,9 @@ defmodule EmisarWeb.RunbookEditorLive do
     end
   end
 
+  defp canonical_definition(draft),
+    do: draft |> RunbookDraft.command() |> Runbooks.Authoring.build_v1()
+
   defp mark_dirty(socket) do
     assign(
       socket,
@@ -548,7 +560,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp save(socket, publish?) do
-    definition = RunbookDraft.definition(socket.assigns.draft)
+    definition = canonical_definition(socket.assigns.draft)
 
     cond do
       not socket.assigns.dirty? and not publishable_saved_draft?(socket, publish?) ->
@@ -561,7 +573,7 @@ defmodule EmisarWeb.RunbookEditorLive do
         attrs = %{
           "title" => socket.assigns.draft["title"],
           "name" => socket.assigns.draft["title"],
-          "slug" => derive_slug(socket.assigns.draft["slug"], socket.assigns.draft["title"]),
+          "slug" => socket.assigns.draft["slug"],
           "description" => socket.assigns.draft["description"],
           "definition" => definition
         }
@@ -636,13 +648,6 @@ defmodule EmisarWeb.RunbookEditorLive do
     end
   end
 
-  defp derive_slug(slug, title) do
-    case String.trim(slug || "") do
-      "" -> Emisar.Slug.slugify(title || "", max_length: 79)
-      value -> value
-    end
-  end
-
   defp assign_form(socket, changeset),
     do: assign(socket, :form, to_form(changeset, as: "runbook"))
 
@@ -673,19 +678,32 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp normalize_draft_params(params) do
     %{
-      "title" => params["title"] || "",
-      "slug" => params["slug"] || "",
-      "description" => params["description"] || "",
-      "context_markdown" => params["context_markdown"] || "",
+      "title" => RunbookDraft.text(params["title"]),
+      "slug" => RunbookDraft.text(params["slug"]),
+      "description" => RunbookDraft.text(params["description"]),
+      "context_markdown" => RunbookDraft.text(params["context_markdown"]),
       "inputs" => params["inputs"] |> indexed() |> Enum.map(&normalize_input/1),
       "stages" => params["stages"] |> indexed() |> Enum.map(&normalize_stage/1)
     }
   end
 
-  defp normalize_input(input) do
+  # A crafted request can post a map or list into any scalar form field, so
+  # every expected scalar becomes draft text before it is assigned or rendered.
+  defp merge_text_fields(defaults, params, fields) when is_map(params) do
+    Enum.reduce(fields, defaults, fn field, draft ->
+      case Map.fetch(params, field) do
+        {:ok, value} -> Map.put(draft, field, RunbookDraft.text(value))
+        :error -> draft
+      end
+    end)
+  end
+
+  defp merge_text_fields(defaults, _params, _fields), do: defaults
+
+  defp normalize_input(input) when is_map(input) do
     normalized =
       RunbookDraft.input()
-      |> Map.merge(Map.take(input, Map.keys(RunbookDraft.input())))
+      |> merge_text_fields(input, @input_fields)
       |> Map.put("enum_values", normalize_enum_values(input["enum_values"]))
 
     if normalized["sensitive"] == "true" do
@@ -697,12 +715,20 @@ defmodule EmisarWeb.RunbookEditorLive do
     end
   end
 
+  defp normalize_input(_input), do: RunbookDraft.input()
+
   defp normalize_enum_values(values) do
     values
     |> indexed()
-    |> Enum.map_reduce(false, fn value, selected? ->
-      default? = not selected? and value["default"] == "true"
-      {RunbookDraft.enum_value(value["value"] || "", default?), selected? or default?}
+    |> Enum.map_reduce(false, fn
+      value, selected? when is_map(value) ->
+        default? = not selected? and value["default"] == "true"
+
+        {RunbookDraft.enum_value(RunbookDraft.text(value["value"]), default?),
+         selected? or default?}
+
+      _value, selected? ->
+        {RunbookDraft.enum_value(), selected?}
     end)
     |> elem(0)
   end
@@ -727,46 +753,44 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp clear_enum_defaults(values),
     do: Enum.map(values, &Map.put(&1, "default", "false"))
 
-  defp normalize_stage(stage) do
+  defp normalize_stage(stage) when is_map(stage) do
     RunbookDraft.stage()
-    |> Map.merge(Map.take(stage, ~w[id title mode max_parallel]))
+    |> merge_text_fields(stage, @stage_fields)
     |> Map.put("steps", stage["steps"] |> indexed() |> Enum.map(&normalize_step/1))
   end
 
-  defp normalize_step(step) do
+  defp normalize_stage(_stage), do: RunbookDraft.stage()
+
+  defp normalize_step(step) when is_map(step) do
     {pack_id, action_id} =
       RunbookEditorCatalog.split_action_value(
         step["action_choice"] ||
           RunbookEditorCatalog.action_value(step["pack_id"], step["action"])
       )
 
+    target_refs = step["target_refs"] |> List.wrap() |> Enum.map(&RunbookDraft.text/1)
+
     RunbookDraft.step()
-    |> Map.merge(Map.take(step, ~w[id target_selection target_refs wait]))
+    |> merge_text_fields(step, @step_fields)
     |> Map.put("pack_id", pack_id)
     |> Map.put("action", action_id)
-    |> Map.put("target_refs", List.wrap(step["target_refs"]))
+    |> Map.put("target_refs", target_refs)
     |> Map.put("args", step["args"] |> indexed() |> Enum.map(&normalize_argument/1))
     |> Map.put("outputs", step["outputs"] |> indexed() |> Enum.map(&normalize_output/1))
     |> Map.put("success", step["success"] |> indexed() |> Enum.map(&normalize_success/1))
-    |> Map.put("wait", Map.merge(RunbookDraft.step()["wait"], step["wait"] || %{}))
+    |> Map.put("wait", merge_text_fields(RunbookDraft.step()["wait"], step["wait"], @wait_fields))
   end
 
-  defp normalize_argument(argument) do
-    Map.merge(
-      RunbookDraft.argument(),
-      Map.take(argument, ~w[name type required sensitive source value ref])
-    )
-  end
+  defp normalize_step(_step), do: RunbookDraft.step()
 
-  defp normalize_output(output) do
-    Map.merge(
-      RunbookDraft.output(),
-      Map.take(output, ~w[id source sensitive extract_type expression capture])
-    )
-  end
+  defp normalize_argument(argument),
+    do: merge_text_fields(RunbookDraft.argument(), argument, @argument_fields)
+
+  defp normalize_output(output),
+    do: merge_text_fields(RunbookDraft.output(), output, @output_fields)
 
   defp normalize_success(success),
-    do: Map.merge(RunbookDraft.success(), Map.take(success, ~w[output operator value]))
+    do: merge_text_fields(RunbookDraft.success(), success, @success_fields)
 
   defp indexed(nil), do: []
   defp indexed(values) when is_list(values), do: values
@@ -776,6 +800,8 @@ defmodule EmisarWeb.RunbookEditorLive do
     |> Enum.sort_by(fn {key, _value} -> safe_index(key) end)
     |> Enum.map(&elem(&1, 1))
   end
+
+  defp indexed(_values), do: []
 
   defp publishable_saved_draft?(%{assigns: %{runbook: %{status: :draft}}}, true), do: true
   defp publishable_saved_draft?(_socket, _publish?), do: false

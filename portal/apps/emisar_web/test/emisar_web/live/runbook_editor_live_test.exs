@@ -43,6 +43,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
     })
   end
 
+  defp canonical_definition(draft),
+    do: draft |> RunbookDraft.command() |> Runbooks.Authoring.build_v1()
+
   defp change(lv, draft, target \\ ["draft", "title"]) do
     render_change(lv, "draft_changed", %{
       "_target" => target,
@@ -669,7 +672,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
 
       assert get_in(
-               RunbookDraft.definition(sensitive_draft),
+               canonical_definition(sensitive_draft),
                [
                  "stages",
                  Access.at(0),
@@ -1111,7 +1114,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert %Runbook{} = runbook = Repo.one!(Runbook)
       assert runbook.status == :draft
-      assert runbook.definition == RunbookDraft.definition(draft)
+      assert runbook.definition == canonical_definition(draft)
 
       assert get_in(runbook.definition, ["stages", Access.at(0), "steps", Access.at(0), "pack"]) ==
                %{"id" => "linux-core"}
@@ -1200,7 +1203,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           %{
             "title" => "Fleet health",
             "slug" => "fleet-health",
-            "definition" => valid_draft() |> RunbookDraft.definition()
+            "definition" => canonical_definition(valid_draft())
           },
           subject
         )
@@ -1266,6 +1269,58 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert %Runbook{status: :draft} = Repo.one!(Runbook)
     end
 
+    test "a crafted composite scalar becomes draft text instead of crashing the editor", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      input =
+        RunbookDraft.input()
+        |> Map.merge(%{
+          "id" => "count",
+          "description" => "Number of observations",
+          "type" => "integer",
+          "default" => %{"nested" => "1"}
+        })
+
+      html = change(lv, valid_draft(inputs: [input]))
+
+      assert html =~ "Input 1 · Default"
+      assert html =~ "Default does not satisfy the input&#39;s type and constraints."
+
+      # The same normalizer owns every scalar position, not only input defaults.
+      wait = %{
+        "enabled" => "true",
+        "interval_seconds" => %{"nested" => "1"},
+        "timeout_seconds" => "120",
+        "max_attempts" => "12"
+      }
+
+      draft =
+        [inputs: [input]]
+        |> valid_draft()
+        |> put_in(["stages", Access.at(0), "steps", Access.at(0), "wait"], wait)
+
+      change(lv, draft)
+      render_click(lv, "toggle_panel", %{"key" => "wait-0-0"})
+
+      assert has_element?(
+               lv,
+               ~s|input[name="draft[stages][0][steps][0][wait][interval_seconds]"][value='{"nested":"1"}']|
+             )
+
+      params = valid_draft() |> form_params() |> put_in(["inputs", "0"], "not-a-row")
+
+      html =
+        render_change(lv, "draft_changed", %{
+          "_target" => ["draft", "inputs", "0"],
+          "draft" => params
+        })
+
+      assert html =~ "Input 1"
+    end
+
     test "metadata feedback follows the field the operator changed", %{
       conn: conn,
       account: account
@@ -1311,7 +1366,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           %{
             "title" => "Fleet health",
             "slug" => "fleet-health",
-            "definition" => valid_draft(inputs: [input]) |> RunbookDraft.definition()
+            "definition" => canonical_definition(valid_draft(inputs: [input]))
           },
           subject
         )

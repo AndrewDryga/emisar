@@ -1,7 +1,6 @@
 defmodule Emisar.Runbooks.Runbook.Changeset do
   use Emisar, :changeset
-  alias Emisar.Runbooks.{Definition, Runbook}
-  alias Emisar.Slug
+  alias Emisar.Runbooks.{Definition, Naming, Runbook}
 
   # Status is never cast: every status is decided by a named transition
   # (`create`, `create_published`, `new_version`, `new_published_version`,
@@ -142,10 +141,9 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   defp put_slug_from_title(changeset) do
     case {get_field(changeset, :slug), get_field(changeset, :title)} do
       {slug, title} when is_binary(title) ->
-        if is_nil(slug) or String.trim(slug) == "" do
-          put_change(changeset, :slug, Slug.slugify(title, max_length: 79))
-        else
-          changeset
+        case Naming.resolve_slug(title, slug) do
+          ^slug -> changeset
+          resolved -> put_change(changeset, :slug, resolved)
         end
 
       _missing ->

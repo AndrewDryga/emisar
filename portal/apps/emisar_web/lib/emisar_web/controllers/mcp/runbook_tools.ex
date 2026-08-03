@@ -7,7 +7,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   scheduling; this module only handles wire identity and bounded projection.
   """
 
-  alias Emisar.{Approvals, Crypto, Runbooks, Slug}
+  alias Emisar.{Approvals, Crypto, Runbooks}
   alias Emisar.Auth.Subject
   alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract, Service}
   alias EmisarWeb.MCP.ValidationError
@@ -522,7 +522,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     %{
       operation_id: operation_id,
       title: args["title"],
-      slug: normalized_slug(args["slug"], args["title"]),
+      slug: Runbooks.Naming.resolve_slug(args["title"], args["slug"]),
       description: args["description"],
       definition: args["definition"]
     }
@@ -539,12 +539,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
     }
 
     encoded_size(envelope, Runbooks.Definition.limit!(:max_definition_bytes) + 8_192)
-  end
-
-  defp normalized_slug(nil, title), do: Slug.slugify(title, max_length: 79)
-
-  defp normalized_slug(slug, title) when is_binary(slug) do
-    if String.trim(slug) == "", do: Slug.slugify(title, max_length: 79), else: slug
   end
 
   defp draft_payload(runbook, operation_id, subject) do

@@ -2,10 +2,13 @@ defmodule EmisarWeb.RunbookDraft do
   @moduledoc """
   Lossless form state for the structured runbook editor.
 
-  The browser edits strings and ordered rows; `definition/1` is the only
-  conversion into the strict JSON-compatible Runbooks contract. No source-text
-  definition or alternate persisted shape exists.
+  The browser edits strings and ordered rows. `command/1` is the only
+  conversion out of that state — into the typed command
+  `Emisar.Runbooks.Authoring` canonicalizes — and `from_definition/1` is its
+  inverse projection. No source-text definition or alternate persisted shape
+  exists.
   """
+  alias Emisar.Runbooks
 
   @default_wait %{
     "enabled" => "false",
@@ -48,12 +51,53 @@ defmodule EmisarWeb.RunbookDraft do
 
   def from_definition(_definition), do: new()
 
-  def definition(draft) do
+  @doc """
+  Coerce one browser-supplied scalar into the form text this module owns.
+
+  A crafted request can post a map or list where the form has a text field, so
+  a composite value becomes its compact JSON text instead of a raw term.
+  """
+  def text(nil), do: ""
+  def text(value) when is_binary(value), do: value
+  def text(value) when is_number(value) or is_atom(value), do: to_string(value)
+  def text(value), do: Jason.encode!(value)
+
+  @doc "Project the whole browser draft onto the domain's typed authoring command."
+  def command(draft) do
     %{
-      "schema_version" => 1,
-      "context_markdown" => draft["context_markdown"] || "",
-      "inputs" => Enum.map(draft["inputs"] || [], &input_to_definition/1),
-      "stages" => Enum.map(draft["stages"] || [], &stage_to_definition/1)
+      context_markdown: text_field(draft, "context_markdown"),
+      inputs: Enum.map(rows(draft["inputs"]), &input_command/1),
+      stages: Enum.map(rows(draft["stages"]), &stage_command/1)
+    }
+  end
+
+  @doc "Project one browser argument row onto its typed argument command."
+  def argument_command(nil), do: nil
+
+  def argument_command(argument) when is_map(argument) do
+    %{
+      name: text_field(argument, "name"),
+      type: text_field(argument, "type", "json"),
+      required?: argument["required"] == "true",
+      sensitive?: argument["sensitive"] == "true",
+      source: text_field(argument, "source", "omit"),
+      value: text_field(argument, "value"),
+      ref: text_field(argument, "ref")
+    }
+  end
+
+  def argument_command(_argument), do: argument_command(argument())
+
+  @doc "Project one typed argument command back onto its browser row."
+  def argument_from_command(argument) do
+    %{
+      "name" => argument.name,
+      "type" => argument.type,
+      "required" => bool_string(argument.required?),
+      "sensitive" => bool_string(argument.sensitive?),
+      "source" => argument.source,
+      "value" => argument.value,
+      "ref" => argument.ref
     }
   end
 
@@ -62,7 +106,7 @@ defmodule EmisarWeb.RunbookDraft do
       "title" => draft["title"] || "",
       "slug" => draft["slug"] || "",
       "description" => draft["description"] || "",
-      "definition" => definition(draft)
+      "definition" => draft |> command() |> Runbooks.Authoring.build_v1()
     }
     |> Jason.encode!()
   end
@@ -123,27 +167,6 @@ defmodule EmisarWeb.RunbookDraft do
     }
   end
 
-  @doc "Align one form binding with its selected trusted action argument descriptor."
-  def sync_argument(spec, existing) when is_map(spec) do
-    existing? = is_map(existing)
-    existing = existing || argument()
-    type = spec["type"] || "json"
-    required? = spec["required"] == true
-    sensitive? = spec["sensitive"] == true
-
-    source = synced_argument_source(existing, existing?, required?, sensitive?)
-
-    %{
-      "name" => spec["name"] || "",
-      "type" => type,
-      "required" => bool_string(required?),
-      "sensitive" => bool_string(sensitive?),
-      "source" => source,
-      "value" => synced_literal_value(spec, existing, type, existing?),
-      "ref" => existing["ref"] || ""
-    }
-  end
-
   def output do
     %{
       "id" => "",
@@ -159,6 +182,91 @@ defmodule EmisarWeb.RunbookDraft do
     %{"output" => "", "operator" => "equals", "value" => ""}
   end
 
+  defp input_command(input) when is_map(input) do
+    %{
+      id: text_field(input, "id"),
+      description: text_field(input, "description"),
+      type: text_field(input, "type", "string"),
+      required?: input["required"] == "true",
+      sensitive?: input["sensitive"] == "true",
+      default: text_field(input, "default"),
+      enum_values: Enum.map(rows(input["enum_values"]), &enum_value_command/1),
+      minimum: text_field(input, "minimum"),
+      maximum: text_field(input, "maximum"),
+      min_length: text_field(input, "min_length"),
+      max_length: text_field(input, "max_length")
+    }
+  end
+
+  defp input_command(_input), do: input_command(input())
+
+  defp enum_value_command(value) when is_map(value),
+    do: %{value: text_field(value, "value"), default?: value["default"] == "true"}
+
+  defp enum_value_command(_value), do: enum_value_command(enum_value())
+
+  defp stage_command(stage) when is_map(stage) do
+    %{
+      id: text_field(stage, "id"),
+      title: text_field(stage, "title"),
+      mode: text_field(stage, "mode", "sequential"),
+      max_parallel: text_field(stage, "max_parallel"),
+      steps: Enum.map(rows(stage["steps"]), &step_command/1)
+    }
+  end
+
+  defp stage_command(_stage), do: stage_command(stage())
+
+  defp step_command(step) when is_map(step) do
+    %{
+      id: text_field(step, "id"),
+      pack_id: text_field(step, "pack_id"),
+      action: text_field(step, "action"),
+      target_selection: text_field(step, "target_selection", "all"),
+      target_refs: step["target_refs"] |> List.wrap() |> Enum.map(&text/1),
+      args: Enum.map(rows(step["args"]), &argument_command/1),
+      outputs: Enum.map(rows(step["outputs"]), &output_command/1),
+      success: Enum.map(rows(step["success"]), &success_command/1),
+      wait: wait_command(step["wait"] || @default_wait)
+    }
+  end
+
+  defp step_command(_step), do: step_command(step())
+
+  defp output_command(output) when is_map(output) do
+    %{
+      id: text_field(output, "id"),
+      source: text_field(output, "source", "structured_output"),
+      sensitive?: output["sensitive"] == "true",
+      extract_type: text_field(output, "extract_type", "json_pointer"),
+      expression: text_field(output, "expression"),
+      capture: text_field(output, "capture", "0")
+    }
+  end
+
+  defp output_command(_output), do: output_command(output())
+
+  defp success_command(success) when is_map(success) do
+    %{
+      output: text_field(success, "output"),
+      operator: text_field(success, "operator", "equals"),
+      value: text_field(success, "value")
+    }
+  end
+
+  defp success_command(_success), do: success_command(success())
+
+  defp wait_command(wait) when is_map(wait) do
+    %{
+      enabled?: wait["enabled"] == "true",
+      interval_seconds: text_field(wait, "interval_seconds"),
+      timeout_seconds: text_field(wait, "timeout_seconds"),
+      max_attempts: text_field(wait, "max_attempts")
+    }
+  end
+
+  defp wait_command(_wait), do: wait_command(@default_wait)
+
   defp input_from_definition(input) do
     input()
     |> Map.merge(%{
@@ -169,10 +277,10 @@ defmodule EmisarWeb.RunbookDraft do
       "sensitive" => bool_string(input["sensitive"]),
       "default" => input_default_text(input),
       "enum_values" => enum_values_from_definition(input),
-      "minimum" => optional_text(input["minimum"]),
-      "maximum" => optional_text(input["maximum"]),
-      "min_length" => optional_text(input["min_length"]),
-      "max_length" => optional_text(input["max_length"])
+      "minimum" => text(input["minimum"]),
+      "maximum" => text(input["maximum"]),
+      "min_length" => text(input["min_length"]),
+      "max_length" => text(input["max_length"])
     })
   end
 
@@ -183,70 +291,19 @@ defmodule EmisarWeb.RunbookDraft do
       default? =
         not selected? and Map.has_key?(input, "default") and value == input["default"]
 
-      {enum_value(optional_text(value), default?), selected? or default?}
+      {enum_value(text(value), default?), selected? or default?}
     end)
     |> elem(0)
   end
-
-  defp input_to_definition(input) do
-    type = input["type"] || "string"
-
-    %{
-      "id" => input["id"] || "",
-      "description" => input["description"] || "",
-      "type" => type,
-      "required" => input["required"] == "true",
-      "sensitive" => input["sensitive"] == "true"
-    }
-    |> maybe_put_input_default(input, type)
-    |> maybe_put(
-      "enum",
-      type == "enum",
-      Enum.map(input["enum_values"] || [], &(&1["value"] || ""))
-    )
-    |> maybe_put_nonblank("minimum", input["minimum"], &parse_number/1)
-    |> maybe_put_nonblank("maximum", input["maximum"], &parse_number/1)
-    |> maybe_put_nonblank("min_length", input["min_length"], &parse_integer/1)
-    |> maybe_put_nonblank("max_length", input["max_length"], &parse_integer/1)
-  end
-
-  defp maybe_put_input_default(definition, %{"sensitive" => "true"}, _type),
-    do: definition
-
-  defp maybe_put_input_default(definition, input, "enum") do
-    case Enum.find(input["enum_values"] || [], &(&1["default"] == "true")) do
-      %{"value" => value} ->
-        maybe_put_nonblank(definition, "default", value, &parse_typed_value(&1, "enum"))
-
-      nil ->
-        definition
-    end
-  end
-
-  defp maybe_put_input_default(definition, input, type),
-    do: maybe_put_nonblank(definition, "default", input["default"], &parse_typed_value(&1, type))
 
   defp stage_from_definition(stage) do
     %{
       "id" => stage["id"] || "",
       "title" => stage["title"] || "",
       "mode" => stage["mode"] || "sequential",
-      "max_parallel" => optional_text(stage["max_parallel"] || 1),
+      "max_parallel" => text(stage["max_parallel"] || 1),
       "steps" => Enum.map(stage["steps"] || [], &step_from_definition/1)
     }
-  end
-
-  defp stage_to_definition(stage) do
-    stage_definition = %{
-      "id" => stage["id"] || "",
-      "title" => stage["title"] || "",
-      "mode" => stage["mode"] || "sequential",
-      "steps" => Enum.map(stage["steps"] || [], &step_to_definition/1)
-    }
-
-    if stage_definition["mode"] == "parallel",
-      do: Map.put(stage_definition, "max_parallel", parse_integer(stage["max_parallel"])),
-      else: stage_definition
   end
 
   defp step_from_definition(step) do
@@ -267,74 +324,20 @@ defmodule EmisarWeb.RunbookDraft do
     }
   end
 
-  defp step_to_definition(step) do
-    %{
-      "id" => step["id"] || "",
-      "pack" => %{"id" => step["pack_id"] || ""},
-      "action" => step["action"] || "",
-      "targets" => %{
-        "selection" => step["target_selection"] || "all",
-        "refs" => step["target_refs"] || []
-      },
-      "args" => arguments_to_definition(step["args"] || []),
-      "outputs" => Enum.map(step["outputs"] || [], &output_to_definition/1),
-      "success" => Enum.map(step["success"] || [], &success_to_definition/1),
-      "wait" => wait_to_definition(step["wait"] || @default_wait)
-    }
-  end
+  defp argument_from_definition({name, %{"source" => "literal", "value" => value}}),
+    do: %{loaded_argument(name) | "source" => "literal", "value" => json_text(value)}
 
-  defp argument_from_definition({name, %{"source" => "literal", "value" => value}}) do
-    argument()
-    |> Map.merge(%{
-      "name" => name,
-      "source" => "literal",
-      "value" => json_text(value)
-    })
-  end
+  defp argument_from_definition({name, %{"source" => source, "ref" => ref}}),
+    do: %{loaded_argument(name) | "source" => source, "ref" => ref || ""}
 
-  defp argument_from_definition({name, %{"source" => source, "ref" => ref}}) do
-    argument()
-    |> Map.merge(%{
-      "name" => name,
-      "source" => source,
-      "ref" => ref || ""
-    })
-  end
+  defp argument_from_definition({name, _binding}), do: loaded_argument(name)
 
-  defp argument_from_definition({name, _binding}),
-    do: Map.merge(argument(), %{"name" => name})
-
-  defp arguments_to_definition(arguments) do
-    Enum.reduce(arguments, %{}, fn argument, bindings ->
-      if argument["source"] != "omit" do
-        {name, binding} = argument_to_definition(argument)
-        Map.put(bindings, name, binding)
-      else
-        bindings
-      end
-    end)
-  end
-
-  defp argument_to_definition(argument) do
-    binding =
-      case argument["source"] do
-        "input" ->
-          %{"source" => "input", "ref" => argument["ref"] || ""}
-
-        "output" ->
-          %{"source" => "output", "ref" => argument["ref"] || ""}
-
-        _ ->
-          %{"source" => "literal"}
-          |> maybe_put_nonblank(
-            "value",
-            argument["value"],
-            &parse_argument_value(&1, argument["type"])
-          )
-      end
-
-    {argument["name"] || "", binding}
-  end
+  # A persisted binding carries no descriptor metadata, so the row must show it
+  # missing — that is what makes the catalog restore type/required/sensitive on
+  # load. The type stays `json` because the literal text below IS JSON, and the
+  # descriptor sync uses that to decode it back to a typed field's plain text.
+  defp loaded_argument(name),
+    do: %{argument() | "name" => name, "required" => "", "sensitive" => ""}
 
   defp output_from_definition(output) do
     extract = output["extract"] || %{}
@@ -349,25 +352,6 @@ defmodule EmisarWeb.RunbookDraft do
     }
   end
 
-  defp output_to_definition(output) do
-    extract = %{
-      "type" => output["extract_type"] || "json_pointer",
-      "expression" => output["expression"] || ""
-    }
-
-    extract =
-      if extract["type"] == "regex",
-        do: Map.put(extract, "capture", output["capture"] || "0"),
-        else: extract
-
-    %{
-      "id" => output["id"] || "",
-      "source" => output["source"] || "structured_output",
-      "sensitive" => output["sensitive"] == "true",
-      "extract" => extract
-    }
-  end
-
   defp success_from_definition(success) do
     %{
       "output" => success["output"] || "",
@@ -376,34 +360,16 @@ defmodule EmisarWeb.RunbookDraft do
     }
   end
 
-  defp success_to_definition(success) do
-    %{
-      "output" => success["output"] || "",
-      "operator" => success["operator"] || "equals"
-    }
-    |> maybe_put_nonblank("value", success["value"], &parse_json/1)
-  end
-
   defp wait_from_definition(nil), do: @default_wait
 
   defp wait_from_definition(wait) do
     %{
       "enabled" => "true",
-      "interval_seconds" => optional_text(wait["interval_seconds"]),
-      "timeout_seconds" => optional_text(wait["timeout_seconds"]),
-      "max_attempts" => optional_text(wait["max_attempts"])
+      "interval_seconds" => text(wait["interval_seconds"]),
+      "timeout_seconds" => text(wait["timeout_seconds"]),
+      "max_attempts" => text(wait["max_attempts"])
     }
   end
-
-  defp wait_to_definition(%{"enabled" => "true"} = wait) do
-    %{
-      "interval_seconds" => parse_integer(wait["interval_seconds"]),
-      "timeout_seconds" => parse_integer(wait["timeout_seconds"]),
-      "max_attempts" => parse_integer(wait["max_attempts"])
-    }
-  end
-
-  defp wait_to_definition(_wait), do: nil
 
   defp default_context do
     """
@@ -415,117 +381,32 @@ defmodule EmisarWeb.RunbookDraft do
     |> String.trim()
   end
 
-  defp parse_typed_value(value, "string"), do: value || ""
-  defp parse_typed_value(value, "enum"), do: value || ""
-  defp parse_typed_value(value, "integer"), do: parse_integer(value)
-  defp parse_typed_value(value, "number"), do: parse_number(value)
-  defp parse_typed_value("true", "boolean"), do: true
-  defp parse_typed_value("false", "boolean"), do: false
-  defp parse_typed_value(value, "boolean"), do: value
-
-  defp parse_argument_value(value, type) when type in ["string", "path", "duration"],
-    do: value || ""
-
-  defp parse_argument_value(value, "integer"), do: parse_integer(value)
-  defp parse_argument_value(value, "number"), do: parse_number(value)
-  defp parse_argument_value("true", "boolean"), do: true
-  defp parse_argument_value("false", "boolean"), do: false
-  defp parse_argument_value(value, "boolean"), do: value
-  defp parse_argument_value(value, _type), do: parse_json(value)
-
-  defp parse_integer(value) when is_integer(value), do: value
-
-  defp parse_integer(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {integer, ""} -> integer
-      _ -> value
-    end
-  end
-
-  defp parse_integer(value), do: value
-
-  defp parse_number(value) when is_number(value), do: value
-
-  defp parse_number(value) when is_binary(value) do
-    case Float.parse(value) do
-      {number, ""} -> number
-      _ -> value
-    end
-  end
-
-  defp parse_number(value), do: value
-
-  defp parse_json(value) when is_binary(value) do
-    case Jason.decode(value) do
-      {:ok, decoded} -> decoded
-      {:error, _reason} -> value
-    end
-  end
-
-  defp parse_json(value), do: value
-
   defp typed_value_text(nil, _type), do: ""
   defp typed_value_text(value, "string"), do: value
-  defp typed_value_text(value, _type), do: optional_text(value)
+  defp typed_value_text(value, _type), do: text(value)
 
   defp input_default_text(%{"type" => "enum"}), do: ""
   defp input_default_text(input), do: typed_value_text(input["default"], input["type"])
 
   defp json_text(value), do: Jason.encode!(value)
 
-  defp synced_literal_value(spec, existing, type, true) do
-    case {existing["type"], existing["value"], type} do
-      {"json", value, target} when target in ["string", "path", "duration"] ->
-        value
-        |> parse_json()
-        |> typed_value_text(target)
+  # Every editable scalar reaches the typed command as text, so the domain sees
+  # the operator's token and reports its own per-path issue.
+  defp text_field(row, key, default \\ "")
 
-      {_existing_type, value, _target} ->
-        value || default_argument_value(spec, type)
+  defp text_field(row, key, default) when is_map(row) do
+    case row[key] do
+      nil -> default
+      value -> text(value)
     end
   end
 
-  defp synced_literal_value(spec, _existing, type, false),
-    do: default_argument_value(spec, type)
+  defp text_field(_row, _key, default), do: default
 
-  defp default_argument_value(spec, type) do
-    if Map.has_key?(spec, "default") do
-      case type do
-        target when target in ["string", "path", "duration"] -> spec["default"] || ""
-        _target -> json_text(spec["default"])
-      end
-    else
-      case type do
-        _target -> ""
-      end
-    end
-  end
+  defp rows(nil), do: []
+  defp rows(values) when is_list(values), do: values
+  defp rows(value), do: [value]
 
-  defp synced_argument_source(existing, true, required?, sensitive?) do
-    source = existing["source"] || if(required?, do: "literal", else: "omit")
-
-    cond do
-      required? and source == "omit" -> if(sensitive?, do: "input", else: "literal")
-      sensitive? and source == "literal" -> "input"
-      true -> source
-    end
-  end
-
-  defp synced_argument_source(_existing, false, true, true), do: "input"
-  defp synced_argument_source(_existing, false, true, false), do: "literal"
-  defp synced_argument_source(_existing, false, false, _sensitive), do: "omit"
-
-  defp optional_text(nil), do: ""
-  defp optional_text(value), do: to_string(value)
   defp bool_string(true), do: "true"
   defp bool_string(_value), do: "false"
-
-  defp maybe_put(map, key, true, value), do: Map.put(map, key, value)
-  defp maybe_put(map, _key, false, _value), do: map
-
-  defp maybe_put_nonblank(map, key, value, parse) when is_binary(value) do
-    if String.trim(value) == "", do: map, else: Map.put(map, key, parse.(value))
-  end
-
-  defp maybe_put_nonblank(map, _key, _value, _parse), do: map
 end

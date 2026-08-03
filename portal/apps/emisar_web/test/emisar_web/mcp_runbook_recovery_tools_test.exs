@@ -455,6 +455,44 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Enum.any?(listed["runbooks"], &(&1["runbook_ref"] == "partial-fleet@1"))
   end
 
+  test "draft creation derives an absent slug through the shared runbook rule", %{conn: conn} do
+    targets = %{"selection" => "all", "refs" => ["group:fleet"]}
+
+    absent_args = %{
+      "title" => "Check Database Fleet!",
+      "slug" => nil,
+      "description" => nil,
+      "definition" => runbook_definition(targets)
+    }
+
+    absent = call(conn, "create_runbook_draft", absent_args)
+
+    assert absent["ok"]
+    assert absent["slug"] == "check-database-fleet"
+    assert call(conn, "create_runbook_draft", absent_args) == absent
+
+    blank =
+      call(conn, "create_runbook_draft", %{
+        "title" => "Rotate Standby Nodes",
+        "slug" => "   ",
+        "description" => nil,
+        "definition" => runbook_definition(targets)
+      })
+
+    assert blank["slug"] == "rotate-standby-nodes"
+
+    explicit =
+      call(conn, "create_runbook_draft", %{
+        "title" => "Drain Edge Nodes",
+        "slug" => "edge-drain",
+        "description" => nil,
+        "definition" => runbook_definition(targets)
+      })
+
+    assert explicit["slug"] == "edge-drain"
+    assert Repo.aggregate(Runbooks.Runbook, :count) == 3
+  end
+
   test "draft creation rejects an invalid canonical definition before reserving an operation", %{
     conn: conn
   } do

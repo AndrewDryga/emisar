@@ -2,6 +2,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
   @moduledoc false
 
   use EmisarWeb, :html
+  alias Emisar.Runbooks
   alias EmisarWeb.{RunbookDraft, RunbookMarkdown, RunbookWorkflowComponents}
 
   defp issue_target(path) when is_binary(path) do
@@ -64,8 +65,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
     ) or input["enum_values"] != []
   end
 
-  defp canonical_definition(draft),
-    do: draft |> RunbookDraft.definition() |> Jason.encode!(pretty: true)
+  defp canonical_definition(draft) do
+    draft
+    |> RunbookDraft.command()
+    |> Runbooks.Authoring.build_v1()
+    |> Jason.encode!(pretty: true)
+  end
 
   defp field_error(form, field) do
     case form[field].errors do

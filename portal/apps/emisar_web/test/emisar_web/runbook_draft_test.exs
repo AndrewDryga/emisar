@@ -1,7 +1,8 @@
 defmodule EmisarWeb.RunbookDraftTest do
   use ExUnit.Case, async: true
+  alias Emisar.Runbooks
   alias Emisar.Runbooks.Definition
-  alias EmisarWeb.RunbookDraft
+  alias EmisarWeb.{RunbookDraft, RunbookEditorCatalog}
 
   test "round-trips every strict v1 authoring feature without another representation" do
     definition = %{
@@ -100,105 +101,94 @@ defmodule EmisarWeb.RunbookDraftTest do
     }
 
     assert {:ok, ^definition} = Definition.validate(definition)
-    assert definition |> RunbookDraft.from_definition() |> RunbookDraft.definition() == definition
+
+    rebuilt =
+      definition
+      |> RunbookDraft.from_definition()
+      |> RunbookDraft.command()
+      |> Runbooks.Authoring.build_v1()
+
+    assert rebuilt == definition
   end
 
-  test "keeps malformed typed values intact so the canonical validator can explain them" do
-    draft =
-      RunbookDraft.new()
-      |> Map.put("inputs", [
-        RunbookDraft.input()
-        |> Map.merge(%{
-          "id" => "count",
-          "description" => "Number of observations",
-          "type" => "integer",
-          "default" => "not-a-number"
-        })
-      ])
-      |> put_in(["stages", Access.at(0), "steps", Access.at(0)], %{
-        RunbookDraft.step()
-        | "id" => "inspect",
-          "pack_id" => "linux-core",
-          "action" => "linux.uptime",
-          "target_selection" => "all",
-          "target_refs" => ["group:default"]
-      })
-
-    definition = RunbookDraft.definition(draft)
-
-    assert get_in(definition, ["inputs", Access.at(0), "default"]) == "not-a-number"
-    assert {:error, issues} = Definition.validate(definition)
-    assert Enum.any?(issues, &(&1.path == "/inputs/0/default"))
-  end
-
-  test "omits every default when an input is sensitive" do
-    draft =
-      RunbookDraft.new()
-      |> Map.put("inputs", [
-        RunbookDraft.input()
-        |> Map.merge(%{
-          "id" => "secret",
-          "type" => "boolean",
-          "sensitive" => "true",
-          "default" => "true"
-        }),
-        RunbookDraft.input()
-        |> Map.merge(%{
-          "id" => "environment",
-          "type" => "enum",
-          "sensitive" => "true",
-          "enum_values" => [
-            RunbookDraft.enum_value("staging"),
-            RunbookDraft.enum_value("production", true)
+  test "a loaded argument binding is descriptor-resynchronized without double-quoting a literal" do
+    definition = %{
+      "schema_version" => 1,
+      "context_markdown" => "",
+      "inputs" => [],
+      "stages" => [
+        %{
+          "id" => "stage",
+          "title" => "Run actions",
+          "mode" => "sequential",
+          "steps" => [
+            %{
+              "id" => "step",
+              "pack" => %{"id" => "linux-core"},
+              "action" => "linux.tail",
+              "targets" => %{"selection" => "all", "refs" => ["group:default"]},
+              "args" => %{"path" => %{"source" => "literal", "value" => "/var/log/syslog"}},
+              "outputs" => [],
+              "success" => [],
+              "wait" => nil
+            }
           ]
-        })
-      ])
+        }
+      ]
+    }
 
-    inputs = RunbookDraft.definition(draft)["inputs"]
+    draft = RunbookDraft.from_definition(definition)
+    step = get_in(draft, ["stages", Access.at(0), "steps", Access.at(0)])
+    loaded = hd(step["args"])
 
-    refute Map.has_key?(Enum.at(inputs, 0), "default")
-    refute Map.has_key?(Enum.at(inputs, 1), "default")
+    assert loaded["value"] == ~s("/var/log/syslog")
+    assert loaded["required"] == ""
+    assert loaded["sensitive"] == ""
+
+    catalog = %{
+      actions: %{
+        "linux-core|linux.tail" => %{
+          args: [%{"name" => "path", "type" => "path", "required" => true, "sensitive" => false}]
+        }
+      }
+    }
+
+    synced = hd(RunbookEditorCatalog.sync_step(step, step, catalog)["args"])
+
+    assert synced == %{
+             "name" => "path",
+             "type" => "path",
+             "required" => "true",
+             "sensitive" => "false",
+             "source" => "literal",
+             "value" => "/var/log/syslog",
+             "ref" => ""
+           }
   end
 
-  test "descriptor-synced arguments produce typed bindings and omit disabled optional values" do
-    required =
-      RunbookDraft.sync_argument(
-        %{"name" => "path", "type" => "path", "required" => true, "sensitive" => false},
-        nil
-      )
-
-    optional =
-      RunbookDraft.sync_argument(
-        %{"name" => "count", "type" => "integer", "required" => false, "sensitive" => false},
-        nil
-      )
-
-    sensitive =
-      RunbookDraft.sync_argument(
-        %{"name" => "token", "type" => "string", "required" => true, "sensitive" => true},
-        nil
-      )
+  test "a composite scalar reaches the typed command as compact JSON text" do
+    input = %{RunbookDraft.input() | "id" => "count", "default" => %{"a" => [1]}}
+    success = %{RunbookDraft.success() | "output" => "lag", "value" => [1, 2]}
 
     draft =
       RunbookDraft.new()
-      |> put_in(
-        ["stages", Access.at(0), "steps", Access.at(0), "args"],
-        [
-          %{required | "value" => "/var/lib/postgresql"},
-          %{optional | "value" => "3"},
-          %{sensitive | "ref" => "token"}
-        ]
-      )
+      |> Map.put("inputs", [input])
+      |> put_in(["stages", Access.at(0), "steps", Access.at(0), "success"], [success])
 
-    bindings =
-      draft
-      |> RunbookDraft.definition()
-      |> get_in(["stages", Access.at(0), "steps", Access.at(0), "args"])
+    command = RunbookDraft.command(draft)
 
-    assert bindings == %{
-             "path" => %{"source" => "literal", "value" => "/var/lib/postgresql"},
-             "token" => %{"source" => "input", "ref" => "token"}
-           }
+    assert [%{id: "count", default: ~s({"a":[1]})}] = command.inputs
+    assert [%{output: "lag", value: "[1,2]"}] = hd(hd(command.stages).steps).success
+
+    definition = Runbooks.Authoring.build_v1(command)
+
+    assert get_in(definition, ["inputs", Access.at(0), "default"]) == ~s({"a":[1]})
+  end
+
+  test "a malformed browser row falls back to its bounded default shape" do
+    command = RunbookDraft.command(%{RunbookDraft.new() | "inputs" => ["not-a-row"]})
+
+    assert [%{id: "", type: "string", default: ""}] = command.inputs
   end
 
   test "fingerprint tracks persisted semantics and ignores map insertion order" do
