@@ -8,6 +8,7 @@ defmodule Emisar.Runs do
   use Supervisor
   alias Ecto.Multi
   alias Emisar.Accounts
+  alias Emisar.ActionContract
   alias Emisar.ApiKeys
   alias Emisar.Approvals
   alias Emisar.Audit
@@ -780,156 +781,280 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  Atomically reserves one fixed MCP operation and persists every target outcome.
+  Creates or replays one fixed MCP `run_action` operation.
 
-  `operation_attrs` carries the raw `:attestation_headers` and the actual
-  request `:portal_origin`; this function — not its caller — validates the
-  signed envelope and binds it to the refs of the runners this account really
-  scopes. Target attrs may not carry an `:attestation` of their own.
+  `facts` is the exact model-facing call: `:operation_id`, `:action_id`,
+  `:pack_ref`, the requested `:runner_refs`, `:args` plus the exact
+  `:args_raw` bytes, `:reason`, the optional `:evidence`/`:expected`
+  justification chain, and the raw `:attestation_headers` with the actual
+  request `:portal_origin`. Account, credential, client metadata, membership
+  scope, and attribution come from `subject` alone.
 
-  Catalog trust, runner scope, attestation presence, and policy are re-evaluated
-  for every target inside the transaction. No run is broadcast or delivered and
-  no approval notification is emitted until the operation row, every run, every
-  approval request, and every grant use have committed together.
+  The operation is reserved first. Only the fresh winner resolves current
+  runner generations and trusted contracts, validates the arguments and the
+  signed envelope, and persists every target atomically; a failed preflight
+  rolls the reservation back with it. An exact replay returns the committed
+  rows without consulting current catalog state, and nothing is broadcast,
+  delivered, or notified until the whole transaction commits.
 
-  An exact replay returns the original target rows without re-dispatching them.
+  Returns `{:ok, :created | :replay, runs}`, `{:error, :operation_conflict}`,
+  `{:error, :operation_incomplete}` when the persisted target set does not
+  match the request, or the first rejection.
   """
-  def dispatch_mcp_fanout(operation_attrs, target_attrs, %Subject{} = subject)
-      when is_map(operation_attrs) and is_list(target_attrs) do
-    {attestation_input, operation_attrs} = pop_attestation_input(operation_attrs)
-
+  def dispatch_mcp_action(facts, %Subject{actor: %ApiKeys.ApiKey{}} = subject)
+      when is_map(facts) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.dispatch_run_permission()
            ),
          :ok <- require_subject_membership(subject),
-         :ok <- validate_mcp_targets(operation_attrs, target_attrs),
-         :ok <- refuse_caller_attestations(target_attrs),
-         {:ok, attestation} <-
-           preflight_attestation(
-             attestation_input,
-             operation_attrs,
-             target_attrs,
-             subject.account.id
-           ) do
-      target_attrs =
-        Enum.map(target_attrs, fn attrs ->
-          attrs
-          |> put_dispatcher_context(subject)
-          |> put_dispatcher_identity(subject)
-          |> put_validated_attestation(attestation)
-        end)
-
-      commit_mcp_fanout(operation_attrs, target_attrs, subject, true)
+         {:ok, facts} <- normalize_mcp_action_facts(facts) do
+      commit_mcp_action(facts, mcp_action_operation_attrs(facts), subject, true)
     end
   end
 
-  def dispatch_mcp_fanout(_operation_attrs, _target_attrs, %Subject{}),
-    do: {:error, :invalid_targets}
+  def dispatch_mcp_action(_facts, %Subject{}), do: {:error, :unauthorized}
 
-  defp validate_mcp_targets(
+  defp normalize_mcp_action_facts(
          %{
-           tool: :run_action,
            operation_id: operation_id,
            action_id: action_id,
-           pack_ref: pack_ref
-         },
-         target_attrs
+           pack_ref: pack_ref,
+           runner_refs: runner_refs,
+           args: args,
+           args_raw: args_raw,
+           reason: reason
+         } = facts
        )
-       when is_binary(operation_id) and is_binary(action_id) and is_binary(pack_ref) do
-    valid_targets? =
-      Enum.all?(target_attrs, fn
-        %{
-          runner_id: runner_id,
-          operation_id: ^operation_id,
-          action_id: ^action_id,
-          pack_ref: ^pack_ref
-        }
-        when is_binary(runner_id) ->
-          true
-
-        _attrs ->
-          false
-      end)
-
-    runner_ids = Enum.map(target_attrs, &Map.get(&1, :runner_id))
-
-    if length(target_attrs) in 1..@max_mcp_fanout and valid_targets? and
-         MapSet.size(MapSet.new(runner_ids)) == length(runner_ids) do
-      :ok
+       when is_binary(operation_id) and is_binary(action_id) and is_binary(pack_ref) and
+              is_list(runner_refs) and is_map(args) and is_binary(args_raw) and
+              is_binary(reason) do
+    if length(runner_refs) in 1..@max_mcp_fanout and Enum.all?(runner_refs, &is_binary/1) and
+         Enum.uniq(runner_refs) == runner_refs do
+      {:ok,
+       %{
+         operation_id: operation_id,
+         action_id: action_id,
+         pack_ref: pack_ref,
+         runner_refs: runner_refs,
+         args: args,
+         args_raw: args_raw,
+         reason: reason,
+         evidence: facts[:evidence],
+         expected: facts[:expected],
+         attestation_headers: Map.get(facts, :attestation_headers, []),
+         portal_origin: facts[:portal_origin]
+       }}
     else
       {:error, :invalid_targets}
     end
   end
 
-  defp validate_mcp_targets(_operation_attrs, _target_attrs), do: {:error, :invalid_targets}
+  defp normalize_mcp_action_facts(_facts), do: {:error, :invalid_targets}
 
-  defp pop_attestation_input(operation_attrs) do
-    {headers, operation_attrs} = Map.pop(operation_attrs, :attestation_headers, [])
-    {portal_origin, operation_attrs} = Map.pop(operation_attrs, :portal_origin)
-    {%{headers: headers, portal_origin: portal_origin}, operation_attrs}
+  # Evidence, expected, attestation, and origin are deliberately absent: they
+  # never make an otherwise-identical retry a different mutation, and replay
+  # must answer from persisted children rather than from what this call claims.
+  defp mcp_action_operation_attrs(facts) do
+    fingerprint =
+      MCPOperations.mutation_fingerprint("run_action", %{
+        "action_id" => facts.action_id,
+        "pack_ref" => facts.pack_ref,
+        "args_sha256" => Crypto.hash_hex(facts.args_raw),
+        "reason" => facts.reason,
+        "runner_refs" => Enum.sort(facts.runner_refs)
+      })
+
+    %{
+      operation_id: facts.operation_id,
+      tool: :run_action,
+      fingerprint: fingerprint,
+      action_id: facts.action_id,
+      pack_ref: facts.pack_ref
+    }
   end
+
+  defp commit_mcp_action(facts, operation_attrs, subject, use_grants?) do
+    base = put_active_account_lock(Multi.new(), subject.account.id, :active_account)
+
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(base, operation_attrs, subject) do
+      result =
+        multi
+        |> Multi.merge(fn
+          %{mcp_operation: %{fresh?: false}} ->
+            Multi.new()
+
+          %{mcp_operation: %{operation: operation, fresh?: true}} ->
+            compose_fresh_mcp_action(facts, subject, operation.id, use_grants?)
+        end)
+        |> Repo.commit_multi(after_commit: &after_mcp_action_committed/1)
+
+      case result do
+        {:ok, %{mcp_operation: %{operation: operation, fresh?: fresh?}}} ->
+          settle_mcp_action(operation, facts, fresh?, subject)
+
+        {:error, :grant_unusable} when use_grants? ->
+          # A grant can expire, be revoked, or exhaust its final use between
+          # policy planning and the locked consume. The first transaction has
+          # rolled back completely, including the operation reservation, so the
+          # retry can safely persist the same fan-out as pending approval.
+          commit_mcp_action(facts, operation_attrs, subject, false)
+
+        other ->
+          other
+      end
+    end
+  end
+
+  defp compose_fresh_mcp_action(facts, subject, operation_record_id, use_grants?) do
+    case plan_fresh_mcp_action(facts, subject) do
+      {:ok, target_attrs} ->
+        compose_mcp_action_runs(
+          target_attrs,
+          subject.account.id,
+          operation_record_id,
+          use_grants?
+        )
+
+      {:error, reason} ->
+        Multi.error(Multi.new(), :mcp_action_preflight, reason)
+    end
+  end
+
+  defp plan_fresh_mcp_action(facts, subject) do
+    with {:ok, targets, action} <- resolve_mcp_action_targets(facts, subject),
+         :ok <- validate_mcp_action_args(facts.args, action),
+         {:ok, attestation} <- preflight_attestation(facts, targets, subject.account.id) do
+      {:ok, Enum.map(targets, &mcp_target_attrs(&1, facts, attestation, subject))}
+    end
+  end
+
+  # Model-facing input names a pack, an action, and runner refs; only an exact
+  # trusted manifest deployed on a current runner generation resolves to a
+  # target, so a rotated runner or a changed contract stops the fan-out here.
+  defp resolve_mcp_action_targets(facts, subject) do
+    with {:ok, runners} <- Emisar.Runners.list_all_runners_for_account(subject),
+         {:ok, actions} <- Catalog.list_all_actions_for_account(subject),
+         {:ok, pack_versions} <- Catalog.list_all_pack_versions_for_account(subject) do
+      runner_ids = MapSet.new(runners, & &1.id)
+      scoped_actions = Enum.filter(actions, &MapSet.member?(runner_ids, &1.runner_id))
+      snapshot = Catalog.MCPProjection.build(pack_versions, scoped_actions, runners)
+
+      exact_mcp_action_targets(snapshot, facts)
+    end
+  end
+
+  defp exact_mcp_action_targets(snapshot, facts) do
+    with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == facts.pack_ref)),
+         %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == facts.action_id)),
+         {:ok, targets} <- exact_runner_targets(snapshot.runners, action, facts.runner_refs) do
+      {:ok, targets, action}
+    else
+      _ -> {:error, :target_contract_changed}
+    end
+  end
+
+  defp exact_runner_targets(runners, action, runner_refs) do
+    by_ref = Map.new(runners, &{&1.runner_ref, &1})
+    compatible_ids = MapSet.new(action.compatible_runner_ids)
+
+    runner_refs
+    |> Enum.reduce_while({:ok, []}, fn runner_ref, {:ok, targets} ->
+      case Map.get(by_ref, runner_ref) do
+        %{id: id} = runner ->
+          if MapSet.member?(compatible_ids, id),
+            do: {:cont, {:ok, [%{id: runner.id, runner_ref: runner.runner_ref} | targets]}},
+            else: {:halt, {:error, :target_contract_changed}}
+
+        _runner ->
+          {:halt, {:error, :target_contract_changed}}
+      end
+    end)
+    |> case do
+      {:ok, targets} -> {:ok, Enum.reverse(targets)}
+      {:error, :target_contract_changed} -> {:error, :target_contract_changed}
+    end
+  end
+
+  defp validate_mcp_action_args(args, action) do
+    case ActionContract.validate(args, action) do
+      :ok -> :ok
+      {:error, issue} -> {:error, {:invalid_action_arguments, issue}}
+    end
+  end
+
+  defp mcp_target_attrs(target, facts, attestation, subject) do
+    %{
+      action_id: facts.action_id,
+      runner_id: target.id,
+      args: facts.args,
+      args_raw: facts.args_raw,
+      reason: facts.reason,
+      evidence: facts.evidence,
+      expected: facts.expected,
+      source: "mcp",
+      client_info: mcp_client_info(subject),
+      operation_id: facts.operation_id,
+      pack_ref: facts.pack_ref
+    }
+    |> put_dispatcher_context(subject)
+    |> put_dispatcher_identity(subject)
+    |> put_validated_attestation(attestation)
+  end
+
+  defp mcp_client_info(%Subject{actor: %ApiKeys.ApiKey{last_client_info: info}})
+       when is_map(info),
+       do: info
+
+  defp mcp_client_info(%Subject{}), do: %{}
 
   defp put_validated_attestation(attrs, nil), do: attrs
 
   defp put_validated_attestation(attrs, %Attestation{} = attestation),
     do: Map.put(attrs, :attestation, attestation)
 
-  # Signature-required dispatch is decided before the operation is reserved, and
-  # the envelope is bound to the refs of the runners this account actually
+  # The envelope is bound to the refs of the runners this account actually
   # scopes — never to refs the caller sent.
-  defp preflight_attestation(input, operation_attrs, target_attrs, account_id) do
-    with {:ok, runners} <- scoped_target_runners(target_attrs, account_id) do
-      resolve_attestation(input, operation_attrs, target_attrs, runners)
+  defp preflight_attestation(facts, targets, account_id) do
+    with {:ok, runners} <- scoped_target_runners(Enum.map(targets, & &1.id), account_id) do
+      resolve_attestation(facts, runners)
     end
   end
 
-  defp resolve_attestation(%{headers: []}, _operation_attrs, _target_attrs, runners) do
+  defp resolve_attestation(%{attestation_headers: []}, runners) do
     case Enum.filter(runners, & &1.enforce_signatures) do
       [] -> {:ok, nil}
       enforcing -> {:error, {:signature_required, Enum.map(enforcing, & &1.runner_ref)}}
     end
   end
 
-  defp resolve_attestation(input, operation_attrs, target_attrs, runners) do
-    with {:ok, facts} <- attestation_facts(input, operation_attrs, target_attrs, runners),
-         {:ok, %Attestation{} = attestation} <- Attestation.validate(input.headers, facts) do
+  # The signed claim covers ONE operation, so it binds the exact argument bytes,
+  # reason, and origin of this call plus the scoped refs it fans out to.
+  defp resolve_attestation(facts, runners) do
+    signed_facts = %{
+      action_id: facts.action_id,
+      pack_ref: facts.pack_ref,
+      args_raw: facts.args_raw,
+      runner_refs: Enum.map(runners, & &1.runner_ref),
+      reason: facts.reason,
+      operation_id: facts.operation_id,
+      portal_origin: facts.portal_origin
+    }
+
+    with true <- is_binary(facts.portal_origin),
+         {:ok, %Attestation{} = attestation} <-
+           Attestation.validate(facts.attestation_headers, signed_facts) do
       {:ok, attestation}
     else
       _ -> {:error, :invalid_attestation}
     end
   end
 
-  # The signed claim covers ONE operation, so every target must agree on the
-  # exact argument bytes and reason it binds; the action, pack, and operation
-  # already agree by `validate_mcp_targets/2`.
-  defp attestation_facts(input, operation_attrs, [first | _] = target_attrs, runners) do
-    facts = %{
-      action_id: operation_attrs.action_id,
-      pack_ref: operation_attrs.pack_ref,
-      args_raw: first[:args_raw],
-      runner_refs: Enum.map(runners, & &1.runner_ref),
-      reason: first[:reason],
-      operation_id: operation_attrs.operation_id,
-      portal_origin: input.portal_origin
-    }
-
-    agreed? =
-      is_binary(facts.args_raw) and is_binary(facts.reason) and
-        is_binary(facts.portal_origin) and
-        Enum.all?(
-          target_attrs,
-          &(&1[:args_raw] == facts.args_raw and &1[:reason] == facts.reason)
-        )
-
-    if agreed?, do: {:ok, facts}, else: {:error, :invalid_attestation}
-  end
-
-  defp scoped_target_runners(target_attrs, account_id) do
-    target_attrs
-    |> Enum.reduce_while({:ok, []}, fn attrs, {:ok, runners} ->
-      case scoped_target_runner(attrs[:runner_id], account_id) do
+  defp scoped_target_runners(runner_ids, account_id) do
+    runner_ids
+    |> Enum.reduce_while({:ok, []}, fn runner_id, {:ok, runners} ->
+      case scoped_target_runner(runner_id, account_id) do
         {:ok, runner} -> {:cont, {:ok, [runner | runners]}}
         {:error, :runner_not_found} -> {:halt, {:error, :runner_not_found}}
       end
@@ -943,46 +1068,32 @@ defmodule Emisar.Runs do
   defp scoped_target_runner(runner_id, account_id) do
     with true <- Emisar.Runners.runner_in_account?(runner_id, account_id),
          %Emisar.Runners.Runner{} = runner <- Emisar.Runners.peek_runner_by_id(runner_id),
-         {:ok, runner_ref} <- Emisar.Catalog.MCPProjection.runner_ref(runner) do
+         {:ok, runner_ref} <- Catalog.MCPProjection.runner_ref(runner) do
       {:ok, %{runner_ref: runner_ref, enforce_signatures: runner.enforce_signatures}}
     else
       _ -> {:error, :runner_not_found}
     end
   end
 
-  defp commit_mcp_fanout(operation_attrs, target_attrs, subject, use_grants?) do
-    base = put_active_account_lock(Multi.new(), subject.account.id, :active_account)
-
-    with {:ok, multi} <- MCPOperations.reserve_in_multi(base, operation_attrs, subject) do
-      result =
-        multi
-        |> Multi.merge(fn
-          %{mcp_operation: %{fresh?: false}} ->
-            Multi.new()
-
-          %{mcp_operation: %{operation: operation, fresh?: true}} ->
-            compose_mcp_fanout(target_attrs, subject.account.id, operation.id, use_grants?)
-        end)
-        |> Repo.commit_multi(after_commit: &after_mcp_fanout_committed/1)
-
-      case result do
-        {:ok, %{mcp_operation: %{operation: operation}}} ->
-          list_runs_by_mcp_operation(operation.id, subject)
-
-        {:error, :grant_unusable} when use_grants? ->
-          # A grant can expire, be revoked, or exhaust its final use between
-          # policy planning and the locked consume. The first transaction has
-          # rolled back completely, including the operation reservation, so the
-          # retry can safely persist the same fan-out as pending approval.
-          commit_mcp_fanout(operation_attrs, target_attrs, subject, false)
-
-        other ->
-          other
-      end
+  # A committed operation whose child rows are missing or partial is never
+  # reported as a successful mutation: recovery must reconcile it explicitly.
+  defp settle_mcp_action(operation, facts, fresh?, subject) do
+    with {:ok, runs} <- list_runs_by_mcp_operation(operation.id, subject),
+         :ok <- ensure_complete_mcp_target_set(runs, facts.runner_refs) do
+      {:ok, if(fresh?, do: :created, else: :replay), runs}
     end
   end
 
-  defp compose_mcp_fanout(target_attrs, account_id, operation_record_id, use_grants?) do
+  defp ensure_complete_mcp_target_set(runs, runner_refs) do
+    persisted = Enum.map(runs, & &1.runner_ref)
+
+    if length(persisted) == length(runner_refs) and
+         MapSet.new(persisted) == MapSet.new(runner_refs),
+       do: :ok,
+       else: {:error, :operation_incomplete}
+  end
+
+  defp compose_mcp_action_runs(target_attrs, account_id, operation_record_id, use_grants?) do
     target_attrs
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, Multi.new()}, fn {attrs, index}, {:ok, multi} ->
@@ -1370,9 +1481,9 @@ defmodule Emisar.Runs do
     end)
   end
 
-  defp after_mcp_fanout_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
+  defp after_mcp_action_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
 
-  defp after_mcp_fanout_committed(%{mcp_operation: %{fresh?: true}} = changes) do
+  defp after_mcp_action_committed(%{mcp_operation: %{fresh?: true}} = changes) do
     after_composed_dispatches_committed(changes)
   end
 
@@ -1842,7 +1953,7 @@ defmodule Emisar.Runs do
          %{descriptor: descriptor, pack_hash: pack_hash}
        )
        when is_map(expected_contract) and is_binary(expected_hash) do
-    current_contract = Emisar.ActionContract.snapshot(descriptor)
+    current_contract = ActionContract.snapshot(descriptor)
 
     if current_contract == expected_contract and pack_hash == expected_hash,
       do: :ok,

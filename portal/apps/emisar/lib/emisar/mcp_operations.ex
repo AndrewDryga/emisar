@@ -49,6 +49,21 @@ defmodule Emisar.MCPOperations do
   end
 
   @doc """
+  Fingerprints the immutable facts one MCP tool call is allowed to reuse.
+
+  The encoding is type- and length-framed and sorts map keys recursively, so no
+  two distinct fact sets encode to the same bytes and no caller can smuggle a
+  changed fact past an identical fingerprint. Facts must be JSON-compatible
+  values with binary map keys; a context passes only the facts whose change
+  must conflict.
+  """
+  def mutation_fingerprint(tool, facts) when is_binary(tool) do
+    ["emisar-mcp-mutation-v1", encode_fact(tool), encode_fact(facts)]
+    |> IO.iodata_to_binary()
+    |> Crypto.hash_hex()
+  end
+
+  @doc """
   Adds an atomic operation reservation to `multi`.
 
   Requires the MCP operation reserve permission. The `:mcp_operation` result is
@@ -113,24 +128,6 @@ defmodule Emisar.MCPOperations do
   def fetch_recovery(_operation_id, %Subject{}), do: {:error, :unauthorized}
 
   @doc """
-  Fetches an exact committed mutation for replay.
-
-  `:not_found` means the caller may proceed with current preflight and an atomic
-  reservation. Reusing an existing identity with different immutable facts is
-  always an operation conflict, even if mutable catalog state has since changed.
-  """
-  def fetch_matching_replay(%{operation_id: operation_id} = expected, %Subject{} = subject)
-      when is_binary(operation_id) do
-    with {:ok, operation} <- fetch_recovery(operation_id, subject) do
-      if same_facts?(operation, expected),
-        do: {:ok, operation},
-        else: {:error, :operation_conflict}
-    end
-  end
-
-  def fetch_matching_replay(_expected, %Subject{}), do: {:error, :not_found}
-
-  @doc """
   Derives the stable UUID owned by one lineage-local resource operation.
 
   The operation registry and resource insert share this identity, so concurrent
@@ -161,6 +158,31 @@ defmodule Emisar.MCPOperations do
       "-8" <>
       String.slice(hex, 17, 3) <>
       "-" <> String.slice(hex, 20, 12)
+  end
+
+  defp encode_fact(nil), do: "n"
+  defp encode_fact(true), do: "b1"
+  defp encode_fact(false), do: "b0"
+  defp encode_fact(value) when is_integer(value), do: ["i", Integer.to_string(value), ";"]
+
+  defp encode_fact(value) when is_float(value),
+    do: ["f", :erlang.float_to_binary(value, [:short]), ";"]
+
+  defp encode_fact(value) when is_binary(value),
+    do: ["s", Integer.to_string(byte_size(value)), ":", value]
+
+  defp encode_fact(value) when is_list(value),
+    do: ["l", Integer.to_string(length(value)), ":", Enum.map(value, &encode_fact/1)]
+
+  defp encode_fact(value) when is_map(value) do
+    pairs = Enum.sort_by(value, fn {key, _value} -> key end)
+
+    [
+      "m",
+      Integer.to_string(map_size(value)),
+      ":",
+      Enum.map(pairs, fn {key, item} -> [encode_fact(key), encode_fact(item)] end)
+    ]
   end
 
   defp encode_operation_digest(<<value::unsigned-big-integer-size(128)>>) do

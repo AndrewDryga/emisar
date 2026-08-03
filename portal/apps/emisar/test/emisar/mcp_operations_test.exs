@@ -124,6 +124,45 @@ defmodule Emisar.MCPOperationsTest do
     end
   end
 
+  describe "mutation_fingerprint/2" do
+    test "frames typed values and distinguishes sampled fact sets" do
+      facts = %{
+        "action_id" => "linux.uptime",
+        "args" => %{"deep" => [1, 2.5, true, nil]},
+        "runner_refs" => ["web-01~aaa", "web-02~bbb"]
+      }
+
+      fingerprint = MCPOperations.mutation_fingerprint("run_action", facts)
+
+      assert fingerprint =~ ~r/\A[0-9a-f]{64}\z/
+      assert MCPOperations.mutation_fingerprint("run_action", facts) == fingerprint
+      refute MCPOperations.mutation_fingerprint("execute_runbook", facts) == fingerprint
+
+      # Key order never changes the identity, but any changed value does.
+      reordered = %{
+        "runner_refs" => ["web-01~aaa", "web-02~bbb"],
+        "args" => %{"deep" => [1, 2.5, true, nil]},
+        "action_id" => "linux.uptime"
+      }
+
+      assert MCPOperations.mutation_fingerprint("run_action", reordered) == fingerprint
+
+      distinct = [
+        %{facts | "action_id" => "linux.reboot"},
+        %{facts | "args" => %{"deep" => [1, 2.5, true]}},
+        %{facts | "args" => %{"deep" => [1, 2.5, false, nil]}},
+        %{facts | "runner_refs" => ["web-02~bbb", "web-01~aaa"]},
+        Map.delete(facts, "args"),
+        # Framing: a split that would concatenate to the same bytes unframed.
+        %{facts | "action_id" => "linux.upti", "args" => %{"deep" => "me"}}
+      ]
+
+      fingerprints = Enum.map(distinct, &MCPOperations.mutation_fingerprint("run_action", &1))
+
+      assert length(Enum.uniq([fingerprint | fingerprints])) == length(distinct) + 1
+    end
+  end
+
   describe "fetch_recovery/2" do
     test "survives key rotation but hides other lineages and accounts", %{
       account: account,
@@ -168,39 +207,6 @@ defmodule Emisar.MCPOperationsTest do
     test "requires the view permission", %{owner_subject: owner_subject} do
       assert {:error, :unauthorized} =
                MCPOperations.fetch_recovery(@operation_id, owner_subject)
-    end
-  end
-
-  describe "fetch_matching_replay/2" do
-    test "distinguishes an exact replay, a conflict, and a new operation", %{
-      key_subject: key_subject
-    } do
-      operation = reserve!(action_operation_attrs(), key_subject)
-
-      assert {:ok, replay} =
-               MCPOperations.fetch_matching_replay(action_operation_attrs(), key_subject)
-
-      assert replay.id == operation.id
-
-      changed = Map.put(action_operation_attrs(), :fingerprint, String.duplicate("c", 64))
-
-      assert {:error, :operation_conflict} =
-               MCPOperations.fetch_matching_replay(changed, key_subject)
-
-      absent = Map.put(action_operation_attrs(), :operation_id, "op_624NN9NMDZ1T76NARWCKM5A0D6")
-      assert {:error, :not_found} = MCPOperations.fetch_matching_replay(absent, key_subject)
-    end
-
-    test "hides another credential lineage", %{
-      key_subject: key_subject,
-      owner_subject: owner_subject
-    } do
-      reserve!(action_operation_attrs(), key_subject)
-      {:ok, _raw, other_key} = ApiKeys.create_key(%{name: "Other MCP"}, owner_subject)
-      other_subject = Auth.Subject.for_api_key(other_key, owner_subject.account)
-
-      assert {:error, :not_found} =
-               MCPOperations.fetch_matching_replay(action_operation_attrs(), other_subject)
     end
   end
 

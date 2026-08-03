@@ -655,14 +655,12 @@ defmodule Emisar.RunsTest do
       %{
         subject: subject,
         membership: membership,
-        runners: [runner],
-        key: key
+        runners: [runner]
       } = mcp_fanout_fixture(["low"])
 
       :ok = Emisar.Runners.subscribe_runner_transport(runner)
-      operation = mcp_operation_attrs("op_134NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
-      assert {:ok, [run]} = Runs.dispatch_mcp_fanout(operation, [target], subject)
+      facts = mcp_action_facts("op_134NN9NMDZ1T76NARWCKM5A0D6", [runner])
+      assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
 
       {:ok, _operator_run} =
         Runs.create_run(base_attrs(subject.account.id, runner.id, %{source: "operator"}))
@@ -899,14 +897,12 @@ defmodule Emisar.RunsTest do
       %{
         subject: subject,
         membership: membership,
-        runners: [runner],
-        key: key
+        runners: [runner]
       } = mcp_fanout_fixture(["low"])
 
       :ok = Emisar.Runners.subscribe_runner_transport(runner)
-      operation = mcp_operation_attrs("op_234NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
-      assert {:ok, [run]} = Runs.dispatch_mcp_fanout(operation, [target], subject)
+      facts = mcp_action_facts("op_234NN9NMDZ1T76NARWCKM5A0D6", [runner])
+      assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
 
       assert {:ok, fetched} = Runs.fetch_mcp_run_by_id(run.id, subject)
       assert fetched.id == run.id
@@ -1796,8 +1792,7 @@ defmodule Emisar.RunsTest do
   describe "compose_dispatch_batch_in_multi/5" do
     test "rejects a subject without dispatch permission" do
       %{account: account, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+      target = mcp_target_attrs(runner, key, "op_334NN9NMDZ1T76NARWCKM5A0D6")
 
       assert Runs.compose_dispatch_batch_in_multi(
                Multi.new(),
@@ -1809,9 +1804,7 @@ defmodule Emisar.RunsTest do
 
     test "rejects a permission-bearing subject without a concrete membership" do
       %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D7")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
-
+      target = mcp_target_attrs(runner, key, "op_334NN9NMDZ1T76NARWCKM5A0D7")
       unbound = %{subject | membership_id: nil}
 
       assert {:error, :runner_out_of_scope} =
@@ -1831,8 +1824,7 @@ defmodule Emisar.RunsTest do
         Fixtures.ApiKeys.create_api_key(account_id: account_b.id, created_by_id: user_b.id)
 
       subject_b = Emisar.Auth.Subject.for_api_key(key_b, account_b)
-      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner_a, key_a, operation.operation_id)
+      target = mcp_target_attrs(runner_a, key_a, "op_334NN9NMDZ1T76NARWCKM5A0D6")
 
       assert {:ok, multi} =
                Runs.compose_dispatch_batch_in_multi(
@@ -1972,22 +1964,18 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "dispatch_mcp_fanout/3" do
+  describe "dispatch_mcp_action/2" do
     test "rejects a subject without dispatch permission" do
-      %{account: account, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+      %{account: account, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
-      assert Runs.dispatch_mcp_fanout(operation, [target], no_permissions_subject(account)) ==
+      assert Runs.dispatch_mcp_action(facts, no_permissions_subject(account)) ==
                {:error, :unauthorized}
     end
 
     test "a stale MCP subject cannot reserve or create fan-out work" do
-      %{account: account, subject: subject, runners: [runner], key: key} =
-        mcp_fanout_fixture(["low"])
-
-      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D7")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+      %{account: account, subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D7", [runner])
 
       assert {:ok, _account} =
                Emisar.Accounts.set_account_disabled_for_support(
@@ -1997,48 +1985,45 @@ defmodule Emisar.RunsTest do
                  subject
                )
 
-      assert {:error, :not_found} = Runs.dispatch_mcp_fanout(operation, [target], subject)
+      assert {:error, :not_found} = Runs.dispatch_mcp_action(facts, subject)
       refute Repo.exists?(ActionRun)
     end
 
     test "rejects a permission-bearing subject without a concrete membership" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D8")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
-
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D8", [runner])
       unbound = %{subject | membership_id: nil}
 
-      assert {:error, :runner_out_of_scope} =
-               Runs.dispatch_mcp_fanout(operation, [target], unbound)
+      assert {:error, :runner_out_of_scope} = Runs.dispatch_mcp_action(facts, unbound)
     end
 
-    test "rejects a runner from another account" do
-      %{runners: [runner_a], key: key_a} = mcp_fanout_fixture(["low"])
+    test "rejects a runner ref that another account owns" do
+      %{runners: [runner_a]} = mcp_fanout_fixture(["low"])
       {user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
 
       {_raw, key_b} =
         Fixtures.ApiKeys.create_api_key(account_id: account_b.id, created_by_id: user_b.id)
 
       subject_b = Emisar.Auth.Subject.for_api_key(key_b, account_b)
-      operation = mcp_operation_attrs("op_334NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner_a, key_a, operation.operation_id)
+      facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D6", [runner_a])
 
-      assert Runs.dispatch_mcp_fanout(operation, [target], subject_b) ==
-               {:error, :runner_not_found}
+      assert Runs.dispatch_mcp_action(facts, subject_b) ==
+               {:error, :target_contract_changed}
+
+      refute Repo.exists?(MCPOperations.Operation)
     end
 
     test "persists the optional evidence/expected justification chain on each run" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
       :ok = Emisar.Runners.subscribe_runner_transport(runner)
-      operation = mcp_operation_attrs("op_534NN9NMDZ1T76NARWCKM5A0D6")
 
-      target =
-        Map.merge(mcp_target_attrs(runner, key, operation.operation_id), %{
+      facts =
+        Map.merge(mcp_action_facts("op_534NN9NMDZ1T76NARWCKM5A0D6", [runner]), %{
           evidence: "run 0f9c showed the queue depth climbing for 20m",
           expected: "queue depth drops to zero within a minute"
         })
 
-      assert {:ok, [run]} = Runs.dispatch_mcp_fanout(operation, [target], subject)
+      assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
       assert run.evidence == "run 0f9c showed the queue depth climbing for 20m"
       assert run.expected == "queue depth drops to zero within a minute"
 
@@ -2047,19 +2032,48 @@ defmodule Emisar.RunsTest do
       assert {:ok, fetched} = Runs.fetch_mcp_run_by_id(run.id, subject)
       assert fetched.evidence == run.evidence
       assert fetched.expected == run.expected
+
+      changed_retry = %{
+        facts
+        | evidence: "replacement evidence",
+          expected: "replacement expectation"
+      }
+
+      assert {:ok, :replay, [replayed]} = Runs.dispatch_mcp_action(changed_retry, subject)
+      assert replayed.id == run.id
+      assert replayed.evidence == run.evidence
+      assert replayed.expected == run.expected
+    end
+
+    test "attributes the run to the authenticated credential, not to caller-supplied facts" do
+      %{subject: subject, membership: membership, runners: [runner], key: key} =
+        mcp_fanout_fixture(["low"])
+
+      :ok = Emisar.Runners.subscribe_runner_transport(runner)
+
+      facts =
+        Map.merge(mcp_action_facts("op_534NN9NMDZ1T76NARWCKM5A0D7", [runner]), %{
+          api_key_id: Ecto.UUID.generate(),
+          requested_by_membership_id: Ecto.UUID.generate(),
+          source: "operator"
+        })
+
+      assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
+      assert run.api_key_id == key.id
+      assert run.initiating_membership_id == membership.id
+      assert run.source == :mcp
+      assert is_nil(run.requested_by_id)
     end
 
     test "commits every target before delivery and exact replay never redelivers" do
-      %{subject: subject, runners: [runner_a, runner_b], key: key} =
-        mcp_fanout_fixture(["low", "low"])
+      %{subject: subject, runners: [runner_a, runner_b]} = mcp_fanout_fixture(["low", "low"])
 
       :ok = Emisar.Runners.subscribe_runner_transport(runner_a)
       :ok = Emisar.Runners.subscribe_runner_transport(runner_b)
 
-      operation = mcp_operation_attrs("op_724NN9NMDZ1T76NARWCKM5A0D6")
-      targets = Enum.map([runner_a, runner_b], &mcp_target_attrs(&1, key, operation.operation_id))
+      facts = mcp_action_facts("op_724NN9NMDZ1T76NARWCKM5A0D6", [runner_a, runner_b])
 
-      assert {:ok, runs} = Runs.dispatch_mcp_fanout(operation, targets, subject)
+      assert {:ok, :created, runs} = Runs.dispatch_mcp_action(facts, subject)
       assert length(runs) == 2
       assert Enum.uniq_by(runs, & &1.mcp_operation_record_id) |> length() == 1
       assert Enum.all?(runs, &(&1.status == :sent))
@@ -2068,7 +2082,7 @@ defmodule Emisar.RunsTest do
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 
       original_ids = Enum.map(runs, & &1.id)
-      assert {:ok, replayed} = Runs.dispatch_mcp_fanout(operation, targets, subject)
+      assert {:ok, :replay, replayed} = Runs.dispatch_mcp_action(facts, subject)
       assert Enum.map(replayed, & &1.id) == original_ids
       refute_receive {:cloud_to_runner, _generation, _}, 100
 
@@ -2076,27 +2090,77 @@ defmodule Emisar.RunsTest do
       assert Repo.aggregate(ActionRun, :count) == 2
     end
 
-    test "concurrent identical fan-outs converge on one complete delivered target set" do
-      %{subject: subject, runners: [runner_a, runner_b], key: key} =
-        mcp_fanout_fixture(["low", "low"])
+    test "replays without consulting current catalog state" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      :ok = Emisar.Runners.subscribe_runner_transport(runner)
+      facts = mcp_action_facts("op_734NN9NMDZ1T76NARWCKM5A0D6", [runner])
+
+      assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+
+      {:ok, action} =
+        Catalog.fetch_action_for_account("linux.uptime", runner.id, subject.account.id)
+
+      action |> Ecto.Changeset.change(risk: :critical) |> Repo.update!()
+
+      assert {:ok, :replay, [replayed]} = Runs.dispatch_mcp_action(facts, subject)
+      assert replayed.id == run.id
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+    end
+
+    test "changed immutable facts conflict under the same operation identity" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      :ok = Emisar.Runners.subscribe_runner_transport(runner)
+      facts = mcp_action_facts("op_744NN9NMDZ1T76NARWCKM5A0D6", [runner])
+
+      assert {:ok, :created, _runs} = Runs.dispatch_mcp_action(facts, subject)
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+
+      changed = [
+        %{facts | reason: "something else"},
+        %{facts | args_raw: ~s({"verbose":true})},
+        %{facts | action_id: "linux.reboot"},
+        %{facts | pack_ref: "linux-core@2.0.0/" <> @mcp_pack_hash}
+      ]
+
+      for facts <- changed do
+        assert Runs.dispatch_mcp_action(facts, subject) == {:error, :operation_conflict}
+      end
+
+      assert Repo.aggregate(ActionRun, :count) == 1
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+    end
+
+    test "reports an incomplete operation when a committed target row is missing" do
+      %{subject: subject, runners: [runner_a, runner_b]} = mcp_fanout_fixture(["low", "low"])
+      facts = mcp_action_facts("op_754NN9NMDZ1T76NARWCKM5A0D6", [runner_a, runner_b])
+
+      assert {:ok, :created, [first, _second]} = Runs.dispatch_mcp_action(facts, subject)
+      Repo.delete!(first)
+
+      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :operation_incomplete}
+    end
+
+    test "concurrent identical first attempts converge on one complete delivered target set" do
+      %{subject: subject, runners: [runner_a, runner_b]} = mcp_fanout_fixture(["low", "low"])
 
       :ok = Emisar.Runners.subscribe_runner_transport(runner_a)
       :ok = Emisar.Runners.subscribe_runner_transport(runner_b)
 
-      operation = mcp_operation_attrs("op_714NN9NMDZ1T76NARWCKM5A0D6")
-      targets = Enum.map([runner_a, runner_b], &mcp_target_attrs(&1, key, operation.operation_id))
+      facts = mcp_action_facts("op_714NN9NMDZ1T76NARWCKM5A0D6", [runner_a, runner_b])
 
       results =
         1..8
-        |> Enum.map(fn _ ->
-          Task.async(fn -> Runs.dispatch_mcp_fanout(operation, targets, subject) end)
+        |> Enum.map(fn _index ->
+          Task.async(fn -> Runs.dispatch_mcp_action(facts, subject) end)
         end)
         |> Enum.map(&Task.await(&1, 5_000))
 
-      assert Enum.all?(results, &match?({:ok, [_run_a, _run_b]}, &1))
+      assert Enum.all?(results, &match?({:ok, _outcome, [_run_a, _run_b]}, &1))
+      assert Enum.count(results, &match?({:ok, :created, _runs}, &1)) == 1
 
       target_sets =
-        Enum.map(results, fn {:ok, runs} ->
+        Enum.map(results, fn {:ok, _outcome, runs} ->
           runs |> Enum.map(& &1.id) |> Enum.sort()
         end)
 
@@ -2111,25 +2175,35 @@ defmodule Emisar.RunsTest do
     end
 
     test "rolls back the operation and every target when any preflight fails" do
-      %{account: account, subject: subject, runners: [ready], key: key} =
-        mcp_fanout_fixture(["low"])
+      %{account: account, subject: subject, runners: [ready]} = mcp_fanout_fixture(["low"])
 
       missing = Fixtures.Runners.create_runner(account_id: account.id)
       :ok = Emisar.Runners.subscribe_runner_transport(ready)
 
-      operation = mcp_operation_attrs("op_624NN9NMDZ1T76NARWCKM5A0D6")
+      facts = mcp_action_facts("op_624NN9NMDZ1T76NARWCKM5A0D6", [ready, missing])
 
-      targets = [
-        mcp_target_attrs(ready, key, operation.operation_id),
-        mcp_target_attrs(missing, key, operation.operation_id)
-      ]
-
-      assert {:error, :action_not_found} =
-               Runs.dispatch_mcp_fanout(operation, targets, subject)
+      assert {:error, :target_contract_changed} = Runs.dispatch_mcp_action(facts, subject)
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
       refute_receive {:cloud_to_runner, _generation, _}, 100
+    end
+
+    test "rejects arguments the trusted contract does not accept" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+
+      facts =
+        Map.merge(mcp_action_facts("op_634NN9NMDZ1T76NARWCKM5A0D6", [runner]), %{
+          args: %{"unknown" => true},
+          args_raw: ~s({"unknown":true})
+        })
+
+      assert {:error, {:invalid_action_arguments, issue}} =
+               Runs.dispatch_mcp_action(facts, subject)
+
+      assert issue.code == "unknown_arg"
+      refute Repo.exists?(MCPOperations.Operation)
+      refute Repo.exists?(ActionRun)
     end
 
     test "commits mixed allow and approval outcomes in one operation" do
@@ -2148,8 +2222,7 @@ defmodule Emisar.RunsTest do
       %{
         subject: subject,
         owner_subject: owner_subject,
-        runners: [allowed, gated],
-        key: key
+        runners: [allowed, gated]
       } = mcp_fanout_fixture(["low", "low"])
 
       assert {:ok, _policy} =
@@ -2162,10 +2235,9 @@ defmodule Emisar.RunsTest do
 
       :ok = Emisar.Runners.subscribe_runner_transport(allowed)
 
-      operation = mcp_operation_attrs("op_524NN9NMDZ1T76NARWCKM5A0D6")
-      targets = Enum.map([allowed, gated], &mcp_target_attrs(&1, key, operation.operation_id))
+      facts = mcp_action_facts("op_524NN9NMDZ1T76NARWCKM5A0D6", [allowed, gated])
 
-      assert {:ok, runs} = Runs.dispatch_mcp_fanout(operation, targets, subject)
+      assert {:ok, :created, runs} = Runs.dispatch_mcp_action(facts, subject)
       assert Enum.sort(Enum.map(runs, & &1.status)) == [:pending_approval, :sent]
       assert Enum.uniq_by(runs, & &1.mcp_operation_record_id) |> length() == 1
 
@@ -2192,26 +2264,24 @@ defmodule Emisar.RunsTest do
         "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
       }
 
-      %{account: account, subject: subject, runners: [runner], key: key} =
+      %{account: account, subject: subject, runners: [runner]} =
         mcp_fanout_fixture(["low"], gated_rules)
 
       policy = Emisar.Policies.peek_policy_for_account(account.id)
       rules = Map.delete(policy.rules, "approval")
       _policy = policy |> Ecto.Changeset.change(rules: rules) |> Repo.update!()
 
-      operation = mcp_operation_attrs("op_504NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+      facts = mcp_action_facts("op_504NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
-      assert {:error, :invalid_policy_approval} =
-               Runs.dispatch_mcp_fanout(operation, [target], subject)
+      assert {:error, :invalid_policy_approval} = Runs.dispatch_mcp_action(facts, subject)
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
       refute Repo.exists?(Emisar.Approvals.Request)
     end
 
-    test "rejects an already-stale signed fan-out before reserving its operation" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+    test "rolls back an already-stale signed fan-out with its operation" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
 
       assert {:ok, _runner} =
                Emisar.Runners.apply_state(runner, %{
@@ -2219,20 +2289,17 @@ defmodule Emisar.RunsTest do
                  "max_attestation_age_seconds" => 3_600
                })
 
-      operation = mcp_operation_attrs("op_514NN9NMDZ1T76NARWCKM5A0D6")
+      facts = mcp_action_facts("op_514NN9NMDZ1T76NARWCKM5A0D6", [runner])
       now = DateTime.utc_now()
 
       signed =
-        signed_mcp_attestation(operation, [runner],
+        signed_mcp_attestation(facts, [runner],
           issued_at: now |> DateTime.add(-7_200, :second) |> DateTime.to_iso8601(),
           valid_until: now |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
         )
 
-      operation = signed_mcp_operation_attrs(operation, signed.header)
-      target = mcp_target_attrs(runner, key, operation.operation_id)
-
       assert {:error, :attestation_stale} =
-               Runs.dispatch_mcp_fanout(operation, [target], subject)
+               Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject)
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
@@ -2254,8 +2321,7 @@ defmodule Emisar.RunsTest do
       %{
         subject: subject,
         owner_subject: owner_subject,
-        runners: [runner],
-        key: key
+        runners: [runner]
       } = mcp_fanout_fixture(["low"], gated_rules)
 
       assert {:ok, _runner} =
@@ -2264,21 +2330,18 @@ defmodule Emisar.RunsTest do
                  "max_attestation_age_seconds" => 3_600
                })
 
-      operation = mcp_operation_attrs("op_414NN9NMDZ1T76NARWCKM5A0D6")
+      facts = mcp_action_facts("op_414NN9NMDZ1T76NARWCKM5A0D6", [runner])
       now = DateTime.utc_now()
       cert_deadline = DateTime.add(now, 600, :second)
 
       signed =
-        signed_mcp_attestation(operation, [runner],
+        signed_mcp_attestation(facts, [runner],
           issued_at: DateTime.to_iso8601(now),
           valid_until: DateTime.to_iso8601(cert_deadline)
         )
 
-      operation = signed_mcp_operation_attrs(operation, signed.header)
-      target = mcp_target_attrs(runner, key, operation.operation_id)
-
-      assert {:ok, [%ActionRun{status: :pending_approval} = run]} =
-               Runs.dispatch_mcp_fanout(operation, [target], subject)
+      assert {:ok, :created, [%ActionRun{status: :pending_approval} = run]} =
+               Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject)
 
       assert {:ok, [request], _meta} =
                Approvals.list_pending_approval_requests(owner_subject)
@@ -2289,7 +2352,7 @@ defmodule Emisar.RunsTest do
     end
 
     test "a valid signed fan-out persists and relays the normalized envelope" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
 
       assert {:ok, runner} =
                Emisar.Runners.apply_state(runner, %{
@@ -2299,16 +2362,11 @@ defmodule Emisar.RunsTest do
 
       :ok = Emisar.Runners.subscribe_runner_transport(runner)
 
-      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D7")
-      signed = signed_mcp_attestation(operation, [runner])
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+      facts = mcp_action_facts("op_424NN9NMDZ1T76NARWCKM5A0D7", [runner])
+      signed = signed_mcp_attestation(facts, [runner])
 
-      assert {:ok, [run]} =
-               Runs.dispatch_mcp_fanout(
-                 signed_mcp_operation_attrs(operation, signed.header),
-                 [target],
-                 subject
-               )
+      assert {:ok, :created, [run]} =
+               Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject)
 
       assert run.attestation == signed.envelope
       assert_receive {:cloud_to_runner, _generation, payload}, 500
@@ -2316,7 +2374,7 @@ defmodule Emisar.RunsTest do
     end
 
     test "an unsigned call to an enforcing runner names the refs that enforce" do
-      %{subject: subject, runners: [open_runner, enforcing_runner], key: key} =
+      %{subject: subject, runners: [open_runner, enforcing_runner]} =
         mcp_fanout_fixture(["low", "low"])
 
       assert {:ok, enforcing_runner} =
@@ -2325,46 +2383,19 @@ defmodule Emisar.RunsTest do
                  "max_attestation_age_seconds" => 3_600
                })
 
-      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D8")
+      facts =
+        mcp_action_facts("op_424NN9NMDZ1T76NARWCKM5A0D8", [open_runner, enforcing_runner])
 
-      targets =
-        Enum.map(
-          [open_runner, enforcing_runner],
-          &mcp_target_attrs(&1, key, operation.operation_id)
-        )
-
-      assert Runs.dispatch_mcp_fanout(operation, targets, subject) ==
+      assert Runs.dispatch_mcp_action(facts, subject) ==
                {:error, {:signature_required, mcp_runner_refs([enforcing_runner])}}
 
       refute Repo.one(MCPOperations.Operation)
       refute Repo.one(ActionRun)
     end
 
-    test "a caller-supplied attestation never reaches the operation" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D9")
-      signed = Fixtures.Runs.signed_attestation()
-
-      # Even the carrier this context would itself have minted is refused: the
-      # facts it bound came from the fixture, not from this call.
-      for claimed <- [signed.envelope, signed.attestation] do
-        target =
-          runner
-          |> mcp_target_attrs(key, operation.operation_id)
-          |> Map.put(:attestation, claimed)
-
-        assert Runs.dispatch_mcp_fanout(operation, [target], subject) ==
-                 {:error, :invalid_attestation}
-      end
-
-      refute Repo.one(MCPOperations.Operation)
-      refute Repo.one(ActionRun)
-    end
-
-    test "every bound fact must agree with the call before the operation is reserved" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0DA")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+    test "every bound fact must agree with the call before any run is persisted" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_424NN9NMDZ1T76NARWCKM5A0DA", [runner])
 
       mismatches = [
         [action_id: "linux.reboot"],
@@ -2377,13 +2408,10 @@ defmodule Emisar.RunsTest do
       ]
 
       for overrides <- mismatches do
-        signed = signed_mcp_attestation(operation, [runner], overrides)
+        signed = signed_mcp_attestation(facts, [runner], overrides)
 
-        assert Runs.dispatch_mcp_fanout(
-                 signed_mcp_operation_attrs(operation, signed.header),
-                 [target],
-                 subject
-               ) == {:error, :invalid_attestation}
+        assert Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject) ==
+                 {:error, :invalid_attestation}
       end
 
       refute Repo.one(MCPOperations.Operation)
@@ -2391,49 +2419,41 @@ defmodule Emisar.RunsTest do
     end
 
     test "the signed target set is compared against the runners this account scopes" do
-      %{subject: subject, runners: [selected, unselected], key: key} =
-        mcp_fanout_fixture(["low", "low"])
+      %{subject: subject, runners: [selected, unselected]} = mcp_fanout_fixture(["low", "low"])
 
-      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0DB")
-      signed = signed_mcp_attestation(operation, [unselected])
-      target = mcp_target_attrs(selected, key, operation.operation_id)
+      facts = mcp_action_facts("op_424NN9NMDZ1T76NARWCKM5A0DB", [selected])
+      signed = signed_mcp_attestation(facts, [unselected])
 
-      assert Runs.dispatch_mcp_fanout(
-               signed_mcp_operation_attrs(operation, signed.header),
-               [target],
-               subject
-             ) == {:error, :invalid_attestation}
+      assert Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject) ==
+               {:error, :invalid_attestation}
 
       refute Repo.one(MCPOperations.Operation)
       refute Repo.one(ActionRun)
     end
 
-    test "rejects duplicate targets before reserving an operation" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+    test "rejects duplicate runner refs before reserving an operation" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_424NN9NMDZ1T76NARWCKM5A0D6", [runner, runner])
 
-      assert {:error, :invalid_targets} =
-               Runs.dispatch_mcp_fanout(operation, [target, target], subject)
+      assert {:error, :invalid_targets} = Runs.dispatch_mcp_action(facts, subject)
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
     end
 
-    test "rejects targets inconsistent with the reserved operation intent" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_424NN9NMDZ1T76NARWCKM5A0D7")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+    test "rejects a malformed or empty fact set before reserving an operation" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_424NN9NMDZ1T76NARWCKM5A0D7", [runner])
 
-      mismatches = [
-        Map.put(target, :operation_id, "op_424NN9NMDZ1T76NARWCKM5A0D8"),
-        Map.put(target, :action_id, "linux.other"),
-        Map.put(target, :pack_ref, "linux-core@1.0.1/sha256:changed-contract")
+      malformed = [
+        %{facts | runner_refs: []},
+        %{facts | args_raw: nil},
+        %{facts | reason: nil},
+        Map.delete(facts, :pack_ref)
       ]
 
-      Enum.each(mismatches, fn mismatch ->
-        assert {:error, :invalid_targets} =
-                 Runs.dispatch_mcp_fanout(operation, [mismatch], subject)
+      Enum.each(malformed, fn facts ->
+        assert Runs.dispatch_mcp_action(facts, subject) == {:error, :invalid_targets}
 
         refute Repo.exists?(MCPOperations.Operation)
         refute Repo.exists?(ActionRun)
@@ -2441,9 +2461,8 @@ defmodule Emisar.RunsTest do
     end
 
     test "uses the trusted risk and rejects an advertisement that lowers it" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["high"])
-      operation = mcp_operation_attrs("op_434NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["high"])
+      facts = mcp_action_facts("op_434NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
       {:ok, action} =
         Catalog.fetch_action_for_account("linux.uptime", runner.id, subject.account.id)
@@ -2452,20 +2471,17 @@ defmodule Emisar.RunsTest do
       |> Ecto.Changeset.change(risk: :low)
       |> Repo.update!()
 
-      assert {:error, :action_contract_changed} =
-               Runs.dispatch_mcp_fanout(operation, [target], subject)
+      assert {:error, :target_contract_changed} = Runs.dispatch_mcp_action(facts, subject)
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
     end
 
     test "one descriptor mismatch rolls back the complete fan-out" do
-      %{subject: subject, runners: [ready, changed], key: key} =
-        mcp_fanout_fixture(["low", "low"])
+      %{subject: subject, runners: [ready, changed]} = mcp_fanout_fixture(["low", "low"])
 
       :ok = Emisar.Runners.subscribe_runner_transport(ready)
-      operation = mcp_operation_attrs("op_444NN9NMDZ1T76NARWCKM5A0D6")
-      targets = Enum.map([ready, changed], &mcp_target_attrs(&1, key, operation.operation_id))
+      facts = mcp_action_facts("op_444NN9NMDZ1T76NARWCKM5A0D6", [ready, changed])
 
       {:ok, action} =
         Catalog.fetch_action_for_account("linux.uptime", changed.id, subject.account.id)
@@ -2481,8 +2497,7 @@ defmodule Emisar.RunsTest do
       )
       |> Repo.update!()
 
-      assert {:error, :action_contract_changed} =
-               Runs.dispatch_mcp_fanout(operation, targets, subject)
+      assert {:error, :target_contract_changed} = Runs.dispatch_mcp_action(facts, subject)
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
@@ -2492,11 +2507,10 @@ defmodule Emisar.RunsTest do
 
   describe "list_runs_by_mcp_operation/2" do
     test "uses the subject account boundary" do
-      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
-      operation = mcp_operation_attrs("op_324NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_324NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
-      assert {:ok, [run]} = Runs.dispatch_mcp_fanout(operation, [target], subject)
+      assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
 
       assert {:ok, [listed]} =
                Runs.list_runs_by_mcp_operation(run.mcp_operation_record_id, subject)
@@ -2510,13 +2524,10 @@ defmodule Emisar.RunsTest do
     end
 
     test "re-reads the API key owner's runner access before returning operation runs" do
-      %{subject: subject, membership: membership, runners: [runner], key: key} =
-        mcp_fanout_fixture(["low"])
+      %{subject: subject, membership: membership, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_314NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
-      operation = mcp_operation_attrs("op_314NN9NMDZ1T76NARWCKM5A0D6")
-      target = mcp_target_attrs(runner, key, operation.operation_id)
-
-      assert {:ok, [run]} = Runs.dispatch_mcp_fanout(operation, [target], subject)
+      assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
 
       assert {:ok, [_listed]} =
                Runs.list_runs_by_mcp_operation(run.mcp_operation_record_id, subject)
@@ -2711,13 +2722,15 @@ defmodule Emisar.RunsTest do
     }
   end
 
-  defp mcp_operation_attrs(operation_id) do
+  defp mcp_action_facts(operation_id, runners) do
     %{
       operation_id: operation_id,
-      tool: :run_action,
-      fingerprint: String.duplicate("b", 64),
       action_id: "linux.uptime",
-      pack_ref: @mcp_pack_ref
+      pack_ref: @mcp_pack_ref,
+      runner_refs: mcp_runner_refs(runners),
+      args: %{},
+      args_raw: "{}",
+      reason: "inspect uptime"
     }
   end
 
@@ -2729,29 +2742,31 @@ defmodule Emisar.RunsTest do
   end
 
   # The bridge signs over the facts of the call it is about to make, so the
-  # defaults here mirror `mcp_target_attrs/3` and a test overrides only the one
+  # defaults here mirror `mcp_action_facts/2` and a test overrides only the one
   # fact it is bending.
-  defp signed_mcp_attestation(operation, runners, overrides \\ []) do
+  defp signed_mcp_attestation(facts, runners, overrides \\ []) do
     defaults = [
-      action_id: operation.action_id,
-      pack_ref: operation.pack_ref,
-      args_raw: "{}",
+      action_id: facts.action_id,
+      pack_ref: facts.pack_ref,
+      args_raw: facts.args_raw,
       runner_refs: mcp_runner_refs(runners),
-      reason: "inspect uptime",
-      operation_id: operation.operation_id,
+      reason: facts.reason,
+      operation_id: facts.operation_id,
       portal_origin: @mcp_portal_origin
     ]
 
     Fixtures.Runs.signed_attestation(Keyword.merge(defaults, overrides))
   end
 
-  defp signed_mcp_operation_attrs(operation, header) do
-    Map.merge(operation, %{
+  defp signed_mcp_facts(facts, header) do
+    Map.merge(facts, %{
       attestation_headers: [header],
       portal_origin: @mcp_portal_origin
     })
   end
 
+  # The composed-batch API still takes fully-built target attrs; only the fixed
+  # MCP action tool derives them from model-facing facts.
   defp mcp_target_attrs(runner, key, operation_id) do
     %{
       action_id: "linux.uptime",

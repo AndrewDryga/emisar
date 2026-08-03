@@ -18,45 +18,21 @@ defmodule EmisarWeb.MCP.Service do
   # frame's real ceiling is enforced by `fits_frame?/1`, not by this number.
   @max_tail_read_bytes 200 * 1_024
 
-  @doc "Dispatches a preflighted fixed-catalog action and returns current run summaries."
-  def dispatch_fixed_action(conn, targets, intent, wait_ms) do
-    api_key = conn.assigns.api_key
+  @doc """
+  Creates or replays one fixed-catalog action operation and returns current run
+  summaries. Runs owns identity, replay, preflight, and persistence; this
+  boundary only waits out the caller's bounded window and re-reads the result.
+  """
+  def dispatch_fixed_action(conn, facts, wait_ms) do
     subject = conn.assigns.current_subject
-    operation_attrs = intent.operation_attrs
 
-    target_attrs =
-      Enum.map(targets, fn target ->
-        %{
-          action_id: intent.action_id,
-          runner_id: target.id,
-          args: intent.args,
-          args_raw: intent.args_raw,
-          reason: intent.reason,
-          evidence: intent.evidence,
-          expected: intent.expected,
-          source: "mcp",
-          api_key_id: api_key.id,
-          client_info: api_key.last_client_info || %{},
-          operation_id: operation_attrs.operation_id,
-          pack_ref: intent.pack_ref,
-          requested_by_membership_id: api_key.created_by_membership_id
-        }
-      end)
-
-    with {:ok, runs} <- Runs.dispatch_mcp_fanout(operation_attrs, target_attrs, subject),
-         true <- complete_target_set?(runs, targets),
+    with {:ok, _outcome, runs} <- Runs.dispatch_mcp_action(facts, subject),
          :ok <-
-           maybe_poll_to_terminal(
-             conn,
-             subject,
-             fixed_dispatch_results(runs, targets),
-             wait_ms,
-             Cancellation.topic(conn)
-           ),
-         {:ok, runs} <-
+           maybe_poll_to_terminal(conn, subject, runs, wait_ms, Cancellation.topic(conn)),
+         {:ok, settled} <-
            Runs.list_runs_by_mcp_operation(hd(runs).mcp_operation_record_id, subject),
-         true <- complete_target_set?(runs, targets) do
-      {:ok, fixed_run_summaries(runs, subject, tail_scope: cursor_scope(conn))}
+         true <- same_run_set?(settled, runs) do
+      {:ok, fixed_run_summaries(settled, subject, tail_scope: cursor_scope(conn))}
     else
       :cancelled -> {:error, :cancelled}
       false -> {:error, :operation_incomplete}
@@ -64,56 +40,10 @@ defmodule EmisarWeb.MCP.Service do
     end
   end
 
-  @doc "Returns one committed fixed action operation without consulting current catalog state."
-  def replay_fixed_action(conn, operation, wait_ms) do
-    subject = conn.assigns.current_subject
-
-    with {:ok, runs} <- Runs.list_runs_by_mcp_operation(operation.id, subject),
-         false <- runs == [],
-         :ok <-
-           maybe_poll_to_terminal(
-             conn,
-             subject,
-             fixed_replay_results(runs),
-             wait_ms,
-             Cancellation.topic(conn)
-           ),
-         {:ok, runs} <- Runs.list_runs_by_mcp_operation(operation.id, subject),
-         false <- runs == [] do
-      {:ok, fixed_run_summaries(runs, subject, tail_scope: cursor_scope(conn))}
-    else
-      :cancelled -> {:error, :cancelled}
-      true -> {:error, :operation_incomplete}
-      other -> other
-    end
-  end
-
-  defp fixed_replay_results(runs) do
-    Enum.map(runs, fn run ->
-      {run.runner_ref, fixed_dispatch_result(run), nil}
-    end)
-  end
-
-  defp fixed_dispatch_results(runs, targets) do
-    targets_by_id = Map.new(targets, &{&1.id, &1})
-
-    Enum.map(runs, fn run ->
-      target = Map.fetch!(targets_by_id, run.runner_id)
-      {target.name, fixed_dispatch_result(run), target}
-    end)
-  end
-
-  defp fixed_dispatch_result(%{status: :denied, policy_reason: reason}),
-    do: {:error, :denied_by_policy, reason || "policy denied this call"}
-
-  defp fixed_dispatch_result(%{status: :pending_approval} = run),
-    do: {:ok, :pending_approval, run}
-
-  defp fixed_dispatch_result(run), do: {:ok, :running, run}
-
-  defp complete_target_set?(runs, targets) do
-    MapSet.new(runs, & &1.runner_id) == MapSet.new(targets, & &1.id)
-  end
+  # The waiting window is long enough for the caller's runner access to narrow
+  # underneath it, so the re-read must still cover the dispatched target set.
+  defp same_run_set?(settled, dispatched),
+    do: MapSet.new(settled, & &1.id) == MapSet.new(dispatched, & &1.id)
 
   @doc "The credential-lineage scope binding a run's output cursor to one account + key."
   def cursor_scope(conn) do
@@ -570,11 +500,15 @@ defmodule EmisarWeb.MCP.Service do
 
   # -- Per-runner long-poll + result rendering ------------------------
 
-  defp maybe_poll_to_terminal(_conn, _subject, _results, 0, _cancellation_topic), do: :ok
+  defp maybe_poll_to_terminal(_conn, _subject, _runs, 0, _cancellation_topic), do: :ok
 
-  defp maybe_poll_to_terminal(conn, subject, results, ms, cancellation_topic) do
+  defp maybe_poll_to_terminal(conn, subject, runs, ms, cancellation_topic) do
+    # A denied run is already terminal and an approval waits on a human, so
+    # neither can settle inside this window.
     polling_ids =
-      for {_name, {:ok, :running, %{id: id}}, _runner} <- results, do: id
+      for %{id: id, status: status} <- runs,
+          status not in [:denied, :pending_approval],
+          do: id
 
     if polling_ids == [] do
       :ok

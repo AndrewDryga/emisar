@@ -2,14 +2,12 @@ defmodule EmisarWeb.MCP.ActionTools do
   @moduledoc """
   Fixed `run_action` boundary.
 
-  It resolves only exact trusted catalog contracts and exact runner-generation
-  references. Model-facing input never chooses a database id or relies on a
-  display name. The Runs context remains the policy, approval, audit,
-  signature-binding, and persistence authority.
+  It parses model-facing input without accepting database ids or display names.
+  The Runs context resolves exact trusted catalog contracts and runner-generation
+  references, and remains the policy, approval, audit, signature-binding, and
+  persistence authority.
   """
 
-  alias Emisar.ActionContract
-  alias Emisar.{Catalog, Crypto, MCPOperations, Runners}
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.MCP.Service
   alias EmisarWeb.MCP.ValidationError
@@ -23,18 +21,8 @@ defmodule EmisarWeb.MCP.ActionTools do
     # The published wait_short pattern mirrors parse_wait's grammar exactly,
     # so a schema-validated wait always parses.
     {:ok, wait_ms} = Service.parse_wait(input.wait)
-    fingerprint = operation_fingerprint(input, args_raw)
-    operation_attrs = operation_attrs(input, operation_id, fingerprint)
-
-    result =
-      run_or_replay(
-        conn,
-        input,
-        args_raw,
-        operation_attrs,
-        wait_ms,
-        attestation_headers
-      )
+    facts = action_facts(conn, input, operation_id, attestation_headers)
+    result = Service.dispatch_fixed_action(conn, facts, wait_ms)
 
     handle_result(conn, result, input, operation_id)
   end
@@ -93,6 +81,9 @@ defmodule EmisarWeb.MCP.ActionTools do
            %{runner_refs: runner_refs}
          )}
 
+      {:error, {:invalid_action_arguments, issue}} ->
+        {:error, invalid_action_arguments(issue)}
+
       {:error, reason}
       when reason in [
              :runner_not_found,
@@ -102,7 +93,8 @@ defmodule EmisarWeb.MCP.ActionTools do
              :pack_ref_mismatch,
              :pack_untrusted,
              :pack_retired,
-             :action_contract_changed
+             :action_contract_changed,
+             :target_contract_changed
            ] ->
         target_contract_changed(conn, input)
 
@@ -130,57 +122,23 @@ defmodule EmisarWeb.MCP.ActionTools do
     end
   end
 
-  defp run_or_replay(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers) do
-    case MCPOperations.fetch_matching_replay(
-           operation_attrs,
-           conn.assigns.current_subject
-         ) do
-      {:ok, operation} ->
-        Service.replay_fixed_action(conn, operation, wait_ms)
-
-      {:error, :not_found} ->
-        dispatch_new(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers)
-
-      other ->
-        other
-    end
-  end
-
-  defp dispatch_new(conn, input, args_raw, operation_attrs, wait_ms, attestation_headers) do
-    with {:ok, targets, action} <- resolve_targets(conn, input),
-         :ok <- validate_action_args(input.args, action) do
-      intent = %{
-        action_id: input.action_id,
-        pack_ref: input.pack_ref,
-        args: input.args,
-        args_raw: args_raw,
-        reason: input.reason,
-        evidence: input.evidence,
-        expected: input.expected,
-        operation_attrs: signed_dispatch_attrs(conn, operation_attrs, attestation_headers)
-      }
-
-      Service.dispatch_fixed_action(conn, targets, intent, wait_ms)
-    end
-  end
-
-  # Runs owns the envelope's bounds and its binding to the dispatch. The
-  # boundary contributes only what it alone knows: the raw header and the actual
-  # request origin the client signed over. Both ride the fresh-dispatch attrs,
-  # so the replay lookup above still matches on the operation facts alone.
-  defp signed_dispatch_attrs(conn, operation_attrs, attestation_headers) do
-    operation_attrs
-    |> Map.put(:attestation_headers, attestation_headers)
-    |> Map.put(:portal_origin, request_origin(conn))
-  end
-
-  defp operation_attrs(input, operation_id, fingerprint) do
+  # Runs owns identity, replay, target resolution, contract validation, and the
+  # envelope's binding. The boundary contributes only what it alone knows: the
+  # exact request bytes, the raw signature header, and the actual request origin
+  # the client signed over.
+  defp action_facts(conn, input, operation_id, attestation_headers) do
     %{
       operation_id: operation_id,
-      tool: :run_action,
-      fingerprint: fingerprint,
       action_id: input.action_id,
-      pack_ref: input.pack_ref
+      pack_ref: input.pack_ref,
+      runner_refs: input.runner_refs,
+      args: input.args,
+      args_raw: input.args_raw,
+      reason: input.reason,
+      evidence: input.evidence,
+      expected: input.expected,
+      attestation_headers: attestation_headers,
+      portal_origin: request_origin(conn)
     }
   end
 
@@ -196,6 +154,7 @@ defmodule EmisarWeb.MCP.ActionTools do
       pack_ref: args["pack_ref"],
       runner_refs: args["runner_refs"],
       args: exact_args,
+      args_raw: args_raw,
       reason: args["reason"],
       # Optional, unenforced justification chain — persisted and rendered for
       # approvers/audit, never a policy/attestation input (so they stay out of
@@ -206,69 +165,13 @@ defmodule EmisarWeb.MCP.ActionTools do
     }
   end
 
-  defp resolve_targets(conn, input) do
-    subject = conn.assigns.current_subject
+  defp invalid_action_arguments(issue) do
+    path = if issue.code == "unknown_arg", do: [:args], else: [:args, issue.arg]
 
-    with {:ok, runners} <- Runners.list_all_runners_for_account(subject),
-         {:ok, actions} <- Catalog.list_all_actions_for_account(subject),
-         {:ok, pack_versions} <- Catalog.list_all_pack_versions_for_account(subject) do
-      runner_ids = MapSet.new(runners, & &1.id)
-      actions = Enum.filter(actions, &MapSet.member?(runner_ids, &1.runner_id))
-      snapshot = Catalog.MCPProjection.build(pack_versions, actions, runners)
-
-      with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == input.pack_ref)),
-           %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == input.action_id)),
-           {:ok, targets} <- exact_targets(snapshot.runners, action, input.runner_refs) do
-        {:ok, targets, action}
-      else
-        _ -> target_contract_changed(conn, input)
-      end
-    else
-      {:error, :unauthorized} ->
-        not_allowed(conn, input)
-    end
-  end
-
-  defp validate_action_args(args, action) do
-    case ActionContract.validate(args, action) do
-      :ok ->
-        :ok
-
-      {:error, issue} ->
-        path = if issue.code == "unknown_arg", do: [:args], else: [:args, issue.arg]
-
-        {:error,
-         ValidationError.payload("Action arguments do not match the trusted contract.",
-           stage: :action_arguments,
-           issues: [ValidationError.issue(path, issue.code)]
-         )}
-    end
-  end
-
-  defp exact_targets(runners, action, requested_refs) do
-    by_ref = Map.new(runners, &{&1.runner_ref, &1})
-    compatible_ids = MapSet.new(action.compatible_runner_ids)
-
-    requested_refs
-    |> Enum.reduce_while({:ok, []}, fn runner_ref, {:ok, targets} ->
-      case Map.get(by_ref, runner_ref) do
-        %{id: id} = runner ->
-          if MapSet.member?(compatible_ids, id) do
-            target = %{id: runner.id, name: runner.name, runner_ref: runner.runner_ref}
-
-            {:cont, {:ok, [target | targets]}}
-          else
-            {:halt, {:error, :target_contract_changed}}
-          end
-
-        _ ->
-          {:halt, {:error, :target_contract_changed}}
-      end
-    end)
-    |> case do
-      {:ok, targets} -> {:ok, Enum.reverse(targets)}
-      error -> error
-    end
+    ValidationError.payload("Action arguments do not match the trusted contract.",
+      stage: :action_arguments,
+      issues: [ValidationError.issue(path, issue.code)]
+    )
   end
 
   defp target_contract_changed(conn, input) do
@@ -316,21 +219,6 @@ defmodule EmisarWeb.MCP.ActionTools do
       port: conn.port
     }
     |> URI.to_string()
-  end
-
-  defp operation_fingerprint(input, args_raw) do
-    fields = [
-      "emisar-mcp-operation-v1",
-      "run_action",
-      input.action_id,
-      input.pack_ref,
-      Crypto.hash_hex(args_raw),
-      input.reason | Enum.sort(input.runner_refs)
-    ]
-
-    fields
-    |> Enum.map_join(fn value -> Integer.to_string(byte_size(value)) <> ":" <> value end)
-    |> Crypto.hash_hex()
   end
 
   defp error(code, message, dispatch_started \\ false, details \\ nil)

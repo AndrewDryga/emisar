@@ -65,6 +65,12 @@ defmodule Emisar.Fixtures.Runbooks do
     published
   end
 
+  @doc "Soft-deletes a persisted runbook so a test can arrange a vanished family."
+  def mark_runbook_as_deleted(%Runbook{} = runbook) do
+    {:ok, deleted} = runbook |> Runbook.Changeset.delete() |> Repo.update()
+    deleted
+  end
+
   @doc "Returns a fresh canonical minimal v1 definition for context tests."
   def default_definition, do: @default_definition
 end

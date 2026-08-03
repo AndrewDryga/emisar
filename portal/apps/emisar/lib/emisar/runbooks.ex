@@ -20,6 +20,8 @@ defmodule Emisar.Runbooks do
   # One runbook list page is 35 rows; 64 bounds the batch without capping the
   # page it serves.
   @max_risk_runbook_ids 64
+  # The published `<slug>@<version>` identity a model executes by.
+  @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -219,39 +221,6 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  @doc "Fetches one MCP-created draft through the caller's credential lineage."
-  def fetch_mcp_draft_by_operation(operation_id, %Subject{} = subject)
-      when is_binary(operation_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         {:ok, %{tool: :create_runbook_draft, resource_id: draft_id}} <-
-           MCPOperations.fetch_recovery(operation_id, subject) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_id(draft_id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(Runbook.Query)
-    else
-      {:ok, _other_operation} -> {:error, :not_found}
-      other -> other
-    end
-  end
-
-  @doc "Fetches one MCP runbook execution through the caller's credential lineage."
-  def fetch_execution_by_operation(operation_id, %Subject{} = subject)
-      when is_binary(operation_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         {:ok, %{tool: :execute_runbook, resource_id: execution_id}} <-
-           MCPOperations.fetch_recovery(operation_id, subject) do
-      RunbookExecution.Query.by_account_id(subject.account.id)
-      |> RunbookExecution.Query.by_id(execution_id)
-      |> Repo.fetch(RunbookExecution.Query)
-    else
-      {:ok, _other_operation} -> {:error, :not_found}
-      other -> other
-    end
-  end
-
   @doc "Fetches one runbook execution visible to the subject."
   def fetch_execution_by_id(execution_id, %Subject{} = subject) when is_binary(execution_id) do
     with :ok <-
@@ -426,54 +395,100 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  @doc "Strictly validates, then creates or replays one MCP draft under its operation identity."
-  def create_mcp_draft(attrs, operation_id, fingerprint, %Subject{account: account} = subject)
-      when is_binary(operation_id) and is_binary(fingerprint) do
-    definition = if is_map(attrs), do: Map.get(attrs, "definition")
+  @doc """
+  Creates or replays one MCP runbook draft under its operation identity.
 
+  `facts` carries the model's exact authoring intent: `:operation_id`,
+  `:title`, the already-normalized `:slug`, `:description`, and `:definition`.
+  Requires manage or draft runbooks.
+
+  The operation is reserved first; only the fresh winner validates the
+  definition and writes the draft, so a rejected definition rolls the
+  reservation back with it and an exact replay re-reads the committed draft
+  without revalidating. Returns `{:ok, :created | :replay, runbook}`,
+  `{:error, :operation_conflict}`, `{:error, :operation_incomplete}`, the
+  ordered definition issues, or `{:error, :unauthorized}`.
+  """
+  def create_or_replay_mcp_draft(
+        %{operation_id: operation_id} = facts,
+        %Subject{actor: %ApiKeys.ApiKey{}} = subject
+      )
+      when is_binary(operation_id) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              {:one_of,
               [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
-           ),
-         {:ok, definition} <- Definition.validate(definition) do
+           ) do
       id = MCPOperations.resource_id(operation_id, :create_runbook_draft, subject)
-      attrs = attrs |> Map.put("definition", definition) |> Map.put("id", id)
+      commit_mcp_draft(facts, id, mcp_draft_operation_attrs(facts, id), subject)
+    end
+  end
 
-      operation_attrs = %{
-        operation_id: operation_id,
-        tool: :create_runbook_draft,
-        fingerprint: fingerprint,
-        resource_id: id,
-        resource_ref: attrs["slug"]
-      }
+  def create_or_replay_mcp_draft(_facts, %Subject{}), do: {:error, :unauthorized}
 
-      with {:ok, multi} <-
-             MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
-        multi =
-          Multi.merge(multi, fn
-            %{mcp_operation: %{fresh?: false}} ->
-              Multi.new()
+  defp mcp_draft_operation_attrs(facts, id) do
+    fingerprint =
+      MCPOperations.mutation_fingerprint("create_runbook_draft", %{
+        "title" => facts.title,
+        "slug" => facts.slug,
+        "description" => facts.description,
+        "definition" => facts.definition
+      })
 
-            %{mcp_operation: %{fresh?: true}} ->
-              Multi.new()
-              |> Multi.insert(
-                :runbook,
-                Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs)
-              )
-              |> Multi.insert(:audit, fn %{runbook: runbook} ->
-                Audit.Events.runbook_created(subject, runbook)
-              end)
-          end)
+    %{
+      operation_id: facts.operation_id,
+      tool: :create_runbook_draft,
+      fingerprint: fingerprint,
+      resource_id: id,
+      resource_ref: facts.slug
+    }
+  end
 
-        with {:ok, %{mcp_operation: reservation}} <-
-               Repo.commit_multi(multi, after_commit: &after_mcp_draft_committed/1),
-             {:ok, runbook} <- fetch_runbook_by_id(id, subject) do
-          kind = if reservation.fresh?, do: :created, else: :replay
-          {:ok, kind, runbook}
-        end
+  defp commit_mcp_draft(facts, id, operation_attrs, %Subject{account: account} = subject) do
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
+      multi =
+        Multi.merge(multi, fn
+          %{mcp_operation: %{fresh?: false}} ->
+            Multi.new()
+
+          %{mcp_operation: %{fresh?: true}} ->
+            Multi.new()
+            |> Multi.run(:definition, fn _repo, _changes ->
+              Definition.validate(facts.definition)
+            end)
+            |> Multi.insert(:runbook, fn %{definition: definition} ->
+              attrs = mcp_draft_attrs(facts, definition, id)
+              Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs)
+            end)
+            |> Multi.insert(:audit, fn %{runbook: runbook} ->
+              Audit.Events.runbook_created(subject, runbook)
+            end)
+        end)
+
+      with {:ok, %{mcp_operation: reservation}} <-
+             Repo.commit_multi(multi, after_commit: &after_mcp_draft_committed/1),
+           {:ok, runbook} <- fetch_mcp_draft(id, subject) do
+        {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
       end
+    end
+  end
+
+  defp mcp_draft_attrs(facts, definition, id) do
+    %{
+      "id" => id,
+      "title" => facts.title,
+      "slug" => facts.slug,
+      "description" => facts.description,
+      "definition" => definition
+    }
+  end
+
+  defp fetch_mcp_draft(id, subject) do
+    case fetch_runbook_by_id(id, subject) do
+      {:ok, runbook} -> {:ok, runbook}
+      {:error, :not_found} -> {:error, :operation_incomplete}
+      other -> other
     end
   end
 
@@ -710,16 +725,9 @@ defmodule Emisar.Runbooks do
   and action contracts before any execution row is created. The resulting plan
   is immutable; current membership, runner scope, policy, lifecycle, trust, and
   content hash are rechecked before each physical attempt.
-
-  MCP callers may pass their operation identity through `opts`. Matching
-  operations replay before mutable preflight; conflicting fingerprints fail
-  without creating another execution.
   """
   def dispatch_runbook(%Runbook{} = runbook, reason, %Subject{} = subject, opts \\ [])
       when is_binary(reason) do
-    operation_id = Keyword.get(opts, :operation_id)
-    operation_fingerprint = Keyword.get(opts, :operation_fingerprint)
-    operation_ref = Keyword.get(opts, :operation_ref)
     input_values = Keyword.get(opts, :input_values, %{})
     selection_seed = Keyword.get_lazy(opts, :target_selection_seed, &new_target_selection_seed/0)
 
@@ -731,124 +739,151 @@ defmodule Emisar.Runbooks do
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
          :ok <- ensure_published(runbook),
          :ok <- ensure_membership(subject),
-         :ok <- ensure_reason(reason) do
-      if operation_id do
-        dispatch_mcp_execution(
-          runbook,
-          reason,
-          input_values,
-          subject,
-          operation_id,
-          operation_fingerprint,
-          operation_ref,
-          selection_seed
-        )
-      else
-        with {:ok, compiled} <-
-               Compiler.compile(runbook.definition, input_values, selection_seed, subject) do
-          Scheduler.create_execution(runbook, compiled, reason, subject)
-        end
-      end
+         :ok <- ensure_reason(reason),
+         {:ok, compiled} <-
+           Compiler.compile(runbook.definition, input_values, selection_seed, subject) do
+      Scheduler.create_execution(runbook, compiled, reason, subject)
     end
   end
 
-  defp dispatch_mcp_execution(
-         runbook,
-         reason,
-         input_values,
-         subject,
-         operation_id,
-         fingerprint,
-         operation_ref,
-         selection_seed
-       )
-       when is_binary(operation_id) and is_binary(fingerprint) and is_binary(operation_ref) do
-    execution_id = MCPOperations.resource_id(operation_id, :execute_runbook, subject)
+  @doc """
+  Creates or replays one MCP runbook execution under its operation identity.
 
-    operation_attrs = %{
-      operation_id: operation_id,
+  `facts` carries the model's exact call: `:operation_id`, the exact
+  `:runbook_ref`, `:reason`, and `:input_values`. Requires the dispatch-run
+  permission.
+
+  The operation is reserved first; only the fresh winner resolves the current
+  published runbook, rechecks membership, reason, and current scope, seeds
+  target selection, compiles the immutable plan, and composes the execution in
+  the same transaction — so a rejected preflight rolls the reservation back
+  with it. An exact replay re-reads the committed execution without touching
+  current runbook or catalog state. Returns
+  `{:ok, :created | :replay, execution}`, `{:error, :operation_conflict}`,
+  `{:error, :operation_incomplete}`, or the first rejection.
+  """
+  def create_or_replay_mcp_execution(
+        %{operation_id: operation_id} = facts,
+        %Subject{actor: %ApiKeys.ApiKey{}} = subject
+      )
+      when is_binary(operation_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Emisar.Runs.Authorizer.dispatch_run_permission()
+           ) do
+      execution_id = MCPOperations.resource_id(operation_id, :execute_runbook, subject)
+      operation_attrs = mcp_execution_operation_attrs(facts, execution_id)
+      commit_mcp_execution(facts, execution_id, operation_attrs, subject)
+    end
+  end
+
+  def create_or_replay_mcp_execution(_facts, %Subject{}), do: {:error, :unauthorized}
+
+  defp mcp_execution_operation_attrs(facts, execution_id) do
+    fingerprint =
+      MCPOperations.mutation_fingerprint("execute_runbook", %{
+        "runbook_ref" => facts.runbook_ref,
+        "reason" => facts.reason,
+        "input_values" => facts.input_values
+      })
+
+    %{
+      operation_id: facts.operation_id,
       tool: :execute_runbook,
       fingerprint: fingerprint,
       resource_id: execution_id,
-      resource_ref: operation_ref
+      resource_ref: facts.runbook_ref
     }
-
-    case MCPOperations.fetch_matching_replay(operation_attrs, subject) do
-      {:ok, _operation} ->
-        Scheduler.fetch_result(execution_id, runbook.account_id)
-
-      {:error, :not_found} ->
-        create_mcp_execution(
-          runbook,
-          reason,
-          input_values,
-          subject,
-          operation_attrs,
-          execution_id,
-          selection_seed
-        )
-
-      {:error, error} ->
-        {:error, error}
-    end
   end
 
-  defp dispatch_mcp_execution(
-         _runbook,
-         _reason,
-         _input_values,
-         _subject,
-         _operation_id,
-         _fingerprint,
-         _operation_ref,
-         _selection_seed
-       ),
-       do: {:error, :invalid_operation}
-
-  defp create_mcp_execution(
-         runbook,
-         reason,
-         input_values,
-         subject,
-         operation_attrs,
-         execution_id,
-         selection_seed
-       ) do
-    with {:ok, compiled} <-
-           Compiler.compile(runbook.definition, input_values, selection_seed, subject),
-         {:ok, multi} <-
-           MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
+  defp commit_mcp_execution(facts, execution_id, operation_attrs, %Subject{} = subject) do
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
       multi =
         Multi.merge(multi, fn
           %{mcp_operation: %{fresh?: false}} ->
             Multi.new()
 
           %{mcp_operation: %{fresh?: true, operation: operation}} ->
-            Scheduler.compose_creation(
-              Multi.new(),
-              runbook,
-              compiled,
-              reason,
-              subject,
-              execution_id,
-              operation_id: operation_attrs.operation_id,
-              mcp_operation_record_id: operation.id
-            )
+            compose_fresh_mcp_execution(facts, execution_id, operation, subject)
         end)
 
       with {:ok, changes} <-
              Repo.commit_multi(multi,
                after_commit: &Approvals.after_runbook_execution_request_committed/1
              ) do
-        reservation = changes.mcp_operation
-        execution = Map.get(changes, {:runbook_execution, execution_id})
-
-        if reservation.fresh? and match?(%RunbookExecution{status: :active}, execution),
-          do: Scheduler.advance_execution(execution_id),
-          else: :ok
-
-        Scheduler.fetch_result(execution_id, runbook.account_id)
+        settle_mcp_execution(changes, execution_id, subject)
       end
+    end
+  end
+
+  # Every mutable fact an execution freezes — the published version behind the
+  # ref, membership scope, the compiled plan — is resolved by the fresh winner
+  # only, inside the reservation's own transaction.
+  defp compose_fresh_mcp_execution(facts, execution_id, operation, subject) do
+    with {:ok, runbook} <- fetch_runbook_for_mcp_execution(facts.runbook_ref, subject),
+         :ok <- ensure_membership(subject),
+         :ok <- ensure_reason(facts.reason),
+         {:ok, compiled} <-
+           Compiler.compile(
+             runbook.definition,
+             facts.input_values,
+             new_target_selection_seed(),
+             subject
+           ) do
+      Scheduler.compose_creation(
+        Multi.new(),
+        runbook,
+        compiled,
+        facts.reason,
+        subject,
+        execution_id,
+        operation_id: facts.operation_id,
+        mcp_operation_record_id: operation.id
+      )
+    else
+      {:error, reason} -> Multi.error(Multi.new(), :mcp_execution_preflight, reason)
+    end
+  end
+
+  defp fetch_runbook_for_mcp_execution(runbook_ref, subject) do
+    case parse_runbook_ref(runbook_ref) do
+      {:ok, {slug, version}} -> fetch_published_runbook_version(slug, version, subject)
+      {:error, :invalid_runbook_ref} -> {:error, :invalid_runbook_ref}
+    end
+  end
+
+  defp parse_runbook_ref(value) when is_binary(value) do
+    case Regex.run(@runbook_ref, value) do
+      [_ref, slug, version] -> {:ok, {slug, String.to_integer(version)}}
+      _no_match -> {:error, :invalid_runbook_ref}
+    end
+  end
+
+  defp parse_runbook_ref(_value), do: {:error, :invalid_runbook_ref}
+
+  defp settle_mcp_execution(changes, execution_id, %Subject{} = subject) do
+    reservation = changes.mcp_operation
+    created_execution = Map.get(changes, {:runbook_execution, execution_id})
+
+    _ =
+      if reservation.fresh? and match?(%RunbookExecution{status: :active}, created_execution),
+        do: Scheduler.advance_execution(execution_id),
+        else: :ok
+
+    with {:ok, execution} <- fetch_mcp_execution(execution_id, subject) do
+      {:ok, if(reservation.fresh?, do: :created, else: :replay), execution}
+    end
+  end
+
+  defp fetch_mcp_execution(execution_id, %Subject{} = subject) do
+    queryable =
+      RunbookExecution.Query.by_account_id(subject.account.id)
+      |> RunbookExecution.Query.by_id(execution_id)
+
+    case Repo.fetch(queryable, RunbookExecution.Query) do
+      {:ok, execution} -> {:ok, execution}
+      {:error, :not_found} -> {:error, :operation_incomplete}
     end
   end
 

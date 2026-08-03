@@ -7,7 +7,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   scheduling; this module only handles wire identity and bounded projection.
   """
 
-  alias Emisar.{Approvals, Crypto, MCPOperations, Runbooks, Slug}
+  alias Emisar.{Approvals, Crypto, Runbooks, Slug}
   alias Emisar.Auth.Subject
   alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract, Service}
   alias EmisarWeb.MCP.ValidationError
@@ -84,11 +84,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp create_draft(conn, args, operation_id) do
-    input = draft_input(args)
-    fingerprint = mutation_fingerprint("create_runbook_draft", draft_facts(input))
-    operation_attrs = draft_operation_attrs(input, operation_id, fingerprint, conn)
+    facts = draft_facts(args, operation_id)
 
-    case create_or_replay_draft(conn, input, operation_attrs) do
+    case create_or_replay_draft(conn, facts) do
       {:ok, _kind, runbook} ->
         {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
 
@@ -122,51 +120,22 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
-  defp create_or_replay_draft(conn, input, operation_attrs) do
-    subject = conn.assigns.current_subject
-
-    case MCPOperations.fetch_matching_replay(operation_attrs, subject) do
-      {:ok, _operation} ->
-        case Runbooks.fetch_mcp_draft_by_operation(operation_attrs.operation_id, subject) do
-          {:ok, runbook} -> {:ok, :replay, runbook}
-          {:error, :not_found} -> {:error, :operation_incomplete}
-          other -> other
-        end
-
-      {:error, :not_found} ->
-        with :ok <- validate_draft_envelope(input) do
-          attrs = draft_attrs(input, input.definition)
-
-          Runbooks.create_mcp_draft(
-            attrs,
-            operation_attrs.operation_id,
-            operation_attrs.fingerprint,
-            subject
-          )
-        end
-
-      other ->
-        other
+  defp create_or_replay_draft(conn, facts) do
+    with :ok <- validate_draft_envelope(facts) do
+      Runbooks.create_or_replay_mcp_draft(facts, conn.assigns.current_subject)
     end
   end
 
   defp execute_runbook(conn, args, operation_id) do
-    input = %{
+    facts = %{
+      operation_id: operation_id,
       runbook_ref: args["runbook_ref"],
       reason: args["reason"],
       input_values: args["input_values"] || %{}
     }
 
-    fingerprint =
-      mutation_fingerprint("execute_runbook", %{
-        "runbook_ref" => input.runbook_ref,
-        "reason" => input.reason,
-        "input_values" => input.input_values
-      })
-
-    operation_attrs = execution_operation_attrs(input, operation_id, fingerprint, conn)
-
-    with {:ok, execution} <- execute_or_replay(conn, input, operation_attrs),
+    with {:ok, _outcome, execution} <-
+           Runbooks.create_or_replay_mcp_execution(facts, conn.assigns.current_subject),
          {:ok, payload} <- execution_payload(conn, execution.id) do
       {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
     else
@@ -184,41 +153,39 @@ defmodule EmisarWeb.MCP.RunbookTools do
          )}
 
       {:error, :unauthorized} ->
-        not_allowed(conn, input)
+        not_allowed(conn, facts.runbook_ref)
 
       {:error, reason} ->
-        execution_rejected(conn, input, reason)
+        execution_rejected(conn, facts.runbook_ref, reason)
     end
   end
 
-  defp not_allowed(conn, input) do
+  defp not_allowed(conn, runbook_ref) do
     :ok =
       ValidationError.log_dispatch_rejected(conn, "execute_runbook", "not_allowed",
-        runbook_ref: input.runbook_ref
+        runbook_ref: runbook_ref
       )
 
     {:error, error("not_allowed", "This key cannot execute this runbook.")}
   end
 
-  defp execution_rejected(conn, input, [%{code: _code, path: _path} | _rest] = reason) do
-    :ok =
-      ValidationError.log_dispatch_rejected(conn, "execute_runbook", "target_contract_changed",
-        runbook_ref: input.runbook_ref
-      )
-
+  defp execution_rejected(conn, runbook_ref, [%{code: _code, path: _path} | _rest] = reason) do
+    :ok = log_target_contract_changed(conn, runbook_ref)
     {:error, execution_failure(reason)}
   end
 
-  defp execution_rejected(conn, input, reason) when reason in @hidden_contract_reasons do
-    :ok =
-      ValidationError.log_dispatch_rejected(conn, "execute_runbook", "target_contract_changed",
-        runbook_ref: input.runbook_ref
-      )
-
+  defp execution_rejected(conn, runbook_ref, reason) when reason in @hidden_contract_reasons do
+    :ok = log_target_contract_changed(conn, runbook_ref)
     {:error, execution_failure(reason)}
   end
 
-  defp execution_rejected(_conn, _input, reason), do: {:error, execution_failure(reason)}
+  defp execution_rejected(_conn, _runbook_ref, reason), do: {:error, execution_failure(reason)}
+
+  defp log_target_contract_changed(conn, runbook_ref) do
+    ValidationError.log_dispatch_rejected(conn, "execute_runbook", "target_contract_changed",
+      runbook_ref: runbook_ref
+    )
+  end
 
   @doc false
   def execution_failure(reason) when reason in @hidden_contract_reasons do
@@ -245,43 +212,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   def execution_failure(_reason) do
     error("execution_failed", "The runbook could not be started.")
-  end
-
-  defp execute_or_replay(conn, input, operation_attrs) do
-    subject = conn.assigns.current_subject
-
-    case MCPOperations.fetch_matching_replay(operation_attrs, subject) do
-      {:ok, _operation} ->
-        fetch_committed_execution(operation_attrs.operation_id, subject)
-
-      {:error, :not_found} ->
-        execute_new(input, operation_attrs, subject)
-
-      other ->
-        other
-    end
-  end
-
-  defp execute_new(input, operation_attrs, subject) do
-    with {:ok, {slug, version}} <- parse_runbook_ref(input.runbook_ref),
-         {:ok, runbook} <- Runbooks.fetch_published_runbook_version(slug, version, subject),
-         {:ok, _result} <-
-           Runbooks.dispatch_runbook(runbook, input.reason, subject,
-             operation_id: operation_attrs.operation_id,
-             operation_fingerprint: operation_attrs.fingerprint,
-             operation_ref: input.runbook_ref,
-             input_values: input.input_values
-           ) do
-      fetch_committed_execution(operation_attrs.operation_id, subject)
-    end
-  end
-
-  defp fetch_committed_execution(operation_id, subject) do
-    case Runbooks.fetch_execution_by_operation(operation_id, subject) do
-      {:ok, execution} -> {:ok, execution}
-      {:error, :not_found} -> {:error, :operation_incomplete}
-      other -> other
-    end
   end
 
   @doc "Builds the fixed execution projection used by execute, wait, and recovery."
@@ -600,8 +530,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end)
   end
 
-  defp draft_input(args) do
+  defp draft_facts(args, operation_id) do
     %{
+      operation_id: operation_id,
       title: args["title"],
       slug: normalized_slug(args["slug"], args["title"]),
       description: args["description"],
@@ -609,57 +540,17 @@ defmodule EmisarWeb.MCP.RunbookTools do
     }
   end
 
-  defp validate_draft_envelope(input) do
+  # The envelope must fit in the transport's bounded frame before the domain
+  # spends a transaction on it; the definition contract itself is Runbooks'.
+  defp validate_draft_envelope(facts) do
     envelope = %{
-      "title" => input.title,
-      "slug" => input.slug,
-      "description" => input.description,
-      "definition" => input.definition
+      "title" => facts.title,
+      "slug" => facts.slug,
+      "description" => facts.description,
+      "definition" => facts.definition
     }
 
     encoded_size(envelope, Runbooks.Definition.limit!(:max_definition_bytes) + 8_192)
-  end
-
-  defp draft_attrs(input, definition) do
-    %{
-      "title" => input.title,
-      "slug" => input.slug,
-      "description" => input.description,
-      "definition" => definition
-    }
-  end
-
-  defp draft_facts(input) do
-    %{
-      "title" => input.title,
-      "slug" => input.slug,
-      "description" => input.description,
-      "definition" => input.definition
-    }
-  end
-
-  defp draft_operation_attrs(input, operation_id, fingerprint, conn) do
-    subject = conn.assigns.current_subject
-
-    %{
-      operation_id: operation_id,
-      tool: :create_runbook_draft,
-      fingerprint: fingerprint,
-      resource_id: MCPOperations.resource_id(operation_id, :create_runbook_draft, subject),
-      resource_ref: input.slug
-    }
-  end
-
-  defp execution_operation_attrs(input, operation_id, fingerprint, conn) do
-    subject = conn.assigns.current_subject
-
-    %{
-      operation_id: operation_id,
-      tool: :execute_runbook,
-      fingerprint: fingerprint,
-      resource_id: MCPOperations.resource_id(operation_id, :execute_runbook, subject),
-      resource_ref: input.runbook_ref
-    }
   end
 
   defp normalized_slug(nil, title), do: Slug.slugify(title, max_length: 79)
@@ -678,42 +569,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
       review_url:
         "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
     }
-  end
-
-  defp mutation_fingerprint(tool, facts) do
-    ["emisar-mcp-mutation-v1", encode_fingerprint_value(tool), encode_fingerprint_value(facts)]
-    |> IO.iodata_to_binary()
-    |> Crypto.hash_hex()
-  end
-
-  defp encode_fingerprint_value(nil), do: "n"
-  defp encode_fingerprint_value(true), do: "b1"
-  defp encode_fingerprint_value(false), do: "b0"
-
-  defp encode_fingerprint_value(value) when is_integer(value),
-    do: ["i", Integer.to_string(value), ";"]
-
-  defp encode_fingerprint_value(value) when is_float(value),
-    do: ["f", :erlang.float_to_binary(value, [:short]), ";"]
-
-  defp encode_fingerprint_value(value) when is_binary(value),
-    do: ["s", Integer.to_string(byte_size(value)), ":", value]
-
-  defp encode_fingerprint_value(value) when is_list(value) do
-    ["l", Integer.to_string(length(value)), ":", Enum.map(value, &encode_fingerprint_value/1)]
-  end
-
-  defp encode_fingerprint_value(value) when is_map(value) do
-    pairs = Enum.sort_by(value, fn {key, _value} -> key end)
-
-    [
-      "m",
-      Integer.to_string(map_size(value)),
-      ":",
-      Enum.map(pairs, fn {key, item} ->
-        [encode_fingerprint_value(key), encode_fingerprint_value(item)]
-      end)
-    ]
   end
 
   defp parse_runbook_ref(value) when is_binary(value) do
