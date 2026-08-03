@@ -67,14 +67,14 @@ func loadReg(t *testing.T, root string) *packs.Registry {
 	return reg
 }
 
-// threePackRoot writes: alpha (generic-only requires → stripped detect),
-// beta (explicit detect wins), remote (requires only a generic helper + a
-// remote-target client → no signal → suggest omits it).
+// threePackRoot writes: alpha (requirements only → no detection), beta
+// (explicit detection), and remote (requirements only → no detection).
 func threePackRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	writePack(t, root, "alpha", map[string]string{
-		"pack.yaml":      packYAML("alpha", "1.0.0", "requires:\n  os: [linux]\n  binaries: [curl, alpha-tool]\n"),
+		"pack.yaml": packYAML("alpha", "1.0.0",
+			"requires:\n  os: [linux]\n  binaries: [git, timeout, base64, alpha-tool]\n"),
 		"actions/a.yaml": execAction("alpha"),
 	})
 	writePack(t, root, "beta", map[string]string{
@@ -82,8 +82,6 @@ func threePackRoot(t *testing.T) string {
 			"requires:\n  binaries: [curl]\ndetect:\n  binaries: [beta-bin]\n  processes: [betad]\n  ports: [1234]\n"),
 		"actions/a.yaml": execAction("beta"),
 	})
-	// ipmitool is a remote BMC client, not a host-presence signal: a pack
-	// requiring only it (dell-ipmi) must not be auto-suggested.
 	writePack(t, root, "remote", map[string]string{
 		"pack.yaml":      packYAML("remote", "0.1.0", "requires:\n  binaries: [curl, ipmitool]\n"),
 		"actions/a.yaml": execAction("remote"),
@@ -135,15 +133,15 @@ func TestBuild(t *testing.T) {
 	if alpha.TarballURL != wantTarball {
 		t.Errorf("tarball_url = %q, want %q", alpha.TarballURL, wantTarball)
 	}
-	// Generic helper stripped, real tool kept.
-	if got := alpha.Detect.Binaries; len(got) != 1 || got[0] != "alpha-tool" {
-		t.Errorf("alpha detect.binaries = %v, want [alpha-tool] (curl stripped)", got)
+	// Runtime dependencies are never promoted into suggestion evidence.
+	if got := alpha.Detect.Binaries; len(got) != 0 {
+		t.Errorf("alpha detect.binaries = %v, want []", got)
 	}
 	if len(alpha.Actions) != 1 || alpha.Actions[0].Command == nil || alpha.Actions[0].Command.Binary != "cat" {
 		t.Errorf("alpha action command not carried: %+v", alpha.Actions)
 	}
 
-	// Explicit detect wins over requires-derived binaries.
+	// Explicit detect is carried exactly as authored.
 	beta := cat.Packs[1]
 	if got := beta.Detect.Binaries; len(got) != 1 || got[0] != "beta-bin" {
 		t.Errorf("beta detect.binaries = %v, want [beta-bin]", got)
@@ -239,34 +237,29 @@ func TestSuggest_OmitsDetectlessPacks(t *testing.T) {
 	for _, p := range cat.Suggest().Packs {
 		got[p.ID] = true
 	}
-	if !got["alpha"] || !got["beta"] {
-		t.Errorf("suggest should include alpha and beta, got %v", got)
+	if got["alpha"] || !got["beta"] {
+		t.Errorf("suggest should include only explicitly detected beta, got %v", got)
 	}
 	if got["remote"] {
 		t.Error("suggest must omit remote (no detect signal)")
 	}
 }
 
-func TestDeriveDetect_StripsNonSignalBinaries(t *testing.T) {
+func TestDeriveDetect_UsesOnlyExplicitSignals(t *testing.T) {
 	tests := []struct {
-		name     string
-		requires []string
-		detect   []string
-		want     []string
+		name   string
+		detect []string
+		want   []string
 	}{
-		{"generic helper stripped, real tool kept", []string{"curl", "nomad"}, nil, []string{"nomad"}},
-		{"remote BMC client stripped (dell-ipmi)", []string{"ipmitool"}, nil, []string{}},
-		{"remote cloud/SaaS/cluster clients stripped", []string{"aws", "gcloud", "gh", "kubectl", "terraform"}, nil, []string{}},
-		{"remote SNMP clients stripped (snmp)", []string{"snmpget", "snmpbulkwalk"}, nil, []string{}},
-		{"local-service client kept (postgres)", []string{"psql"}, nil, []string{"psql"}},
-		{"explicit detect wins, never stripped", []string{"curl"}, []string{"ipmitool"}, []string{"ipmitool"}},
+		{"missing detect stays empty", nil, []string{}},
+		{"explicit detect is preserved", []string{"nomad", "timeout"}, []string{"nomad", "timeout"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got := deriveDetect(test.requires, test.detect, nil, nil).Binaries
+			got := deriveDetect(test.detect, nil, nil).Binaries
 			if !reflect.DeepEqual(got, test.want) {
-				t.Errorf("deriveDetect(requires=%v, detect=%v).Binaries = %v, want %v",
-					test.requires, test.detect, got, test.want)
+				t.Errorf("deriveDetect(detect=%v).Binaries = %v, want %v",
+					test.detect, got, test.want)
 			}
 		})
 	}

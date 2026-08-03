@@ -25,9 +25,8 @@ var baselinePackIDs = []string{"linux-core", "debugging"}
 const systemdPackID = "systemd-deep"
 
 // catalogPack mirrors one entry of the registry's /packs/suggest.json
-// index: the per-pack detect signal, with ubiquitous helpers already
-// stripped server-side, plus id/name/os. No description/hash/tarball —
-// suggestion doesn't need them.
+// index: the pack-authored detect signal plus id/name/os. No
+// description/hash/tarball — suggestion doesn't need them.
 type catalogPack struct {
 	ID     string        `json:"id"`
 	Name   string        `json:"name"`
@@ -61,10 +60,10 @@ pack, one with Grafana on :3000 at grafana, and so on. The read-only core
 recommended.
 
 The detection metadata comes from the registry's /packs/suggest.json by
-default (the curated list of which binaries are too generic to be a signal
-lives server-side, so it evolves without a runner upgrade); --catalog points
-at a local suggest.json file or a directory of packs instead (offline, e.g.
-the bundle install.sh ships). Packs already installed are left out.
+default; --catalog points at a local suggest.json file or a directory of packs
+instead (offline, e.g. the bundle install.sh ships). Only explicit detect
+metadata is used; runtime requirements are never treated as evidence. Packs
+already installed are left out.
 
   emisar pack suggest                       # from the registry
   emisar pack suggest --names-only          # just ids, one per line (scripts)
@@ -189,21 +188,16 @@ func catalogFromPackDir(dir string) ([]hostscan.PackReq, error) {
 	}
 	var out []hostscan.PackReq
 	for _, p := range reg.Packs() {
-		// Mirror the portal's derivation: an explicit detect.binaries wins,
-		// else fall back to the pack's requires binaries; the declared
-		// processes/ports are always added on top. (The offline catalog is
-		// the install bundle, which has no generic-helper-only packs, so no
-		// server-side stripping is needed here.)
+		// Mirror the published catalog exactly: only pack-authored detect
+		// evidence participates in suggestions. Requirements describe what
+		// actions need at runtime, not what service exists on this host.
 		req := hostscan.PackReq{
 			ID:        p.ID,
 			Name:      p.Name,
 			OS:        p.Requires.OS,
-			Binaries:  p.Requires.Binaries,
+			Binaries:  p.Detect.Binaries,
 			Processes: p.Detect.Processes,
 			Ports:     p.Detect.Ports,
-		}
-		if len(p.Detect.Binaries) > 0 {
-			req.Binaries = p.Detect.Binaries
 		}
 		out = append(out, req)
 	}

@@ -314,18 +314,21 @@ defmodule EmisarWeb.PacksTest do
       refute Map.has_key?(grafana, "tarball")
     end
 
-    test "GET /packs/suggest.json strips generic binaries and carries only the lean keys",
+    test "GET /packs/suggest.json carries only explicit evidence and the lean keys",
          %{conn: conn} do
       body = conn |> get(~p"/packs/suggest.json") |> json_response(200)
       by_id = Map.new(body["packs"], &{&1["id"], &1})
 
-      # A curl-only pack collapses to an empty binary signal server-side
-      # (the ubiquitous helpers — curl/jq/… — say nothing about the host),
-      # and a remote-API-only pack with no detectable signal is omitted.
+      # Runtime requirements never become detection evidence. Packs without an
+      # explicit detect block are omitted; declared processes and ports remain.
       assert by_id["grafana"]["detect"]["binaries"] == []
-      assert by_id["postgres"]["detect"]["binaries"] == ["psql"]
-      assert by_id["docker"]["detect"]["binaries"] == ["docker"]
+      assert by_id["postgres"]["detect"]["binaries"] == []
+      assert by_id["docker"]["detect"]["binaries"] == []
       refute Map.has_key?(by_id, "cloudflare")
+      refute Map.has_key?(by_id, "git-local")
+      refute Map.has_key?(by_id, "oidc-jwks")
+      assert "nomad" in by_id["nomad"]["detect"]["processes"]
+      assert 4646 in by_id["nomad"]["detect"]["ports"]
 
       # The JSON entry exposes ONLY the lean public shape — no hash, no
       # tarball URL, no description, no internal field. Every entry, not

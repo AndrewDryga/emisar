@@ -167,6 +167,39 @@ func TestPackSuggest_OfflineCatalogDir(t *testing.T) {
 	}
 }
 
+// A local pack directory follows the same contract as the published suggest
+// index: execution prerequisites are not service-discovery evidence. This is
+// the offline path used by bundled installs, so it must not revive the
+// dependency fallback removed from the catalog builder.
+func TestCatalogFromPackDir_DoesNotPromoteRequirements(t *testing.T) {
+	catalogDir := t.TempDir()
+	writePack(t, catalogDir, "helper-only")
+	manifest := `schema_version: 1
+id: helper-only
+name: Helper only
+version: 0.0.1
+description: d
+requires:
+  binaries: [git, timeout, base64, helper-tool]
+actions:
+  - actions/ping.yaml
+`
+	if err := os.WriteFile(filepath.Join(catalogDir, "helper-only", "pack.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write pack.yaml: %v", err)
+	}
+
+	catalog, err := catalogFromPackDir(catalogDir)
+	if err != nil {
+		t.Fatalf("catalogFromPackDir: %v", err)
+	}
+	if len(catalog) != 1 {
+		t.Fatalf("catalog length = %d, want 1", len(catalog))
+	}
+	if got := catalog[0].Binaries; len(got) != 0 {
+		t.Fatalf("detection binaries = %v, want []", got)
+	}
+}
+
 // Already-installed packs are excluded from the suggestions: a baseline pack
 // present in the catalog but also already installed (in the --packs-dir) is
 // de-duped out, so a re-run doesn't recommend reinstalling it

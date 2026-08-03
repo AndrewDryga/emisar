@@ -59,44 +59,43 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
   end
 
   describe "suggest_index/0" do
-    test "strips generic helpers and omits undetectable packs" do
+    test "carries pack-authored detect evidence and omits packs that declare none" do
       by_id = Map.new(PublishedRegistry.suggest_index(), &{&1.id, &1})
 
-      # grafana: curl stripped server-side → no binary signal; detected by
-      # its server process and listening port instead.
+      # Authored process/port evidence reaches the runner unchanged.
       grafana = by_id["grafana"]
-      assert grafana.detect.binaries == []
       assert "grafana-server" in grafana.detect.processes
       # grafana detects by process only — :3000 is shared with Node/dev apps.
       assert grafana.detect.ports == []
-
-      # consul: no detect.binaries block → binaries derived from requires
-      # (consul survives as a useful CLI signal; generic curl is stripped).
-      assert by_id["consul"].detect.binaries == ["consul"]
       assert "consul" in by_id["consul"].detect.processes
       assert 8500 in by_id["consul"].detect.ports
-
-      # Required CLIs stay valid suggestion signals on supervised hosts.
-      assert by_id["postgres"].detect.binaries == ["psql"]
       assert "postgres" in by_id["postgres"].detect.processes
-      assert by_id["docker"].detect.binaries == ["docker"]
+      assert 5432 in by_id["postgres"].detect.ports
       assert "dockerd" in by_id["docker"].detect.processes
 
-      # cloudflare: requires only curl and declares no detect → all-empty
-      # signal → omitted entirely (a remote-API pack isn't host-detectable).
-      refute Map.has_key?(by_id, "cloudflare")
+      # An authored binary IS the pack's own evidence, so it survives.
+      assert by_id["nic"].detect.binaries == ["ethtool"]
 
-      # Remote-target client CLIs are not a host-presence signal: a pack that
-      # requires only ipmitool (BMC), gh (GitHub), kubectl (a remote cluster),
-      # terraform (remote infra), or snmpget (remote agents) is omitted, so a
-      # host that merely has the CLI installed is never suggested the pack.
-      # dell-ipmi suggested on a GCP box that happened to ship ipmitool was
-      # the bug this guards.
-      for id <- ~w(dell-ipmi github-cli kubernetes snmp terraform-readonly) do
+      # A runtime requirement never becomes one: curl, consul, psql, and docker
+      # are clients these packs run, not proof the service lives on this host.
+      for id <- ~w(grafana consul postgres docker) do
+        assert by_id[id].detect.binaries == [],
+               "#{id} must not turn a required client into a binary signal"
+      end
+
+      # No authored evidence → nothing to suggest on, so the pack is omitted
+      # rather than guessed at from its dependencies, whether that dependency
+      # looks generic (curl, jq), local (git), or remote (a BMC, GitHub, a
+      # cluster, remote infra, SNMP agents). dell-ipmi suggested on a GCP box
+      # that happened to ship ipmitool was the bug this guards.
+      undetectable =
+        ~w(cloudflare dell-ipmi git-local github-cli kubernetes oidc-jwks snmp terraform-readonly)
+
+      for id <- undetectable do
         assert PublishedRegistry.get(id), "expected #{id} to be a real catalog pack"
 
         refute Map.has_key?(by_id, id),
-               "#{id} requires only a remote-target client; must not be suggested"
+               "#{id} declares no detect evidence; must not be suggested"
       end
 
       # Lean shape: only id/name/os/detect — no hash/tarball/description.

@@ -34,9 +34,8 @@ type Pack struct {
 
 	// Detect describes how `emisar pack suggest` recognizes that this
 	// pack's target service is present on a host. Optional: when omitted,
-	// the suggester derives a signal from Requires.Binaries (minus generic
-	// helpers and remote-target clients, server-side), so a pack that
-	// requires only such clients is never auto-suggested.
+	// the pack is not auto-suggested from host discovery. Requirements are
+	// runtime prerequisites, not evidence that the target exists here.
 	Detect Detect `yaml:"detect,omitempty"`
 
 	// Setup documents what an operator must do on the runner host before
@@ -84,8 +83,8 @@ type Requirements struct {
 // service-API pack like grafana lists its server process / port here while
 // leaving curl in Requires. A pack about a remote service (a cloud API, a
 // hardware BMC, a remote cluster) declares no Detect and requires only
-// off-host client tools (curl, ipmitool, kubectl), which the catalog build
-// strips, so its derived signal is empty and it is never auto-suggested.
+// off-host client tools (curl, ipmitool, kubectl), so it is never
+// auto-suggested.
 type Detect struct {
 	// Binaries specific to the service (not generic helpers like curl).
 	Binaries []string `yaml:"binaries,omitempty"`
