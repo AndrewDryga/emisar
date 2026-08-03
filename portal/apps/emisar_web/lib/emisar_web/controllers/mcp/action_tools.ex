@@ -8,7 +8,7 @@ defmodule EmisarWeb.MCP.ActionTools do
   persistence authority.
   """
 
-  alias EmisarWeb.MCP.RawJSON
+  alias Emisar.RawJSON
   alias EmisarWeb.MCP.Service
   alias EmisarWeb.MCP.ValidationError
 

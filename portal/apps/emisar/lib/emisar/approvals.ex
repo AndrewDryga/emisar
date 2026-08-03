@@ -788,11 +788,20 @@ defmodule Emisar.Approvals do
     do: Enum.all?(runner_facts, &Accounts.RunnerAccess.runner_in_scope?(&1, access))
 
   defp deliver_approval_email(membership, request, {:action_run, run}) do
+    # The mail shows only what THIS recipient may see: the eligible active
+    # membership we just filtered to IS their authorization, so the notifier
+    # projects the run's arguments through their own subject.
+    subject = Subject.for_user(membership.user, request.account, membership)
+
     deliver_approval_email_result(
       membership,
       request,
       fn ->
-        Emisar.Mailers.UserNotifier.deliver_approval_request(membership.user, request, run)
+        Emisar.Mailers.UserNotifier.deliver_approval_request(
+          subject,
+          request,
+          run
+        )
       end
     )
   end

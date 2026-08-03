@@ -7,8 +7,8 @@ defmodule EmisarWeb.CommandPreviewTest do
   stakes screen).
   """
   use ExUnit.Case, async: true
+  alias Emisar.RawJSON
   alias EmisarWeb.CommandPreview
-  alias EmisarWeb.MCP.RawJSON
 
   describe "render/3" do
     test "substitutes scalar args and fills declared defaults for omitted ones" do

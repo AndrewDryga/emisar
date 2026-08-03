@@ -1,6 +1,6 @@
-defmodule EmisarWeb.MCP.RawJSONTest do
+defmodule Emisar.RawJSONTest do
   use ExUnit.Case, async: true
-  alias EmisarWeb.MCP.RawJSON
+  alias Emisar.RawJSON
 
   describe "parse/1" do
     test "retains exact nested value bytes" do

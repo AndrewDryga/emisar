@@ -9,7 +9,8 @@ defmodule EmisarWeb.MCP.ValidationError do
   `details`; raw values and messages never reach the log event.
   """
 
-  alias EmisarWeb.MCP.{InputContract, RawJSON, SchemaRegistry}
+  alias Emisar.RawJSON
+  alias EmisarWeb.MCP.{InputContract, SchemaRegistry}
   require Logger
 
   @stages ~w(tool_call arguments action_arguments)

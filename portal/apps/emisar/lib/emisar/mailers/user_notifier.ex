@@ -7,6 +7,7 @@ defmodule Emisar.Mailers.UserNotifier do
   rendered by `Emisar.Mailers.MonthlyReport`.
   """
   import Swoosh.Email
+  alias Emisar.Auth.Subject
   alias Emisar.Crypto
   alias Emisar.Mail
   alias Emisar.Mailer
@@ -14,6 +15,7 @@ defmodule Emisar.Mailers.UserNotifier do
   alias Emisar.Mailers.MonthlyReport
   alias Emisar.PublicUrl
   alias Emisar.RequestContext
+  alias Emisar.Runs
   alias Emisar.Users
   require Logger
 
@@ -181,13 +183,21 @@ defmodule Emisar.Mailers.UserNotifier do
   opaque id), the operator's reason, the matched policy rules, and a
   preview of the arguments — that an experienced operator can decide
   from their inbox without context-switching into the app.
+
+  The recipient is the user actor on `subject`: the arguments are projected
+  through `Runs.project_action_args/2`, so the mail shows exactly what that
+  approver may see, with every declared sensitive value redacted.
   """
-  def deliver_approval_request(%Users.User{} = approver, %{} = request, %{} = run) do
+  def deliver_approval_request(
+        %Subject{actor: %Users.User{} = approver} = subject,
+        %{} = request,
+        %Runs.ActionRun{} = run
+      ) do
     # Canonical console route is /app/:account/approvals/:id — a slug-less
     # link 404s, so the request must arrive with its account preloaded.
     url = PublicUrl.url("/app/#{request.account.slug}/approvals/#{request.id}")
     runner_label = runner_email_label(run)
-    args_block = format_args_for_email(run)
+    args_block = format_args_for_email(run, subject)
     matched = format_matched_rules(run)
 
     body = """
@@ -207,8 +217,8 @@ defmodule Emisar.Mailers.UserNotifier do
 
       #{url}
 
-    You'll need to sign in if you aren't already. Approvers are
-    determined per workspace by the :decide_approval permission.
+    You'll need to sign in if you aren't already. This email goes to
+    people who can approve runs in this workspace.
 
     — emisar
     """
@@ -337,15 +347,23 @@ defmodule Emisar.Mailers.UserNotifier do
 
   # Two-space indented args block. Approvers reading on a phone get a
   # readable preview; a long-tail of huge args still produces tidy
-  # output because Jason's pretty-print already wraps reasonably.
-  defp format_args_for_email(%{args: args}) when is_map(args) and map_size(args) > 0 do
+  # output because Jason's pretty-print already wraps reasonably. A run whose
+  # stored payload won't project says so rather than guessing at content — the
+  # approval page is the fallback, and a mail can't ask for a second opinion.
+  defp format_args_for_email(%Runs.ActionRun{} = run, %Subject{} = subject) do
+    case Runs.project_action_args(run, subject) do
+      {:ok, args} when map_size(args) > 0 -> indented_args(args)
+      {:ok, _empty} -> "  (none)"
+      {:error, _reason} -> "  (unavailable)"
+    end
+  end
+
+  defp indented_args(args) do
     args
     |> Jason.encode!(pretty: true)
     |> String.split("\n")
     |> Enum.map_join("\n", &("  " <> &1))
   end
-
-  defp format_args_for_email(_), do: "  (none)"
 
   defp format_execution_items([]), do: "  (no items)"
 

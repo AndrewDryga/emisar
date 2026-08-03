@@ -45,11 +45,12 @@ defmodule EmisarWeb.MCPRpcController do
 
   use EmisarWeb, :controller
   alias Emisar.{ApiKeys, Compat, MCPOperations}
+  alias Emisar.RawJSON
   alias EmisarWeb.AppVersion
   alias EmisarWeb.MCP.{ActionTools, Auth, BoundaryResponse, Cancellation}
   alias EmisarWeb.MCP.{CatalogTools, RecoveryTools, RunbookTools}
   alias EmisarWeb.MCP.ClientMetadata
-  alias EmisarWeb.MCP.{InputContract, Instructions, RawJSON, ResponseBudget, SchemaRegistry}
+  alias EmisarWeb.MCP.{InputContract, Instructions, ResponseBudget, SchemaRegistry}
   alias EmisarWeb.MCP.Transport
   alias EmisarWeb.MCP.ValidationError
 

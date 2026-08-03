@@ -1,7 +1,6 @@
 defmodule EmisarWeb.RunDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Runners, Runs, Users}
-  alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.Permissions
   alias EmisarWeb.RunStatuses
 
@@ -65,7 +64,7 @@ defmodule EmisarWeb.RunDetailLive do
          socket
          |> assign(:page_title, "Run #{run.action_id}")
          |> assign(:run, run)
-         |> assign(:action_args, visible_action_args(run))
+         |> assign(:action_args, visible_action_args(run, subject))
          |> assign(:approval_request, approval_request)
          |> assign(:approval_decider, approval_decider)
          |> assign(:runner_connection, runner_connection(run))
@@ -124,7 +123,7 @@ defmodule EmisarWeb.RunDetailLive do
     {:noreply,
      socket
      |> assign(:run, run)
-     |> assign(:action_args, visible_action_args(run))
+     |> assign(:action_args, visible_action_args(run, socket.assigns.current_subject))
      |> assign(:approval_request, approval_request)
      |> assign(:approval_decider, approval_decider(approval_request))}
   end
@@ -154,9 +153,11 @@ defmodule EmisarWeb.RunDetailLive do
 
   def handle_info(_, socket), do: {:noreply, socket}
 
-  defp visible_action_args(run) do
-    case RawJSON.decode_object(run.args_raw) do
-      {:ok, args} -> RawJSON.redact(args, run.sensitive_arg_names)
+  # Runs owns the decode + sensitivity replacement; an unauthorized or
+  # undecodable projection renders no Arguments panel at all.
+  defp visible_action_args(run, subject) do
+    case Runs.project_action_args(run, subject) do
+      {:ok, args} -> args
       {:error, _reason} -> %{}
     end
   end

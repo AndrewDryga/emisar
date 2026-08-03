@@ -339,6 +339,81 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "secret-value"
   end
 
+  test "renders the resolved command from the redacted arguments", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    # The pack's own schema does NOT declare `module` sensitive, so only the
+    # run's recorded sensitivity can keep the value out of the command line.
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "cloud-init.single_module",
+      pack_id: "cloud-init",
+      kind: "exec",
+      args_schema: %{
+        "args" => [
+          %{"name" => "module", "type" => "string", "required" => true},
+          %{"name" => "frequency", "type" => "string", "default" => "always"}
+        ]
+      }
+    )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "cloud-init.single_module",
+        source: "operator",
+        reason: "re-run module",
+        args_raw: ~s({"module":"secret-module-value"}),
+        sensitive_arg_names: ["module"],
+        expected_pack_hash: PublishedRegistry.get("cloud-init").content_hash
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    # Shell-quoted because the placeholder carries brackets — the same quoting
+    # the runner applies, so the preview still reads as the real command.
+    assert html =~ "cloud-init single &#39;--name=[REDACTED]&#39; --frequency=always"
+    refute html =~ "secret-module-value"
+  end
+
+  test "hides both the arguments and the command when they no longer decode", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "cloud-init.single_module",
+      pack_id: "cloud-init",
+      kind: "exec",
+      args_schema: %{"args" => [%{"name" => "module", "type" => "string", "required" => true}]}
+    )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "cloud-init.single_module",
+        source: "operator",
+        reason: "re-run module",
+        args: %{"module" => "ssh"},
+        status: :pending_approval,
+        expected_pack_hash: PublishedRegistry.get("cloud-init").content_hash
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    Fixtures.Runs.put_malformed_args_raw(run, ~s({"canary":"secret-value",}))
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    refute html =~ "secret-value"
+    refute html =~ "canary"
+    refute html =~ "what the runner will execute"
+  end
+
   test "renders the decision panel for a decider without crashing", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

@@ -14,8 +14,9 @@ defmodule Emisar.Fixtures.Runs do
   @doc """
   Persists a `:success` action run by default. Caller supplies `:account_id`
   (a runner is created in it) or nothing (a fresh account + runner). Override
-  `:status`, `:action_id`, `:source`, `:request_id`, and `:inserted_at` (to land
-  a run in a report window) as needed.
+  `:status`, `:action_id`, `:source`, `:request_id`, `:args_raw`,
+  `:sensitive_arg_names`, and `:inserted_at` (to land a run in a report window)
+  as needed.
   """
   def create_run(attrs \\ %{}) do
     attrs = Map.new(attrs)
@@ -31,7 +32,9 @@ defmodule Emisar.Fixtures.Runs do
       request_id: attrs[:request_id] || Crypto.run_request_id(),
       action_id: attrs[:action_id] || "svc.read",
       source: attrs[:source] || :operator,
-      status: attrs[:status] || :success
+      status: attrs[:status] || :success,
+      args_raw: attrs[:args_raw] || "{}",
+      sensitive_arg_names: attrs[:sensitive_arg_names] || []
     }
 
     {:ok, run} = params |> ActionRun.Changeset.create() |> Repo.insert()
@@ -40,6 +43,18 @@ defmodule Emisar.Fixtures.Runs do
       %DateTime{} = ts -> run |> change(inserted_at: ts) |> Repo.update!()
       nil -> run
     end
+  end
+
+  @doc """
+  Replaces a run's stored argument bytes with a payload the create changeset
+  would have rejected, so a display path can be driven against arguments that
+  were corrupted after the write. Writes the column straight onto the row — a
+  fixture builds rows without a Subject.
+  """
+  def put_malformed_args_raw(%ActionRun{} = run, args_raw) when is_binary(args_raw) do
+    run
+    |> change(args_raw: args_raw)
+    |> Repo.update!()
   end
 
   @doc """

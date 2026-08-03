@@ -2,7 +2,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Catalog, Runners, Runs}
   alias EmisarWeb.{CommandPreview, Permissions, RunbookWorkflowComponents}
-  alias EmisarWeb.MCP.RawJSON
 
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
@@ -80,13 +79,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:run, run)
          |> assign(:execution_plan, execution_plan)
          |> assign(:execution_request?, execution_request?)
-         |> assign(:action_args, visible_action_args(run))
+         |> assign(:action_args, visible_action_args(run, subject))
          |> assign(:action_risk, request_risk(request, subject))
          |> assign(:action_description, action && action.description)
          # The exact command the runner will execute, arguments resolved into
          # the action's template — shown only when our compiled pack is provably
          # the runner's (its pinned hash, or advertised version when unpinned).
-         |> assign(:executed_command, build_command_preview(action, run))
+         |> assign(:executed_command, build_command_preview(action, run, subject))
          |> assign(:runner_connection, runner_connection(run))
          # Approve re-resolves the action's trusted contract and fails closed
          # when it is gone, so an unresolvable action means the panel must not
@@ -272,9 +271,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # template the runner holds. Returns nil (no command card) for a drift, a
   # script-kind action, or a template we can't fully resolve — the raw Arguments
   # card still carries the detail.
-  defp build_command_preview(%Catalog.RunnerAction{} = action, %Runs.ActionRun{} = run) do
+  defp build_command_preview(%Catalog.RunnerAction{} = action, %Runs.ActionRun{} = run, subject) do
     specs = List.wrap(action.args_schema["args"])
 
+    # The preview renders the SAFE projection, so a sensitive value can never
+    # reach the command line even if the action's spec stopped declaring it;
+    # CommandPreview still masks what the spec does declare.
     with {:ok, command} <-
            Catalog.PublishedRegistry.resolve_command(
              action.pack_id,
@@ -282,7 +284,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
              run.expected_pack_hash,
              action.pack_version
            ),
-         {:ok, args} <- RawJSON.decode_object(run.args_raw),
+         {:ok, args} <- Runs.project_action_args(run, subject),
          {:ok, line} <- CommandPreview.render(command, args, specs) do
       line
     else
@@ -290,16 +292,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
-  defp build_command_preview(_action, _run), do: nil
+  defp build_command_preview(_action, _run, _subject), do: nil
 
-  defp visible_action_args(%Runs.ActionRun{} = run) do
-    case RawJSON.decode_object(run.args_raw) do
-      {:ok, args} -> RawJSON.redact(args, run.sensitive_arg_names)
+  # Runs owns the decode + sensitivity replacement; an unauthorized or
+  # undecodable projection renders no Arguments card at all.
+  defp visible_action_args(%Runs.ActionRun{} = run, subject) do
+    case Runs.project_action_args(run, subject) do
+      {:ok, args} -> args
       {:error, _reason} -> %{}
     end
   end
 
-  defp visible_action_args(_run), do: %{}
+  defp visible_action_args(_run, _subject), do: %{}
 
   # The request and the lifecycle facts the page renders move together, so a
   # broadcast, a lapse, or a decision can never leave the two disagreeing.

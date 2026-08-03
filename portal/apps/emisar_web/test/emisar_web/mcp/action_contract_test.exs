@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MCP.ActionContractTest do
   use ExUnit.Case, async: true
   alias Emisar.{ActionContract, JSONNumber}
-  alias EmisarWeb.MCP.RawJSON
+  alias Emisar.RawJSON
 
   test "accepts exact numeric tokens and every supported portable type" do
     action =

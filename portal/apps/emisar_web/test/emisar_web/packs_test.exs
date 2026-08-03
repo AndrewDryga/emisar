@@ -2,8 +2,8 @@ defmodule EmisarWeb.PacksTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.ActionContract
   alias Emisar.Catalog.PublishedRegistry
+  alias Emisar.RawJSON
   alias Emisar.Runbooks
-  alias EmisarWeb.MCP.RawJSON
 
   describe "GET /packs" do
     test "renders 200 and lists every registered pack by id + name", %{conn: conn} do

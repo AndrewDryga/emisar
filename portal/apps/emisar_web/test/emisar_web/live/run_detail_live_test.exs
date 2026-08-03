@@ -59,6 +59,34 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "target_id=#{run.id}"
   end
 
+  test "the Arguments panel shows exact numbers and redacts every sensitive value", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    run =
+      run_with(account, %{
+        args_raw: ~s({"ratio":0.1234567890123456789,"token":"secret-value"}),
+        sensitive_arg_names: ["token"]
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "0.1234567890123456789"
+    assert html =~ "[REDACTED]"
+    refute html =~ "0.12345678901234568"
+    refute html =~ "secret-value"
+  end
+
+  test "arguments that no longer decode render no panel instead of raw bytes", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{})
+    Fixtures.Runs.put_malformed_args_raw(run, ~s({"canary":"secret-value",}))
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    refute html =~ "secret-value"
+    refute html =~ "canary"
+  end
+
   test "a removed runner renders an unlinked label that keeps the full id", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")

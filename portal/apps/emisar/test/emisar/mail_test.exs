@@ -10,6 +10,7 @@ defmodule Emisar.MailTest do
   alias Emisar.Mail
   alias Emisar.Mailers.UserNotifier
   alias Emisar.RequestContext
+  alias Emisar.Runs
 
   describe "suppressed?/1" do
     test "reports a suppressed address case-insensitively (citext key)" do
@@ -346,59 +347,99 @@ defmodule Emisar.MailTest do
 
   describe "approval-needed email content" do
     setup do
-      %{approver: Fixtures.Users.create_user()}
+      approver = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: approver.id,
+          role: "owner"
+        )
+
+      %{
+        account: account,
+        approver: approver,
+        subject: Fixtures.Subjects.membership_subject(membership)
+      }
     end
 
-    test "surfaces action, runner name, reason, args, and the approval link", %{
-      approver: approver
+    test "surfaces action, runner name, reason, redacted args, and the approval link", %{
+      account: account,
+      subject: subject
     } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "edge-1")
+
+      persisted =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "caddy.reload_config",
+          args_raw: ~s({"path":"/etc/caddy","token":"secret-value"}),
+          sensitive_arg_names: ["token"]
+        )
+
+      {:ok, run} = Runs.fetch_run_by_id(persisted.id, subject, preload: [:runner])
+
       request = %{
         id: "req-id-123",
         reason: "rotate the cert",
         matched_rules: ["high → approve"],
-        account: %{slug: "globex"}
+        account: account
       }
 
-      run = %{
-        action_id: "caddy.reload_config",
-        runner: %{name: "edge-1"},
-        runner_id: "rnr-abc",
-        policy_reason: "high risk",
-        matched_rules: ["high → approve"],
-        args: %{"path" => "/etc/caddy"}
-      }
-
-      UserNotifier.deliver_approval_request(approver, request, run)
+      UserNotifier.deliver_approval_request(subject, request, run)
 
       assert_email_sent(fn email ->
         assert email.subject == "Approval needed: caddy.reload_config"
         assert email.text_body =~ "caddy.reload_config"
         assert email.text_body =~ "edge-1"
         assert email.text_body =~ "rotate the cert"
-        assert email.text_body =~ "/etc/caddy"
-        assert email.text_body =~ "/app/globex/approvals/req-id-123"
+        assert email.text_body =~ ~s("path": "/etc/caddy")
+        assert email.text_body =~ ~s("token": "[REDACTED]")
+        refute email.text_body =~ "secret-value"
+        assert email.text_body =~ "people who can approve runs in this workspace."
+        refute email.text_body =~ "decide_approval"
+        assert email.text_body =~ "/app/#{account.slug}/approvals/req-id-123"
         refute email.text_body =~ "/app/approvals/req-id-123"
         true
       end)
     end
 
-    test "labels an unnamed runner by a truncated id", %{approver: approver} do
-      request = %{id: "req-id-9", reason: "x", matched_rules: [], account: %{slug: "acme"}}
+    test "labels a runner it cannot name by a truncated id", %{
+      account: account,
+      subject: subject
+    } do
+      persisted = Fixtures.Runs.create_run(account_id: account.id, action_id: "linux.uptime")
+      {:ok, run} = Runs.fetch_run_by_id(persisted.id, subject)
 
-      run = %{
-        action_id: "linux.uptime",
-        runner: %{name: ""},
-        runner_id: "abcdef0123456789",
-        policy_reason: nil,
-        matched_rules: [],
-        args: %{}
-      }
+      request = %{id: "req-id-9", reason: "x", matched_rules: [], account: account}
 
-      UserNotifier.deliver_approval_request(approver, request, run)
+      UserNotifier.deliver_approval_request(subject, request, run)
 
       assert_email_sent(fn email ->
-        assert email.text_body =~ "id abcdef01…"
-        refute email.text_body =~ "abcdef0123456789"
+        assert email.text_body =~ "id #{String.slice(run.runner_id, 0, 8)}…"
+        refute email.text_body =~ run.runner_id
+        true
+      end)
+    end
+
+    test "shows a non-secret placeholder when the arguments cannot be projected", %{
+      account: account,
+      subject: subject
+    } do
+      persisted = Fixtures.Runs.create_run(account_id: account.id)
+      Fixtures.Runs.put_malformed_args_raw(persisted, ~s({"canary":"secret-value",}))
+      {:ok, run} = Runs.fetch_run_by_id(persisted.id, subject, preload: [:runner])
+
+      request = %{id: "req-id-7", reason: "x", matched_rules: [], account: account}
+
+      UserNotifier.deliver_approval_request(subject, request, run)
+
+      assert_email_sent(fn email ->
+        assert email.text_body =~ "(unavailable)"
+        refute email.text_body =~ "secret-value"
+        refute email.text_body =~ "canary"
         true
       end)
     end
@@ -462,13 +503,18 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    test "skips a suppressed decider", %{approver: approver} do
+    test "skips a suppressed decider", %{
+      account: account,
+      approver: approver,
+      subject: subject
+    } do
       {:ok, _} = Mail.suppress(approver.email, :hard_bounce, "bounce")
-      request = %{id: "r", reason: "x", matched_rules: [], account: %{slug: "acme"}}
-      run = %{action_id: "a", runner: %{name: "n"}, runner_id: "i", policy_reason: nil, args: %{}}
+      persisted = Fixtures.Runs.create_run(account_id: account.id)
+      {:ok, run} = Runs.fetch_run_by_id(persisted.id, subject, preload: [:runner])
+      request = %{id: "r", reason: "x", matched_rules: [], account: account}
 
       assert {:ok, %{suppressed: true}} =
-               UserNotifier.deliver_approval_request(approver, request, run)
+               UserNotifier.deliver_approval_request(subject, request, run)
     end
   end
 

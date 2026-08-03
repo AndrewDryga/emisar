@@ -1,11 +1,13 @@
-defmodule EmisarWeb.MCP.RawJSON do
+defmodule Emisar.RawJSON do
   @moduledoc """
-  Parses the cached MCP request body without normalizing JSON values.
+  Parses JSON without normalizing its values.
 
   The ordinary Plug/Jason projection remains useful for routing, but it cannot
   detect duplicate keys or preserve numeric spelling. This parser supplies the
-  security boundary: it rejects ambiguous JSON recursively and records byte
-  offsets so signed action arguments can be sliced from the original body.
+  security boundary wherever exact bytes matter: it rejects ambiguous JSON
+  recursively and records byte offsets, so signed action arguments can be
+  sliced from an inbound request body and a stored `args_raw` payload can be
+  read back with every number's original token intact.
   """
 
   alias Emisar.JSONNumber
@@ -87,16 +89,6 @@ defmodule EmisarWeb.MCP.RawJSON do
       {:ok, %Node{}} -> {:error, :invalid_json}
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  @doc "Replace sensitive top-level action arguments before display."
-  @spec redact(map(), [String.t()]) :: map()
-  def redact(args, names) when is_map(args) and is_list(names) do
-    Enum.reduce(names, args, fn name, redacted ->
-      if Map.has_key?(redacted, name),
-        do: Map.put(redacted, name, "[REDACTED]"),
-        else: redacted
-    end)
   end
 
   @doc "Extract exact mutation argument sidecars from one tools/call request."

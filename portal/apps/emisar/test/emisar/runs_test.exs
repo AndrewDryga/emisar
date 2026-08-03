@@ -1008,6 +1008,77 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "project_action_args/2" do
+    test "keeps every number's exact spelling through JSON encoding" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          args_raw: ~s({"ratio":0.1234567890123456789,"scale":1e3})
+        )
+
+      assert {:ok, args} = Runs.project_action_args(run, subject)
+      encoded = Jason.encode!(args)
+
+      assert encoded =~ ~s("ratio":0.1234567890123456789)
+      assert encoded =~ ~s("scale":1e3)
+    end
+
+    test "redacts every declared sensitive value and leaves the rest exactly as stored" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          args_raw: ~s({"path":"/etc/caddy","token":"secret-value","password":"hunter2"}),
+          # `api_key` is declared but absent from the payload — a redaction
+          # placeholder for an argument that was never sent would be a lie.
+          sensitive_arg_names: ["token", "password", "api_key"]
+        )
+
+      assert Runs.project_action_args(run, subject) ==
+               {:ok,
+                %{
+                  "path" => "/etc/caddy",
+                  "token" => "[REDACTED]",
+                  "password" => "[REDACTED]"
+                }}
+    end
+
+    test "collapses malformed stored bytes to one reason that carries no payload" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      run = Fixtures.Runs.create_run(account_id: account.id)
+
+      truncated = Fixtures.Runs.put_malformed_args_raw(run, ~s({"canary":"secret-value",}))
+      duplicated = Fixtures.Runs.put_malformed_args_raw(run, ~s({"canary":1,"canary":2}))
+
+      assert Runs.project_action_args(truncated, subject) == {:error, :invalid_action_args}
+      # The parser names the offending key in its own error; the projection
+      # must not pass that key — or the bytes around it — to a presenter.
+      assert Runs.project_action_args(duplicated, subject) == {:error, :invalid_action_args}
+    end
+
+    test "rejects a same-account subject without view_runs before it decodes" do
+      account = Fixtures.Accounts.create_account()
+      run = Fixtures.Runs.create_run(account_id: account.id)
+      malformed = Fixtures.Runs.put_malformed_args_raw(run, ~s({"canary":"secret-value",}))
+
+      assert Runs.project_action_args(malformed, no_permissions_subject(account)) ==
+               {:error, :unauthorized}
+    end
+
+    test "returns not_found for a run in another account before it decodes" do
+      account = Fixtures.Accounts.create_account()
+      run = Fixtures.Runs.create_run(account_id: account.id)
+      malformed = Fixtures.Runs.put_malformed_args_raw(run, ~s({"canary":"secret-value",}))
+
+      {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runs.project_action_args(malformed, other_subject) == {:error, :not_found}
+    end
+  end
+
   describe "fetch_mcp_run_by_id/2" do
     test "returns the exact fixed-contract run and fails closed outside account or scope" do
       %{

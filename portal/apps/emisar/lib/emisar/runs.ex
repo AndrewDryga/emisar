@@ -17,6 +17,7 @@ defmodule Emisar.Runs do
   alias Emisar.Catalog
   alias Emisar.Crypto
   alias Emisar.MCPOperations
+  alias Emisar.RawJSON
   alias Emisar.Repo
   alias Emisar.RequestContext
   alias Emisar.Runs.{ActionRun, Attestation, Authorizer, RunEvent, RunnerError}
@@ -483,6 +484,49 @@ defmodule Emisar.Runs do
       false -> {:error, :not_found}
       other -> other
     end
+  end
+
+  @doc """
+  The display-safe arguments of one run, for every surface that shows an
+  operator what was dispatched.
+
+  Requires `view_runs` and the run's own account. Decodes the exact stored
+  bytes — each number keeps its original spelling — then replaces every present
+  top-level argument named in the run's `sensitive_arg_names` with
+  `"[REDACTED]"`; a declared name the payload doesn't carry is not invented.
+
+  Returns `{:ok, args}`, `{:error, :unauthorized}`, `{:error, :not_found}` for
+  a run outside the subject's account, or `{:error, :invalid_action_args}` when
+  the stored payload doesn't decode.
+  """
+  def project_action_args(%ActionRun{} = run, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, run.account_id),
+         {:ok, args} <- decode_action_args(run.args_raw) do
+      {:ok, redact_sensitive_args(args, run.sensitive_arg_names)}
+    end
+  end
+
+  # Every parser failure collapses to one reason: malformed or ambiguous stored
+  # bytes must never hand a presenter the payload — or the duplicate key — that
+  # broke the decode.
+  defp decode_action_args(args_raw) do
+    case RawJSON.decode_object(args_raw) do
+      {:ok, args} -> {:ok, args}
+      {:error, _reason} -> {:error, :invalid_action_args}
+    end
+  end
+
+  defp redact_sensitive_args(args, names) do
+    Enum.reduce(names, args, fn name, redacted ->
+      if Map.has_key?(redacted, name),
+        do: Map.put(redacted, name, "[REDACTED]"),
+        else: redacted
+    end)
   end
 
   @doc "Fetches one run carrying the complete fixed MCP history contract."
