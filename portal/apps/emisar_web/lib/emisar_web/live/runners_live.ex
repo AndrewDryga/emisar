@@ -5,7 +5,6 @@ defmodule EmisarWeb.RunnersLive do
   alias Emisar.Runners
   alias EmisarWeb.LiveTable
   alias EmisarWeb.RunnerInstall
-  alias EmisarWeb.RunnerPresence
   alias EmisarWeb.UrlHelpers
 
   @reload_debounce_ms 500
@@ -33,12 +32,12 @@ defmodule EmisarWeb.RunnersLive do
   end
 
   def handle_info(%{event: "presence_diff"} = event, socket) do
-    changes = RunnerPresence.normalize(event)
+    change = Runners.normalize_connection_change(event)
 
-    if MapSet.size(changes.topology_ids) > 0 do
+    if Runners.connection_topology_changed?(change) do
       {:noreply, schedule_reload(socket)}
     else
-      runners = Enum.map(socket.assigns.runners, &RunnerPresence.patch_runner(&1, changes))
+      runners = Enum.map(socket.assigns.runners, &Runners.project_runner_connection(&1, change))
       {:noreply, assign(socket, :runners, runners)}
     end
   end

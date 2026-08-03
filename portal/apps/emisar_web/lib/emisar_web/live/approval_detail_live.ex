@@ -3,7 +3,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   alias Emisar.{Approvals, Catalog, Runners, Runs}
   alias EmisarWeb.{CommandPreview, Permissions, RunbookWorkflowComponents}
   alias EmisarWeb.MCP.RawJSON
-  alias EmisarWeb.RunnerPresence
 
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
@@ -328,10 +327,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   def handle_info(%{event: "presence_diff"} = event, socket) do
     connection =
-      RunnerPresence.patch_connection(
+      Runners.project_connection(
         socket.assigns.runner_connection,
         runner_id(socket.assigns.run),
-        RunnerPresence.normalize(event)
+        Runners.normalize_connection_change(event)
       )
 
     {:noreply, assign(socket, :runner_connection, connection)}

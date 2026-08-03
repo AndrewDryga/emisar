@@ -8,9 +8,9 @@ defmodule EmisarWeb.UserAuth do
   use EmisarWeb, :verified_routes
   import Plug.Conn
   import Phoenix.Controller
-  alias Emisar.{Accounts, Auth, Marketing}
+  alias Emisar.{Accounts, Auth, Marketing, Runners}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.{Analytics, MarketingAttribution, RunnerPresence}
+  alias EmisarWeb.{Analytics, MarketingAttribution}
   alias EmisarWeb.RequestContext
 
   # Session provenance for an unauthenticated request — no method, no SSO
@@ -465,8 +465,8 @@ defmodule EmisarWeb.UserAuth do
       if subject && Emisar.Catalog.subject_can_view_packs?(subject),
         do: Emisar.Catalog.subscribe_account_packs(account_id)
 
-      if subject && Emisar.Runners.subject_can_view_runners?(subject),
-        do: Emisar.Runners.subscribe_connections(account_id)
+      if subject && Runners.subject_can_view_runners?(subject),
+        do: Runners.subscribe_connections(account_id)
 
       {:cont,
        socket
@@ -605,9 +605,9 @@ defmodule EmisarWeb.UserAuth do
   # Recompute the nav alert only for join-only or leave-only topology changes;
   # host LiveViews still receive the diff to patch their own visible state.
   defp refresh_fleet_offline(%{event: "presence_diff"} = event, socket) do
-    changes = RunnerPresence.normalize(event)
+    change = Runners.normalize_connection_change(event)
 
-    if MapSet.size(changes.topology_ids) > 0 do
+    if Runners.connection_topology_changed?(change) do
       {:cont, schedule_fleet_recompute(socket)}
     else
       {:cont, socket}
@@ -672,7 +672,7 @@ defmodule EmisarWeb.UserAuth do
   # Fleet-offline alert: computed at mount (assign_new) and kept live by
   # `refresh_fleet_offline` on the account's runner-connections topic.
   defp fleet_offline_for(nil), do: false
-  defp fleet_offline_for(subject), do: Emisar.Runners.fleet_all_offline?(subject)
+  defp fleet_offline_for(subject), do: Runners.fleet_all_offline?(subject)
 
   # "Connect an agent" nudge (the LLM-agents nav dot): no agent key yet AND the
   # fleet exists — a brand-new account's first job is a runner, so nudging
@@ -680,7 +680,7 @@ defmodule EmisarWeb.UserAuth do
   defp no_agents_for(nil), do: false
 
   defp no_agents_for(subject),
-    do: Emisar.ApiKeys.no_agents?(subject) and Emisar.Runners.any_runners?(subject)
+    do: Emisar.ApiKeys.no_agents?(subject) and Runners.any_runners?(subject)
 
   # "Finish onboarding" nudge (the Dashboard nav dot): the account has neither a
   # runner NOR an LLM agent yet, so it can't do anything — a fresh workspace's
@@ -689,7 +689,7 @@ defmodule EmisarWeb.UserAuth do
   defp onboarding_incomplete_for(nil), do: false
 
   defp onboarding_incomplete_for(subject),
-    do: not Emisar.Runners.any_runners?(subject) and Emisar.ApiKeys.no_agents?(subject)
+    do: not Runners.any_runners?(subject) and Emisar.ApiKeys.no_agents?(subject)
 
   defp mount_current_user(session, socket) do
     # When a parent LiveView already mounted the user, inherit both assigns

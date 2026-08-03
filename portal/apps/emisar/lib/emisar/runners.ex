@@ -25,7 +25,7 @@ defmodule Emisar.Runners do
   alias Emisar.{Accounts, Audit, Auth, Billing, Compat, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
-  alias Emisar.Runners.{Authorizer, EnrollmentKey, Presence, Runner, Token}
+  alias Emisar.Runners.{Authorizer, ConnectionChange, EnrollmentKey, Presence, Runner, Token}
   require Logger
 
   # 13 chars for "emkey-enroll-" + 16 random chars => 29.
@@ -1181,6 +1181,40 @@ defmodule Emisar.Runners do
   def connection_state(%Runner{online?: true}), do: :online
   def connection_state(%Runner{last_connected_at: nil}), do: :pending
   def connection_state(%Runner{}), do: :offline
+
+  @doc """
+  Normalizes a broadcast from `subscribe_connections/1` into the connection
+  facts a subscriber projects. Presence spells a heartbeat as the same runner
+  leaving with its old metadata and joining with its new one, so metadata
+  updates are separated from real connects and disconnects here; anything that
+  isn't a presence diff yields the empty change.
+  """
+  def normalize_connection_change(event), do: ConnectionChange.normalize(event)
+
+  @doc "Whether a change contains a real connect or disconnect, not just refreshed metadata."
+  def connection_topology_changed?(change), do: ConnectionChange.topology_changed?(change)
+
+  @doc "Ids of the runners that connected in this change — metadata updates are not joins."
+  def joined_runner_ids(change), do: ConnectionChange.joined_runner_ids(change)
+
+  @doc """
+  Applies a change to a `%Runner{}`'s virtual connection fields. A disconnect
+  clears `action_load` and `last_heartbeat_at` with it; a runner the change
+  doesn't name is returned untouched.
+  """
+  def project_runner_connection(%Runner{} = runner, change),
+    do: ConnectionChange.project_runner(runner, change)
+
+  @doc "Applies a change to one runner's local connection atom, or keeps the current one."
+  def project_connection(current, runner_id, change),
+    do: ConnectionChange.project_connection(current, runner_id, change)
+
+  @doc """
+  Applies a change to a set of online runner ids, scoped to `allowed_ids` — ids
+  outside the caller's current scope neither enter nor survive in the result.
+  """
+  def project_allowed_online_ids(online_ids, change, allowed_ids),
+    do: ConnectionChange.project_allowed_online_ids(online_ids, change, allowed_ids)
 
   # Fill the virtual online?/action_load/last_heartbeat_at fields from
   # presence so read callers get connection state without a second

@@ -2,7 +2,6 @@ defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Catalog, Runners, Runs}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, TransportReason, UrlHelpers}
-  alias EmisarWeb.RunnerPresence
 
   def mount(%{"id" => id}, _session, socket) do
     account_id = socket.assigns.current_account.id
@@ -124,8 +123,8 @@ defmodule EmisarWeb.RunnerDetailLive do
   end
 
   def handle_info(%{event: "presence_diff"} = event, socket) do
-    changes = RunnerPresence.normalize(event)
-    {:noreply, update(socket, :runner, &RunnerPresence.patch_runner(&1, changes))}
+    change = Runners.normalize_connection_change(event)
+    {:noreply, update(socket, :runner, &Runners.project_runner_connection(&1, change))}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}

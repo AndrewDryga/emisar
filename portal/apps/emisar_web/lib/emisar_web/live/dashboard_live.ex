@@ -1,7 +1,6 @@
 defmodule EmisarWeb.DashboardLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog, Runners, Runs, SSO}
-  alias EmisarWeb.RunnerPresence
 
   @reload_debounce_ms 500
 
@@ -42,9 +41,9 @@ defmodule EmisarWeb.DashboardLive do
   # load/1 is ~9 queries. Coalesce those topology changes; heartbeat metadata is
   # ignored by the Presence handler below.
   def handle_info(%{event: "presence_diff"} = event, socket) do
-    changes = RunnerPresence.normalize(event)
+    change = Runners.normalize_connection_change(event)
 
-    if MapSet.size(changes.topology_ids) > 0 do
+    if Runners.connection_topology_changed?(change) do
       {:noreply, schedule_reload(socket)}
     else
       {:noreply, socket}

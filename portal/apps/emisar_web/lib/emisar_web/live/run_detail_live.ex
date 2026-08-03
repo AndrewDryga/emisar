@@ -3,7 +3,6 @@ defmodule EmisarWeb.RunDetailLive do
   alias Emisar.{Approvals, Runners, Runs, Users}
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.Permissions
-  alias EmisarWeb.RunnerPresence
   alias EmisarWeb.RunStatuses
 
   # The output terminal shows the most-recent N chunks — the live stream caps at
@@ -144,10 +143,10 @@ defmodule EmisarWeb.RunDetailLive do
 
   def handle_info(%{event: "presence_diff"} = event, socket) do
     connection =
-      RunnerPresence.patch_connection(
+      Runners.project_connection(
         socket.assigns.runner_connection,
         socket.assigns.run.runner_id,
-        RunnerPresence.normalize(event)
+        Runners.normalize_connection_change(event)
       )
 
     {:noreply, assign(socket, :runner_connection, connection)}
