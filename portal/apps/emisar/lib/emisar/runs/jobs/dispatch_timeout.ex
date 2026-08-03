@@ -12,25 +12,27 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
   require Logger
 
   @dispatch_grace_secs 120
-  @redispatch_deadline_secs 600
+
+  @doc "Whether the sweep clock has reached a run's published dispatch deadline. Pure."
+  def deadline_reached?(%DateTime{} = now, %DateTime{} = deadline),
+    do: DateTime.compare(now, deadline) != :lt
 
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(_config) do
     now = DateTime.utc_now()
     grace_cutoff = DateTime.add(now, -@dispatch_grace_secs, :second)
-    redispatch_deadline = DateTime.add(now, -@redispatch_deadline_secs, :second)
 
     stale_dispatches = Runs.list_stale_dispatches(grace_cutoff)
 
     stale_dispatches
     |> Enum.filter(&(&1.status == :sent))
-    |> Enum.each(&resolve_stale_dispatch(&1, redispatch_deadline))
+    |> Enum.each(&resolve_stale_dispatch(&1, now))
 
     stale_dispatches
     |> Enum.filter(&(&1.status == :pending))
     |> Enum.group_by(& &1.runner_id)
     |> Enum.each(fn {_runner_id, runs} ->
-      resolve_stale_pending_dispatches(runs, redispatch_deadline)
+      resolve_stale_pending_dispatches(runs)
     end)
 
     Runs.list_running_runs()
@@ -39,19 +41,19 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
     :ok
   end
 
-  defp resolve_stale_pending_dispatches([oldest | _] = runs, redispatch_deadline) do
+  defp resolve_stale_pending_dispatches([oldest | _] = runs) do
     case Runners.peek_runner_by_id(oldest.runner_id) do
       %Runners.Runner{} = runner ->
-        resolve_stale_pending_dispatches(runs, runner, oldest, redispatch_deadline)
+        resolve_stale_pending_dispatches(runs, runner, oldest)
 
       nil ->
         Enum.each(runs, &Runs.mark_errored(&1, removed_runner_reason(&1)))
     end
   end
 
-  defp resolve_stale_pending_dispatches([], _redispatch_deadline), do: :ok
+  defp resolve_stale_pending_dispatches([]), do: :ok
 
-  defp resolve_stale_pending_dispatches(runs, runner, oldest, _redispatch_deadline) do
+  defp resolve_stale_pending_dispatches(runs, runner, oldest) do
     case Runners.current_connection_generation(runner.account_id, runner.id) do
       {:ok, _generation} ->
         Runs.dispatch_to_runner(oldest)
@@ -61,24 +63,26 @@ defmodule Emisar.Runs.Jobs.DispatchTimeout do
     end
   end
 
-  defp resolve_stale_dispatch(run, redispatch_deadline) do
+  defp resolve_stale_dispatch(run, now) do
     case Runners.peek_runner_by_id(run.runner_id) do
       %Runners.Runner{} = runner ->
-        resolve_stale_dispatch(run, runner, redispatch_deadline)
+        resolve_stale_dispatch(run, runner, now)
 
       nil ->
         mark_stale_dispatch_errored(run, removed_runner_reason(run))
     end
   end
 
-  defp resolve_stale_dispatch(%{status: :sent} = run, runner, redispatch_deadline) do
+  defp resolve_stale_dispatch(%{status: :sent} = run, runner, now) do
+    %{dispatch_deadline_at: deadline} = Runs.run_outcome_facts(run)
+
     case Runners.current_connection_generation(runner.account_id, runner.id) do
       {:error, :not_connected} ->
         mark_stale_dispatch_errored(run, unreachable_reason(run, runner))
 
       {:ok, generation} ->
         cond do
-          DateTime.compare(run.queued_at, redispatch_deadline) == :lt ->
+          deadline_reached?(now, deadline) ->
             mark_stale_dispatch_errored(run, never_acknowledged_reason(runner))
 
           run.runner_connection_generation != generation ->

@@ -122,6 +122,122 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "run_outcome_facts/1" do
+    test "gives every status its terminality and its fixed cause" do
+      expected = %{
+        pending: {false, nil},
+        pending_approval: {false, nil},
+        sent: {false, nil},
+        running: {false, nil},
+        cancelling: {false, nil},
+        success: {true, nil},
+        denied: {true, "Denied by policy."},
+        failed: {true, "The action failed."},
+        error: {true, "The run ended with an error."},
+        validation_failed: {true, "The runner returned an invalid result."},
+        unknown_action: {true, "The runner does not recognize this action."},
+        cancelled: {true, nil},
+        timed_out: {true, "The action timed out."},
+        refused: {true, "The runner refused the dispatch."}
+      }
+
+      assert Enum.sort(Map.keys(expected)) == Enum.sort(Ecto.Enum.values(ActionRun, :status))
+
+      for {status, {terminal?, error_message}} <- expected do
+        facts = Runs.run_outcome_facts(%ActionRun{status: status})
+
+        assert facts.status == status
+        assert facts.terminal? == terminal?, "expected #{status} terminal? to be #{terminal?}"
+        assert facts.error_message == error_message, "wrong fixed cause for #{status}"
+      end
+    end
+
+    test "carries exactly the outcome contract" do
+      queued_at = ~U[2026-07-13 14:42:10.000000Z]
+      run = %ActionRun{status: :sent, queued_at: queued_at, error_message: "runner detail"}
+
+      assert Runs.run_outcome_facts(run) == %{
+               status: :sent,
+               terminal?: false,
+               error_message: nil,
+               output_complete: nil,
+               approval_pending?: false,
+               dispatch_deadline_at: ~U[2026-07-13 14:52:10.000000Z],
+               local_audit_failed?: false
+             }
+    end
+
+    test "reports output completeness only once the run has settled" do
+      completeness = fn status, complete? ->
+        %ActionRun{status: status, output_complete: complete?}
+        |> Runs.run_outcome_facts()
+        |> Map.fetch!(:output_complete)
+      end
+
+      assert completeness.(:success, true) == true
+      assert completeness.(:failed, false) == false
+      assert completeness.(:running, true) == nil
+      assert completeness.(:sent, false) == nil
+    end
+
+    test "flags only a run waiting on an approval decision" do
+      assert Runs.run_outcome_facts(%ActionRun{status: :pending_approval}).approval_pending?
+      refute Runs.run_outcome_facts(%ActionRun{status: :pending}).approval_pending?
+      refute Runs.run_outcome_facts(%ActionRun{status: :cancelled}).approval_pending?
+    end
+
+    test "reports the local-audit warning without changing the outcome" do
+      facts = Runs.run_outcome_facts(%ActionRun{status: :success, local_audit_failed: true})
+
+      assert facts.local_audit_failed?
+      assert facts.status == :success
+      assert facts.error_message == nil
+      refute Runs.run_outcome_facts(%ActionRun{status: :success}).local_audit_failed?
+    end
+
+    test "dates a sent run's dispatch deadline ten minutes after it was queued" do
+      queued_at = DateTime.utc_now()
+      sent = Runs.run_outcome_facts(%ActionRun{status: :sent, queued_at: queued_at})
+
+      assert sent.dispatch_deadline_at == DateTime.add(queued_at, 600, :second)
+      assert Runs.run_outcome_facts(%ActionRun{status: :sent}).dispatch_deadline_at == nil
+
+      for status <- Ecto.Enum.values(ActionRun, :status) -- [:sent] do
+        facts = Runs.run_outcome_facts(%ActionRun{status: status, queued_at: queued_at})
+        assert facts.dispatch_deadline_at == nil, "#{status} must not carry a dispatch deadline"
+      end
+    end
+
+    test "never relays a recorded reason, policy reason, or runner message" do
+      canary = "password=do-not-echo"
+
+      runs = [
+        %ActionRun{status: :failed, reason: canary},
+        %ActionRun{status: :error, reason_text: canary},
+        %ActionRun{status: :denied, policy_reason: canary},
+        %ActionRun{status: :refused, error_message: canary},
+        %ActionRun{status: :cancelled, reason_text: canary}
+      ]
+
+      for run <- runs do
+        facts = Runs.run_outcome_facts(run)
+        without_text = Runs.run_outcome_facts(%ActionRun{status: run.status})
+
+        refute inspect(facts) =~ canary, "#{run.status} leaked untrusted text"
+        assert facts.error_message == without_text.error_message
+      end
+    end
+
+    test "never lets cancellation text classify the model-facing outcome" do
+      for reason_text <- ["approval denied", "approval denied: password=do-not-echo"] do
+        facts = Runs.run_outcome_facts(%ActionRun{status: :cancelled, reason_text: reason_text})
+
+        assert facts.error_message == nil
+        refute inspect(facts) =~ reason_text
+      end
+    end
+  end
+
   describe "run_who_via/1" do
     test "names an operator through only the run account's initiating membership" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()

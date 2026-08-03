@@ -80,6 +80,13 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     run |> Ecto.Changeset.change(queued_at: queued_at) |> Repo.update!()
   end
 
+  test "the dispatch deadline is reached at equality" do
+    deadline = ~U[2026-07-13 14:52:10.000000Z]
+
+    assert DispatchTimeout.deadline_reached?(deadline, deadline)
+    refute DispatchTimeout.deadline_reached?(DateTime.add(deadline, -1, :microsecond), deadline)
+  end
+
   test "an online runner's stale sent run is re-dispatched, not failed" do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = sent_run_for(runner, 5 * 60)
@@ -90,6 +97,20 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert reloaded.status == :sent
     # The dispatch path re-stamped sent_at — proof it was re-sent, not no-op'd.
     assert DateTime.compare(reloaded.sent_at, run.sent_at) == :gt
+  end
+
+  # The deadline Runs publishes is `queued_at + 600`, and the sweep expires a
+  # run once its own clock has reached it — so the run queued exactly ten
+  # minutes ago is already out of redelivery, not given one more sweep.
+  test "an online runner's sent run is expired the moment it reaches the deadline" do
+    runner = Fixtures.Runners.create_runner(connected?: true)
+    expired = sent_run_for(runner, 10 * 60)
+    eligible = sent_run_for(runner, 9 * 60)
+
+    assert :ok = DispatchTimeout.execute([])
+
+    assert Runs.peek_run_by_id(expired.id).status == :error
+    assert Runs.peek_run_by_id(eligible.id).status == :sent
   end
 
   test "an online runner that never acknowledges past the deadline goes terminal" do

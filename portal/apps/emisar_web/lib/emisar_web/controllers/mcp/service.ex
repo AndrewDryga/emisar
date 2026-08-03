@@ -13,7 +13,6 @@ defmodule EmisarWeb.MCP.Service do
 
   @recheck_interval_ms 2_000
   @max_output_events 32
-  @max_error_message_bytes 1_024
   # Raw-byte budget for ONE tail read. Bounds memory and sizes a frame; the
   # frame's real ceiling is enforced by `fits_frame?/1`, not by this number.
   @max_tail_read_bytes 200 * 1_024
@@ -177,7 +176,8 @@ defmodule EmisarWeb.MCP.Service do
   defp flag_output_gap(summary, true), do: Map.put(summary, :output_complete, false)
 
   defp base_run_fields(run, subject) do
-    {approval, approval_wait_until} = fixed_approval(run, subject)
+    facts = Runs.run_outcome_facts(run)
+    {approval, approval_wait_until} = fixed_approval(run, subject, facts.approval_pending?)
 
     %{
       run_id: run.id,
@@ -187,16 +187,16 @@ defmodule EmisarWeb.MCP.Service do
       runner_ref: run.runner_ref,
       runbook_execution_id: run.runbook_execution_id,
       step_id: run.runbook_step_id,
-      status: to_string(run.status),
+      status: to_string(facts.status),
       created_at: run.inserted_at,
       finished_at: run.finished_at,
       exit_code: run.exit_code,
       duration_ms: run.duration_ms,
-      error_message: fixed_error_message(run),
-      output_complete: if(terminal_output_complete(run) == false, do: false),
-      local_audit_failed: if(run.local_audit_failed, do: true),
+      error_message: facts.error_message,
+      output_complete: if(facts.output_complete == false, do: false),
+      local_audit_failed: if(facts.local_audit_failed?, do: true),
       approval: approval,
-      wait_until: approval_wait_until || fixed_wait_until(run),
+      wait_until: approval_wait_until || facts.dispatch_deadline_at,
       run_url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runs/#{run.id}"
     }
   end
@@ -367,18 +367,14 @@ defmodule EmisarWeb.MCP.Service do
       (is_integer(total_bytes) and total_bytes > byte_size(preview))
   end
 
-  defp terminal_output_complete(%{status: status, output_complete: complete?}) do
-    if Runs.terminal_status?(status), do: complete?, else: nil
-  end
-
-  defp fixed_approval(%{status: :pending_approval} = run, subject) do
+  defp fixed_approval(run, subject, true) do
     case Approvals.fetch_request_for_visible_run(run, subject) do
       {:ok, request} -> {approval_summary(request, subject), request.expires_at}
       _ -> {nil, nil}
     end
   end
 
-  defp fixed_approval(_run, _subject), do: {nil, nil}
+  defp fixed_approval(_run, _subject, false), do: {nil, nil}
 
   @doc """
   The bounded `{request_id, url, expires_at}` approval object shared by run
@@ -392,39 +388,6 @@ defmodule EmisarWeb.MCP.Service do
       expires_at: request.expires_at
     }
   end
-
-  # Policy and approval causes are control-plane facts. Do not substitute the
-  # operator's freeform run reason here: it is untrusted context and may carry
-  # action-specific secrets.
-  defp fixed_error_message(%{status: :denied} = run),
-    do: policy_denial_preview(run.policy_reason)
-
-  defp fixed_error_message(%{
-         status: :cancelled,
-         reason_text: <<"approval denied", _::binary>> = reason
-       }),
-       do: error_message_preview(reason)
-
-  defp fixed_error_message(%{error_message: message}), do: error_message_preview(message)
-
-  defp policy_denial_preview(reason) when is_binary(reason) do
-    if String.trim(reason) == "" do
-      "Denied by policy: no specific policy reason was recorded."
-    else
-      error_message_preview("Denied by policy: " <> reason)
-    end
-  end
-
-  defp policy_denial_preview(_reason),
-    do: "Denied by policy: no specific policy reason was recorded."
-
-  # DispatchTimeout gives an acknowledged-or-terminal decision ten minutes
-  # after queueing. Expose that durable deadline rather than inventing a wait
-  # horizon from this particular HTTP request.
-  defp fixed_wait_until(%{status: :sent, queued_at: %DateTime{} = queued_at}),
-    do: DateTime.add(queued_at, 600, :second)
-
-  defp fixed_wait_until(_run), do: nil
 
   defp fixed_run_next(
          %{id: run_id},
@@ -668,31 +631,6 @@ defmodule EmisarWeb.MCP.Service do
 
   defp drop_incomplete_utf8_prefix(_value, _dropped), do: ""
 
-  defp error_message_preview(nil), do: nil
-
-  defp error_message_preview(message) when byte_size(message) <= @max_error_message_bytes,
-    do: message
-
-  defp error_message_preview(message) do
-    suffix = "..."
-    prefix_bytes = @max_error_message_bytes - byte_size(suffix)
-
-    prefix =
-      message
-      |> binary_part(0, prefix_bytes)
-      |> drop_incomplete_utf8_suffix(0)
-
-    prefix <> suffix
-  end
-
-  defp drop_incomplete_utf8_suffix(value, dropped) when dropped < 4 do
-    if String.valid?(value),
-      do: value,
-      else: drop_incomplete_utf8_suffix(init_binary(value), dropped + 1)
-  end
-
-  defp drop_incomplete_utf8_suffix(_value, _dropped), do: ""
   defp tl_binary(<<_byte, rest::binary>>), do: rest
   defp tl_binary(<<>>), do: <<>>
-  defp init_binary(value), do: binary_part(value, 0, byte_size(value) - 1)
 end

@@ -23,6 +23,8 @@ defmodule Emisar.Runs do
   alias Emisar.Users
   require Logger
 
+  @sent_dispatch_deadline_secs 600
+
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
   end
@@ -53,6 +55,50 @@ defmodule Emisar.Runs do
   single source of truth, so no caller re-lists the terminal set.
   """
   def terminal_status?(status), do: ActionRun.terminal?(status)
+
+  @doc """
+  The safe outcome facts of one run, for any adapter describing it to an
+  operator or a model.
+
+  Returns `status`, whether it is `terminal?`, a fixed `error_message` chosen by
+  that status alone (`nil` when the outcome carries no cause),
+  `output_complete` once the run is terminal (`nil` while it can still stream),
+  whether it waits on a human as `approval_pending?`, the durable
+  `dispatch_deadline_at` a `:sent` run is judged against, and the
+  `local_audit_failed?` warning. Pure.
+  """
+  def run_outcome_facts(%ActionRun{} = run) do
+    terminal? = terminal_status?(run.status)
+
+    %{
+      status: run.status,
+      terminal?: terminal?,
+      error_message: safe_error_message(run),
+      output_complete: if(terminal?, do: run.output_complete),
+      approval_pending?: run.status == :pending_approval,
+      dispatch_deadline_at: dispatch_deadline_at(run),
+      local_audit_failed?: run.local_audit_failed
+    }
+  end
+
+  defp safe_error_message(%ActionRun{status: status}), do: status_error_message(status)
+
+  # The cause is the lifecycle outcome and nothing else. A runner message, a
+  # policy reason, and an operator reason are all untrusted or sensitive text —
+  # none of them is ever copied into a message an adapter may relay.
+  defp status_error_message(:denied), do: "Denied by policy."
+  defp status_error_message(:failed), do: "The action failed."
+  defp status_error_message(:error), do: "The run ended with an error."
+  defp status_error_message(:validation_failed), do: "The runner returned an invalid result."
+  defp status_error_message(:unknown_action), do: "The runner does not recognize this action."
+  defp status_error_message(:timed_out), do: "The action timed out."
+  defp status_error_message(:refused), do: "The runner refused the dispatch."
+  defp status_error_message(_status), do: nil
+
+  defp dispatch_deadline_at(%ActionRun{status: :sent, queued_at: %DateTime{} = queued_at}),
+    do: DateTime.add(queued_at, @sent_dispatch_deadline_secs, :second)
+
+  defp dispatch_deadline_at(%ActionRun{}), do: nil
 
   @doc """
   Human-first run attribution as `{who, via}`, for a run read with

@@ -1536,7 +1536,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(gappy_summary, "stderr")
   end
 
-  test "recent history exposes a terminal failure cause only when recorded", %{
+  test "recent history states a terminal failure by status, never by the recorded cause", %{
     conn: conn,
     account: account,
     subject: subject,
@@ -1545,7 +1545,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runner = setup_runner!(account, subject, "failure-summary")
     failed_run = create_mcp_history_run!(account, runner, key, 1)
     successful_run = create_mcp_history_run!(account, runner, key, 2)
-    cause = "runner could not durably reserve this dispatch; action was not executed"
+    cause = "reserve failed for €dmin@db1: " <> String.duplicate("runner detail ", 100)
 
     assert {:ok, _finished} =
              Fixtures.Runs.finish(failed_run, %{
@@ -1561,7 +1561,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     failed_summary = Enum.find(summaries, &(&1["run_id"] == failed_run.id))
     successful_summary = Enum.find(summaries, &(&1["run_id"] == successful_run.id))
 
-    assert failed_summary["error_message"] == cause
+    assert failed_summary["error_message"] == "The action failed."
+    refute Jason.encode!(summaries) =~ "€dmin@db1"
     refute Map.has_key?(successful_summary, "error_message")
   end
 
@@ -1630,35 +1631,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(recovered, "next")
   end
 
-  test "recent runs byte-bound terminal failure causes without breaking UTF-8", %{
-    conn: conn,
-    account: account,
-    subject: subject,
-    key: key
-  } do
-    runner = setup_runner!(account, subject, "bounded-failure-summary")
-    run = create_mcp_history_run!(account, runner, key, 1)
-    cause = String.duplicate("€", 600)
-
-    assert {:ok, _finished} =
-             Fixtures.Runs.finish(run, %{
-               "status" => "failed",
-               "error" => cause
-             })
-
-    summary =
-      conn
-      |> call("recent_runs", %{})
-      |> Map.fetch!("runs")
-      |> Enum.find(&(&1["run_id"] == run.id))
-
-    preview = summary["error_message"]
-    assert byte_size(preview) <= 1_024
-    assert String.valid?(preview)
-    assert String.ends_with?(preview, "...")
-    refute preview == cause
-  end
-
   test "recent history explains policy denials and approval rejections without operator input", %{
     conn: conn,
     account: account,
@@ -1710,22 +1682,17 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     generic_summary = Enum.find(summaries, &(&1["run_id"] == generic_denied_run.id))
     approval_summary = Enum.find(summaries, &(&1["run_id"] == approval_run.id))
 
-    assert default_summary["error_message"] ==
-             "Denied by policy: Default for critical-risk actions"
+    for summary <- [default_summary, explicit_summary, generic_summary] do
+      assert summary["error_message"] == "Denied by policy."
+    end
 
-    assert String.starts_with?(
-             explicit_summary["error_message"],
-             "Denied by policy: Override: block-critical"
-           )
+    refute Map.has_key?(approval_summary, "error_message")
 
-    assert generic_summary["error_message"] ==
-             "Denied by policy: no specific policy reason was recorded."
-
-    assert approval_summary["error_message"] == "approval denied: not during the change freeze"
-    refute Jason.encode!(summaries) =~ secret
-
-    assert byte_size(explicit_summary["error_message"]) <= 1_024
-    assert String.valid?(explicit_summary["error_message"])
+    encoded = Jason.encode!(summaries)
+    refute encoded =~ secret
+    refute encoded =~ "block-critical"
+    refute encoded =~ "critical-risk actions"
+    refute encoded =~ "change freeze"
   end
 
   test "wait_for_run rejects a deadline above the repeatable 60-second window", %{conn: conn} do

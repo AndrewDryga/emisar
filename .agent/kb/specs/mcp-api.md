@@ -1327,10 +1327,14 @@ bypasses the caller's current runner scope.
 
 Every run summary carries `operation_id`, exact `action_id` and `pack_ref`,
 `runner_ref`, `status`, and `created_at`; terminal rows may add `finished_at`.
-Failed, refused, or errored rows add `error_message` when the runner or control
-plane recorded a cause, so the caller does not have to infer one from empty
-output or a synthetic exit code. The summary keeps a UTF-8-safe prefix of at
-most 1,024 bytes; longer causes end in `...`.
+Denied, failed, refused, and errored rows add `error_message`, so the caller
+does not have to infer the outcome from empty output or a synthetic exit code.
+It is a fixed message chosen by the run's status and classification alone — one
+of a closed set of short sentences. It never copies runner output, a runner's
+recorded failure text, a policy reason, an approver's denial reason, or the
+dispatching operator's own reason, so a cause the control plane recorded stays
+on the portal run page and in the audit record. Where the exact cause matters,
+follow `run_url`.
 When a typed action succeeds, the summary may also carry the exact redacted
 `structured_output` object that passed the pack schema. The object is never
 partially truncated. Multi-run responses allocate a separate 64 KiB aggregate
@@ -1364,14 +1368,14 @@ runbook plan or relying on a separate lookup per row.
 }
 ```
 
-A terminal failure exposes the recorded cause directly:
+A terminal failure states its outcome, not its recorded cause:
 
 ```json
 {
   "status": "failed",
   "exit_code": -1,
   "duration_ms": 0,
-  "error_message": "runner could not durably reserve this dispatch; action was not executed"
+  "error_message": "The action failed."
 }
 ```
 
