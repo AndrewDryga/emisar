@@ -40,6 +40,11 @@ defmodule Emisar.Runners do
   @install_eviction_grace_seconds 60
   @connection_lease_seconds 120
 
+  # Matches EmisarWeb.RunnerSocket's heartbeat timeout: past this age the socket
+  # is already closing the connection, so a stale reading is an imminent drop,
+  # never a re-derived liveness verdict of our own.
+  @heartbeat_stale_after_seconds 90
+
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
   end
@@ -332,31 +337,6 @@ defmodule Emisar.Runners do
 
   defp selected_group("random_one", ["group:" <> group]), do: group
   defp selected_group(_selection, _refs), do: nil
-
-  @doc """
-  Counts the complete runner fleet visible to the subject without materializing
-  runner rows. Presence supplies current online ids; the database aggregate
-  partitions the scoped fleet into online, offline, pending, and disabled.
-  """
-  def fetch_fleet_health(%Subject{account: %{id: account_id}} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runners_permission()
-           ) do
-      counts =
-        Runner.Query.not_deleted()
-        |> scope_to_subject_membership(subject)
-        |> Runner.Query.fleet_health(Map.keys(connection_metas(account_id)))
-        |> Authorizer.for_subject(subject)
-        |> Repo.one()
-
-      offline = max(counts.total - counts.online - counts.pending - counts.disabled, 0)
-      {:ok, Map.put(counts, :offline, offline) |> Map.delete(:total)}
-    end
-  end
-
-  def fetch_fleet_health(%Subject{}), do: {:error, :unauthorized}
 
   # Membership access is current authorization data, not session state. Resolve
   # the active membership before every runner query so suspension, deletion, and
@@ -1114,62 +1094,10 @@ defmodule Emisar.Runners do
   def connection_metas(account_id), do: Presence.list(Presence.topic(account_id))
 
   @doc """
-  Whether the account's whole active fleet is offline — there's at least one
-  billable (active, non-disabled) runner and every one of them is currently
-  disconnected. Drives the "all runners offline" nav alert (Option B). Requires
-  `view_runners`; returns `false` for a subject with no account or without the
-  permission — i.e. no badge. A bare boolean, matching the sidebar count badges.
-  """
-  def fleet_all_offline?(%Subject{account: %{id: _account_id}} = subject) do
-    case fetch_fleet_health(subject) do
-      {:ok, counts} ->
-        counts.online == 0 and counts.offline + counts.pending > 0
-
-      {:error, _reason} ->
-        false
-    end
-  end
-
-  def fleet_all_offline?(%Subject{}), do: false
-
-  @doc "Whether the subject can see ANY active runner — sequences fleet-dependent nudges."
-  def any_runners?(%Subject{} = subject) do
-    case fetch_fleet_health(subject) do
-      {:ok, counts} -> counts.online + counts.offline + counts.pending > 0
-      {:error, _reason} -> false
-    end
-  end
-
-  @doc """
-  Whether the account's whole active fleet is signed-only — there's at least one
-  billable (active, non-disabled) runner and every one of them advertises
-  `enforce_signatures`, so the portal can't dispatch to any of them. Drives the
-  runners-index "fleet is signed-only" notice. Requires `view_runners`; returns
-  `false` for a subject with no account or without the permission. A bare boolean.
-  """
-  def fleet_all_signed?(%Subject{account: %{id: account_id}} = subject) do
-    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
-      :ok ->
-        active =
-          Runner.Query.not_deleted()
-          |> Runner.Query.not_disabled()
-          |> Runner.Query.by_account_id(account_id)
-
-        total = Repo.aggregate(active, :count, :id)
-        total > 0 and Repo.aggregate(Runner.Query.enforcing(active), :count, :id) == total
-
-      _ ->
-        false
-    end
-  end
-
-  def fleet_all_signed?(%Subject{}), do: false
-
-  @doc """
   Derived connection state for a runner struct carrying the virtual
   `online?` field (set by `list_runners_for_account/2` and
-  `fetch_runner_by_id/3` from presence). `:disabled` and `:pending`
-  win over a stale socket so the operator UI reads true.
+  `fetch_runner_by_id/3` from presence). `:disabled` wins over stale presence
+  metadata; a never-connected runner with no presence is `:pending`.
   """
   # No heartbeat-age `:stale` state by design — liveness is enforced at the
   # socket, not re-derived from `last_heartbeat_at`: the runner heartbeats every
@@ -1177,10 +1105,315 @@ defmodule Emisar.Runners do
   # after 90s with no heartbeat (EmisarWeb.RunnerSocket). A silent runner drops
   # to `:offline` within 90s rather than lingering "online but stale", so an
   # `online?` runner is one that has heartbeated recently — the binary is honest.
+  # `runner_readiness/2` reports heartbeat age as its OWN advisory fact, beside
+  # this state rather than folded into it.
   def connection_state(%Runner{disabled_at: %DateTime{}}), do: :disabled
   def connection_state(%Runner{online?: true}), do: :online
   def connection_state(%Runner{last_connected_at: nil}), do: :pending
   def connection_state(%Runner{}), do: :offline
+
+  @doc """
+  Pure readiness projection for one presence-decorated runner — the stable facts
+  every operator surface classifies on, each carrying an explicit reason atom so
+  the web picks wording instead of re-deriving posture from raw columns:
+
+    * `:connection` — `connection_state/1`'s atom plus why it holds
+    * `:heartbeat` — heartbeat freshness, judged ONLY while presence says the
+      runner is online (an offline row's last heartbeat is history, not
+      liveness); `#{@heartbeat_stale_after_seconds}s` matches the socket's own
+      heartbeat timeout, and the timestamps stay on the fact so a caller can
+      render them
+    * `:signatures` — whether the runner refuses unsigned dispatch
+    * `:degradation` — the packs its loader skipped, as advertised
+    * `:portal_dispatch` — what the portal may do right now: `:disabled` and
+      signature enforcement block first, then the connection state decides.
+      Stale heartbeats and degraded packs are advisory and never change it
+
+  `now` is injectable so a caller can project a fixed instant.
+  """
+  def runner_readiness(%Runner{} = runner, now \\ DateTime.utc_now()) do
+    connection = readiness_connection(runner)
+    signatures = readiness_signatures(runner)
+
+    %{
+      runner_id: runner.id,
+      connection: connection,
+      heartbeat: readiness_heartbeat(runner, connection, now),
+      signatures: signatures,
+      degradation: readiness_degradation(runner),
+      portal_dispatch: readiness_portal_dispatch(connection, signatures),
+      action_load: readiness_action_load(runner.action_load)
+    }
+  end
+
+  @doc """
+  Pure fleet projection over an ALREADY-scoped runner list: every runner's
+  `runner_readiness/2` rolled into counts, one fleet-wide signature mode, and
+  the stable reason atoms a surface turns into copy.
+
+  Connection and portal-dispatch counts partition the whole list. `stale`,
+  `signed_only`, `degraded`, and `degraded_packs` cover only the ACTIVE
+  (non-disabled) runners — a disabled runner's posture isn't actionable — and
+  `signature_mode` is computed over that same active set, so a disabled
+  non-enforcing runner can't keep a fleet from reading signed-only.
+  """
+  def fleet_status(runners, now \\ DateTime.utc_now()) when is_list(runners) do
+    readiness = Enum.map(runners, &runner_readiness(&1, now))
+    {active, disabled} = Enum.split_with(readiness, &(&1.connection.state != :disabled))
+    build_fleet_status(fleet_counts(readiness, active, disabled))
+  end
+
+  @doc """
+  The subject's complete scoped fleet as one `fleet_status/2` projection,
+  counted in the database — the nav, the runners index, and the fleet-dependent
+  nudges all ask on common paths, so no runner row is materialized. The
+  `view_runners` permission, the membership's CURRENT runner access, and the
+  Authorizer's account scope all apply, so a runner the caller can't see never
+  reaches the counts; Presence stays the authority on who is online and whose
+  heartbeat has aged out. `:now` projects a fixed instant. Returns
+  `{:ok, status} | {:error, :unauthorized}`.
+  """
+  def fetch_fleet_status(subject, opts \\ [])
+
+  def fetch_fleet_status(%Subject{account: %{id: account_id}} = subject, opts) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      now = Keyword.get(opts, :now, DateTime.utc_now())
+      metas = connection_metas(account_id)
+
+      aggregate =
+        Runner.Query.not_deleted()
+        |> scope_to_subject_membership(subject)
+        |> Runner.Query.fleet_status(Map.keys(metas), stale_heartbeat_ids(metas, now))
+        |> Authorizer.for_subject(subject)
+        |> Repo.one()
+
+      {:ok, build_fleet_status(aggregate_counts(aggregate))}
+    end
+  end
+
+  def fetch_fleet_status(%Subject{}, _opts), do: {:error, :unauthorized}
+
+  defp readiness_connection(%Runner{} = runner) do
+    state = connection_state(runner)
+    %{state: state, reason: connection_reason(state)}
+  end
+
+  defp connection_reason(:disabled), do: :disabled
+  defp connection_reason(:online), do: :presence_online
+  defp connection_reason(:pending), do: :never_connected
+  defp connection_reason(:offline), do: :presence_absent
+
+  defp readiness_heartbeat(%Runner{last_heartbeat_at: nil} = runner, %{state: :online}, _now),
+    do: heartbeat_fact(runner, :awaiting_first, :awaiting_first_heartbeat)
+
+  defp readiness_heartbeat(%Runner{last_heartbeat_at: at} = runner, %{state: :online}, now) do
+    if DateTime.diff(now, at, :second) >= @heartbeat_stale_after_seconds do
+      heartbeat_fact(runner, :stale, :heartbeat_stale)
+    else
+      heartbeat_fact(runner, :fresh, :heartbeat_recent)
+    end
+  end
+
+  defp readiness_heartbeat(%Runner{} = runner, _connection, _now),
+    do: heartbeat_fact(runner, :unavailable, :not_online)
+
+  defp heartbeat_fact(%Runner{} = runner, state, reason) do
+    %{
+      state: state,
+      reason: reason,
+      at: runner.last_heartbeat_at,
+      connected_at: runner.last_connected_at
+    }
+  end
+
+  defp readiness_signatures(%Runner{enforce_signatures: true}),
+    do: %{mode: :signed_only, reason: :signature_required}
+
+  defp readiness_signatures(%Runner{}),
+    do: %{mode: :unsigned_allowed, reason: :unsigned_allowed}
+
+  defp readiness_degradation(%Runner{degraded_packs: []}),
+    do: %{state: :healthy, reason: :all_packs_loaded, packs: []}
+
+  defp readiness_degradation(%Runner{degraded_packs: packs}),
+    do: %{state: :degraded, reason: :degraded_packs, packs: packs}
+
+  defp readiness_portal_dispatch(%{state: :disabled}, _signatures),
+    do: %{state: :blocked, reason: :disabled}
+
+  defp readiness_portal_dispatch(_connection, %{mode: :signed_only}),
+    do: %{state: :blocked, reason: :signature_required}
+
+  defp readiness_portal_dispatch(%{state: :online}, _signatures),
+    do: %{state: :ready, reason: :online}
+
+  defp readiness_portal_dispatch(%{state: :offline}, _signatures),
+    do: %{state: :queueable, reason: :offline}
+
+  defp readiness_portal_dispatch(%{state: :pending}, _signatures),
+    do: %{state: :queueable, reason: :pending}
+
+  defp readiness_action_load(load) when is_integer(load) and load >= 0, do: load
+  defp readiness_action_load(_load), do: 0
+
+  defp fleet_counts(readiness, active, disabled) do
+    %{
+      total: length(readiness),
+      active: length(active),
+      online: count_connection(readiness, :online),
+      offline: count_connection(readiness, :offline),
+      pending: count_connection(readiness, :pending),
+      disabled: length(disabled),
+      stale: Enum.count(active, &(&1.heartbeat.state == :stale)),
+      signed_only: Enum.count(active, &(&1.signatures.mode == :signed_only)),
+      degraded: Enum.count(active, &(&1.degradation.state == :degraded)),
+      degraded_packs: Enum.sum_by(active, &length(&1.degradation.packs)),
+      portal_ready: count_dispatch(readiness, :ready),
+      portal_queueable: count_dispatch(readiness, :queueable),
+      portal_blocked: count_dispatch(readiness, :blocked)
+    }
+  end
+
+  defp count_connection(readiness, state),
+    do: Enum.count(readiness, &(&1.connection.state == state))
+
+  defp count_dispatch(readiness, state),
+    do: Enum.count(readiness, &(&1.portal_dispatch.state == state))
+
+  # The list projection and the database aggregate both stop at counts, so the
+  # signature mode and the reason atoms are derived once — the two paths cannot
+  # answer the same fleet differently.
+  defp build_fleet_status(counts) do
+    signature_mode = fleet_signature_mode(counts)
+
+    %{
+      counts: counts,
+      signature_mode: signature_mode,
+      reasons: fleet_reasons(counts, signature_mode)
+    }
+  end
+
+  # Presence carries the heartbeat, so staleness is resolved here and handed to
+  # the aggregate as an id list. A runner that has never heartbeated is awaiting
+  # its first one, never stale — matching `runner_readiness/2`.
+  defp stale_heartbeat_ids(metas, now) do
+    for {runner_id, %{metas: [_ | _] = runner_metas}} <- metas,
+        meta = latest_connection_meta(runner_metas),
+        stale_heartbeat?(Map.get(meta, :last_heartbeat_at), now),
+        do: runner_id
+  end
+
+  defp stale_heartbeat?(nil, _now), do: false
+
+  defp stale_heartbeat?(unix, now) when is_integer(unix) do
+    DateTime.to_unix(now) - unix >= @heartbeat_stale_after_seconds
+  end
+
+  defp stale_heartbeat?(_invalid, _now), do: false
+
+  # Lease reclamation can briefly leave the old and new socket metas under one
+  # Presence key. Presence does not promise list order, so prefer the newest
+  # connection generation, then its newest heartbeat/online timestamp.
+  defp latest_connection_meta(metas) do
+    Enum.max_by(metas, fn meta ->
+      {
+        integer_meta(meta, :connection_generation),
+        integer_meta(meta, :last_heartbeat_at),
+        integer_meta(meta, :online_at)
+      }
+    end)
+  end
+
+  defp integer_meta(meta, key) do
+    case Map.get(meta, key) do
+      value when is_integer(value) -> value
+      _invalid -> -1
+    end
+  end
+
+  # SQL counts what a row can answer; the rest is arithmetic over those, in the
+  # same shape `fleet_counts/3` builds from readiness facts. Among active
+  # runners, signed-only is blocked and the unsigned remainder splits into
+  # online (ready) and absent-presence (queueable).
+  defp aggregate_counts(row) do
+    active = row.total - row.disabled
+
+    %{
+      total: row.total,
+      active: active,
+      online: row.online,
+      offline: row.total - row.online - row.pending - row.disabled,
+      pending: row.pending,
+      disabled: row.disabled,
+      stale: row.stale,
+      signed_only: row.signed_only,
+      degraded: row.degraded,
+      degraded_packs: row.degraded_packs,
+      portal_ready: row.portal_ready,
+      portal_queueable: active - row.signed_only - row.portal_ready,
+      portal_blocked: row.disabled + row.signed_only
+    }
+  end
+
+  defp fleet_signature_mode(%{active: 0}), do: :empty
+  defp fleet_signature_mode(%{signed_only: 0}), do: :unsigned_allowed
+  defp fleet_signature_mode(%{active: active, signed_only: active}), do: :signed_only
+  defp fleet_signature_mode(_counts), do: :mixed
+
+  # Stable atoms, never copy: each names one fleet-wide fact a surface explains.
+  defp fleet_reasons(%{total: 0}, _signature_mode), do: [:fleet_empty]
+
+  defp fleet_reasons(counts, signature_mode) do
+    facts = [
+      {counts.online > 0, :runners_online},
+      {counts.online == 0 and counts.active > 0, :no_runners_online},
+      {counts.stale > 0, :stale_heartbeats},
+      {signature_mode == :signed_only, :fleet_signed_only},
+      {signature_mode == :mixed, :mixed_signature_modes},
+      {counts.degraded > 0, :degraded_packs}
+    ]
+
+    for {applies?, reason} <- facts, applies?, do: reason
+  end
+
+  @doc """
+  Whether the account's whole active fleet is offline — there's at least one
+  active (non-disabled) runner and every one of them is currently disconnected.
+  Drives the "all runners offline" nav alert (Option B). Requires
+  `view_runners`; returns `false` for a subject with no account or without the
+  permission — i.e. no badge. A bare boolean, matching the sidebar count badges.
+  """
+  def fleet_all_offline?(%Subject{} = subject) do
+    case fetch_fleet_status(subject) do
+      {:ok, status} -> :no_runners_online in status.reasons
+      {:error, _reason} -> false
+    end
+  end
+
+  @doc """
+  Whether the subject can see ANY active runner — sequences fleet-dependent
+  nudges. An existence check, not a fleet projection: it stops at the first
+  matching row and never touches Presence. Fails closed without `view_runners`.
+  """
+  def any_runners?(%Subject{} = subject) do
+    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runners_permission()) do
+      :ok ->
+        queryable =
+          Runner.Query.not_deleted()
+          |> Runner.Query.not_disabled()
+          |> scope_to_subject_membership(subject)
+          |> Authorizer.for_subject(subject)
+
+        Repo.exists?(queryable)
+
+      {:error, _reason} ->
+        false
+    end
+  end
 
   @doc """
   Normalizes a broadcast from `subscribe_connections/1` into the connection
@@ -1244,19 +1477,29 @@ defmodule Emisar.Runners do
     put_connection_meta(runner, Map.get(connection_metas(runner.account_id), runner.id))
   end
 
-  defp put_connection_meta(runner, %{metas: [meta | _]}) do
+  defp put_connection_meta(runner, %{metas: [_ | _] = metas}) do
+    meta = latest_connection_meta(metas)
+
     %{
       runner
       | online?: true,
-        action_load: meta.action_load,
-        last_heartbeat_at: unix_to_datetime(meta.last_heartbeat_at)
+        action_load: Map.get(meta, :action_load, 0),
+        last_heartbeat_at: unix_to_datetime(Map.get(meta, :last_heartbeat_at))
     }
   end
 
   defp put_connection_meta(runner, _absent), do: %{runner | online?: false}
 
   defp unix_to_datetime(nil), do: nil
-  defp unix_to_datetime(unix) when is_integer(unix), do: DateTime.from_unix!(unix)
+
+  defp unix_to_datetime(unix) when is_integer(unix) do
+    case DateTime.from_unix(unix) do
+      {:ok, datetime} -> datetime
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp unix_to_datetime(_invalid), do: nil
 
   @doc """
   True when a runner is visible/dispatchable under explicit runner access.

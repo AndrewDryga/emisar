@@ -92,8 +92,11 @@ defmodule EmisarWeb.DashboardLive do
 
     # Only a currently ONLINE runner's advertised actions are dispatchable —
     # catalog rows left behind by an offline runner can't back the checklist's
-    # "ask your agent to run an action" step.
-    online_runner_ids = for %{online?: true} = runner <- runners, do: runner.id
+    # "ask your agent to run an action" step. The readiness projection owns
+    # what "online" means (a disabled runner never counts), so the checklist and
+    # the fleet pillar can't drift from the runners page.
+    readiness = Enum.map(runners, &Runners.runner_readiness/1)
+    online_runner_ids = for %{connection: %{state: :online}} = r <- readiness, do: r.runner_id
     actions_read = Catalog.action_risks_for_runner_ids(online_runner_ids, subject)
 
     actions_advertised? =
@@ -110,7 +113,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:page_title, "Dashboard")
     |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
-    |> assign(:runners_connected, Enum.count(runners, & &1.online?))
+    |> assign(:runners_connected, length(online_runner_ids))
     |> assign(:actions_advertised?, actions_advertised?)
     |> assign(:recent_runs, recent_runs)
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))

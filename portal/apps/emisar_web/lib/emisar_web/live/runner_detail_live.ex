@@ -27,7 +27,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            socket
            |> assign(:page_title, runner.name)
            |> assign(:base_url, UrlHelpers.derive_base_url(socket))
-           |> assign(:runner, runner)
+           |> assign_runner(runner)
            |> ConfirmDialog.init()}
         else
           {:ok,
@@ -36,6 +36,15 @@ defmodule EmisarWeb.RunnerDetailLive do
            |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
         end
     end
+  end
+
+  # The page classifies on the readiness projection, never on raw runner
+  # columns, so every path that changes the runner re-projects it in the same
+  # step — a presence diff and an enable/disable alike.
+  defp assign_runner(socket, runner) do
+    socket
+    |> assign(:runner, runner)
+    |> assign(:readiness, Runners.runner_readiness(runner))
   end
 
   def handle_params(params, _uri, socket) do
@@ -124,7 +133,8 @@ defmodule EmisarWeb.RunnerDetailLive do
 
   def handle_info(%{event: "presence_diff"} = event, socket) do
     change = Runners.normalize_connection_change(event)
-    {:noreply, update(socket, :runner, &Runners.project_runner_connection(&1, change))}
+    runner = Runners.project_runner_connection(socket.assigns.runner, change)
+    {:noreply, assign_runner(socket, runner)}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
@@ -147,7 +157,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       fn socket ->
         case Runners.disable_runner(socket.assigns.runner, socket.assigns.current_subject) do
           {:ok, runner} ->
-            {:noreply, socket |> put_flash(:info, "Runner disabled.") |> assign(:runner, runner)}
+            {:noreply, socket |> put_flash(:info, "Runner disabled.") |> assign_runner(runner)}
 
           {:error, :not_found} ->
             {:noreply,
@@ -169,7 +179,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       fn socket ->
         case Runners.enable_runner(socket.assigns.runner, socket.assigns.current_subject) do
           {:ok, runner} ->
-            {:noreply, socket |> put_flash(:info, "Runner enabled.") |> assign(:runner, runner)}
+            {:noreply, socket |> put_flash(:info, "Runner enabled.") |> assign_runner(runner)}
 
           {:error, :over_limit, _plan, limit} ->
             {:noreply,
@@ -287,7 +297,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-16">
             <.meta_field label="Status">
               <.runner_status_badge
-                state={Runners.connection_state(@runner)}
+                state={@readiness.connection.state}
                 version={@runner.runner_version}
               />
             </.meta_field>
@@ -314,7 +324,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                  (a genuinely long-running action), which is the right home. --%>
             <.meta_field label="Last heartbeat">
               <span class="text-zinc-200">
-                <.local_time value={heartbeat_at(@runner)} mode={:relative} />
+                <.local_time value={heartbeat_at(@readiness)} mode={:relative} />
               </span>
             </.meta_field>
           </div>
@@ -358,15 +368,15 @@ defmodule EmisarWeb.RunnerDetailLive do
              without this the pack just silently vanishes from the catalog
              while the runner looks healthy. --%>
           <.callout
-            :if={@runner.degraded_packs != []}
+            :if={@readiness.degradation.state == :degraded}
             id="degraded-packs"
             tone={:amber}
             icon="hero-exclamation-triangle"
-            title={degraded_packs_title(@runner.degraded_packs)}
+            title={degraded_packs_title(@readiness.degradation.packs)}
             class="mt-8"
           >
             <div class="space-y-3">
-              <p :for={degraded <- @runner.degraded_packs}>
+              <p :for={degraded <- @readiness.degradation.packs}>
                 <span class="font-mono text-zinc-200">{degraded["pack"]}</span>
                 <span class="text-zinc-500">— {degraded["reason"]}</span>
               </p>
@@ -385,8 +395,11 @@ defmodule EmisarWeb.RunnerDetailLive do
         <%!-- Naked status line on the canvas, not a boxed callout — a note ABOUT
            this runner's posture (it's signed-only), the shield lead carrying
            the brand tint, aligned with everything else below. --%>
+        <%!-- Keyed on the dispatch verdict, not the signature axis: a disabled
+           signed-only runner is blocked BECAUSE it's disabled, and the Status
+           badge above already says so. --%>
         <.status_note
-          :if={@runner.enforce_signatures}
+          :if={@readiness.portal_dispatch.reason == :signature_required}
           icon="hero-shield-check"
           tone={:brand}
           title="Signed dispatch only"
@@ -490,7 +503,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                             Run
                           </.button>
                         </.tooltip>
-                      <% @runner.enforce_signatures -> %>
+                      <% @readiness.portal_dispatch.reason == :signature_required -> %>
                         <%!-- Signed-only: the portal can't dispatch here. The lock icon
                            carries it without relying on color alone; the tooltip explains
                            WHY on hover, keyboard focus, and touch alike. --%>
@@ -510,7 +523,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                             Run
                           </.button>
                         </.tooltip>
-                      <% @runner.online? -> %>
+                      <% @readiness.portal_dispatch.state == :ready -> %>
                         <%!-- Secondary: a brand fill per catalog row out-shouts the
                            page's real primary; the row's affordance is enough. --%>
                         <.button
@@ -523,13 +536,15 @@ defmodule EmisarWeb.RunnerDetailLive do
                         >
                           Run
                         </.button>
-                      <% true -> %>
-                        <%!-- Offline: the signal-slash icon carries "can't run" without
-                           relying on the dimmed color alone; the tooltip explains why on
-                           hover, keyboard focus, and touch alike. --%>
+                      <% @readiness.portal_dispatch.state == :queueable -> %>
+                        <%!-- Offline or never connected: a dispatch would only queue,
+                           so this page doesn't offer it (the run form still does, from
+                           a direct link). The signal-slash icon carries "can't run"
+                           without relying on the dimmed color alone; the tooltip
+                           explains why on hover, keyboard focus, and touch alike. --%>
                         <.tooltip
                           id={"action-offline-#{action.id}"}
-                          text={"Runner is #{connection_status(Runners.connection_state(@runner))} — runs can't be dispatched from here until it reconnects"}
+                          text={"Runner is #{connection_status(@readiness.connection.state)} — runs can't be dispatched from here until it reconnects"}
                           class="shrink-0"
                         >
                           <.button
@@ -538,6 +553,25 @@ defmodule EmisarWeb.RunnerDetailLive do
                             disabled
                             aria-disabled="true"
                             icon="hero-signal-slash"
+                            class="cursor-not-allowed opacity-60"
+                          >
+                            Run
+                          </.button>
+                        </.tooltip>
+                      <% true -> %>
+                        <%!-- Disabled — the one remaining blocked reason, and the only
+                           one an operator fixes right here on this page. --%>
+                        <.tooltip
+                          id={"action-disabled-#{action.id}"}
+                          text="Runner is disabled — enable it before dispatching"
+                          class="shrink-0"
+                        >
+                          <.button
+                            size={:sm}
+                            variant={:secondary}
+                            disabled
+                            aria-disabled="true"
+                            icon="hero-no-symbol"
                             class="cursor-not-allowed opacity-60"
                           >
                             Run
@@ -614,7 +648,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           <.section_header title="Danger zone" />
           <div class="divide-y divide-zinc-800/70">
             <.confirm_zone
-              :if={is_nil(@runner.disabled_at)}
+              :if={@readiness.connection.state != :disabled}
               id="disable-runner"
               title="Disable this runner"
               confirm="It will not be able to reconnect until you enable it again. Audit history is preserved."
@@ -628,7 +662,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             </.confirm_zone>
 
             <.confirm_zone
-              :if={not is_nil(@runner.disabled_at)}
+              :if={@readiness.connection.state == :disabled}
               tone={:success}
               title="Enable this runner"
               phx-click="enable"
@@ -644,7 +678,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                button only OPENS the dialog; `delete` still fires from Confirm
                and stays server-authz-gated (Runners.subject_can_manage_runners?). --%>
             <.confirm_zone
-              :if={not @runner.online?}
+              :if={@readiness.connection.state != :online}
               title="Delete this runner"
               phx-click={show_confirm_dialog("delete-runner")}
             >
@@ -659,7 +693,7 @@ defmodule EmisarWeb.RunnerDetailLive do
           </div>
 
           <.confirm_dialog
-            :if={not @runner.online?}
+            :if={@readiness.connection.state != :online}
             id="delete-runner"
             title="Delete this runner"
             confirm_label="Delete runner"
@@ -686,11 +720,11 @@ defmodule EmisarWeb.RunnerDetailLive do
   # UI doesn't read "connected 23s ago … waiting for first heartbeat",
   # which is self-contradictory. nil falls through to <.local_time>'s
   # placeholder.
-  defp heartbeat_at(%{last_heartbeat_at: %DateTime{} = ts}), do: ts
+  defp heartbeat_at(%{heartbeat: %{at: %DateTime{} = ts}}), do: ts
 
-  defp heartbeat_at(%{last_connected_at: %DateTime{} = ts}), do: ts
+  defp heartbeat_at(%{heartbeat: %{connected_at: %DateTime{} = ts}}), do: ts
 
-  defp heartbeat_at(_), do: nil
+  defp heartbeat_at(_readiness), do: nil
 
   # Labels are stored as a `:map` so the keys are strings and the order
   # is non-deterministic. Sort for stable rendering.

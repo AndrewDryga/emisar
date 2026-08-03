@@ -447,7 +447,9 @@ defmodule EmisarWeb.RunNewLiveTest do
     refute has_element?(lv, "button[data-confirm]")
   end
 
-  test "an offline runner warns the run will queue", %{conn: conn} do
+  test "a never-connected runner warns the run will queue and still offers Dispatch", %{
+    conn: conn
+  } do
     {conn, _user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
     action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
@@ -459,6 +461,34 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     assert html =~ "Runner offline"
     assert html =~ "queues as"
+    # The portal accepts the dispatch and delivers it on the first connect.
+    assert has_element?(lv, "button", "Dispatch to #{runner.name}")
+  end
+
+  test "a disabled runner reports the disabled remedy, not the signed-only one", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        enforce_signatures: true,
+        connected?: true
+      )
+
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+
+    {:ok, _disabled} =
+      Emisar.Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user, account))
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+    html = render(lv)
+
+    # Disabled beats signature enforcement — the operator's next move is enabling
+    # the runner, not reaching for a signing key.
+    assert html =~ "This runner is disabled"
+    refute html =~ "Signed dispatch only"
+    refute html =~ "run it from your MCP client"
+    refute has_element?(lv, "button", "Dispatch to")
   end
 
   test "a viewer sees a note instead of the dispatch button", %{conn: conn} do

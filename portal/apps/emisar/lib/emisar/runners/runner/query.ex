@@ -136,6 +136,47 @@ defmodule Emisar.Runners.Runner.Query do
     where(queryable, ^condition)
   end
 
+  @doc """
+  One-row fleet aggregate — the whole scoped fleet's posture without
+  materializing a single runner. Presence supplies both id sets the DB can't
+  see: `online_ids` is every runner with a live socket, `stale_ids` the subset
+  whose last heartbeat has aged out. Clauses mirror
+  `Emisar.Runners.connection_state/1`'s precedence (disabled beats a live
+  socket), and posture counts exclude disabled runners — a parked runner's
+  signature/degradation posture isn't actionable. `offline`, `active`, and the
+  remaining portal-dispatch states are arithmetic over these, so the context
+  derives them.
+  """
+  def fleet_status(queryable, online_ids, stale_ids) do
+    select(queryable, [runners: r], %{
+      total: count(r.id),
+      disabled: filter(count(r.id), not is_nil(r.disabled_at)),
+      online: filter(count(r.id), r.id in ^online_ids and is_nil(r.disabled_at)),
+      pending:
+        filter(
+          count(r.id),
+          is_nil(r.last_connected_at) and r.id not in ^online_ids and is_nil(r.disabled_at)
+        ),
+      stale: filter(count(r.id), r.id in ^stale_ids and is_nil(r.disabled_at)),
+      signed_only: filter(count(r.id), r.enforce_signatures == true and is_nil(r.disabled_at)),
+      degraded:
+        filter(
+          count(r.id),
+          fragment("cardinality(?)", r.degraded_packs) > 0 and is_nil(r.disabled_at)
+        ),
+      degraded_packs:
+        coalesce(
+          filter(sum(fragment("cardinality(?)", r.degraded_packs)), is_nil(r.disabled_at)),
+          0
+        ),
+      portal_ready:
+        filter(
+          count(r.id),
+          r.id in ^online_ids and r.enforce_signatures == false and is_nil(r.disabled_at)
+        )
+    })
+  end
+
   @doc "Audit label-lookup helper. See Users.User.Query.select_labels/3."
   def select_labels(queryable, ids, field) do
     queryable
@@ -148,27 +189,6 @@ defmodule Emisar.Runners.Runner.Query do
     |> group_by([runners: r], r.group)
     |> select([runners: r], {r.group, count(r.id)})
     |> order_by([runners: r], asc: r.group)
-  end
-
-  @doc """
-  One-row aggregate for the four fleet states. Presence supplies the current
-  online ids; durable columns partition the remaining rows.
-  """
-  def fleet_health(queryable, online_ids) do
-    select(queryable, [runners: r], %{
-      total: count(r.id),
-      online:
-        filter(
-          count(r.id),
-          r.id in ^online_ids and is_nil(r.disabled_at)
-        ),
-      pending:
-        filter(
-          count(r.id),
-          is_nil(r.last_connected_at) and r.id not in ^online_ids and is_nil(r.disabled_at)
-        ),
-      disabled: filter(count(r.id), not is_nil(r.disabled_at))
-    })
   end
 
   # Connection-record state from the DURABLE `last_connected_at` /

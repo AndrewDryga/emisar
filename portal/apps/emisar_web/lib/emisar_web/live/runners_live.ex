@@ -178,8 +178,7 @@ defmodule EmisarWeb.RunnersLive do
     |> assign(:filter_params, params)
     |> assign(:filters, Runners.runner_filters())
     |> assign(:groups, [])
-    |> assign(:fleet, %{online: 0, offline: 0, pending: 0, disabled: 0})
-    |> assign(:fleet_signed?, false)
+    |> assign(:fleet, Runners.fleet_status([]))
     |> assign(:load_error?, false)
   end
 
@@ -191,13 +190,11 @@ defmodule EmisarWeb.RunnersLive do
     # a broader membership. Rows, group summaries, and fleet posture all use the
     # same scoped fleet; counts must not reveal inaccessible runners.
 
-    # Fleet health is counted from the complete accessible set, not the current
-    # page; Presence ids are folded into the same scoped aggregate.
-    fleet = load_fleet_health(socket.assigns.current_subject)
-
-    # When every accessible active runner enforces signatures, surface the
-    # resulting portal-dispatch posture once instead of on each row.
-    fleet_signed? = Runners.fleet_all_signed?(socket.assigns.current_subject)
+    # Fleet posture — counts, signature mode, and the reasons behind them — is
+    # projected from the complete accessible set, not the current page. That one
+    # read also answers the account-wide signed-only question, so a whole-fleet
+    # notice never disagrees with the counters beside it.
+    fleet = load_fleet_status(socket.assigns.current_subject)
 
     case Runners.list_runners_for_account(socket.assigns.current_subject, opts) do
       {:ok, runners, meta} ->
@@ -223,7 +220,6 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, groups)
         |> assign(:fleet, fleet)
-        |> assign(:fleet_signed?, fleet_signed?)
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — show a
@@ -238,7 +234,6 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, [])
         |> assign(:fleet, fleet)
-        |> assign(:fleet_signed?, fleet_signed?)
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -266,10 +261,10 @@ defmodule EmisarWeb.RunnersLive do
 
   defp maybe_mint_install(socket, false), do: socket
 
-  defp load_fleet_health(subject) do
-    case Runners.fetch_fleet_health(subject) do
+  defp load_fleet_status(subject) do
+    case Runners.fetch_fleet_status(subject) do
       {:ok, fleet} -> fleet
-      _ -> %{online: 0, offline: 0, pending: 0, disabled: 0}
+      _ -> Runners.fleet_status([])
     end
   end
 
@@ -369,14 +364,14 @@ defmodule EmisarWeb.RunnersLive do
               <%!-- Alerts keep a tight internal rhythm, then the stack leaves a
                    larger exit gutter before ordinary fleet counters and rows. --%>
               <div
-                :if={fleet_attention?(@fleet, @fleet_signed?, @runners)}
+                :if={fleet_attention?(@fleet, @runners)}
                 id="fleet-attention"
                 class="mb-10 space-y-6"
               >
                 <%!-- Fleet-dark escalation: runners exist but none are reachable, so
                      nothing can be dispatched right now. --%>
                 <.offline_notice
-                  :if={@fleet.online == 0 and @fleet.offline > 0}
+                  :if={@fleet.counts.online == 0 and @fleet.counts.offline > 0}
                   severity={:critical}
                   title="All runners offline"
                 >
@@ -386,7 +381,7 @@ defmodule EmisarWeb.RunnersLive do
                 <%!-- Whole-fleet dispatch posture: every active runner is signed-only, so the
                      portal is locked out account-wide. --%>
                 <.callout
-                  :if={@fleet_signed?}
+                  :if={@fleet.signature_mode == :signed_only}
                   tone={:brand}
                   icon="hero-shield-check"
                   title="Fleet is signed-only"
@@ -411,19 +406,19 @@ defmodule EmisarWeb.RunnersLive do
               <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
                 <span class="flex items-center gap-1.5">
                   <.status_dot tone={:brand} size={:sm} />
-                  <span class="tabular-nums text-zinc-400">{@fleet.online} connected</span>
+                  <span class="tabular-nums text-zinc-400">{@fleet.counts.online} connected</span>
                 </span>
-                <span :if={@fleet.offline > 0} class="flex items-center gap-1.5">
+                <span :if={@fleet.counts.offline > 0} class="flex items-center gap-1.5">
                   <.status_dot tone={:amber} size={:sm} />
-                  <span class="tabular-nums text-amber-300">{@fleet.offline} offline</span>
+                  <span class="tabular-nums text-amber-300">{@fleet.counts.offline} offline</span>
                 </span>
-                <span :if={@fleet.pending > 0} class="flex items-center gap-1.5">
+                <span :if={@fleet.counts.pending > 0} class="flex items-center gap-1.5">
                   <.status_dot tone={:amber} size={:sm} />
-                  <span class="tabular-nums text-amber-300">{@fleet.pending} pending</span>
+                  <span class="tabular-nums text-amber-300">{@fleet.counts.pending} pending</span>
                 </span>
-                <span :if={@fleet.disabled > 0} class="flex items-center gap-1.5">
+                <span :if={@fleet.counts.disabled > 0} class="flex items-center gap-1.5">
                   <.status_dot tone={:neutral} size={:sm} />
-                  <span class="tabular-nums text-zinc-400">{@fleet.disabled} disabled</span>
+                  <span class="tabular-nums text-zinc-400">{@fleet.counts.disabled} disabled</span>
                 </span>
               </div>
 
@@ -453,8 +448,7 @@ defmodule EmisarWeb.RunnersLive do
                 </:group_header>
 
                 <:item :let={runner}>
-                  <% connection = Runners.connection_state(runner) %>
-                  <% state = connection_status(connection) %>
+                  <% readiness = Runners.runner_readiness(runner) %>
                   <li>
                     <.link
                       navigate={~p"/app/#{@current_account}/runners/#{runner.id}"}
@@ -481,7 +475,7 @@ defmodule EmisarWeb.RunnersLive do
                           <%!-- Hardened runners are scannable at a glance — the portal
                            can't dispatch to them; only signed MCP calls run. --%>
                           <.chip
-                            :if={runner.enforce_signatures}
+                            :if={readiness.signatures.mode == :signed_only}
                             tone={:neutral}
                             icon="hero-shield-check"
                             title="Runs only signed dispatches — the portal can't dispatch to this runner"
@@ -497,18 +491,18 @@ defmodule EmisarWeb.RunnersLive do
                           }>
                             {runner.hostname || runner.external_id || "no host"}
                           </:seg>
-                          <:seg><.heartbeat_status runner={runner} status={state} /></:seg>
+                          <:seg><.heartbeat_status readiness={readiness} /></:seg>
                           <%!-- Zero is the default, not a signal — the count joins the meta
                            line only while something is actually running. --%>
-                          <:seg :if={runner.action_load > 0}>
-                            {active_runs_label(runner.action_load)}
+                          <:seg :if={readiness.action_load > 0}>
+                            {active_runs_label(readiness.action_load)}
                           </:seg>
                         </.meta_line>
                       </div>
 
                       <div class="flex items-center gap-4 text-right">
                         <.runner_status_badge
-                          state={connection}
+                          state={readiness.connection.state}
                           version={runner.runner_version}
                           class="shrink-0"
                         />
@@ -606,8 +600,9 @@ defmodule EmisarWeb.RunnersLive do
   # first) is preserved.
   defp sort_by_group(runners), do: Enum.sort_by(runners, &(&1.group || ""))
 
-  defp fleet_attention?(fleet, fleet_signed?, runners) do
-    (fleet.online == 0 and fleet.offline > 0) or fleet_signed? or
+  defp fleet_attention?(fleet, runners) do
+    (fleet.counts.online == 0 and fleet.counts.offline > 0) or
+      fleet.signature_mode == :signed_only or
       Enum.any?(runners, &(Compat.runner_status(&1.runner_version) in [:outdated, :unsupported]))
   end
 
@@ -619,38 +614,39 @@ defmodule EmisarWeb.RunnersLive do
   end
 
   # "last heartbeat 3m ago" / "just connected — waiting for first
-  # heartbeat" / "last seen 5m ago" / "never connected". Composes
-  # status + timestamps into one human line — clearer than a "—" with
+  # heartbeat" / "last seen 5m ago" / "never connected". Composes the
+  # readiness heartbeat fact into one human line — clearer than a "—" with
   # "(connected X ago)" tacked on the side. The two time-bearing cases
   # render the timestamp through <.local_time> (viewer-local, hoverable,
   # live) like every other timestamp; {" "} keeps the prefix from
   # abutting the <time> tag (HEEx trims the surrounding newline).
-  attr :runner, :map, required: true
-  attr :status, :string, required: true
+  attr :readiness, :map, required: true
 
-  defp heartbeat_status(%{runner: %{last_heartbeat_at: %DateTime{} = ts}} = assigns) do
+  defp heartbeat_status(%{readiness: %{heartbeat: %{at: %DateTime{} = ts}}} = assigns) do
     assigns = assign(assigns, :heartbeat_at, ts)
 
     ~H"""
     last heartbeat{" "}<.local_time
-      id={"runner-heartbeat-#{@runner.id}"}
+      id={"runner-heartbeat-#{@readiness.runner_id}"}
       value={@heartbeat_at}
       mode={:relative}
     />
     """
   end
 
-  defp heartbeat_status(
-         %{runner: %{last_connected_at: %DateTime{}}, status: "connected"} = assigns
-       ) do
+  defp heartbeat_status(%{readiness: %{heartbeat: %{state: :awaiting_first}}} = assigns) do
     ~H"just connected — waiting for first heartbeat"
   end
 
-  defp heartbeat_status(%{runner: %{last_connected_at: %DateTime{} = ts}} = assigns) do
+  defp heartbeat_status(%{readiness: %{heartbeat: %{connected_at: %DateTime{} = ts}}} = assigns) do
     assigns = assign(assigns, :seen_at, ts)
 
     ~H"""
-    last seen{" "}<.local_time id={"runner-seen-#{@runner.id}"} value={@seen_at} mode={:relative} />
+    last seen{" "}<.local_time
+      id={"runner-seen-#{@readiness.runner_id}"}
+      value={@seen_at}
+      mode={:relative}
+    />
     """
   end
 

@@ -35,6 +35,7 @@ defmodule EmisarWeb.RunNewLive do
          |> assign(:action, action)
          |> assign(:runner_id, runner_id)
          |> assign(:runner, runner)
+         |> assign(:readiness, runner && Runners.runner_readiness(runner))
          |> assign(:args_schema, args_schema)
          |> assign_form(ActionContract.form_values(action))
          |> assign(:reason, "")
@@ -53,16 +54,28 @@ defmodule EmisarWeb.RunNewLive do
     end
   end
 
-  # Strict boolean (never nil) so `not signed_only?(@runner)` in the template is
-  # safe on the dead render, where @runner is still nil.
-  defp signed_only?(%{enforce_signatures: true}), do: true
-  defp signed_only?(_), do: false
+  # Every branch below reads the ONE authoritative dispatch verdict, never the
+  # separate signature or connection axis — a disabled signed-only runner is
+  # blocked because it's disabled, and must say so. Each is a strict boolean so
+  # the dead render, where @readiness is still nil, is safe.
+  defp signature_blocked?(%{portal_dispatch: %{reason: :signature_required}}), do: true
+  defp signature_blocked?(_readiness), do: false
 
-  # Show the "it'll queue" offline notice only for an offline runner the portal
-  # can still reach — a signed-only runner is blocked, not queued, so its own
-  # notice (below) carries the state instead. Strict boolean, nil-safe.
-  defp offline_notice?(%{online?: false} = runner), do: not signed_only?(runner)
-  defp offline_notice?(_), do: false
+  defp dispatch_disabled?(%{portal_dispatch: %{reason: :disabled}}), do: true
+  defp dispatch_disabled?(_readiness), do: false
+
+  # A dispatch from here queues whenever the portal will accept it but can't
+  # deliver it yet — offline, and equally a runner that has never connected. A
+  # blocked runner is refused outright rather than queued, so its own notice
+  # (below) carries that state instead.
+  defp dispatch_would_queue?(%{portal_dispatch: %{state: :queueable}}), do: true
+  defp dispatch_would_queue?(_readiness), do: false
+
+  defp portal_dispatchable?(%{portal_dispatch: %{state: state}})
+       when state in [:ready, :queueable],
+       do: true
+
+  defp portal_dispatchable?(_readiness), do: false
 
   # High/critical dispatches confirm and echo the action + target + the args
   # the operator entered, so a mis-aimed click on a destructive action is
@@ -361,7 +374,7 @@ defmodule EmisarWeb.RunNewLive do
              a fine reason to queue) — runner_detail disables Run instead,
              but here we warn it'll queue rather than block. --%>
         <.offline_notice
-          :if={offline_notice?(@runner)}
+          :if={dispatch_would_queue?(@readiness)}
           severity={:info}
           title="Runner offline"
         >
@@ -374,7 +387,7 @@ defmodule EmisarWeb.RunNewLive do
              interruption takes precedence over the offline posture note and
              replaces the Dispatch button below. --%>
         <.event_block
-          :if={signed_only?(@runner)}
+          :if={signature_blocked?(@readiness)}
           icon="hero-shield-check"
           tone={:brand}
           title="Signed dispatch only"
@@ -426,7 +439,7 @@ defmodule EmisarWeb.RunNewLive do
               <%!-- The last glance binds action + host: the button names the
                    TARGET, so a mis-aimed dispatch is caught at the click. --%>
               <.button
-                :if={@can_dispatch? and not signed_only?(@runner)}
+                :if={@can_dispatch? and portal_dispatchable?(@readiness)}
                 phx-disable-with="Dispatching..."
                 data-confirm={dispatch_confirm(@action, @runner, @runner_id, @args_schema, @form)}
               >
@@ -435,8 +448,19 @@ defmodule EmisarWeb.RunNewLive do
               </.button>
               <%!-- Signed-only runner — the run would be refused, so there's no
                    Dispatch button; the quiet fact points at the MCP client. --%>
-              <p :if={@can_dispatch? and signed_only?(@runner)} class="text-sm text-zinc-400">
+              <p
+                :if={@can_dispatch? and signature_blocked?(@readiness)}
+                class="text-sm text-zinc-400"
+              >
                 This runner only runs signed dispatches — run it from your MCP client.
+              </p>
+              <%!-- Disabled runner — also buttonless, but the remedy is on the
+                   runner's own page rather than in an MCP client. --%>
+              <p
+                :if={@can_dispatch? and dispatch_disabled?(@readiness)}
+                class="text-sm text-zinc-400"
+              >
+                This runner is disabled — enable it on the runner's page before dispatching.
               </p>
               <%!-- Viewers can reach this page but can't dispatch; the
                    handler also gates (IL-15) — this hides the dead button. --%>

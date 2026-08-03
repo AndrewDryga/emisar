@@ -197,6 +197,33 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute html =~ "/runs/new/#{runner.id}/linux.uptime"
   end
 
+  test "a disabled runner's Run affordance reports disabled, not signed-only", %{
+    conn: conn,
+    user: user,
+    account: account
+  } do
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        enforce_signatures: true,
+        connected?: true
+      )
+
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+
+    {:ok, _disabled} =
+      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user, account))
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    # Disabled beats signature enforcement, so the operator reads the state they
+    # can actually fix from this page.
+    assert has_element?(lv, "#action-disabled-#{action.id}-tt button[disabled]", "Run")
+    assert has_element?(lv, "#action-disabled-#{action.id}[role=tooltip]", "Runner is disabled")
+    refute has_element?(lv, "#action-signed-only-#{action.id}[role=tooltip]")
+    refute html =~ "Signed dispatch only"
+  end
+
   test "an online non-enforcing runner offers the Run link (no signed-only gating)", %{
     conn: conn,
     account: account
@@ -334,6 +361,22 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     assert render_click(lv, "enable", %{}) =~ "Runner enabled."
     refute Emisar.Repo.reload!(runner).disabled_at
+  end
+
+  test "disabling re-reads the page's status and lifecycle zones from the updated runner", %{
+    conn: conn,
+    account: account,
+    runner: runner
+  } do
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    refute html =~ "Enable this runner"
+
+    disabled_html = render_click(lv, "disable", %{})
+
+    assert disabled_html =~ "disabled"
+    assert disabled_html =~ "Enable this runner"
+    refute disabled_html =~ "Disable this runner"
   end
 
   test "disable redirects when the runner disappears after mount", %{

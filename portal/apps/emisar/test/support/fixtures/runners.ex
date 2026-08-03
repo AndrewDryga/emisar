@@ -141,6 +141,17 @@ defmodule Emisar.Fixtures.Runners do
     |> Repo.update!()
   end
 
+  @doc """
+  Rigs the packs the runner's loader skipped — the durable runner_state fact the
+  console reads to explain a pack missing from the catalog. `degraded` is the
+  stored shape: `[%{"pack" => name, "reason" => text}]`.
+  """
+  def advertise_degraded_packs(%Runner{} = runner, degraded) when is_list(degraded) do
+    runner
+    |> Runner.Changeset.apply_state(%{degraded_packs: degraded})
+    |> Repo.update!()
+  end
+
   @doc "Backdates the runner's connection-lease expiry so the next claim may take over."
   def expire_connection_lease(%Runner{} = runner) do
     runner

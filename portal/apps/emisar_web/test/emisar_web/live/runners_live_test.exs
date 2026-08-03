@@ -179,6 +179,19 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "Fleet is signed-only"
     end
 
+    test "a disabled plain runner doesn't suppress the fleet signed-only notice", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      Fixtures.Runners.create_runner(account_id: account.id, name: "a", enforce_signatures: true)
+      plain = Fixtures.Runners.create_runner(account_id: account.id, name: "b")
+      {:ok, _plain} = Emisar.Runners.disable_runner(plain, subject)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert html =~ "Fleet is signed-only"
+    end
+
     test "an offline runner's 'last seen' heartbeat renders through <.local_time>", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 

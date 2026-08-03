@@ -30,6 +30,18 @@ defmodule Emisar.RunnersTest do
     runners |> Enum.map(& &1.name) |> Enum.sort()
   end
 
+  defp track_presence_meta(topic, runner_id, meta) do
+    pid =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    {:ok, _ref} = Presence.track(pid, topic, runner_id, meta)
+    on_exit(fn -> send(pid, :stop) end)
+  end
+
   describe "runner_labels_for_ids/1" do
     test "returns a %{id => name} map for the supplied ids" do
       r1 = Fixtures.Runners.create_runner(name: "alpha", connected?: false)
@@ -413,90 +425,6 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.select_runbook_target_runners(["nonsense"], available) ==
                {:error, :unknown_target}
-    end
-  end
-
-  describe "fetch_fleet_health/1" do
-    test "counts the scoped fleet states without materializing runner rows" do
-      {account, _user, subject} = account_with_owner_subject()
-      other_account = Fixtures.Accounts.create_account()
-
-      _online =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          name: "online",
-          connected?: true
-        )
-
-      offline =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          name: "offline",
-          connected?: true
-        )
-
-      :ok = Presence.untrack(self(), Presence.topic(account.id), offline.id)
-
-      _pending =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          name: "pending",
-          connected?: false
-        )
-
-      disabled =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          name: "disabled",
-          connected?: false
-        )
-
-      {:ok, _disabled} = Runners.disable_runner(disabled, subject)
-      _other = Fixtures.Runners.create_runner(account_id: other_account.id, connected?: true)
-
-      assert Runners.fetch_fleet_health(subject) ==
-               {:ok, %{online: 1, offline: 1, pending: 1, disabled: 1}}
-    end
-
-    test "applies restricted membership access before counting" do
-      {account, _owner, _subject} = account_with_owner_subject()
-
-      in_scope =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          name: "visible",
-          connected?: true
-        )
-
-      _out_of_scope =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          name: "hidden",
-          connected?: true
-        )
-
-      operator = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
-
-      {:ok, access} = RunnerAccess.restricted([], [in_scope.id])
-      Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
-
-      assert Runners.fetch_fleet_health(subject) ==
-               {:ok, %{online: 1, offline: 0, pending: 0, disabled: 0}}
-    end
-
-    test "rejects a subject without view permission" do
-      account = Fixtures.Accounts.create_account()
-      no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
-
-      assert Runners.fetch_fleet_health(no_view) == {:error, :unauthorized}
     end
   end
 
@@ -1764,6 +1692,596 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "connection_state/1" do
+    test "maps online / disabled / pending / offline" do
+      now = DateTime.utc_now()
+
+      assert Runners.connection_state(%Runner{online?: true}) == :online
+      assert Runners.connection_state(%Runner{disabled_at: now}) == :disabled
+      assert Runners.connection_state(%Runner{online?: false, last_connected_at: nil}) == :pending
+
+      assert Runners.connection_state(%Runner{online?: false, last_connected_at: now}) ==
+               :offline
+
+      # disabled wins over a still-live socket
+      assert Runners.connection_state(%Runner{online?: true, disabled_at: now}) == :disabled
+    end
+
+    # there is NO heartbeat-age `:stale` state by design.
+    # Liveness is enforced only at the socket (the 90s heartbeat-timeout watcher),
+    # never re-derived from `last_heartbeat_at`: an `online?` runner reads :online
+    # no matter how old its last heartbeat looks. The binary stays honest because
+    # the socket would already have closed a genuinely silent runner to :offline.
+    test "stays :online regardless of last_heartbeat_at age (no :stale)" do
+      ancient = DateTime.add(DateTime.utc_now(), -3600, :second)
+
+      assert Runners.connection_state(%Runner{online?: true, last_heartbeat_at: ancient}) ==
+               :online
+
+      # A nil heartbeat on a live socket is still :online, not a derived stale state.
+      assert Runners.connection_state(%Runner{online?: true, last_heartbeat_at: nil}) == :online
+    end
+  end
+
+  describe "runner_readiness/2" do
+    setup do
+      %{now: ~U[2026-08-03 12:00:00.000000Z]}
+    end
+
+    test "an online runner with a recent heartbeat is fresh and portal-ready", %{now: now} do
+      runner_id = Ecto.UUID.generate()
+
+      runner = %Runner{
+        id: runner_id,
+        online?: true,
+        action_load: 2,
+        last_connected_at: DateTime.add(now, -600, :second),
+        last_heartbeat_at: DateTime.add(now, -10, :second)
+      }
+
+      readiness = Runners.runner_readiness(runner, now)
+
+      assert readiness.runner_id == runner_id
+      assert readiness.connection == %{state: :online, reason: :presence_online}
+      assert readiness.heartbeat.state == :fresh
+      assert readiness.heartbeat.reason == :heartbeat_recent
+      assert readiness.heartbeat.at == runner.last_heartbeat_at
+      assert readiness.heartbeat.connected_at == runner.last_connected_at
+      assert readiness.signatures == %{mode: :unsigned_allowed, reason: :unsigned_allowed}
+      assert readiness.degradation == %{state: :healthy, reason: :all_packs_loaded, packs: []}
+      assert readiness.portal_dispatch == %{state: :ready, reason: :online}
+      assert readiness.action_load == 2
+    end
+
+    test "a stale heartbeat is advisory — the runner stays online and dispatchable", %{now: now} do
+      runner = %Runner{
+        online?: true,
+        last_connected_at: DateTime.add(now, -600, :second),
+        last_heartbeat_at: DateTime.add(now, -120, :second)
+      }
+
+      readiness = Runners.runner_readiness(runner, now)
+
+      assert readiness.heartbeat.state == :stale
+      assert readiness.heartbeat.reason == :heartbeat_stale
+      assert readiness.connection == %{state: :online, reason: :presence_online}
+      assert readiness.portal_dispatch == %{state: :ready, reason: :online}
+    end
+
+    test "the exact 90s boundary is stale; a future heartbeat is fresh", %{now: now} do
+      at_boundary = %Runner{online?: true, last_heartbeat_at: DateTime.add(now, -90, :second)}
+      inside = %Runner{online?: true, last_heartbeat_at: DateTime.add(now, -89, :second)}
+      ahead = %Runner{online?: true, last_heartbeat_at: DateTime.add(now, 30, :second)}
+
+      assert Runners.runner_readiness(at_boundary, now).heartbeat.state == :stale
+      assert Runners.runner_readiness(inside, now).heartbeat.state == :fresh
+      assert Runners.runner_readiness(ahead, now).heartbeat.state == :fresh
+    end
+
+    test "an online runner that hasn't heartbeated yet is awaiting its first", %{now: now} do
+      runner = %Runner{online?: true, last_connected_at: DateTime.add(now, -5, :second)}
+
+      readiness = Runners.runner_readiness(runner, now)
+
+      assert readiness.heartbeat.state == :awaiting_first
+      assert readiness.heartbeat.reason == :awaiting_first_heartbeat
+      assert readiness.heartbeat.at == nil
+      assert readiness.heartbeat.connected_at == runner.last_connected_at
+      assert readiness.portal_dispatch == %{state: :ready, reason: :online}
+    end
+
+    test "an offline runner queues, and its recent heartbeat is history not liveness", %{now: now} do
+      # The heartbeat timestamp is minutes fresher than the stale threshold, but
+      # presence says the socket is gone — only an online runner can be stale.
+      runner = %Runner{
+        online?: false,
+        last_connected_at: DateTime.add(now, -600, :second),
+        last_heartbeat_at: DateTime.add(now, -5, :second)
+      }
+
+      readiness = Runners.runner_readiness(runner, now)
+
+      assert readiness.connection == %{state: :offline, reason: :presence_absent}
+      assert readiness.heartbeat.state == :unavailable
+      assert readiness.heartbeat.reason == :not_online
+      assert readiness.heartbeat.at == runner.last_heartbeat_at
+      assert readiness.portal_dispatch == %{state: :queueable, reason: :offline}
+    end
+
+    test "a never-connected runner is pending and queueable", %{now: now} do
+      readiness = Runners.runner_readiness(%Runner{online?: false, last_connected_at: nil}, now)
+
+      assert readiness.connection == %{state: :pending, reason: :never_connected}
+      assert readiness.heartbeat.state == :unavailable
+      assert readiness.portal_dispatch == %{state: :queueable, reason: :pending}
+    end
+
+    test "normalizes hostile action-load metadata to a non-negative count", %{now: now} do
+      assert Runners.runner_readiness(%Runner{action_load: -1}, now).action_load == 0
+      assert Runners.runner_readiness(%Runner{action_load: "many"}, now).action_load == 0
+      assert Runners.runner_readiness(%Runner{action_load: 3}, now).action_load == 3
+    end
+
+    test "disabled takes precedence over a live socket and over signature enforcement", %{
+      now: now
+    } do
+      runner = %Runner{
+        online?: true,
+        disabled_at: now,
+        enforce_signatures: true,
+        last_connected_at: DateTime.add(now, -600, :second)
+      }
+
+      readiness = Runners.runner_readiness(runner, now)
+
+      assert readiness.connection == %{state: :disabled, reason: :disabled}
+      assert readiness.signatures == %{mode: :signed_only, reason: :signature_required}
+      assert readiness.heartbeat.state == :unavailable
+      assert readiness.portal_dispatch == %{state: :blocked, reason: :disabled}
+    end
+
+    test "a signature-enforcing runner is blocked even while online and fresh", %{now: now} do
+      runner = %Runner{
+        online?: true,
+        enforce_signatures: true,
+        last_connected_at: DateTime.add(now, -600, :second),
+        last_heartbeat_at: DateTime.add(now, -5, :second)
+      }
+
+      readiness = Runners.runner_readiness(runner, now)
+
+      assert readiness.connection.state == :online
+      assert readiness.heartbeat.state == :fresh
+      assert readiness.signatures == %{mode: :signed_only, reason: :signature_required}
+      assert readiness.portal_dispatch == %{state: :blocked, reason: :signature_required}
+    end
+
+    test "degraded packs are advisory — they never change the dispatch outcome", %{now: now} do
+      degraded = [%{"pack" => "nginx", "reason" => "invalid manifest"}]
+
+      runner = %Runner{
+        online?: true,
+        degraded_packs: degraded,
+        last_connected_at: DateTime.add(now, -600, :second),
+        last_heartbeat_at: DateTime.add(now, -5, :second)
+      }
+
+      readiness = Runners.runner_readiness(runner, now)
+
+      assert readiness.degradation == %{
+               state: :degraded,
+               reason: :degraded_packs,
+               packs: degraded
+             }
+
+      assert readiness.portal_dispatch == %{state: :ready, reason: :online}
+    end
+
+    test "defaults `now` to the current instant" do
+      runner = %Runner{online?: true, last_heartbeat_at: DateTime.utc_now()}
+
+      assert Runners.runner_readiness(runner).heartbeat.state == :fresh
+    end
+  end
+
+  describe "fleet_status/2" do
+    setup do
+      %{now: ~U[2026-08-03 12:00:00.000000Z]}
+    end
+
+    test "an empty fleet counts zero and reads :empty", %{now: now} do
+      status = Runners.fleet_status([], now)
+
+      assert status.counts.total == 0
+      assert status.counts.active == 0
+      assert status.signature_mode == :empty
+      assert status.reasons == [:fleet_empty]
+    end
+
+    test "connection and dispatch counts partition the whole list", %{now: now} do
+      online = %Runner{online?: true, last_heartbeat_at: DateTime.add(now, -5, :second)}
+      offline = %Runner{last_connected_at: DateTime.add(now, -600, :second)}
+      pending = %Runner{}
+      disabled = %Runner{disabled_at: now}
+
+      status = Runners.fleet_status([online, offline, pending, disabled], now)
+
+      assert status.counts.total == 4
+      assert status.counts.active == 3
+      assert status.counts.online == 1
+      assert status.counts.offline == 1
+      assert status.counts.pending == 1
+      assert status.counts.disabled == 1
+      assert status.counts.portal_ready == 1
+      assert status.counts.portal_queueable == 2
+      assert status.counts.portal_blocked == 1
+    end
+
+    test "reads no-runners-online once every active runner is disconnected", %{now: now} do
+      connected_at = DateTime.add(now, -600, :second)
+      runners = [%Runner{last_connected_at: connected_at}, %Runner{last_connected_at: nil}]
+
+      status = Runners.fleet_status(runners, now)
+
+      assert status.counts.online == 0
+      assert :no_runners_online in status.reasons
+      refute :runners_online in status.reasons
+    end
+
+    test "a fleet of only disabled runners is neither online nor all-offline", %{now: now} do
+      status = Runners.fleet_status([%Runner{disabled_at: now}], now)
+
+      assert status.counts.total == 1
+      assert status.counts.active == 0
+      assert status.signature_mode == :empty
+      assert status.reasons == []
+    end
+
+    test "every active runner enforcing reads :signed_only", %{now: now} do
+      runners = [
+        %Runner{enforce_signatures: true, last_connected_at: DateTime.add(now, -60, :second)},
+        %Runner{enforce_signatures: true, last_connected_at: DateTime.add(now, -60, :second)}
+      ]
+
+      status = Runners.fleet_status(runners, now)
+
+      assert status.counts.signed_only == 2
+      assert status.signature_mode == :signed_only
+      assert :fleet_signed_only in status.reasons
+    end
+
+    test "one plain runner beside an enforcing one reads :mixed", %{now: now} do
+      connected_at = DateTime.add(now, -60, :second)
+
+      runners = [
+        %Runner{enforce_signatures: true, last_connected_at: connected_at},
+        %Runner{last_connected_at: connected_at}
+      ]
+
+      status = Runners.fleet_status(runners, now)
+
+      assert status.counts.signed_only == 1
+      assert status.signature_mode == :mixed
+      assert :mixed_signature_modes in status.reasons
+      refute :fleet_signed_only in status.reasons
+    end
+
+    test "no enforcing runner reads :unsigned_allowed", %{now: now} do
+      status = Runners.fleet_status([%Runner{last_connected_at: now}], now)
+
+      assert status.counts.signed_only == 0
+      assert status.signature_mode == :unsigned_allowed
+    end
+
+    test "a disabled non-enforcing runner doesn't keep the fleet from reading signed-only", %{
+      now: now
+    } do
+      runners = [
+        %Runner{enforce_signatures: true, last_connected_at: DateTime.add(now, -60, :second)},
+        %Runner{disabled_at: now}
+      ]
+
+      assert Runners.fleet_status(runners, now).signature_mode == :signed_only
+    end
+
+    test "stale and degraded counts cover the active runners only", %{now: now} do
+      stale = %Runner{online?: true, last_heartbeat_at: DateTime.add(now, -120, :second)}
+
+      degraded = %Runner{
+        online?: true,
+        last_heartbeat_at: DateTime.add(now, -5, :second),
+        degraded_packs: [
+          %{"pack" => "nginx", "reason" => "invalid manifest"},
+          %{"pack" => "redis", "reason" => "unreadable"}
+        ]
+      }
+
+      disabled_degraded = %Runner{
+        disabled_at: now,
+        degraded_packs: [%{"pack" => "postgres", "reason" => "invalid manifest"}]
+      }
+
+      status = Runners.fleet_status([stale, degraded, disabled_degraded], now)
+
+      assert status.counts.stale == 1
+      assert status.counts.degraded == 1
+      assert status.counts.degraded_packs == 2
+      assert :stale_heartbeats in status.reasons
+      assert :degraded_packs in status.reasons
+    end
+
+    test "defaults `now` to the current instant" do
+      runner = %Runner{online?: true, last_heartbeat_at: DateTime.utc_now()}
+
+      assert Runners.fleet_status([runner]).counts.stale == 0
+    end
+  end
+
+  describe "fetch_fleet_status/2" do
+    test "projects every scoped connection state into the fleet counts" do
+      {account, _user, subject} = account_with_owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Runners.create_runner(account_id: account.id, name: "online", connected?: true)
+
+      offline =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "offline", connected?: true)
+
+      :ok = Presence.untrack(self(), Presence.topic(account.id), offline.id)
+
+      Fixtures.Runners.create_runner(account_id: account.id, name: "pending", connected?: false)
+
+      disabled =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "disabled",
+          connected?: false
+        )
+
+      {:ok, _disabled} = Runners.disable_runner(disabled, subject)
+      Fixtures.Runners.create_runner(account_id: other_account.id, connected?: true)
+
+      assert {:ok, status} = Runners.fetch_fleet_status(subject)
+
+      assert status.counts.total == 4
+      assert status.counts.active == 3
+      assert status.counts.online == 1
+      assert status.counts.offline == 1
+      assert status.counts.pending == 1
+      assert status.counts.disabled == 1
+      assert :runners_online in status.reasons
+
+      # A never-connected runner queues exactly like a disconnected one — the
+      # portal accepts the dispatch and delivers it on the first connect.
+      assert status.counts.portal_ready == 1
+      assert status.counts.portal_queueable == 2
+      assert status.counts.portal_blocked == 1
+    end
+
+    test "counts the signed and degraded posture of the active fleet" do
+      {account, _user, subject} = account_with_owner_subject()
+
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "signed",
+        enforce_signatures: true,
+        connected?: true
+      )
+
+      degraded =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "degraded", connected?: true)
+
+      Fixtures.Runners.advertise_degraded_packs(degraded, [
+        %{"pack" => "nginx", "reason" => "invalid manifest"},
+        %{"pack" => "redis", "reason" => "unreadable"}
+      ])
+
+      parked =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "parked", connected?: false)
+
+      Fixtures.Runners.advertise_degraded_packs(parked, [
+        %{"pack" => "postgres", "reason" => "invalid manifest"}
+      ])
+
+      {:ok, _parked} = Runners.disable_runner(parked, subject)
+
+      assert {:ok, status} = Runners.fetch_fleet_status(subject)
+
+      assert status.counts.signed_only == 1
+      # The disabled runner's skipped pack is not actionable, so it stays out.
+      assert status.counts.degraded == 1
+      assert status.counts.degraded_packs == 2
+      assert status.signature_mode == :mixed
+      assert :degraded_packs in status.reasons
+
+      # Signed-only blocks beside the disabled runner; the plain online one is
+      # the only immediately dispatchable host.
+      assert status.counts.portal_ready == 1
+      assert status.counts.portal_queueable == 0
+      assert status.counts.portal_blocked == 2
+    end
+
+    test "another account's signed fleet never reaches these counts" do
+      {_account, _user, subject} = account_with_owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Runners.create_runner(
+        account_id: other_account.id,
+        enforce_signatures: true,
+        connected?: false
+      )
+
+      assert {:ok, status} = Runners.fetch_fleet_status(subject)
+
+      assert status.counts.total == 0
+      assert status.signature_mode == :empty
+      assert status.reasons == [:fleet_empty]
+    end
+
+    test "restricted runner access hides a signed, degraded runner from the fleet posture" do
+      {account, _owner, _owner_subject} = account_with_owner_subject()
+
+      in_scope =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "visible", connected?: false)
+
+      hidden =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "hidden",
+          enforce_signatures: true,
+          connected?: false
+        )
+
+      Fixtures.Runners.advertise_degraded_packs(hidden, [
+        %{"pack" => "nginx", "reason" => "invalid manifest"}
+      ])
+
+      operator = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, access} = RunnerAccess.restricted([], [in_scope.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:ok, status} = Runners.fetch_fleet_status(subject)
+
+      assert status.counts.total == 1
+      assert status.counts.signed_only == 0
+      assert status.counts.degraded == 0
+      assert status.signature_mode == :unsigned_allowed
+      refute :fleet_signed_only in status.reasons
+      refute :degraded_packs in status.reasons
+    end
+
+    test "a stale heartbeat surfaces beside an online runner it doesn't unseat" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, _ref} =
+        Runners.record_heartbeat(
+          account.id,
+          runner.id,
+          runner.connection_generation,
+          runner.connection_lease_id,
+          0
+        )
+
+      later = DateTime.add(DateTime.utc_now(), 120, :second)
+
+      assert {:ok, status} = Runners.fetch_fleet_status(subject, now: later)
+
+      assert status.counts.online == 1
+      assert status.counts.stale == 1
+      assert :runners_online in status.reasons
+      assert :stale_heartbeats in status.reasons
+    end
+
+    test "overlapping Presence metas use the newest heartbeat regardless of list order" do
+      {account, _user, subject} = account_with_owner_subject()
+      topic = Presence.topic(account.id)
+      now = ~U[2026-08-03 12:00:00Z]
+      stale = DateTime.to_unix(DateTime.add(now, -120, :second))
+      fresh = DateTime.to_unix(DateTime.add(now, -10, :second))
+
+      first = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      second = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      awaiting = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      track_presence_meta(topic, first.id, %{connection_generation: 1, last_heartbeat_at: stale})
+      track_presence_meta(topic, first.id, %{connection_generation: 1, last_heartbeat_at: fresh})
+      track_presence_meta(topic, second.id, %{connection_generation: 1, last_heartbeat_at: fresh})
+      track_presence_meta(topic, second.id, %{connection_generation: 1, last_heartbeat_at: stale})
+
+      # A reclaimed connection's higher generation wins even before its first
+      # heartbeat; the superseded socket must not make the new one look stale.
+      track_presence_meta(topic, awaiting.id, %{
+        connection_generation: 1,
+        last_heartbeat_at: stale
+      })
+
+      track_presence_meta(topic, awaiting.id, %{
+        connection_generation: 2,
+        last_heartbeat_at: nil
+      })
+
+      assert {:ok, status} = Runners.fetch_fleet_status(subject, now: now)
+      assert status.counts.online == 3
+      assert status.counts.stale == 0
+    end
+
+    test "overlapping all-stale metas count once and an invalid Unix value stays non-crashing" do
+      {account, _user, subject} = account_with_owner_subject()
+      topic = Presence.topic(account.id)
+      now = ~U[2026-08-03 12:00:00Z]
+      stale = DateTime.to_unix(DateTime.add(now, -120, :second))
+      older = DateTime.to_unix(DateTime.add(now, -180, :second))
+
+      stale_runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      invalid_runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      track_presence_meta(topic, stale_runner.id, %{
+        connection_generation: 1,
+        last_heartbeat_at: stale
+      })
+
+      track_presence_meta(topic, stale_runner.id, %{
+        connection_generation: 1,
+        last_heartbeat_at: older
+      })
+
+      track_presence_meta(topic, invalid_runner.id, %{
+        connection_generation: 1,
+        last_heartbeat_at: 1_208_925_819_614_629_174_706_176
+      })
+
+      assert {:ok, status} = Runners.fetch_fleet_status(subject, now: now)
+      assert status.counts.online == 2
+      assert status.counts.stale == 1
+
+      assert {:ok, runners, _meta} = Runners.list_runners_for_account(subject)
+      assert Enum.find(runners, &(&1.id == invalid_runner.id)).last_heartbeat_at == nil
+    end
+
+    test "a suspended membership fails closed — no runner reaches the counts" do
+      {account, _owner, _owner_subject} = account_with_owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+      Fixtures.Memberships.suspend_membership(membership)
+
+      assert {:ok, status} = Runners.fetch_fleet_status(subject)
+
+      assert status.counts.total == 0
+      assert status.reasons == [:fleet_empty]
+    end
+
+    test "rejects a subject without view permission" do
+      account = Fixtures.Accounts.create_account()
+      no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Runners.fetch_fleet_status(no_view) == {:error, :unauthorized}
+    end
+
+    test "rejects a subject with no account" do
+      assert Runners.fetch_fleet_status(%Subject{}) == {:error, :unauthorized}
+    end
+  end
+
   describe "fleet_all_offline?/1" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -1809,131 +2327,6 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "fleet_all_signed?/1" do
-    setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      %{account: account, subject: subject}
-    end
-
-    test "true when there's at least one active runner and every one enforces signatures", %{
-      account: account,
-      subject: subject
-    } do
-      _r1 =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          enforce_signatures: true,
-          connected?: false
-        )
-
-      _r2 =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          enforce_signatures: true,
-          connected?: false
-        )
-
-      assert Runners.fleet_all_signed?(subject)
-    end
-
-    test "false when any active runner does not enforce", %{account: account, subject: subject} do
-      _signed =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          enforce_signatures: true,
-          connected?: false
-        )
-
-      _plain = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-
-      refute Runners.fleet_all_signed?(subject)
-    end
-
-    test "false when the account has no runners (nothing to signal)", %{subject: subject} do
-      refute Runners.fleet_all_signed?(subject)
-    end
-
-    test "a disabled non-enforcing runner doesn't keep the fleet from reading signed-only", %{
-      account: account,
-      subject: subject
-    } do
-      _signed =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          enforce_signatures: true,
-          connected?: false
-        )
-
-      plain = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      {:ok, _} = Runners.disable_runner(plain, subject)
-
-      assert Runners.fleet_all_signed?(subject)
-    end
-
-    test "is account-scoped — account B's enforcing fleet doesn't make account A signed", %{
-      subject: subject_a
-    } do
-      account_b = Fixtures.Accounts.create_account()
-
-      _r =
-        Fixtures.Runners.create_runner(
-          account_id: account_b.id,
-          enforce_signatures: true,
-          connected?: false
-        )
-
-      refute Runners.fleet_all_signed?(subject_a)
-    end
-
-    test "false (no badge) for a subject without view_runners", %{account: account} do
-      _r =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          enforce_signatures: true,
-          connected?: false
-        )
-
-      no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
-
-      refute Runners.fleet_all_signed?(no_view)
-    end
-
-    test "false for a subject with no account" do
-      refute Runners.fleet_all_signed?(%Subject{})
-    end
-  end
-
-  describe "connection_state/1" do
-    test "maps online / disabled / pending / offline" do
-      now = DateTime.utc_now()
-
-      assert Runners.connection_state(%Runner{online?: true}) == :online
-      assert Runners.connection_state(%Runner{disabled_at: now}) == :disabled
-      assert Runners.connection_state(%Runner{online?: false, last_connected_at: nil}) == :pending
-
-      assert Runners.connection_state(%Runner{online?: false, last_connected_at: now}) ==
-               :offline
-
-      # disabled wins over a still-live socket
-      assert Runners.connection_state(%Runner{online?: true, disabled_at: now}) == :disabled
-    end
-
-    # there is NO heartbeat-age `:stale` state by design.
-    # Liveness is enforced only at the socket (the 90s heartbeat-timeout watcher),
-    # never re-derived from `last_heartbeat_at`: an `online?` runner reads :online
-    # no matter how old its last heartbeat looks. The binary stays honest because
-    # the socket would already have closed a genuinely silent runner to :offline.
-    test "stays :online regardless of last_heartbeat_at age (no :stale)" do
-      ancient = DateTime.add(DateTime.utc_now(), -3600, :second)
-
-      assert Runners.connection_state(%Runner{online?: true, last_heartbeat_at: ancient}) ==
-               :online
-
-      # A nil heartbeat on a live socket is still :online, not a derived stale state.
-      assert Runners.connection_state(%Runner{online?: true, last_heartbeat_at: nil}) == :online
-    end
-  end
-
   describe "any_runners?/1" do
     test "false on an empty fleet, true once a runner exists, false without permission" do
       {account, _user, subject} = account_with_owner_subject()
@@ -1953,6 +2346,54 @@ defmodule Emisar.RunnersTest do
 
       viewer = Fixtures.Subjects.membership_subject(membership)
       assert Runners.any_runners?(viewer)
+    end
+
+    test "a disabled runner is not an active one" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, _disabled} = Runners.disable_runner(runner, subject)
+
+      refute Runners.any_runners?(subject)
+    end
+
+    test "another account's fleet never answers for this one" do
+      {_account, _user, subject} = account_with_owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+      Fixtures.Runners.create_runner(account_id: other_account.id)
+
+      refute Runners.any_runners?(subject)
+    end
+
+    test "restricted runner access answers only for the runners in scope" do
+      {account, _owner, _owner_subject} = account_with_owner_subject()
+      in_scope = Fixtures.Runners.create_runner(account_id: account.id, name: "visible")
+      Fixtures.Runners.create_runner(account_id: account.id, name: "hidden")
+
+      operator = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, access} = RunnerAccess.restricted([], [in_scope.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert Runners.any_runners?(subject)
+
+      Fixtures.Memberships.suspend_membership(membership)
+      refute Runners.any_runners?(subject)
+    end
+
+    test "false without view_runners" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Runners.create_runner(account_id: account.id)
+      no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      refute Runners.any_runners?(no_view)
     end
   end
 
