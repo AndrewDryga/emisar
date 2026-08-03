@@ -7,7 +7,7 @@
       toc={[
         {"calling-the-endpoint", "Calling the endpoint"},
         {"protocol-methods", "Protocol methods"},
-        {"tools", "Twelve fixed tools"},
+        {"tools", "Fourteen fixed tools"},
         {"discovery", "Discovery"},
         {"running-an-action", "Running an action"},
         {"operations", "Operations and recovery"},
@@ -68,7 +68,7 @@
             returns capabilities and operating instructions (2025-11-25 / 2025-06-18).
           </li>
           <li><code>ping</code> remains responsive while another request waits.</li>
-          <li><code>tools/list</code> always returns the same twelve tool descriptors.</li>
+          <li><code>tools/list</code> always returns the same fourteen tool descriptors.</li>
           <li><code>tools/call</code> invokes one fixed tool.</li>
           <li>
             <code>notifications/cancelled</code> stops observation of one in-flight request and
@@ -81,7 +81,7 @@
           a request ID so its operation can be recovered safely.
         </p>
 
-        <h2 id="tools">Twelve fixed tools</h2>
+        <h2 id="tools">Fourteen fixed tools</h2>
         <p>
           Actions are data, not MCP tool descriptors. Runner and pack changes appear in discovery
           results, so clients never need a hand-maintained action allowlist and never load hundreds
@@ -105,10 +105,12 @@
                 {"get_operation", "Recover one exact mutation after an ambiguous response."},
                 {"wait_for_run", "Wait for one run to change or reach a terminal state."},
                 {"recent_runs", "Inspect scoped run history with exact identity filters."},
-                {"list_runbooks", "List visible immutable published runbooks."},
-                {"get_runbook", "Read one frozen typed runbook definition."},
+                {"list_runbooks", "List published runbooks, or explicitly list current drafts."},
+                {"get_runbook", "Read one exact published revision or current draft."},
                 {"execute_runbook", "Execute one published runbook through policy and approval."},
-                {"create_runbook_draft", "Save an agent-proposed draft for human review."}
+                {"create_runbook_draft", "Start a new runbook family as a draft."},
+                {"update_runbook_draft", "Save the next draft revision without changing the family slug."},
+                {"test_runbook_draft", "Run one exact draft through normal policy and approval gates."}
               ] do %>
                 <tr>
                   <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{tool}</td>
@@ -194,8 +196,8 @@
 
         <h2 id="operations">Operations and recovery</h2>
         <p>
-          Every <code>run_action</code>, <code>execute_runbook</code>, and
-          <code>create_runbook_draft</code>
+          Every <code>run_action</code>, <code>execute_runbook</code>, <code>create_runbook_draft</code>, <code>update_runbook_draft</code>, and
+          <code>test_runbook_draft</code>
           receives a private <code>operation_id</code>. The stdio bridge derives it from its private
           process nonce and request sequence; for native HTTP clients, the portal derives it from
           the exact request and credential lineage — the API key together with its automatic-rotation
@@ -226,11 +228,17 @@
 
         <h2 id="runbooks-signing">Runbooks and signing</h2>
         <p>
-          Published runbooks are immutable <code>slug@version</code>
-          records. Inspect the complete
-          typed definition with <code>get_runbook</code>
-          before calling <code>execute_runbook</code>. Draft creation accepts that same strict
-          definition and saves it for review; it never publishes or executes it.
+          Runbooks are immutable <code>slug@version</code>
+          records. Published discovery is the default. To revise an existing runbook, inspect its
+          exact ref and definition hash, then call <code>update_runbook_draft</code>. The next
+          version keeps the family slug and remains a draft.
+        </p>
+        <p>
+          Drafts never enter ordinary discovery or <code>execute_runbook</code>. List or read them
+          with <code>status: "draft"</code>, then pass the exact ref and hash to <code>test_runbook_draft</code>. A draft test uses the same target, trust, policy,
+          approval, scheduler, runner, and audit path as published execution. It can cause the
+          actions' real effects, but it does not publish the draft; publication remains a human
+          action in the console.
         </p>
         <p>
           A definition may contain 32 inputs, 16 stages, 32 steps in total, 16 target refs per

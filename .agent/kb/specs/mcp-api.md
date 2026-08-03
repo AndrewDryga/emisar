@@ -97,7 +97,7 @@ rather than this specification.
 
 ## Fixed tool catalog
 
-`tools/list` returns exactly these twelve tools:
+`tools/list` returns exactly these fourteen tools:
 
 | Tool | Purpose |
 | --- | --- |
@@ -109,10 +109,12 @@ rather than this specification.
 | `get_operation` | Recover one exact bridge mutation after an ambiguous response. |
 | `wait_for_run` | Wait for one run or runbook execution to change or finish, and stream its output forward. |
 | `recent_runs` | Inspect and paginate scoped run activity. |
-| `list_runbooks` | List published runbooks. |
-| `get_runbook` | Inspect one immutable published runbook revision. |
+| `list_runbooks` | List published runbooks, or explicitly list current working drafts. |
+| `get_runbook` | Inspect one immutable published revision, or one exact current draft. |
 | `execute_runbook` | Execute a published runbook on eligible runners. |
 | `create_runbook_draft` | Save an agent-proposed draft for human review. |
+| `update_runbook_draft` | Save the next immutable working revision in an existing runbook family. |
+| `test_runbook_draft` | Execute one exact current draft through normal policy and approval gates. |
 
 The server advertises `tools.listChanged: false`. Runner and pack changes appear
 in tool results, never by growing the MCP tool catalog.
@@ -122,7 +124,7 @@ serialized JSON in one text content block for clients that do not consume
 structured results. Each fixed wire descriptor publishes its complete
 `inputSchema`, carrying only the canonical `$defs` it transitively references.
 The wire descriptors intentionally omit the optional MCP `outputSchema`:
-resolving the full response schemas into all twelve descriptors grows
+resolving the full response schemas into all fourteen descriptors grows
 `tools/list` from roughly 17 KiB to roughly 140 KiB, and a client that relays
 descriptors into model context would pay that on every session — recreating the
 large-catalog problem this API exists to avoid. The complete response schemas remain normative
@@ -362,10 +364,10 @@ authorization, and approval decision:
   tools read only the authenticated account's closed Emisar catalog, runner,
   runbook, operation, and run state; they neither contact arbitrary external
   entities nor change publicly visible internet state.
-- `create_runbook_draft` advertises `readOnlyHint: false`,
+- `create_runbook_draft` and `update_runbook_draft` advertise `readOnlyHint: false`,
   `destructiveHint: false`, `idempotentHint: false`, and
-  `openWorldHint: false`: it saves only a portal-local proposal.
-- `run_action` and `execute_runbook` advertise `readOnlyHint: false`,
+  `openWorldHint: false`: they save only portal-local proposals.
+- `run_action`, `execute_runbook`, and `test_runbook_draft` advertise `readOnlyHint: false`,
   `destructiveHint: true`, `idempotentHint: false`, and `openWorldHint: true`.
   Each static tool spans low-risk through critical operations, including packs
   that call public cloud APIs or alter internet-facing production services, so
@@ -878,14 +880,16 @@ rotation. For `run_action`, in one transaction it:
    allowed runs.
 
 The mutation fingerprint is tool-specific and versioned. `run_action` uses the
-facts above; `execute_runbook` uses exact runbook ref and reason; draft creation
-uses fixed JSON over its validated title, slug, description, and ordered step
-facts. Tool name is always part of the fingerprint, so different mutations
-cannot collide.
-`execute_runbook` and `create_runbook_draft` reserve the same lineage-local
-operation identity and persist their fingerprint atomically with the execution
-or draft described below; they do not use the action-specific run-set steps
-above.
+facts above; published and draft-test execution use exact runbook ref, reason,
+and typed inputs, with a draft test also binding the caller-inspected definition
+SHA-256. Draft creation uses fixed JSON over its validated title, slug,
+description, and definition. Draft revision additionally binds the exact source
+ref and source definition SHA-256. Tool name is always part of the fingerprint,
+so different mutations cannot collide.
+`execute_runbook`, `create_runbook_draft`, `update_runbook_draft`, and
+`test_runbook_draft` reserve the same lineage-local operation identity and
+persist their fingerprint atomically with the execution or draft described
+below; they do not use the action-specific run-set steps above.
 
 The transaction commits before any runner delivery. The same operation ID and
 fingerprint returns the original operation; the same ID with a different
@@ -1133,10 +1137,11 @@ client signing key merely by being direct.
 ### `get_operation`
 
 `get_operation` is the exact, typed recovery read for every bridge mutation. It
-requires only `operation_id`, is never paginated, and returns one of three
-bounded shapes: action identity plus `recent_runs` continuation, runbook
-identity plus `wait_for_run` continuation, or the recovered draft identity and
-review URL. It returns no runner refs, output, or expanded plan.
+requires only `operation_id`, is never paginated, and returns one of four
+bounded shapes: action identity plus `recent_runs` continuation, published
+runbook execution plus `wait_for_run`, draft-test execution plus its pinned
+definition SHA-256 and `wait_for_run`, or the created or revised draft identity
+and review URL. It returns no runner refs, output, or expanded plan.
 
 ```json
 {
@@ -1412,8 +1417,10 @@ action signature.
 
 ### `list_runbooks`
 
-Input accepts `query` (case-insensitive slug/title words), `limit` (1 through
-50, default 15), and cursor. Results order by slug and immutable ref.
+Input accepts `query` (case-insensitive slug/title words), `status`
+(`published` by default or explicit `draft`), `limit` (1 through 50, default
+15), and cursor. The cursor is bound to the status filter. Results order by
+slug and immutable ref.
 
 ```json
 {
@@ -1422,6 +1429,8 @@ Input accepts `query` (case-insensitive slug/title words), `limit` (1 through
   "runbooks": [
     {
       "runbook_ref": "restart-postgres@3",
+      "status": "published",
+      "definition_sha256": "d564bf1dafd0ca0e93dcf022bc5626ad9c53c3d93afd23874c6d9cfe9d9c72b1",
       "title": "Restart PostgreSQL safely",
       "summary": "Checks replication, restarts the primary, then verifies recovery.",
       "input_count": 1,
@@ -1439,9 +1448,12 @@ The readable immutable ref is:
 <slug>@<version>
 ```
 
-Published runbook versions are immutable portal records. A newly published
-revision receives the next version and therefore a new ref. The response does
-not repeat version beside the ref.
+Published and draft runbook versions are immutable portal records. A newly
+saved revision receives the next version and therefore a new ref. Published
+discovery is the default and never includes drafts. An explicit
+`status: "draft"` read returns only a family's current head when that head is a
+draft; each result also carries `draft_id`. Older drafts are not model-visible.
+The response does not repeat version beside the ref.
 
 Runbook reads apply the atomic visibility rule above. The complete definition
 must currently resolve to in-scope runners and trusted compatible pack/action
@@ -1453,14 +1465,17 @@ visible.
 
 ### `get_runbook`
 
-Input requires only exact `runbook_ref`. The bounded result returns the frozen
-definition or `runbook_not_found`:
+Input requires exact `runbook_ref` and accepts the same explicit `status`, which
+defaults to `published`. The bounded result returns the frozen definition or a
+status-specific not-found error:
 
 ```json
 {
   "ok": true,
   "runbook": {
     "runbook_ref": "restart-postgres@3",
+    "status": "published",
+    "definition_sha256": "d564bf1dafd0ca0e93dcf022bc5626ad9c53c3d93afd23874c6d9cfe9d9c72b1",
     "title": "Restart PostgreSQL safely",
     "description": "Checks replication, restarts the primary, then verifies recovery.",
     "definition": {
@@ -1516,15 +1531,23 @@ definition or `runbook_not_found`:
 }
 ```
 
-The `definition` object is the same strict JSON-compatible v1 contract used by
-the console, persistence, validation, compilation, and draft creation. It
-allows no aliases or unknown fields. A target requires `selection` and 1 through
-16 tagged `refs`. `selection: "all"` accepts distinct `runner:<runner_ref>` and
+An explicit draft read also returns `draft_id`. The `definition_sha256` is the
+server-issued digest required by draft revision and test mutations; callers
+copy it exactly and never recompute identity from a modified document.
+
+For a published read, `definition` is the same strict JSON-compatible v1
+contract used by the console, validation, and compilation. It allows no aliases
+or unknown fields. A target requires `selection` and 1 through 16 tagged `refs`.
+`selection: "all"` accepts distinct `runner:<runner_ref>` and
 `group:<group_name>` refs in one union. `selection: "random_one"` accepts exactly
 one group ref. Group membership is resolved only when execution begins;
-publishing a runbook does not claim a future runner set. The complete online pool
-must be inside the caller's current scope or preflight returns generic
+publishing a runbook does not claim a future runner set. The complete online
+pool must be inside the caller's current scope or preflight returns generic
 `not_allowed` without refs or counts; partial-fleet execution is never inferred.
+
+A draft read uses the bounded canonical v1 object envelope but may still be
+incomplete. Publication and draft testing apply the complete definition
+contract before any action can run.
 
 One definition is at most 64 KiB and contains at most 32 inputs, 16 stages, 32
 steps total, 16 target refs per step, and 256 resolved logical items. The
@@ -1569,6 +1592,8 @@ Accepted response:
   "execution": {
     "runbook_execution_id": "60aeb528-cde1-5be6-8d2b-5b903f036d1c",
     "runbook_ref": "restart-postgres@3",
+    "kind": "published",
+    "definition_sha256": "d564bf1dafd0ca0e93dcf022bc5626ad9c53c3d93afd23874c6d9cfe9d9c72b1",
     "status": "active",
     "blocking": null,
     "stages": [
@@ -1742,18 +1767,58 @@ limits. Unknown fields are rejected at every level.
 ```
 
 The bridge injects an operation ID. The result is `ok: true` with
-`operation_id`, `draft_id`, `slug`, `status: "draft"`, and `review_url`. It
-creates neither a published ref nor a run. Static DefinitionV1 validation is
-required before reserving the operation or writing the draft. An invalid
-definition returns `invalid_runbook` with the total issue count and up to 64
+`operation_id`, `draft_id`, immutable `runbook_ref`, `slug`, `status: "draft"`,
+`definition_sha256`, and `review_url`. It
+creates neither a published ref nor a run. The bounded canonical draft envelope
+is validated before reserving the operation or writing the draft; it may remain
+incomplete until human review. An invalid definition returns `invalid_runbook`
+with the total issue count and up to 64
 ordered `{code, path, message}` issues using exact JSON Pointer paths. The
 `issues_truncated` flag says when the bounded report has more issues to fix; a
 21-issue definition returns all 21. No runbook, operation, audit event, or other
 side effect is written on this path. Current target/pack preflight happens in
 the console before publication and again at execution. Human review and
 publication remain mandatory. Retry returns the same draft through the common
-operation contract. `get_operation` recovers the draft ID, slug, and review URL
-after an ambiguous response; no synthetic run is created for recovery.
+operation contract. `get_operation` recovers the draft ID, ref, hash, slug, and
+review URL after an ambiguous response; no synthetic run is created for
+recovery.
+
+### `update_runbook_draft`
+
+Use this tool when a runbook family already exists. Input requires the exact
+current `runbook_ref`, its server-issued `definition_sha256`, a nonblank title,
+nullable description, and the complete replacement definition. The slug is not
+an input: the new immutable version stays in the source family.
+
+The source may be the current published version or the current draft. The
+portal locks that row, confirms it is still the family head, compares the hash,
+then writes the next version as `draft`. A stale ref or hash returns
+`draft_changed` and writes no operation or revision. The success and recovery
+objects use the same complete draft shape as `create_runbook_draft`.
+
+Saving a revision does not publish it. Human review and publication remain the
+only way to replace the family's published version.
+
+### `test_runbook_draft`
+
+Input requires the exact current draft `runbook_ref`, its server-issued
+`definition_sha256`, a nonblank reason, and optional typed `input_values`. This
+is the only execution tool that accepts a draft; `execute_runbook` continues to
+resolve published versions only.
+
+The portal locks and rechecks the draft identity, then runs the normal compiler,
+target expansion, current scope and trust checks, policy evaluation, approval,
+scheduler, runner delivery, and audit path. The durable execution carries
+`kind: "draft_test"` and the pinned definition hash in execution, approval, and
+dispatch evidence. It may therefore cause the same external effects as the
+draft's actions, and policy may allow, hold, or deny them exactly as it would a
+published runbook. A stale ref or hash returns `draft_changed` before an
+execution is created.
+
+The accepted response uses the normal runbook execution shape and
+continuations. `get_operation` recovers it as `kind: "runbook_draft_test"` with
+the execution ID, draft ref, definition hash, and `wait_for_run` continuation.
+Testing never changes draft status and never publishes it.
 
 ## Error taxonomy
 
@@ -1785,6 +1850,8 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | --- | --- | --- |
 | `action_unavailable` | Exact visible contract is not executable. | Follow returned diagnostics. |
 | `dispatch_failed` | The atomic action operation did not commit. | Safe to retry with the same operation ID. |
+| `draft_changed` | The requested draft head or definition hash is stale. | List drafts, inspect the current head, and decide whether to reapply the change. |
+| `draft_not_found` | Exact current draft is absent or no longer visible. | List drafts; do not substitute a published ref. |
 | `execution_failed` | The atomic runbook operation did not commit. | Safe to retry with the same operation ID. |
 | `ambiguous_pack_version` | The selected pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
 | `fan_out_too_large` | Target expansion exceeds the 256-item execution cap. | Narrow targets or split the reviewed runbook. |
@@ -1942,8 +2009,8 @@ production actions.
   immediately before execution.
 - Operation identity is durable in the portal across API-key rotation and portal
   delivery retries. The bridge reuses it for retries of one live tool call;
-  `get_operation` covers action, runbook, and draft mutations without inventing
-  runs.
+  `get_operation` covers action, published execution, draft revision, and draft
+  test mutations without inventing resources.
 - For signed actions, `reason` is part of the client-signed execution intent; it
   remains agent-supplied audit context, not proof of human intent.
 - Free-form metadata and output never become policy inputs.
@@ -1976,7 +2043,7 @@ production actions.
 
 1. **Trusted catalog**: expand the trusted pack snapshot to the complete bounded
    manifest; add scoped pack, runner, candidate, and exact-action reads.
-2. **Portal MCP boundary**: generate the fixed twelve descriptors from
+2. **Portal MCP boundary**: generate the fixed fourteen descriptors from
    `portal/apps/emisar_web/priv/mcp/api-schemas.json`; publish strict JSON Schema 2020-12
    inputs/outputs, common results, live cursors, deterministic search, and
    authenticated operation idempotency without a second signature over HTTPS.

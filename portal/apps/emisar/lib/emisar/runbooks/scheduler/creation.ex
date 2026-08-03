@@ -4,7 +4,8 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
   alias Ecto.Multi
   alias Emisar.{Accounts, Approvals, Audit, Policies, Repo}
   alias Emisar.Auth.Subject
-  alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Runbook, RunbookExecution, Scheduler}
+  alias Emisar.Runbooks.{Definition, ExecutionItem, ExecutionStage, Runbook}
+  alias Emisar.Runbooks.{RunbookExecution, Scheduler}
 
   @max_active_execution_items_per_account 1_024
 
@@ -54,10 +55,12 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
     stage_ids = Map.new(stages, &{&1.position, &1.id})
     items = build_item_rows(runbook, compiled, execution_id, stage_ids)
 
+    kind = Keyword.get(opts, :kind, :published)
+
     approval =
       compiled.items
       |> approval_posture()
-      |> with_runbook_metadata(runbook)
+      |> with_runbook_metadata(runbook, kind)
 
     execution_attrs = %{
       id: execution_id,
@@ -69,9 +72,11 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
       operation_id: Keyword.get(opts, :operation_id),
       mcp_operation_record_id: Keyword.get(opts, :mcp_operation_record_id),
       reason: reason,
+      kind: kind,
       frozen_plan: compiled.plan,
       inputs_raw: compiled.inputs_raw,
       inputs_sha256: compiled.inputs_sha256,
+      definition_sha256: Definition.digest(runbook.definition),
       sensitive_input_names: compiled.sensitive_input_names,
       status: if(approval, do: :pending_approval, else: :active)
     }
@@ -208,13 +213,16 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
     end
   end
 
-  defp with_runbook_metadata(nil, _runbook), do: nil
+  defp with_runbook_metadata(nil, _runbook, _kind), do: nil
 
-  defp with_runbook_metadata(approval, runbook) do
-    Map.put(approval, :runbook, %{
+  defp with_runbook_metadata(approval, runbook, kind) do
+    approval
+    |> Map.put(:execution_kind, Atom.to_string(kind))
+    |> Map.put(:runbook, %{
       "id" => runbook.id,
       "title" => runbook.title,
-      "version" => runbook.version
+      "version" => runbook.version,
+      "definition_sha256" => Definition.digest(runbook.definition)
     })
   end
 

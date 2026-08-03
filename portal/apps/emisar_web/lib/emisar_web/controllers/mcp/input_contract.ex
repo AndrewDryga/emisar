@@ -22,7 +22,7 @@ defmodule EmisarWeb.MCP.InputContract do
                # actionable, indexed issue report, so only the adapter's copy
                # defers that one subtree instead of collapsing it to eight paths.
                validation_schema =
-                 if name == "create_runbook_draft" do
+                 if name in ["create_runbook_draft", "update_runbook_draft"] do
                    put_in(schema, ["properties", "definition"], %{})
                  else
                    schema

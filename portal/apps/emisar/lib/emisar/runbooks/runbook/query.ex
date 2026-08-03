@@ -33,6 +33,11 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def published(queryable \\ all()),
     do: where(queryable, [runbooks: r], r.status == :published)
 
+  def draft(queryable \\ all()),
+    do: where(queryable, [runbooks: r], r.status == :draft)
+
+  def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
+
   def ordered_by_title_version(queryable),
     do: order_by(queryable, [runbooks: r], asc: r.title, desc: r.version)
 

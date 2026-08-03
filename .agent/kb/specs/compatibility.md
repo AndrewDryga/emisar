@@ -170,17 +170,18 @@ deprecation window. Additive fields still need either optional v1 semantics
 that old consumers safely ignore where allowed, or a new schema version when
 the strict v1 object would reject them.
 
-### MCP transport and the 12-tool surface
+### MCP transport and the 14-tool surface
 
 **What it is.** The portal exposes stateless, JSON-only Streamable HTTP at
 `/api/mcp/rpc`. `tools/list` is server-authoritative and currently returns
-these twelve tools:
+these fourteen tools:
 
 ```text
 list_packs          list_runners          find_actions
 get_action          run_action             get_operation
 wait_for_run        recent_runs           list_runbooks
 get_runbook         execute_runbook        create_runbook_draft
+update_runbook_draft                       test_runbook_draft
 ```
 
 The tool catalog advertises `tools.listChanged: false`. Packs and runner state

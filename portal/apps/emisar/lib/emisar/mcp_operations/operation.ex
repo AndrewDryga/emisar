@@ -11,7 +11,14 @@ defmodule Emisar.MCPOperations.Operation do
     field :credential_lineage_id, Ecto.UUID
     field :operation_id, :string
 
-    field :tool, Ecto.Enum, values: [:run_action, :execute_runbook, :create_runbook_draft]
+    field :tool, Ecto.Enum,
+      values: [
+        :run_action,
+        :execute_runbook,
+        :create_runbook_draft,
+        :update_runbook_draft,
+        :test_runbook_draft
+      ]
 
     field :fingerprint, :string
     field :action_id, :string

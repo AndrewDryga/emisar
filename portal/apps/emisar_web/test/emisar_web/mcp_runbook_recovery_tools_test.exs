@@ -5,7 +5,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   alias Emisar.MCPOperations.Operation
   alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Runbook, RunbookExecution}
   alias Emisar.Runs.ActionRun
-  alias EmisarWeb.MCP.{ResponseBudget, RunbookTools}
+  alias EmisarWeb.MCP.{ResponseBudget, RunbookTools, SchemaRegistry}
 
   @hash "sha256:" <> String.duplicate("b", 64)
   @pack_ref "operations@1.0.0/#{@hash}"
@@ -208,6 +208,11 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
     execution_id = execution["execution"]["runbook_execution_id"]
 
+    assert execution["execution"]["kind"] == "published"
+
+    assert execution["execution"]["definition_sha256"] ==
+             Runbooks.Definition.digest(runbook.definition)
+
     assert [
              %{
                "stage_id" => "inspect",
@@ -283,6 +288,315 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert rejected_wait["error"]["code"] == "invalid_args"
 
+    assert Repo.aggregate(Operation, :count) == 2
+  end
+
+  test "runbook drafts are discoverable only when a caller asks for them", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "db-primary")
+    published = publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
+    draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
+    draft_hash = Runbooks.Definition.digest(draft.definition)
+    published_ref = "#{published.slug}@#{published.version}"
+
+    listed = call(conn, "list_runbooks", %{})
+
+    assert [%{"runbook_ref" => ^published_ref, "status" => "published"}] = listed["runbooks"]
+
+    drafts = call(conn, "list_runbooks", %{"status" => "draft"})
+
+    assert [
+             %{
+               "runbook_ref" => "cache-health@1",
+               "status" => "draft",
+               "definition_sha256" => ^draft_hash,
+               "draft_id" => draft_id
+             }
+           ] = drafts["runbooks"]
+
+    assert draft_id == draft.id
+
+    hidden = call(conn, "get_runbook", %{"runbook_ref" => "cache-health@1"})
+    assert hidden["error"]["code"] == "runbook_not_found"
+
+    fetched = call(conn, "get_runbook", %{"runbook_ref" => "cache-health@1", "status" => "draft"})
+
+    assert fetched["runbook"]["status"] == "draft"
+    assert fetched["runbook"]["draft_id"] == draft.id
+    assert fetched["runbook"]["definition_sha256"] == draft_hash
+
+    as_draft = call(conn, "get_runbook", %{"runbook_ref" => published_ref, "status" => "draft"})
+    assert as_draft["error"]["code"] == "draft_not_found"
+  end
+
+  test "update_runbook_draft advances the family head and refuses stale edits", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "db-primary")
+    draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
+    first_hash = Runbooks.Definition.digest(draft.definition)
+
+    revised_definition =
+      subject
+      |> target_refs(%{"runner_id" => [runner.id]})
+      |> runbook_definition()
+      |> Map.put("context_markdown", "Verify the cache fleet.")
+
+    revision_args = %{
+      "runbook_ref" => "cache-health@1",
+      "definition_sha256" => first_hash,
+      "title" => "Cache health revised",
+      "description" => nil,
+      "definition" => revised_definition
+    }
+
+    stale_hash =
+      call(
+        conn,
+        "update_runbook_draft",
+        Map.put(revision_args, "definition_sha256", String.duplicate("0", 64))
+      )
+
+    assert stale_hash["error"]["code"] == "draft_changed"
+
+    revised = call(conn, "update_runbook_draft", revision_args)
+
+    assert revised["runbook_ref"] == "cache-health@2"
+    assert revised["slug"] == "cache-health"
+    assert revised["status"] == "draft"
+    assert revised["draft_id"] != draft.id
+
+    assert revised["definition_sha256"] == Runbooks.Definition.digest(revised_definition)
+
+    assert call(conn, "update_runbook_draft", revision_args) == revised
+
+    recovered = call(conn, "get_operation", %{"operation_id" => revised["operation_id"]})
+
+    assert recovered["operation"]["kind"] == "runbook_draft"
+    assert recovered["operation"]["runbook_ref"] == "cache-health@2"
+    assert recovered["operation"]["definition_sha256"] == revised["definition_sha256"]
+
+    # The same source ref and hash are now one revision behind the head.
+    stale_head = call(conn, "update_runbook_draft", Map.put(revision_args, "title", "Stale edit"))
+
+    assert stale_head["error"]["code"] == "draft_changed"
+    assert Repo.aggregate(Runbook, :count) == 2
+  end
+
+  test "test_runbook_draft executes the exact current draft and recovers by operation", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "db-primary")
+    :ok = Runners.subscribe_runner_transport(runner)
+    draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
+    draft_hash = Runbooks.Definition.digest(draft.definition)
+
+    args = %{
+      "runbook_ref" => "cache-health@1",
+      "definition_sha256" => draft_hash,
+      "reason" => "Verify the draft before publishing"
+    }
+
+    tested = call(conn, "test_runbook_draft", args)
+    execution_id = tested["execution"]["runbook_execution_id"]
+
+    assert tested["execution"]["kind"] == "draft_test"
+    assert tested["execution"]["definition_sha256"] == draft_hash
+    assert tested["execution"]["runbook_ref"] == "cache-health@1"
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+
+    replayed = call(conn, "test_runbook_draft", args)
+    assert replayed["execution"]["runbook_execution_id"] == execution_id
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
+
+    recovered = call(conn, "get_operation", %{"operation_id" => tested["operation_id"]})
+
+    assert recovered["operation"]["kind"] == "runbook_draft_test"
+    assert recovered["operation"]["runbook_execution_id"] == execution_id
+    assert recovered["operation"]["definition_sha256"] == draft_hash
+    assert recovered["operation"]["runbook_ref"] == "cache-health@1"
+
+    stale =
+      call(
+        conn,
+        "test_runbook_draft",
+        Map.put(args, "definition_sha256", String.duplicate("0", 64))
+      )
+
+    assert stale["error"]["code"] == "draft_changed"
+    assert Repo.aggregate(RunbookExecution, :count) == 1
+  end
+
+  test "another account's key can neither read nor test this draft", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "db-primary")
+    draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
+    foreign_conn = foreign_key_conn()
+
+    assert call(foreign_conn, "list_runbooks", %{"status" => "draft"})["runbooks"] == []
+
+    foreign_read =
+      call(foreign_conn, "get_runbook", %{"runbook_ref" => "cache-health@1", "status" => "draft"})
+
+    assert foreign_read["error"]["code"] == "draft_not_found"
+
+    foreign_test =
+      call(foreign_conn, "test_runbook_draft", %{
+        "runbook_ref" => "cache-health@1",
+        "definition_sha256" => Runbooks.Definition.digest(draft.definition),
+        "reason" => "Borrow another tenant's draft"
+      })
+
+    assert foreign_test["error"]["code"] == "draft_changed"
+    refute Repo.exists?(RunbookExecution)
+
+    # The owning account still sees its own draft.
+    assert [%{"runbook_ref" => "cache-health@1"}] =
+             call(conn, "list_runbooks", %{"status" => "draft"})["runbooks"]
+  end
+
+  test "no runbook publish or delete tool is exposed", %{conn: conn} do
+    refute Enum.any?(SchemaRegistry.tool_names(), &(&1 =~ ~r/publish|delete/))
+
+    Enum.each(~w(publish_runbook publish_runbook_draft delete_runbook), fn name ->
+      body =
+        conn
+        |> rpc("tools/call", %{"name" => name, "arguments" => %{}})
+        |> json_response(200)
+
+      assert get_in(body, ["result", "structuredContent", "error", "code"]) == "unknown_tool"
+    end)
+  end
+
+  test "models revise one runbook family and explicitly test its current draft", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "draft-test")
+    :ok = Runners.subscribe_runner_transport(runner)
+    runner_ref = runner_ref(runner)
+
+    published =
+      publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
+
+    fetched = call(conn, "get_runbook", %{"runbook_ref" => "database-health@1"})
+    published_hash = fetched["runbook"]["definition_sha256"]
+
+    revised_definition =
+      runbook_definition(%{"selection" => "all", "refs" => ["runner:" <> runner_ref]})
+      |> Map.put("context_markdown", "Inspect the database fleet, then report the evidence.")
+
+    revision_args = %{
+      "runbook_ref" => "database-health@1",
+      "definition_sha256" => published_hash,
+      "title" => "Database health review",
+      "description" => "Working revision",
+      "definition" => revised_definition
+    }
+
+    revised =
+      call(
+        conn,
+        "update_runbook_draft",
+        revision_args,
+        "op_424NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert revised["runbook_ref"] == "database-health@2"
+    assert revised["slug"] == published.slug
+    assert revised["status"] == "draft"
+    draft_hash = revised["definition_sha256"]
+
+    assert call(conn, "update_runbook_draft", revision_args, "op_424NN9NMDZ1T76NARWCKM5A0D6") ==
+             revised
+
+    assert [%{"runbook_ref" => "database-health@1", "status" => "published"}] =
+             call(conn, "list_runbooks", %{})["runbooks"]
+
+    assert [
+             %{
+               "runbook_ref" => "database-health@2",
+               "status" => "draft",
+               "definition_sha256" => ^draft_hash
+             }
+           ] = call(conn, "list_runbooks", %{"status" => "draft"})["runbooks"]
+
+    inspected =
+      call(conn, "get_runbook", %{
+        "runbook_ref" => "database-health@2",
+        "status" => "draft"
+      })
+
+    assert inspected["runbook"]["draft_id"] == revised["draft_id"]
+    assert inspected["runbook"]["definition_sha256"] == draft_hash
+
+    stale_revision =
+      call(
+        conn,
+        "update_runbook_draft",
+        revision_args,
+        "op_524NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert stale_revision["error"]["code"] == "draft_changed"
+
+    ordinary_execution =
+      call(
+        conn,
+        "execute_runbook",
+        %{"runbook_ref" => "database-health@2", "reason" => "Do not run drafts implicitly"},
+        "op_624NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert ordinary_execution["error"]["code"] == "runbook_not_found"
+
+    test_args = %{
+      "runbook_ref" => "database-health@2",
+      "definition_sha256" => draft_hash,
+      "reason" => "Validate the working revision"
+    }
+
+    tested =
+      call(conn, "test_runbook_draft", test_args, "op_724NN9NMDZ1T76NARWCKM5A0D6")
+
+    execution_id = tested["execution"]["runbook_execution_id"]
+    assert tested["execution"]["kind"] == "draft_test"
+    assert tested["execution"]["definition_sha256"] == draft_hash
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
+
+    replayed =
+      call(conn, "test_runbook_draft", test_args, "op_724NN9NMDZ1T76NARWCKM5A0D6")
+
+    assert replayed["execution"]["runbook_execution_id"] == execution_id
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
+
+    recovered =
+      call(conn, "get_operation", %{"operation_id" => "op_724NN9NMDZ1T76NARWCKM5A0D6"})
+
+    assert recovered["operation"]["kind"] == "runbook_draft_test"
+    assert recovered["operation"]["runbook_execution_id"] == execution_id
+    assert recovered["operation"]["definition_sha256"] == draft_hash
+
+    stale_test =
+      call(
+        conn,
+        "test_runbook_draft",
+        %{test_args | "definition_sha256" => String.duplicate("0", 64)},
+        "op_324NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert stale_test["error"]["code"] == "draft_changed"
     assert Repo.aggregate(Operation, :count) == 2
   end
 
@@ -2175,34 +2489,53 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   end
 
   defp publish_runbook!(subject, slug, selector, opts \\ []) do
-    targets =
-      case selector do
-        %{"runner_id" => ids} ->
-          {:ok, runners} = Runners.list_all_runners_for_account(subject)
+    subject
+    |> draft_runbook!(slug, selector, opts)
+    |> Emisar.Fixtures.Runbooks.publish_runbook()
+  end
 
-          refs =
-            runners
-            |> Enum.filter(&(&1.id in ids))
-            |> Enum.map(&("runner:" <> runner_ref(&1)))
-
-          %{"selection" => "all", "refs" => refs}
-
-        %{"group" => groups} ->
-          %{"selection" => "all", "refs" => Enum.map(groups, &("group:" <> &1))}
-      end
-
+  defp draft_runbook!(subject, slug, selector, opts \\ []) do
     {:ok, draft} =
       Runbooks.create_runbook(
         %{
           "title" => String.replace(slug, "-", " "),
           "name" => slug,
           "slug" => slug,
-          "definition" => runbook_definition(targets, opts)
+          "definition" => runbook_definition(target_refs(subject, selector), opts)
         },
         subject
       )
 
-    Emisar.Fixtures.Runbooks.publish_runbook(draft)
+    draft
+  end
+
+  defp target_refs(subject, %{"runner_id" => ids}) do
+    {:ok, runners} = Runners.list_all_runners_for_account(subject)
+
+    refs =
+      runners
+      |> Enum.filter(&(&1.id in ids))
+      |> Enum.map(&("runner:" <> runner_ref(&1)))
+
+    %{"selection" => "all", "refs" => refs}
+  end
+
+  defp target_refs(_subject, %{"group" => groups}),
+    do: %{"selection" => "all", "refs" => Enum.map(groups, &("group:" <> &1))}
+
+  defp foreign_key_conn do
+    account = Fixtures.Accounts.create_account()
+    user = Fixtures.Users.create_user()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: "owner"
+    )
+
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {:ok, raw, _key} = ApiKeys.create_key(%{name: "foreign-tools", kind: :mcp}, subject)
+    authorize(build_conn(), raw)
   end
 
   defp runbook_definition(targets, opts \\ []) do

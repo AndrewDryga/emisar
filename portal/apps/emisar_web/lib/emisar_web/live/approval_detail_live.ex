@@ -134,6 +134,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp execution_plan(_request), do: nil
 
   defp request_title(%{
+         context: %{
+           "kind" => "runbook_execution",
+           "execution_kind" => "draft_test",
+           "runbook" => runbook
+         }
+       }),
+       do: "Draft test · #{runbook["title"] || "Runbook"}"
+
+  defp request_title(%{
          context: %{"kind" => "runbook_execution", "runbook" => runbook}
        }),
        do: runbook["title"] || "Runbook execution"
@@ -164,6 +173,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp plural(_count, noun), do: noun <> "s"
   defp target_noun(true), do: "runbook execution"
   defp target_noun(false), do: "action"
+
+  defp execution_action_label("draft_test", action),
+    do: "#{action} draft test"
+
+  defp execution_action_label(_execution_kind, action), do: "#{action} runbook"
 
   # The labels + posted values are the web's; which durations may be offered is
   # the account's cap, owned by Approvals — so this only converts its atoms to
@@ -645,7 +659,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
           variant={:secondary}
           size={:md}
         >
-          View runbook execution
+          {if(@request.context["execution_kind"] == "draft_test",
+            do: "View draft test",
+            else: "View runbook execution"
+          )}
         </.button>
         <%!-- BUTTONS, one grammar per actions row (the run/runner-detail
              correction): the run this request gates, and its audit-trail
@@ -991,6 +1008,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               runner_state={@runner_connection}
               unavailable_action_id={@unavailable_action_id}
               execution_request?={@execution_request?}
+              execution_kind={@request.context["execution_kind"]}
               self_blocked?={@self_blocked?}
               already_decided?={@already_decided?}
               approved_count={@approved_count}
@@ -1032,6 +1050,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # reuse controls and leaves Deny as the way out.
   attr :unavailable_action_id, :string, default: nil
   attr :execution_request?, :boolean, default: false
+  attr :execution_kind, :string, default: nil
   # Server-computed UI gates. self_blocked? hides Approve when this user is the
   # requester and self-approval is forbidden; already_decided? hides both forms
   # once they've voted. The CONTEXT re-checks both (IL-15) — these are cosmetic.
@@ -1258,7 +1277,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
               icon="hero-check"
               phx-disable-with="Approving…"
             >
-              {if(@execution_request?, do: "Approve runbook", else: "Approve and send")}
+              {if(@execution_request?,
+                do: execution_action_label(@execution_kind, "Approve"),
+                else: "Approve and send"
+              )}
             </.button>
             <.button
               name="decision"

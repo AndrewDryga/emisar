@@ -644,6 +644,8 @@ defmodule Emisar.Audit.Events do
       version: runbook.version,
       runbook_id: runbook.id,
       runbook_execution_id: execution.id,
+      execution_kind: execution.kind,
+      definition_sha256: execution.definition_sha256,
       reason: execution.reason,
       status: execution.status,
       total: total,

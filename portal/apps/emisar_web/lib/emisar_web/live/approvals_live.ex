@@ -188,6 +188,15 @@ defmodule EmisarWeb.ApprovalsLive do
   end
 
   defp request_title(%{
+         context: %{
+           "kind" => "runbook_execution",
+           "execution_kind" => "draft_test",
+           "runbook" => runbook
+         }
+       }),
+       do: "Draft test · #{runbook["title"] || "Runbook"}"
+
+  defp request_title(%{
          context: %{"kind" => "runbook_execution", "runbook" => runbook}
        }),
        do: runbook["title"] || "Runbook execution"

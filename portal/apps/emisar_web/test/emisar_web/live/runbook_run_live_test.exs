@@ -264,6 +264,44 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "Publish this runbook before running it."
     end
 
+    test "an exact draft-test execution has a labeled read-only detail route", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      published = published_runbook(subject, runner)
+      assert {:ok, draft} = Runbooks.save_new_version(published, %{}, subject)
+
+      assert {:ok, compiled} =
+               Runbooks.Compiler.compile(
+                 draft.definition,
+                 %{},
+                 Runbooks.new_target_selection_seed(),
+                 subject
+               )
+
+      assert {:ok, result} =
+               Runbooks.Scheduler.Creation.create_execution(
+                 draft,
+                 compiled,
+                 "Validate the working revision",
+                 subject,
+                 kind: :draft_test
+               )
+
+      execution_id = result.execution_id
+      assert_receive {:cloud_to_runner, _generation, _payload}, 500
+
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/runbooks/#{draft.id}/runs/#{execution_id}")
+
+      assert html =~ "Draft test · #{draft.title}"
+      assert html =~ "Validate the working revision"
+      refute has_element?(lv, "a", "Run again")
+      refute has_element?(lv, "button", "Start execution")
+    end
+
     test "renders typed inputs and the exact current frozen plan", %{
       conn: conn,
       account: account,

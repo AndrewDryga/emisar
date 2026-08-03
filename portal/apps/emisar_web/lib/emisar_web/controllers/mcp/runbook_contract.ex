@@ -16,6 +16,30 @@ defmodule EmisarWeb.MCP.RunbookContract do
     with {:ok, definition} <- Runbooks.Definition.validate(runbook.definition),
          projection <- %{
            runbook_ref: "#{runbook.slug}@#{runbook.version}",
+           status: "published",
+           definition_sha256: Runbooks.Definition.digest(definition),
+           title: runbook.title,
+           description: runbook.description,
+           definition: definition,
+           summary: summary(definition)
+         },
+         true <- encoded_size(projection) <= @max_projection_bytes do
+      {:ok, projection}
+    else
+      _invalid_or_oversized -> {:error, :incomplete_contract}
+    end
+  rescue
+    Jason.EncodeError -> {:error, :incomplete_contract}
+  end
+
+  @doc "Returns one canonical immutable draft projection with its test identity."
+  def project_draft(runbook) do
+    with {:ok, definition} <- Runbooks.Definition.validate_draft(runbook.definition),
+         projection <- %{
+           runbook_ref: "#{runbook.slug}@#{runbook.version}",
+           draft_id: runbook.id,
+           status: "draft",
+           definition_sha256: Runbooks.Definition.digest(definition),
            title: runbook.title,
            description: runbook.description,
            definition: definition,

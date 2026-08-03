@@ -1,6 +1,6 @@
 defmodule EmisarWeb.MCP.RunbookTools do
   @moduledoc """
-  Fixed MCP runbook discovery, draft creation, and execution boundary.
+  Fixed MCP runbook discovery, draft authoring, and execution boundary.
 
   MCP accepts and returns the same strict JSON-compatible definition used by
   persistence and the console. Runbooks owns compilation, authorization, and
@@ -29,7 +29,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     :target_contract_changed
   ]
 
-  @doc "Executes one of the four fixed runbook tools."
+  @doc "Executes one of the six fixed runbook tools."
   def call(conn, "list_runbooks", args, _operation_id), do: list_runbooks(conn, args)
   def call(conn, "get_runbook", args, _operation_id), do: get_runbook(conn, args)
 
@@ -39,13 +39,20 @@ defmodule EmisarWeb.MCP.RunbookTools do
   def call(conn, "create_runbook_draft", args, operation_id),
     do: create_draft(conn, args, operation_id)
 
+  def call(conn, "update_runbook_draft", args, operation_id),
+    do: update_draft(conn, args, operation_id)
+
+  def call(conn, "test_runbook_draft", args, operation_id),
+    do: test_draft(conn, args, operation_id)
+
   defp list_runbooks(conn, args) do
     query = args["query"]
     limit = args["limit"] || @default_limit
+    status = args["status"] || "published"
 
-    with {:ok, summaries} <- published_summaries(conn, query),
+    with {:ok, summaries} <- runbook_summaries(conn, status, query),
          scope <- cursor_scope(conn),
-         filters <- %{"query" => query, "limit" => limit},
+         filters <- %{"query" => query, "status" => status, "limit" => limit},
          {:ok, after_key} <-
            CatalogCursor.decode(args["cursor"], "list_runbooks", scope, filters) do
       page = drop_through(summaries, after_key) |> Enum.take(limit + 1)
@@ -64,23 +71,36 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp get_runbook(conn, args) do
     {:ok, {slug, version}} = parse_runbook_ref(args["runbook_ref"])
+    status = args["status"] || "published"
 
-    with {:ok, runbook} <-
-           Runbooks.fetch_model_visible_runbook_version(
-             slug,
-             version,
-             conn.assigns.current_subject
-           ),
-         {:ok, public_runbook} <- RunbookContract.project(runbook) do
+    with {:ok, runbook} <- fetch_runbook(conn, status, slug, version),
+         {:ok, public_runbook} <- project_runbook(status, runbook) do
       {:ok, %{ok: true, runbook: public_runbook}}
     else
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read runbooks.")}
 
       {:error, reason} when reason in [:not_found, :incomplete_contract] ->
-        {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
+        {:error, runbook_not_found(status)}
     end
   end
+
+  defp fetch_runbook(conn, "published", slug, version) do
+    Runbooks.fetch_model_visible_runbook_version(slug, version, conn.assigns.current_subject)
+  end
+
+  defp fetch_runbook(conn, "draft", slug, version) do
+    Runbooks.fetch_model_draft_runbook_version(slug, version, conn.assigns.current_subject)
+  end
+
+  defp project_runbook("published", runbook), do: RunbookContract.project(runbook)
+  defp project_runbook("draft", runbook), do: RunbookContract.project_draft(runbook)
+
+  defp runbook_not_found("published"),
+    do: error("runbook_not_found", "No published runbook has that exact ref.")
+
+  defp runbook_not_found("draft"),
+    do: error("draft_not_found", "No current runbook draft has that exact ref.")
 
   defp create_draft(conn, args, operation_id) do
     facts = draft_facts(args, operation_id)
@@ -125,6 +145,53 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
+  defp update_draft(conn, args, operation_id) do
+    facts = draft_revision_facts(args, operation_id)
+
+    case update_or_replay_draft(conn, facts) do
+      {:ok, _kind, runbook} ->
+        {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
+
+      {:error, :operation_conflict} ->
+        {:error,
+         error("operation_conflict", "This operation_id already belongs to another mutation.")}
+
+      {:error, :operation_incomplete} ->
+        {:error,
+         error(
+           "operation_incomplete",
+           "The operation committed without its draft resource.",
+           true,
+           %{operation_id: operation_id}
+         )}
+
+      {:error, reason} when reason in [:not_found, :draft_changed] ->
+        {:error,
+         error(
+           "draft_changed",
+           "That runbook is no longer the current revision. List drafts and inspect the new head before editing again."
+         )}
+
+      {:error, issues} when is_list(issues) ->
+        {:error, definition_issue_error(issues)}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:error,
+         error("invalid_draft", "The draft failed validation.", false, %{
+           fields: changeset_errors(changeset)
+         })}
+
+      {:error, :unauthorized} ->
+        {:error, error("not_allowed", "This key cannot update runbook drafts.")}
+    end
+  end
+
+  defp update_or_replay_draft(conn, facts) do
+    with :ok <- validate_draft_envelope(facts) do
+      Runbooks.create_or_replay_mcp_draft_revision(facts, conn.assigns.current_subject)
+    end
+  end
+
   defp execute_runbook(conn, args, operation_id) do
     facts = %{
       operation_id: operation_id,
@@ -157,6 +224,80 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:error, reason} ->
         execution_rejected(conn, facts.runbook_ref, reason)
     end
+  end
+
+  defp test_draft(conn, args, operation_id) do
+    facts = %{
+      operation_id: operation_id,
+      runbook_ref: args["runbook_ref"],
+      definition_sha256: args["definition_sha256"],
+      reason: args["reason"],
+      input_values: args["input_values"] || %{}
+    }
+
+    with {:ok, _outcome, execution} <-
+           Runbooks.create_or_replay_mcp_draft_test(facts, conn.assigns.current_subject),
+         {:ok, payload} <- execution_payload(conn, execution.id) do
+      {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
+    else
+      {:error, :operation_conflict} ->
+        {:error,
+         error("operation_conflict", "This operation_id already belongs to another mutation.")}
+
+      {:error, :operation_incomplete} ->
+        {:error,
+         error(
+           "operation_incomplete",
+           "The operation committed without its execution resource.",
+           true,
+           %{operation_id: operation_id}
+         )}
+
+      {:error, :unauthorized} ->
+        :ok =
+          ValidationError.log_dispatch_rejected(conn, "test_runbook_draft", "not_allowed",
+            runbook_ref: facts.runbook_ref
+          )
+
+        {:error, error("not_allowed", "This key cannot test this runbook draft.")}
+
+      {:error, reason} when reason in [:draft_not_found, :draft_changed] ->
+        :ok =
+          ValidationError.log_dispatch_rejected(conn, "test_runbook_draft", "draft_changed",
+            runbook_ref: facts.runbook_ref
+          )
+
+        {:error,
+         error(
+           "draft_changed",
+           "That draft is no longer current or its definition hash changed. Inspect the current draft before testing again."
+         )}
+
+      {:error, reason} ->
+        draft_test_rejected(conn, facts.runbook_ref, reason)
+    end
+  end
+
+  defp draft_test_rejected(conn, runbook_ref, [%{code: _code, path: _path} | _rest] = reason) do
+    :ok = log_draft_contract_changed(conn, runbook_ref)
+    {:error, execution_failure(reason)}
+  end
+
+  defp draft_test_rejected(conn, runbook_ref, reason) when reason in @hidden_contract_reasons do
+    :ok = log_draft_contract_changed(conn, runbook_ref)
+    {:error, error("draft_not_found", "No current runbook draft has that exact ref.")}
+  end
+
+  defp draft_test_rejected(_conn, _runbook_ref, reason),
+    do: {:error, execution_failure(reason)}
+
+  defp log_draft_contract_changed(conn, runbook_ref) do
+    ValidationError.log_dispatch_rejected(
+      conn,
+      "test_runbook_draft",
+      "target_contract_changed",
+      runbook_ref: runbook_ref
+    )
   end
 
   defp not_allowed(conn, runbook_ref) do
@@ -243,7 +384,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
     [:full, :summary, :minimal]
     |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
-      payload = execution_projection(execution.id, runbook, projection, approval, mode)
+      payload = execution_projection(execution, runbook, projection, approval, mode)
 
       if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
         {:halt, {:ok, payload}}
@@ -262,27 +403,39 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp execution_approval(_execution, _subject), do: nil
 
-  defp execution_projection(execution_id, runbook, projection, approval, mode) do
+  defp execution_projection(execution, runbook, projection, approval, mode) do
     %{
-      runbook_execution_id: execution_id,
+      runbook_execution_id: execution.id,
       runbook_ref: runbook_ref(runbook),
+      kind: to_string(execution.kind),
+      definition_sha256: execution_definition_sha256(execution, runbook),
       status: to_string(projection.execution.status),
       blocking: blocking(projection.execution.blocking),
       stages: Enum.map(projection.stages, &stage_projection(&1, mode)),
       runs_next: %{
         tool: "recent_runs",
-        arguments: %{runbook_execution_id: execution_id, limit: 15}
+        arguments: %{runbook_execution_id: execution.id, limit: 15}
       }
     }
     |> maybe_put(:approval, approval)
     |> maybe_put(:wait_until, approval[:expires_at])
-    |> maybe_put(:next, wait_next(execution_id, projection.execution.waitable?))
+    |> maybe_put(:next, wait_next(execution.id, projection.execution.waitable?))
   end
 
   defp wait_next(_execution_id, false), do: nil
 
   defp wait_next(execution_id, true),
     do: %{tool: "wait_for_run", arguments: %{runbook_execution_id: execution_id, timeout: "60s"}}
+
+  defp execution_definition_sha256(%{definition_sha256: digest}, _runbook)
+       when is_binary(digest),
+       do: digest
+
+  defp execution_definition_sha256(_execution, %{definition: definition})
+       when is_map(definition),
+       do: Runbooks.Definition.digest(definition)
+
+  defp execution_definition_sha256(_execution, _runbook), do: nil
 
   defp blocking(nil), do: nil
 
@@ -426,6 +579,20 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
+  defp runbook_summaries(conn, "published", query), do: published_summaries(conn, query)
+
+  defp runbook_summaries(conn, "draft", query) do
+    with {:ok, runbooks} <- Runbooks.list_model_draft_runbooks(conn.assigns.current_subject) do
+      summaries =
+        runbooks
+        |> Enum.flat_map(&projected_draft_summary/1)
+        |> Enum.filter(&summary_matches?(&1, query))
+        |> Enum.sort_by(& &1.runbook_ref)
+
+      {:ok, summaries}
+    end
+  end
+
   defp projected_summary(runbook) do
     case RunbookContract.project(runbook) do
       {:ok, public_runbook} -> [runbook_summary(runbook, public_runbook)]
@@ -433,9 +600,22 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
+  defp projected_draft_summary(runbook) do
+    case RunbookContract.project_draft(runbook) do
+      {:ok, public_runbook} ->
+        summary = runbook_summary(runbook, public_runbook)
+        [Map.put(summary, :draft_id, public_runbook.draft_id)]
+
+      {:error, :incomplete_contract} ->
+        []
+    end
+  end
+
   defp runbook_summary(runbook, public_runbook) do
     %{
       runbook_ref: runbook_ref(runbook),
+      status: public_runbook.status,
+      definition_sha256: public_runbook.definition_sha256,
       title: runbook.title,
       summary: text_summary(runbook.description),
       input_count: public_runbook.summary.input_count,
@@ -469,17 +649,23 @@ defmodule EmisarWeb.MCP.RunbookTools do
     }
   end
 
+  defp draft_revision_facts(args, operation_id) do
+    %{
+      operation_id: operation_id,
+      runbook_ref: args["runbook_ref"],
+      definition_sha256: args["definition_sha256"],
+      title: args["title"],
+      description: args["description"],
+      definition: args["definition"]
+    }
+  end
+
   # The envelope must fit in the transport's bounded frame before the domain
   # spends a transaction on it; the definition contract itself is Runbooks'.
   defp validate_draft_envelope(facts) do
-    envelope = %{
-      "title" => facts.title,
-      "slug" => facts.slug,
-      "description" => facts.description,
-      "definition" => facts.definition
-    }
-
-    encoded_size(envelope, Runbooks.Definition.limit!(:max_definition_bytes) + 8_192)
+    facts
+    |> Map.take([:title, :slug, :description, :definition])
+    |> encoded_size(Runbooks.Definition.limit!(:max_definition_bytes) + 8_192)
   end
 
   defp draft_payload(runbook, operation_id, subject) do
@@ -487,8 +673,10 @@ defmodule EmisarWeb.MCP.RunbookTools do
       ok: true,
       operation_id: operation_id,
       draft_id: runbook.id,
+      runbook_ref: runbook_ref(runbook),
       slug: runbook.slug,
       status: "draft",
+      definition_sha256: Runbooks.Definition.digest(runbook.definition),
       review_url:
         "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
     }

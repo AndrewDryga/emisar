@@ -1,6 +1,7 @@
 defmodule EmisarWeb.RunbookRunLive do
   @moduledoc """
-  Preflight and durable staged execution detail for one published runbook.
+  Preflight and durable staged execution detail for one published runbook or
+  one explicitly marked draft test.
 
   The LiveView never reconstructs scheduler state from ActionRuns. It renders
   the bounded Runbooks result projection and re-reads it after exact execution
@@ -14,10 +15,10 @@ defmodule EmisarWeb.RunbookRunLive do
   @preflight_delay_ms 300
   @item_page_size 25
 
-  def mount(%{"id" => id}, _session, socket) do
+  def mount(%{"id" => id} = params, _session, socket) do
     if Runs.subject_can_dispatch_run?(socket.assigns.current_subject) do
       if connected?(socket),
-        do: mount_runbook(id, socket),
+        do: mount_runbook(id, Map.has_key?(params, "execution_id"), socket),
         else: mount_disconnected(socket)
     else
       {:ok,
@@ -52,9 +53,9 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:subscribed_execution_id, nil)}
   end
 
-  defp mount_runbook(id, socket) do
+  defp mount_runbook(id, execution_detail?, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
-      {:ok, %{status: :draft} = runbook} ->
+      {:ok, %{status: :draft} = runbook} when not execution_detail? ->
         {:ok,
          socket
          |> put_flash(:info, "Publish this runbook before running it.")
@@ -380,6 +381,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> load_execution_approval_request(result)
           |> load_attempt_output_previews(result.latest_attempts)
           |> assign(:recent_executions, [])
+          |> assign(:page_title, execution_page_title(result))
 
         if projection.execution.waitable?,
           do: socket,
@@ -611,6 +613,17 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp output_rows(outputs), do: Enum.sort_by(outputs, &elem(&1, 0))
 
+  defp execution_page_title(%{execution: %{kind: :draft_test}, runbook: runbook}),
+    do: "Draft test · #{runbook.title}"
+
+  defp execution_page_title(%{runbook: runbook}), do: "Run #{runbook.title}"
+
+  defp header_title(%{result: %{execution: %{kind: :draft_test}}, runbook: runbook}),
+    do: "Draft test · #{runbook.title}"
+
+  defp header_title(%{runbook: runbook}) when not is_nil(runbook), do: runbook.title
+  defp header_title(_assigns), do: "Runbook"
+
   # An item's terminal message counts as detail only when it says something the
   # execution-level halt block hasn't already said for the whole run.
   defp item_terminal_message(item, execution) do
@@ -661,7 +674,7 @@ defmodule EmisarWeb.RunbookRunLive do
         <.detail_header
           back="Runbooks"
           navigate={~p"/app/#{@current_account}/runbooks"}
-          title={if @runbook, do: @runbook.title, else: "Runbook"}
+          title={header_title(assigns)}
         />
       </:title>
       <:actions>
@@ -675,7 +688,10 @@ defmodule EmisarWeb.RunbookRunLive do
           Cancel execution
         </.button>
         <.button
-          :if={@projection && @projection.execution.terminal?}
+          :if={
+            @projection && @projection.execution.terminal? &&
+              @result.execution.kind == :published
+          }
           variant={:secondary}
           phx-click="run_again"
         >
@@ -704,7 +720,7 @@ defmodule EmisarWeb.RunbookRunLive do
         />
 
         <.run_form
-          :if={@loaded? && is_nil(@result)}
+          :if={@loaded? && is_nil(@result) && @runbook.status == :published}
           runbook={@runbook}
           reason={@reason}
           input_raw={@input_raw}

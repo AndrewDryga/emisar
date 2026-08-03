@@ -451,6 +451,15 @@ defmodule Emisar.MailTest do
         refute email.text_body =~ "secret-value"
         true
       end)
+
+      draft_request = put_in(request.context["execution_kind"], "draft_test")
+      UserNotifier.deliver_runbook_execution_approval_request(approver, draft_request)
+
+      assert_email_sent(fn email ->
+        assert email.subject == "Approval needed: Draft test · Database maintenance"
+        assert email.text_body =~ "Draft test · Database maintenance"
+        true
+      end)
     end
 
     test "skips a suppressed decider", %{approver: approver} do

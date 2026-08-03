@@ -372,7 +372,7 @@ defmodule EmisarWeb.MCPRpcController do
             error: %{
               code: "unknown_tool",
               message:
-                "Unknown tool. Emisar exposes only its twelve fixed API tools; an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action.",
+                "Unknown tool. Emisar exposes only its fourteen fixed API tools; an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action.",
               retryable: false
             },
             dispatch_started: false
@@ -399,7 +399,10 @@ defmodule EmisarWeb.MCPRpcController do
        do: handle_catalog_tool(conn, name, args)
 
   defp dispatch_tool(conn, name, args)
-       when name in ~w(list_runbooks get_runbook execute_runbook create_runbook_draft),
+       when name in ~w(
+              list_runbooks get_runbook execute_runbook create_runbook_draft
+              update_runbook_draft test_runbook_draft
+            ),
        do: handle_runbook_tool(conn, name, args)
 
   defp dispatch_tool(conn, name, args)
@@ -547,7 +550,9 @@ defmodule EmisarWeb.MCPRpcController do
   end
 
   defp handle_runbook_tool(conn, name, args)
-       when name in ~w(execute_runbook create_runbook_draft) do
+       when name in ~w(
+              execute_runbook create_runbook_draft update_runbook_draft test_runbook_draft
+            ) do
     case mutation_operation_id(conn) do
       operation_id when is_binary(operation_id) ->
         runbook_tool_result(conn, name, args, operation_id)

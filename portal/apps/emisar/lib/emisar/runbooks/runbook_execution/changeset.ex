@@ -5,7 +5,7 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
   @fields ~w[
     id account_id runbook_id initiating_membership_id requested_by_id api_key_id
     operation_id mcp_operation_record_id reason frozen_plan inputs_raw inputs_sha256
-    sensitive_input_names status
+    definition_sha256 sensitive_input_names kind status
   ]a
 
   def create(attrs) do
@@ -23,10 +23,14 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
       :reason,
       :frozen_plan,
       :inputs_raw,
-      :inputs_sha256
+      :inputs_sha256,
+      :definition_sha256,
+      :kind
     ])
     |> validate_length(:reason, min: 1, max: 4_096)
     |> validate_length(:inputs_sha256, is: 64)
+    |> validate_length(:definition_sha256, is: 64)
+    |> check_constraint(:kind, name: :runbook_executions_kind_check)
     |> unique_constraint(:mcp_operation_record_id,
       name: :runbook_executions_mcp_operation_index
     )

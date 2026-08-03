@@ -455,9 +455,24 @@
 
       <.docs_h2 id="agents">LLMs and MCP</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
-        Connected agents see the same definitions and subject-scoped results through <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>, and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>.
-        Draft creation never publishes or executes. While work or approval remains, the response
-        names the blocking reason and returns an exact
+        Connected agents use
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
+        to inspect published revisions.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
+        starts a new family;
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update_runbook_draft</code>
+        creates the next draft version in an existing family without changing its slug.
+      </p>
+      <p class="mt-5 text-base text-zinc-400">
+        Draft reads require <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "draft"</code>.
+        An agent can run the exact current draft with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">test_runbook_draft</code>,
+        which requires the definition hash returned by Emisar and uses the normal policy and
+        approval path. Ordinary
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
+        accepts published revisions only. Testing never publishes a draft; an operator still
+        reviews and publishes it in the console. While work or approval remains, the response names
+        the blocking reason and returns an exact
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
         continuation.
       </p>

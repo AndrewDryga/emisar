@@ -75,7 +75,29 @@ defmodule EmisarWeb.MCP.RecoveryTools do
      }}
   end
 
-  defp operation_projection(conn, %{tool: :create_runbook_draft} = operation) do
+  defp operation_projection(conn, %{tool: :test_runbook_draft} = operation) do
+    case RunbookTools.execution_payload(conn, operation.resource_id) do
+      {:ok, execution} ->
+        {:ok,
+         %{
+           operation_id: operation.operation_id,
+           kind: "runbook_draft_test",
+           runbook_execution_id: operation.resource_id,
+           runbook_ref: operation.resource_ref,
+           definition_sha256: execution.definition_sha256,
+           next: %{
+             tool: "wait_for_run",
+             arguments: %{runbook_execution_id: operation.resource_id, timeout: "0"}
+           }
+         }}
+
+      _ ->
+        {:error, :operation_resource_missing}
+    end
+  end
+
+  defp operation_projection(conn, %{tool: tool} = operation)
+       when tool in [:create_runbook_draft, :update_runbook_draft] do
     case Runbooks.fetch_runbook_by_id(operation.resource_id, conn.assigns.current_subject) do
       {:ok, runbook} ->
         {:ok,
@@ -83,8 +105,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
            operation_id: operation.operation_id,
            kind: "runbook_draft",
            draft_id: runbook.id,
+           runbook_ref: "#{runbook.slug}@#{runbook.version}",
            slug: runbook.slug,
            status: "draft",
+           definition_sha256: Runbooks.Definition.digest(runbook.definition),
            review_url:
              "#{EmisarWeb.Endpoint.url()}/app/#{conn.assigns.current_subject.account.slug}/runbooks/#{runbook.id}/edit"
          }}

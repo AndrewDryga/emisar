@@ -37,7 +37,7 @@ defmodule EmisarWeb.MarketingController do
      "emisar's refund policy: Free is free; Team is billed monthly via Paddle and cancellable any time with access through the paid period; duplicate charges and billing errors are refunded in full."},
     {"/docs/mcp-reference", :docs_mcp_reference, :docs_mcp_reference,
      "MCP reference — methods, parameters, and errors",
-     "The emisar MCP API reference for builders: twelve fixed discovery, action, operation, history, wait, and runbook tools; immutable pack and runner references; atomic mutation recovery; cancellation; signing; and actionable errors."},
+     "The emisar MCP API reference for builders: fourteen fixed discovery, action, operation, history, wait, and runbook tools; immutable pack and runner references; atomic mutation recovery; cancellation; signing; and actionable errors."},
     {"/docs/connect-an-llm", :connect_llm, :connect_llm, "Connect a cloud LLM",
      "Connect Claude.ai, ChatGPT, and recent IDE clients to your emisar catalog over remote MCP and OAuth — a display name and a server URL, no API key or header to manage."},
     {"/docs/connect-a-cli-client", :connect_cli_client, :connect_cli_client,

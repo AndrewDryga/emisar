@@ -88,6 +88,20 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Approve and send"
   end
 
+  test "identifies a draft test before the approver decides", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    request =
+      Fixtures.Approvals.create_execution_request(account, user, %{execution_kind: :draft_test})
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Draft test · Database maintenance"
+    assert has_element?(lv, "a", "View draft test")
+    assert has_element?(lv, "button", "Approve draft test")
+    refute html =~ "Approve runbook"
+  end
+
   test "labels a requester with this account's directory name", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     other_account = Fixtures.Accounts.create_account()

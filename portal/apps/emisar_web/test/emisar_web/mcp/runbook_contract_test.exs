@@ -19,6 +19,8 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
 
       assert projection == %{
                runbook_ref: "inspect-fleet@3",
+               status: "published",
+               definition_sha256: Runbooks.Definition.digest(definition),
                title: "Inspect fleet",
                description: "Confirm the fleet is ready.",
                definition: definition,
@@ -47,6 +49,28 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
       }
 
       assert RunbookContract.project(runbook) == {:error, :incomplete_contract}
+    end
+  end
+
+  describe "project_draft/1" do
+    test "adds the exact immutable draft and definition identities" do
+      definition = valid_definition()
+
+      runbook = %Runbooks.Runbook{
+        id: Ecto.UUID.generate(),
+        slug: "inspect-fleet",
+        version: 4,
+        title: "Inspect fleet",
+        description: nil,
+        definition: definition
+      }
+
+      assert {:ok, projection} = RunbookContract.project_draft(runbook)
+      assert projection.draft_id == runbook.id
+      assert projection.runbook_ref == "inspect-fleet@4"
+      assert projection.status == "draft"
+      assert projection.definition_sha256 == Runbooks.Definition.digest(definition)
+      assert projection.definition == definition
     end
   end
 

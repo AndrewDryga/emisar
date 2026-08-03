@@ -135,7 +135,13 @@ defmodule Emisar.MCPOperations do
   internal persistence identity, not a capability or authentication token.
   """
   def resource_id(operation_id, tool, %Subject{actor: %ApiKeys.ApiKey{} = key} = subject)
-      when is_binary(operation_id) and tool in [:execute_runbook, :create_runbook_draft] do
+      when is_binary(operation_id) and
+             tool in [
+               :execute_runbook,
+               :create_runbook_draft,
+               :update_runbook_draft,
+               :test_runbook_draft
+             ] do
     seed =
       Enum.join(
         [

@@ -48,6 +48,14 @@
       "maxLength": 96,
       "pattern": "^[a-z][a-z0-9_-]{0,79}@[1-9][0-9]*$"
     },
+    "definition_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "runbook_status": {
+      "type": "string",
+      "enum": ["published", "draft"]
+    },
     "cursor": {
       "type": "string",
       "minLength": 1,
@@ -890,6 +898,7 @@
       "required": [
         "runbook_execution_id",
         "runbook_ref",
+        "kind",
         "status",
         "blocking",
         "stages",
@@ -899,6 +908,13 @@
       "properties": {
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
         "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+        "kind": {"type": "string", "enum": ["published", "draft_test"]},
+        "definition_sha256": {
+          "oneOf": [
+            {"$ref": "#/$defs/definition_sha256"},
+            {"type": "null"}
+          ]
+        },
         "status": {"$ref": "#/$defs/runbook_execution_status"},
         "blocking": {"$ref": "#/$defs/runbook_execution_error"},
         "stages": {
@@ -1223,14 +1239,29 @@
                   },
                   {
                     "type": "object",
-                    "required": ["operation_id", "kind", "draft_id", "slug", "status", "review_url"],
+                    "required": ["operation_id", "kind", "runbook_execution_id", "runbook_ref", "definition_sha256", "next"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "operation_id": {"$ref": "#/$defs/operation_id"},
+                      "kind": {"const": "runbook_draft_test"},
+                      "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+                      "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+                      "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+                      "next": {"$ref": "#/$defs/next_wait"}
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["operation_id", "kind", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "review_url"],
                     "additionalProperties": false,
                     "properties": {
                       "operation_id": {"$ref": "#/$defs/operation_id"},
                       "kind": {"const": "runbook_draft"},
                       "draft_id": {"type": "string", "minLength": 1, "maxLength": 80},
+                      "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
                       "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
                       "status": {"const": "draft"},
+                      "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
                       "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
                     }
                   }
@@ -1310,13 +1341,14 @@
     },
     "list_runbooks": {
       "title": "List runbooks",
-      "description": "List visible immutable published runbooks with concise input, stage, and step counts. Use get_runbook to inspect the canonical definition before execution.",
+      "description": "List visible immutable runbooks by lifecycle. Published is the default; request draft explicitly to inspect the current working revision of each family.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "query": {"type": "string", "minLength": 1, "maxLength": 256},
+          "status": {"type": "string", "enum": ["published", "draft"], "default": "published"},
           "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 15},
           "cursor": {"$ref": "#/$defs/cursor"}
         }
@@ -1339,6 +1371,8 @@
                   "type": "object",
                   "required": [
                     "runbook_ref",
+                    "status",
+                    "definition_sha256",
                     "title",
                     "summary",
                     "input_count",
@@ -1348,12 +1382,21 @@
                   "additionalProperties": false,
                   "properties": {
                     "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+                    "status": {"$ref": "#/$defs/runbook_status"},
+                    "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+                    "draft_id": {"type": "string", "format": "uuid"},
                     "title": {"type": "string", "minLength": 1, "maxLength": 160},
                     "summary": {"type": "string", "maxLength": 512},
                     "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
-                    "stage_count": {"type": "integer", "minimum": 1, "maximum": 16},
-                    "step_count": {"type": "integer", "minimum": 1, "maximum": 32}
-                  }
+                    "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
+                    "step_count": {"type": "integer", "minimum": 0, "maximum": 32}
+                  },
+                  "allOf": [
+                    {
+                      "if": {"properties": {"status": {"const": "draft"}}},
+                      "then": {"required": ["draft_id"]}
+                    }
+                  ]
                 }
               },
               "next_cursor": {"$ref": "#/$defs/next_cursor"}
@@ -1364,13 +1407,16 @@
     },
     "get_runbook": {
       "title": "Get runbook",
-      "description": "Get one exact immutable published runbook by runbook_ref. Metadata stays separate from the canonical typed definition used by authoring and execution.",
+      "description": "Get one exact immutable runbook by runbook_ref. Published is the default; request draft explicitly to inspect its definition hash before updating or testing it.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
         "required": ["runbook_ref"],
         "additionalProperties": false,
-        "properties": {"runbook_ref": {"$ref": "#/$defs/runbook_ref"}}
+        "properties": {
+          "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+          "status": {"type": "string", "enum": ["published", "draft"], "default": "published"}
+        }
       },
       "outputSchema": {
         "type": "object",
@@ -1385,10 +1431,13 @@
               "runbook": {
                 "type": "object",
                 "x-maxEncodedUtf8Bytes": 73728,
-                "required": ["runbook_ref", "title", "description", "definition", "summary"],
+                "required": ["runbook_ref", "status", "definition_sha256", "title", "description", "definition", "summary"],
                 "additionalProperties": false,
                 "properties": {
                   "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+                  "status": {"$ref": "#/$defs/runbook_status"},
+                  "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+                  "draft_id": {"type": "string", "format": "uuid"},
                   "title": {"type": "string", "minLength": 1, "maxLength": 160},
                   "description": {
                     "oneOf": [
@@ -1396,20 +1445,24 @@
                       {"type": "string", "maxLength": 4096}
                     ]
                   },
-                  "definition": {
-                    "$ref": "https://emisar.dev/schemas/runbook-definition-v1.json"
-                  },
+                  "definition": {"type": "object"},
                   "summary": {
                     "type": "object",
                     "required": ["input_count", "stage_count", "step_count"],
                     "additionalProperties": false,
                     "properties": {
                       "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
-                      "stage_count": {"type": "integer", "minimum": 1, "maximum": 16},
-                      "step_count": {"type": "integer", "minimum": 1, "maximum": 32}
+                      "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
+                      "step_count": {"type": "integer", "minimum": 0, "maximum": 32}
                     }
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "if": {"properties": {"status": {"const": "draft"}}},
+                    "then": {"required": ["draft_id"]}
+                  }
+                ]
               }
             }
           }
@@ -1492,15 +1545,93 @@
           {"$ref": "#/$defs/error_result"},
           {
             "type": "object",
-            "required": ["ok", "operation_id", "draft_id", "slug", "status", "review_url"],
+            "required": ["ok", "operation_id", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "review_url"],
             "additionalProperties": false,
             "properties": {
               "ok": {"const": true},
               "operation_id": {"$ref": "#/$defs/operation_id"},
               "draft_id": {"type": "string", "minLength": 1, "maxLength": 80},
+              "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
               "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
               "status": {"const": "draft"},
+              "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
               "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
+            }
+          }
+        ]
+      }
+    },
+    "update_runbook_draft": {
+      "title": "Update runbook draft",
+      "description": "Create the next immutable draft revision in an existing runbook family. The exact current runbook_ref and server-issued definition hash prevent stale edits; the family slug is preserved and the result is never published.",
+      "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+      "inputSchema": {
+        "type": "object",
+        "x-maxEncodedUtf8Bytes": 73728,
+        "required": ["runbook_ref", "definition_sha256", "title", "description", "definition"],
+        "additionalProperties": false,
+        "properties": {
+          "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+          "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+          "title": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S"},
+          "description": {
+            "oneOf": [
+              {"type": "null"},
+              {"type": "string", "maxLength": 4096}
+            ]
+          },
+          "definition": {"$ref": "https://emisar.dev/schemas/runbook-definition-v1.json"}
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "operation_id", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "review_url"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "operation_id": {"$ref": "#/$defs/operation_id"},
+              "draft_id": {"type": "string", "format": "uuid"},
+              "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+              "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
+              "status": {"const": "draft"},
+              "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+              "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
+            }
+          }
+        ]
+      }
+    },
+    "test_runbook_draft": {
+      "title": "Test runbook draft",
+      "description": "Execute one exact current draft on real infrastructure through Emisar scope, trust, policy, approval, audit, and runner verification. This is a live execution, not a dry-run; inspect the draft and copy its definition hash first.",
+      "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
+      "inputSchema": {
+        "type": "object",
+        "required": ["runbook_ref", "definition_sha256", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+          "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+          "reason": {"$ref": "#/$defs/reason"},
+          "input_values": {"type": "object", "default": {}, "x-maxEncodedUtf8Bytes": 32768}
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "oneOf": [
+          {"$ref": "#/$defs/error_result"},
+          {
+            "type": "object",
+            "required": ["ok", "operation_id", "execution"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "operation_id": {"$ref": "#/$defs/operation_id"},
+              "execution": {"$ref": "#/$defs/runbook_execution"}
             }
           }
         ]

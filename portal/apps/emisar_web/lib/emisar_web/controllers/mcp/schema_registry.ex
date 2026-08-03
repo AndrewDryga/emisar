@@ -279,6 +279,8 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
     get_runbook
     execute_runbook
     create_runbook_draft
+    update_runbook_draft
+    test_runbook_draft
   )
 
   @schema_path Path.expand("../../../../priv/mcp/api-schemas.json", __DIR__)

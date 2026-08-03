@@ -1,8 +1,8 @@
 defmodule Emisar.RunbooksTest do
   use Emisar.DataCase, async: true
   alias Ecto.Multi
+  alias Emisar.{Approvals, Catalog}
   alias Emisar.Auth.Subject
-  alias Emisar.Catalog
   alias Emisar.Fixtures
   alias Emisar.MCPOperations
   alias Emisar.Repo
@@ -278,6 +278,49 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "list_model_draft_runbooks/1" do
+    test "returns only each family's current draft head even when its target is unavailable" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+
+      published =
+        create_runbook(subject, slug: "working", definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, second} = Runbooks.save_new_version(published, %{}, subject)
+      assert {:ok, third} = Runbooks.save_new_version(second, %{}, subject)
+
+      assert {:ok, [draft]} = Runbooks.list_model_draft_runbooks(subject)
+      assert draft.id == third.id
+
+      assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
+
+      assert {:ok, [still_visible]} = Runbooks.list_model_draft_runbooks(subject)
+      assert still_visible.id == third.id
+    end
+
+    test "excludes a family whose head is published and another account's drafts" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      _shipped = create_runbook(subject, slug: "shipped") |> Fixtures.Runbooks.publish_runbook()
+      working = create_runbook(subject, slug: "working")
+
+      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      _theirs = create_runbook(other_subject, slug: "theirs")
+
+      assert {:ok, [draft]} = Runbooks.list_model_draft_runbooks(subject)
+      assert draft.id == working.id
+    end
+
+    test "denies a principal without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.list_model_draft_runbooks(Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
+    end
+  end
+
   describe "fetch_model_visible_runbook_version/3" do
     test "returns the exact published version until its contract stops resolving" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -328,6 +371,47 @@ defmodule Emisar.RunbooksTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert Runbooks.fetch_model_visible_runbook_version(
+               "any",
+               1,
+               Subject.for_runner(runner, account)
+             ) == {:error, :unauthorized}
+    end
+  end
+
+  describe "fetch_model_draft_runbook_version/3" do
+    test "returns only the exact current draft head and hides other accounts" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+      first = create_runbook(subject, slug: "working", definition: definition(runner.group))
+      assert {:ok, second} = Runbooks.save_new_version(first, %{}, subject)
+
+      assert {:ok, fetched} =
+               Runbooks.fetch_model_draft_runbook_version("working", 2, subject)
+
+      assert fetched.id == second.id
+
+      assert Runbooks.fetch_model_draft_runbook_version("working", 1, subject) ==
+               {:error, :not_found}
+
+      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runbooks.fetch_model_draft_runbook_version("working", 2, other_subject) ==
+               {:error, :not_found}
+    end
+
+    test "hides a published version behind its exact ref" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      _shipped = create_runbook(subject, slug: "shipped") |> Fixtures.Runbooks.publish_runbook()
+
+      assert Runbooks.fetch_model_draft_runbook_version("shipped", 1, subject) ==
+               {:error, :not_found}
+    end
+
+    test "denies a principal without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.fetch_model_draft_runbook_version(
                "any",
                1,
                Subject.for_runner(runner, account)
@@ -1214,6 +1298,124 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "create_or_replay_mcp_draft_revision/2" do
+    test "creates the next same-family draft once and rejects a stale source" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "draft revision")
+      source = create_runbook(owner, slug: "health-review")
+      facts = mcp_draft_revision_facts(source, title: "Health review revised")
+
+      assert {:ok, :created, revised} =
+               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+
+      assert revised.slug == source.slug
+      assert revised.version == 2
+      assert revised.status == :draft
+      assert revised.title == "Health review revised"
+
+      assert {:ok, :replay, replayed} =
+               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+
+      assert replayed.id == revised.id
+
+      stale = %{facts | operation_id: "op_244NN9NMDZ1T76NARWCKM5A0D6"}
+
+      assert Runbooks.create_or_replay_mcp_draft_revision(stale, subject) ==
+               {:error, :draft_changed}
+
+      assert Repo.aggregate(Runbooks.Runbook, :count) == 2
+      assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+    end
+
+    test "rolls back stale hashes and hides cross-account sources" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "draft revision")
+      source = create_runbook(owner, slug: "health-review")
+
+      stale_hash =
+        source
+        |> mcp_draft_revision_facts()
+        |> Map.put(:definition_sha256, String.duplicate("0", 64))
+
+      assert Runbooks.create_or_replay_mcp_draft_revision(stale_hash, subject) ==
+               {:error, :draft_changed}
+
+      {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
+      other_subject = api_client_subject(other_account, other_owner, "foreign revision")
+
+      assert Runbooks.create_or_replay_mcp_draft_revision(
+               mcp_draft_revision_facts(source),
+               other_subject
+             ) == {:error, :not_found}
+
+      refute Repo.exists?(MCPOperations.Operation)
+    end
+
+    test "conflicts when changed facts reuse the operation identity" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "draft revision")
+      source = create_runbook(owner, slug: "health-review")
+      facts = mcp_draft_revision_facts(source)
+
+      assert {:ok, :created, _revised} =
+               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+
+      assert Runbooks.create_or_replay_mcp_draft_revision(%{facts | title: "Renamed"}, subject) ==
+               {:error, :operation_conflict}
+
+      assert Repo.aggregate(Runbooks.Runbook, :count) == 2
+      assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+    end
+
+    test "denies a caller holding neither draft nor manage authority" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "draft revision")
+      source = create_runbook(owner, slug: "health-review")
+      facts = mcp_draft_revision_facts(source)
+
+      narrowed =
+        subject
+        |> without_permission(Runbooks.Authorizer.draft_runbooks_permission())
+        |> without_permission(Runbooks.Authorizer.manage_runbooks_permission())
+
+      assert Runbooks.create_or_replay_mcp_draft_revision(facts, narrowed) ==
+               {:error, :unauthorized}
+
+      assert Runbooks.create_or_replay_mcp_draft_revision(
+               facts,
+               membership_subject(account, :operator)
+             ) == {:error, :unauthorized}
+
+      refute Repo.exists?(MCPOperations.Operation)
+    end
+
+    test "accepts a canonical revision that is not yet publishable" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "draft revision")
+      source = create_runbook(owner, slug: "health-review")
+
+      incomplete =
+        update_in(
+          definition(),
+          ["stages", Access.at(0), "steps", Access.at(0)],
+          &Map.delete(&1, "action")
+        )
+
+      facts = mcp_draft_revision_facts(source, definition: incomplete)
+
+      assert {:ok, :created, revised} =
+               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+
+      assert revised.status == :draft
+      assert revised.definition == incomplete
+
+      # The revision passes the draft envelope precisely because publication
+      # validation is a separate, human-only transition.
+      assert {:ok, _draft} = Runbooks.Definition.validate_draft(revised.definition)
+      assert {:error, _issues} = Runbooks.Definition.validate(revised.definition)
+    end
+  end
+
   describe "subscribe_account_runbooks/1" do
     test "delivers exact account-local list changes" do
       {_user, account, _subject} = Fixtures.Subjects.owner_subject()
@@ -1630,6 +1832,139 @@ defmodule Emisar.RunbooksTest do
       # Only the fixture's reservation survives: the rejected preflight rolled
       # the foreign account's own reservation back with it.
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+    end
+  end
+
+  describe "create_or_replay_mcp_draft_test/2" do
+    test "executes the exact current draft through the scheduler and replays it" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = api_client_subject(account, owner, "draft test")
+      runner = trusted_runner(account, owner)
+      Runners.subscribe_runner_transport(runner)
+      draft = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
+      facts = mcp_draft_test_facts(draft)
+
+      assert {:ok, :created, execution} =
+               Runbooks.create_or_replay_mcp_draft_test(facts, subject)
+
+      assert execution.kind == :draft_test
+      assert execution.definition_sha256 == facts.definition_sha256
+
+      assert execution.id ==
+               MCPOperations.resource_id(facts.operation_id, :test_runbook_draft, subject)
+
+      assert [%{runbook_step_id: "uptime"}] =
+               Runs.list_runs_for_runbook_execution(account.id, execution.id)
+
+      assert %{payload: payload} =
+               Repo.get_by!(Emisar.Audit.Event,
+                 event_type: "runbook.dispatched",
+                 target_id: draft.id
+               )
+
+      assert payload["execution_kind"] == "draft_test"
+      assert payload["definition_sha256"] == facts.definition_sha256
+
+      assert {:ok, :replay, replayed} =
+               Runbooks.create_or_replay_mcp_draft_test(facts, subject)
+
+      assert replayed.id == execution.id
+      assert Repo.aggregate(RunbookExecution, :count) == 1
+    end
+
+    test "rejects a stale hash and another account without persisting an operation" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = api_client_subject(account, owner, "draft test")
+      runner = trusted_runner(account, owner)
+      draft = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
+      stale = %{mcp_draft_test_facts(draft) | definition_sha256: String.duplicate("0", 64)}
+
+      assert Runbooks.create_or_replay_mcp_draft_test(stale, subject) ==
+               {:error, :draft_changed}
+
+      {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
+      _other_policy = Fixtures.Policies.create_policy(account_id: other_account.id)
+      other_subject = api_client_subject(other_account, other_owner, "foreign draft test")
+
+      assert Runbooks.create_or_replay_mcp_draft_test(
+               mcp_draft_test_facts(draft),
+               other_subject
+             ) == {:error, :draft_not_found}
+
+      refute Repo.exists?(RunbookExecution)
+      refute Repo.exists?(MCPOperations.Operation)
+    end
+
+    test "rejects a superseded draft and each missing authority" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = api_client_subject(account, owner, "draft test")
+      runner = trusted_runner(account, owner)
+      first = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
+      assert {:ok, second} = Runbooks.save_new_version(first, %{}, owner)
+
+      assert Runbooks.create_or_replay_mcp_draft_test(mcp_draft_test_facts(first), subject) ==
+               {:error, :draft_changed}
+
+      head_facts = mcp_draft_test_facts(second)
+
+      assert Runbooks.create_or_replay_mcp_draft_test(
+               head_facts,
+               without_permission(subject, Runbooks.Authorizer.draft_runbooks_permission())
+             ) == {:error, :unauthorized}
+
+      assert Runbooks.create_or_replay_mcp_draft_test(
+               head_facts,
+               without_permission(subject, Runs.Authorizer.dispatch_run_permission())
+             ) == {:error, :unauthorized}
+
+      # A draft head is reachable only through the draft-test path: ordinary
+      # execution still resolves published versions only.
+      assert Runbooks.create_or_replay_mcp_execution(mcp_execution_facts(second), subject) ==
+               {:error, :not_found}
+
+      refute Repo.exists?(RunbookExecution)
+    end
+
+    test "retains the whole-execution approval gate and draft-test identity" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+
+      _policy =
+        Fixtures.Policies.create_policy(
+          account_id: account.id,
+          rules: %{
+            "schema_version" => 2,
+            "defaults" => %{
+              "low" => "require_approval",
+              "medium" => "require_approval",
+              "high" => "require_approval",
+              "critical" => "deny"
+            },
+            "overrides" => [],
+            "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
+          }
+        )
+
+      subject = api_client_subject(account, owner, "draft approval")
+      runner = trusted_runner(account, owner)
+      draft = create_runbook(owner, slug: "draft-approval", definition: definition(runner.group))
+
+      assert {:ok, :created, execution} =
+               Runbooks.create_or_replay_mcp_draft_test(mcp_draft_test_facts(draft), subject)
+
+      assert execution.status == :pending_approval
+      assert execution.kind == :draft_test
+      assert Runs.list_runs_for_runbook_execution(account.id, execution.id) == []
+
+      assert {:ok, request} =
+               Approvals.fetch_request_for_visible_runbook_execution(execution, subject)
+
+      assert request.context["execution_kind"] == "draft_test"
+
+      assert get_in(request.context, ["runbook", "definition_sha256"]) ==
+               execution.definition_sha256
     end
   end
 
@@ -2382,6 +2717,27 @@ defmodule Emisar.RunbooksTest do
     }
   end
 
+  defp mcp_draft_revision_facts(runbook, opts \\ []) do
+    %{
+      operation_id: Keyword.get(opts, :operation_id, operation_id()),
+      runbook_ref: "#{runbook.slug}@#{runbook.version}",
+      definition_sha256: Runbooks.Definition.digest(runbook.definition),
+      title: Keyword.get(opts, :title, runbook.title),
+      description: Keyword.get(opts, :description, runbook.description),
+      definition: Keyword.get(opts, :definition, runbook.definition)
+    }
+  end
+
+  defp mcp_draft_test_facts(runbook, opts \\ []) do
+    %{
+      operation_id: Keyword.get(opts, :operation_id, operation_id()),
+      runbook_ref: "#{runbook.slug}@#{runbook.version}",
+      definition_sha256: Runbooks.Definition.digest(runbook.definition),
+      reason: Keyword.get(opts, :reason, "test draft on the selected fleet"),
+      input_values: Keyword.get(opts, :input_values, %{})
+    }
+  end
+
   defp runbook_attrs(opts \\ []) do
     title = Keyword.get(opts, :title, "Runbook #{System.unique_integer([:positive])}")
 
@@ -2542,6 +2898,11 @@ defmodule Emisar.RunbooksTest do
     assert {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: name}, owner)
     Subject.for_api_key(key, account)
   end
+
+  # The api_client role holds draft and dispatch authority together, so each
+  # gate is proven by taking exactly one permission off a real MCP subject.
+  defp without_permission(%Subject{} = subject, permission),
+    do: %{subject | permissions: MapSet.delete(subject.permissions, permission)}
 
   defp membership_subject(account, role) do
     user = Fixtures.Users.create_user()

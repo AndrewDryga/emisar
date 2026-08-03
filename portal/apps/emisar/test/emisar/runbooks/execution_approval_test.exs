@@ -45,6 +45,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert is_nil(request.run_id)
     assert request.runbook_execution_id == result.execution_id
     assert request.context["kind"] == "runbook_execution"
+    assert request.context["execution_kind"] == "published"
     assert request.context["runbook"]["id"] == runbook.id
     assert request.context["runbook"]["title"] == runbook.title
 

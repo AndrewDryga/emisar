@@ -41,6 +41,8 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
              get_runbook
              execute_runbook
              create_runbook_draft
+             update_runbook_draft
+             test_runbook_draft
            )
 
     # Response schemas stay internal to the validation registry; the wire
@@ -88,6 +90,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     assert by_name["run_action"]["annotations"] == destructive_annotations
     assert by_name["execute_runbook"]["annotations"] == destructive_annotations
+    assert by_name["test_runbook_draft"]["annotations"] == destructive_annotations
 
     assert by_name["create_runbook_draft"]["annotations"] == %{
              "readOnlyHint" => false,
@@ -95,6 +98,9 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
              "idempotentHint" => false,
              "openWorldHint" => false
            }
+
+    assert by_name["update_runbook_draft"]["annotations"] ==
+             by_name["create_runbook_draft"]["annotations"]
   end
 
   test "published scalar types are enforced without string coercion", %{

@@ -135,6 +135,18 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute html =~ "on —"
   end
 
+  test "labels draft tests separately from published runbook approvals", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    _request =
+      Fixtures.Approvals.create_execution_request(account, user, %{execution_kind: :draft_test})
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert html =~ "Draft test · Database maintenance"
+    refute html =~ ">Database maintenance<"
+  end
+
   test "a pending request shows its expiry, amber only when it's about to lapse", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request!(account, user.id, "kernel patch")

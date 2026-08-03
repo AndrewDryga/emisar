@@ -183,6 +183,27 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
+  Lists the current draft head of each runbook family a model may revise.
+
+  Unlike published discovery, draft discovery does not require current target
+  availability: an unavailable draft must remain reachable so its author can
+  repair it. Requires `view_runbooks`; scoped to the subject's account.
+  """
+  def list_model_draft_runbooks(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      runbooks =
+        Runbook.Query.not_deleted()
+        |> Runbook.Query.latest_version_per_slug()
+        |> Runbook.Query.draft()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, runbooks}
+    end
+  end
+
+  @doc """
   Fetches the one exact published `slug@version` a model may read. Requires
   `view_runbooks`; scoped to the subject's account. Returns
   `{:ok, runbook} | {:error, :not_found | :unauthorized}` — a draft,
@@ -195,6 +216,26 @@ defmodule Emisar.Runbooks do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
          {:ok, runbook} <- fetch_model_published_version(slug, version, subject) do
       if model_visible?(runbook, subject), do: {:ok, runbook}, else: {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Fetches one exact current draft head by immutable `slug@version`.
+
+  A superseded draft, published row, deleted family, or foreign-account row is
+  `:not_found`. Current runner and catalog availability is deliberately not a
+  read gate because the caller may be inspecting the draft to repair it.
+  """
+  def fetch_model_draft_runbook_version(slug, version, %Subject{} = subject)
+      when is_binary(slug) and is_integer(version) and version > 0 do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         {:ok, runbook} <- fetch_exact_runbook_version(slug, version, subject, status: :draft),
+         :ok <- ensure_family_head(runbook, subject) do
+      {:ok, runbook}
+    else
+      {:error, :draft_changed} -> {:error, :not_found}
+      other -> other
     end
   end
 
@@ -212,6 +253,42 @@ defmodule Emisar.Runbooks do
   # contract) is the same answer to a model: it isn't there.
   defp model_visible?(%Runbook{} = runbook, %Subject{} = subject),
     do: Compiler.validate_availability(runbook.definition, subject) == :ok
+
+  defp fetch_exact_runbook_version(slug, version, %Subject{} = subject, opts) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    queryable =
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_slug(slug)
+      |> Runbook.Query.by_version(version)
+      |> maybe_filter_runbook_status(opts[:status])
+      |> maybe_lock_runbook(opts[:lock])
+      |> Authorizer.for_subject(subject)
+
+    repo.fetch(queryable, Runbook.Query)
+  end
+
+  defp maybe_filter_runbook_status(queryable, :draft), do: Runbook.Query.draft(queryable)
+  defp maybe_filter_runbook_status(queryable, :published), do: Runbook.Query.published(queryable)
+  defp maybe_filter_runbook_status(queryable, nil), do: queryable
+
+  defp maybe_lock_runbook(queryable, true), do: Runbook.Query.lock_for_update(queryable)
+  defp maybe_lock_runbook(queryable, _lock), do: queryable
+
+  defp ensure_family_head(%Runbook{} = runbook, %Subject{} = subject, opts \\ []) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    Runbook.Query.not_deleted()
+    |> Runbook.Query.by_slug(runbook.slug)
+    |> Runbook.Query.latest_version()
+    |> Authorizer.for_subject(subject)
+    |> repo.fetch(Runbook.Query)
+    |> case do
+      {:ok, %{id: id}} when id == runbook.id -> :ok
+      {:ok, %Runbook{}} -> {:error, :draft_changed}
+      other -> other
+    end
+  end
 
   def fetch_runbook_by_id(id, %Subject{} = subject) do
     with :ok <-
@@ -550,6 +627,127 @@ defmodule Emisar.Runbooks do
 
   defp after_mcp_draft_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
 
+  @doc """
+  Creates or replays the next immutable draft revision of one runbook family.
+
+  The exact source ref and definition hash form an optimistic authoring lock.
+  Only the current family head may be revised, its slug is preserved, and the
+  resulting row is always a draft. Publishing remains a separate human-only
+  transition.
+  """
+  def create_or_replay_mcp_draft_revision(
+        %{operation_id: operation_id} = facts,
+        %Subject{actor: %ApiKeys.ApiKey{}} = subject
+      )
+      when is_binary(operation_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             {:one_of,
+              [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
+           ) do
+      id = MCPOperations.resource_id(operation_id, :update_runbook_draft, subject)
+      attrs = mcp_draft_revision_operation_attrs(facts, id)
+      commit_mcp_draft_revision(facts, id, attrs, subject)
+    end
+  end
+
+  def create_or_replay_mcp_draft_revision(_facts, %Subject{}), do: {:error, :unauthorized}
+
+  defp mcp_draft_revision_operation_attrs(facts, id) do
+    fingerprint =
+      MCPOperations.mutation_fingerprint("update_runbook_draft", %{
+        "runbook_ref" => facts.runbook_ref,
+        "definition_sha256" => facts.definition_sha256,
+        "title" => facts.title,
+        "description" => facts.description,
+        "definition" => facts.definition
+      })
+
+    %{
+      operation_id: facts.operation_id,
+      tool: :update_runbook_draft,
+      fingerprint: fingerprint,
+      resource_id: id,
+      resource_ref: facts.runbook_ref
+    }
+  end
+
+  defp commit_mcp_draft_revision(facts, id, operation_attrs, %Subject{} = subject) do
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
+      multi =
+        Multi.merge(multi, fn
+          %{mcp_operation: %{fresh?: false}} ->
+            Multi.new()
+
+          %{mcp_operation: %{fresh?: true}} ->
+            compose_fresh_mcp_draft_revision(facts, id, subject)
+        end)
+
+      with {:ok, %{mcp_operation: reservation}} <-
+             Repo.commit_multi(multi, after_commit: &after_mcp_draft_revision_committed/1),
+           {:ok, runbook} <- fetch_mcp_draft(id, subject) do
+        {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
+      else
+        {:error, %Ecto.Changeset{} = changeset} -> normalize_draft_revision_error(changeset)
+        other -> other
+      end
+    end
+  end
+
+  defp compose_fresh_mcp_draft_revision(facts, id, %Subject{} = subject) do
+    Multi.new()
+    |> Multi.run(:source_runbook, fn repo, _changes ->
+      fetch_locked_revision_source(facts, subject, repo)
+    end)
+    |> Multi.run(:definition, fn _repo, _changes ->
+      Definition.validate_draft(facts.definition)
+    end)
+    |> Multi.insert(:runbook, fn %{source_runbook: source, definition: definition} ->
+      attrs = %{
+        "id" => id,
+        "title" => facts.title,
+        "description" => facts.description,
+        "definition" => definition
+      }
+
+      Runbook.Changeset.new_version(source, Subject.user_id(subject), attrs)
+    end)
+    |> Multi.insert(:audit, fn %{source_runbook: source, runbook: runbook} ->
+      Audit.Events.runbook_updated(subject, source, runbook)
+    end)
+  end
+
+  defp fetch_locked_revision_source(facts, %Subject{} = subject, repo) do
+    with {:ok, {slug, version}} <- parse_runbook_ref(facts.runbook_ref),
+         {:ok, runbook} <-
+           fetch_exact_runbook_version(slug, version, subject, repo: repo, lock: true),
+         :ok <- ensure_family_head(runbook, subject, repo: repo),
+         true <- Definition.digest(runbook.definition) == facts.definition_sha256 do
+      {:ok, runbook}
+    else
+      false -> {:error, :draft_changed}
+      {:error, :invalid_runbook_ref} -> {:error, :invalid_runbook_ref}
+      {:error, :not_found} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp normalize_draft_revision_error(changeset) do
+    if changeset.errors[:slug] || changeset.errors[:version],
+      do: {:error, :draft_changed},
+      else: {:error, changeset}
+  end
+
+  defp after_mcp_draft_revision_committed(%{
+         mcp_operation: %{fresh?: true},
+         runbook: runbook
+       }) do
+    broadcast_runbook_updated(runbook)
+  end
+
+  defp after_mcp_draft_revision_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
+
   # -- PubSub ----------------------------------------------------------
 
   @doc "Subscribe the caller to the account's runbook list changes (`{:list_changed, :runbook, …}`)."
@@ -825,14 +1023,45 @@ defmodule Emisar.Runbooks do
              Emisar.Runs.Authorizer.dispatch_run_permission()
            ) do
       execution_id = MCPOperations.resource_id(operation_id, :execute_runbook, subject)
-      operation_attrs = mcp_execution_operation_attrs(facts, execution_id)
-      commit_mcp_execution(facts, execution_id, operation_attrs, subject)
+      operation_attrs = mcp_execution_operation_attrs(facts, execution_id, :published)
+      commit_mcp_execution(facts, execution_id, operation_attrs, :published, subject)
     end
   end
 
   def create_or_replay_mcp_execution(_facts, %Subject{}), do: {:error, :unauthorized}
 
-  defp mcp_execution_operation_attrs(facts, execution_id) do
+  @doc """
+  Creates or replays one exact draft test through the normal runbook scheduler.
+
+  A test executes real actions. It therefore requires both draft-authoring and
+  dispatch authority, re-reads the current draft head under lock, verifies the
+  server-issued definition hash, then applies the same compiler, scope, trust,
+  policy, approval, capacity, audit, and per-attempt gates as published work.
+  """
+  def create_or_replay_mcp_draft_test(
+        %{operation_id: operation_id} = facts,
+        %Subject{actor: %ApiKeys.ApiKey{}} = subject
+      )
+      when is_binary(operation_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.draft_runbooks_permission()
+           ),
+         :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Emisar.Runs.Authorizer.dispatch_run_permission()
+           ) do
+      execution_id = MCPOperations.resource_id(operation_id, :test_runbook_draft, subject)
+      operation_attrs = mcp_execution_operation_attrs(facts, execution_id, :draft_test)
+      commit_mcp_execution(facts, execution_id, operation_attrs, :draft_test, subject)
+    end
+  end
+
+  def create_or_replay_mcp_draft_test(_facts, %Subject{}), do: {:error, :unauthorized}
+
+  defp mcp_execution_operation_attrs(facts, execution_id, :published) do
     fingerprint =
       MCPOperations.mutation_fingerprint("execute_runbook", %{
         "runbook_ref" => facts.runbook_ref,
@@ -849,7 +1078,31 @@ defmodule Emisar.Runbooks do
     }
   end
 
-  defp commit_mcp_execution(facts, execution_id, operation_attrs, %Subject{} = subject) do
+  defp mcp_execution_operation_attrs(facts, execution_id, :draft_test) do
+    fingerprint =
+      MCPOperations.mutation_fingerprint("test_runbook_draft", %{
+        "runbook_ref" => facts.runbook_ref,
+        "definition_sha256" => facts.definition_sha256,
+        "reason" => facts.reason,
+        "input_values" => facts.input_values
+      })
+
+    %{
+      operation_id: facts.operation_id,
+      tool: :test_runbook_draft,
+      fingerprint: fingerprint,
+      resource_id: execution_id,
+      resource_ref: facts.runbook_ref
+    }
+  end
+
+  defp commit_mcp_execution(
+         facts,
+         execution_id,
+         operation_attrs,
+         kind,
+         %Subject{} = subject
+       ) do
     with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
       multi =
         Multi.merge(multi, fn
@@ -857,7 +1110,7 @@ defmodule Emisar.Runbooks do
             Multi.new()
 
           %{mcp_operation: %{fresh?: true, operation: operation}} ->
-            compose_fresh_mcp_execution(facts, execution_id, operation, subject)
+            compose_fresh_mcp_execution(facts, execution_id, operation, kind, subject)
         end)
 
       with {:ok, changes} <-
@@ -872,8 +1125,8 @@ defmodule Emisar.Runbooks do
   # Every mutable fact an execution freezes — the published version behind the
   # ref, membership scope, the compiled plan — is resolved by the fresh winner
   # only, inside the reservation's own transaction.
-  defp compose_fresh_mcp_execution(facts, execution_id, operation, subject) do
-    with {:ok, runbook} <- fetch_runbook_for_mcp_execution(facts.runbook_ref, subject),
+  defp compose_fresh_mcp_execution(facts, execution_id, operation, kind, subject) do
+    with {:ok, runbook} <- fetch_runbook_for_mcp_execution(facts, kind, subject),
          :ok <- ensure_membership(subject),
          :ok <- ensure_reason(facts.reason),
          {:ok, compiled} <-
@@ -891,17 +1144,37 @@ defmodule Emisar.Runbooks do
         subject,
         execution_id,
         operation_id: facts.operation_id,
-        mcp_operation_record_id: operation.id
+        mcp_operation_record_id: operation.id,
+        kind: kind
       )
     else
       {:error, reason} -> Multi.error(Multi.new(), :mcp_execution_preflight, reason)
     end
   end
 
-  defp fetch_runbook_for_mcp_execution(runbook_ref, subject) do
+  defp fetch_runbook_for_mcp_execution(%{runbook_ref: runbook_ref}, :published, subject) do
     case parse_runbook_ref(runbook_ref) do
       {:ok, {slug, version}} -> fetch_published_runbook_version(slug, version, subject)
       {:error, :invalid_runbook_ref} -> {:error, :invalid_runbook_ref}
+    end
+  end
+
+  defp fetch_runbook_for_mcp_execution(facts, :draft_test, subject) do
+    with {:ok, {slug, version}} <- parse_runbook_ref(facts.runbook_ref),
+         {:ok, runbook} <-
+           fetch_exact_runbook_version(slug, version, subject,
+             status: :draft,
+             repo: Repo,
+             lock: true
+           ),
+         :ok <- ensure_family_head(runbook, subject),
+         true <- Definition.digest(runbook.definition) == facts.definition_sha256 do
+      {:ok, runbook}
+    else
+      false -> {:error, :draft_changed}
+      {:error, :not_found} -> {:error, :draft_not_found}
+      {:error, :draft_changed} -> {:error, :draft_changed}
+      {:error, reason} -> {:error, reason}
     end
   end
 

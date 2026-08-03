@@ -96,6 +96,8 @@ defmodule Emisar.Fixtures.Approvals do
         frozen_plan: %{"schema_version" => 1, "stages" => [stage_plan]},
         inputs_raw: "{}",
         inputs_sha256: String.duplicate("0", 64),
+        definition_sha256: Runbooks.Definition.digest(runbook.definition),
+        kind: attrs[:execution_kind] || :published,
         status: :pending_approval
       })
       |> Repo.insert!()
@@ -125,6 +127,7 @@ defmodule Emisar.Fixtures.Approvals do
       allow_self_approval: Map.get(attrs, :allow_self_approval, true),
       context: %{
         "kind" => "runbook_execution",
+        "execution_kind" => to_string(execution.kind),
         "execution_id" => execution.id,
         "runbook" => %{
           "id" => runbook.id,

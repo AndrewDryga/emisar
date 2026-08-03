@@ -10,6 +10,8 @@ defmodule Emisar.Runbooks.RunbookExecution do
   schema "runbook_executions" do
     field :reason, :string
 
+    field :kind, Ecto.Enum, values: [:published, :draft_test], default: :published
+
     field :status, Ecto.Enum,
       values: [:pending_approval, :active, :succeeded, :halted, :cancelled],
       default: :active
@@ -22,6 +24,7 @@ defmodule Emisar.Runbooks.RunbookExecution do
     field :frozen_plan, :map, default: %{}
     field :inputs_raw, :binary
     field :inputs_sha256, :string
+    field :definition_sha256, :string
     field :sensitive_input_names, {:array, :string}, default: []
 
     field :api_key_id, Ecto.UUID

@@ -492,8 +492,9 @@ defmodule Emisar.Approvals do
           min_approvals: min_approvals,
           allow_self_approval: allow_self_approval,
           runbook: runbook
-        }
+        } = approval
       ) do
+    execution_kind = Map.get(approval, :execution_kind, "published")
     now = DateTime.utc_now()
     expires_at = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
 
@@ -514,6 +515,7 @@ defmodule Emisar.Approvals do
           allow_self_approval: allow_self_approval,
           context: %{
             "kind" => "runbook_execution",
+            "execution_kind" => execution_kind,
             "execution_id" => execution.id,
             "runbook" => runbook,
             "plan" => execution.frozen_plan

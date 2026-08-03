@@ -224,7 +224,7 @@ defmodule Emisar.Mailers.UserNotifier do
   """
   def deliver_runbook_execution_approval_request(%Users.User{} = approver, %{} = request) do
     plan = request.context["plan"] || %{}
-    title = get_in(request.context, ["runbook", "title"]) || "runbook execution"
+    title = runbook_approval_title(request)
     stages = plan["stages"] || []
     total = plan["total_items"] || Enum.sum(Enum.map(stages, &length(&1["items"] || [])))
     url = PublicUrl.url("/app/#{request.account.slug}/approvals/#{request.id}")
@@ -294,6 +294,22 @@ defmodule Emisar.Mailers.UserNotifier do
   defp approval_decision_outcome(:approved), do: "Approved"
   defp approval_decision_outcome(:denied), do: "Denied"
   defp approval_decision_outcome(:expired), do: "Expired"
+
+  defp runbook_approval_title(%{context: %{"execution_kind" => "draft_test"} = context}) do
+    "Draft test · #{get_in(context, ["runbook", "title"]) || "runbook"}"
+  end
+
+  defp runbook_approval_title(request),
+    do: get_in(request.context, ["runbook", "title"]) || "runbook execution"
+
+  defp approval_decision_label(%{
+         context: %{
+           "execution_kind" => "draft_test",
+           "runbook" => %{"title" => title}
+         }
+       })
+       when is_binary(title),
+       do: "Draft test · #{title}"
 
   defp approval_decision_label(%{context: %{"runbook" => %{"title" => title}}})
        when is_binary(title),

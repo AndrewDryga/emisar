@@ -258,6 +258,30 @@ defmodule Emisar.Runbooks.DefinitionTest do
     end
   end
 
+  describe "digest/1" do
+    test "is stable across object key order and changes with definition content" do
+      definition = valid_definition()
+
+      reordered =
+        definition
+        |> Enum.reverse()
+        |> Map.new()
+        |> update_in(["stages"], fn stages ->
+          Enum.map(stages, &Map.new(Enum.reverse(&1)))
+        end)
+
+      digest = Definition.digest(definition)
+
+      assert digest == Definition.digest(reordered)
+      assert digest =~ ~r/^[0-9a-f]{64}$/
+
+      refute digest ==
+               definition
+               |> Map.put("context_markdown", "Changed evidence instructions.")
+               |> Definition.digest()
+    end
+  end
+
   test "schema and runtime limits have one machine-readable owner" do
     assert Definition.schema()["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert Definition.limit!(:max_steps) == 32
