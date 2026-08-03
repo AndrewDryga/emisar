@@ -1,8 +1,9 @@
-defmodule EmisarWeb.PacksRegistry.Action do
+defmodule Emisar.Catalog.PublishedRegistry.Action do
   @moduledoc """
   One action's catalog metadata as parsed from `pack/actions/<id>.yaml`.
-  Lives in its own file so it compiles before `EmisarWeb.PacksRegistry`,
-  which embeds these structs into a compile-time module attribute.
+  Lives in its own file so a reader can see the shape
+  `Emisar.Catalog.PublishedRegistry` hands to the public pack pages and the
+  approval-page command preview.
   """
 
   @enforce_keys [:id, :title, :kind, :risk]

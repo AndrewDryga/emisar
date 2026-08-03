@@ -1,4 +1,4 @@
-defmodule EmisarWeb.PacksRegistry.Cache do
+defmodule Emisar.Catalog.PublishedRegistry.Cache do
   @moduledoc """
   Holds the current pack catalog and keeps it fresh.
 
@@ -11,11 +11,11 @@ defmodule EmisarWeb.PacksRegistry.Cache do
   a registry outage or a malformed publish never blanks the pack pages.
 
   The catalog lives in `:persistent_term` (read-mostly, refreshed rarely),
-  so every `EmisarWeb.PacksRegistry` read is a lock-free term lookup rather
-  than a `GenServer.call` through this process.
+  so every `Emisar.Catalog.PublishedRegistry` read is a lock-free term lookup
+  rather than a `GenServer.call` through this process.
   """
   use GenServer
-  alias EmisarWeb.PacksRegistry.{Catalog, CatalogClient, Pack}
+  alias Emisar.Catalog.PublishedRegistry.{Catalog, CatalogClient, Pack}
   require Logger
 
   @term_key {__MODULE__, :catalog}
@@ -62,7 +62,7 @@ defmodule EmisarWeb.PacksRegistry.Cache do
           %{state | source: :remote, loaded_at: DateTime.utc_now()}
 
         {:keep, message} ->
-          Logger.warning("PacksRegistry.Cache: #{message}; serving last-good catalog")
+          Logger.warning("PublishedRegistry.Cache: #{message}; serving last-good catalog")
           state
       end
 
@@ -146,13 +146,13 @@ defmodule EmisarWeb.PacksRegistry.Cache do
         packs
 
       {:error, reason} ->
-        raise "PacksRegistry.Cache: bundled catalog at #{path} is invalid: #{reason}"
+        raise "PublishedRegistry.Cache: bundled catalog at #{path} is invalid: #{reason}"
     end
   end
 
   defp catalog_url do
-    :emisar_web
-    |> Application.get_env(EmisarWeb.PacksRegistry, [])
+    :emisar
+    |> Application.get_env(Emisar.Catalog.PublishedRegistry, [])
     |> Keyword.get(:catalog_url)
   end
 end

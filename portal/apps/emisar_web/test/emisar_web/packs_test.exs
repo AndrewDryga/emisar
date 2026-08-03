@@ -1,9 +1,9 @@
 defmodule EmisarWeb.PacksTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.ActionContract
+  alias Emisar.Catalog.PublishedRegistry
   alias Emisar.Runbooks
   alias EmisarWeb.MCP.RawJSON
-  alias EmisarWeb.PacksRegistry
 
   describe "GET /packs" do
     test "renders 200 and lists every registered pack by id + name", %{conn: conn} do
@@ -14,7 +14,7 @@ defmodule EmisarWeb.PacksTest do
 
       # Each registered pack is rendered as a card — assert id + name
       # for every one so adding a pack without listing it surfaces.
-      for pack <- PacksRegistry.list() do
+      for pack <- PublishedRegistry.list() do
         assert html =~ pack.id, "missing pack id #{pack.id}"
         assert html =~ pack.name, "missing pack name #{pack.name}"
       end
@@ -23,7 +23,7 @@ defmodule EmisarWeb.PacksTest do
 
   describe "GET /packs/:id" do
     test "renders the per-pack detail page with all its actions", %{conn: conn} do
-      pack = hd(PacksRegistry.list())
+      pack = hd(PublishedRegistry.list())
       html = conn |> get(~p"/packs/#{pack.id}") |> html_response(200)
 
       assert html =~ pack.name
@@ -39,7 +39,7 @@ defmodule EmisarWeb.PacksTest do
     end
 
     test "renders each action's operator docs, crawlable while collapsed", %{conn: conn} do
-      pack = hd(PacksRegistry.list())
+      pack = hd(PublishedRegistry.list())
       action = Enum.find(pack.actions, &(&1.description != ""))
       html = conn |> get(~p"/packs/#{pack.id}") |> html_response(200)
 
@@ -68,7 +68,7 @@ defmodule EmisarWeb.PacksTest do
     end
 
     test "the detail page pins the install hash and sets the meta description", %{conn: conn} do
-      pack = PacksRegistry.get("cassandra")
+      pack = PublishedRegistry.get("cassandra")
       html = conn |> get(~p"/packs/#{pack.id}") |> html_response(200)
 
       # The install story is integrity-pinned: the pack's content_hash and
@@ -85,7 +85,7 @@ defmodule EmisarWeb.PacksTest do
     test "the content hash lives in the install command's own scroll, not a page-wide row", %{
       conn: conn
     } do
-      pack = PacksRegistry.get("cassandra")
+      pack = PublishedRegistry.get("cassandra")
       html = conn |> get(~p"/packs/#{pack.id}") |> html_response(200)
 
       # A real sha256 (`sha256:` + 64 hex) is one unbreakable 71-char token that
@@ -101,8 +101,8 @@ defmodule EmisarWeb.PacksTest do
     end
 
     test "the required-binaries banner shows only when the pack needs binaries", %{conn: conn} do
-      with_binaries = Enum.find(PacksRegistry.list(), &(&1.requires_binaries != []))
-      without_binaries = Enum.find(PacksRegistry.list(), &(&1.requires_binaries == []))
+      with_binaries = Enum.find(PublishedRegistry.list(), &(&1.requires_binaries != []))
+      without_binaries = Enum.find(PublishedRegistry.list(), &(&1.requires_binaries == []))
 
       assert with_binaries, "expected at least one pack with requires_binaries"
       assert without_binaries, "expected at least one pack with no requires_binaries"
@@ -127,7 +127,7 @@ defmodule EmisarWeb.PacksTest do
 
     test "a path-traversal-ish id is a clean branded 404, never a 500", %{conn: conn} do
       # `..%2F..%2Fetc` decodes to the single segment `../../etc`, so it
-      # binds to :id and resolves through PacksRegistry.get/1 like any
+      # binds to :id and resolves through PublishedRegistry.get/1 like any
       # unknown id — no filesystem reach, no crash, just the 404 page.
       conn = get(conn, "/packs/..%2F..%2Fetc%2Fpasswd")
       assert conn.status == 404
@@ -135,7 +135,7 @@ defmodule EmisarWeb.PacksTest do
     end
 
     test "a known pack detail page stays indexable and carries the CSP header", %{conn: conn} do
-      pack = hd(PacksRegistry.list())
+      pack = hd(PublishedRegistry.list())
       conn = get(conn, ~p"/packs/#{pack.id}")
       html = html_response(conn, 200)
 
@@ -156,7 +156,7 @@ defmodule EmisarWeb.PacksTest do
     test "each pack card shows version, vendor, action count, and a safe-rel source link",
          %{conn: conn} do
       html = conn |> get(~p"/packs") |> html_response(200)
-      pack = PacksRegistry.get("redis")
+      pack = PublishedRegistry.get("redis")
 
       # The card's metadata strip — version + vendor + the action count.
       assert html =~ "v#{pack.version}"
@@ -165,7 +165,7 @@ defmodule EmisarWeb.PacksTest do
 
       # The per-pack "Source" repo link opens off-site, so every external
       # anchor on the index must carry the safe-rel pair (reverse-tabnabbing).
-      assert html =~ PacksRegistry.source_url(pack)
+      assert html =~ EmisarWeb.PacksRegistry.source_url(pack)
 
       for link <- external_links(html) do
         assert link =~ ~s(rel="noopener noreferrer"),
@@ -183,7 +183,7 @@ defmodule EmisarWeb.PacksTest do
 
       # The hero count reflects the real registry size (rendered into the
       # "<n> packs · <m> declared actions" line).
-      assert html =~ "#{PacksRegistry.pack_count()} packs"
+      assert html =~ "#{PublishedRegistry.pack_count()} packs"
     end
   end
 
@@ -205,50 +205,25 @@ defmodule EmisarWeb.PacksTest do
       assert body =~ "https://emisar.dev/compare/custom-mcp-server</loc>"
       refute body =~ "<lastmod>"
 
-      for pack <- PacksRegistry.list() do
+      for pack <- PublishedRegistry.list() do
         assert body =~ "https://emisar.dev/packs/#{pack.id}</loc>"
       end
     end
   end
 
-  describe "PacksRegistry" do
-    test "list/0 returns alphabetically sorted packs" do
-      ids = PacksRegistry.list() |> Enum.map(& &1.id)
-      assert ids == Enum.sort(ids)
-    end
-
-    test "every pack lists at least one action and action ids are unique across the catalog" do
-      packs = PacksRegistry.list()
-      assert packs != []
-
-      all_action_ids =
-        for pack <- packs, action <- pack.actions do
-          assert pack.actions != [], "pack #{pack.id} has no actions"
-          action.id
-        end
-
-      assert all_action_ids == Enum.uniq(all_action_ids),
-             "duplicate action id across the catalog"
-    end
-
-    test "get/1 returns the pack struct for a known id" do
-      assert %PacksRegistry.Pack{id: "linux-core"} = PacksRegistry.get("linux-core")
-    end
-
-    test "get/1 returns nil for an unknown id" do
-      assert PacksRegistry.get("nope") == nil
-    end
-
-    test "action_source_url/2 splits the action_id correctly" do
-      pack = PacksRegistry.get("linux-core")
+  describe "action_source_url/2" do
+    test "splits the action_id into the pack's action YAML path" do
+      pack = PublishedRegistry.get("linux-core")
       action = Enum.find(pack.actions, &(&1.id == "linux.disk_usage"))
-      url = PacksRegistry.action_source_url(pack, action)
+      url = EmisarWeb.PacksRegistry.action_source_url(pack, action)
       assert url =~ "linux-core/actions/disk_usage.yaml"
     end
+  end
 
-    test "install_snippet/1 is one integrity-pinned command — no --dest, no manual reload" do
-      pack = PacksRegistry.get("cassandra")
-      snippet = PacksRegistry.install_snippet(pack)
+  describe "install_snippet/1" do
+    test "is one integrity-pinned command — no --dest, no manual reload" do
+      pack = PublishedRegistry.get("cassandra")
+      snippet = EmisarWeb.PacksRegistry.install_snippet(pack)
 
       assert snippet =~ "emisar pack install cassandra"
       assert snippet =~ "--hash #{pack.content_hash}"
@@ -256,190 +231,6 @@ defmodule EmisarWeb.PacksTest do
       # daemon itself, so neither belongs in the copy-paste snippet.
       refute snippet =~ "--dest"
       refute snippet =~ "systemctl reload"
-    end
-
-    test "every pack has a well-formed sha256 content hash" do
-      for pack <- PacksRegistry.list() do
-        assert pack.content_hash =~ ~r/^sha256:[0-9a-f]{64}$/,
-               "bad content_hash for #{pack.id}: #{inspect(pack.content_hash)}"
-      end
-    end
-
-    test "suggest_index strips generic helpers and omits undetectable packs" do
-      by_id = Map.new(PacksRegistry.suggest_index(), &{&1.id, &1})
-
-      # grafana: curl stripped server-side → no binary signal; detected by
-      # its server process and listening port instead.
-      grafana = by_id["grafana"]
-      assert grafana.detect.binaries == []
-      assert "grafana-server" in grafana.detect.processes
-      # grafana detects by process only — :3000 is shared with Node/dev apps.
-      assert grafana.detect.ports == []
-
-      # consul: no detect.binaries block → binaries derived from requires
-      # (consul survives as a useful CLI signal; generic curl is stripped).
-      assert by_id["consul"].detect.binaries == ["consul"]
-      assert "consul" in by_id["consul"].detect.processes
-      assert 8500 in by_id["consul"].detect.ports
-
-      # Required CLIs stay valid suggestion signals on supervised hosts.
-      assert by_id["postgres"].detect.binaries == ["psql"]
-      assert "postgres" in by_id["postgres"].detect.processes
-      assert by_id["docker"].detect.binaries == ["docker"]
-      assert "dockerd" in by_id["docker"].detect.processes
-
-      # cloudflare: requires only curl and declares no detect → all-empty
-      # signal → omitted entirely (a remote-API pack isn't host-detectable).
-      refute Map.has_key?(by_id, "cloudflare")
-
-      # Remote-target client CLIs are not a host-presence signal: a pack that
-      # requires only ipmitool (BMC), gh (GitHub), kubectl (a remote cluster),
-      # terraform (remote infra), or snmpget (remote agents) is omitted, so a
-      # host that merely has the CLI installed is never suggested the pack.
-      # dell-ipmi suggested on a GCP box that happened to ship ipmitool was
-      # the bug this guards.
-      for id <- ~w(dell-ipmi github-cli kubernetes snmp terraform-readonly) do
-        assert PacksRegistry.get(id), "expected #{id} to be a real catalog pack"
-
-        refute Map.has_key?(by_id, id),
-               "#{id} requires only a remote-target client; must not be suggested"
-      end
-
-      # Lean shape: only id/name/os/detect — no hash/tarball/description.
-      assert grafana |> Map.keys() |> Enum.sort() == [:detect, :id, :name, :os]
-    end
-
-    # Golden values captured from the Go runner's `emisar pack validate`
-    # (runner/internal/packs computePackHash). If a pack's bytes change,
-    # both the Go hash and this expectation must move together — a
-    # mismatch here means the portal's Elixir hash has drifted from the
-    # runner's, which would make every `--hash` install fail for users.
-    # redis is exec-only; cassandra includes a script-kind action, so
-    # the pair covers both hash code paths.
-    test "content_hash matches the Go runner byte-for-byte (golden values)" do
-      assert PacksRegistry.get("redis").content_hash ==
-               "sha256:1231006a60b01d8712b6874c57ec6407112a20183236680b5a1732b8f2649b12"
-
-      assert PacksRegistry.get("cassandra").content_hash ==
-               "sha256:233c8f73bf3f859559e503f60f13edf723174f31f6c186e47c40137a68657454"
-    end
-
-    test "tarball_url/1 returns the immutable content-addressed URL for a known id" do
-      pack = PacksRegistry.get("redis")
-      assert {:ok, url} = PacksRegistry.tarball_url("redis")
-      # The version + content hash are baked into the immutable path, so the
-      # URL a page renders is the exact bytes its --hash pin was cut against.
-      assert url == pack.tarball_url
-      assert url =~ "/v1/packs/redis/#{pack.version}/"
-      assert url =~ String.replace(pack.content_hash, "sha256:", "")
-    end
-
-    test "tarball_url/1 is :error for an unknown id" do
-      assert PacksRegistry.tarball_url("nope") == :error
-    end
-
-    test "tarball_url/2 resolves a pack's current version to its tarball" do
-      pack = PacksRegistry.get("redis")
-      assert PacksRegistry.tarball_url("redis", pack.version) == {:ok, pack.tarball_url}
-    end
-
-    test "tarball_url/2 is :error for a version the pack doesn't advertise" do
-      # No pack yet ships history in the bundled catalog, so any non-current
-      # version is unknown; the remembered-version branch is covered purely in
-      # EmisarWeb.PacksRegistry.PackTest.
-      assert PacksRegistry.tarball_url("redis", "9.9.9") == :error
-    end
-
-    test "tarball_url/2 is :error for an unknown id" do
-      assert PacksRegistry.tarball_url("nope", "0.1.0") == :error
-    end
-
-    test "build_action parses an exec action's command template" do
-      pack = PacksRegistry.get("cloud-init")
-      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
-
-      assert action.command == %{
-               binary: "cloud-init",
-               argv: ["single", "--name={{ args.module }}", "--frequency={{ args.frequency }}"]
-             }
-    end
-
-    test "a script-kind action carries no command template" do
-      pack = PacksRegistry.get("cassandra")
-      action = Enum.find(pack.actions, &(&1.id == "cassandra.analyze_disk_pressure"))
-
-      assert action.kind == "script"
-      assert action.command == nil
-    end
-
-    test "resolve_command/4 returns the compiled command when the pinned hash matches" do
-      pack = PacksRegistry.get("cloud-init")
-      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
-
-      assert PacksRegistry.resolve_command(
-               "cloud-init",
-               "cloud-init.single_module",
-               pack.content_hash,
-               nil
-             ) == {:ok, action.command}
-    end
-
-    test "resolve_command/4 falls back to the advertised version when no hash is pinned" do
-      pack = PacksRegistry.get("cloud-init")
-      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
-
-      assert PacksRegistry.resolve_command(
-               "cloud-init",
-               "cloud-init.single_module",
-               nil,
-               pack.version
-             ) == {:ok, action.command}
-    end
-
-    test "resolve_command/4 trusts a pinned hash over the version — a hash drift is :error" do
-      # The pinned hash is authoritative: even a matching advertised version
-      # must not paper over a hash the runner will actually enforce differently.
-      pack = PacksRegistry.get("cloud-init")
-
-      assert PacksRegistry.resolve_command(
-               "cloud-init",
-               "cloud-init.single_module",
-               "sha256:#{String.duplicate("0", 64)}",
-               pack.version
-             ) == :error
-    end
-
-    test "resolve_command/4 is :error when neither hash nor version matches" do
-      assert PacksRegistry.resolve_command("cloud-init", "cloud-init.single_module", nil, "9.9.9") ==
-               :error
-
-      assert PacksRegistry.resolve_command("cloud-init", "cloud-init.single_module", nil, nil) ==
-               :error
-    end
-
-    test "resolve_command/4 is :error for a script-kind action even on a hash match" do
-      pack = PacksRegistry.get("cassandra")
-
-      assert PacksRegistry.resolve_command(
-               "cassandra",
-               "cassandra.analyze_disk_pressure",
-               pack.content_hash,
-               nil
-             ) == :error
-    end
-
-    test "resolve_command/4 is :error for an unknown pack or action" do
-      assert PacksRegistry.resolve_command("nope", "nope.x", "sha256:abc", nil) == :error
-
-      pack = PacksRegistry.get("cloud-init")
-
-      assert PacksRegistry.resolve_command(
-               "cloud-init",
-               "cloud-init.nope",
-               pack.content_hash,
-               nil
-             ) ==
-               :error
     end
   end
 
@@ -498,12 +289,12 @@ defmodule EmisarWeb.PacksTest do
       body = conn |> get(~p"/packs.json") |> json_response(200)
       ids = Enum.map(body["packs"], & &1["id"])
 
-      for pack <- PacksRegistry.list() do
+      for pack <- PublishedRegistry.list() do
         assert pack.id in ids, "missing #{pack.id} from index"
       end
 
       redis = Enum.find(body["packs"], &(&1["id"] == "redis"))
-      assert redis["hash"] == PacksRegistry.get("redis").content_hash
+      assert redis["hash"] == PublishedRegistry.get("redis").content_hash
       assert redis["tarball"] =~ "/packs/redis/pack.tar.gz"
     end
 
@@ -548,7 +339,7 @@ defmodule EmisarWeb.PacksTest do
     test "GET /packs/:id/pack.tar.gz redirects to the immutable tarball URL", %{conn: conn} do
       conn = get(conn, ~p"/packs/redis/pack.tar.gz")
 
-      assert redirected_to(conn, 302) == PacksRegistry.get("redis").tarball_url
+      assert redirected_to(conn, 302) == PublishedRegistry.get("redis").tarball_url
     end
 
     test "GET /packs/:id/pack.tar.gz 404s for an unknown pack", %{conn: conn} do
@@ -559,7 +350,7 @@ defmodule EmisarWeb.PacksTest do
     test "GET /packs/:id/versions/:version/pack.tar.gz redirects the current version", %{
       conn: conn
     } do
-      redis = PacksRegistry.get("redis")
+      redis = PublishedRegistry.get("redis")
       conn = get(conn, ~p"/packs/redis/versions/#{redis.version}/pack.tar.gz")
 
       assert redirected_to(conn, 302) == redis.tarball_url
@@ -609,7 +400,7 @@ defmodule EmisarWeb.PacksTest do
       assert entry |> Map.keys() |> Enum.sort() ==
                ~w(description hash id name previous_versions requires_binaries requires_os retired_below tarball version)
 
-      pack = PacksRegistry.get("redis")
+      pack = PublishedRegistry.get("redis")
       assert entry["hash"] == pack.content_hash
       assert entry["version"] == pack.version
       assert entry["tarball"] =~ "/packs/redis/pack.tar.gz"

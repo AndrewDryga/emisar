@@ -8,8 +8,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Approvals, Repo, Runs}
+  alias Emisar.Catalog.PublishedRegistry
   alias Emisar.Runners.Runner
-  alias EmisarWeb.PacksRegistry
 
   defp subscribe_approvals(account) do
     assert :ok = Approvals.subscribe_account_approvals(account.id)
@@ -205,7 +205,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         source: "operator",
         reason: "re-run module",
         args: %{"module" => "ssh"},
-        expected_pack_hash: PacksRegistry.get("cloud-init").content_hash
+        expected_pack_hash: PublishedRegistry.get("cloud-init").content_hash
       })
 
     {:ok, request} = Approvals.create_request(run, user.id, "please approve")
@@ -224,7 +224,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # advertised the pack at a version that matches our compiled copy.
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    pack = PacksRegistry.get("systemd-deep")
+    pack = PublishedRegistry.get("systemd-deep")
 
     Fixtures.Catalog.create_action(
       runner: runner,
@@ -260,7 +260,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # coincidentally-matching advertised version. No command; args still show.
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    pack = PacksRegistry.get("cloud-init")
+    pack = PublishedRegistry.get("cloud-init")
 
     Fixtures.Catalog.create_action(
       runner: runner,

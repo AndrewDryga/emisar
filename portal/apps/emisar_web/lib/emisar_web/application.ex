@@ -22,10 +22,6 @@ defmodule EmisarWeb.Application do
       # Bounds authenticated MCP long polls per credential lineage. Leases are
       # process-monitored so abnormal request exits cannot consume capacity.
       EmisarWeb.MCP.WaitLimiter,
-      # Loads the pack catalog (bundled at boot, then refreshed from the
-      # published URL) BEFORE the Endpoint, so the first /packs request
-      # already sees a populated registry.
-      EmisarWeb.PacksRegistry.Cache,
       EmisarWeb.Endpoint,
       # Sits AFTER the Endpoint so on SIGTERM it terminates first
       # (`:one_for_one` shuts down in reverse-start order). Its

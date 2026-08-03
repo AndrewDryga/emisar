@@ -7,7 +7,8 @@ defmodule EmisarWeb.SitemapControllerTest do
   lingers — fails here instead of silently hurting SEO.
   """
   use EmisarWeb.ConnCase, async: true
-  alias EmisarWeb.{PacksRegistry, SitemapController}
+  alias Emisar.Catalog.PublishedRegistry
+  alias EmisarWeb.SitemapController
 
   # Marketing GET routes that are deliberately NOT in the sitemap (feeds).
   @non_indexable ~w(/changelog.xml)
@@ -15,7 +16,8 @@ defmodule EmisarWeb.SitemapControllerTest do
   test "GET /sitemap.xml lists every public path, including guides and packs", %{conn: conn} do
     xml = conn |> get(~p"/sitemap.xml") |> response(200)
 
-    all_paths = SitemapController.paths() ++ Enum.map(PacksRegistry.list(), &"/packs/#{&1.id}")
+    all_paths =
+      SitemapController.paths() ++ Enum.map(PublishedRegistry.list(), &"/packs/#{&1.id}")
 
     for path <- all_paths do
       assert xml =~ "<loc>https://emisar.dev#{path}</loc>",

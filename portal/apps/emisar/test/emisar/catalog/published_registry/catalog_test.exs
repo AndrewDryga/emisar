@@ -1,6 +1,6 @@
-defmodule EmisarWeb.PacksRegistry.CatalogTest do
+defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
   use ExUnit.Case, async: true
-  alias EmisarWeb.PacksRegistry.{Catalog, Pack}
+  alias Emisar.Catalog.PublishedRegistry.{Catalog, Pack}
 
   # A minimal, valid two-pack catalog. Each test overrides just the field
   # under test so the invalid input is explicit against a valid baseline.

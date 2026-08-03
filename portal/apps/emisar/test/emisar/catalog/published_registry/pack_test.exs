@@ -1,6 +1,6 @@
-defmodule EmisarWeb.PacksRegistry.PackTest do
+defmodule Emisar.Catalog.PublishedRegistry.PackTest do
   use ExUnit.Case, async: true
-  alias EmisarWeb.PacksRegistry.Pack
+  alias Emisar.Catalog.PublishedRegistry.Pack
 
   defp pack(version, previous_versions) do
     %Pack{

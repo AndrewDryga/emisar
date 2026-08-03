@@ -77,10 +77,15 @@ func (a *App) packSync(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.run(ctx, filepath.Join(a.Portal, "apps", "emisar"), env, "mix", "test", "test/emisar/catalog/pack_baseline_test.exs"); err != nil {
+	registryTests := []string{
+		"test/emisar/catalog/pack_baseline_test.exs",
+		"test/emisar/catalog/published_registry_test.exs",
+		"test/emisar/catalog/published_registry/cache_test.exs",
+	}
+	if err := a.run(ctx, filepath.Join(a.Portal, "apps", "emisar"), env, "mix", append([]string{"test"}, registryTests...)...); err != nil {
 		return err
 	}
-	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), env, "mix", "test", "test/emisar_web/packs_registry/cache_test.exs", "test/emisar_web/packs_test.exs")
+	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), env, "mix", "test", "test/emisar_web/packs_test.exs")
 }
 
 func (a *App) packTest(ctx context.Context, pattern string, names []string, caseID, shard string) error {

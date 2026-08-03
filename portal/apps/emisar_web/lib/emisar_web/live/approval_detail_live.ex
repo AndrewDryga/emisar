@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Catalog, Runners, Runs}
-  alias EmisarWeb.{CommandPreview, PacksRegistry, Permissions, RunbookWorkflowComponents}
+  alias EmisarWeb.{CommandPreview, Permissions, RunbookWorkflowComponents}
   alias EmisarWeb.MCP.RawJSON
   alias EmisarWeb.RunnerPresence
 
@@ -263,7 +263,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     specs = List.wrap(action.args_schema["args"])
 
     with {:ok, command} <-
-           PacksRegistry.resolve_command(
+           Catalog.PublishedRegistry.resolve_command(
              action.pack_id,
              action.action_id,
              run.expected_pack_hash,

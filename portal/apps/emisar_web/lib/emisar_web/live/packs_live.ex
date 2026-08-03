@@ -1624,7 +1624,7 @@ defmodule EmisarWeb.PacksLive do
   end
 
   defp registry_pack_url(pack_id) when is_binary(pack_id) do
-    if EmisarWeb.PacksRegistry.get(pack_id), do: ~p"/packs/#{pack_id}", else: nil
+    if Catalog.PublishedRegistry.get(pack_id), do: ~p"/packs/#{pack_id}", else: nil
   end
 
   # The diff block renders only when there's something to show — a re-advertised

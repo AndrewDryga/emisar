@@ -50,7 +50,7 @@ func formatInput(ctx context.Context, name string, args []string, source []byte)
 func (a *App) requireCleanPackHashInputs(ctx context.Context) error {
 	paths := []string{
 		"packs/redis", "packs/cassandra",
-		"portal/apps/emisar_web/test/emisar_web/packs_test.exs",
+		"portal/apps/emisar/test/emisar/catalog/published_registry_test.exs",
 	}
 	unstaged, err := a.output(ctx, a.Root, nil, "git",
 		append([]string{"diff", "--name-only", "-z", "--"}, paths...)...)

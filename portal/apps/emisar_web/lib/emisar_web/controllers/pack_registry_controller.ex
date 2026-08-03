@@ -13,16 +13,16 @@ defmodule EmisarWeb.PackRegistryController do
                                      remembered prior one)
 
   The human-facing `/packs` + `/packs/:id` HTML pages live in
-  `MarketingController`. Both read from the same `EmisarWeb.PacksRegistry`
-  catalog cache.
+  `MarketingController`. Both read from the same
+  `Emisar.Catalog.PublishedRegistry` catalog cache.
   """
   use EmisarWeb, :controller
-  alias EmisarWeb.PacksRegistry
+  alias Emisar.Catalog
 
   @doc "JSON index of the full catalog — drives discovery + OS matching."
   def index(conn, _params) do
     packs =
-      Enum.map(PacksRegistry.list(), fn p ->
+      Enum.map(Catalog.PublishedRegistry.list(), fn p ->
         %{
           id: p.id,
           name: p.name,
@@ -58,7 +58,7 @@ defmodule EmisarWeb.PackRegistryController do
   evolve without a runner release.
   """
   def suggest(conn, _params) do
-    json(conn, %{packs: PacksRegistry.suggest_index()})
+    json(conn, %{packs: Catalog.PublishedRegistry.suggest_index()})
   end
 
   @doc """
@@ -68,7 +68,7 @@ defmodule EmisarWeb.PackRegistryController do
   `emisar pack install` still rejects a poisoned mirror.
   """
   def tarball(conn, %{"id" => id}) do
-    redirect_to_tarball(conn, PacksRegistry.tarball_url(id), "unknown pack #{id}")
+    redirect_to_tarball(conn, Catalog.PublishedRegistry.tarball_url(id), "unknown pack #{id}")
   end
 
   @doc """
@@ -81,7 +81,7 @@ defmodule EmisarWeb.PackRegistryController do
   def tarball_version(conn, %{"id" => id, "version" => version}) do
     redirect_to_tarball(
       conn,
-      PacksRegistry.tarball_url(id, version),
+      Catalog.PublishedRegistry.tarball_url(id, version),
       "unknown pack #{id} version #{version}"
     )
   end

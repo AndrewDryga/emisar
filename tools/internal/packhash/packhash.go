@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const goldenPath = "portal/apps/emisar_web/test/emisar_web/packs_test.exs"
+const goldenPath = "portal/apps/emisar/test/emisar/catalog/published_registry_test.exs"
 
 var (
 	hashLine   = regexp.MustCompile(`sha256:[0-9a-f]{64}`)
@@ -137,7 +137,7 @@ func Check(root, configuredBinary string, write bool, out io.Writer) error {
 			return fmt.Errorf("writing %s: %w", goldenPath, err)
 		}
 		fmt.Fprintf(out, "refreshed %s (redis=%s cassandra=%s)\n", goldenPath, current["redis"], current["cassandra"])
-		fmt.Fprintln(out, "run: (cd portal/apps/emisar_web && mix test test/emisar_web/packs_test.exs)")
+		fmt.Fprintln(out, "run: (cd portal/apps/emisar && mix test test/emisar/catalog/published_registry_test.exs)")
 		return nil
 	}
 

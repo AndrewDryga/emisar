@@ -12,6 +12,7 @@ defmodule EmisarWeb.MarketingController do
   between routes, sitemap, and per-page metadata.
   """
   use EmisarWeb, :controller
+  alias Emisar.Catalog
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
 
@@ -215,8 +216,8 @@ defmodule EmisarWeb.MarketingController do
         "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, and a hash-chained audit trail.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
-      pack_count: EmisarWeb.PacksRegistry.pack_count(),
-      action_count: delimit_int(EmisarWeb.PacksRegistry.action_count()),
+      pack_count: Catalog.PublishedRegistry.pack_count(),
+      action_count: delimit_int(Catalog.PublishedRegistry.action_count()),
       json_ld: org_ld
     )
   end
@@ -671,12 +672,12 @@ defmodule EmisarWeb.MarketingController do
   #
   # `/packs` lists every published pack; `/packs/:id` is the per-pack
   # detail page (description, actions, install snippet, source link).
-  # The registry data is hardcoded in `EmisarWeb.PacksRegistry`; future
-  # work may load from a remote manifest so third-party packs can list
-  # themselves without a code change.
+  # `Emisar.Catalog.PublishedRegistry` owns the catalog data; this
+  # controller only renders it, grouped for display by
+  # `EmisarWeb.PacksRegistry`.
 
   def packs(conn, _params) do
-    packs = EmisarWeb.PacksRegistry.list()
+    packs = Catalog.PublishedRegistry.list()
 
     json_ld =
       Jason.encode!(
@@ -709,9 +710,9 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :packs,
-      grouped: EmisarWeb.PacksRegistry.grouped(),
-      pack_count: EmisarWeb.PacksRegistry.pack_count(),
-      action_count: delimit_int(EmisarWeb.PacksRegistry.action_count()),
+      grouped: EmisarWeb.PacksRegistry.grouped(packs),
+      pack_count: Catalog.PublishedRegistry.pack_count(),
+      action_count: delimit_int(Catalog.PublishedRegistry.action_count()),
       page_title: "Action packs registry",
       meta_description:
         "Browse the registry of action packs you can install on your emisar runner — Postgres, Cassandra, Linux core, Docker, AWS, and more. Each pack ships a typed catalog of actions an LLM can call.",
@@ -721,7 +722,7 @@ defmodule EmisarWeb.MarketingController do
   end
 
   def pack_detail(conn, %{"id" => id}) do
-    case EmisarWeb.PacksRegistry.get(id) do
+    case Catalog.PublishedRegistry.get(id) do
       nil ->
         conn
         |> Plug.Conn.put_status(:not_found)

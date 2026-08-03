@@ -221,7 +221,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # The registry page is pack-scoped, so the link rides the pack HEADER —
       # for any trust state (a pending or retired version is exactly when the
       # registry reference helps) — never a version row.
-      caddy = EmisarWeb.PacksRegistry.get("caddy")
+      caddy = Emisar.Catalog.PublishedRegistry.get("caddy")
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _} =

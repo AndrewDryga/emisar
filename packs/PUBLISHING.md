@@ -171,8 +171,9 @@ packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
 # 3. Regenerate the BUNDLED catalog the portal compiles in, in the SAME
 #    commit as the pack edit (retired_below is baked into PackBaseline):
 cp ./dist/packs/v1/catalog.json ./portal/apps/emisar/priv/packs/catalog.json
-#    then from portal/: mix test test/emisar/catalog/pack_baseline_test.exs (apps/emisar)
-#                       mix test test/emisar_web/packs_registry/cache_test.exs (apps/emisar_web)
+#    then from portal/apps/emisar/:
+#      mix test test/emisar/catalog/pack_baseline_test.exs \
+#        test/emisar/catalog/published_registry/cache_test.exs
 
 # 4. Deploy the portal. Retirement takes effect on that deploy — the same
 #    motion that ships the fix. Verify in a test account: a runner pinned to

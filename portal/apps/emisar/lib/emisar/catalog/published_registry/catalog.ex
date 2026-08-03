@@ -1,7 +1,7 @@
-defmodule EmisarWeb.PacksRegistry.Catalog do
+defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   @moduledoc """
   Parses and validates a published `catalog.json` document into
-  `EmisarWeb.PacksRegistry.Pack` structs.
+  `Emisar.Catalog.PublishedRegistry.Pack` structs.
 
   The catalog is produced out-of-band by `emisar pack catalog build`
   (the runner's loader is the single source of the content hash, so the
@@ -15,10 +15,11 @@ defmodule EmisarWeb.PacksRegistry.Catalog do
   the tarball redirect), and the exec-command template shape.
 
   Pure — no Repo, no HTTP, no side effects. The cache
-  (`EmisarWeb.PacksRegistry.Cache`) owns fetching and last-good caching.
+  (`Emisar.Catalog.PublishedRegistry.Cache`) owns fetching and last-good
+  caching.
   """
 
-  alias EmisarWeb.PacksRegistry.{Action, Pack}
+  alias Emisar.Catalog.PublishedRegistry.{Action, Pack}
 
   @schema_version 1
   @hash_regex ~r/^sha256:[0-9a-f]{64}$/

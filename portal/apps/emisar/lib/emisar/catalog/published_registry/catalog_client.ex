@@ -1,13 +1,13 @@
-defmodule EmisarWeb.PacksRegistry.CatalogClient do
+defmodule Emisar.Catalog.PublishedRegistry.CatalogClient do
   @moduledoc """
   The one seam that fetches the published `catalog.json` over HTTP (via
   the shared `Emisar.Finch` pool). Wrapping the vendor call here (IL-19)
-  keeps `EmisarWeb.PacksRegistry.Cache` free of HTTP concerns and gives
-  tests a single place to reason about the fetch contract.
+  keeps `Emisar.Catalog.PublishedRegistry.Cache` free of HTTP concerns and
+  gives tests a single place to reason about the fetch contract.
 
   `fetch/1` returns the raw response body; parsing + validation is
-  `EmisarWeb.PacksRegistry.Catalog`'s job, so a 200 carrying garbage is a
-  parse error, not a fetch error.
+  `Emisar.Catalog.PublishedRegistry.Catalog`'s job, so a 200 carrying
+  garbage is a parse error, not a fetch error.
   """
 
   @receive_timeout 10_000

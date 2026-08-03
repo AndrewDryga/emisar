@@ -34,7 +34,7 @@ defmodule Emisar.Catalog.PackBaseline do
   ## Source of truth
 
   The bundled `priv/packs/catalog.json` — the same artifact
-  `EmisarWeb.PacksRegistry.Cache` serves from, built by `emisar pack
+  `Emisar.Catalog.PublishedRegistry.Cache` serves from, built by `emisar pack
   catalog build` (the runner's `computePackHash` is the single hash
   source, so a runner with unmodified shipped bytes produces a hash this
   baseline also carries). Baking it at compile time keeps trust

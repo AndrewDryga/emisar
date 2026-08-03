@@ -32,7 +32,8 @@ defmodule Emisar.Catalog do
   alias Emisar.{Accounts, Audit, Auth, Repo, Runners, Users}
   alias Emisar.Auth.Subject
   alias Emisar.Catalog.{ActionSetDiff, Authorizer, MCPProjection, PackBaseline}
-  alias Emisar.Catalog.{PackRetentionInput, PackVersion, RunnerAction, TrustedManifest}
+  alias Emisar.Catalog.{PackRetentionInput, PackVersion, PublishedRegistry}
+  alias Emisar.Catalog.{RunnerAction, TrustedManifest}
   require Logger
 
   def start_link(opts) do
@@ -42,6 +43,10 @@ defmodule Emisar.Catalog do
   @impl Supervisor
   def init(_opts) do
     children = [
+      # The published catalog the pack pages, the registry endpoints, and the
+      # command preview read. Loads the bundled artifact synchronously, so it
+      # is populated before the Endpoint accepts a request.
+      PublishedRegistry.Cache,
       job_module("PackVersionRetention")
     ]
 

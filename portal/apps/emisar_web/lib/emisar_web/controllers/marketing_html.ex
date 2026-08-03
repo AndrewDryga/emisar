@@ -15,7 +15,8 @@ defmodule EmisarWeb.MarketingHTML do
   def action_icon("script"), do: "hero-code-bracket"
   def action_icon(_), do: "hero-cube"
 
-  # Heroicon per pack-registry category (slug from PacksRegistry.@pack_categories).
+  # Heroicon per pack-registry category (slug from
+  # `EmisarWeb.PacksRegistry.@pack_categories`).
   # The icon varies for scannability; the accent stays brand — one accent, by design.
   def category_icon("databases"), do: "hero-circle-stack"
   def category_icon("containers"), do: "hero-cube"

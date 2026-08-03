@@ -10,7 +10,8 @@ defmodule EmisarWeb.CommandPreview do
   `{{ args.x }}` substitution, whole-expression array expansion, scalar
   formatting, `sensitive: true` masking, and shell quoting the runner
   records as `executed_command` after a run. Callers gate on a pack-hash
-  match first (`PacksRegistry.resolve_command/3`), so the template is
+  match first (`Emisar.Catalog.PublishedRegistry.resolve_command/4`), so the
+  template is
   guaranteed to be the exact one the runner will execute; this module only
   fills the arguments in.
 

@@ -1,8 +1,8 @@
-defmodule EmisarWeb.PacksRegistry.Pack do
+defmodule Emisar.Catalog.PublishedRegistry.Pack do
   @moduledoc """
   One pack's catalog metadata, decoded from a published `catalog.json`
-  entry (`EmisarWeb.PacksRegistry.Catalog`). Lives in its own file so a
-  reader can see the shape the registry cache hands to every pack page,
+  entry (`Emisar.Catalog.PublishedRegistry.Catalog`). Lives in its own file
+  so a reader can see the shape the registry cache hands to every pack page,
   the install snippet, and the command preview.
   """
 
@@ -80,14 +80,14 @@ defmodule EmisarWeb.PacksRegistry.Pack do
             processes: [String.t()],
             ports: [integer()]
           },
-          actions: [EmisarWeb.PacksRegistry.Action.t()]
+          actions: [Emisar.Catalog.PublishedRegistry.Action.t()]
         }
 
   @doc """
   The immutable tarball URL for this pack at `version` — its current version
   or one of its remembered prior versions — or `:error` when `version` is
   neither. Pure resolution over the pack's own catalog entry; the cache read
-  by pack id happens in `EmisarWeb.PacksRegistry`.
+  by pack id happens in `Emisar.Catalog.PublishedRegistry`.
   """
   @spec tarball_url(t(), String.t()) :: {:ok, String.t()} | :error
   def tarball_url(%__MODULE__{version: version, tarball_url: url}, version), do: {:ok, url}

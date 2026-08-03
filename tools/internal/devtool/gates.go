@@ -387,7 +387,8 @@ func (a *App) packsGate(ctx context.Context) error {
 		args  []string
 	}{
 		{"pack baseline tests", filepath.Join(a.Portal, "apps", "emisar"), []string{"test", "test/emisar/catalog/pack_baseline_test.exs"}},
-		{"pack registry tests", filepath.Join(a.Portal, "apps", "emisar_web"), []string{"test", "test/emisar_web/packs_registry/cache_test.exs", "test/emisar_web/packs_test.exs"}},
+		{"pack registry tests", filepath.Join(a.Portal, "apps", "emisar"), []string{"test", "test/emisar/catalog/published_registry_test.exs", "test/emisar/catalog/published_registry/cache_test.exs"}},
+		{"pack registry page tests", filepath.Join(a.Portal, "apps", "emisar_web"), []string{"test", "test/emisar_web/packs_test.exs"}},
 	}
 	for _, check := range checks {
 		if err := a.runCaptured(ctx, check.label, check.dir, env, "mix", check.args...); err != nil {

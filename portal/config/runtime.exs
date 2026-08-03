@@ -247,7 +247,7 @@ if config_env() == :prod do
   # for a mirror or a staging bucket (a self-host base still pins to itself).
   # An explicitly empty value disables remote refresh and serves the bundled
   # catalog, which keeps image smoke tests and offline self-hosts deterministic.
-  config :emisar_web, EmisarWeb.PacksRegistry, catalog_url: pack_catalog_url
+  config :emisar, Emisar.Catalog.PublishedRegistry, catalog_url: pack_catalog_url
 
   # -- Mailer (Postmark by default; Mailgun and SMTP available as
   # fallbacks if you swap providers later) --------------------------

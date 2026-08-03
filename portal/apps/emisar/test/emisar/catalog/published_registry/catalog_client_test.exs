@@ -1,6 +1,6 @@
-defmodule EmisarWeb.PacksRegistry.CatalogClientTest do
+defmodule Emisar.Catalog.PublishedRegistry.CatalogClientTest do
   use ExUnit.Case, async: true
-  alias EmisarWeb.PacksRegistry.CatalogClient
+  alias Emisar.Catalog.PublishedRegistry.CatalogClient
 
   describe "fetch/1" do
     test "returns {:error, reason} on a transport failure instead of crashing" do

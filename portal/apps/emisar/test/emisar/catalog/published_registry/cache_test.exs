@@ -1,6 +1,6 @@
-defmodule EmisarWeb.PacksRegistry.CacheTest do
+defmodule Emisar.Catalog.PublishedRegistry.CacheTest do
   use ExUnit.Case, async: true
-  alias EmisarWeb.PacksRegistry.Cache
+  alias Emisar.Catalog.PublishedRegistry.Cache
 
   @catalog_url "https://registry.emisar.dev/v1/catalog.json"
 

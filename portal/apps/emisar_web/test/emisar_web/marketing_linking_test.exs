@@ -12,7 +12,8 @@ defmodule EmisarWeb.MarketingLinkingTest do
   which let a real orphan ship green.
   """
   use EmisarWeb.ConnCase, async: true
-  alias EmisarWeb.{PacksRegistry, SitemapController}
+  alias Emisar.Catalog.PublishedRegistry
+  alias EmisarWeb.SitemapController
 
   # The pages we crawl for outbound links — the static hubs (nav, footer, the
   # /packs grid, the /guides + /docs indexes). Their union of hrefs is the link
@@ -21,7 +22,7 @@ defmodule EmisarWeb.MarketingLinkingTest do
   defp hub_paths, do: SitemapController.paths()
 
   defp all_public_paths do
-    pack_paths = Enum.map(PacksRegistry.list(), &"/packs/#{&1.id}")
+    pack_paths = Enum.map(PublishedRegistry.list(), &"/packs/#{&1.id}")
     SitemapController.paths() ++ pack_paths
   end
 
