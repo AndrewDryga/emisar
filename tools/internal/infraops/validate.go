@@ -189,11 +189,15 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	gcloudImage, err := terraformImage(filepath.Join(a.Infra, "compute.tf"), "gcloud_image")
+	if err != nil {
+		return err
+	}
 	livebookImage, err := terraformImage(filepath.Join(a.Infra, "livebook.tf"), "livebook_image")
 	if err != nil {
 		return err
 	}
-	for _, image := range []string{proxyImage, livebookImage} {
+	for _, image := range []string{proxyImage, gcloudImage, livebookImage} {
 		if err := requirePinnedImage(image); err != nil {
 			return err
 		}
@@ -219,6 +223,16 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	}
 	if !strings.Contains(string(proxyVersion), "cloud-sql-proxy version "+imageVersion(proxyImage)+"+container") {
 		return fmt.Errorf("unexpected Cloud SQL Auth Proxy version: %s", proxyVersion)
+	}
+	gcloudVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--network", "host",
+		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m", "--env", "CLOUDSDK_CONFIG=/tmp/gcloud",
+		gcloudImage, "gcloud", "version")
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(gcloudVersion), "Google Cloud SDK "+strings.TrimSuffix(imageVersion(gcloudImage), "-stable")) {
+		return fmt.Errorf("unexpected Google Cloud CLI version: %s", gcloudVersion)
 	}
 	livebookVersion, err := a.output(ctx, a.Root, nil, "docker", "run", "--rm", "--read-only",
 		"--cap-drop=ALL", "--security-opt=no-new-privileges", "--entrypoint", "/app/bin/livebook",
@@ -280,10 +294,21 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	rendered := string(renderedData)
 	if err := requireText("Portal cloud-init", rendered,
 		`ensure_image "`+proxyImage+`"`,
+		`ensure_image "`+gcloudImage+`"`,
 		"--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges "+proxyImage+" --private-ip --auto-iam-authn",
 		"Wants=emisar-cloud-sql-proxy.service",
 		"runner=/run/emisar-admin-runner/bin/emisar",
 		"required_packs='linux-core debugging systemd-deep cloud-init docker firewall nic time-sync elixir-beam'",
+		"emisar-admin-runner-tfe-token",
+		"inherit_env:", "- TFE_TOKEN",
+		`- "gcp.*"`, `- "tfc.*"`,
+		"gcp-certificates=0.1.0|sha256:da73325336f2d11cdff984948bf6f53fe34f43f1bce873c6e01e6a6fc38f792b",
+		"hcp-terraform=0.6.1|sha256:995d8832b44e6d81bb11dd278d3e32d303738aed3e1346d4ba8584b729eef5dd",
+		`"$runner" pack install "$pack_ref"`,
+		`--hash "$expected_hash"`,
+		"/var/lib/emisar-admin-runner/gcloud.sh",
+		"--tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m",
+		`gcloud "$@"`,
 		"x86_64|amd64) runner_arch=amd64",
 		"aarch64|arm64) runner_arch=arm64",
 		`release_tag="runner-v0.16.0"`,

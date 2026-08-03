@@ -6,6 +6,7 @@ locals {
     app_port                 = 4000
     container_image          = "ghcr.io/andrewdryga/emisar@sha256:0000000000000000000000000000000000000000000000000000000000000000"
     cloud_sql_proxy_image    = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c"
+    gcloud_image             = "gcr.io/google.com/cloudsdktool/google-cloud-cli:578.0.0-stable@sha256:39f4c48c083fb1d8d182eedc7de97545980afb646b1afdfec61a3f560969bc96"
     cluster_value            = "emisar-portal"
     database_user            = "emisar-vm@test-project.iam"
     database_name            = "emisar"
@@ -21,6 +22,7 @@ locals {
   ensure_image = templatefile("${path.module}/../../runtime/portal/ensure-image.sh", {
     container_image       = local.common.container_image
     cloud_sql_proxy_image = local.common.cloud_sql_proxy_image
+    gcloud_image          = local.common.gcloud_image
   })
 
   start = templatefile("${path.module}/../../runtime/portal/start.sh", merge(local.common, {
@@ -38,6 +40,23 @@ locals {
     project_id                = local.common.project_id
     runner_version            = "0.16.0"
     enrollment_secret_version = "1"
+    tfe_secret_version        = "2"
+    pinned_packs = join("\n", [
+      "gcp-certificates=0.1.0|sha256:da73325336f2d11cdff984948bf6f53fe34f43f1bce873c6e01e6a6fc38f792b",
+      "gcp-cloudsql=0.3.0|sha256:45cbc52c0088f28a747d80cb2c71879232cb97e95aab65e15efcdd4840c30b32",
+      "gcp-compute=0.2.0|sha256:8df5c0c0c759c0a491435e39bb00f91371f2711d54334a3114c097ad21c2c2b2",
+      "gcp-dns=0.2.0|sha256:4163dda5066fe4553d38a94d9b1f8eca62595cf7246ee3ef7900de57251ad99b",
+      "gcp-iam=0.1.0|sha256:c8bc2db792a56ae123ea865287e029a0ecf6e95e5790722dcae3ff01449d480b",
+      "gcp-load-balancing=0.1.0|sha256:d43b24b0767cb62752eb368314fec257755880f6ea860c453a76bf8c3ca5820b",
+      "gcp-monitoring=0.2.0|sha256:ab13b607bfdfc3583249d0c06a53daa06c3ed1c012aeaa97563f961bf33d892d",
+      "gcp-networking=0.1.0|sha256:8aeca131aa12cc7ee244a1c5bb7663a7434919e7f8a8406cd9206d0b9b02062f",
+      "gcp-storage=0.1.0|sha256:976ede94963f134ef0cca63eedd4bdb2dedde67d8e820feceac5a5a9c79a306b",
+      "hcp-terraform=0.6.1|sha256:995d8832b44e6d81bb11dd278d3e32d303738aed3e1346d4ba8584b729eef5dd",
+    ])
+  })
+
+  admin_runner_gcloud = templatefile("${path.module}/../../runtime/admin-runner/gcloud.sh", {
+    gcloud_image = local.common.gcloud_image
   })
 
   admin_runner_pack_files = {
@@ -46,15 +65,16 @@ locals {
   }
 
   cloud_init = templatefile("${path.module}/../../runtime/portal/cloud-init.yaml", {
-    ensure_image_script       = local.ensure_image
-    start_script              = local.start
-    admin_runner_config       = local.admin_runner_config
-    admin_runner_start_script = local.admin_runner_start
-    admin_runner_pack_files   = local.admin_runner_pack_files
-    container_image           = local.common.container_image
-    cloud_sql_proxy_image     = local.common.cloud_sql_proxy_image
-    database_connection_name  = local.common.database_connection_name
-    app_port                  = local.common.app_port
+    ensure_image_script        = local.ensure_image
+    start_script               = local.start
+    admin_runner_config        = local.admin_runner_config
+    admin_runner_start_script  = local.admin_runner_start
+    admin_runner_gcloud_script = local.admin_runner_gcloud
+    admin_runner_pack_files    = local.admin_runner_pack_files
+    container_image            = local.common.container_image
+    cloud_sql_proxy_image      = local.common.cloud_sql_proxy_image
+    database_connection_name   = local.common.database_connection_name
+    app_port                   = local.common.app_port
   })
 
   livebook = {

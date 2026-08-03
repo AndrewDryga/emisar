@@ -21,37 +21,67 @@ token_response=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
 TOKEN=$(printf '%s' "$token_response" | grep -oE '"access_token": ?"[^"]+"' | cut -d'"' -f4 || true)
 [ -n "$TOKEN" ] || { echo "no metadata access token" >&2; exit 1; }
 
-body=$(mktemp /run/emisar-admin-runner/secret.XXXXXX)
-trap 'rm -f "$body"' EXIT
-if ! status=$(printf 'Authorization: Bearer %s\n' "$TOKEN" | \
-  curl --silent --show-error --retry 5 --retry-delay 2 \
-    --retry-connrefused --connect-timeout 5 --max-time 30 \
-    -H @- -o "$body" -w '%%{http_code}' \
-    "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/emisar-admin-runner-enrollment-key/versions/${enrollment_secret_version}:access"); then
-  echo "Secret Manager enrollment-key request failed" >&2
-  exit 1
-fi
-if [ "$status" != 200 ]; then
-  echo "Secret Manager returned HTTP $status for the enrollment key" >&2
-  exit 1
-fi
-data=$(grep -oE '"data": ?"[^"]+"' "$body" | cut -d'"' -f4 || true)
-[ -n "$data" ] || { echo "Secret Manager returned no enrollment key" >&2; exit 1; }
-EMISAR_ENROLLMENT_KEY=$(printf '%s' "$data" | base64 -d) || {
-  echo "Secret Manager returned invalid enrollment-key data" >&2
-  exit 1
+fetch_secret() {
+  local secret=$1
+  local version=$2
+  local label=$3
+  local body status data decoded
+
+  body=$(mktemp /run/emisar-admin-runner/secret.XXXXXX)
+  if ! status=$(printf 'Authorization: Bearer %s\n' "$TOKEN" | \
+    curl --silent --show-error --retry 5 --retry-delay 2 \
+      --retry-connrefused --connect-timeout 5 --max-time 30 \
+      -H @- -o "$body" -w '%%{http_code}' \
+      "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/$${secret}/versions/$${version}:access"); then
+    rm -f "$body"
+    echo "Secret Manager $label request failed" >&2
+    return 1
+  fi
+  if [ "$status" != 200 ]; then
+    rm -f "$body"
+    echo "Secret Manager returned HTTP $status for $label" >&2
+    return 1
+  fi
+  data=$(grep -oE '"data": ?"[^"]+"' "$body" | cut -d'"' -f4 || true)
+  rm -f "$body"
+  [ -n "$data" ] || { echo "Secret Manager returned no $label" >&2; return 1; }
+  decoded=$(printf '%s' "$data" | base64 -d) || {
+    echo "Secret Manager returned invalid $label data" >&2
+    return 1
+  }
+  printf '%s' "$decoded"
 }
+
+EMISAR_ENROLLMENT_KEY=$(fetch_secret \
+  emisar-admin-runner-enrollment-key \
+  "${enrollment_secret_version}" \
+  enrollment-key)
 printf '%s' "$EMISAR_ENROLLMENT_KEY" | grep -Eq '^emkey-enroll-[A-Za-z0-9_-]{16,}$' || {
   echo "Secret Manager returned an invalid enrollment key" >&2
   exit 1
 }
 export EMISAR_ENROLLMENT_KEY
-rm -f "$body"
-trap - EXIT
+
+TFE_TOKEN=$(fetch_secret \
+  emisar-admin-runner-tfe-token \
+  "${tfe_secret_version}" \
+  HCP-token)
+[ "$${#TFE_TOKEN}" -ge 16 ] || {
+  echo "Secret Manager returned an invalid HCP token" >&2
+  exit 1
+}
+export TFE_TOKEN
 
 runner=/run/emisar-admin-runner/bin/emisar
 expected_version="emisar version ${runner_version}"
 required_packs='linux-core debugging systemd-deep cloud-init docker firewall nic time-sync elixir-beam'
+runner_bin_dir=$(dirname "$runner")
+install -d -m 0755 "$runner_bin_dir"
+install -m 0755 /var/lib/emisar-admin-runner/gcloud.sh "$runner_bin_dir/gcloud"
+export PATH="$runner_bin_dir:$PATH"
+command -v curl >/dev/null
+command -v jq >/dev/null
+gcloud version >/dev/null
 installed_version=$($runner --version 2>/dev/null || true)
 if [ "$installed_version" != "$expected_version" ]; then
   case "$(uname -m)" in
@@ -114,6 +144,21 @@ for pack in $required_packs; do
       --force
   fi
 done
+
+while IFS='|' read -r pack_ref expected_hash; do
+  pack_id=$${pack_ref%%=*}
+  installed_hash=$("$runner" pack validate \
+    "/var/lib/emisar-admin-runner/packs/$${pack_id}" 2>/dev/null | \
+    awk '$1 == "hash:" {print $2}' || true)
+  if [ "$installed_hash" != "$expected_hash" ]; then
+    "$runner" pack install "$pack_ref" \
+      --hash "$expected_hash" \
+      --dest /var/lib/emisar-admin-runner/packs \
+      --force
+  fi
+done <<'PACKS'
+${pinned_packs}
+PACKS
 "$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs >/dev/null
 
 exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml

@@ -1,6 +1,22 @@
 locals {
   cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c"
+  gcloud_image          = "gcr.io/google.com/cloudsdktool/google-cloud-cli:578.0.0-stable@sha256:39f4c48c083fb1d8d182eedc7de97545980afb646b1afdfec61a3f560969bc96"
   admin_runner_version  = "0.16.0"
+  admin_runner_remote_packs = {
+    gcp-certificates   = { version = "0.1.0", hash = "sha256:da73325336f2d11cdff984948bf6f53fe34f43f1bce873c6e01e6a6fc38f792b" }
+    gcp-cloudsql       = { version = "0.3.0", hash = "sha256:45cbc52c0088f28a747d80cb2c71879232cb97e95aab65e15efcdd4840c30b32" }
+    gcp-compute        = { version = "0.2.0", hash = "sha256:8df5c0c0c759c0a491435e39bb00f91371f2711d54334a3114c097ad21c2c2b2" }
+    gcp-dns            = { version = "0.2.0", hash = "sha256:4163dda5066fe4553d38a94d9b1f8eca62595cf7246ee3ef7900de57251ad99b" }
+    gcp-iam            = { version = "0.1.0", hash = "sha256:c8bc2db792a56ae123ea865287e029a0ecf6e95e5790722dcae3ff01449d480b" }
+    gcp-load-balancing = { version = "0.1.0", hash = "sha256:d43b24b0767cb62752eb368314fec257755880f6ea860c453a76bf8c3ca5820b" }
+    gcp-monitoring     = { version = "0.2.0", hash = "sha256:ab13b607bfdfc3583249d0c06a53daa06c3ed1c012aeaa97563f961bf33d892d" }
+    gcp-networking     = { version = "0.1.0", hash = "sha256:8aeca131aa12cc7ee244a1c5bb7663a7434919e7f8a8406cd9206d0b9b02062f" }
+    gcp-storage        = { version = "0.1.0", hash = "sha256:976ede94963f134ef0cca63eedd4bdb2dedde67d8e820feceac5a5a9c79a306b" }
+    hcp-terraform      = { version = "0.6.1", hash = "sha256:995d8832b44e6d81bb11dd278d3e32d303738aed3e1346d4ba8584b729eef5dd" }
+  }
+  admin_runner_pack_pins = join("\n", [
+    for id, pin in local.admin_runner_remote_packs : "${id}=${pin.version}|${pin.hash}"
+  ])
   # The release image, instance firewall, MIG named port, and load-balancer
   # probes share this contract. Changing it requires a staged successor fleet;
   # it is not a routine workspace input.
@@ -26,6 +42,7 @@ locals {
   ensure_image_script = templatefile("${path.module}/runtime/portal/ensure-image.sh", {
     container_image       = var.container_image
     cloud_sql_proxy_image = local.cloud_sql_proxy_image
+    gcloud_image          = local.gcloud_image
   })
   start_script = templatefile("${path.module}/runtime/portal/start.sh", {
     container_image          = var.container_image
@@ -50,21 +67,27 @@ locals {
     project_id                = var.project_id
     runner_version            = local.admin_runner_version
     enrollment_secret_version = google_secret_manager_secret_version.admin_runner_enrollment_key.version
+    tfe_secret_version        = google_secret_manager_secret_version.admin_runner_tfe_token.version
+    pinned_packs              = local.admin_runner_pack_pins
+  })
+  admin_runner_gcloud_script = templatefile("${path.module}/runtime/admin-runner/gcloud.sh", {
+    gcloud_image = local.gcloud_image
   })
   admin_runner_pack_files = {
     for relative_path in fileset("${path.module}/packs/emisar-admin", "**") :
     "emisar-admin/${relative_path}" => filebase64("${path.module}/packs/emisar-admin/${relative_path}")
   }
   cloud_init = templatefile("${path.module}/runtime/portal/cloud-init.yaml", {
-    container_image           = var.container_image
-    cloud_sql_proxy_image     = local.cloud_sql_proxy_image
-    app_port                  = local.portal_port
-    database_connection_name  = google_sql_database_instance.emisar.connection_name
-    ensure_image_script       = local.ensure_image_script
-    start_script              = local.start_script
-    admin_runner_config       = local.admin_runner_config
-    admin_runner_start_script = local.admin_runner_start_script
-    admin_runner_pack_files   = local.admin_runner_pack_files
+    container_image            = var.container_image
+    cloud_sql_proxy_image      = local.cloud_sql_proxy_image
+    app_port                   = local.portal_port
+    database_connection_name   = google_sql_database_instance.emisar.connection_name
+    ensure_image_script        = local.ensure_image_script
+    start_script               = local.start_script
+    admin_runner_config        = local.admin_runner_config
+    admin_runner_start_script  = local.admin_runner_start_script
+    admin_runner_gcloud_script = local.admin_runner_gcloud_script
+    admin_runner_pack_files    = local.admin_runner_pack_files
   })
 
   zone_reservation_counts = {
@@ -313,6 +336,7 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     google_secret_manager_secret_version.release_cookie,
     google_secret_manager_secret_version.optional,
     google_secret_manager_secret_version.admin_runner_enrollment_key,
+    google_secret_manager_secret_version.admin_runner_tfe_token,
     google_sql_user.pgaudit_owner,
     google_sql_user.emisar_vm,
   ]

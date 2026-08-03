@@ -98,7 +98,12 @@ pinned loopback Cloud SQL Auth Proxy container obtains short-lived
 database credentials from the VM identity; the application assumes the non-login
 `emisar_owner` role. Cloud-init installs the pinned runner release directly on
 the COS host and writes the private packs from the reviewed Terraform module;
-the portal container contains only the application release.
+the portal container contains only the application release. GCP pack actions
+invoke a digest-pinned Google Cloud CLI container with no host mounts and use
+the VM identity through the metadata server. The HCP Terraform token is fetched
+from one exact Secret Manager version into the runner process and reaches pack
+actions only through the `TFE_TOKEN` inherit allowlist; neither credential enters
+instance metadata or command arguments.
 `Emisar.Cluster.GCE` discovers running peers by
 the `cluster_name` label through the Compute API. Erlang distribution is limited
 to tagged application instances plus explicit connections originating from the
@@ -126,7 +131,10 @@ the public pack registry otherwise: `linux-core`, `debugging`, `systemd-deep`,
 is intentionally curated instead of host-detected: COS includes unused clients
 and shared ports that falsely suggest Kubernetes, Prometheus, Postgres, and Git
 packs. The runner advertises group `emisar-admin` with `purpose=emisar-admin`; local admission
-allows only the private actions and those nine packs' namespaces.
+allows the private actions, those nine host packs, `hcp-terraform`, and the GCP
+certificate, Cloud SQL, compute, DNS, IAM, load-balancing, monitoring,
+networking, and storage packs at every declared risk tier. The GCP credentials
+remain read-only, so mutation actions are visible but Google refuses them.
 
 Set the reusable runner enrollment credential as the sensitive HCP
 Terraform variable `emisar_runner_enrollment_key`. A regional MIG can create
@@ -134,6 +142,9 @@ several runners and replaces their boot disks during rollouts, so a single-use
 key is insufficient. Issue the key in the management account with enough uses
 for the fleet and rollout surge. Changing the variable automatically writes and
 deploys a new exact Secret Manager version without storing the payload in state.
+Set the HCP Terraform API token separately as the sensitive workspace variable
+`emisar_tfe_token`; changing it likewise writes and rolls to an exact managed
+secret version.
 
 This is a fully trusted administration runner. It runs on the COS host and its
 fixed script uses `docker exec emisar /app/bin/emisar rpc` to call the

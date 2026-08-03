@@ -33,6 +33,43 @@ resource "google_project_iam_member" "vm_monitoring" {
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
 
+# Reusing the colocated admin runner means its fixed GCP pack programs execute
+# as the portal VM identity. Keep that new authority read-only even though the
+# runner exposes every installed action risk tier: mutation attempts must still
+# fail at Google's authorization boundary.
+resource "google_project_iam_member" "vm_operations_read" {
+  for_each = toset([
+    "roles/certificatemanager.viewer",
+    "roles/cloudsql.viewer",
+    "roles/compute.viewer",
+    "roles/dns.reader",
+    "roles/iam.serviceAccountViewer",
+    "roles/iam.workloadIdentityPoolViewer",
+    "roles/monitoring.viewer",
+    "roles/storage.bucketViewer",
+    "roles/storage.objectViewer",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.vm.email}"
+}
+
+resource "google_project_iam_custom_role" "vm_storage_policy_reader" {
+  project     = var.project_id
+  role_id     = "emisarStoragePolicyReader"
+  title       = "Emisar Storage Policy Reader"
+  description = "Read bucket IAM policies for governed storage inventory without storage mutation authority."
+  permissions = ["storage.buckets.getIamPolicy"]
+  stage       = "GA"
+}
+
+resource "google_project_iam_member" "vm_storage_policy_reader" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.vm_storage_policy_reader.name
+  member  = "serviceAccount:${google_service_account.vm.email}"
+}
+
 resource "google_project_iam_member" "livebook_logging" {
   count = var.livebook_enabled ? 1 : 0
 

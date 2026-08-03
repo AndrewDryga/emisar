@@ -257,6 +257,17 @@ variable "emisar_runner_enrollment_key" {
   }
 }
 
+variable "emisar_tfe_token" {
+  type        = string
+  description = "HCP Terraform API token for the private admin runners. Set as a sensitive HCP Terraform workspace variable; changing it automatically creates and deploys a new managed secret version."
+  sensitive   = true
+
+  validation {
+    condition     = length(var.emisar_tfe_token) >= 16
+    error_message = "emisar_tfe_token must be a non-empty HCP Terraform API token of at least 16 characters."
+  }
+}
+
 variable "paddle_api_key" {
   type        = string
   description = "Paddle API key (billing). Empty + disable_billing=false fails the plan."

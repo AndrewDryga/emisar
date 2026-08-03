@@ -175,6 +175,38 @@ resource "google_secret_manager_secret_iam_member" "admin_runner_enrollment_key_
   member    = "serviceAccount:${google_service_account.vm.email}"
 }
 
+resource "google_secret_manager_secret" "admin_runner_tfe_token" {
+  project             = var.project_id
+  secret_id           = "emisar-admin-runner-tfe-token"
+  deletion_protection = true
+
+  replication {
+    auto {}
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "admin_runner_tfe_token" {
+  secret         = google_secret_manager_secret.admin_runner_tfe_token.id
+  secret_data_wo = var.emisar_tfe_token
+  # Keep rotation tied to the sensitive workspace value without retaining the
+  # credential itself in Terraform state.
+  secret_data_wo_version = nonsensitive(parseint(substr(sha256(var.emisar_tfe_token), 0, 13), 16))
+  deletion_policy        = "ABANDON"
+}
+
+resource "google_secret_manager_secret_iam_member" "admin_runner_tfe_token_access" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.admin_runner_tfe_token.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.vm.email}"
+}
+
 resource "google_secret_manager_secret_version" "release_cookie" {
   count                  = var.release_cookie_ready || var.livebook_enabled ? 1 : 0
   secret                 = google_secret_manager_secret.app["emisar-release-cookie"].id

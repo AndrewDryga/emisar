@@ -19,3 +19,4 @@ ensure_image() {
 
 ensure_image "${container_image}"
 ensure_image "${cloud_sql_proxy_image}"
+ensure_image "${gcloud_image}"

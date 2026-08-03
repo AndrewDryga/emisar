@@ -15,6 +15,10 @@ paths:
   packs:
     - /var/lib/emisar-admin-runner/packs
 
+execution:
+  inherit_env:
+    - TFE_TOKEN
+
 admission:
   allow:
     - "emisar.admin.*"
@@ -27,6 +31,8 @@ admission:
     - "nic.*"
     - "time.*"
     - "beam.*"
+    - "gcp.*"
+    - "tfc.*"
   max_risk: critical
 
 events:
