@@ -74,6 +74,39 @@ defmodule Emisar.CatalogTest do
     |> Fixtures.Memberships.force_runner_access(access)
   end
 
+  defp advertise_pack(runner, pack_id, opts \\ []) do
+    hash = Keyword.get(opts, :hash, pack_id <> "-bytes")
+
+    {:ok, _observed} =
+      Catalog.observe_state(
+        runner,
+        state_payload(
+          packs: %{pack_id => %{"version" => "1.0.0", "hash" => hash}},
+          actions: [
+            action(pack_id <> ".inspect",
+              pack_id: pack_id,
+              title: Keyword.get(opts, :title, "Inspect")
+            )
+          ]
+        )
+      )
+  end
+
+  defp pack_ref(pack_id, opts \\ []) do
+    hash = Fixtures.Catalog.pack_hash(Keyword.get(opts, :hash, pack_id <> "-bytes"))
+    pack_id <> "@1.0.0/" <> hash
+  end
+
+  # The model-facing reads expose only an exact hash an operator already
+  # trusted, so every snapshot test arranges that decision explicitly.
+  defp trust_advertised_packs(subject) do
+    {:ok, pack_versions} = Catalog.list_all_pack_versions_for_account(subject)
+
+    Enum.each(pack_versions, fn pack_version ->
+      {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
+    end)
+  end
+
   describe "observe_state/2 — packs" do
     setup do
       runner = Fixtures.Runners.create_runner()
@@ -2419,6 +2452,254 @@ defmodule Emisar.CatalogTest do
       subject = Fixtures.Subjects.build_subject(account: account, role: :runner)
 
       assert Catalog.list_all_actions_for_account(subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "model_catalog/1" do
+    test "projects the trusted pack onto the connected runner that can execute it" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+
+      demo_ref = pack_ref("demo")
+      assert {:ok, snapshot} = Catalog.model_catalog(subject)
+
+      assert [%{pack_ref: ^demo_ref, availability: "executable", actions: [descriptor]}] =
+               snapshot.packs
+
+      assert descriptor["action_id"] == "demo.inspect"
+      assert descriptor.compatible_runner_ids == [runner.id]
+
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+      assert [%{runner_ref: ^runner_ref, status: "connected"}] = snapshot.runners
+    end
+
+    test "rejects a subject without view_catalog permission" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.build_subject(account: account, role: :runner)
+
+      assert Catalog.model_catalog(subject) == {:error, :unauthorized}
+    end
+
+    test "another account's trusted deployment never appears" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+
+      {_other_account, other_subject} = account_with_owner()
+
+      assert Catalog.model_catalog(other_subject) == {:ok, %{packs: [], runners: []}}
+    end
+
+    test "narrowed runner access drops the unreachable runner and its pack" do
+      {account, subject} = account_with_owner()
+
+      database_runner =
+        Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      advertise_pack(database_runner, "demo")
+      advertise_pack(web_runner, "web")
+      trust_advertised_packs(subject)
+
+      {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
+      force_runner_access(account, subject, database_only)
+
+      assert {:ok, snapshot} = Catalog.model_catalog(subject)
+      assert Enum.map(snapshot.packs, & &1.pack_id) == ["demo"]
+
+      assert {:ok, database_ref} = Runners.public_ref(database_runner)
+      assert Enum.map(snapshot.runners, & &1.runner_ref) == [database_ref]
+
+      force_runner_access(account, subject, Accounts.RunnerAccess.none())
+      assert Catalog.model_catalog(subject) == {:ok, %{packs: [], runners: []}}
+    end
+  end
+
+  describe "resolve_model_action/4" do
+    test "returns the explicitly requested runners in the requested order" do
+      {account, subject} = account_with_owner()
+      runner_one = Fixtures.Runners.create_runner(account_id: account.id, name: "alpha")
+      runner_two = Fixtures.Runners.create_runner(account_id: account.id, name: "beta")
+      advertise_pack(runner_one, "demo")
+      advertise_pack(runner_two, "demo")
+      trust_advertised_packs(subject)
+
+      assert {:ok, ref_one} = Runners.public_ref(runner_one)
+      assert {:ok, ref_two} = Runners.public_ref(runner_two)
+      demo_ref = pack_ref("demo")
+
+      assert {:ok, resolved} =
+               Catalog.resolve_model_action("demo.inspect", demo_ref, [ref_two, ref_one], subject)
+
+      assert Enum.map(resolved.runners, & &1.runner_ref) == [ref_two, ref_one]
+      assert resolved.action["action_id"] == "demo.inspect"
+      assert resolved.pack.pack_ref == demo_ref
+    end
+
+    test "an empty ref list returns every compatible runner ordered by ref" do
+      {account, subject} = account_with_owner()
+      runner_one = Fixtures.Runners.create_runner(account_id: account.id, name: "alpha")
+      runner_two = Fixtures.Runners.create_runner(account_id: account.id, name: "beta")
+      advertise_pack(runner_one, "demo")
+      advertise_pack(runner_two, "demo")
+      trust_advertised_packs(subject)
+
+      assert {:ok, ref_one} = Runners.public_ref(runner_one)
+      assert {:ok, ref_two} = Runners.public_ref(runner_two)
+
+      assert {:ok, resolved} =
+               Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), [], subject)
+
+      assert Enum.map(resolved.runners, & &1.runner_ref) == Enum.sort([ref_one, ref_two])
+    end
+
+    test "fails closed for an unknown action id, pack ref, or runner ref" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+      demo_ref = pack_ref("demo")
+      unknown_ref = "ghost~" <> String.duplicate("a", 32)
+
+      assert Catalog.resolve_model_action("demo.absent", demo_ref, [runner_ref], subject) ==
+               {:error, :not_found}
+
+      assert Catalog.resolve_model_action(
+               "demo.inspect",
+               pack_ref("absent"),
+               [runner_ref],
+               subject
+             ) ==
+               {:error, :not_found}
+
+      assert Catalog.resolve_model_action("demo.inspect", demo_ref, [unknown_ref], subject) ==
+               {:error, :not_found}
+
+      # One unresolvable ref refuses the WHOLE fan-out, never a partial subset.
+      assert Catalog.resolve_model_action(
+               "demo.inspect",
+               demo_ref,
+               [runner_ref, unknown_ref],
+               subject
+             ) == {:error, :not_found}
+    end
+
+    test "a runner from another account never resolves" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+
+      {other_account, other_subject} = account_with_owner()
+      foreign_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
+      advertise_pack(foreign_runner, "demo")
+      trust_advertised_packs(other_subject)
+      assert {:ok, foreign_ref} = Runners.public_ref(foreign_runner)
+
+      demo_ref = pack_ref("demo")
+
+      assert Catalog.resolve_model_action("demo.inspect", demo_ref, [foreign_ref], subject) ==
+               {:error, :not_found}
+
+      assert Catalog.resolve_model_action(
+               "demo.inspect",
+               demo_ref,
+               [runner_ref, foreign_ref],
+               subject
+             ) == {:error, :not_found}
+    end
+
+    test "a runner that has never connected is not a compatible target" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+      demo_ref = pack_ref("demo")
+
+      assert Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject) ==
+               {:error, :not_found}
+
+      assert {:ok, resolved} = Catalog.resolve_model_action("demo.inspect", demo_ref, [], subject)
+      assert resolved.runners == []
+    end
+
+    test "a descriptor that drifts from the trusted manifest stops resolving" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+      demo_ref = pack_ref("demo")
+
+      assert {:ok, _resolved} =
+               Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject)
+
+      # Same pack bytes, a renamed action: the trusted manifest, not the
+      # advertisement, decides what a model may see.
+      advertise_pack(runner, "demo", title: "Renamed")
+
+      assert Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject) ==
+               {:error, :not_found}
+    end
+
+    test "newly advertised bytes stop resolving under either exact ref" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+      demo_ref = pack_ref("demo")
+
+      assert {:ok, _resolved} =
+               Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject)
+
+      advertise_pack(runner, "demo", hash: "demo-bytes-v2")
+      drifted_ref = pack_ref("demo", hash: "demo-bytes-v2")
+
+      # The trusted ref is no longer deployed, and the deployed ref is only
+      # pending an operator review.
+      assert Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject) ==
+               {:error, :not_found}
+
+      assert Catalog.resolve_model_action("demo.inspect", drifted_ref, [runner_ref], subject) ==
+               {:error, :not_found}
+    end
+
+    test "revoked trust stops resolving" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+
+      assert {:ok, runner_ref} = Runners.public_ref(runner)
+      demo_ref = pack_ref("demo")
+
+      assert {:ok, _resolved} =
+               Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject)
+
+      assert {:ok, [pack_version]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
+
+      assert Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject) ==
+               {:error, :not_found}
+    end
+
+    test "rejects a subject without view_catalog permission" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.build_subject(account: account, role: :runner)
+
+      assert Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), [], subject) ==
+               {:error, :unauthorized}
     end
   end
 

@@ -2,13 +2,13 @@ defmodule EmisarWeb.MCP.CatalogTools do
   @moduledoc """
   Fixed MCP catalog tool implementation.
 
-  Authorization and account isolation come from the domain contexts. This
-  module additionally applies the API key creator's runner scope, projects
-  hostile runner advertisements through exact-hash trusted manifests, and
-  shapes bounded model-facing responses.
+  `Emisar.Catalog` owns authorization, account isolation, the caller's runner
+  scope, and the exact-hash trusted projection of hostile runner
+  advertisements. This module only filters, ranks, paginates, and shapes
+  bounded model-facing responses over that snapshot.
   """
 
-  alias Emisar.{Catalog, Crypto, Runners}
+  alias Emisar.{Catalog, Crypto}
   alias EmisarWeb.MCP.{CatalogCursor, Service, ToolSchema}
 
   @default_limit 15
@@ -57,9 +57,13 @@ defmodule EmisarWeb.MCP.CatalogTools do
 
   @doc "Executes one of the four fixed, read-only catalog tools."
   @spec call(Plug.Conn.t(), String.t(), map()) :: {:ok, map()} | {:error, map()}
-  def call(conn, tool, args) when tool in ~w(list_packs list_runners find_actions get_action) do
+  def call(conn, "get_action", args) do
+    get_action(conn.assigns.current_subject, parse("get_action", args))
+  end
+
+  def call(conn, tool, args) when tool in ~w(list_packs list_runners find_actions) do
     with {:ok, snapshot, scope} <- snapshot(conn) do
-      execute(tool, snapshot, scope, parse(tool, args), conn)
+      execute(tool, snapshot, scope, parse(tool, args))
     end
   end
 
@@ -67,26 +71,21 @@ defmodule EmisarWeb.MCP.CatalogTools do
     subject = conn.assigns.current_subject
     api_key = conn.assigns.api_key
 
-    with {:ok, runners} <- Runners.list_all_runners_for_account(subject),
-         {:ok, actions} <- Catalog.list_all_actions_for_account(subject),
-         {:ok, pack_versions} <- Catalog.list_all_pack_versions_for_account(subject) do
-      runner_ids = MapSet.new(runners, & &1.id)
-      actions = Enum.filter(actions, &MapSet.member?(runner_ids, &1.runner_id))
-      snapshot = Catalog.MCPProjection.build(pack_versions, actions, runners)
+    case Catalog.model_catalog(subject) do
+      {:ok, snapshot} ->
+        scope =
+          [subject.account.id, api_key.id | Enum.map(snapshot.runners, & &1.runner_ref)]
+          |> Enum.join("\0")
+          |> Crypto.hash_hex()
 
-      scope =
-        [subject.account.id, api_key.id | Enum.map(snapshot.runners, & &1.runner_ref)]
-        |> Enum.join("\0")
-        |> Crypto.hash_hex()
+        {:ok, snapshot, scope}
 
-      {:ok, snapshot, scope}
-    else
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read catalog data.")}
     end
   end
 
-  defp execute("list_packs", snapshot, scope, args, _conn) do
+  defp execute("list_packs", snapshot, scope, args) do
     packs =
       snapshot.packs
       |> Enum.filter(&pack_matches?(&1, args))
@@ -103,7 +102,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     )
   end
 
-  defp execute("list_runners", snapshot, scope, args, _conn) do
+  defp execute("list_runners", snapshot, scope, args) do
     packs_by_ref = Map.new(snapshot.packs, &{&1.pack_ref, &1})
 
     runners =
@@ -126,7 +125,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
     end
   end
 
-  defp execute("find_actions", snapshot, scope, args, _conn) do
+  defp execute("find_actions", snapshot, scope, args) do
     searchable =
       snapshot.packs
       |> Enum.flat_map(&searchable_actions(&1, snapshot.runners, args))
@@ -151,12 +150,17 @@ defmodule EmisarWeb.MCP.CatalogTools do
     )
   end
 
-  defp execute("get_action", snapshot, _scope, args, _conn) do
-    with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == args.pack_ref)),
-         %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == args.action_id)),
-         runners when runners != [] <- compatible_runners(snapshot.runners, action, args) do
+  # An empty `runner_refs` asks for every compatible runner; an explicit list is
+  # all-or-nothing, and the domain fails it closed. `target` is the model's
+  # free-text narrowing over what already resolved, so it stays here.
+  defp get_action(subject, args) do
+    with {:ok, resolved} <-
+           Catalog.resolve_model_action(args.action_id, args.pack_ref, args.runner_refs, subject),
+         runners = target_matches(resolved.runners, args.target),
+         [_runner | _rest] <- runners do
       runner_limit = if args.runner_refs == [], do: @default_limit, else: length(args.runner_refs)
       {runners, more?} = split_more(runners, runner_limit)
+      action = resolved.action
 
       {:ok,
        %{
@@ -165,7 +169,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
          action:
            %{
              action_id: action["action_id"],
-             pack_ref: pack.pack_ref,
+             pack_ref: resolved.pack.pack_ref,
              title: action["title"],
              description: action["description"],
              risk: action["risk"],
@@ -176,10 +180,13 @@ defmodule EmisarWeb.MCP.CatalogTools do
            |> maybe_put_output_schema(action["output_schema"]),
          compatible_runners: Enum.map(runners, &runner_brief/1),
          more_compatible_runners: more?,
-         next: compatible_runners_next(pack, action, args, more?)
+         next: compatible_runners_next(resolved.pack, action, args, more?)
        }}
     else
-      _other ->
+      {:error, :unauthorized} ->
+        {:error, error("not_allowed", "This key cannot read catalog data.")}
+
+      _unavailable ->
         payload =
           error(
             "action_unavailable",
@@ -194,6 +201,11 @@ defmodule EmisarWeb.MCP.CatalogTools do
         {:error, put_in(payload, [:error, :next], next)}
     end
   end
+
+  defp target_matches(runners, nil), do: runners
+
+  defp target_matches(runners, target),
+    do: Enum.filter(runners, &runner_query_match?(&1, target))
 
   defp maybe_put_output_schema(action, %{} = schema), do: Map.put(action, :output_schema, schema)
   defp maybe_put_output_schema(action, _schema), do: action
@@ -559,10 +571,11 @@ defmodule EmisarWeb.MCP.CatalogTools do
   end
 
   defp compatible_runners(runners, action, args) do
-    Enum.filter(runners, fn runner ->
+    runners
+    |> Enum.filter(fn runner ->
       runner.id in action.compatible_runner_ids and
-        (Map.get(args, :runner_refs, []) == [] or runner.runner_ref in args.runner_refs) and
-        (is_nil(Map.get(args, :target)) or runner_query_match?(runner, args.target))
+        (args.runner_refs == [] or runner.runner_ref in args.runner_refs) and
+        (is_nil(args.target) or runner_query_match?(runner, args.target))
     end)
     |> Enum.sort_by(& &1.runner_ref)
   end

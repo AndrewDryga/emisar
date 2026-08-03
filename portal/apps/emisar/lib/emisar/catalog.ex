@@ -1533,6 +1533,102 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  The model-facing catalog snapshot for the subject's account: every exact
+  trusted pack ref projected onto the fleet the subject may reach, as
+  `%{packs: [...], runners: [...]}`.
+
+  This is the single model-visible projection. Untrusted, rejected, revoked,
+  hash-mismatched, incomplete, retired, and out-of-scope refs are absent;
+  offline or drifted trusted deployments remain visible only as unavailable
+  diagnostics, never compatible targets. Requires `view_catalog` (plus the
+  runner-scope gate the fleet read applies); returns `{:ok, snapshot}` or
+  `{:error, :unauthorized}`.
+  """
+  @spec model_catalog(Subject.t()) :: {:ok, map()} | {:error, :unauthorized}
+  def model_catalog(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      model_snapshot(subject)
+    end
+  end
+
+  @doc """
+  Resolve one exact `action_id` inside one exact trusted `pack_ref`, plus the
+  projected runners that can execute it, for the subject's account.
+
+  `runner_refs` is the caller's explicit fan-out: `[]` means every compatible
+  runner (ordered by ref), while a non-empty list must resolve EXACTLY — every
+  ref present in the subject's own snapshot AND compatible — and comes back in
+  the requested order. Anything else fails the whole call closed. Requires
+  `view_catalog`; returns `{:ok, %{action: action, pack: pack, runners: runners}}`
+  or `{:error, :not_found | :unauthorized}`.
+  """
+  @spec resolve_model_action(String.t(), String.t(), [String.t()], Subject.t()) ::
+          {:ok, %{action: map(), pack: map(), runners: [map()]}}
+          | {:error, :not_found | :unauthorized}
+  def resolve_model_action(action_id, pack_ref, runner_refs, %Subject{} = subject)
+      when is_list(runner_refs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()),
+         {:ok, snapshot} <- model_snapshot(subject),
+         %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == pack_ref)),
+         %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == action_id)),
+         {:ok, runners} <- compatible_model_runners(snapshot.runners, action, runner_refs) do
+      {:ok, %{action: action, pack: pack, runners: runners}}
+    else
+      {:error, reason} -> {:error, reason}
+      _unresolvable -> {:error, :not_found}
+    end
+  end
+
+  # The fleet read carries live membership + API-key runner scope, so it — not
+  # the account — decides which advertisements may reach a model at all.
+  defp model_snapshot(%Subject{} = subject) do
+    with {:ok, runners} <- Runners.list_all_runners_for_account(subject) do
+      runner_ids = Enum.map(runners, & &1.id)
+
+      actions =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.by_runner_ids(runner_ids)
+        |> RunnerAction.Query.ordered_by_action_seen()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      pack_versions =
+        PackVersion.Query.all()
+        |> PackVersion.Query.ordered_by_pack()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, MCPProjection.build(pack_versions, actions, runners)}
+    end
+  end
+
+  defp compatible_model_runners(runners, action, []) do
+    compatible_ids = MapSet.new(action.compatible_runner_ids)
+
+    compatible =
+      runners
+      |> Enum.filter(&MapSet.member?(compatible_ids, &1.id))
+      |> Enum.sort_by(& &1.runner_ref)
+
+    {:ok, compatible}
+  end
+
+  defp compatible_model_runners(runners, action, runner_refs) do
+    runners_by_ref = Map.new(runners, &{&1.runner_ref, &1})
+    compatible_ids = MapSet.new(action.compatible_runner_ids)
+
+    requested =
+      Enum.map(runner_refs, fn runner_ref ->
+        runner = Map.get(runners_by_ref, runner_ref)
+        if runner && MapSet.member?(compatible_ids, runner.id), do: runner
+      end)
+
+    if Enum.all?(requested), do: {:ok, requested}, else: {:error, :not_found}
+  end
+
+  @doc """
   Returns bounded trusted exact pack/action candidates for already scoped
   runbook runners. The caller owns requirement matching; this context owns the
   trusted-manifest projection and hides untrusted, retired, drifted, offline,

@@ -424,7 +424,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert Enum.any?(single_term["candidates"], &(&1["action_id"] == "system.disk_usage"))
   end
 
-  test "get_action returns fifteen discovered runners or every explicit runner ref", %{
+  test "get_action returns fifteen discovered runners, or every explicit runner ref or none", %{
     conn: conn,
     account: account,
     subject: subject
@@ -464,6 +464,24 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert length(exact["compatible_runners"]) == 16
     refute exact["more_compatible_runners"]
     assert exact["next"] == nil
+
+    # An explicit list is all-or-nothing: one ref that cannot execute this exact
+    # trusted action refuses the whole call rather than answering with a subset.
+    bystander = Fixtures.Runners.create_runner(account_id: account.id, name: "bystander")
+    observe!(bystander, %{}, [])
+
+    bystander_ref =
+      bystander.name <> "~" <> binary_part(Crypto.hash_hex(bystander.external_id), 0, 32)
+
+    partial =
+      call(
+        conn,
+        "get_action",
+        Map.put(arguments, "runner_refs", [hd(runner_refs), bystander_ref])
+      )
+
+    assert partial["error"]["code"] == "action_unavailable"
+    assert partial["error"]["next"]["tool"] == "list_runners"
 
     invalid = call(conn, "get_action", Map.put(arguments, "runner_limit", 1))
     assert invalid["error"]["code"] == "invalid_args"

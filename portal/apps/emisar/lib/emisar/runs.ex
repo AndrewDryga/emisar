@@ -980,46 +980,15 @@ defmodule Emisar.Runs do
   # trusted manifest deployed on a current runner generation resolves to a
   # target, so a rotated runner or a changed contract stops the fan-out here.
   defp resolve_mcp_action_targets(facts, subject) do
-    with {:ok, runners} <- Emisar.Runners.list_all_runners_for_account(subject),
-         {:ok, actions} <- Catalog.list_all_actions_for_account(subject),
-         {:ok, pack_versions} <- Catalog.list_all_pack_versions_for_account(subject) do
-      runner_ids = MapSet.new(runners, & &1.id)
-      scoped_actions = Enum.filter(actions, &MapSet.member?(runner_ids, &1.runner_id))
-      snapshot = Catalog.MCPProjection.build(pack_versions, scoped_actions, runners)
+    case Catalog.resolve_model_action(facts.action_id, facts.pack_ref, facts.runner_refs, subject) do
+      {:ok, %{action: action, runners: runners}} ->
+        {:ok, Enum.map(runners, &%{id: &1.id, runner_ref: &1.runner_ref}), action}
 
-      exact_mcp_action_targets(snapshot, facts)
-    end
-  end
+      {:error, :not_found} ->
+        {:error, :target_contract_changed}
 
-  defp exact_mcp_action_targets(snapshot, facts) do
-    with %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == facts.pack_ref)),
-         %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == facts.action_id)),
-         {:ok, targets} <- exact_runner_targets(snapshot.runners, action, facts.runner_refs) do
-      {:ok, targets, action}
-    else
-      _ -> {:error, :target_contract_changed}
-    end
-  end
-
-  defp exact_runner_targets(runners, action, runner_refs) do
-    by_ref = Map.new(runners, &{&1.runner_ref, &1})
-    compatible_ids = MapSet.new(action.compatible_runner_ids)
-
-    runner_refs
-    |> Enum.reduce_while({:ok, []}, fn runner_ref, {:ok, targets} ->
-      case Map.get(by_ref, runner_ref) do
-        %{id: id} = runner ->
-          if MapSet.member?(compatible_ids, id),
-            do: {:cont, {:ok, [%{id: runner.id, runner_ref: runner.runner_ref} | targets]}},
-            else: {:halt, {:error, :target_contract_changed}}
-
-        _runner ->
-          {:halt, {:error, :target_contract_changed}}
-      end
-    end)
-    |> case do
-      {:ok, targets} -> {:ok, Enum.reverse(targets)}
-      {:error, :target_contract_changed} -> {:error, :target_contract_changed}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
