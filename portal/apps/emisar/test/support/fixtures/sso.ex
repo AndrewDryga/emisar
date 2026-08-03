@@ -7,12 +7,24 @@ defmodule Emisar.Fixtures.SSO do
   alias Emisar.Repo
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
 
+  @runner_scope_fields [
+    :default_runner_access_mode,
+    :default_runner_scope_groups,
+    :default_runner_scope_runner_ids
+  ]
+
   @doc """
   Creates an identity provider (enabled by default). Returns the provider.
+
+  The default runner-access mode and scope arrays are written directly: `SSO`
+  derives them from a raw picker selection allowlisted against the account's
+  live runners, which is the write path under test, not a way to rig the state
+  it starts from.
   """
   def create_identity_provider(attrs \\ %{}) do
     attrs = Map.new(attrs)
     account_id = attrs[:account_id] || Emisar.Fixtures.Accounts.create_account().id
+    {scope, attrs} = Map.split(attrs, @runner_scope_fields)
 
     provider_attrs =
       Map.merge(
@@ -30,7 +42,12 @@ defmodule Emisar.Fixtures.SSO do
         Map.delete(attrs, :account_id)
       )
 
-    {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account_id, provider_attrs))
+    {:ok, provider} =
+      account_id
+      |> IdentityProvider.Changeset.create(provider_attrs)
+      |> Ecto.Changeset.change(scope)
+      |> Repo.insert()
+
     provider
   end
 

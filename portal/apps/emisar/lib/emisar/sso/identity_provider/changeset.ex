@@ -2,31 +2,34 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
   use Emisar, :changeset
   alias Emisar.SSO.IdentityProvider
 
-  # `kind` is set once at create (the IdP preset); update casts the rest.
+  # `kind` is set once at create (the IdP preset); update casts the rest. The
+  # persisted `default_runner_scope_*` arrays are deliberately NOT cast — they
+  # are derived from the raw `default_runner_scope` selection, so a submitted
+  # array can never widen the default reach.
   @config_fields ~w[name issuer client_id client_secret identifier_claim default_role
-                     default_runner_access_mode default_runner_scope_groups
-                     default_runner_scope_runner_ids satisfies_mfa allowed_email_domain
-                     provisioner enabled]a
+                     default_runner_access_mode default_runner_scope satisfies_mfa
+                     allowed_email_domain provisioner enabled]a
+  @no_runner_facts %{groups: [], runners: []}
 
-  def create(account_id, attrs) do
+  def create(account_id, attrs, allowlist \\ @no_runner_facts) do
     %IdentityProvider{}
     |> cast(attrs, [:kind | @config_fields])
     |> put_change(:account_id, account_id)
     |> validate_required([:account_id])
-    |> validate_fields()
+    |> validate_fields(allowlist)
   end
 
-  def update(%IdentityProvider{} = provider, attrs) do
+  def update(%IdentityProvider{} = provider, attrs, allowlist \\ @no_runner_facts) do
     provider
     |> cast(attrs, @config_fields)
-    |> validate_fields()
+    |> validate_fields(allowlist)
   end
 
-  @doc "Form changeset for the config editor — the create validations minus the account_id only `create/2` can set."
-  def form(%IdentityProvider{} = provider, attrs) do
+  @doc "Form changeset for the config editor — the create validations minus the account_id only `create/3` can set."
+  def form(%IdentityProvider{} = provider, attrs, allowlist \\ @no_runner_facts) do
     provider
     |> cast(attrs, [:kind | @config_fields])
-    |> validate_fields()
+    |> validate_fields(allowlist)
   end
 
   def delete(%IdentityProvider{} = provider),
@@ -67,14 +70,18 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
 
   def mark_groups_synced(%IdentityProvider{} = provider), do: change(provider, %{})
 
-  defp validate_fields(changeset) do
+  defp validate_fields(changeset, allowlist) do
     changeset
     |> validate_required([:kind, :name, :issuer, :client_id])
     # JIT/SCIM provisioning applies `default_role` directly, so `:owner` here
     # would let a `manage_sso` admin self-provision account owners — never
     # allowed via sync (owner is a deliberate human grant needing manage_owners).
     |> validate_exclusion(:default_role, [:owner], message: "can't be owner")
-    |> Emisar.Accounts.RunnerAccess.validate_changeset(:default_runner)
+    |> Emisar.Accounts.RunnerAccess.validate_selection(
+      :default_runner,
+      :default_runner_scope,
+      allowlist
+    )
     |> validate_issuer()
     |> normalize_allowed_email_domain()
     |> unique_constraint([:account_id, :kind],

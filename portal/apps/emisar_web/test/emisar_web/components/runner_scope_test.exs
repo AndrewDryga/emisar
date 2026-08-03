@@ -46,6 +46,18 @@ defmodule EmisarWeb.RunnerScopeTest do
       refute hd(app.runners).covered
     end
 
+    test "a selected ref the catalog no longer has is unavailable, not dropped" do
+      tree = RunnerScope.tree(@runners, ["group:retired", "runner:gone", "group:edge-web"])
+
+      assert tree.unavailable == [
+               %{kind: :group, name: "retired", value: "group:retired"},
+               %{kind: :runner, name: "gone", value: "runner:gone"}
+             ]
+
+      # A ref the catalog DOES account for stays in its own section.
+      assert Enum.find(tree.groups, &(&1.name == "edge-web")).selected
+    end
+
     test "an individually selected runner (no group selected) is selected, not covered" do
       tree = RunnerScope.tree(@runners, ["runner:r3"])
       runner = Enum.find(tree.groups, &(&1.name == "app-api")).runners |> hd()
@@ -87,6 +99,23 @@ defmodule EmisarWeb.RunnerScopeTest do
         )
 
       assert html =~ "No runners registered yet."
+    end
+
+    test "an unavailable selection stays ticked and removable, even with an empty catalog" do
+      html =
+        render_component(&RunnerScope.runner_scope_select/1,
+          name: "scope[]",
+          runners: [],
+          selected: ["group:retired"]
+        )
+
+      refute html =~ "No runners registered yet."
+      assert html =~ "Unavailable"
+      assert html =~ "unavailable"
+      # Ticked, and the tag closes right after its value — so unlike a "via
+      # group" runner it carries no `disabled`, and unticking it is possible.
+      assert html =~ ~s(<input type="checkbox" checked)
+      assert html =~ ~s|name="scope[]" value="group:retired">|
     end
 
     test "attached mode is one compact continuation with full-height option rows" do

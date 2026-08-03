@@ -149,6 +149,45 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert invalid =~ "Choose at least one runner group or runner for selected access."
     end
 
+    test "a rejected selection keeps what was typed and stays removable", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      # A group the account no longer has — the selection an operator's stale
+      # picker (or a crafted submission) still names.
+      params = %{
+        "provider" => %{
+          "kind" => "okta",
+          "name" => "Acme Okta",
+          "issuer" => "https://idp.test",
+          "client_id" => "cid",
+          "client_secret" => "secret",
+          "default_runner_access_mode" => "restricted",
+          "default_runner_scope" => ["group:retired-fleet"]
+        }
+      }
+
+      html = render_submit(lv, "create", params)
+
+      assert html =~ "Choose at least one runner group or runner for selected access."
+      assert html =~ ~s(value="Acme Okta")
+      assert html =~ ~s(value="https://idp.test")
+      assert html =~ "retired-fleet"
+      assert html =~ "unavailable"
+
+      # Still ticked and still enabled, so unticking it is how the operator
+      # moves on from a selection the account can no longer honor.
+      assert has_element?(
+               lv,
+               ~s|input[name="provider[default_runner_scope][]"][value="group:retired-fleet"][checked]:not([disabled])|
+             )
+
+      refute Repo.one(IdentityProvider)
+    end
+
     test "picking a provider type doesn't accuse the operator of blank fields", %{
       conn: conn,
       account: account

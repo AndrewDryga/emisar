@@ -425,7 +425,15 @@ defmodule Emisar.SSOGroupsTest do
 
   describe "reconcile_pending_authorizations/1" do
     setup do
-      scim_provider()
+      context = scim_provider()
+
+      # A grant may only name runner groups the account actually has, so the
+      # groups these mappings hand out have to exist before they are granted.
+      for group <- ["db", "app", "baseline"] do
+        Fixtures.Runners.create_runner(account_id: context.account.id, group: group)
+      end
+
+      context
     end
 
     test "unions mapped groups and revokes access on group removal and mapping deletion", %{
@@ -442,7 +450,7 @@ defmodule Emisar.SSOGroupsTest do
           %{
             external_group_id: "grp-db",
             runner_access_mode: :restricted,
-            runner_scope_groups: ["db"]
+            scope: ["group:db"]
           },
           subject
         )
@@ -453,7 +461,7 @@ defmodule Emisar.SSOGroupsTest do
           %{
             external_group_id: "grp-app",
             runner_access_mode: :restricted,
-            runner_scope_groups: ["app"]
+            scope: ["group:app"]
           },
           subject
         )
@@ -501,7 +509,7 @@ defmodule Emisar.SSOGroupsTest do
           %{
             external_group_id: "grp-db",
             runner_access_mode: :restricted,
-            runner_scope_groups: ["db"]
+            scope: ["group:db"]
           },
           subject
         )
@@ -542,7 +550,7 @@ defmodule Emisar.SSOGroupsTest do
           %{
             external_group_id: "grp-db",
             runner_access_mode: :restricted,
-            runner_scope_groups: ["db"]
+            scope: ["group:db"]
           },
           subject
         )
@@ -561,11 +569,7 @@ defmodule Emisar.SSOGroupsTest do
       assert {:ok, _updated} =
                SSO.update_group_runner_access_mapping(
                  mapping,
-                 %{
-                   runner_access_mode: :restricted,
-                   runner_scope_groups: ["app"],
-                   runner_scope_runner_ids: []
-                 },
+                 %{runner_access_mode: :restricted, scope: ["group:app"]},
                  subject
                )
 
@@ -594,7 +598,7 @@ defmodule Emisar.SSOGroupsTest do
           %{
             external_group_id: "grp-runner",
             runner_access_mode: :restricted,
-            runner_scope_runner_ids: [runner.id]
+            scope: ["runner:#{runner.id}"]
           },
           subject
         )
@@ -625,8 +629,7 @@ defmodule Emisar.SSOGroupsTest do
                  provider,
                  %{
                    default_runner_access_mode: :restricted,
-                   default_runner_scope_groups: ["baseline"],
-                   default_runner_scope_runner_ids: []
+                   default_runner_scope: ["group:baseline"]
                  },
                  subject
                )
@@ -696,7 +699,7 @@ defmodule Emisar.SSOGroupsTest do
           %{
             external_group_id: "grp-runner",
             runner_access_mode: :restricted,
-            runner_scope_runner_ids: [runner.id]
+            scope: ["runner:#{runner.id}"]
           },
           subject
         )
@@ -717,8 +720,7 @@ defmodule Emisar.SSOGroupsTest do
                  provider,
                  %{
                    default_runner_access_mode: :restricted,
-                   default_runner_scope_groups: ["baseline"],
-                   default_runner_scope_runner_ids: []
+                   default_runner_scope: ["group:baseline"]
                  },
                  subject
                )

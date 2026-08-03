@@ -1200,47 +1200,6 @@ defmodule Emisar.Accounts do
       else: {:error, :runner_access_exceeds_subject}
   end
 
-  @doc "Internal - reject individual runner grants that do not name live runners in the account."
-  def validate_runner_access_for_account(account_id, %RunnerAccess{runner_ids: runner_ids})
-      when is_binary(account_id) do
-    cond do
-      runner_ids == [] ->
-        :ok
-
-      not Repo.valid_uuid?(account_id) ->
-        {:error, :invalid_runner_access}
-
-      true ->
-        query = """
-        SELECT NOT EXISTS (
-          SELECT 1
-          FROM unnest($1::uuid[]) AS requested(id)
-          WHERE NOT EXISTS (
-            SELECT 1
-            FROM runners
-            WHERE runners.account_id = $2
-              AND runners.id = requested.id
-              AND runners.deleted_at IS NULL
-          )
-        )
-        """
-
-        dumped_runner_ids = Enum.map(runner_ids, &Ecto.UUID.dump!/1)
-
-        case Ecto.Adapters.SQL.query(Repo, query, [
-               dumped_runner_ids,
-               Ecto.UUID.dump!(account_id)
-             ]) do
-          {:ok, %{rows: [[true]]}} -> :ok
-          {:ok, %{rows: [[false]]}} -> {:error, :invalid_runner_access}
-          {:error, reason} -> {:error, reason}
-        end
-    end
-  end
-
-  def validate_runner_access_for_account(_account_id, %RunnerAccess{}),
-    do: {:error, :invalid_runner_access}
-
   defp ensure_runner_access_not_directory_managed(%Membership{
          runner_access_directory_managed: true
        }),

@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, MailTo, Permissions, RunnerScope}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, MailTo, Permissions}
   alias Phoenix.LiveView.JS
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
@@ -173,12 +173,13 @@ defmodule EmisarWeb.SSOSettingsLive do
         :new ->
           socket
           |> load_runners()
-          |> assign_form(SSO.change_provider())
+          |> assign_form(SSO.change_provider(socket.assigns.current_subject))
           |> assign(:test_result, nil)
       end
     else
-      # A synchronous changeset (no DB read) so /new renders on the dead pass.
-      assign_form(socket, SSO.change_provider())
+      # A blank form names no runners, so SSO resolves it without a read (IL-18)
+      # and /new still renders on the dead pass.
+      assign_form(socket, SSO.change_provider(socket.assigns.current_subject))
     end
   end
 
@@ -214,7 +215,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> load_group_mappings([provider])
         |> load_synced_members(provider)
         |> load_runners()
-        |> assign_form(SSO.change_provider())
+        |> assign_form(SSO.change_provider(socket.assigns.current_subject))
 
       {:error, :not_found} ->
         socket
@@ -268,7 +269,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> assign(:loaded?, true)
         |> assign(:providers, [provider])
         |> load_runners()
-        |> assign(:edit_form, edit_form(provider))
+        |> assign_edit_form(provider)
 
       {:error, :not_found} ->
         socket
@@ -334,7 +335,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       end)
 
     forms = Map.new(scim_providers, &{&1.id, mapping_form(&1)})
-    runner_access_forms = Map.new(scim_providers, &{&1.id, runner_access_mapping_form(&1)})
+    runner_access_forms = runner_access_mapping_forms(socket, scim_providers)
 
     socket
     |> assign(:group_mappings, role_mappings)
@@ -382,14 +383,17 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("validate", %{"provider" => params} = event, socket) do
-    params = normalize_provider_access(params, socket.assigns.runners)
-    changeset = SSO.change_provider(%SSO.IdentityProvider{}, params) |> LiveForm.on_change(event)
+    case SSO.change_provider(%SSO.IdentityProvider{}, params, socket.assigns.current_subject) do
+      {:ok, changeset} ->
+        changeset = LiveForm.on_change(changeset, event)
+        {:noreply, socket |> assign_form(changeset) |> assign(:test_result, nil)}
 
-    {:noreply, socket |> assign_form(changeset) |> assign(:test_result, nil)}
+      {:error, :unauthorized} ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("create", %{"provider" => params}, socket) do
-    params = normalize_provider_access(params, socket.assigns.runners)
     Permissions.gated(socket, socket.assigns.can_configure?, &do_create(&1, params))
   end
 
@@ -401,19 +405,13 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("validate_edit", %{"provider_id" => id, "provider" => params}, socket) do
-    params = normalize_provider_access(params, socket.assigns.runners)
-
     case find_provider(socket, id) do
-      nil ->
-        {:noreply, socket}
-
-      provider ->
-        {:noreply, assign(socket, :edit_form, edit_form(provider, params, :validate))}
+      nil -> {:noreply, socket}
+      provider -> {:noreply, assign_edit_form(socket, provider, params, :validate)}
     end
   end
 
   def handle_event("update", %{"provider_id" => id, "provider" => params}, socket) do
-    params = normalize_provider_access(params, socket.assigns.runners)
     Permissions.gated(socket, socket.assigns.can_configure?, &do_update(&1, id, params))
   end
 
@@ -546,9 +544,18 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, socket}
 
       provider ->
-        changeset = runner_access_mapping_changeset(provider, params, socket.assigns.runners)
-        form = runner_access_mapping_to_form(provider, LiveForm.on_change(changeset, event))
-        {:noreply, put_runner_access_mapping_form(socket, id, form)}
+        case SSO.change_group_runner_access_mapping(
+               provider,
+               params,
+               socket.assigns.current_subject
+             ) do
+          {:ok, changeset} ->
+            form = runner_access_mapping_to_form(provider, LiveForm.on_change(changeset, event))
+            {:noreply, put_runner_access_mapping_form(socket, id, form)}
+
+          {:error, :unauthorized} ->
+            {:noreply, socket}
+        end
     end
   end
 
@@ -570,15 +577,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("cancel_add_runner_access_mapping", _params, socket) do
     socket =
       case socket.assigns.providers do
-        [provider | _] ->
-          put_runner_access_mapping_form(
-            socket,
-            provider.id,
-            runner_access_mapping_form(provider)
-          )
-
-        _ ->
-          socket
+        [provider | _] -> reset_runner_access_mapping_form(socket, provider)
+        _ -> socket
       end
 
     {:noreply, assign(socket, :adding_runner_access_mapping, false)}
@@ -593,10 +593,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply,
          socket
          |> assign(:editing_runner_access_mapping_id, id)
-         |> assign(
-           :runner_access_mapping_edit_form,
-           runner_access_mapping_edit_form(mapping)
-         )}
+         |> assign_runner_access_mapping_edit_form(mapping)}
     end
   end
 
@@ -617,10 +614,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, socket}
 
       mapping ->
-        form =
-          runner_access_mapping_edit_form(mapping, params, socket.assigns.runners, event)
-
-        {:noreply, assign(socket, :runner_access_mapping_edit_form, form)}
+        {:noreply, assign_runner_access_mapping_edit_form(socket, mapping, params, event)}
     end
   end
 
@@ -736,7 +730,13 @@ defmodule EmisarWeb.SSOSettingsLive do
              )}
 
           {:error, %Ecto.Changeset{} = changeset} ->
-            {:noreply, assign(socket, :edit_form, edit_form_from(changeset, provider))}
+            # Render the changeset the WRITE returned. Rebuilding a fresh one
+            # from the same params re-runs only the in-process validations, so
+            # the database's verdict — a second connection claiming an allowed
+            # email domain already taken — was dropped and the form came back
+            # with no error at all.
+            form = edit_form(provider, Map.put(changeset, :action, :update))
+            {:noreply, assign(socket, :edit_form, form)}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, error_message(reason))}
@@ -927,8 +927,6 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp do_create_runner_access_mapping(socket, provider_id, params) do
     with_provider(socket, provider_id, fn provider ->
-      params = normalize_runner_access_mapping(params, socket.assigns.runners)
-
       case SSO.create_group_runner_access_mapping(
              provider,
              params,
@@ -938,10 +936,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           {:noreply,
            socket
            |> put_flash(:info, "Group runner access added.")
-           |> put_runner_access_mapping_form(
-             provider_id,
-             runner_access_mapping_form(provider)
-           )
+           |> reset_runner_access_mapping_form(provider)
            |> reload_runner_access_mappings(provider)}
 
         {:error, %Ecto.Changeset{} = changeset} ->
@@ -960,8 +955,6 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:noreply, socket}
 
       mapping ->
-        params = normalize_runner_access_mapping(params, socket.assigns.runners)
-
         case SSO.update_group_runner_access_mapping(
                mapping,
                params,
@@ -976,7 +969,9 @@ defmodule EmisarWeb.SSOSettingsLive do
              |> reload_runner_access_mappings_for_id(updated.provider_id)}
 
           {:error, %Ecto.Changeset{} = changeset} ->
-            form = runner_access_mapping_edit_form(mapping, Map.put(changeset, :action, :update))
+            form =
+              runner_access_mapping_edit_form(mapping, Map.put(changeset, :action, :update))
+
             {:noreply, assign(socket, :runner_access_mapping_edit_form, form)}
 
           {:error, reason} ->
@@ -1180,19 +1175,33 @@ defmodule EmisarWeb.SSOSettingsLive do
     to_form(changeset, as: "mapping", id: "edit-mapping-#{mapping.id}")
   end
 
-  defp runner_access_mapping_changeset(provider, params \\ %{}, runners \\ []) do
-    params = normalize_runner_access_mapping(params, runners)
-    SSO.change_group_runner_access_mapping(provider, params)
+  # SSO owns the runner-access mapping form — it resolves the raw picker values
+  # against the account's live runners — so the web passes them through and
+  # renders what comes back.
+  defp runner_access_mapping_forms(socket, providers) do
+    providers
+    |> Enum.flat_map(fn provider ->
+      case SSO.change_group_runner_access_mapping(provider, %{}, socket.assigns.current_subject) do
+        {:ok, changeset} -> [{provider.id, runner_access_mapping_to_form(provider, changeset)}]
+        {:error, :unauthorized} -> []
+      end
+    end)
+    |> Map.new()
   end
 
-  defp runner_access_mapping_form(provider) do
-    provider
-    |> runner_access_mapping_changeset()
-    |> runner_access_mapping_to_form(provider)
-  end
+  defp reset_runner_access_mapping_form(socket, provider) do
+    case SSO.change_group_runner_access_mapping(provider, %{}, socket.assigns.current_subject) do
+      {:ok, changeset} ->
+        put_runner_access_mapping_form(
+          socket,
+          provider.id,
+          runner_access_mapping_to_form(provider, changeset)
+        )
 
-  defp runner_access_mapping_to_form(%Ecto.Changeset{} = changeset, provider),
-    do: runner_access_mapping_to_form(provider, changeset)
+      {:error, :unauthorized} ->
+        socket
+    end
+  end
 
   defp runner_access_mapping_to_form(provider, %Ecto.Changeset{} = changeset) do
     to_form(changeset,
@@ -1201,82 +1210,29 @@ defmodule EmisarWeb.SSOSettingsLive do
     )
   end
 
-  defp runner_access_mapping_edit_form(
-         mapping,
-         params_or_changeset \\ %{},
-         runners \\ [],
-         event \\ %{}
-       )
+  # The inline edit form for one mapping. With no input it renders the stored
+  # selection; with submitted params it renders exactly what was chosen, so a
+  # rejected save comes back with the operator's picks still in the picker.
+  defp assign_runner_access_mapping_edit_form(socket, mapping, params \\ %{}, event \\ %{}) do
+    case SSO.change_group_runner_access_mapping(mapping, params, socket.assigns.current_subject) do
+      {:ok, changeset} ->
+        changeset = if params == %{}, do: changeset, else: LiveForm.on_change(changeset, event)
 
-  defp runner_access_mapping_edit_form(mapping, %Ecto.Changeset{} = changeset, _runners, _event) do
-    to_form(changeset,
-      as: "runner_access_mapping",
-      id: "edit-runner-access-mapping-#{mapping.id}"
-    )
-  end
+        assign(
+          socket,
+          :runner_access_mapping_edit_form,
+          runner_access_mapping_edit_form(mapping, changeset)
+        )
 
-  defp runner_access_mapping_edit_form(mapping, params, _runners, _event)
-       when map_size(params) == 0 do
-    changeset = SSO.change_group_runner_access_mapping(mapping)
-    runner_access_mapping_edit_form(mapping, changeset, [])
-  end
-
-  defp runner_access_mapping_edit_form(mapping, params, runners, event) do
-    changeset =
-      mapping
-      |> SSO.change_group_runner_access_mapping(normalize_runner_access_mapping(params, runners))
-      |> LiveForm.on_change(event)
-
-    runner_access_mapping_edit_form(mapping, changeset, runners)
-  end
-
-  defp normalize_runner_access_mapping(params, runners) do
-    mode = Map.get(params, "runner_access_mode")
-    scope = List.wrap(params["scope"])
-    access = parse_runner_access(mode, scope, runners)
-
-    params
-    |> Map.delete("scope")
-    |> Map.put("runner_scope_groups", access.groups)
-    |> Map.put("runner_scope_runner_ids", access.runner_ids)
-  end
-
-  defp runner_access_mapping_scope_values(form) do
-    RunnerScope.to_values(
-      List.wrap(form[:runner_scope_groups].value),
-      List.wrap(form[:runner_scope_runner_ids].value)
-    )
-  end
-
-  defp normalize_provider_access(params, runners) do
-    mode = Map.get(params, "default_runner_access_mode", "none")
-    scope = List.wrap(params["default_runner_scope"])
-
-    access = parse_runner_access(mode, scope, runners)
-
-    params
-    |> Map.delete("default_runner_scope")
-    |> Map.put("default_runner_scope_groups", access.groups)
-    |> Map.put("default_runner_scope_runner_ids", access.runner_ids)
-  end
-
-  defp parse_runner_access(mode, scope, runners) do
-    case Accounts.RunnerAccess.from_selection(mode, scope, runners) do
-      {:ok, access} -> access
-      {:error, :invalid_runner_access} -> invalid_runner_access()
+      {:error, :unauthorized} ->
+        socket
     end
   end
 
-  # A rejected selection rides on as an empty restricted scope, so the mapping
-  # changeset reports it on the field rather than silently widening reach.
-  defp invalid_runner_access do
-    %Accounts.RunnerAccess{mode: :restricted, groups: [], runner_ids: []}
-  end
-
-  defp provider_scope_values(form) do
-    RunnerScope.to_values(
-      List.wrap(form[:default_runner_scope_groups].value),
-      List.wrap(form[:default_runner_scope_runner_ids].value)
+  defp runner_access_mapping_edit_form(mapping, %Ecto.Changeset{} = changeset) do
+    to_form(changeset,
+      as: "runner_access_mapping",
+      id: "edit-runner-access-mapping-#{mapping.id}"
     )
   end
 
@@ -1356,28 +1312,33 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # The create form and any open inline edit form coexist in the DOM, so each
   # gets its own `id` — otherwise their inputs collide on `provider_<field>`.
+  # SSO owns the config form — it resolves the raw runner-scope selection
+  # against the account — so a subject that may not manage single sign-on gets
+  # no form and the page renders its permission state instead.
+  defp assign_form(socket, {:ok, changeset}), do: assign_form(socket, changeset)
+  defp assign_form(socket, {:error, :unauthorized}), do: socket
+
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "provider", id: "create-provider"))
 
   # The inline edit form. `change_provider` returns a presentation-safe
   # changeset — the stored, write-only client_secret is never in it — so leaving
   # the field blank keeps the stored secret, unless the edit repoints the issuer
-  # or client id, which the domain refuses without one.
-  defp edit_form(provider, params \\ %{}, action \\ nil) do
-    changeset = provider |> SSO.change_provider(params) |> maybe_put_action(action)
+  # or client id, which the domain refuses without one. With no input it seeds
+  # the picker from the stored runner scope.
+  defp assign_edit_form(socket, provider, params \\ %{}, action \\ nil) do
+    case SSO.change_provider(provider, params, socket.assigns.current_subject) do
+      {:ok, changeset} ->
+        changeset = maybe_put_action(changeset, action)
+        assign(socket, :edit_form, edit_form(provider, changeset))
 
-    to_form(changeset, as: "provider", id: "edit-provider-#{provider.id}")
+      {:error, :unauthorized} ->
+        socket
+    end
   end
 
-  # Render the changeset the WRITE returned. Rebuilding a fresh one from the same
-  # params re-runs only the in-process validations, so the database's verdict — a
-  # second connection claiming an allowed email domain already taken — was
-  # dropped and the form came back with no error at all.
-  defp edit_form_from(%Ecto.Changeset{} = changeset, provider) do
-    changeset
-    |> Map.put(:action, :update)
-    |> to_form(as: "provider", id: "edit-provider-#{provider.id}")
-  end
+  defp edit_form(provider, %Ecto.Changeset{} = changeset),
+    do: to_form(changeset, as: "provider", id: "edit-provider-#{provider.id}")
 
   defp maybe_put_action(changeset, nil), do: changeset
   defp maybe_put_action(changeset, action), do: Map.put(changeset, :action, action)
@@ -2316,7 +2277,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 name="provider[default_runner_scope][]"
                 variant={:attached}
                 runners={@runners}
-                selected={provider_scope_values(@form)}
+                selected={List.wrap(@form[:default_runner_scope].value)}
                 submit_error_field={@form[:default_runner_access_mode]}
                 submit_error_message="Choose at least one runner group or runner for selected access."
                 load_error={
@@ -3197,7 +3158,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             name={"#{@form.name}[scope][]"}
             variant={:attached}
             runners={@runners}
-            selected={runner_access_mapping_scope_values(@form)}
+            selected={List.wrap(@form[:scope].value)}
             submit_error_field={@form[:runner_access_mode]}
             submit_error_message="Choose all runners or at least one selected runner scope."
           />

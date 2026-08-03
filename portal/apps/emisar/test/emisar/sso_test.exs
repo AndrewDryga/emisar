@@ -335,32 +335,58 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- change_provider/2 -----------------------------------------------
+  # -- change_provider/3 -----------------------------------------------
 
-  describe "change_provider/2" do
-    test "builds a provider config changeset from attrs (the phx-change form)" do
-      changeset = SSO.change_provider(%IdentityProvider{}, %{kind: :okta, name: "Okta"})
+  describe "change_provider/3" do
+    setup do
+      {_user, account, subject} = enterprise_owner()
+      %{account: account, subject: subject}
+    end
 
-      assert %Ecto.Changeset{} = changeset
+    test "builds a provider config changeset from attrs (the phx-change form)", %{
+      subject: subject
+    } do
+      assert {:ok, changeset} =
+               SSO.change_provider(%IdentityProvider{}, %{kind: :okta, name: "Okta"}, subject)
+
       assert Ecto.Changeset.get_change(changeset, :kind) == :okta
       assert Ecto.Changeset.get_change(changeset, :name) == "Okta"
     end
 
-    test "defaults to an empty provider + no attrs" do
-      assert %Ecto.Changeset{data: %IdentityProvider{}} = SSO.change_provider()
+    test "defaults to an empty provider + no attrs", %{subject: subject} do
+      assert {:ok, %Ecto.Changeset{data: %IdentityProvider{}}} = SSO.change_provider(subject)
     end
 
-    test "surfaces validation errors (a non-https issuer) for inline display" do
-      changeset = SSO.change_provider(%IdentityProvider{}, %{issuer: "http://idp.test"})
+    test "a subject that can't manage single sign-on gets no form" do
+      {_user, account, _subject} = enterprise_owner()
+      viewer_subject = viewer_in(account)
+
+      assert SSO.change_provider(viewer_subject) == {:error, :unauthorized}
+
+      assert SSO.change_provider(%IdentityProvider{}, %{name: "Okta"}, viewer_subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "surfaces validation errors (a non-https issuer) for inline display", %{
+      subject: subject
+    } do
+      assert {:ok, changeset} =
+               SSO.change_provider(%IdentityProvider{}, %{issuer: "http://idp.test"}, subject)
 
       assert "must be an https URL" in errors_on(changeset).issuer
     end
 
-    test "a new connection takes its kind's fixed issuer and identifier claim" do
-      google = SSO.change_provider(%IdentityProvider{}, %{"kind" => "google_workspace"})
-      jumpcloud = SSO.change_provider(%IdentityProvider{}, %{"kind" => "jumpcloud"})
-      entra = SSO.change_provider(%IdentityProvider{}, %{"kind" => "entra"})
-      okta = SSO.change_provider(%IdentityProvider{}, %{"kind" => "okta"})
+    test "a new connection takes its kind's fixed issuer and identifier claim", %{
+      subject: subject
+    } do
+      {:ok, google} =
+        SSO.change_provider(%IdentityProvider{}, %{"kind" => "google_workspace"}, subject)
+
+      {:ok, jumpcloud} =
+        SSO.change_provider(%IdentityProvider{}, %{"kind" => "jumpcloud"}, subject)
+
+      {:ok, entra} = SSO.change_provider(%IdentityProvider{}, %{"kind" => "entra"}, subject)
+      {:ok, okta} = SSO.change_provider(%IdentityProvider{}, %{"kind" => "okta"}, subject)
 
       assert Ecto.Changeset.get_field(google, :issuer) == "https://accounts.google.com"
       assert Ecto.Changeset.get_field(jumpcloud, :issuer) == "https://oauth.id.jumpcloud.com/"
@@ -370,31 +396,57 @@ defmodule Emisar.SSOTest do
       assert Ecto.Changeset.get_field(okta, :issuer) == nil
     end
 
-    test "a fixed issuer we prefilled is cleared when the kind switches away from it" do
+    test "a fixed issuer we prefilled is cleared when the kind switches away from it", %{
+      subject: subject
+    } do
       params = %{"kind" => "okta", "issuer" => "https://accounts.google.com"}
-      changeset = SSO.change_provider(%IdentityProvider{}, params)
 
+      assert {:ok, changeset} = SSO.change_provider(%IdentityProvider{}, params, subject)
       assert "can't be blank" in errors_on(changeset).issuer
     end
 
-    test "an existing connection's changeset never carries its stored client secret" do
-      account = Fixtures.Accounts.create_account()
+    test "an existing connection's changeset never carries its stored client secret", %{
+      account: account,
+      subject: subject
+    } do
       provider = provider_fixture(account, %{client_secret: "stored-secret-value"})
 
-      changeset = SSO.change_provider(provider, %{"name" => "Renamed"})
-
+      assert {:ok, changeset} = SSO.change_provider(provider, %{"name" => "Renamed"}, subject)
       assert changeset.data.client_secret == nil
+
       # A secret being typed still renders — it rides in `changes`, not in data.
-      typed = SSO.change_provider(provider, %{"client_secret" => "being-typed"})
+      assert {:ok, typed} =
+               SSO.change_provider(provider, %{"client_secret" => "being-typed"}, subject)
+
       assert Ecto.Changeset.get_change(typed, :client_secret) == "being-typed"
     end
 
-    test "an edit derives from the PERSISTED kind — a submitted kind is ignored" do
-      account = Fixtures.Accounts.create_account()
+    test "an untouched edit form seeds the picker from the stored scope", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      provider =
+        provider_fixture(account, %{
+          default_runner_access_mode: :restricted,
+          default_runner_scope_groups: ["database"]
+        })
+
+      assert {:ok, changeset} = SSO.change_provider(provider, %{}, subject)
+
+      assert Ecto.Changeset.get_field(changeset, :default_runner_scope) == ["group:database"]
+      assert Ecto.Changeset.get_field(changeset, :default_runner_scope_groups) == ["database"]
+    end
+
+    test "an edit derives from the PERSISTED kind — a submitted kind is ignored", %{
+      account: account,
+      subject: subject
+    } do
       google = provider_fixture(account, %{kind: :google_workspace})
 
       params = %{"kind" => "okta", "issuer" => "https://evil.test", "name" => "Renamed"}
-      changeset = SSO.change_provider(google, params)
+      assert {:ok, changeset} = SSO.change_provider(google, params, subject)
 
       # kind is create-only, and Google's issuer is not an editable field at all.
       assert Ecto.Changeset.get_change(changeset, :kind) == nil
@@ -402,16 +454,25 @@ defmodule Emisar.SSOTest do
       assert Ecto.Changeset.get_change(changeset, :name) == "Renamed"
     end
 
-    test "an unrelated edit leaves a stored identifier claim alone" do
-      account = Fixtures.Accounts.create_account()
+    test "an unrelated edit leaves a stored identifier claim alone", %{
+      account: account,
+      subject: subject
+    } do
       provider = provider_fixture(account, %{kind: :keycloak, identifier_claim: :oid})
 
-      changeset = SSO.change_provider(provider, %{"name" => "Renamed"})
+      assert {:ok, changeset} = SSO.change_provider(provider, %{"name" => "Renamed"}, subject)
 
       # Narrowing the claim list must not retype a connection people already
       # sign in through — the form tells the truth about what is stored.
       assert Ecto.Changeset.get_change(changeset, :identifier_claim) == nil
       assert Ecto.Changeset.get_field(changeset, :identifier_claim) == :oid
+    end
+
+    test "another account cannot build an existing provider's form", %{account: account} do
+      provider = provider_fixture(account)
+      {_user, _other_account, other_subject} = enterprise_owner()
+
+      assert SSO.change_provider(provider, %{}, other_subject) == {:error, :not_found}
     end
   end
 
@@ -450,51 +511,115 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "change_group_runner_access_mapping/2" do
-    test "builds explicit create and update changesets" do
-      {_user, account, _subject} = enterprise_owner()
+  describe "change_group_runner_access_mapping/3" do
+    setup do
+      {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account)
+      Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+      %{account: account, provider: provider, subject: subject}
+    end
 
-      create =
-        SSO.change_group_runner_access_mapping(provider, %{
-          external_group_id: "grp-db",
-          runner_access_mode: :restricted,
-          runner_scope_groups: ["db"]
-        })
+    test "builds explicit create and update changesets", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      create_attrs = %{
+        external_group_id: "grp-db",
+        runner_access_mode: :restricted,
+        scope: ["group:db"]
+      }
+
+      assert {:ok, create} =
+               SSO.change_group_runner_access_mapping(provider, create_attrs, subject)
 
       assert %Ecto.Changeset{data: %GroupRunnerAccessMapping{}} = create
       assert Ecto.Changeset.get_field(create, :account_id) == account.id
       assert Ecto.Changeset.get_field(create, :provider_id) == provider.id
+      assert Ecto.Changeset.get_field(create, :runner_scope_groups) == ["db"]
 
-      mapping = %GroupRunnerAccessMapping{runner_access_mode: :restricted}
+      mapping = %GroupRunnerAccessMapping{
+        account_id: account.id,
+        runner_access_mode: :restricted
+      }
 
-      update =
-        SSO.change_group_runner_access_mapping(mapping, %{
-          runner_access_mode: :all,
-          runner_scope_groups: [],
-          runner_scope_runner_ids: []
-        })
+      update_attrs = %{runner_access_mode: :all}
+
+      assert {:ok, update} =
+               SSO.change_group_runner_access_mapping(mapping, update_attrs, subject)
 
       assert Ecto.Changeset.get_change(update, :runner_access_mode) == :all
     end
 
-    test "rejects selected access without a group or runner" do
-      {_user, account, _subject} = enterprise_owner()
-      provider = provider_fixture(account)
+    test "an injected persisted array never becomes the grant", %{
+      provider: provider,
+      subject: subject
+    } do
+      attrs = %{
+        external_group_id: "grp-db",
+        runner_access_mode: :restricted,
+        runner_scope_groups: ["db"]
+      }
 
-      changeset =
-        SSO.change_group_runner_access_mapping(provider, %{
-          external_group_id: "grp-empty",
-          runner_access_mode: :restricted
-        })
+      assert {:ok, changeset} = SSO.change_group_runner_access_mapping(provider, attrs, subject)
 
+      # Only the raw picker selection grants reach, and there was none.
       assert "is invalid" in errors_on(changeset).runner_access_mode
+    end
+
+    test "rejects selected access without a group or runner", %{
+      provider: provider,
+      subject: subject
+    } do
+      attrs = %{external_group_id: "grp-empty", runner_access_mode: :restricted}
+
+      assert {:ok, changeset} = SSO.change_group_runner_access_mapping(provider, attrs, subject)
+      assert "is invalid" in errors_on(changeset).runner_access_mode
+    end
+
+    test "a subject that can't manage single sign-on gets no form", %{
+      account: account,
+      provider: provider
+    } do
+      viewer_subject = viewer_in(account)
+
+      assert SSO.change_group_runner_access_mapping(provider, %{}, viewer_subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "another account cannot build a group runner-access form", %{
+      account: account,
+      provider: provider
+    } do
+      {_user, _other_account, other_subject} = enterprise_owner()
+      mapping = %GroupRunnerAccessMapping{account_id: account.id, provider_id: provider.id}
+
+      assert SSO.change_group_runner_access_mapping(provider, %{}, other_subject) ==
+               {:error, :not_found}
+
+      assert SSO.change_group_runner_access_mapping(mapping, %{}, other_subject) ==
+               {:error, :not_found}
     end
   end
 
   # -- configure_provider/2 --------------------------------------------
 
   describe "configure_provider/2 gating" do
+    test "a malformed selection from a subject without manage_sso is still unauthorized" do
+      {_user, account, _subject} = enterprise_owner()
+
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.test",
+        client_id: "cid",
+        default_runner_access_mode: :restricted,
+        default_runner_scope: ["crafted"]
+      }
+
+      assert {:error, :unauthorized} = SSO.configure_provider(attrs, viewer_in(account))
+    end
+
     test "a free account cannot configure SSO" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject(%{})
 
@@ -572,18 +697,122 @@ defmodule Emisar.SSOTest do
       {_user, _account, subject} = enterprise_owner()
       foreign_runner = Fixtures.Runners.create_runner()
 
-      assert {:error, :invalid_runner_access} =
-               SSO.configure_provider(
-                 %{
-                   kind: :okta,
-                   name: "Okta",
-                   issuer: "https://idp.test",
-                   client_id: "cid",
-                   default_runner_access_mode: :restricted,
-                   default_runner_scope_runner_ids: [foreign_runner.id]
-                 },
-                 subject
-               )
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.test",
+        client_id: "cid",
+        default_runner_access_mode: :restricted,
+        default_runner_scope: ["runner:#{foreign_runner.id}"]
+      }
+
+      assert {:error, changeset} = SSO.configure_provider(attrs, subject)
+      assert "is invalid" in errors_on(changeset).default_runner_access_mode
+      refute Repo.one(IdentityProvider)
+    end
+
+    test "an injected persisted scope array is ignored, so it never becomes the default" do
+      {_user, account, subject} = enterprise_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.test",
+        client_id: "cid",
+        client_secret: "secret",
+        default_runner_access_mode: :restricted,
+        default_runner_scope_groups: ["database"],
+        default_runner_scope_runner_ids: [runner.id]
+      }
+
+      assert {:error, changeset} = SSO.configure_provider(attrs, subject)
+      assert "is invalid" in errors_on(changeset).default_runner_access_mode
+      refute Repo.one(IdentityProvider)
+    end
+
+    test "a selected default is canonicalized: trimmed, deduplicated, sorted, group-covered" do
+      {_user, account, subject} = enterprise_owner()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      covered = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      exact = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.test",
+        client_id: "cid",
+        client_secret: "secret",
+        default_runner_access_mode: :restricted,
+        default_runner_scope: [
+          "group:  database ",
+          "group:database",
+          "runner:#{covered.id}",
+          "runner:#{exact.id}"
+        ]
+      }
+
+      assert {:ok, provider} = SSO.configure_provider(attrs, subject)
+      assert provider.default_runner_scope_groups == ["database"]
+      # The covered runner's group already grants it; only the "web" one stays.
+      assert provider.default_runner_scope_runner_ids == [exact.id]
+    end
+
+    test "switching a selected default back to none or all clears the stored scope" do
+      {_user, account, subject} = enterprise_owner()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.test",
+        client_id: "cid",
+        client_secret: "secret",
+        default_runner_access_mode: :restricted,
+        default_runner_scope: ["group:database"]
+      }
+
+      assert {:ok, provider} = SSO.configure_provider(attrs, subject)
+
+      for mode <- [:all, :none] do
+        assert {:ok, updated} =
+                 SSO.update_provider(
+                   provider,
+                   %{default_runner_access_mode: mode, default_runner_scope: ["group:database"]},
+                   subject
+                 )
+
+        assert updated.default_runner_access_mode == mode
+        assert updated.default_runner_scope_groups == []
+        assert updated.default_runner_scope_runner_ids == []
+      end
+    end
+
+    test "a stale selection is rejected on the mode field, leaving the connection untouched" do
+      {_user, account, subject} = enterprise_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      provider = provider_fixture(account)
+      Fixtures.Runners.mark_deleted(runner)
+
+      attrs = %{
+        default_runner_access_mode: :restricted,
+        default_runner_scope: ["group:database"]
+      }
+
+      assert {:error, changeset} = SSO.update_provider(provider, attrs, subject)
+      assert "is invalid" in errors_on(changeset).default_runner_access_mode
+      assert Ecto.Changeset.get_field(changeset, :default_runner_scope) == ["group:database"]
+      assert Repo.reload!(provider).default_runner_access_mode == :none
+    end
+
+    test "a cross-account update with a malformed selection is still not_found" do
+      {_user, account, _subject} = enterprise_owner()
+      {_other_user, _other_account, other_subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      attrs = %{default_runner_access_mode: :restricted, default_runner_scope: ["crafted"]}
+
+      assert {:error, :not_found} = SSO.update_provider(provider, attrs, other_subject)
     end
 
     test "a restricted admin cannot configure or update a broader provider default" do
@@ -1119,6 +1348,7 @@ defmodule Emisar.SSOTest do
 
     test "a SCIM provider default change reconciles members and audits before/after access" do
       %{provider: provider, account: account, subject: subject} = scim_provider()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       %{membership: membership} = provision(provider, "okta|default-change")
 
       assert Accounts.runner_access_for_membership(account.id, membership.id) ==
@@ -1129,8 +1359,7 @@ defmodule Emisar.SSOTest do
                  provider,
                  %{
                    default_runner_access_mode: :restricted,
-                   default_runner_scope_groups: ["database"],
-                   default_runner_scope_runner_ids: []
+                   default_runner_scope: ["group:database"]
                  },
                  subject
                )
@@ -4004,6 +4233,36 @@ defmodule Emisar.SSOTest do
       assert updated.role == :operator
     end
 
+    test "granting every runner drops the selection it replaces", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+
+      {:ok, mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-db",
+            runner_access_mode: :restricted,
+            scope: ["group:db"]
+          },
+          subject
+        )
+
+      assert {:ok, updated} =
+               SSO.update_group_runner_access_mapping(
+                 mapping,
+                 %{runner_access_mode: :all, scope: ["group:db"]},
+                 subject
+               )
+
+      assert updated.runner_access_mode == :all
+      assert updated.runner_scope_groups == []
+      assert updated.runner_scope_runner_ids == []
+    end
+
     test "denies a viewer without manage_sso", %{
       provider: provider,
       subject: subject,
@@ -4084,14 +4343,20 @@ defmodule Emisar.SSOTest do
       scim_provider()
     end
 
-    test "lists only the provider's mappings", %{provider: provider, subject: subject} do
+    test "lists only the provider's mappings", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+
       {:ok, mapping} =
         SSO.create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-db",
             runner_access_mode: :restricted,
-            runner_scope_groups: ["db"]
+            scope: ["group:db"]
           },
           subject
         )
@@ -4119,9 +4384,12 @@ defmodule Emisar.SSOTest do
     end
 
     test "creates an independent additive access grant", %{
+      account: account,
       provider: provider,
       subject: subject
     } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+
       assert {:ok, %GroupRunnerAccessMapping{} = mapping} =
                SSO.create_group_runner_access_mapping(
                  provider,
@@ -4129,7 +4397,7 @@ defmodule Emisar.SSOTest do
                    external_group_id: "grp-prod",
                    external_group_display: "Production",
                    runner_access_mode: :restricted,
-                   runner_scope_groups: ["production"]
+                   scope: ["group:production"]
                  },
                  subject
                )
@@ -4148,21 +4416,113 @@ defmodule Emisar.SSOTest do
       assert event.payload["after"]["groups"] == ["production"]
     end
 
-    test "rejects a grant that names a runner in another account", %{
+    test "rejects a grant that names a runner or group in another account", %{
       provider: provider,
       subject: subject
     } do
-      foreign_runner = Fixtures.Runners.create_runner()
+      foreign_runner = Fixtures.Runners.create_runner(group: "foreign")
 
-      assert {:error, :invalid_runner_access} =
+      for scope <- [["runner:#{foreign_runner.id}"], ["group:foreign"]] do
+        assert {:error, changeset} =
+                 SSO.create_group_runner_access_mapping(
+                   provider,
+                   %{
+                     external_group_id: "grp-foreign",
+                     runner_access_mode: :restricted,
+                     scope: scope
+                   },
+                   subject
+                 )
+
+        assert "is invalid" in errors_on(changeset).runner_access_mode
+        # The rejected selection rides back so the picker still shows it.
+        assert Ecto.Changeset.get_field(changeset, :scope) == scope
+      end
+    end
+
+    test "an injected persisted array is ignored, so it never becomes the grant", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+
+      assert {:error, changeset} =
                SSO.create_group_runner_access_mapping(
                  provider,
                  %{
-                   external_group_id: "grp-foreign",
+                   external_group_id: "grp-injected",
                    runner_access_mode: :restricted,
-                   runner_scope_runner_ids: [foreign_runner.id]
+                   runner_scope_groups: ["db"],
+                   runner_scope_runner_ids: [runner.id]
                  },
                  subject
+               )
+
+      assert "is invalid" in errors_on(changeset).runner_access_mode
+      refute Repo.one(GroupRunnerAccessMapping)
+    end
+
+    test "a valid same-account grant beyond the configuring admin is nondelegation, not input", %{
+      account: account,
+      provider: provider,
+      subject: owner_subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "app")
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(membership, db_access, owner_subject)
+
+      assert {:error, :runner_access_exceeds_subject} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{
+                   external_group_id: "grp-app",
+                   runner_access_mode: :restricted,
+                   scope: ["group:app"]
+                 },
+                 Fixtures.Subjects.membership_subject(membership)
+               )
+    end
+
+    test "a malformed selection from another account is still not_found", %{provider: provider} do
+      {_user, _other_account, other_subject} = enterprise_owner()
+
+      assert {:error, :not_found} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{
+                   external_group_id: "grp-x",
+                   runner_access_mode: :restricted,
+                   scope: ["not-a-selector"]
+                 },
+                 other_subject
+               )
+    end
+
+    test "a malformed selection a viewer submits is still unauthorized", %{
+      provider: provider,
+      account: account
+    } do
+      assert {:error, :unauthorized} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{
+                   external_group_id: "grp-x",
+                   runner_access_mode: :restricted,
+                   scope: ["not-a-selector"]
+                 },
+                 viewer_in(account)
                )
     end
 
@@ -4237,14 +4597,21 @@ defmodule Emisar.SSOTest do
       scim_provider()
     end
 
-    test "replaces the mapped access", %{provider: provider, subject: subject} do
+    test "replaces the mapped access", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "app")
+
       {:ok, mapping} =
         SSO.create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-db",
             runner_access_mode: :restricted,
-            runner_scope_groups: ["db"]
+            scope: ["group:db"]
           },
           subject
         )
@@ -4252,11 +4619,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, updated} =
                SSO.update_group_runner_access_mapping(
                  mapping,
-                 %{
-                   runner_access_mode: :restricted,
-                   runner_scope_groups: ["app"],
-                   runner_scope_runner_ids: []
-                 },
+                 %{runner_access_mode: :restricted, scope: ["group:app"]},
                  subject
                )
 

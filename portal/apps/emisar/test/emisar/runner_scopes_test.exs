@@ -98,6 +98,56 @@ defmodule Emisar.RunnerAccessTest do
       assert RunnerAccess.from_selection("everything", ["runner:#{database.id}"], runners) ==
                {:error, :invalid_runner_access}
     end
+
+    test "a group selector is trimmed and deduplicated before it is allowlisted", %{
+      runners: runners
+    } do
+      values = ["group:  database  ", "group:database"]
+
+      assert RunnerAccess.from_selection("restricted", values, runners) ==
+               {:ok, %RunnerAccess{mode: :restricted, groups: ["database"], runner_ids: []}}
+    end
+
+    test "an explicit allowlist resolves exactly the refs the lookup answered for", %{
+      database: database
+    } do
+      allowlist = %{groups: ["database"], runners: [database]}
+
+      assert RunnerAccess.from_selection("restricted", ["group:database"], allowlist) ==
+               {:ok, %RunnerAccess{mode: :restricted, groups: ["database"], runner_ids: []}}
+
+      # The lookup resolved the group but not this id, so the whole selection
+      # fails rather than granting the half that existed.
+      values = ["group:database", "runner:#{Ecto.UUID.generate()}"]
+
+      assert RunnerAccess.from_selection("restricted", values, allowlist) ==
+               {:error, :invalid_runner_access}
+    end
+  end
+
+  describe "selection_refs/1" do
+    test "canonicalizes the refs an allowlist lookup is asked about" do
+      lower = Ecto.UUID.generate()
+      upper = String.upcase(lower)
+
+      values = ["group: web ", "group:app", "group:web", "runner:#{upper}", "runner:#{lower}"]
+
+      assert RunnerAccess.selection_refs(values) == {:ok, {["app", "web"], [lower]}}
+    end
+
+    test "a malformed ref never reaches the lookup" do
+      for values <- [
+            ["database"],
+            ["group:"],
+            ["group:   "],
+            ["runner:not-a-uuid"],
+            ["runner:#{RunnerAccess.none_runner_id()}"],
+            [%{"crafted" => "all"}],
+            List.duplicate("group:web", 257)
+          ] do
+        assert RunnerAccess.selection_refs(values) == {:error, :invalid_runner_access}
+      end
+    end
   end
 
   describe "update_membership_runner_access/3" do
@@ -426,21 +476,6 @@ defmodule Emisar.RunnerAccessTest do
 
       assert {:error, :not_found} =
                Accounts.fetch_and_lock_active_membership(Repo, account.id, suspended.id)
-    end
-  end
-
-  describe "validate_runner_access_for_account/2" do
-    test "accepts local individual runners and rejects foreign ones" do
-      account = Fixtures.Accounts.create_account()
-      local = Fixtures.Runners.create_runner(account_id: account.id)
-      foreign = Fixtures.Runners.create_runner()
-      {:ok, local_access} = RunnerAccess.restricted([], [local.id])
-      {:ok, foreign_access} = RunnerAccess.restricted([], [foreign.id])
-
-      assert :ok = Accounts.validate_runner_access_for_account(account.id, local_access)
-
-      assert {:error, :invalid_runner_access} =
-               Accounts.validate_runner_access_for_account(account.id, foreign_access)
     end
   end
 

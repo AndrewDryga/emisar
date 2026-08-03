@@ -15,7 +15,7 @@ defmodule Emisar.SSO do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Users}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Runners, Users}
   alias Emisar.Auth.Subject
   alias Emisar.SSO.{Authorizer, DirectoryGroup, DirectoryGroupMember}
   alias Emisar.SSO.GroupRoleMapping
@@ -151,22 +151,42 @@ defmodule Emisar.SSO do
   end
 
   @doc """
-  Changeset for the SSO provider config form (phx-change validation). A new
-  connection normalizes against the SUBMITTED kind (create is where it's chosen);
-  an existing one against its stored kind. The changeset is presentation-safe —
-  it validates against the real row but never carries its stored `client_secret`,
-  which is write-only and must not reach a rendered form. A secret the operator
-  is typing stays in `changes`, so the field keeps what they entered.
+  Changeset for the SSO provider config form (phx-change validation), as
+  `{:ok, changeset}` for a subject holding `manage_sso` and `{:error,
+  :unauthorized}` otherwise — the raw runner-scope selection is resolved
+  against the subject's account, so building the form is an authorized read.
+
+  A new connection normalizes against the SUBMITTED kind (create is where it's
+  chosen); an existing one against its stored kind. The changeset is
+  presentation-safe — it validates against the real row but never carries its
+  stored `client_secret`, which is write-only and must not reach a rendered
+  form. A secret the operator is typing stays in `changes`, so the field keeps
+  what they entered.
   """
-  def change_provider(provider \\ %IdentityProvider{}, attrs \\ %{})
+  def change_provider(provider \\ %IdentityProvider{}, attrs \\ %{}, subject)
 
-  def change_provider(%IdentityProvider{id: nil} = provider, attrs),
-    do: IdentityProvider.Changeset.form(provider, new_provider_attrs(attrs))
+  def change_provider(%IdentityProvider{id: nil} = provider, attrs, %Subject{} = subject) do
+    with :ok <- ensure_can_manage_sso(subject) do
+      {attrs, allowlist} =
+        provider_selection(new_provider_attrs(attrs), subject.account.id, provider)
 
-  def change_provider(%IdentityProvider{} = provider, attrs) do
-    provider
-    |> IdentityProvider.Changeset.form(edit_provider_attrs(provider, attrs))
-    |> hide_stored_secret()
+      {:ok, IdentityProvider.Changeset.form(provider, attrs, allowlist)}
+    end
+  end
+
+  def change_provider(%IdentityProvider{} = provider, attrs, %Subject{} = subject) do
+    with :ok <- ensure_can_manage_sso(subject),
+         :ok <- Subject.ensure_in_account(subject, provider.account_id) do
+      {attrs, allowlist} =
+        provider_selection(edit_provider_attrs(provider, attrs), subject.account.id, provider)
+
+      changeset =
+        provider
+        |> IdentityProvider.Changeset.form(attrs, allowlist)
+        |> hide_stored_secret()
+
+      {:ok, changeset}
+    end
   end
 
   @doc """
@@ -183,15 +203,46 @@ defmodule Emisar.SSO do
   def change_group_mapping(%GroupRoleMapping{} = mapping, attrs),
     do: GroupRoleMapping.Changeset.update(mapping, attrs)
 
-  @doc "Changeset for an IdP group runner-access mapping form."
-  def change_group_runner_access_mapping(provider_or_mapping, attrs \\ %{})
+  @doc """
+  Changeset for an IdP group runner-access mapping form, as `{:ok, changeset}`
+  for a subject holding `manage_sso` and `{:error, :unauthorized}` otherwise.
+  From a `%IdentityProvider{}` it's the create form, from a
+  `%GroupRunnerAccessMapping{}` the inline edit form; either way the raw
+  runner-scope selection is resolved against the subject's account.
+  """
+  def change_group_runner_access_mapping(provider_or_mapping, attrs \\ %{}, subject)
 
-  def change_group_runner_access_mapping(%IdentityProvider{} = provider, attrs) do
-    GroupRunnerAccessMapping.Changeset.create(provider.account_id, provider.id, attrs)
+  def change_group_runner_access_mapping(
+        %IdentityProvider{} = provider,
+        attrs,
+        %Subject{} = subject
+      ) do
+    with :ok <- ensure_can_manage_sso(subject),
+         :ok <- Subject.ensure_in_account(subject, provider.account_id) do
+      {attrs, allowlist} =
+        mapping_selection(attrs, subject.account.id, %GroupRunnerAccessMapping{})
+
+      {:ok,
+       GroupRunnerAccessMapping.Changeset.create(
+         provider.account_id,
+         provider.id,
+         attrs,
+         allowlist
+       )}
+    end
   end
 
-  def change_group_runner_access_mapping(%GroupRunnerAccessMapping{} = mapping, attrs),
-    do: GroupRunnerAccessMapping.Changeset.update(mapping, attrs)
+  def change_group_runner_access_mapping(
+        %GroupRunnerAccessMapping{} = mapping,
+        attrs,
+        %Subject{} = subject
+      ) do
+    with :ok <- ensure_can_manage_sso(subject),
+         :ok <- Subject.ensure_in_account(subject, mapping.account_id) do
+      {attrs, allowlist} = mapping_selection(attrs, subject.account.id, mapping)
+      {:ok, GroupRunnerAccessMapping.Changeset.update(mapping, attrs, allowlist)}
+    end
+  end
 
   # -- Config mutations ------------------------------------------------
 
@@ -200,15 +251,16 @@ defmodule Emisar.SSO do
     # Authorization first: nothing is parsed, normalized or built from
     # caller-supplied attrs until the subject has proven it may configure SSO.
     with :ok <- ensure_can_configure_sso(subject),
-         changeset = IdentityProvider.Changeset.create(account.id, new_provider_attrs(attrs)),
+         {attrs, allowlist} =
+           provider_selection(new_provider_attrs(attrs), account.id, %IdentityProvider{}),
+         changeset = IdentityProvider.Changeset.create(account.id, attrs, allowlist),
          default_role = Ecto.Changeset.get_field(changeset, :default_role),
          # Creation checked runner access but never the role it hands every new
          # member. The changeset only excludes :owner, so an admin could stand up
          # a connection defaulting to a role they cannot themselves grant.
          :ok <- ensure_grantable_role(default_role, subject),
          {:ok, access} <- provider_access_from_changeset(changeset),
-         :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
-         :ok <- Accounts.validate_runner_access_for_account(account.id, access) do
+         :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
       multi = configure_multi(changeset, subject)
 
       case Repo.commit_multi(multi) do
@@ -230,12 +282,20 @@ defmodule Emisar.SSO do
           # chooses the kind, so a submitted one is not evidence of anything.
           attrs = edit_provider_attrs(loaded_provider, attrs)
           supplied_secret? = client_secret_supplied?(attrs)
-          changeset = IdentityProvider.Changeset.update(loaded_provider, drop_blank_secret(attrs))
+
+          # The locked row is what the selection is resolved against: its
+          # account owns the runners, so a cross-account id never gets here.
+          {attrs, allowlist} =
+            provider_selection(
+              drop_blank_secret(attrs),
+              loaded_provider.account_id,
+              loaded_provider
+            )
+
+          changeset = IdentityProvider.Changeset.update(loaded_provider, attrs, allowlist)
 
           with {:ok, access} <- provider_access_from_changeset(changeset),
-               :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
-               :ok <-
-                 Accounts.validate_runner_access_for_account(loaded_provider.account_id, access) do
+               :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
             cond do
               not grantable_role?(Ecto.Changeset.get_change(changeset, :default_role), subject) ->
                 :role_exceeds_your_permissions
@@ -485,6 +545,14 @@ defmodule Emisar.SSO do
       else: Map.put(attrs, key, value)
   end
 
+  # `put_attr/3` stringifies the scalar fields it normalizes; a raw selection is
+  # a list of selector values and rides through as one.
+  defp put_attr_values(attrs, key, values) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1),
+      do: Map.put(attrs, Atom.to_string(key), values),
+      else: Map.put(attrs, key, values)
+  end
+
   # Repointing is refused once an identity is bound, so it is allowed exactly
   # while none is — which is also when pending link requests exist. Those were
   # captured under the OLD issuer/client/claim, and approving one afterwards binds
@@ -553,6 +621,88 @@ defmodule Emisar.SSO do
     |> Multi.insert(:audit, fn %{provider: provider} ->
       Audit.Events.identity_provider_configured(subject, provider)
     end)
+  end
+
+  # The two surfaces that grant runner reach: the raw field their picker posts,
+  # the mode it qualifies, and the persisted arrays SSO derives from it.
+  @provider_scope_fields %{
+    mode: :default_runner_access_mode,
+    scope: :default_runner_scope,
+    groups: :default_runner_scope_groups,
+    runner_ids: :default_runner_scope_runner_ids
+  }
+
+  @mapping_scope_fields %{
+    mode: :runner_access_mode,
+    scope: :scope,
+    groups: :runner_scope_groups,
+    runner_ids: :runner_scope_runner_ids
+  }
+
+  defp provider_selection(attrs, account_id, %IdentityProvider{} = provider) do
+    put_runner_selection(
+      attrs,
+      account_id,
+      @provider_scope_fields,
+      provider_runner_access(provider)
+    )
+  end
+
+  defp mapping_selection(attrs, account_id, %GroupRunnerAccessMapping{} = mapping) do
+    put_runner_selection(
+      attrs,
+      account_id,
+      @mapping_scope_fields,
+      runner_access_mapping_access(mapping)
+    )
+  end
+
+  # The picker's raw `"group:<name>"` / `"runner:<id>"` values are the only
+  # accepted way to name runner reach: a submitted persisted array is dropped
+  # here, and the selection is resolved against `account_id`'s live runners, so
+  # a crafted submission can never widen reach past what the account offers.
+  defp put_runner_selection(attrs, account_id, fields, %Accounts.RunnerAccess{} = stored) do
+    stored_values = Accounts.RunnerAccess.selection_values(stored.groups, stored.runner_ids)
+    values = submitted_scope_values(attrs, fields, stored_values)
+
+    attrs =
+      attrs
+      |> drop_attr(fields.groups)
+      |> drop_attr(fields.runner_ids)
+      |> put_attr_values(fields.scope, values)
+
+    {attrs, runner_selection_allowlist(account_id, values)}
+  end
+
+  defp submitted_scope_values(attrs, fields, stored_values) do
+    case fetch_attr(attrs, fields.scope) do
+      {:ok, values} -> List.wrap(values)
+      :error -> unsubmitted_scope_values(attrs, fields, stored_values)
+    end
+  end
+
+  # Attrs carrying the mode but no selection are "nothing is checked"; attrs
+  # mentioning neither are not a runner-access submission at all — an unrelated
+  # edit, or the untouched form — so the stored selection carries over instead
+  # of reading as a cleared picker.
+  defp unsubmitted_scope_values(attrs, fields, stored_values) do
+    case fetch_attr(attrs, fields.mode) do
+      {:ok, _mode} -> []
+      :error -> stored_values
+    end
+  end
+
+  # A malformed, over-long, or unresolvable selection allowlists nothing, so
+  # the changeset rejects it on the mode field instead of granting whichever
+  # part of it happened to exist.
+  defp runner_selection_allowlist(account_id, values) do
+    with {:ok, {groups, runner_ids}} <- Accounts.RunnerAccess.selection_refs(values),
+         {:ok, allowlist} <-
+           Runners.runner_selection_facts_for_account(account_id, groups, runner_ids) do
+      allowlist
+    else
+      {:error, _reason} -> %{groups: [], runners: []}
+    end
   end
 
   defp provider_access_from_changeset(%Ecto.Changeset{} = changeset) do
@@ -2954,12 +3104,20 @@ defmodule Emisar.SSO do
         %Subject{} = subject
       ) do
     with :ok <- ensure_can_configure_directory_sync(subject),
+         # The subject-scoped re-read comes first: a cross-account provider is
+         # not_found before any of its attrs is parsed or looked up.
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject),
+         {attrs, allowlist} =
+           mapping_selection(attrs, provider.account_id, %GroupRunnerAccessMapping{}),
          changeset =
-           GroupRunnerAccessMapping.Changeset.create(provider.account_id, provider.id, attrs),
+           GroupRunnerAccessMapping.Changeset.create(
+             provider.account_id,
+             provider.id,
+             attrs,
+             allowlist
+           ),
          {:ok, access} <- runner_access_mapping_from_changeset(changeset),
-         :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
-         :ok <- Accounts.validate_runner_access_for_account(provider.account_id, access) do
+         :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
       Multi.new()
       |> Multi.run(:authorization_version, fn _repo, _changes ->
         prepare_mapping_authorization_change(
@@ -2996,12 +3154,13 @@ defmodule Emisar.SSO do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(GroupRunnerAccessMapping.Query,
         with: fn mapping ->
-          changeset = GroupRunnerAccessMapping.Changeset.update(mapping, attrs)
+          # The locked row is what the selection is resolved against: its
+          # account owns the runners, so a cross-account id never gets here.
+          {attrs, allowlist} = mapping_selection(attrs, mapping.account_id, mapping)
+          changeset = GroupRunnerAccessMapping.Changeset.update(mapping, attrs, allowlist)
 
           with {:ok, access} <- runner_access_mapping_from_changeset(changeset),
                :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
-               :ok <-
-                 Accounts.validate_runner_access_for_account(mapping.account_id, access),
                {:ok, _provider} <-
                  prepare_mapping_authorization_change(
                    mapping.account_id,

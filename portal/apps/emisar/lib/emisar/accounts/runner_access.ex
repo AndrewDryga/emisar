@@ -37,42 +37,60 @@ defmodule Emisar.Accounts.RunnerAccess do
 
   @doc """
   Canonical access for an explicit mode plus the raw `"group:<name>"` /
-  `"runner:<id>"` selector values a picker submitted, allowlisted against
-  `runners` — the account's current `%{id: _, group: _}` runner facts.
+  `"runner:<id>"` selector values a picker submitted, allowlisted against the
+  account facts the selection may name: either `%{groups: [name], runners:
+  [%{id: _, group: _}]}` — exactly the refs an authoritative lookup resolved —
+  or a plain runner list, whose own groups are the ones that exist.
 
   `none` and `all` carry no selection. `restricted` drops a runner a selected
   group already covers, and rejects an empty, malformed, unknown, or
   cross-account selection with `{:error, :invalid_runner_access}`, so a crafted
   submission can never widen reach.
   """
-  def from_selection(mode, values, runners) when is_list(values) and is_list(runners) do
+  def from_selection(mode, values, %{groups: groups, runners: runners})
+      when is_list(values) and is_list(groups) and is_list(runners) do
     case cast_mode(mode) do
-      {:ok, mode} -> selected_access(mode, values, runners)
+      {:ok, mode} -> selected_access(mode, values, %{groups: groups, runners: runners})
       :error -> {:error, :invalid_runner_access}
     end
+  end
+
+  def from_selection(mode, values, runners) when is_list(values) and is_list(runners) do
+    known_groups =
+      runners |> Enum.map(& &1.group) |> Enum.filter(&present_group?/1) |> Enum.uniq()
+
+    from_selection(mode, values, %{groups: known_groups, runners: runners})
   end
 
   def from_selection(_mode, _values, _runners), do: {:error, :invalid_runner_access}
 
   @doc """
-  Splits raw selector values into `{:ok, {groups, runner_ids}}` — the names an
-  authoritative lookup has to resolve, before anything is known about them. A
-  value carrying no known prefix (or an empty one) is `{:error,
-  :invalid_runner_access}`.
+  Splits raw selector values into `{:ok, {groups, runner_ids}}` — the CANONICAL
+  refs an authoritative lookup has to resolve, before anything is known about
+  them: groups trimmed, runner ids normalized, both deduplicated and sorted. A
+  value carrying no known prefix, a blank group, or a malformed runner id is
+  `{:error, :invalid_runner_access}`, so a crafted ref never reaches a lookup
+  parameter and a ref that survives is the one the allowlist is asked about.
   """
   def selection_refs(values) when is_list(values) and length(values) <= @max_scopes do
     Enum.reduce_while(values, {[], []}, fn
-      "group:" <> group, {groups, runner_ids} when group != "" ->
-        {:cont, {[group | groups], runner_ids}}
+      "group:" <> group, {groups, runner_ids} ->
+        case normalize_group(group) do
+          {:ok, group} -> {:cont, {[group | groups], runner_ids}}
+          :error -> {:halt, :error}
+        end
 
-      "runner:" <> runner_id, {groups, runner_ids} when runner_id != "" ->
-        {:cont, {groups, [runner_id | runner_ids]}}
+      "runner:" <> runner_id, {groups, runner_ids} ->
+        case normalize_runner_id(runner_id) do
+          {:ok, runner_id} -> {:cont, {groups, [runner_id | runner_ids]}}
+          :error -> {:halt, :error}
+        end
 
       _value, _acc ->
         {:halt, :error}
     end)
     |> case do
-      {groups, runner_ids} -> {:ok, {unique_refs(groups), unique_refs(runner_ids)}}
+      {groups, runner_ids} -> {:ok, {canonical_refs(groups), canonical_refs(runner_ids)}}
       :error -> {:error, :invalid_runner_access}
     end
   end
@@ -116,14 +134,31 @@ defmodule Emisar.Accounts.RunnerAccess do
     |> Ecto.Changeset.put_change(field(prefix, :scope_runner_ids), access.runner_ids)
   end
 
-  def validate_changeset(changeset, prefix) do
-    data = Ecto.Changeset.apply_changes(changeset)
+  @doc """
+  Rebuilds a changeset's persisted `<prefix>_scope_*` arrays from the raw
+  selector values cast into `scope_field`, allowlisted against `allowlist` (the
+  account facts `from_selection/3` resolves against).
 
-    case from_prefixed_fields(data, prefix) do
+  The raw selection is the only accepted contract: the arrays are written here
+  and nowhere else, `none`/`all` clear them, and an empty, malformed, unknown,
+  or foreign selection is an error on the rendered `<prefix>_access_mode`
+  field — so a rejected submission comes back as the ordinary changeset with
+  the operator's values still in it.
+  """
+  def validate_selection(changeset, prefix, scope_field, allowlist) do
+    mode = Ecto.Changeset.get_field(changeset, field(prefix, :access_mode))
+    values = changeset |> Ecto.Changeset.get_field(scope_field) |> List.wrap()
+
+    case from_selection(mode, values, allowlist) do
       {:ok, access} ->
-        put_changes(changeset, access, prefix)
+        changeset
+        |> put_changes(access, prefix)
+        |> Ecto.Changeset.put_change(
+          scope_field,
+          selection_values(access.groups, access.runner_ids)
+        )
 
-      {:error, _} ->
+      {:error, :invalid_runner_access} ->
         Ecto.Changeset.add_error(changeset, field(prefix, :access_mode), "is invalid")
     end
   end
@@ -169,37 +204,34 @@ defmodule Emisar.Accounts.RunnerAccess do
 
   def none_runner_id, do: @none_runner_id
 
-  defp selected_access(mode, _values, _runners) when mode in [:none, :all], do: new(mode)
+  defp selected_access(mode, _values, _allowlist) when mode in [:none, :all], do: new(mode)
 
-  defp selected_access(:restricted, values, runners) do
+  defp selected_access(:restricted, values, allowlist) do
     with {:ok, {groups, runner_ids}} <- selection_refs(values),
-         {:ok, runners_by_id} <- resolve_runner_ids(runner_ids, runners),
-         :ok <- ensure_known_groups(groups, runners) do
+         :ok <- ensure_allowlisted(groups, runner_ids, allowlist) do
       covered = MapSet.new(groups)
+      runners_by_id = Map.new(allowlist.runners, &{&1.id, &1})
       kept = Enum.reject(runner_ids, &MapSet.member?(covered, runners_by_id[&1].group))
       new(:restricted, groups, kept)
     end
   end
 
-  defp resolve_runner_ids(runner_ids, runners) do
-    runners_by_id = Map.new(runners, &{&1.id, &1})
+  # Every canonical ref must be one the lookup actually resolved — an unknown,
+  # deleted, or foreign group or runner rejects the WHOLE selection rather than
+  # quietly resolving to the subset that happened to exist.
+  defp ensure_allowlisted(groups, runner_ids, %{groups: known_groups, runners: runners}) do
+    known = MapSet.new(known_groups)
+    known_ids = MapSet.new(runners, & &1.id)
 
-    if Enum.all?(runner_ids, &Map.has_key?(runners_by_id, &1)),
-      do: {:ok, runners_by_id},
-      else: {:error, :invalid_runner_access}
-  end
-
-  defp ensure_known_groups(groups, runners) do
-    known = runners |> Enum.map(& &1.group) |> Enum.filter(&present_group?/1) |> MapSet.new()
-
-    if Enum.all?(groups, &MapSet.member?(known, &1)),
-      do: :ok,
-      else: {:error, :invalid_runner_access}
+    if Enum.all?(groups, &MapSet.member?(known, &1)) and
+         Enum.all?(runner_ids, &MapSet.member?(known_ids, &1)),
+       do: :ok,
+       else: {:error, :invalid_runner_access}
   end
 
   defp present_group?(group), do: is_binary(group) and group != ""
 
-  defp unique_refs(refs), do: refs |> Enum.reverse() |> Enum.uniq()
+  defp canonical_refs(refs), do: refs |> Enum.uniq() |> Enum.sort()
 
   defp cast_mode(mode) when mode in @modes, do: {:ok, mode}
   defp cast_mode("none"), do: {:ok, :none}
@@ -208,40 +240,49 @@ defmodule Emisar.Accounts.RunnerAccess do
   defp cast_mode(_mode), do: :error
 
   defp normalize_groups(groups) when is_list(groups) and length(groups) <= @max_scopes do
-    if Enum.all?(groups, &valid_group?/1) do
-      {:ok, groups |> Enum.map(&String.trim/1) |> Enum.uniq() |> Enum.sort()}
-    else
-      :error
-    end
+    normalize_refs(groups, &normalize_group/1)
   end
 
   defp normalize_groups(_groups), do: :error
 
-  defp valid_group?(group) when is_binary(group) do
+  defp normalize_group(group) when is_binary(group) do
     trimmed = String.trim(group)
-    trimmed != "" and String.length(trimmed) <= @max_group_length
+
+    if trimmed != "" and String.length(trimmed) <= @max_group_length,
+      do: {:ok, trimmed},
+      else: :error
   end
 
-  defp valid_group?(_group), do: false
+  defp normalize_group(_group), do: :error
 
   defp normalize_runner_ids(runner_ids)
        when is_list(runner_ids) and length(runner_ids) <= @max_scopes do
-    Enum.reduce_while(runner_ids, {:ok, []}, fn runner_id, {:ok, ids} ->
-      case Ecto.UUID.cast(runner_id) do
-        {:ok, normalized} when normalized != @none_runner_id ->
-          {:cont, {:ok, [normalized | ids]}}
+    normalize_refs(runner_ids, &normalize_runner_id/1)
+  end
 
-        _ ->
-          {:halt, :error}
-      end
-    end)
-    |> case do
-      {:ok, ids} -> {:ok, ids |> Enum.uniq() |> Enum.sort()}
+  defp normalize_runner_ids(_runner_ids), do: :error
+
+  # The all-zero id is the persisted marker for `none`, never a selectable runner.
+  defp normalize_runner_id(runner_id) do
+    case Ecto.UUID.cast(runner_id) do
+      {:ok, @none_runner_id} -> :error
+      {:ok, normalized} -> {:ok, normalized}
       :error -> :error
     end
   end
 
-  defp normalize_runner_ids(_runner_ids), do: :error
+  defp normalize_refs(refs, normalize) do
+    Enum.reduce_while(refs, {:ok, []}, fn ref, {:ok, normalized} ->
+      case normalize.(ref) do
+        {:ok, ref} -> {:cont, {:ok, [ref | normalized]}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, refs} -> {:ok, canonical_refs(refs)}
+      :error -> :error
+    end
+  end
 
   defp validate_shape(mode, [], []) when mode in [:none, :all], do: :ok
 

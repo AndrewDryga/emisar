@@ -11,9 +11,9 @@ defmodule EmisarWeb.RunnerScope do
   a hierarchy rail nesting runners under their group, brand-tinted selection — and
   it works on mobile, where a multi-select cannot. Selection travels as
   `"group:<name>"` / `"runner:<id>"` strings in one `scope[]` field, so the caller
-  wraps it in a `phx-change` form and hands the checked values to
-  `Emisar.Accounts.RunnerAccess.from_selection/3`, which owns what they mean and
-  what a subject may actually reach. This module renders and serializes only.
+  wraps it in a `phx-change` form and hands the checked values to the domain
+  (`Emisar.Accounts` / `Emisar.SSO`), which owns what they mean and what a
+  subject may actually reach. This module renders and serializes only.
   """
   use Phoenix.Component
   import EmisarWeb.CoreComponents, only: [callout: 1, checkbox: 1, error: 1, loading_state: 1]
@@ -57,14 +57,14 @@ defmodule EmisarWeb.RunnerScope do
       </div>
 
       <div
-        :if={not @loading? and is_nil(@load_error) and @runners == []}
+        :if={not @loading? and is_nil(@load_error) and empty_tree?(@tree)}
         class={scope_empty_class(@variant)}
       >
         No runners registered yet.
       </div>
 
       <div
-        :if={not @loading? and is_nil(@load_error) and @runners != []}
+        :if={not @loading? and is_nil(@load_error) and not empty_tree?(@tree)}
         class={scope_tree_class(@variant)}
       >
         <div :for={group <- @tree.groups}>
@@ -117,6 +117,27 @@ defmodule EmisarWeb.RunnerScope do
             <span class="flex-1 truncate text-zinc-300">{runner.name}</span>
           </.checkbox>
         </div>
+
+        <%!-- A chosen group or runner the account no longer has: keep it
+             visible and TICKED so the operator can see what their rejected
+             submission still names, and untick it to move on. --%>
+        <div :if={@tree.unavailable != []}>
+          <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            Unavailable
+          </p>
+          <.checkbox
+            :for={ref <- @tree.unavailable}
+            name={@name}
+            value={ref.value}
+            checked
+            class="flex min-h-10 cursor-pointer select-none items-center gap-3 py-2 pl-3 pr-3 text-xs transition-colors hover:bg-white/[0.04]"
+          >
+            <span class={["flex-1 truncate", unavailable_name_class(ref.kind)]}>{ref.name}</span>
+            <span class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+              unavailable
+            </span>
+          </.checkbox>
+        </div>
       </div>
     </div>
     """
@@ -124,19 +145,24 @@ defmodule EmisarWeb.RunnerScope do
 
   @doc """
   Nested selection tree for the picker: `%{groups: [%{name, value, selected,
-  runners: [%{name, value, selected, covered}]}], ungrouped: [runner…]}`. A
-  runner whose group is in `selected` has `covered: true` (the group covers it,
-  so it renders disabled). `selected` is the list of chosen `"group:x"`/`"runner:id"`.
+  runners: [%{name, value, selected, covered}]}], ungrouped: [runner…],
+  unavailable: [%{kind, name, value}]}`. A runner whose group is in `selected`
+  has `covered: true` (the group covers it, so it renders disabled). `selected`
+  is the list of chosen `"group:x"`/`"runner:id"`.
+
+  A selected value the current runners don't account for is `unavailable` — a
+  group or runner that has since been removed, or one a rejected submission
+  still names. It stays in the tree so the operator can see and untick it.
   """
   def tree(runners, selected) do
-    selected = MapSet.new(selected)
+    selected_set = MapSet.new(selected)
 
     groups =
       runners |> Enum.map(& &1.group) |> Enum.reject(&blank?/1) |> Enum.uniq() |> Enum.sort()
 
     group_nodes =
       Enum.map(groups, fn group ->
-        group_selected? = MapSet.member?(selected, "group:" <> group)
+        group_selected? = MapSet.member?(selected_set, "group:" <> group)
 
         %{
           name: group,
@@ -145,15 +171,42 @@ defmodule EmisarWeb.RunnerScope do
           runners:
             runners
             |> runners_in_group(group)
-            |> Enum.map(&runner_node(&1, selected, group_selected?))
+            |> Enum.map(&runner_node(&1, selected_set, group_selected?))
         }
       end)
 
+    ungrouped_nodes =
+      runners |> ungrouped_runners() |> Enum.map(&runner_node(&1, selected_set, false))
+
     %{
       groups: group_nodes,
-      ungrouped: runners |> ungrouped_runners() |> Enum.map(&runner_node(&1, selected, false))
+      ungrouped: ungrouped_nodes,
+      unavailable: unavailable_nodes(selected, group_nodes, ungrouped_nodes)
     }
   end
+
+  defp unavailable_nodes(selected, group_nodes, ungrouped_nodes) do
+    rendered =
+      group_nodes
+      |> Enum.flat_map(&[&1.value | Enum.map(&1.runners, fn runner -> runner.value end)])
+      |> Enum.concat(Enum.map(ungrouped_nodes, & &1.value))
+      |> MapSet.new()
+
+    selected
+    |> Enum.uniq()
+    |> Enum.reject(&MapSet.member?(rendered, &1))
+    |> Enum.map(&unavailable_node/1)
+  end
+
+  defp unavailable_node("group:" <> group = value), do: %{kind: :group, name: group, value: value}
+  defp unavailable_node("runner:" <> id = value), do: %{kind: :runner, name: id, value: value}
+  defp unavailable_node(value), do: %{kind: :runner, name: value, value: value}
+
+  defp unavailable_name_class(:group), do: "font-medium text-zinc-100"
+  defp unavailable_name_class(:runner), do: "text-zinc-400"
+
+  defp empty_tree?(tree),
+    do: tree.groups == [] and tree.ungrouped == [] and tree.unavailable == []
 
   defp runner_node(runner, selected, covered?) do
     value = "runner:" <> runner.id

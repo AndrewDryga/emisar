@@ -86,6 +86,67 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "runner_selection_facts_for_account/3" do
+    test "answers only the requested refs that live in the account" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      foreign = Fixtures.Runners.create_runner(account_id: other_account.id, group: "foreign")
+
+      assert {:ok, facts} =
+               Runners.runner_selection_facts_for_account(
+                 account.id,
+                 ["database", "foreign", "unknown"],
+                 [runner.id, foreign.id]
+               )
+
+      # The unrequested "web" group, the other account's group, and its runner
+      # all stay missing — and a requested group answers once, never once per
+      # member.
+      assert facts.groups == ["database"]
+      assert facts.runners == [%{id: runner.id, group: "database"}]
+    end
+
+    test "a deleted runner takes its group and its id with it" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Runners.mark_deleted(runner)
+
+      assert Runners.runner_selection_facts_for_account(account.id, ["database"], [runner.id]) ==
+               {:ok, %{groups: [], runners: []}}
+    end
+
+    test "an invalid account, ref, or over-long selection fails closed" do
+      account = Fixtures.Accounts.create_account()
+
+      assert Runners.runner_selection_facts_for_account("not-a-uuid", ["database"], []) ==
+               {:error, :invalid_runner_scope}
+
+      assert Runners.runner_selection_facts_for_account(account.id, [], ["not-a-uuid"]) ==
+               {:error, :invalid_runner_scope}
+
+      assert Runners.runner_selection_facts_for_account(
+               account.id,
+               List.duplicate("database", 257),
+               []
+             ) == {:error, :invalid_runner_scope}
+
+      assert Runners.runner_selection_facts_for_account(
+               account.id,
+               [],
+               List.duplicate(Ecto.UUID.generate(), 257)
+             ) == {:error, :invalid_runner_scope}
+
+      assert Runners.runner_selection_facts_for_account(
+               account.id,
+               List.duplicate("database", 128),
+               List.duplicate(Ecto.UUID.generate(), 129)
+             ) == {:error, :invalid_runner_scope}
+    end
+  end
+
   describe "runner_filters/0" do
     test "carries the Runners table's filters in panel order" do
       assert Enum.map(Runners.runner_filters(), & &1.name) == [:group, :name]

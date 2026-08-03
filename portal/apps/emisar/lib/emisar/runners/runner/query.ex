@@ -47,6 +47,14 @@ defmodule Emisar.Runners.Runner.Query do
   def select_scope_facts(queryable),
     do: select(queryable, [runners: r], %{id: r.id, group: r.group})
 
+  @doc """
+  The distinct group names the matched runners carry — the existence half of a
+  runner-scope allowlist, so a selection can be checked against a group without
+  reading the rows in it.
+  """
+  def select_distinct_groups(queryable),
+    do: queryable |> distinct(true) |> select([runners: r], r.group)
+
   # The durable pack advertisement a runner last sent, plus the identity the
   # console names it by. `packs` is the whole runner_state map, so a pack that
   # advertises no actions still counts as installed.

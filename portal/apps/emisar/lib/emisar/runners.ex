@@ -105,6 +105,56 @@ defmodule Emisar.Runners do
 
   def runner_scope_facts_for_ids(_account_id, _ids), do: []
 
+  @doc """
+  Internal — the account facts one runner-access selection is allowlisted
+  against: the distinct requested `groups` a live runner in `account_id`
+  actually carries, plus `%{id, group}` for each requested runner id that
+  exists there. Deleted rows and other accounts' runners resolve to nothing, so
+  the caller rejects the ref rather than granting it.
+
+  It answers only what the selection named — never a group's members, never the
+  fleet — and is bounded at 256 refs total. Both lists must already be
+  canonical (`Emisar.Accounts.RunnerAccess.selection_refs/1`): a malformed id
+  must not reach the uuid parameter, so an invalid account, an invalid id, or
+  an over-long selection fails closed with `{:error, :invalid_runner_scope}`.
+  """
+  def runner_selection_facts_for_account(account_id, groups, runner_ids)
+      when is_binary(account_id) and is_list(groups) and is_list(runner_ids) and
+             length(groups) + length(runner_ids) <= 256 do
+    if Repo.valid_uuid?(account_id) and Enum.all?(runner_ids, &Repo.valid_uuid?/1) do
+      {:ok,
+       %{
+         groups: existing_groups(account_id, groups),
+         runners: exact_runner_facts(account_id, runner_ids)
+       }}
+    else
+      {:error, :invalid_runner_scope}
+    end
+  end
+
+  def runner_selection_facts_for_account(_account_id, _groups, _runner_ids),
+    do: {:error, :invalid_runner_scope}
+
+  defp existing_groups(_account_id, []), do: []
+
+  defp existing_groups(account_id, groups) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_groups(groups)
+    |> Runner.Query.select_distinct_groups()
+    |> Repo.all()
+  end
+
+  defp exact_runner_facts(_account_id, []), do: []
+
+  defp exact_runner_facts(account_id, runner_ids) do
+    Runner.Query.not_deleted()
+    |> Runner.Query.by_account_id(account_id)
+    |> Runner.Query.by_ids(runner_ids)
+    |> Runner.Query.select_scope_facts()
+    |> Repo.all()
+  end
+
   @doc "The Runners table's `%Repo.Filter{}` list."
   def runner_filters, do: Runner.Query.filters()
 
