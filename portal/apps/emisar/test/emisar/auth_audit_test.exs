@@ -21,6 +21,18 @@ defmodule Emisar.AuthAuditTest do
     events
   end
 
+  # The raw secret only leaves Auth by email, so a magic-link test drives the
+  # real request workflow and reads the 6-character code back out of the
+  # delivered message.
+  defp request_magic_link(user) do
+    assert {:ok, %{token_id: token_id, nonce: nonce, delivery: {:ok, :sent}}} =
+             Auth.request_magic_link(user, %RequestContext{})
+
+    assert_received {:email, sent}
+    [_, ^token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+    {token_id, nonce, secret}
+  end
+
   describe "sign-out" do
     setup do
       {user, account, _subject} = Fixtures.Subjects.owner_subject()
@@ -118,8 +130,8 @@ defmodule Emisar.AuthAuditTest do
       %{user: user, account: account}
     end
 
-    test "issue_magic_link audits", %{user: user, account: account} do
-      _ = Auth.issue_magic_link(user)
+    test "request_magic_link audits", %{user: user, account: account} do
+      request_magic_link(user)
       assert [event] = events_of(account, "user.magic_link_issued")
       assert event.actor_id == user.id
     end
@@ -128,7 +140,7 @@ defmodule Emisar.AuthAuditTest do
       user: user,
       account: account
     } do
-      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+      {token_id, nonce, secret} = request_magic_link(user)
 
       assert {:ok, _u} = Auth.verify_magic_link(token_id, secret, nonce)
       # Verifying a factor is not signing in — Users.record_sign_in (the
@@ -141,7 +153,7 @@ defmodule Emisar.AuthAuditTest do
       user: user,
       account: account
     } do
-      {token_id, nonce, _secret} = Auth.issue_magic_link(user)
+      {token_id, nonce, _secret} = request_magic_link(user)
       context = %RequestContext{ip_address: "198.51.100.9", user_agent: "Firefox"}
 
       # Wrong secret on a valid, un-consumed token → digest mismatch → the token

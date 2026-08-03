@@ -1,6 +1,6 @@
 defmodule Emisar.AuthTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Auth, Crypto, Fixtures, RequestContext}
+  alias Emisar.{Accounts, Auth, Crypto, Fixtures, Mail, RequestContext}
   alias Emisar.Auth.UserToken
   alias Emisar.Users.User
 
@@ -14,6 +14,18 @@ defmodule Emisar.AuthTest do
       |> Repo.update_all(set: [inserted_at: DateTime.add(DateTime.utc_now(), -minutes, :minute)])
 
     n
+  end
+
+  # The raw secret only leaves Auth by email, so a test that must complete a
+  # sign-in drives the real request workflow and reads the 6-character code back
+  # out of the delivered message — exactly as an operator does.
+  defp request_magic_link(user, opts \\ []) do
+    assert {:ok, %{token_id: token_id, nonce: nonce, delivery: {:ok, :sent}}} =
+             Auth.request_magic_link(user, %RequestContext{}, opts)
+
+    assert_received {:email, sent}
+    [_, ^token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+    {token_id, nonce, secret}
   end
 
   describe "roles/0" do
@@ -470,7 +482,7 @@ defmodule Emisar.AuthTest do
       subject: subject
     } do
       _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.issue_magic_link(user)
+      request_magic_link(user)
       _ = Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, false)
 
       assert {:ok, [token], _meta} = Auth.list_sessions_for_user(subject)
@@ -534,17 +546,28 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "issue_magic_link/2" do
+  describe "request_magic_link/3" do
     setup do
       %{user: Fixtures.Users.create_user()}
     end
 
-    test "returns {token_id, nonce, secret} that verifies back to the user", %{user: user} do
-      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+    test "hands back only the browser half, emails the code, and verifies", %{user: user} do
+      assert {:ok, %{token_id: token_id, nonce: nonce, delivery: delivery} = result} =
+               Auth.request_magic_link(user, %RequestContext{})
+
+      # Three keys and no more: the raw secret stays inside Auth, so no caller
+      # can relay a sign-in credential it didn't earn.
+      assert map_size(result) == 3
+      assert delivery == {:ok, :sent}
       assert is_binary(token_id) and is_binary(nonce)
+
+      assert_received {:email, sent}
+      assert [{_, email}] = sent.to
+      assert email == user.email
+      [_, ^token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
       # The emailed half is a typable 6-char alphanumeric code, from an
       # unambiguous uppercase alphabet — no 0/O, 1/I/L, or U to misread.
-      assert secret =~ ~r/^[0-9A-Z]{6}$/
       refute secret =~ ~r/[01ILOU]/
 
       assert {:ok, %User{id: id}} = Auth.verify_magic_link(token_id, secret, nonce)
@@ -552,26 +575,91 @@ defmodule Emisar.AuthTest do
     end
 
     test "issuing again replaces the prior outstanding token (single outstanding)", %{user: user} do
-      {token_id1, nonce1, secret1} = Auth.issue_magic_link(user)
-      {token_id2, nonce2, secret2} = Auth.issue_magic_link(user)
+      {token_id1, nonce1, secret1} = request_magic_link(user)
+      {token_id2, nonce2, secret2} = request_magic_link(user)
 
       # The first token is gone — re-issuing deleted it.
       assert Auth.verify_magic_link(token_id1, secret1, nonce1) == {:error, :invalid_or_expired}
       assert {:ok, %User{}} = Auth.verify_magic_link(token_id2, secret2, nonce2)
     end
+
+    test "a suppressed address is reported as suppressed and nothing is sent", %{user: user} do
+      {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      assert {:ok, %{delivery: {:ok, :suppressed}}} =
+               Auth.request_magic_link(user, %RequestContext{})
+
+      refute_received {:email, _}
+      assert %UserToken{context: "magic_link"} = Repo.one(UserToken)
+    end
+
+    test "a mailer failure is reported while the token stays outstanding", %{user: user} do
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
+
+      assert {:ok, %{token_id: token_id, nonce: nonce, delivery: delivery}} =
+               Auth.request_magic_link(user, %RequestContext{})
+
+      assert delivery == {:error, {:failed, :boom}}
+      # The browser half still comes back and the row survives, so a resend from
+      # the sent page is the operator's remedy — not a lost, already-audited link.
+      assert is_binary(token_id) and is_binary(nonce)
+      assert %UserToken{id: ^token_id, context: "magic_link"} = Repo.one(UserToken)
+    end
+
+    test "a branded request issues for a live team", %{user: user} do
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, %{delivery: {:ok, :sent}}} =
+               Auth.request_magic_link(user, %RequestContext{}, account_ref: account.slug)
+
+      assert_received {:email, _sent}
+    end
+
+    test "a branded request for an unavailable team issues and sends nothing", %{user: user} do
+      account = Fixtures.Accounts.create_account()
+      {token_id, _nonce, _secret} = request_magic_link(user, account_ref: account.slug)
+      Fixtures.Accounts.disable_account(account)
+
+      assert Auth.request_magic_link(user, %RequestContext{}, account_ref: account.slug) ==
+               {:error, :not_found}
+
+      refute_received {:email, _}
+      # The outstanding token is the one issued while the team was live — the
+      # refused request minted nothing.
+      assert %UserToken{id: ^token_id} = Repo.one(UserToken)
+    end
+
+    test "an unknown or malformed team ref issues and sends nothing", %{user: user} do
+      assert Auth.request_magic_link(user, %RequestContext{}, account_ref: "no-such-team") ==
+               {:error, :not_found}
+
+      assert Auth.request_magic_link(user, %RequestContext{}, account_ref: %{"nested" => "ref"}) ==
+               {:error, :not_found}
+
+      refute_received {:email, _}
+      refute Repo.one(UserToken)
+    end
   end
 
   describe "correct_registration_email/4" do
-    test "updates the pending unconfirmed user and reissues the magic link" do
+    test "updates the pending unconfirmed user and emails a fresh link to it" do
       user = Fixtures.Users.create_user(confirmed?: false)
-      {old_token_id, old_nonce, old_secret} = Auth.issue_magic_link(user)
+      {old_token_id, old_nonce, old_secret} = request_magic_link(user)
       new_email = "fixed-#{System.unique_integer([:positive])}@example.test"
 
-      assert {:ok, %User{} = updated, new_token_id, new_nonce, new_secret} =
+      assert {:ok, %{token_id: new_token_id, nonce: new_nonce, delivery: delivery} = result} =
                Auth.correct_registration_email(old_token_id, user.id, new_email)
 
-      assert updated.email == new_email
+      # The same narrowed shape as a fresh request — no user struct, no secret.
+      assert map_size(result) == 3
+      assert delivery == {:ok, :sent}
       assert Repo.reload!(user).email == new_email
+
+      assert_received {:email, sent}
+      assert [{_, ^new_email}] = sent.to
+
+      [_, ^new_token_id, new_secret] =
+        Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
 
       assert Auth.verify_magic_link(old_token_id, old_secret, old_nonce) ==
                {:error, :invalid_or_expired}
@@ -584,7 +672,7 @@ defmodule Emisar.AuthTest do
 
     test "refuses when the pending signup user has already confirmed" do
       user = Fixtures.Users.create_user()
-      {token_id, _nonce, _secret} = Auth.issue_magic_link(user)
+      {token_id, _nonce, _secret} = request_magic_link(user)
       new_email = "late-#{System.unique_integer([:positive])}@example.test"
 
       assert Auth.correct_registration_email(token_id, user.id, new_email) ==
@@ -596,7 +684,7 @@ defmodule Emisar.AuthTest do
     test "rejects a token that was not minted for the registration user" do
       user = Fixtures.Users.create_user(confirmed?: false)
       other_user = Fixtures.Users.create_user(confirmed?: false)
-      {token_id, _nonce, _secret} = Auth.issue_magic_link(user)
+      {token_id, _nonce, _secret} = request_magic_link(user)
       new_email = "hijack-#{System.unique_integer([:positive])}@example.test"
 
       assert Auth.correct_registration_email(token_id, other_user.id, new_email) ==
@@ -626,7 +714,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "verifies with both halves and is single-use", %{user: user} do
-      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+      {token_id, nonce, secret} = request_magic_link(user)
 
       assert {:ok, %User{id: id}} = Auth.verify_magic_link(token_id, secret, nonce)
       assert id == user.id
@@ -638,7 +726,7 @@ defmodule Emisar.AuthTest do
     test "the email half alone can't sign in — a wrong nonce is rejected (anti-hijack)", %{
       user: user
     } do
-      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+      {token_id, nonce, secret} = request_magic_link(user)
 
       # An intercepted email gives token_id + secret but NOT the originating
       # browser's nonce → the core anti-hijack guarantee: no sign-in.
@@ -652,7 +740,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "a token past the 15-minute window no longer verifies", %{user: user} do
-      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+      {token_id, nonce, secret} = request_magic_link(user)
       age_tokens(user.id, 16)
 
       assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
@@ -664,7 +752,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "five wrong attempts lock the token — even the correct half then fails", %{user: user} do
-      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+      {token_id, nonce, secret} = request_magic_link(user)
 
       # Burn all five attempts (a wrong nonce always mismatches the high-entropy one).
       for _ <- 1..5 do

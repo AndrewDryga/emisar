@@ -11,7 +11,7 @@ defmodule EmisarWeb.UserSessionController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Auth, Mailers, Throttle, Users}
+  alias Emisar.{Auth, Throttle, Users}
   alias EmisarWeb.Analytics
   alias EmisarWeb.CoreComponents
   alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
@@ -40,10 +40,11 @@ defmodule EmisarWeb.UserSessionController do
             ]
 
   @doc """
-  Magic-link request (POST from the email form). Issues a split-code token,
-  emails the link + 6-character code, and stashes the browser nonce in the signed
-  cookie. Always lands on the "check your email" page — a throttled or unknown
-  email skips the work but shows the same page (no account-existence leak).
+  Magic-link request (POST from the email form). `Auth.request_magic_link/3`
+  issues the split-code token and emails the link + 6-character code; the browser
+  nonce it hands back is stashed in the signed cookie. Always lands on the "check
+  your email" page — a throttled, unknown, or unavailable-team request skips the
+  work but shows the same page (no account-existence leak).
   """
   def magic_link_start(conn, %{"user" => %{"email" => email}} = params) when is_binary(email) do
     context = RequestContext.from_conn(conn)
@@ -57,11 +58,14 @@ defmodule EmisarWeb.UserSessionController do
 
     conn =
       with :ok <- Throttle.check("magic_link", key, 5, 900_000),
-           {:ok, user} <- Users.fetch_user_by_email(email) do
+           {:ok, user} <- Users.fetch_user_by_email(email),
+           {:ok, %{token_id: token_id, nonce: nonce}} <-
+             Auth.request_magic_link(user, context,
+               account_ref: branded_account_ref(return_to),
+               return_to: return_to
+             ) do
         registration_user_id = registration_user_id(registration_handoff, user)
         registered? = is_binary(registration_user_id)
-        {token_id, nonce, secret} = Auth.issue_magic_link(user, context)
-        Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, context, return_to)
 
         conn
         |> Analytics.track_sign_up_started(registered?)
@@ -84,8 +88,9 @@ defmodule EmisarWeb.UserSessionController do
             "You've asked for several sign-in emails for that address. Wait a few minutes, then resend."
           )
 
-        # An unknown email stays silent — same "sent" page either way, so the
-        # response never reveals whether the address is an account.
+        # An unknown email, or a branded request naming a team that isn't
+        # available, stays silent — same "sent" page either way, so the response
+        # never reveals whether the address is an account or the team exists.
         _ ->
           conn
       end
@@ -116,16 +121,14 @@ defmodule EmisarWeb.UserSessionController do
     with {:ok, token_id, _nonce, registration_user_id} when is_binary(registration_user_id) <-
            read_magic_cookie(conn),
          :ok <- Throttle.check("magic_link", key, 5, 900_000),
-         {:ok, user, new_token_id, nonce, secret} <-
+         {:ok, %{token_id: new_token_id, nonce: nonce}} <-
            Auth.correct_registration_email(token_id, registration_user_id, trimmed, context) do
-      _ = Mailers.UserNotifier.deliver_magic_link(user, new_token_id, secret, context)
-
       conn
-      |> put_magic_cookie(new_token_id, nonce, user.id)
+      |> put_magic_cookie(new_token_id, nonce, registration_user_id)
       |> put_session(:magic_link_token_id, new_token_id)
       |> put_session(:magic_link_nonce, nonce)
       |> put_session(:magic_link_registered, true)
-      |> put_session(:magic_link_registration_user_id, user.id)
+      |> put_session(:magic_link_registration_user_id, registration_user_id)
       |> put_session(:magic_link_email, trimmed)
       |> put_session(:magic_link_expires_at, magic_link_expiry())
       |> put_flash(:info, "We updated your signup email and sent a new code.")

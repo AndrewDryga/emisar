@@ -9,6 +9,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Auth
+  alias Emisar.RequestContext
   alias EmisarWeb.RegistrationHandoff
 
   test "renders the email form that POSTs to the start action", %{conn: conn} do
@@ -119,7 +120,14 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   describe "verifying the typed code (verify_code)" do
     setup %{conn: conn} do
       user = Fixtures.Users.create_user()
-      {token_id, nonce, secret} = Auth.issue_magic_link(user)
+
+      assert {:ok, %{token_id: token_id, nonce: nonce}} =
+               Auth.request_magic_link(user, %RequestContext{})
+
+      # The raw secret only leaves Auth by email, so read the typed code back
+      # out of the delivered message, as the operator does.
+      assert_received {:email, sent}
+      [_, secret] = Regex.run(~r"/sign_in/magic/[^/]+/([0-9A-Z]{6})", sent.text_body)
 
       conn =
         Plug.Test.init_test_session(conn, %{

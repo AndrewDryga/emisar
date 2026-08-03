@@ -7,7 +7,7 @@ defmodule Emisar.Auth do
   semantics + validity window.
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit}
+  alias Emisar.{Accounts, Audit, Mailers}
   alias Emisar.Auth.Role
   alias Emisar.Auth.Subject
   alias Emisar.Auth.UserToken
@@ -446,12 +446,57 @@ defmodule Emisar.Auth do
   @magic_link_attempts 5
 
   @doc """
-  Issues a split-code magic-link token. Returns `{token_id, nonce, secret}`: the
-  caller keeps `nonce` browser-side (a short-lived cookie) and emails the
-  `secret` (a short alphanumeric code) plus a link carrying `token_id` + `secret`. Deletes
-  any prior outstanding magic-link token for the user (single outstanding).
+  Internal — pre-auth: the whole magic-link request. Issues a split-code token
+  and emails the code + link; the raw secret never leaves Auth, so no caller can
+  relay a sign-in credential it didn't earn. The link IS the factor being minted,
+  so there's no Subject yet.
+
+  Options: `:account_ref` — the branded `/app/:account_id_or_slug` target the
+  request came from, or `nil` for an unbranded sign-in; a disabled, deleted,
+  unknown, or malformed ref is `{:error, :not_found}` and issues + sends nothing.
+  `:return_to` — the already-validated local path carried into the emailed link.
+
+  Returns `{:ok, %{token_id: id, nonce: nonce, delivery: delivery}}` — the caller
+  keeps `nonce` browser-side (a short-lived cookie) — where `delivery` is
+  `{:ok, :sent}`, `{:ok, :suppressed}` (the address bounced or was marked spam,
+  so nothing was sent), or `{:error, reason}`.
   """
-  def issue_magic_link(%Users.User{} = user, context \\ %RequestContext{}) do
+  def request_magic_link(%Users.User{} = user, %RequestContext{} = context, opts \\ []) do
+    with :ok <- ensure_magic_link_account(Keyword.get(opts, :account_ref)) do
+      issue_and_deliver_magic_link(user, context, Keyword.get(opts, :return_to))
+    end
+  end
+
+  defp ensure_magic_link_account(nil), do: :ok
+
+  defp ensure_magic_link_account(account_ref) when is_binary(account_ref) do
+    with {:ok, _account} <- Accounts.fetch_account_by_id_or_slug(account_ref), do: :ok
+  end
+
+  defp ensure_magic_link_account(_account_ref), do: {:error, :not_found}
+
+  # The token + its audit row commit before the send, so the email is a
+  # post-commit side effect the caller reports on rather than a step that can
+  # undo an issued factor — a mailer outage must not leave the audit log
+  # claiming a link that no longer exists.
+  defp issue_and_deliver_magic_link(%Users.User{} = user, context, return_to) do
+    {token_id, nonce, secret} = issue_magic_link(user, context)
+
+    delivery =
+      case Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, context, return_to) do
+        {:ok, %{suppressed: true}} -> {:ok, :suppressed}
+        {:ok, _sent} -> {:ok, :sent}
+        {:error, reason} -> {:error, reason}
+      end
+
+    {:ok, %{token_id: token_id, nonce: nonce, delivery: delivery}}
+  end
+
+  # Mints the split-code token: the caller keeps `nonce` browser-side, the
+  # `secret` (a short alphanumeric code) is emailed alongside a link carrying
+  # `token_id` + `secret`. Deletes any prior outstanding magic-link token for the
+  # user (single outstanding). Private — the raw secret stays inside Auth.
+  defp issue_magic_link(%Users.User{} = user, context) do
     {nonce, secret, digest} = Crypto.magic_link_token()
 
     prior =
@@ -475,9 +520,11 @@ defmodule Emisar.Auth do
 
   @doc """
   Internal — signup email correction from the same browser that requested a
-  registration magic link for this exact user. Returns `{:ok, user, token_id,
-  nonce, secret} | {:error, :invalid_or_expired | :already_confirmed |
-  %Ecto.Changeset{}}`.
+  registration magic link for this exact user. Applies the corrected address,
+  then issues and emails a fresh link to it; a correction carries no branded
+  return path. Returns the same narrowed `{:ok, %{token_id: id, nonce: nonce,
+  delivery: delivery}}` as `request_magic_link/3`, or `{:error,
+  :invalid_or_expired | :already_confirmed | %Ecto.Changeset{}}`.
   """
   def correct_registration_email(
         token_id,
@@ -491,8 +538,7 @@ defmodule Emisar.Auth do
          :ok <- ensure_registration_token_user(user, registration_user_id),
          {:ok, %Users.User{} = updated} <-
            Users.correct_unconfirmed_user_email(user.id, new_email, context: context) do
-      {new_token_id, nonce, secret} = issue_magic_link(updated, context)
-      {:ok, updated, new_token_id, nonce, secret}
+      issue_and_deliver_magic_link(updated, context, nil)
     end
   end
 
@@ -692,7 +738,7 @@ defmodule Emisar.Auth do
       )
       |> Repo.commit_multi()
 
-    _ = Emisar.Mailers.UserNotifier.deliver_email_change_code(user, code)
+    _ = Mailers.UserNotifier.deliver_email_change_code(user, code)
     :ok
   end
 
@@ -810,7 +856,7 @@ defmodule Emisar.Auth do
   """
   def deliver_confirmation_instructions(%Users.User{} = user) do
     token = issue_confirmation_token!(user)
-    _ = Emisar.Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
+    _ = Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
     :ok
   end
 

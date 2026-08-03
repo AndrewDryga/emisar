@@ -8,6 +8,7 @@ defmodule Emisar.AuthSessionsTest do
   use Emisar.DataCase, async: true
   alias Emisar.Auth
   alias Emisar.Fixtures
+  alias Emisar.RequestContext
 
   describe "list_sessions_for_user/2" do
     setup do
@@ -38,7 +39,7 @@ defmodule Emisar.AuthSessionsTest do
       subject: subject
     } do
       _ = Auth.create_session_token!(user, :magic_link, false)
-      _ = Auth.issue_magic_link(user)
+      assert {:ok, _} = Auth.request_magic_link(user, %RequestContext{})
 
       assert {:ok, [token], _meta} = Auth.list_sessions_for_user(subject)
       assert token.context == "session"
