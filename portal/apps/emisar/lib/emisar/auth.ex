@@ -138,8 +138,11 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Internal — `EmisarWeb.UserAuth` drops the session row backing a cookie on
-  sign-out; possession of the cookie value IS the authorization, so no Subject.
+  Internal — FORCED invalidation of the session row behind a cookie (the
+  suspended-account bounce, the require_sso step-up); possession of the cookie
+  value IS the authorization, so no Subject. Deliberately writes no
+  `user.signed_out` audit: that event means the operator CHOSE to sign out and
+  belongs to `complete_session_sign_out/2`.
   """
   def delete_session_token(token) when is_binary(token) do
     UserToken.Query.by_token_digest(Crypto.hash(token))
@@ -150,13 +153,56 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Audit-records that a user signed out of this session. Called by
-  `EmisarWeb.UserAuth.log_out_user/1` before the token is dropped so the
-  event is attributable to the user that owned it.
+  Internal — the normal, VOLUNTARY sign-out: `EmisarWeb.UserAuth` presents the
+  raw cookie value and the domain ends that session. Possession of the cookie IS
+  the authorization, so no Subject — and the actor is read off the token row, so
+  the audit names whoever the credential belongs to rather than the boundary's
+  own snapshot of who is signed in.
+
+  The row delete and `user.signed_out` commit together, so a browser is never
+  told it signed out on a transaction that rolled back. The audit lands only for
+  a session that was actually live — inside its window, valid auth method, live
+  user — and only when exactly one row was deleted, so a double-submitted
+  sign-out serializes on the token lock and audits once. Expired,
+  removed-auth-method, and soft-deleted-user rows are still swept, silently.
+
+  Returns `:ok`, including for an unknown or stale token, or `{:error, reason}`
+  when the transaction fails.
   """
-  def record_sign_out(%Users.User{} = user, context \\ %RequestContext{}) do
-    Audit.log_for_user(user, "user.signed_out", context: context)
-    :ok
+  def complete_session_sign_out(token, context \\ %RequestContext{}) when is_binary(token) do
+    digest = Crypto.hash(token)
+
+    live_session_query =
+      UserToken.Query.by_token_digest(digest)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.not_expired("session")
+      |> UserToken.Query.with_valid_auth_method()
+      |> UserToken.Query.with_preloaded_user()
+      |> UserToken.Query.lock_for_update()
+
+    stored_session_query =
+      UserToken.Query.by_token_digest(digest)
+      |> UserToken.Query.by_context("session")
+
+    Multi.new()
+    |> Multi.run(:session_user, fn repo, _changes ->
+      case repo.peek(live_session_query) do
+        %UserToken{user: %Users.User{} = user} -> {:ok, user}
+        _dead_or_missing -> {:ok, nil}
+      end
+    end)
+    |> Multi.delete_all(:sessions, stored_session_query)
+    |> Audit.Multi.log_for_user(:audit, nil, "user.signed_out",
+      extra: [context: context],
+      user_fn: fn %{session_user: user, sessions: {count, _}} ->
+        if count == 1, do: user
+      end
+    )
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, _changes} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @doc """

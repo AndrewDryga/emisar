@@ -1,6 +1,6 @@
 defmodule Emisar.AuthTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Auth, Crypto, Fixtures, Mail, RequestContext}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, Fixtures, Mail, RequestContext}
   alias Emisar.Auth.UserToken
   alias Emisar.Users.User
 
@@ -26,6 +26,14 @@ defmodule Emisar.AuthTest do
     assert_received {:email, sent}
     [_, ^token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
     {token_id, nonce, secret}
+  end
+
+  # A user-scoped audit row lands once per account the user belongs to, so read
+  # the type straight off the table instead of through an account-scoped list.
+  defp events_of_type(event_type) do
+    Audit.Event.Query.all()
+    |> Audit.Event.Query.by_event_type(event_type)
+    |> Repo.all()
   end
 
   describe "roles/0" do
@@ -258,22 +266,83 @@ defmodule Emisar.AuthTest do
     test "deleting an unknown token is an idempotent :ok" do
       assert :ok = Auth.delete_session_token("never-existed")
     end
+
+    test "writes no user.signed_out — a forced invalidation is not a sign-out" do
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+
+      assert :ok = Auth.delete_session_token(token)
+      assert events_of_type("user.signed_out") == []
+    end
   end
 
-  describe "record_sign_out/2" do
-    test "audits user.signed_out attributed to the user" do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
+  describe "complete_session_sign_out/2" do
+    test "drops the presented session and audits it once, to the token's owner" do
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      context = RequestContext.new(%{ip_address: "203.0.113.7", user_agent: "Firefox"})
 
-      assert :ok = Auth.record_sign_out(user)
+      assert :ok = Auth.complete_session_sign_out(token, context)
 
-      {:ok, events, _} =
-        Emisar.Audit.list_events(
-          Fixtures.Subjects.subject_for(user, account, role: :owner),
-          filter: [event_type: ["user.signed_out"]]
-        )
-
-      assert [event] = events
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+      assert [event] = events_of_type("user.signed_out")
       assert event.actor_id == user.id
+      assert event.target_id == user.id
+      assert event.ip_address == "203.0.113.7"
+      assert event.user_agent == "Firefox"
+    end
+
+    test "an unknown token is an idempotent :ok that audits nothing" do
+      assert :ok = Auth.complete_session_sign_out("never-existed")
+      assert events_of_type("user.signed_out") == []
+    end
+
+    test "a failed audit rolls the token deletion back" do
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      # A non-string request_id fails the audit changeset, so the sign-out's one
+      # transaction aborts — the browser must not be told it signed out.
+      context = %RequestContext{request_id: %{invalid: true}}
+
+      assert {:error, changeset} = Auth.complete_session_sign_out(token, context)
+      assert "is invalid" in errors_on(changeset).request_id
+
+      assert {:ok, %User{}, _token} = Auth.fetch_user_and_token_by_session_token(token)
+      assert events_of_type("user.signed_out") == []
+    end
+
+    test "an expired session is swept without a voluntary sign-out audit" do
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      # 61 days is past the 60-day session window.
+      age_tokens(user.id, 61 * 24 * 60)
+
+      assert :ok = Auth.complete_session_sign_out(token)
+
+      refute Repo.one(UserToken.Query.by_token_digest(Crypto.hash(token)))
+      assert events_of_type("user.signed_out") == []
+    end
+
+    test "a session holding a removed auth_method is swept without an audit" do
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      Ecto.Adapters.SQL.query!(Repo, "UPDATE auth_user_tokens SET auth_method = 'password'", [])
+
+      assert :ok = Auth.complete_session_sign_out(token)
+
+      refute Repo.one(UserToken.Query.by_token_digest(Crypto.hash(token)))
+      assert events_of_type("user.signed_out") == []
+    end
+
+    test "only the presented session ends — the user's other devices stay signed in" do
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      other_token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+
+      assert :ok = Auth.complete_session_sign_out(token)
+
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %User{}, _token} = Auth.fetch_user_and_token_by_session_token(other_token)
     end
   end
 
@@ -803,6 +872,19 @@ defmodule Emisar.AuthTest do
 
       assert disabled.id == account.id
       refute Repo.one(UserToken.Query.by_context("session"))
+    end
+
+    test "a failed sign-in audit rolls the stamp and the session back", %{user: user} do
+      # A non-string request_id fails the audit changeset, so the one minting
+      # transaction aborts — no stamped sign-in, no session, no audit row.
+      context = %RequestContext{request_id: %{invalid: true}}
+
+      assert {:error, changeset} = Auth.complete_magic_link_sign_in(user.id, nil, context)
+      assert "is invalid" in errors_on(changeset).request_id
+
+      assert Repo.reload!(user).last_sign_in_at == user.last_sign_in_at
+      refute Repo.one(UserToken.Query.by_context("session"))
+      assert events_of_type("user.signed_in") == []
     end
 
     test "a user that no longer resolves is :not_found" do

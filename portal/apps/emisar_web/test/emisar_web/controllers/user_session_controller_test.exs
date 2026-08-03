@@ -657,11 +657,6 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
 
     test "audits user.signed_out attributed to the signed-out user", %{conn: conn} do
-      # the sign-out event must be attributable, which is why
-      # `log_out_user` resolves the actor from `conn.assigns.current_user` and audits
-      # BEFORE dropping the token (dropping it first would lose the only id). The
-      # observable proof: after sign-out a `user.signed_out` row exists on the user's
-      # account naming them as the subject — even though their token is now gone.
       {conn, user, account} = register_and_log_in(conn)
 
       conn = delete(conn, ~p"/sign_out")

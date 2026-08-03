@@ -104,15 +104,15 @@ defmodule EmisarWeb.UserAuth do
     |> put_session(:live_socket_id, Auth.live_socket_topic_for_session(token))
   end
 
-  @doc "Sign-out: invalidate the session token and clear the cookie."
+  @doc """
+  Voluntary sign-out: the domain ends the presented session (row delete + the
+  `user.signed_out` audit, one transaction), then the boundary clears the cookie
+  and drops the live sockets. The raw cookie value is the only attribution the
+  domain gets — `current_user` is this request's snapshot, not the credential
+  being revoked.
+  """
   def log_out_user(conn) do
-    user_token = get_session(conn, :user_token)
-    # Audit-log the sign-out BEFORE deleting the token — the user lookup
-    # is via the token, so dropping it first would lose the actor id.
-    if user = conn.assigns[:current_user],
-      do: Auth.record_sign_out(user, RequestContext.from_conn(conn))
-
-    user_token && Auth.delete_session_token(user_token)
+    :ok = complete_sign_out(get_session(conn, :user_token), conn)
 
     if live_socket_id = get_session(conn, :live_socket_id) do
       EmisarWeb.Endpoint.broadcast(live_socket_id, "disconnect", %{})
@@ -123,6 +123,18 @@ defmodule EmisarWeb.UserAuth do
     |> renew_session()
     |> redirect(to: ~p"/")
   end
+
+  # A rolled-back sign-out must not reach the browser as a completed one, so the
+  # cookie clear, the socket disconnect, and the redirect are all downstream of
+  # this. No cookie value means there is nothing durable to end.
+  defp complete_sign_out(token, conn) when is_binary(token) do
+    case Auth.complete_session_sign_out(token, RequestContext.from_conn(conn)) do
+      :ok -> :ok
+      {:error, reason} -> raise "could not complete sign-out: #{inspect(reason)}"
+    end
+  end
+
+  defp complete_sign_out(_token, _conn), do: :ok
 
   # -- Plugs ----------------------------------------------------------
 
@@ -266,11 +278,13 @@ defmodule EmisarWeb.UserAuth do
     do: put_session(conn, :current_account_id, membership.account_id)
 
   @doc """
-  Log the session out (delete the token, disconnect live sockets, renew the
-  session) and redirect to `to` with an error flash. Drives the suspended-account
-  bounce (default `/sign_in`) and the require_sso step-up, which lands the user on
-  that account's branded sign-in. The flash is set AFTER renew_session, so it
-  survives to the next request.
+  FORCED invalidation (delete the token, disconnect live sockets, renew the
+  session) with an error flash and a redirect to `to`. Drives the
+  suspended-account bounce (default `/sign_in`) and the require_sso step-up,
+  which lands the user on that account's branded sign-in. The operator didn't
+  choose to leave, so this rides `Auth.delete_session_token/1` and writes no
+  `user.signed_out` audit — `log_out_user/1` owns the voluntary sign-out. The
+  flash is set AFTER renew_session, so it survives to the next request.
   """
   def log_out_user_with_flash(conn, message, to \\ ~p"/sign_in") do
     user_token = get_session(conn, :user_token)

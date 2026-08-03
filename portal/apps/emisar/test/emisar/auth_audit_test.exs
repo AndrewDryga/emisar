@@ -39,8 +39,10 @@ defmodule Emisar.AuthAuditTest do
       %{user: user, account: account}
     end
 
-    test "record_sign_out audits", %{user: user, account: account} do
-      assert :ok = Auth.record_sign_out(user)
+    test "complete_session_sign_out audits", %{user: user, account: account} do
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+
+      assert :ok = Auth.complete_session_sign_out(token)
       assert [event] = events_of(account, "user.signed_out")
       assert event.actor_id == user.id
     end
