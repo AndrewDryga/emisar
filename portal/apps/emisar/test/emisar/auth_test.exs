@@ -288,7 +288,7 @@ defmodule Emisar.AuthTest do
       subject =
         Fixtures.Subjects.subject_for(user, Fixtures.Accounts.create_account(), role: :owner)
 
-      assert {:ok, [], _} = Auth.list_sessions_for_user(subject)
+      assert {:ok, [], _} = Auth.list_sessions_for_user(nil, subject)
     end
 
     test "only touches the given user's sessions" do
@@ -366,7 +366,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 2
 
-      {:ok, remaining, _} = Auth.list_sessions_for_user(subject)
+      {:ok, remaining, _} = Auth.list_sessions_for_user(nil, subject)
       assert length(remaining) == 1
       # The kept cookie still resolves.
       assert {:ok, %User{}, _auth} = Auth.fetch_user_and_token_by_session_token(keep)
@@ -420,7 +420,7 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "list_sessions_for_user/2" do
+  describe "list_sessions_for_user/3" do
     setup do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
       %{user: user, subject: subject}
@@ -431,7 +431,7 @@ defmodule Emisar.AuthTest do
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
-      assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject)
+      assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject)
       assert length(sessions) == 3
       assert Enum.sort_by(sessions, & &1.inserted_at, {:desc, DateTime}) == sessions
     end
@@ -440,12 +440,12 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       request_magic_link(user)
-      _ = Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, false)
+      Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, false)
 
-      assert {:ok, [token], _meta} = Auth.list_sessions_for_user(subject)
-      assert token.context == "session"
+      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(token, subject)
+      assert session.current?
     end
   end
 
@@ -458,21 +458,21 @@ defmodule Emisar.AuthTest do
     test "removes one of the caller's own sessions by id", %{user: user, subject: subject} do
       _t1 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
       _t2 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      {:ok, [session | _], _} = Auth.list_sessions_for_user(subject)
+      {:ok, [session | _], _} = Auth.list_sessions_for_user(nil, subject)
 
       assert :ok = Auth.revoke_session(session.id, subject)
-      {:ok, remaining, _} = Auth.list_sessions_for_user(subject)
+      {:ok, remaining, _} = Auth.list_sessions_for_user(nil, subject)
       assert length(remaining) == 1
     end
 
     test "can't kill another user's session — scoped to the caller", %{subject: subject} do
       {other, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       _ = Fixtures.Auth.create_session_token!(other, :magic_link, false)
-      {:ok, [other_session], _} = Auth.list_sessions_for_user(other_subject)
+      {:ok, [other_session], _} = Auth.list_sessions_for_user(nil, other_subject)
 
       assert {:error, :not_found} = Auth.revoke_session(other_session.id, subject)
       # Still alive for its real owner.
-      assert {:ok, [_], _} = Auth.list_sessions_for_user(other_subject)
+      assert {:ok, [_], _} = Auth.list_sessions_for_user(nil, other_subject)
     end
 
     test "a non-uuid id is a clean :not_found (no DB touch)", %{subject: subject} do
@@ -492,8 +492,8 @@ defmodule Emisar.AuthTest do
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_other_sessions!(user, keep) == 2
-      assert {:ok, [survivor], _} = Auth.list_sessions_for_user(subject)
-      assert survivor.token == Crypto.hash(keep)
+      assert {:ok, [survivor], _} = Auth.list_sessions_for_user(keep, subject)
+      assert survivor.current?
     end
 
     test "with nil, kills every session including the caller's", %{user: user, subject: subject} do
@@ -501,7 +501,7 @@ defmodule Emisar.AuthTest do
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       assert Auth.revoke_other_sessions!(user, nil) == 2
-      assert {:ok, [], _} = Auth.list_sessions_for_user(subject)
+      assert {:ok, [], _} = Auth.list_sessions_for_user(nil, subject)
     end
   end
 
@@ -1203,6 +1203,49 @@ defmodule Emisar.AuthTest do
       {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
 
       assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token(raw)
+    end
+  end
+
+  describe "mfa_facts/1" do
+    test "an unenrolled user is off with no recovery codes" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert Auth.mfa_facts(subject) ==
+               {:ok, %Auth.MfaFacts{enabled?: false, recovery_codes_remaining: 0}}
+    end
+
+    test "an enrolled user is on with its remaining recovery codes" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      secret = Auth.generate_mfa_secret()
+      {enrolled, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      # The actor snapshot IS the answer, so the facts follow the row the
+      # enable handed back — not the pre-enrollment one on `subject`.
+      enrolled_subject = Fixtures.Subjects.subject_for(enrolled, account)
+
+      assert Auth.mfa_facts(enrolled_subject) ==
+               {:ok, %Auth.MfaFacts{enabled?: true, recovery_codes_remaining: 10}}
+    end
+
+    test "the same user's facts are the same from a subject on another workspace" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      secret = Auth.generate_mfa_secret()
+      {enrolled, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      other_account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: enrolled.id)
+
+      # A second factor belongs to the identity, not to a tenant.
+      assert Auth.mfa_facts(Fixtures.Subjects.subject_for(enrolled, other_account)) ==
+               Auth.mfa_facts(Fixtures.Subjects.subject_for(enrolled, account))
+    end
+
+    test "refuses a non-user subject" do
+      account = Fixtures.Accounts.create_account()
+      {_raw_key, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      assert Auth.mfa_facts(Auth.Subject.for_api_key(api_key, account)) ==
+               {:error, :unauthorized}
     end
   end
 

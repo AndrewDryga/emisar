@@ -224,7 +224,7 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       keep: _keep
     } do
-      {:ok, [%{id: token_id} | _], _} = Auth.list_sessions_for_user(subject)
+      {:ok, [%{id: token_id} | _], _} = Auth.list_sessions_for_user(nil, subject)
 
       assert :ok = Auth.revoke_session(token_id, subject)
       assert [event] = events_of(account, "user.session_revoked")

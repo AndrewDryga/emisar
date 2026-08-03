@@ -10,7 +10,6 @@ defmodule EmisarWeb.ProfileLive do
     {:ok,
      socket
      |> assign(:page_title, "Profile")
-     |> assign(:mfa_enabled?, mfa_enabled?(user))
      |> assign(:mfa_secret, nil)
      |> assign(:mfa_uri, nil)
      |> assign(:mfa_qr_svg, nil)
@@ -19,11 +18,11 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_disable_step, :idle)
      |> assign(:mfa_disable_error, nil)
      |> assign(:current_session_token, session["user_token"])
-     |> assign(:current_session_digest, current_session_digest(session["user_token"]))
      |> assign(:session_count, 0)
      |> assign(:session_page_count, 0)
      |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
      |> assign(:filter_params, %{})
+     |> assign_mfa_facts(user)
      |> assign_profile_form(user)
      |> assign_email_form(user)
      |> assign_mfa_form()
@@ -52,10 +51,11 @@ defmodule EmisarWeb.ProfileLive do
     opts = LiveTable.params_to_opts(params)
     list_opts = Keyword.put(opts, :page, Keyword.put(opts[:page], :limit, 15))
 
-    case Auth.list_sessions_for_user(socket.assigns.current_subject, list_opts) do
+    presented_token = socket.assigns.current_session_token
+
+    case Auth.list_sessions_for_user(presented_token, socket.assigns.current_subject, list_opts) do
       {:ok, sessions, metadata} ->
-        current_digest = socket.assigns.current_session_digest
-        presented = Enum.map(sessions, &present_session(&1, current_digest))
+        presented = Enum.map(sessions, &present_session/1)
 
         socket
         |> assign(:session_count, metadata.count || 0)
@@ -81,19 +81,16 @@ defmodule EmisarWeb.ProfileLive do
   # doesn't bounce them back to page 1 (their cursor rides on filter_params).
   defp reload_sessions(socket), do: load_sessions(socket, socket.assigns.filter_params)
 
-  defp present_session(session, current_digest) do
+  defp present_session(%Auth.SessionFacts{} = session) do
     %{
       id: session.id,
-      device_label: session_device_label(session),
-      icon: session_device_icon(session),
-      current?: current_session?(session, current_digest),
-      ip_address: session_ip(session),
+      device_label: session_device_label(session.user_agent),
+      icon: session_device_icon(session.user_agent),
+      current?: session.current?,
+      ip_address: session_ip(session.ip_address),
       inserted_at: session.inserted_at
     }
   end
-
-  defp current_session_digest(nil), do: nil
-  defp current_session_digest(token) when is_binary(token), do: Emisar.Crypto.hash(token)
 
   def handle_event("validate_profile", %{"profile" => params} = event, socket) do
     changeset =
@@ -269,7 +266,7 @@ defmodule EmisarWeb.ProfileLive do
              "2FA enabled. Copy your recovery codes below — they'll only be shown once."
            )
            |> assign(:current_user, updated)
-           |> assign(:mfa_enabled?, true)
+           |> assign_mfa_facts(updated)
            |> assign(:mfa_recovery_codes, recovery_codes)
            |> assign(:mfa_secret, nil)
            |> assign(:mfa_uri, nil)
@@ -292,6 +289,7 @@ defmodule EmisarWeb.ProfileLive do
          socket
          |> put_flash(:info, "New recovery codes generated. Old codes are now invalid.")
          |> assign(:current_user, updated)
+         |> assign_mfa_facts(updated)
          |> assign(:mfa_recovery_codes, codes)}
 
       {:error, :mfa_not_enabled} ->
@@ -337,7 +335,7 @@ defmodule EmisarWeb.ProfileLive do
          socket
          |> put_flash(:info, "2FA disabled.")
          |> assign(:current_user, updated)
-         |> assign(:mfa_enabled?, false)
+         |> assign_mfa_facts(updated)
          |> assign(:mfa_recovery_codes, nil)
          |> assign(:mfa_disable_step, :idle)
          |> assign(:mfa_disable_error, nil)
@@ -363,23 +361,14 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
-  defp mfa_enabled?(%{mfa_enabled_at: nil}), do: false
-  defp mfa_enabled?(%{mfa_enabled_at: %DateTime{}}), do: true
-  defp mfa_enabled?(_), do: false
+  # The subject carries a mount-time actor snapshot, so every credential write
+  # re-derives the facts from the fresh user row the domain handed back — the
+  # page itself never inspects an MFA field.
+  defp assign_mfa_facts(socket, user) do
+    {:ok, facts} = Auth.mfa_facts(%{socket.assigns.current_subject | actor: user})
+    assign(socket, :mfa_facts, facts)
+  end
 
-  # Unused recovery-code digests left on the user (consumed ones are removed);
-  # `current_user` is kept fresh after enable/regenerate, so the count is too.
-  defp recovery_codes_remaining(%{mfa_recovery_codes: codes}) when is_list(codes),
-    do: length(codes)
-
-  defp recovery_codes_remaining(_), do: 0
-
-  # Server-side QR rendering — keeps it dependency-free at the JS level
-  # and avoids leaking the otpauth URI through a third-party image
-  # service. The SVG inlines into the page; authenticator apps scan it
-  # directly from the screen.
-  # Renders an SVG with explicit width AND viewBox so it scales cleanly
-  # regardless of the surrounding flex/grid container. EQRCode's
   defp assign_profile_form(socket, user) do
     changeset = Users.change_user(user, %{"full_name" => user.full_name || ""})
     assign(socket, :profile_form, to_form(changeset, as: "profile"))
@@ -433,7 +422,7 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   # The DOMAIN decides the factor from the user's CURRENT row (`begin_email_change`
-  # re-reads it) — not `mfa_enabled?`, which is a stale mount snapshot that could
+  # re-reads it) — not `@mfa_facts`, which is a stale mount snapshot that could
   # downgrade the challenge — and issues the emailed code on the `:code` path.
   defp start_email_step_up(socket, user, new_email) do
     # A fresh challenge invalidates any rejection from a prior one — a stale
@@ -468,18 +457,13 @@ defmodule EmisarWeb.ProfileLive do
     assign(socket, :mfa_disable_form, to_form(%{"code" => ""}, as: "mfa_disable"))
   end
 
-  defp current_session?(%{token: digest}, current_digest) when not is_nil(current_digest),
-    do: digest == current_digest
+  defp session_ip(ip) when is_binary(ip) and ip != "", do: ip
+  defp session_ip(_ip), do: nil
 
-  defp current_session?(_, _), do: false
+  defp session_device_label(user_agent) when is_binary(user_agent),
+    do: UserAgent.label(user_agent)
 
-  defp session_ip(%{metadata: %{"ip_address" => ip}}) when is_binary(ip) and ip != "", do: ip
-  defp session_ip(_), do: nil
-
-  defp session_device_label(%{metadata: %{"user_agent" => ua}}) when is_binary(ua),
-    do: UserAgent.label(ua)
-
-  defp session_device_label(_), do: "Unknown device"
+  defp session_device_label(_user_agent), do: "Unknown device"
 
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
   # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
@@ -664,7 +648,7 @@ defmodule EmisarWeb.ProfileLive do
                   </.confirm_button>
                 </:actions>
               </.secret_reveal>
-            <% @mfa_enabled? -> %>
+            <% @mfa_facts.enabled? -> %>
               <p class="text-sm text-zinc-300">
                 You're protected by a second factor. Disabling means a leaked sign-in link is
                 enough to sign in.
@@ -672,7 +656,7 @@ defmodule EmisarWeb.ProfileLive do
               <%!-- Recovery codes burn down one per lost-device sign-in, but the
                    count was never surfaced — nudge to regenerate before they run
                    out and a lost authenticator becomes a lockout. --%>
-              <% remaining = recovery_codes_remaining(@current_user) %>
+              <% remaining = @mfa_facts.recovery_codes_remaining %>
               <p class={[
                 "mt-3 text-xs",
                 if(remaining <= 2, do: "font-medium text-amber-300", else: "text-zinc-400")
@@ -869,6 +853,6 @@ defmodule EmisarWeb.ProfileLive do
 
   # Picks an icon for the session row that hints at the device class —
   # makes the row visually scannable instead of "wall of identical text".
-  defp session_device_icon(%{metadata: %{"user_agent" => ua}}), do: UserAgent.icon(ua)
-  defp session_device_icon(_), do: "hero-globe-alt"
+  defp session_device_icon(user_agent) when is_binary(user_agent), do: UserAgent.icon(user_agent)
+  defp session_device_icon(_user_agent), do: "hero-globe-alt"
 end

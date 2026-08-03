@@ -298,13 +298,13 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "this device"
 
       subject = Fixtures.Subjects.subject_for(user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
 
       html = render_click(lv, "revoke_other_sessions", %{})
       assert html =~ "1 other session signed out."
 
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 1
     end
 
@@ -332,7 +332,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert has_element?(lv, "#active-sessions li", "this device")
 
       subject = Fixtures.Subjects.subject_for(user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
     end
 
@@ -369,22 +369,20 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       user_agent = "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
 
-      first =
-        Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
-          "ip_address" => "203.0.113.10",
-          "user_agent" => user_agent
-        })
+      Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+        "ip_address" => "203.0.113.10",
+        "user_agent" => user_agent
+      })
 
-      second =
-        Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
-          "ip_address" => "203.0.113.11",
-          "user_agent" => user_agent
-        })
+      Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+        "ip_address" => "203.0.113.11",
+        "user_agent" => user_agent
+      })
 
       subject = Fixtures.Subjects.subject_for(user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
-      first_session = Enum.find(sessions, &(&1.token == Emisar.Crypto.hash(first)))
-      second_session = Enum.find(sessions, &(&1.token == Emisar.Crypto.hash(second)))
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      first_session = Enum.find(sessions, &(&1.ip_address == "203.0.113.10"))
+      second_session = Enum.find(sessions, &(&1.ip_address == "203.0.113.11"))
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -397,7 +395,10 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Session revoked."
       refute html =~ "203.0.113.10"
       assert html =~ "203.0.113.11"
-      assert {:ok, remaining, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+
+      assert {:ok, remaining, _meta} =
+               Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+
       refute Enum.any?(remaining, &(&1.id == first_session.id))
       assert Enum.any?(remaining, &(&1.id == second_session.id))
     end
@@ -407,25 +408,25 @@ defmodule EmisarWeb.ProfileLiveTest do
       user: user,
       account: account
     } do
-      # A second device — the row we'll revoke. Its session is found by being the
-      # one whose token-digest is NOT the current device's.
-      other_raw =
-        Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
-          "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
-        })
-
-      other_digest = Emisar.Crypto.hash(other_raw)
+      # A second device — the row we'll revoke. It's the one the caller's own
+      # session token does NOT mark as current.
+      Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+        "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+      })
 
       subject = Fixtures.Subjects.subject_for(user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
-      other = Enum.find(sessions, &(&1.token == other_digest))
+
+      {:ok, sessions, _meta} =
+        Auth.list_sessions_for_user(session_token(conn), subject, page: [limit: 100])
+
+      other = Enum.find(sessions, &(not &1.current?))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       assert render_click(lv, "revoke_session", %{"id" => other.id}) =~ "Session revoked."
 
       # Down to one — only the current device remains.
-      {:ok, remaining, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      {:ok, remaining, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(remaining) == 1
       refute Enum.any?(remaining, &(&1.id == other.id))
     end
@@ -438,17 +439,17 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Two devices: one current, one other. The other carries a sign-out control;
       # the current device must not (you can't sign yourself out from here —
       # that's "sign out everywhere else").
-      other_raw =
-        Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
-          "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
-        })
-
-      other_digest = Emisar.Crypto.hash(other_raw)
+      Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+        "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+      })
 
       subject = Fixtures.Subjects.subject_for(user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
-      other = Enum.find(sessions, &(&1.token == other_digest))
-      current = Enum.find(sessions, &(&1.token != other_digest))
+
+      {:ok, sessions, _meta} =
+        Auth.list_sessions_for_user(session_token(conn), subject, page: [limit: 100])
+
+      other = Enum.find(sessions, &(not &1.current?))
+      current = Enum.find(sessions, & &1.current?)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       assert has_element?(lv, "#signout-session-#{other.id}")
@@ -475,7 +476,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       for _ <- 1..100, do: Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
       subject = Fixtures.Subjects.subject_for(user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(subject, page: [limit: 100])
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 100
 
       # And the page mounts + renders under that load — the "Sign out everywhere
@@ -801,6 +802,10 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
     end
   end
+
+  # The raw session token the logged-in conn presents — what the page hands
+  # `Auth.list_sessions_for_user/3` so its own row comes back `current?: true`.
+  defp session_token(conn), do: Plug.Conn.get_session(conn, :user_token)
 
   # Count of session rows rendered on the current page — each stream row is an
   # <li id="sessions-<uuid>">, so the ids that match are exactly this page's rows.

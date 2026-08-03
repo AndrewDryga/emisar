@@ -8,7 +8,9 @@ defmodule Emisar.Auth do
   """
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Mailers}
+  alias Emisar.Auth.MfaFacts
   alias Emisar.Auth.Role
+  alias Emisar.Auth.SessionFacts
   alias Emisar.Auth.Subject
   alias Emisar.Auth.UserToken
   alias Emisar.Crypto
@@ -305,18 +307,71 @@ defmodule Emisar.Auth do
     do: live_socket_topic(Crypto.hash(token))
 
   @doc """
-  The caller's own active sessions, newest first (Profile's device
-  list). Self-service — the user is the subject's own actor. The raw
-  token is never surfaced — only the row id (for revocation) and
-  inserted_at (display). Returns `{:ok, [token], %Paginator.Metadata{}}`
-  per the context-function convention.
+  The caller's own active sessions, newest first (Profile's device list).
+  Self-service — the user is the subject's own actor, so the list spans every
+  workspace they belong to, exactly like the identity it describes.
+
+  `presented_token` is the caller's own raw session token: it is hashed once
+  here and each stored digest is compared against it in constant time, so the
+  row making this request comes back `current?: true` and no caller has to
+  handle a digest to find it. A `nil` (or otherwise non-binary) token simply
+  marks every row `current?: false`.
+
+  Rows project into `%SessionFacts{}` — no token, no digest, no raw metadata —
+  so the device list cannot leak credential material. Returns `{:ok,
+  [%SessionFacts{}], %Paginator.Metadata{}}`, or `{:error, :unauthorized}` for
+  a non-user subject.
   """
-  def list_sessions_for_user(%Subject{actor: %Users.User{} = user}, opts \\ []) do
-    UserToken.Query.by_user_id(user.id)
-    |> UserToken.Query.by_context("session")
-    |> UserToken.Query.with_valid_auth_method()
-    |> Repo.list(UserToken.Query, opts)
+  def list_sessions_for_user(presented_token, subject, opts \\ [])
+
+  def list_sessions_for_user(presented_token, %Subject{actor: %Users.User{} = user}, opts) do
+    presented_digest = presented_session_digest(presented_token)
+
+    sessions_query =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.with_valid_auth_method()
+
+    case Repo.list(sessions_query, UserToken.Query, opts) do
+      {:ok, tokens, metadata} ->
+        {:ok, Enum.map(tokens, &session_facts(&1, presented_digest)), metadata}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
+
+  def list_sessions_for_user(_presented_token, %Subject{}, _opts), do: {:error, :unauthorized}
+
+  defp presented_session_digest(token) when is_binary(token), do: Crypto.hash(token)
+  defp presented_session_digest(_token), do: nil
+
+  defp session_facts(%UserToken{} = token, presented_digest) do
+    %SessionFacts{
+      id: token.id,
+      current?: current_session?(token.token, presented_digest),
+      ip_address: session_metadata(token.metadata, "ip_address"),
+      user_agent: session_metadata(token.metadata, "user_agent"),
+      inserted_at: token.inserted_at
+    }
+  end
+
+  defp current_session?(_digest, nil), do: false
+
+  defp current_session?(digest, presented_digest),
+    do: Crypto.secure_compare(digest, presented_digest)
+
+  # Only the two display keys the device list renders, and only when the stored
+  # value is a string — session metadata is written at the web boundary, so the
+  # projection never hands a surface a shape it didn't ask for.
+  defp session_metadata(metadata, key) when is_map(metadata) do
+    case Map.get(metadata, key) do
+      value when is_binary(value) -> value
+      _other -> nil
+    end
+  end
+
+  defp session_metadata(_metadata, _key), do: nil
 
   @doc """
   Revoke one of the caller's own sessions by id (Profile's per-device
@@ -1026,6 +1081,32 @@ defmodule Emisar.Auth do
   end
 
   # -- MFA scaffold -----------------------------------------------------
+
+  @doc """
+  The caller's own second-factor state for display: is TOTP on, and how many
+  recovery codes are left. Self-service — the subject's actor snapshot IS the
+  answer, so this reads no rows and never surfaces the TOTP secret or the
+  recovery-code digests. Returns `{:ok, %MfaFacts{}}`, or `{:error,
+  :unauthorized}` for a non-user subject.
+  """
+  def mfa_facts(%Subject{actor: %Users.User{} = user}) do
+    {:ok,
+     %MfaFacts{
+       enabled?: mfa_enabled?(user),
+       recovery_codes_remaining: recovery_codes_remaining(user)
+     }}
+  end
+
+  def mfa_facts(%Subject{}), do: {:error, :unauthorized}
+
+  defp mfa_enabled?(%Users.User{mfa_enabled_at: %DateTime{}}), do: true
+  defp mfa_enabled?(%Users.User{}), do: false
+
+  # Unused digests — a consumed recovery code is removed from the row.
+  defp recovery_codes_remaining(%Users.User{mfa_recovery_codes: codes}) when is_list(codes),
+    do: length(codes)
+
+  defp recovery_codes_remaining(%Users.User{}), do: 0
 
   @doc """
   Generates a fresh TOTP secret for the user. Caller is responsible
