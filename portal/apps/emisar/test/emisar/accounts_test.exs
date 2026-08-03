@@ -1116,6 +1116,25 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "update_account/3 — runner_inactive_retention_hours (owned by Runners)" do
+    test "an owner cannot arm the inactivity sweep through the generic update" do
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      assert {:error, changeset} =
+               Accounts.update_account(
+                 account,
+                 %{settings: %{runner_inactive_retention_hours: 24}},
+                 owner_subject
+               )
+
+      assert "is set through the runner settings" in errors_on(changeset).settings.runner_inactive_retention_hours
+
+      assert Repo.reload!(account).settings.runner_inactive_retention_hours == nil
+      assert Repo.all(Audit.Event) == []
+    end
+  end
+
   describe "change_account/2" do
     test "builds an update changeset for the form (no DB write)" do
       account = Fixtures.Accounts.create_account()
@@ -1196,6 +1215,69 @@ defmodule Emisar.AccountsTest do
                {:error, :not_found}
 
       assert Repo.reload!(account).settings.pack_unseen_retention_days == nil
+    end
+  end
+
+  describe "put_account_runner_inactive_retention_hours/3" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      %{account: account, subject: subject}
+    end
+
+    test "writes the canonical window Runners validated", %{account: account, subject: subject} do
+      assert {:ok, updated} =
+               Accounts.put_account_runner_inactive_retention_hours(account.id, 24, subject)
+
+      assert updated.settings.runner_inactive_retention_hours == 24
+      assert Enum.map(Repo.all(Audit.Event), & &1.event_type) == ["account.updated"]
+    end
+
+    test "nil turns automatic cleanup off", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 24)
+
+      assert {:ok, updated} =
+               Accounts.put_account_runner_inactive_retention_hours(account.id, nil, subject)
+
+      assert updated.settings.runner_inactive_retention_hours == nil
+    end
+
+    test "leaves every other setting alone", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_account_settings(account, %{
+        require_mfa: true,
+        pack_unseen_retention_days: 30
+      })
+
+      assert {:ok, updated} =
+               Accounts.put_account_runner_inactive_retention_hours(account.id, 6, subject)
+
+      assert updated.settings.require_mfa
+      assert updated.settings.pack_unseen_retention_days == 30
+      assert updated.settings.runner_inactive_retention_hours == 6
+    end
+
+    test "a deleted account is :not_found", %{account: account, subject: subject} do
+      Fixtures.Accounts.mark_account_as_deleted(account)
+
+      assert Accounts.put_account_runner_inactive_retention_hours(account.id, 24, subject) ==
+               {:error, :not_found}
+    end
+
+    test "a malformed id is :not_found, never a query", %{subject: subject} do
+      assert Accounts.put_account_runner_inactive_retention_hours("not-a-uuid", 24, subject) ==
+               {:error, :not_found}
+    end
+
+    test "another account's subject is :not_found", %{account: account} do
+      other_account = Fixtures.Accounts.create_account()
+
+      other_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
+
+      assert Accounts.put_account_runner_inactive_retention_hours(account.id, 24, other_subject) ==
+               {:error, :not_found}
+
+      assert Repo.reload!(account).settings.runner_inactive_retention_hours == nil
     end
   end
 

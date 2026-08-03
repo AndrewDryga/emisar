@@ -28,13 +28,45 @@ defmodule Emisar.Accounts.Account.Settings do
   end
 
   @fields ~w[require_mfa require_sso max_grant_lifetime_seconds monthly_report_opt_out
-             pack_unseen_retention_days runner_inactive_retention_hours]a
+             pack_unseen_retention_days]a
+  # `Emisar.Runners` owns the inactivity window end to end — the permission, the
+  # unrestricted-runner-access requirement, and the period's validation — so the
+  # generic settings path casts it only to refuse it. A caller that could set it
+  # here would arm a fleet-wide destructive sweep through the plain account
+  # update, past every one of those gates.
+  @runners_owned_field :runner_inactive_retention_hours
 
   def changeset(%__MODULE__{} = settings, attrs) do
     settings
-    |> cast(attrs, @fields)
+    |> cast(attrs, [@runners_owned_field | @fields])
+    |> reject_runners_owned_change()
+    |> validate_bounds()
+  end
+
+  @doc """
+  Internal — the inactivity window `Emisar.Runners` has already authorized and
+  validated; the one path allowed to write it. `nil` turns the sweep off.
+  """
+  def runner_inactive_retention_changeset(%__MODULE__{} = settings, attrs) do
+    settings
+    |> cast(attrs, [@runners_owned_field])
+    |> validate_bounds()
+  end
+
+  defp reject_runners_owned_change(changeset) do
+    case fetch_change(changeset, @runners_owned_field) do
+      {:ok, _hours} ->
+        add_error(changeset, @runners_owned_field, "is set through the runner settings")
+
+      :error ->
+        changeset
+    end
+  end
+
+  defp validate_bounds(changeset) do
+    changeset
     |> validate_number(:max_grant_lifetime_seconds, greater_than_or_equal_to: 0)
     |> validate_number(:pack_unseen_retention_days, greater_than: 0)
-    |> validate_number(:runner_inactive_retention_hours, greater_than: 0)
+    |> validate_number(@runners_owned_field, greater_than: 0)
   end
 end

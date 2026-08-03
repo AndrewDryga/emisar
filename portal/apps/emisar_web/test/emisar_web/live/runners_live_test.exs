@@ -366,9 +366,11 @@ defmodule EmisarWeb.RunnersLiveTest do
   end
 
   describe "runner inactivity housekeeping" do
-    defp offline_runner!(account, name) do
+    defp offline_runner!(account, name, attrs \\ []) do
       runner =
-        Fixtures.Runners.create_runner(account_id: account.id, name: name, connected?: false)
+        Fixtures.Runners.create_runner(
+          [account_id: account.id, name: name, connected?: false] ++ attrs
+        )
 
       at = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
       Fixtures.Runners.mark_disconnected_at(runner, at)
@@ -444,7 +446,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "Clean up now soft-deletes runners offline past the window", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
       Fixtures.Runners.create_runner(account_id: account.id, name: "live-host", connected?: true)
       _offline = offline_runner!(account, "stale-host")
 
@@ -469,7 +471,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "a viewer sees the read-only note and crafted events are denied", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
       offline = offline_runner!(account, "stale-host")
 
       viewer = Fixtures.Users.create_user()
@@ -484,17 +486,78 @@ defmodule EmisarWeb.RunnersLiveTest do
       {:ok, lv, html} =
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
 
-      assert html =~ "Owner/admin only"
+      assert html =~ "Owners and admins with full runner access only"
       refute has_element?(lv, "#runner-retention-form")
+      refute has_element?(lv, "#runners-cleanup-now")
 
       assert render_click(lv, "set_runner_retention", %{"hours" => "168"}) =~
-               "Only owners and admins can change this setting."
+               "Only owners and admins with full runner access can change this setting."
 
       assert render_click(lv, "cleanup_inactive_now", %{}) =~
                "Admin required to clean up runners."
 
       # The stale runner survived both crafted attempts (not soft-deleted).
       assert %{deleted_at: nil} = Emisar.Repo.reload!(offline)
+    end
+
+    test "a malformed window is refused and the stored one is untouched", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert render_click(lv, "set_runner_retention", %{"hours" => "soon"}) =~
+               "Pick a valid cleanup period."
+
+      assert Emisar.Repo.reload!(account).settings.runner_inactive_retention_hours == 720
+    end
+
+    test "a runner-scoped admin can't change the schedule but still cleans up in scope", %{
+      conn: conn
+    } do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
+      in_scope = offline_runner!(account, "db-host", group: "db")
+      out_of_scope = offline_runner!(account, "app-host", group: "app")
+
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, db_only} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(membership, db_only)
+
+      {:ok, lv, html} = build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/runners")
+
+      assert html =~ "Owners and admins with full runner access only"
+      refute has_element?(lv, "#runner-retention-form")
+
+      assert render_click(lv, "set_runner_retention", %{"hours" => "168"}) =~
+               "Only owners and admins with full runner access can change this setting."
+
+      # The manual sweep stays available, narrowed to the admin's own scope.
+      assert has_element?(lv, "#runners-cleanup-now")
+      assert render_click(lv, "cleanup_inactive_now", %{}) =~ "Removed 1 inactive runner."
+
+      assert %DateTime{} = Emisar.Repo.reload!(in_scope).deleted_at
+      assert %{deleted_at: nil} = Emisar.Repo.reload!(out_of_scope)
+    end
+
+    test "an unusable stored window renders as off", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.force_runner_inactive_retention_hours(account, 0)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert has_element?(lv, ~s(#runners-cleanup option[value=""][selected]))
+      refute has_element?(lv, "#runners-cleanup-now")
     end
   end
 

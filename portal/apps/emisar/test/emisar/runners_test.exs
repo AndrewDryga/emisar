@@ -1,5 +1,6 @@
 defmodule Emisar.RunnersTest do
   use Emisar.DataCase, async: true
+  alias Emisar.Accounts
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.Audit
   alias Emisar.Auth.Subject
@@ -1052,6 +1053,206 @@ defmodule Emisar.RunnersTest do
     |> Repo.all()
   end
 
+  describe "change_inactive_retention_settings/1" do
+    test "no attrs means automatic cleanup is off" do
+      changeset = Runners.change_inactive_retention_settings()
+
+      assert changeset.valid?
+      assert changeset.changes == %{}
+      assert {:ok, input} = Ecto.Changeset.apply_action(changeset, :insert)
+      assert input.hours == nil
+    end
+
+    test "casts the rail form's string window" do
+      changeset = Runners.change_inactive_retention_settings(%{"hours" => "720"})
+
+      assert changeset.valid?
+      assert changeset.changes == %{hours: 720}
+    end
+
+    test "a blank window turns cleanup off" do
+      changeset = Runners.change_inactive_retention_settings(%{"hours" => ""})
+
+      assert changeset.valid?
+      assert changeset.changes == %{}
+    end
+
+    test "a malformed window is a field error" do
+      changeset = Runners.change_inactive_retention_settings(%{"hours" => "soon"})
+
+      refute changeset.valid?
+      assert "is invalid" in errors_on(changeset).hours
+    end
+
+    test "a zero window is a field error" do
+      changeset = Runners.change_inactive_retention_settings(%{"hours" => "0"})
+
+      refute changeset.valid?
+      assert "must be greater than 0" in errors_on(changeset).hours
+    end
+
+    test "a negative window is a field error" do
+      changeset = Runners.change_inactive_retention_settings(hours: -6)
+
+      refute changeset.valid?
+      assert "must be greater than 0" in errors_on(changeset).hours
+    end
+  end
+
+  describe "update_inactive_retention_settings/3" do
+    setup do
+      {account, user, subject} = account_with_owner_subject()
+      %{account: account, user: user, subject: subject}
+    end
+
+    test "an owner turns cleanup on with the raw form window", %{
+      account: account,
+      user: user,
+      subject: subject
+    } do
+      attrs = %{"hours" => "720"}
+
+      assert {:ok, updated} = Runners.update_inactive_retention_settings(account, attrs, subject)
+      assert updated.settings.runner_inactive_retention_hours == 720
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.runner_inactive_retention_hours == 720
+
+      {:ok, events, _} = Audit.list_events(subject)
+      assert [audit] = Enum.filter(events, &(&1.event_type == "account.updated"))
+      assert audit.target_kind == "account"
+      assert audit.target_id == account.id
+      assert audit.actor_kind == "user"
+      assert audit.actor_id == user.id
+    end
+
+    test "a blank window turns cleanup off", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
+
+      assert {:ok, updated} =
+               Runners.update_inactive_retention_settings(account, %{"hours" => ""}, subject)
+
+      assert updated.settings.runner_inactive_retention_hours == nil
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.runner_inactive_retention_hours == nil
+    end
+
+    test "an invalid window is a field error and writes nothing", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
+
+      assert {:error, changeset} =
+               Runners.update_inactive_retention_settings(account, %{"hours" => "0"}, subject)
+
+      assert "must be greater than 0" in errors_on(changeset).hours
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.runner_inactive_retention_hours == 720
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "account.updated"))
+    end
+
+    test "a viewer is denied and writes nothing", %{account: account} do
+      assert {:error, :unauthorized} =
+               Runners.update_inactive_retention_settings(
+                 account,
+                 %{"hours" => "168"},
+                 viewer_subject_for(account)
+               )
+
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.runner_inactive_retention_hours == nil
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "account.updated"))
+    end
+
+    test "another account's owner gets :not_found and writes nothing", %{account: account} do
+      {_other_account, _other_user, other_subject} = account_with_owner_subject()
+
+      assert {:error, :not_found} =
+               Runners.update_inactive_retention_settings(
+                 account,
+                 %{"hours" => "168"},
+                 other_subject
+               )
+
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.runner_inactive_retention_hours == nil
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "account.updated"))
+    end
+
+    test "a runner-scope-restricted admin cannot arm the account-wide schedule", %{
+      account: account
+    } do
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, db_only} = RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(admin, db_only)
+      admin_subject = Fixtures.Subjects.membership_subject(admin)
+
+      assert {:error, :unauthorized} =
+               Runners.update_inactive_retention_settings(
+                 account,
+                 %{"hours" => "24"},
+                 admin_subject
+               )
+
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.runner_inactive_retention_hours == nil
+    end
+
+    test "an admin with full runner access sets the schedule", %{account: account} do
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      admin_subject = Fixtures.Subjects.membership_subject(admin)
+
+      assert {:ok, updated} =
+               Runners.update_inactive_retention_settings(
+                 account,
+                 %{"hours" => "24"},
+                 admin_subject
+               )
+
+      assert updated.settings.runner_inactive_retention_hours == 24
+    end
+
+    test "a stale account snapshot keeps a concurrently changed setting", %{
+      account: account,
+      subject: subject
+    } do
+      # `account` is the caller's socket snapshot; the seam re-reads the row
+      # under lock, so a setting changed since then survives the write.
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+
+      assert {:ok, updated} =
+               Runners.update_inactive_retention_settings(account, %{"hours" => "6"}, subject)
+
+      assert updated.settings.require_mfa
+      assert updated.settings.runner_inactive_retention_hours == 6
+    end
+  end
+
+  describe "inactive_retention_hours/1" do
+    test "a positive stored window is the sweep's window" do
+      account = Fixtures.Accounts.create_account()
+      account = Fixtures.Accounts.set_runner_inactive_retention_hours(account, 24)
+
+      assert Runners.inactive_retention_hours(account) == {:ok, 24}
+      assert Runners.inactive_retention_hours(account.settings) == {:ok, 24}
+    end
+
+    test "no stored window means cleanup is disabled" do
+      account = Fixtures.Accounts.create_account()
+
+      assert Runners.inactive_retention_hours(account) == {:error, :retention_disabled}
+      assert Runners.inactive_retention_hours(account.settings) == {:error, :retention_disabled}
+    end
+
+    test "an unusable stored window means disabled, so no destructive sweep runs" do
+      account = Fixtures.Accounts.create_account()
+      account = Fixtures.Accounts.force_runner_inactive_retention_hours(account, 0)
+
+      assert Runners.inactive_retention_hours(account) == {:error, :retention_disabled}
+      assert Runners.inactive_retention_hours(account.settings) == {:error, :retention_disabled}
+    end
+  end
+
   describe "sweep_inactive_runners/1" do
     setup do
       {account, _user, subject} = account_with_owner_subject()
@@ -1062,7 +1263,7 @@ defmodule Emisar.RunnersTest do
       account: account,
       subject: subject
     } do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 1})
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 1)
       runner = offline_runner(account, 2)
 
       assert {:ok, 1} = Runners.sweep_inactive_runners(subject)
@@ -1075,7 +1276,7 @@ defmodule Emisar.RunnersTest do
     end
 
     test "keeps runners offline within the window", %{account: account, subject: subject} do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 6})
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 6)
       runner = offline_runner(account, 3)
 
       assert {:ok, 0} = Runners.sweep_inactive_runners(subject)
@@ -1093,14 +1294,14 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a viewer (no manage_runners) is refused", %{account: account} do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
 
       assert {:error, :unauthorized} =
                Runners.sweep_inactive_runners(viewer_subject_for(account))
     end
 
     test "only sweeps the subject's own account", %{account: account, subject: subject} do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
       {other_account, _u, _s} = account_with_owner_subject()
       other = offline_runner(other_account, 960)
 
@@ -1111,7 +1312,7 @@ defmodule Emisar.RunnersTest do
     test "a runner-scope-restricted admin sweeps only in-scope inactive runners", %{
       account: account
     } do
-      Fixtures.Accounts.set_account_settings(account, %{runner_inactive_retention_hours: 720})
+      Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
       in_scope = offline_runner(account, 960, group: "db")
       out_of_scope = offline_runner(account, 960, group: "app")
 
@@ -3084,6 +3285,28 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.subject_can_manage_enrollment_keys?(owner)
       refute Runners.subject_can_manage_enrollment_keys?(viewer_subject_for(account))
+    end
+  end
+
+  describe "subject_can_manage_inactive_retention?/1" do
+    test "true for an owner, false for a viewer" do
+      {account, _user, owner} = account_with_owner_subject()
+
+      assert Runners.subject_can_manage_inactive_retention?(owner)
+      refute Runners.subject_can_manage_inactive_retention?(viewer_subject_for(account))
+    end
+
+    test "false for an admin whose runner access is restricted" do
+      {account, _user, _owner} = account_with_owner_subject()
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      admin_subject = Fixtures.Subjects.membership_subject(admin)
+
+      assert Runners.subject_can_manage_inactive_retention?(admin_subject)
+
+      {:ok, db_only} = RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(admin, db_only)
+
+      refute Runners.subject_can_manage_inactive_retention?(admin_subject)
     end
   end
 

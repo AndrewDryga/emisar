@@ -529,6 +529,29 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc """
+  Internal — Runners owns the runner-cleanup contract (permission, the
+  unrestricted-runner-access requirement, tenancy, and the window's
+  validation); this writes the canonical result to
+  `settings.runner_inactive_retention_hours` on the active account, audited as
+  `account.updated` in the same transaction. `nil` turns cleanup off. Returns
+  `{:ok, account}` or `{:error, %Ecto.Changeset{} | :not_found}`.
+  """
+  def put_account_runner_inactive_retention_hours(account_id, hours, %Subject{} = subject)
+      when is_nil(hours) or (is_integer(hours) and hours > 0) do
+    if Repo.valid_uuid?(account_id) do
+      Account.Query.active()
+      |> Account.Query.by_id(account_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Account.Query,
+        with: &Account.Changeset.put_runner_inactive_retention_hours(&1, hours),
+        audit: &account_update_audit(&1, &2, subject)
+      )
+    else
+      {:error, :not_found}
+    end
+  end
+
   # Requiring SSO with no enabled connection locks EVERYONE out, owners included.
   # That check lived only in the Team page's click handler, so any other caller
   # could set it, and even through the UI it was a read taken outside the write's

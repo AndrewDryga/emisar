@@ -61,8 +61,46 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       assert "must be greater than 0" in errors_on(invalid).settings.pack_unseen_retention_days
     end
 
-    test "validates the runner-inactivity window is at least one hour" do
-      invalid = changeset(settings: %{runner_inactive_retention_hours: 0})
+    test "refuses the runner-inactivity window Runners owns" do
+      invalid = changeset(settings: %{runner_inactive_retention_hours: 24})
+
+      refute invalid.valid?
+
+      assert "is set through the runner settings" in errors_on(invalid).settings.runner_inactive_retention_hours
+    end
+  end
+
+  describe "put_runner_inactive_retention_hours/2" do
+    setup do
+      %{account: Fixtures.Accounts.create_account()}
+    end
+
+    test "writes the window the generic path refuses", %{account: account} do
+      changeset = Account.Changeset.put_runner_inactive_retention_hours(account, 24)
+
+      assert changeset.valid?
+      assert apply_changes(changeset).settings.runner_inactive_retention_hours == 24
+    end
+
+    test "nil turns the sweep off", %{account: account} do
+      account = Fixtures.Accounts.set_runner_inactive_retention_hours(account, 24)
+
+      changeset = Account.Changeset.put_runner_inactive_retention_hours(account, nil)
+
+      assert changeset.valid?
+      assert apply_changes(changeset).settings.runner_inactive_retention_hours == nil
+    end
+
+    test "leaves the other settings alone", %{account: account} do
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+
+      changeset = Account.Changeset.put_runner_inactive_retention_hours(account, 6)
+
+      assert apply_changes(changeset).settings.require_mfa
+    end
+
+    test "validates the window is at least one hour", %{account: account} do
+      invalid = Account.Changeset.put_runner_inactive_retention_hours(account, 0)
 
       refute invalid.valid?
 

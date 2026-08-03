@@ -56,6 +56,24 @@ defmodule Emisar.Fixtures.Accounts do
     |> Repo.update!()
   end
 
+  @doc "Test helper: arm the Runners-owned inactivity window the generic settings path refuses."
+  def set_runner_inactive_retention_hours(%Account{} = account, hours) do
+    account
+    |> Account.Changeset.put_runner_inactive_retention_hours(hours)
+    |> Repo.update!()
+  end
+
+  @doc """
+  Forces an unusable inactivity window past validation, to arrange the corrupt
+  stored state a sweep must refuse to act on.
+  """
+  def force_runner_inactive_retention_hours(%Account{} = account, hours) do
+    account
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.put_embed(:settings, %{runner_inactive_retention_hours: hours})
+    |> Repo.update!()
+  end
+
   @doc "Stamps `last_report_sent_at` directly, to rig the monthly-report cadence."
   def set_last_report_sent_at(%Account{} = account, %DateTime{} = at) do
     account

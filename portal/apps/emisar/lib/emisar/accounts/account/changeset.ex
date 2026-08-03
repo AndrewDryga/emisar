@@ -23,6 +23,17 @@ defmodule Emisar.Accounts.Account.Changeset do
     |> changeset()
   end
 
+  @doc """
+  Internal — writes the inactivity window `Emisar.Runners` owns, the field
+  `update/2` refuses. `nil` turns the sweep off.
+  """
+  def put_runner_inactive_retention_hours(%Account{} = account, hours) do
+    account
+    |> cast(%{settings: %{runner_inactive_retention_hours: hours}}, [])
+    |> cast_embed(:settings, with: &Account.Settings.runner_inactive_retention_changeset/2)
+    |> changeset()
+  end
+
   def sync_paddle_customer(%Account{} = account, customer_id, billing_contact_user_id)
       when is_binary(customer_id) and is_binary(billing_contact_user_id) do
     synced_at = DateTime.utc_now()

@@ -25,7 +25,8 @@ defmodule Emisar.Runners do
   alias Emisar.{Accounts, Audit, Auth, Billing, Compat, Crypto, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
-  alias Emisar.Runners.{Authorizer, ConnectionChange, EnrollmentKey, Presence, Runner, Token}
+  alias Emisar.Runners.{Authorizer, ConnectionChange, EnrollmentKey, InactiveRetentionInput}
+  alias Emisar.Runners.{Presence, Runner, Token}
   require Logger
 
   # 13 chars for "emkey-enroll-" + 16 random chars => 29.
@@ -709,6 +710,72 @@ defmodule Emisar.Runners do
   # -- Retention -------------------------------------------------------
 
   @doc """
+  Changeset for the account's runner-cleanup settings — the raw `hours` window,
+  where a blank value means automatic cleanup is off. Accepts the rail form's
+  string keys or an atom-keyed map / keyword list; a malformed or non-positive
+  window is a field error. Pure.
+  """
+  def change_inactive_retention_settings(attrs \\ %{}),
+    do: InactiveRetentionInput.changeset(attrs)
+
+  @doc """
+  Set how long a runner may stay cleanly offline before the hourly sweep
+  soft-deletes it. Requires `manage_runners` AND unrestricted runner access —
+  the schedule is account-wide, so a runner-scoped admin must not arm a sweep
+  that reaches past their own scope — and `account` must be the subject's own.
+  `attrs` is validated through `change_inactive_retention_settings/1` before
+  anything is written, so an invalid window never reaches the stored setting; a
+  blank window turns automatic cleanup off. Returns
+  `{:ok, %Accounts.Account{}}` or
+  `{:error, %Ecto.Changeset{} | :unauthorized | :not_found}`.
+  """
+  def update_inactive_retention_settings(
+        %Accounts.Account{} = account,
+        attrs,
+        %Subject{} = subject
+      ) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runners_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account.id),
+         :ok <- ensure_full_runner_access(subject),
+         {:ok, %InactiveRetentionInput{hours: hours}} <- inactive_retention_input(attrs) do
+      Accounts.put_account_runner_inactive_retention_hours(account.id, hours, subject)
+    end
+  end
+
+  defp ensure_full_runner_access(%Subject{} = subject) do
+    if full_runner_access?(subject), do: :ok, else: {:error, :unauthorized}
+  end
+
+  @doc """
+  What the account's stored cleanup setting means right now — `{:ok, hours}`
+  while automatic cleanup is on, `{:error, :retention_disabled}` when it is off
+  or the stored window is not a usable positive number. Takes the account (the
+  job sweep's row) or its settings (the operator sweep's fresh read). Both
+  sweeps read the setting through here, so one contract decides when a
+  destructive sweep may run.
+  """
+  def inactive_retention_hours(%Accounts.Account{settings: settings}),
+    do: inactive_retention_hours(settings)
+
+  def inactive_retention_hours(%Accounts.Account.Settings{} = settings) do
+    case inactive_retention_input(%{hours: settings.runner_inactive_retention_hours}) do
+      {:ok, %InactiveRetentionInput{hours: hours}} when is_integer(hours) -> {:ok, hours}
+      {:ok, %InactiveRetentionInput{}} -> {:error, :retention_disabled}
+      {:error, %Ecto.Changeset{}} -> {:error, :retention_disabled}
+    end
+  end
+
+  defp inactive_retention_input(attrs) do
+    attrs
+    |> change_inactive_retention_settings()
+    |> Ecto.Changeset.apply_action(:insert)
+  end
+
+  @doc """
   Run the inactivity-retention sweep for the subject's account right now — the
   runners page "Clean up now" button. Uses the account's configured window
   (`settings.runner_inactive_retention_hours`); `{:error, :retention_disabled}`
@@ -728,15 +795,8 @@ defmodule Emisar.Runners do
 
   # The subject's account struct is a socket snapshot — read the setting fresh.
   defp fetch_inactive_retention_hours(%Subject{account: %{id: account_id}}) do
-    case Accounts.fetch_account_settings(account_id) do
-      {:ok, %{runner_inactive_retention_hours: hours}} when is_integer(hours) and hours > 0 ->
-        {:ok, hours}
-
-      {:ok, _settings} ->
-        {:error, :retention_disabled}
-
-      {:error, :not_found} ->
-        {:error, :not_found}
+    with {:ok, settings} <- Accounts.fetch_account_settings(account_id) do
+      inactive_retention_hours(settings)
     end
   end
 
@@ -1953,6 +2013,23 @@ defmodule Emisar.Runners do
   @doc "Whether `subject` may manage runner enrollment keys (admin+)."
   def subject_can_manage_enrollment_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_enrollment_keys_permission())
+
+  @doc """
+  Whether `subject` may change the account-wide inactivity window (the runners
+  page's automatic-cleanup form) — `manage_runners` plus unrestricted runner
+  access, since the schedule sweeps the whole fleet.
+  """
+  def subject_can_manage_inactive_retention?(%Subject{} = subject),
+    do: subject_can_manage_runners?(subject) and full_runner_access?(subject)
+
+  # Current access, re-read on every call: a narrowed scope takes the schedule
+  # away from an open session immediately, and a stale snapshot never widens it.
+  defp full_runner_access?(%Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :all} -> true
+      %Accounts.RunnerAccess{} -> false
+    end
+  end
 
   # -- Registration (enrollment_key -> runner + token exchange) --------------
 

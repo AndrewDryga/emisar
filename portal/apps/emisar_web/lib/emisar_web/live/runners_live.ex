@@ -1,6 +1,5 @@
 defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
-  alias Emisar.Accounts
   alias Emisar.Compat
   alias Emisar.Runners
   alias EmisarWeb.LiveTable
@@ -20,7 +19,8 @@ defmodule EmisarWeb.RunnersLive do
      |> assign(:install_command, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> assign(:show_troubleshooting?, false)
-     |> assign(:reload_scheduled?, false)}
+     |> assign(:reload_scheduled?, false)
+     |> assign_retention_hours(socket.assigns.current_account)}
   end
 
   def handle_params(params, _uri, socket) do
@@ -53,8 +53,38 @@ defmodule EmisarWeb.RunnersLive do
 
   def handle_info(_, socket), do: {:noreply, socket}
 
-  def handle_event("set_runner_retention", %{"hours" => raw}, socket) do
-    apply_runner_retention(socket, parse_retention_hours(raw))
+  # Runners owns the cleanup contract — it re-checks manage_runners and the
+  # unrestricted runner access the account-wide schedule needs (IL-15), and
+  # validates the raw window, so a crafted event from a viewer or a
+  # runner-scoped admin denies and a malformed one is a changeset error rather
+  # than a stored setting.
+  def handle_event("set_runner_retention", %{"hours" => _raw} = attrs, socket) do
+    case Runners.update_inactive_retention_settings(
+           socket.assigns.current_account,
+           attrs,
+           socket.assigns.current_subject
+         ) do
+      {:ok, account} ->
+        {:noreply,
+         socket
+         |> assign(:current_account, account)
+         |> assign_retention_hours(account)
+         |> put_flash(:info, retention_set_flash(retention_hours(account)))}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
+
+      {:error, :unauthorized} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Only owners and admins with full runner access can change this setting."
+         )}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
+    end
   end
 
   def handle_event("cleanup_inactive_now", _params, socket) do
@@ -80,35 +110,15 @@ defmodule EmisarWeb.RunnersLive do
     end
   end
 
-  defp apply_runner_retention(socket, :error),
-    do: {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
+  defp assign_retention_hours(socket, account),
+    do: assign(socket, :retention_hours, retention_hours(account))
 
-  defp apply_runner_retention(socket, {:ok, hours_or_nil}) do
-    case Accounts.update_account(
-           socket.assigns.current_account,
-           %{settings: %{runner_inactive_retention_hours: hours_or_nil}},
-           socket.assigns.current_subject
-         ) do
-      {:ok, account} ->
-        {:noreply,
-         socket
-         |> assign(:current_account, account)
-         |> put_flash(:info, retention_set_flash(hours_or_nil))}
-
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
-    end
-  end
-
-  defp parse_retention_hours(""), do: {:ok, nil}
-
-  defp parse_retention_hours(raw) when is_binary(raw) do
-    case Integer.parse(raw) do
-      {hours, ""} when hours > 0 -> {:ok, hours}
-      _ -> :error
+  # The stored window is data, not a promise: an unusable value reads as off —
+  # the same verdict the sweep takes — instead of reaching the phrase helpers.
+  defp retention_hours(account) do
+    case Runners.inactive_retention_hours(account) do
+      {:ok, hours} -> hours
+      {:error, :retention_disabled} -> nil
     end
   end
 
@@ -545,45 +555,43 @@ defmodule EmisarWeb.RunnersLive do
                     sweep deletes them; a host that comes back online re-enrolls as a fresh
                     runner. Currently-connected and disabled runners are never touched.
                   </p>
-                  <%= if Accounts.subject_can_manage_account?(@current_subject) do %>
+                  <%= if Runners.subject_can_manage_inactive_retention?(@current_subject) do %>
                     <form id="runner-retention-form" phx-change="set_runner_retention" class="mt-3">
                       <.select
                         name="hours"
                         aria-label="Remove runners inactive for"
-                        options={
-                          runner_retention_options(
-                            @current_account.settings.runner_inactive_retention_hours
-                          )
-                        }
+                        options={runner_retention_options(@retention_hours)}
                       />
                     </form>
-                    <.confirm_button
-                      :if={@current_account.settings.runner_inactive_retention_hours}
-                      id="runners-cleanup-now"
-                      variant={:secondary}
-                      tone={:neutral}
-                      size={:lg}
-                      class="mt-3 w-full"
-                      title="Clean up inactive runners?"
-                      confirm_label="Clean up now"
-                      on_confirm={JS.push("cleanup_inactive_now")}
-                    >
-                      <:body>
-                        Soft-deletes every runner inactive for more than {retention_period_phrase(
-                          @current_account.settings.runner_inactive_retention_hours
-                        )}. A host that comes back online re-enrolls as a fresh runner; its
-                        audit history is kept.
-                      </:body>
-                      Clean up now
-                    </.confirm_button>
                   <% else %>
                     <p class="mt-2 text-[11px] text-zinc-400">
-                      Owner/admin only — currently {(@current_account.settings.runner_inactive_retention_hours &&
-                                                       retention_period_label(
-                                                         @current_account.settings.runner_inactive_retention_hours
-                                                       )) || "off"}.
+                      Owners and admins with full runner access only — currently {(@retention_hours &&
+                                                                                     retention_period_label(
+                                                                                       @retention_hours
+                                                                                     )) || "off"}.
                     </p>
                   <% end %>
+                  <%!-- A runner-scoped admin can't set the account-wide schedule but can
+                       still run the manual sweep — it's narrowed to their own scope. --%>
+                  <.confirm_button
+                    :if={@retention_hours && Runners.subject_can_manage_runners?(@current_subject)}
+                    id="runners-cleanup-now"
+                    variant={:secondary}
+                    tone={:neutral}
+                    size={:lg}
+                    class="mt-3 w-full"
+                    title="Clean up inactive runners?"
+                    confirm_label="Clean up now"
+                    on_confirm={JS.push("cleanup_inactive_now")}
+                  >
+                    <:body>
+                      Soft-deletes every runner inactive for more than {retention_period_phrase(
+                        @retention_hours
+                      )}. A host that comes back online re-enrolls as a fresh runner; its
+                      audit history is kept.
+                    </:body>
+                    Clean up now
+                  </.confirm_button>
                 </div>
               </div>
             </div>

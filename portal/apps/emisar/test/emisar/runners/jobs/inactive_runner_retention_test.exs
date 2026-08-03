@@ -33,9 +33,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
   test "prunes runners offline past a subscribed account's window (idempotently)" do
     account = Fixtures.Accounts.create_account()
 
-    Fixtures.Accounts.set_account_settings(account, %{
-      runner_inactive_retention_hours: @window_hours
-    })
+    Fixtures.Accounts.set_runner_inactive_retention_hours(account, @window_hours)
 
     runner = offline_runner(account, @beyond_window_hours)
 
@@ -51,9 +49,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
   test "sweeps every runner group account-wide — the system tick applies no operator scope" do
     account = Fixtures.Accounts.create_account()
 
-    Fixtures.Accounts.set_account_settings(account, %{
-      runner_inactive_retention_hours: @window_hours
-    })
+    Fixtures.Accounts.set_runner_inactive_retention_hours(account, @window_hours)
 
     db = offline_runner(account, @beyond_window_hours, group: "db")
     app = offline_runner(account, @beyond_window_hours, group: "app")
@@ -70,9 +66,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
   test "keeps runners offline within the window" do
     account = Fixtures.Accounts.create_account()
 
-    Fixtures.Accounts.set_account_settings(account, %{
-      runner_inactive_retention_hours: @window_hours
-    })
+    Fixtures.Accounts.set_runner_inactive_retention_hours(account, @window_hours)
 
     runner = offline_runner(account, 3)
 
@@ -91,12 +85,21 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     assert retention_markers(account.id) == []
   end
 
+  test "skips an account whose stored window is unusable" do
+    account = Fixtures.Accounts.create_account()
+    Fixtures.Accounts.force_runner_inactive_retention_hours(account, 0)
+    runner = offline_runner(account, @beyond_window_hours)
+
+    assert :ok = InactiveRunnerRetention.execute([])
+
+    assert is_nil(Repo.reload!(runner).deleted_at)
+    assert retention_markers(account.id) == []
+  end
+
   test "leaves no housekeeping marker for an account with nothing to remove" do
     account = Fixtures.Accounts.create_account()
 
-    Fixtures.Accounts.set_account_settings(account, %{
-      runner_inactive_retention_hours: @window_hours
-    })
+    Fixtures.Accounts.set_runner_inactive_retention_hours(account, @window_hours)
 
     assert :ok = InactiveRunnerRetention.execute([])
     assert :ok = InactiveRunnerRetention.execute([])
