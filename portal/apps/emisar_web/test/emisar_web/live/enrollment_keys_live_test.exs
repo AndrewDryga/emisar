@@ -187,6 +187,25 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     refute html =~ "bootstrap for prod image"
   end
 
+  test "the reveal shows the domain-built install command, leading space and all", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
+
+    html =
+      lv
+      |> form("#enrollment_key_form", %{"enrollment_key" => %{"description" => "prod tier"}})
+      |> render_submit()
+
+    [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{43}/, html)
+
+    # The one-liner is Runners.enrollment_install_command/2's output verbatim —
+    # rendered after the panel's `$ ` prompt span, so the assertion also pins the
+    # intentional leading space (HISTCONTROL=ignorespace keeps the key out of
+    # shell history; a trim anywhere in the handoff would leak it).
+    assert html =~
+             "</span> curl -sSL http://www.example.com/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://www.example.com bash</pre>"
+  end
+
   # one-time-secret hygiene: once the operator dismisses the
   # revealed secret it's gone for good. There's no re-reveal control, and the
   # only "show secret again" affordance is the dismiss (which clears it) — the

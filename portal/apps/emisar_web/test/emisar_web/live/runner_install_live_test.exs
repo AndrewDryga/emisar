@@ -24,13 +24,15 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     } do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
-      assert html =~ "curl -sSL"
+      [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{43}/, html)
 
-      # The Copy button copies the literal command via data-copy-text,
-      # including the intentional leading space (keeps the enrollment key out of
-      # shell history under HISTCONTROL=ignorespace). Regression: copying
-      # via the element's innerText used to strip that leading space.
-      assert html =~ ~s(data-copy-text=" curl -sSL)
+      # The Copy button copies the literal command via data-copy-text — the
+      # domain's one-liner verbatim, including the intentional leading space
+      # (keeps the enrollment key out of shell history under
+      # HISTCONTROL=ignorespace). Regression: copying via the element's
+      # innerText used to strip that leading space.
+      assert html =~
+               ~s(data-copy-text=" curl -sSL http://www.example.com/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://www.example.com bash")
     end
 
     test "puts the live wait status directly after the command, before the script details", %{

