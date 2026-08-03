@@ -66,9 +66,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
     {:ok, {slug, version}} = parse_runbook_ref(args["runbook_ref"])
 
     with {:ok, runbook} <-
-           Runbooks.fetch_published_runbook_version(slug, version, conn.assigns.current_subject),
-         :ok <-
-           Runbooks.validate_model_visible_runbook(runbook, conn.assigns.current_subject),
+           Runbooks.fetch_model_visible_runbook_version(
+             slug,
+             version,
+             conn.assigns.current_subject
+           ),
          {:ok, public_runbook} <- RunbookContract.project(runbook) do
       {:ok, %{ok: true, runbook: public_runbook}}
     else
@@ -76,9 +78,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
         {:error, error("not_allowed", "This key cannot read runbooks.")}
 
       {:error, reason} when reason in [:not_found, :incomplete_contract] ->
-        {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
-
-      {:error, issues} when is_list(issues) ->
         {:error, error("runbook_not_found", "No published runbook has that exact ref.")}
     end
   end
@@ -475,32 +474,21 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp published_summaries(conn, query) do
-    case Runbooks.list_all_runbooks(conn.assigns.current_subject) do
-      {:ok, runbooks} ->
-        summaries =
-          runbooks
-          |> Enum.filter(&(&1.status == :published))
-          |> Enum.group_by(& &1.slug)
-          |> Enum.map(fn {_slug, versions} -> Enum.max_by(versions, & &1.version) end)
-          |> Enum.flat_map(fn runbook ->
-            with :ok <-
-                   Runbooks.validate_model_visible_runbook(
-                     runbook,
-                     conn.assigns.current_subject
-                   ),
-                 {:ok, public_runbook} <- RunbookContract.project(runbook) do
-              [runbook_summary(runbook, public_runbook)]
-            else
-              _hidden_or_invalid -> []
-            end
-          end)
-          |> Enum.filter(&summary_matches?(&1, query))
-          |> Enum.sort_by(& &1.runbook_ref)
+    with {:ok, runbooks} <- Runbooks.list_model_visible_runbooks(conn.assigns.current_subject) do
+      summaries =
+        runbooks
+        |> Enum.flat_map(&projected_summary/1)
+        |> Enum.filter(&summary_matches?(&1, query))
+        |> Enum.sort_by(& &1.runbook_ref)
 
-        {:ok, summaries}
+      {:ok, summaries}
+    end
+  end
 
-      error ->
-        error
+  defp projected_summary(runbook) do
+    case RunbookContract.project(runbook) do
+      {:ok, public_runbook} -> [runbook_summary(runbook, public_runbook)]
+      {:error, :incomplete_contract} -> []
     end
   end
 

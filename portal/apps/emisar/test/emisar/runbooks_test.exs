@@ -231,24 +231,107 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "list_all_runbooks/1" do
-    test "returns every visible non-deleted version" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject)
-      assert {:ok, second} = Runbooks.save_new_version(first, %{"description" => "v2"}, subject)
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      _other = create_runbook(other_subject)
+  describe "list_model_visible_runbooks/1" do
+    test "returns each family's newest published version and skips never-published families" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
 
-      assert {:ok, runbooks} = Runbooks.list_all_runbooks(subject)
-      assert MapSet.new(runbooks, & &1.id) == MapSet.new([first.id, second.id])
+      first =
+        create_runbook(subject, slug: "alpha", definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, second_draft} = Runbooks.save_new_version(first, %{}, subject)
+      second = Fixtures.Runbooks.publish_runbook(second_draft)
+
+      # The family head is a draft, so the published version it sits on is
+      # still what a model may execute.
+      assert {:ok, _third_draft} = Runbooks.save_new_version(second, %{}, subject)
+      _draft_only = create_runbook(subject, slug: "beta", definition: definition(runner.group))
+
+      assert {:ok, runbooks} = Runbooks.list_model_visible_runbooks(subject)
+      assert Enum.map(runbooks, & &1.id) == [second.id]
+    end
+
+    test "drops a published family once its pack trust is revoked" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+
+      runbook =
+        create_runbook(subject, definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, [visible]} = Runbooks.list_model_visible_runbooks(subject)
+      assert visible.id == runbook.id
+
+      assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
+
+      assert Runbooks.list_model_visible_runbooks(subject) == {:ok, []}
     end
 
     test "denies a principal without view permission" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.list_all_runbooks(Subject.for_runner(runner, account)) ==
+      assert Runbooks.list_model_visible_runbooks(Subject.for_runner(runner, account)) ==
                {:error, :unauthorized}
+    end
+  end
+
+  describe "fetch_model_visible_runbook_version/3" do
+    test "returns the exact published version until its contract stops resolving" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+
+      published =
+        create_runbook(subject, slug: "versioned", definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, fetched} =
+               Runbooks.fetch_model_visible_runbook_version("versioned", 1, subject)
+
+      assert fetched.id == published.id
+
+      assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
+
+      assert Runbooks.fetch_model_visible_runbook_version("versioned", 1, subject) ==
+               {:error, :not_found}
+    end
+
+    test "hides drafts, unknown versions, and another account's family" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+      _draft = create_runbook(subject, slug: "draft-only", definition: definition(runner.group))
+
+      _published =
+        create_runbook(subject, slug: "versioned", definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      assert Runbooks.fetch_model_visible_runbook_version("draft-only", 1, subject) ==
+               {:error, :not_found}
+
+      assert Runbooks.fetch_model_visible_runbook_version("versioned", 2, subject) ==
+               {:error, :not_found}
+
+      assert Runbooks.fetch_model_visible_runbook_version("missing", 1, subject) ==
+               {:error, :not_found}
+
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runbooks.fetch_model_visible_runbook_version("versioned", 1, other_subject) ==
+               {:error, :not_found}
+    end
+
+    test "denies a principal without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.fetch_model_visible_runbook_version(
+               "any",
+               1,
+               Subject.for_runner(runner, account)
+             ) == {:error, :unauthorized}
     end
   end
 
@@ -1398,32 +1481,6 @@ defmodule Emisar.RunbooksTest do
 
       assert get_in(plan, ["stages", Access.at(0), "items", Access.at(0), "args", "seconds"]) ==
                0
-    end
-  end
-
-  describe "validate_model_visible_runbook/2" do
-    test "requires a current trusted compatible execution contract" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = trusted_runner(account, subject)
-      runbook = create_runbook(subject, definition: definition(runner.group))
-
-      assert Runbooks.validate_model_visible_runbook(runbook, subject) == :ok
-
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-
-      assert Runbooks.validate_model_visible_runbook(runbook, other_subject) ==
-               {:error, :not_found}
-    end
-
-    test "denies model discovery to a principal without view permission" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = trusted_runner(account, subject)
-      runbook = create_runbook(subject, definition: definition(runner.group))
-
-      assert Runbooks.validate_model_visible_runbook(
-               runbook,
-               Subject.for_runner(runner, account)
-             ) == {:error, :unauthorized}
     end
   end
 

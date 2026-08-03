@@ -161,19 +161,57 @@ defmodule Emisar.Runbooks do
   defp step_action_id(%{"action" => action}) when is_binary(action), do: action
   defp step_action_id(_step), do: nil
 
-  @doc "Lists every runbook visible to the subject for bounded in-memory MCP projection."
-  def list_all_runbooks(%Subject{} = subject) do
+  @doc """
+  Lists the newest published version of each slug family a model may discover —
+  a newer draft never suppresses the published version behind it. Requires
+  `view_runbooks`; scoped to the subject's account, then narrowed to the rows
+  whose CURRENT execution contract is still available. Returns
+  `{:ok, [runbook]} | {:error, :unauthorized}`.
+  """
+  def list_model_visible_runbooks(%Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
       runbooks =
         Runbook.Query.not_deleted()
-        |> Runbook.Query.ordered_by_title_version()
+        |> Runbook.Query.published()
+        |> Runbook.Query.distinct_latest_per_slug()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, runbooks}
+      {:ok, Enum.filter(runbooks, &model_visible?(&1, subject))}
     end
   end
+
+  @doc """
+  Fetches the one exact published `slug@version` a model may read. Requires
+  `view_runbooks`; scoped to the subject's account. Returns
+  `{:ok, runbook} | {:error, :not_found | :unauthorized}` — a draft,
+  cross-account, missing, or currently unavailable version is all `:not_found`,
+  so discovery never confirms a runbook the caller may not execute.
+  """
+  def fetch_model_visible_runbook_version(slug, version, %Subject{} = subject)
+      when is_binary(slug) and is_integer(version) and version > 0 do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         {:ok, runbook} <- fetch_model_published_version(slug, version, subject) do
+      if model_visible?(runbook, subject), do: {:ok, runbook}, else: {:error, :not_found}
+    end
+  end
+
+  defp fetch_model_published_version(slug, version, %Subject{} = subject) do
+    Runbook.Query.not_deleted()
+    |> Runbook.Query.published()
+    |> Runbook.Query.by_slug(slug)
+    |> Runbook.Query.by_version(version)
+    |> Authorizer.for_subject(subject)
+    |> Repo.fetch(Runbook.Query)
+  end
+
+  # Discovery answers one question — could this runbook run right now? Every
+  # availability failure (missing target, untrusted or retired pack, changed
+  # contract) is the same answer to a model: it isn't there.
+  defp model_visible?(%Runbook{} = runbook, %Subject{} = subject),
+    do: Compiler.validate_availability(runbook.definition, subject) == :ok
 
   def fetch_runbook_by_id(id, %Subject{} = subject) do
     with :ok <-
@@ -1149,15 +1187,6 @@ defmodule Emisar.Runbooks do
     do: min(value, floor(maximum))
 
   defp min_integer_maximum(value, _maximum), do: value
-
-  @doc "Checks whether a runbook's current trusted execution contract is visible to a subject."
-  def validate_model_visible_runbook(%Runbook{} = runbook, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
-      Compiler.validate_availability(runbook.definition, subject)
-    end
-  end
 
   @doc """
   Cancels one visible active execution and requests cancellation of its active
