@@ -100,25 +100,28 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     refute_received {:email, _email}
   end
 
-  test "when workspace setup fails, the user gets a confirmation + a recovery path", %{conn: conn} do
+  test "an over-long workspace name errors inline and leaves no user behind", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
 
     # A valid user but an over-long workspace name passes the LV's blank check
-    # yet fails the account name-length validation (max 80) — so register_user
-    # succeeds and create_account_with_owner fails: the orphan-recovery branch.
-    params = sign_up_params(%{"account_name" => String.duplicate("x", 81)})
+    # yet fails the account name cap (80) — one transaction, so the user row
+    # rolls back with it and the operator fixes the name in place.
+    account_name = String.duplicate("x", 81)
+    params = sign_up_params(%{"account_name" => account_name})
 
-    result = lv |> form("#registration_form", params) |> render_submit()
+    html = lv |> form("#registration_form", params) |> render_submit()
 
-    # Recovers to the magic-link page with concrete, reassuring copy (not a vague
-    # "setup failed" error) — follow the live redirect to render the flash there.
-    assert {:error, {:live_redirect, %{to: "/sign_in/magic"}}} = result
-    assert {:ok, _lv, html} = follow_redirect(result, conn)
-    assert html =~ "check your email"
+    assert html =~ "should be at most 80 character(s)"
 
-    # The user row committed (the orphan); the confirmation email (sent in this
-    # branch too) + the onboarding redirect let them recover.
-    assert {:ok, _user} = Users.fetch_user_by_email(params["user"]["email"])
+    assert html =~
+             ~r/<input(?=[^>]*\bname="account_name")(?=[^>]*\bvalue="#{account_name}")[^>]*>/
+
+    assert html =~
+             ~r/<input(?=[^>]*\bname="user\[email\]")(?=[^>]*\bvalue="#{params["user"]["email"]}")[^>]*>/
+
+    # Stays on the form: no navigation, and the magic-link POST is never armed.
+    refute html =~ "phx-trigger-action"
+    assert Users.fetch_user_by_email(params["user"]["email"]) == {:error, :not_found}
   end
 
   test "a blank workspace name inline-errors and creates nothing", %{conn: conn} do

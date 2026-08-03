@@ -291,9 +291,33 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — onboarding/registration: called from signup where the user has no
-  membership yet, so no `%Subject{}` can exist — owning the brand-new account is
-  what creates one. Creates an account with the given user as `:owner`, wrapped
+  Internal — pre-auth self-serve signup: the person AND the workspace they own,
+  created in ONE transaction. No `%Subject{}` can exist — owning this brand-new
+  account is what creates one. Returns `{:ok, user}`; the caller's next step is
+  the sign-in link, so the user row is what it needs back.
+
+  A rejected form value comes back tagged with the step that owns it —
+  `{:error, {:user | :account | :membership, changeset}}` — because the sign-up
+  form has one input per step and must render the error beside the one the
+  operator typed. Everything else is `{:error, reason}`.
+  """
+  def register_owner(user_attrs, account_attrs) do
+    Multi.new()
+    |> Multi.run(:user, fn repo, _changes ->
+      tag_signup_error(:user, Users.register_user(user_attrs, repo: repo))
+    end)
+    |> put_account_with_owner(account_attrs)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{user: user}} -> {:ok, user}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Internal — onboarding: an existing user stands up another workspace, so unlike
+  `register_owner/2` there is a user row already but still no `%Subject{}` for
+  the new tenant. Creates an account with the given user as `:owner`, wrapped
   in a transaction so a half-created account is impossible. Audit-logs both
   `user.signed_up` (the new user) and `account.created` (the new tenant) —
   together they form the "this person stood up a new team" trace operators need
@@ -301,38 +325,61 @@ defmodule Emisar.Accounts do
   """
   def create_account_with_owner(account_attrs, %Users.User{} = user) do
     Multi.new()
-    |> Multi.insert(:account, Account.Changeset.create(account_attrs))
-    |> Multi.insert(:membership, fn %{account: account} ->
-      Membership.Changeset.create(%{
-        account_id: account.id,
-        user_id: user.id,
-        role: :owner,
-        runner_access_mode: :all
-      })
+    |> Multi.run(:user, fn _repo, _changes -> {:ok, user} end)
+    |> put_account_with_owner(account_attrs)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{account: account}} -> {:ok, account}
+      {:error, {_step, %Ecto.Changeset{} = changeset}} -> {:error, changeset}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The workspace half of standing up a new tenant, shared by both entry points
+  # above; each seeds the owner into a `:user` step first. The form-owned inserts
+  # run through `Multi.run` so a rejected changeset carries the step that owns
+  # it — `Repo.commit_multi/1` reports the reason alone, and signup renders each
+  # step's error under a different input.
+  defp put_account_with_owner(%Multi{} = multi, account_attrs) do
+    multi
+    |> Multi.run(:account, fn repo, _changes ->
+      changeset = Account.Changeset.create(account_attrs)
+      tag_signup_error(:account, repo.insert(changeset))
+    end)
+    |> Multi.run(:membership, fn repo, %{account: account, user: user} ->
+      changeset =
+        Membership.Changeset.create(%{
+          account_id: account.id,
+          user_id: user.id,
+          role: :owner,
+          runner_access_mode: :all
+        })
+
+      tag_signup_error(:membership, repo.insert(changeset))
     end)
     # Making your own workspace is a second membership like any other: it ends the
     # single-account assumption an admin-approved binding elsewhere was granted on.
-    |> Multi.run(:retired_bindings, fn repo, _changes ->
+    |> Multi.run(:retired_bindings, fn repo, %{user: user} ->
       retire_bindings_that_assumed_one_account(repo, user)
     end)
     # Workspace gets the v2 conservative default policy on creation.
     # Without this, `Policies.evaluate(nil, ...)` would default-deny
     # every dispatch — which is correct but unhelpful as a first run.
-    |> Multi.run(:policy, fn _repo, %{account: account} ->
+    |> Multi.run(:policy, fn _repo, %{account: account, user: user} ->
       Emisar.Policies.seed_policy(account.id, user.id)
     end)
-    |> Multi.insert(:account_created, fn %{account: account} ->
+    |> Multi.insert(:account_created, fn %{account: account, user: user} ->
       Audit.Events.account_created(account, user)
     end)
-    |> Multi.insert(:user_signed_up, fn %{account: account} ->
+    |> Multi.insert(:user_signed_up, fn %{account: account, user: user} ->
       Audit.Events.user_signed_up(user, account)
     end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{account: account}} -> {:ok, account}
-      {:error, reason} -> {:error, reason}
-    end
   end
+
+  defp tag_signup_error(_step, {:ok, row}), do: {:ok, row}
+
+  defp tag_signup_error(step, {:error, %Ecto.Changeset{} = changeset}),
+    do: {:error, {step, changeset}}
 
   @doc """
   Update an account's settings. The required permission is **field-aware**:

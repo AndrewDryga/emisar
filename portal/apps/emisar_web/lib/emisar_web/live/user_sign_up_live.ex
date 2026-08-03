@@ -1,6 +1,6 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Auth, Users}
+  alias Emisar.{Accounts, Users}
   alias EmisarWeb.{LiveForm, RegistrationHandoff}
 
   # The landing page's CTA collects a work email and GETs here with it; carry it
@@ -117,56 +117,64 @@ defmodule EmisarWeb.UserSignUpLive do
   def handle_event("save", %{"user" => user_params} = all, socket) do
     account_name = String.trim(all["account_name"] || "")
 
+    socket =
+      socket
+      |> assign(:account_name, account_name)
+      |> assign(:account_name_error, nil)
+
     if account_name == "" do
       # Inline under the field (it's a hand-rolled input, not a changeset
       # field) — matches every other form's inline-error behaviour, not a flash.
-      {:noreply,
-       socket
-       |> assign(:account_name, "")
-       |> assign(:account_name_error, "Tell us what to call your workspace.")}
+      {:noreply, assign(socket, :account_name_error, "Tell us what to call your workspace.")}
     else
       do_save(socket, user_params, account_name)
     end
   end
 
   defp do_save(socket, user_params, account_name) do
-    case Users.register_user(user_params) do
+    account_attrs = %{
+      name: account_name,
+      slug: Accounts.suggest_unique_slug(account_name)
+    }
+
+    case Accounts.register_owner(user_params, account_attrs) do
       {:ok, user} ->
-        case Accounts.create_account_with_owner(
-               %{
-                 name: account_name,
-                 slug: Accounts.suggest_unique_slug(account_name)
-               },
-               user
-             ) do
-          {:ok, _account} ->
-            # Flip trigger_submit → the form POSTs the email to magic_link_start,
-            # which mails the sign-in link, confirms the address when completed,
-            # and lands them on "check your email".
-            {:noreply,
-             socket
-             |> assign(:trigger_submit, true)
-             |> assign(:registration_handoff, RegistrationHandoff.sign(user.id))
-             |> assign_form(Users.change_user(user))}
+        # Flip trigger_submit → the form POSTs the email to magic_link_start,
+        # which mails the sign-in link, confirms the address when completed,
+        # and lands them on "check your email".
+        {:noreply,
+         socket
+         |> assign(:trigger_submit, true)
+         |> assign(:registration_handoff, RegistrationHandoff.sign(user.id))
+         |> assign_form(Users.change_user(user))}
 
-          {:error, _reason} ->
-            # Rare race: the user row committed but the workspace didn't. Still
-            # send the confirmation email so the user can verify and sign in — the
-            # onboarding redirect then walks them through creating a workspace.
-            :ok = Auth.deliver_confirmation_instructions(user)
-
-            {:noreply,
-             socket
-             |> put_flash(
-               :info,
-               "Your account is ready — check your email for a confirmation link, then " <>
-                 "sign in and we'll help you finish setting up your workspace."
-             )
-             |> push_navigate(to: ~p"/sign_in/magic")}
-        end
-
-      {:error, changeset} ->
+      {:error, {:user, changeset}} ->
         {:noreply, assign_form(socket, changeset)}
+
+      {:error, {:account, changeset}} ->
+        {:noreply,
+         socket
+         |> assign(:account_name_error, account_name_error(changeset))
+         |> assign_form(Users.change_user(%Emisar.Users.User{}, user_params))}
+
+      # The owner membership is fixed by this flow, so a failure here is ours,
+      # not something the operator can retype their way out of.
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "We couldn't finish setting up your workspace. Try again.")
+         |> assign_form(Users.change_user(%Emisar.Users.User{}, user_params))}
+    end
+  end
+
+  # The workspace name is a standalone param, not a form field, so its rejection
+  # arrives as the account changeset. The slug is derived from the name, so a
+  # name that validated yet produced an unusable slug is still a name problem
+  # to the operator.
+  defp account_name_error(%Ecto.Changeset{} = changeset) do
+    case changeset.errors[:name] || changeset.errors[:slug] do
+      nil -> "Pick a different workspace name."
+      error -> translate_error(error)
     end
   end
 

@@ -57,11 +57,19 @@ defmodule Emisar.Users do
 
   # -- Registration + sign-in (pre-Subject boundary) ----------------------
 
-  @doc "Internal — registration: the auth boundary creates the user before any subject/tenant exists (pre-auth)."
-  def register_user(attrs) do
+  @doc """
+  Internal — registration: the auth boundary creates the user before any
+  subject/tenant exists (pre-auth). Pass `repo: repo` from a caller's
+  `Multi.run` so the insert joins that open transaction — signup creates the
+  person and the workspace they own together (`Accounts.register_owner/2`);
+  it defaults to `Repo` for a standalone registration.
+  """
+  def register_user(attrs, opts \\ []) do
+    repo = Keyword.get(opts, :repo, Repo)
+
     %User{}
     |> User.Changeset.registration(attrs)
-    |> Repo.insert()
+    |> repo.insert()
   end
 
   @doc """

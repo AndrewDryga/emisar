@@ -587,6 +587,71 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "register_owner/2" do
+    test "creates the user, the workspace and their owner membership" do
+      user_attrs = %{email: Fixtures.Random.unique_email(), full_name: "New Owner"}
+      account_attrs = Fixtures.Accounts.account_attrs()
+
+      assert {:ok, %User{} = user} = Accounts.register_owner(user_attrs, account_attrs)
+
+      assert user.email == user_attrs.email
+      assert account = Repo.one(Account)
+      assert account.name == account_attrs.name
+
+      assert membership = Repo.one(Membership)
+      assert membership.role == :owner
+      assert membership.user_id == user.id
+      assert membership.account_id == account.id
+    end
+
+    test "an invalid workspace tags the account changeset and rolls the user back" do
+      user_attrs = %{email: Fixtures.Random.unique_email(), full_name: "New Owner"}
+      account_attrs = Fixtures.Accounts.account_attrs(slug: "x")
+
+      assert {:error, {:account, changeset}} =
+               Accounts.register_owner(user_attrs, account_attrs)
+
+      assert "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars" in errors_on(
+               changeset
+             ).slug
+
+      refute Repo.one(User)
+      refute Repo.one(Account)
+      refute Repo.one(Membership)
+    end
+
+    test "a taken email tags the user changeset and writes no workspace" do
+      existing = Fixtures.Users.create_user()
+      user_attrs = %{email: existing.email, full_name: "Copy Cat"}
+
+      assert {:error, {:user, changeset}} =
+               Accounts.register_owner(user_attrs, Fixtures.Accounts.account_attrs())
+
+      assert "has already been taken" in errors_on(changeset).email
+
+      # `existing` is the only user; the signup's own row never committed.
+      assert Repo.one(User).id == existing.id
+      refute Repo.one(Account)
+      refute Repo.one(Membership)
+    end
+
+    test "an account claiming the suggested slug before insert rolls the user back" do
+      account_name = "Slug Race #{System.unique_integer([:positive])}"
+      suggested_slug = Accounts.suggest_unique_slug(account_name)
+      existing = Fixtures.Accounts.create_account(name: "Existing", slug: suggested_slug)
+      user_attrs = %{email: Fixtures.Random.unique_email(), full_name: "New Owner"}
+      account_attrs = %{name: account_name, slug: suggested_slug}
+
+      assert {:error, {:account, changeset}} =
+               Accounts.register_owner(user_attrs, account_attrs)
+
+      assert "has already been taken" in errors_on(changeset).slug
+      refute Repo.one(User)
+      assert Repo.one(Account).id == existing.id
+      refute Repo.one(Membership)
+    end
+  end
+
   describe "create_account_with_owner/2" do
     test "persists account + owner membership in a single transaction" do
       user = Fixtures.Users.create_user()
