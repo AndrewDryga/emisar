@@ -22,9 +22,6 @@ defmodule EmisarWeb.PoliciesLive do
   alias Emisar.Runners
   alias EmisarWeb.Permissions
 
-  @decisions Policies.decisions()
-  @tiers Policies.risk_tiers()
-
   # Non-breaking spaces so the browser keeps the indent (ASCII whitespace in an
   # <option> is stripped) — nests runners under their group in the target picker.
   @runner_indent "    "
@@ -119,46 +116,33 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp build_account_editor(policy) do
     rules = (policy && policy.rules) || Policies.default_rules()
-    defaults = normalize_defaults(rules["defaults"])
-    overrides = normalize_overrides(rules["overrides"])
-    {approval, approval_valid?} = normalize_approval(rules)
+    input = Policies.editor_input(rules)
 
-    %{
+    Map.merge(input, %{
       uid: "account",
       scope_type: :account,
       scope_value: "",
-      defaults: defaults,
-      overrides: overrides,
-      approval: approval,
-      approval_valid?: approval_valid?,
       show_override_errors?: false,
       # Snapshot of the saved rules: editor_dirty?/1 compares the live edits to
       # this, so reverting a change back clears the Save button (not a one-way flag).
-      baseline_rules: to_rules(defaults, overrides, approval),
+      baseline_rules: stored_baseline(policy, input),
       policy: policy,
-      rules_errors: stored_approval_errors(approval_valid?)
-    }
+      rules_errors: stored_approval_errors(input.approval_valid?)
+    })
   end
 
   defp build_ruleset_editor(%Policies.Policy{} = policy) do
-    rules = policy.rules || Policies.default_rules()
-    defaults = normalize_defaults(rules["defaults"])
-    overrides = normalize_overrides(rules["overrides"])
-    {approval, approval_valid?} = normalize_approval(rules)
+    input = Policies.editor_input(policy.rules || Policies.default_rules())
 
-    %{
+    Map.merge(input, %{
       uid: policy.id,
       scope_type: policy.scope_type,
       scope_value: policy.scope_value,
-      defaults: defaults,
-      overrides: overrides,
-      approval: approval,
-      approval_valid?: approval_valid?,
       show_override_errors?: false,
-      baseline_rules: to_rules(defaults, overrides, approval),
+      baseline_rules: stored_baseline(policy, input),
       policy: policy,
-      rules_errors: stored_approval_errors(approval_valid?)
-    }
+      rules_errors: stored_approval_errors(input.approval_valid?)
+    })
   end
 
   # A blank, not-yet-targeted ruleset, seeded from the default policy so the
@@ -166,22 +150,23 @@ defmodule EmisarWeb.PoliciesLive do
   # important under replace-semantics, where a ruleset that dropped the
   # account's deny-overrides would silently widen access for that target.
   defp new_ruleset(account) do
-    %{
+    input = policy_input(account)
+
+    Map.merge(input, %{
       uid: "new-" <> Integer.to_string(System.unique_integer([:positive])),
       scope_type: nil,
       scope_value: "",
-      defaults: account.defaults,
-      overrides: account.overrides,
-      approval: account.approval,
-      approval_valid?: true,
       show_override_errors?: false,
-      baseline_rules: to_rules(account.defaults, account.overrides, account.approval),
+      baseline_rules: Policies.build_rules(input),
       # Filled in once a target is picked (set_target); no target = no catalog.
       catalog: %{},
       policy: nil,
       rules_errors: []
-    }
+    })
   end
+
+  defp stored_baseline(nil, input), do: Policies.build_rules(input)
+  defp stored_baseline(%Policies.Policy{rules: rules}, _input), do: rules
 
   defp list_runners(subject) do
     case Runners.list_all_runners_for_account(subject) do
@@ -207,7 +192,7 @@ defmodule EmisarWeb.PoliciesLive do
   def handle_event("add_override", %{"editor" => editor_id}, socket) do
     {:noreply,
      update_editor(socket, editor_id, fn editor ->
-       %{editor | overrides: editor.overrides ++ [empty_override()]}
+       %{editor | overrides: editor.overrides ++ [Policies.empty_override()]}
      end)}
   end
 
@@ -225,11 +210,21 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   def handle_event("add_ruleset", _params, socket) do
-    if Policies.subject_can_manage_policies?(socket.assigns.current_subject) do
-      {:noreply,
-       assign(socket, :rulesets, socket.assigns.rulesets ++ [new_ruleset(socket.assigns.account)])}
-    else
-      {:noreply, socket}
+    cond do
+      not Policies.subject_can_manage_policies?(socket.assigns.current_subject) ->
+        {:noreply, socket}
+
+      not socket.assigns.account.approval_valid? ->
+        {:noreply,
+         put_flash(socket, :error, "Repair and save the default policy before adding a ruleset.")}
+
+      true ->
+        {:noreply,
+         assign(
+           socket,
+           :rulesets,
+           socket.assigns.rulesets ++ [new_ruleset(socket.assigns.account)]
+         )}
     end
   end
 
@@ -306,7 +301,7 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   defp persist_rules(socket, editor, save_fun) do
-    rules = to_rules(editor.defaults, editor.overrides, editor.approval)
+    rules = Policies.build_rules(policy_input(editor))
 
     case save_fun.(rules, socket.assigns.current_subject) do
       {:ok, policy} ->
@@ -400,34 +395,33 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp rules_changed?(editor) do
     Enum.any?(editor.overrides, &partial_override?/1) or
-      to_rules(editor.defaults, editor.overrides, editor.approval) != editor.baseline_rules
+      Policies.build_rules(policy_input(editor)) != editor.baseline_rules
   end
 
+  # The browser adapter: the form posts overrides as an index-keyed map and the
+  # approval gate as strings, so translate both into the domain's shape and let
+  # `Policies` own what an edit may change.
   defp apply_policy_params(socket, editor_id, params) when is_map(params) do
     update_editor(socket, editor_id, fn editor ->
-      defaults =
-        editor.defaults
-        |> merge_defaults(params["defaults"] || %{})
-        |> enforce_monotonic_defaults()
-
-      overrides = merge_overrides(editor.overrides, params["overrides"] || [])
-      approval = merge_approval(editor.approval, params["approval"] || %{})
-
-      rules_errors =
-        stored_approval_errors(editor.approval_valid?) ++
-          rules_errors(defaults, overrides, approval)
-
-      %{
-        editor
-        | defaults: defaults,
-          overrides: overrides,
-          approval: approval,
-          rules_errors: rules_errors
+      changes = %{
+        defaults: params["defaults"] || %{},
+        overrides: normalize_indexed(params["overrides"] || []),
+        approval: parse_approval(editor.approval, params["approval"] || %{})
       }
+
+      input = Policies.update_editor_input(policy_input(editor), changes)
+      rules_errors = stored_approval_errors(input.approval_valid?) ++ rules_errors(input)
+
+      editor |> Map.merge(input) |> Map.put(:rules_errors, rules_errors)
     end)
   end
 
   defp apply_policy_params(socket, _editor_id, _params), do: socket
+
+  # The domain-shaped slice of an editor (or of a rail's assigns) — `Policies`
+  # owns the rules; every other key on the map is this page's own state.
+  defp policy_input(state),
+    do: Map.take(state, [:defaults, :overrides, :approval, :approval_valid?])
 
   defp parse_target(target) do
     case String.split(target, ":", parts: 2) do
@@ -437,69 +431,21 @@ defmodule EmisarWeb.PoliciesLive do
     end
   end
 
-  defp normalize_defaults(nil), do: default_defaults()
-
-  defp normalize_defaults(%{} = defaults) do
-    Enum.into(@tiers, %{}, fn tier ->
-      value = defaults[tier]
-      {tier, if(value in @decisions, do: value, else: default_decision(tier))}
-    end)
-  end
-
-  defp default_defaults, do: Enum.into(@tiers, %{}, fn tier -> {tier, default_decision(tier)} end)
-
-  defp default_decision("low"), do: "allow"
-  defp default_decision("medium"), do: "allow"
-  defp default_decision("high"), do: "require_approval"
-  defp default_decision("critical"), do: "deny"
-
-  defp normalize_overrides(nil), do: []
-
-  defp normalize_overrides(list) when is_list(list) do
-    Enum.map(list, fn override ->
-      %{
-        "name" => override["name"] || "",
-        "action" => override["action"] || "",
-        "decision" =>
-          if(override["decision"] in @decisions, do: override["decision"], else: "allow")
-      }
-    end)
-  end
-
-  defp normalize_overrides(_), do: []
-
-  defp empty_override, do: %{"name" => "", "action" => "", "decision" => "allow"}
-
-  # Corrupt stored settings block dispatch, but the editor must remain a repair
-  # path. Present a conservative complete gate and keep the editor dirty until
-  # the operator explicitly saves it.
-  defp normalize_approval(rules) when is_map(rules) do
-    case Policies.approval_settings_for(rules) do
-      {:ok, approval} ->
-        {%{
-           "min_approvals" => approval.min_approvals,
-           "allow_self_approval" => approval.allow_self_approval
-         }, true}
-
-      {:error, :invalid_policy_approval} ->
-        {%{"min_approvals" => 1, "allow_self_approval" => false}, false}
-    end
-  end
-
   defp stored_approval_errors(true), do: []
 
   defp stored_approval_errors(false),
     do: ["Stored approval settings are invalid. Review this gate and save the policy."]
 
-  # A native checkbox posts its value only when checked, so an UNCHECKED
-  # allow_self_approval (the box absent from params) reads as false. The number
-  # input always posts; floor it at 1 to mirror the changeset.
-  defp merge_approval(state, form) when is_map(form) do
+  # The choice cards post an explicit boolean string. Treat a missing value as
+  # false, and floor the number input at 1 to mirror the changeset.
+  defp parse_approval(current, form) when is_map(form) do
     %{
-      "min_approvals" => parse_min_approvals(form["min_approvals"], state["min_approvals"]),
+      "min_approvals" => parse_min_approvals(form["min_approvals"], current["min_approvals"]),
       "allow_self_approval" => form["allow_self_approval"] == "true"
     }
   end
+
+  defp parse_approval(current, _form), do: current
 
   defp parse_min_approvals(value, fallback) when is_binary(value) do
     case Integer.parse(String.trim(value)) do
@@ -551,52 +497,8 @@ defmodule EmisarWeb.PoliciesLive do
   defp weakening_sentence([one]), do: one
   defp weakening_sentence(many), do: Enum.join(many, " and ")
 
-  defp merge_defaults(state, form) when is_map(form) do
-    Enum.into(@tiers, state, fn tier ->
-      value = form[tier] || state[tier]
-      {tier, if(value in @decisions, do: value, else: state[tier])}
-    end)
-  end
-
-  # Walk left-to-right, lifting any tier that's more permissive than its
-  # predecessor up to the predecessor's level — so changing `low` to deny
-  # instantly bumps the rest, and the operator never sees a transient invalid
-  # state the server would reject.
-  defp enforce_monotonic_defaults(defaults) do
-    @tiers
-    |> Enum.reduce({defaults, 0}, fn tier, {acc, floor_rank} ->
-      cur_rank = Policies.decision_rank(acc[tier])
-
-      {value, rank} =
-        if cur_rank < floor_rank,
-          do: {decision_at_rank(floor_rank), floor_rank},
-          else: {acc[tier], cur_rank}
-
-      {Map.put(acc, tier, value), rank}
-    end)
-    |> elem(0)
-  end
-
-  defp decision_at_rank(0), do: "allow"
-  defp decision_at_rank(1), do: "require_approval"
-  defp decision_at_rank(2), do: "deny"
-
-  defp merge_overrides(state, form) do
-    form_list = normalize_indexed(form)
-
-    state
-    |> Enum.with_index()
-    |> Enum.map(fn {override, i} ->
-      case Enum.at(form_list, i) do
-        nil ->
-          override
-
-        form_override ->
-          Map.merge(override, Map.take(form_override, ["name", "action", "decision"]))
-      end
-    end)
-  end
-
+  # LiveView posts a repeated field group as an index-keyed map; the domain
+  # takes an ordered list.
   defp normalize_indexed(list) when is_list(list), do: list
 
   defp normalize_indexed(%{} = map) do
@@ -612,26 +514,9 @@ defmodule EmisarWeb.PoliciesLive do
 
   defp normalize_indexed(_), do: []
 
-  defp to_rules(defaults, overrides, approval) do
-    %{
-      "schema_version" => 2,
-      "defaults" => defaults,
-      "overrides" =>
-        overrides
-        |> Enum.reject(&blank_action?/1)
-        |> Enum.map(fn override ->
-          %{
-            "name" => String.trim(override["name"] || ""),
-            "action" => String.trim(override["action"]),
-            "decision" => override["decision"]
-          }
-        end),
-      "approval" => approval
-    }
-  end
-
-  defp rules_errors(defaults, overrides, approval) do
-    to_rules(defaults, overrides, approval)
+  defp rules_errors(input) do
+    input
+    |> Policies.build_rules()
     |> Policies.change_policy()
     |> changeset_rules_errors()
   end
@@ -729,6 +614,17 @@ defmodule EmisarWeb.PoliciesLive do
 
     Enum.any?(groups, &(not MapSet.member?(taken, {:group, &1}))) or
       Enum.any?(runners, &(not MapSet.member?(taken, {:runner, &1.id})))
+  end
+
+  defp can_add_ruleset?(account, runners, groups, rulesets),
+    do: account.approval_valid? and addable_any?(runners, groups, rulesets)
+
+  defp add_ruleset_disabled_reason(%{approval_valid?: false}, _runners, _groups, _rulesets),
+    do: "Repair and save the default policy before adding a ruleset"
+
+  defp add_ruleset_disabled_reason(_account, runners, groups, rulesets) do
+    if not addable_any?(runners, groups, rulesets),
+      do: "Every runner and group already has a ruleset (or none exist yet)"
   end
 
   # -- Render ---------------------------------------------------------
@@ -865,11 +761,8 @@ defmodule EmisarWeb.PoliciesLive do
               <.add_row
                 label="Add ruleset"
                 phx-click="add_ruleset"
-                disabled={not addable_any?(@runners, @groups, @rulesets)}
-                title={
-                  if not addable_any?(@runners, @groups, @rulesets),
-                    do: "Every runner and group already has a ruleset (or none exist yet)"
-                }
+                disabled={not can_add_ruleset?(@account, @runners, @groups, @rulesets)}
+                title={add_ruleset_disabled_reason(@account, @runners, @groups, @rulesets)}
               />
             </div>
           </div>
@@ -894,7 +787,7 @@ defmodule EmisarWeb.PoliciesLive do
   # operator sees what the policy DOES, live as they edit. Below it, the catalog's
   # risk profile. Recomputes on every render (pure, in-memory).
   defp policy_rail(assigns) do
-    rules = to_rules(assigns.defaults, assigns.overrides, assigns.approval)
+    rules = Policies.build_rules(policy_input(assigns))
 
     assigns =
       assign(assigns,

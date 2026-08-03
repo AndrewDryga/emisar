@@ -1,11 +1,10 @@
 defmodule Emisar.Policies.Policy.Changeset do
   use Emisar, :changeset
+  alias Emisar.Policies
   alias Emisar.Policies.Policy
 
   @valid_sections ["schema_version", "defaults", "overrides", "approval"]
   @valid_approval_keys ["min_approvals", "allow_self_approval"]
-  @valid_tiers ~w(low medium high critical)
-  @valid_decisions ~w(allow require_approval deny)
 
   @doc """
   Validation-only changeset for the policy editor form. Casts the
@@ -104,11 +103,14 @@ defmodule Emisar.Policies.Policy.Changeset do
     end
   end
 
+  # The tier list, the decision set, and their ranks are read from `Policies` at
+  # runtime — one source of truth, and no compile cycle back into the context.
   defp check_defaults(nil), do: :ok
 
   defp check_defaults(%{} = defaults) do
-    bad_tiers = Map.keys(defaults) -- @valid_tiers
-    bad_values = Map.values(defaults) |> Enum.reject(&(&1 in @valid_decisions))
+    decisions = Policies.decisions()
+    bad_tiers = Map.keys(defaults) -- Policies.risk_tiers()
+    bad_values = Map.values(defaults) |> Enum.reject(&(&1 in decisions))
 
     cond do
       bad_tiers != [] -> {:error, "unknown risk tiers: #{inspect(bad_tiers)}"}
@@ -124,10 +126,10 @@ defmodule Emisar.Policies.Policy.Changeset do
   # < deny). Lets us write `cassandra.drain` policies that can't
   # accidentally be more permissive than `cassandra.nodetool_status`.
   defp check_tier_monotonicity(defaults) do
-    @valid_tiers
+    Policies.risk_tiers()
     |> Enum.map(&Map.get(defaults, &1))
     |> Enum.reject(&is_nil/1)
-    |> Enum.map(&Emisar.Policies.decision_rank/1)
+    |> Enum.map(&Policies.decision_rank/1)
     |> Enum.chunk_every(2, 1, :discard)
     |> Enum.find(fn [a, b] -> a > b end)
     |> case do
@@ -144,17 +146,21 @@ defmodule Emisar.Policies.Policy.Changeset do
   defp check_overrides(nil), do: :ok
 
   defp check_overrides(overrides) when is_list(overrides) do
+    decisions = Policies.decisions()
+
     Enum.reduce_while(overrides, :ok, fn override, _ ->
       cond do
         not is_map(override) ->
           {:halt, {:error, "each override must be a JSON object"}}
 
-        Map.get(override, "decision") not in @valid_decisions ->
-          {:halt,
-           {:error, "override decision must be one of #{Enum.join(@valid_decisions, ", ")}"}}
+        Map.get(override, "decision") not in decisions ->
+          {:halt, {:error, "override decision must be one of #{Enum.join(decisions, ", ")}"}}
 
         not is_binary(Map.get(override, "action")) or String.trim(override["action"]) == "" ->
           {:halt, {:error, "override action is required"}}
+
+        override["action"] != String.trim(override["action"]) ->
+          {:halt, {:error, "override action must not have surrounding whitespace"}}
 
         true ->
           {:cont, :ok}
@@ -175,8 +181,7 @@ defmodule Emisar.Policies.Policy.Changeset do
         {:error, "min_approvals is required"}
 
       not valid_min_approvals?(approval["min_approvals"]) ->
-        {:error,
-         "min_approvals must be an integer between 1 and #{Emisar.Policies.max_min_approvals()}"}
+        {:error, "min_approvals must be an integer between 1 and #{Policies.max_min_approvals()}"}
 
       not Map.has_key?(approval, "allow_self_approval") ->
         {:error, "allow_self_approval is required"}
@@ -192,7 +197,7 @@ defmodule Emisar.Policies.Policy.Changeset do
   defp check_approval(_), do: {:error, "approval must be a JSON object"}
 
   defp valid_min_approvals?(n) when is_integer(n) and n >= 1,
-    do: n <= Emisar.Policies.max_min_approvals()
+    do: n <= Policies.max_min_approvals()
 
   defp valid_min_approvals?(_), do: false
 end

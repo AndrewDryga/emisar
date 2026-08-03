@@ -54,6 +54,26 @@ defmodule Emisar.Policies do
     "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
   }
 
+  @typedoc """
+  The editor's working copy of a policy: atom keys outside, the persisted
+  string-keyed JSON shapes inside. `approval_valid?` reports whether the STORED
+  approval gate was usable, not whether the current one is.
+  """
+  @type approval_input :: %{String.t() => pos_integer() | boolean()}
+  @type editor_input :: %{
+          defaults: %{String.t() => String.t()},
+          overrides: [%{String.t() => String.t()}],
+          approval: approval_input(),
+          approval_valid?: boolean()
+        }
+
+  @typedoc "One round of operator edits, already parsed out of its transport."
+  @type editor_changes :: %{
+          optional(:defaults) => %{String.t() => term()},
+          optional(:overrides) => [term()],
+          optional(:approval) => approval_input()
+        }
+
   def default_rules, do: @default_rules
   def risk_tiers, do: @risk_tiers
   def decisions, do: @decisions
@@ -128,6 +148,192 @@ defmodule Emisar.Policies do
 
   defp override_action(%{"action" => action}) when is_binary(action) and action != "", do: action
   defp override_action(_), do: nil
+
+  # -- Policy editor --------------------------------------------------
+
+  @doc """
+  The editor's working copy of stored `rules`: a complete tier-default map,
+  normalized override rows, and a complete approval gate.
+
+  Total — any stored term is accepted. Valid values are preserved; a missing or
+  unknown tier/override decision repairs to `"deny"`, the verdict runtime
+  evaluation already reaches for a corrupt one, and an unusable approval gate
+  repairs to one approver with no self-approval, reported through
+  `approval_valid?: false`. A corrupt row therefore never widens access while
+  the operator repairs it.
+  """
+  @spec editor_input(term()) :: editor_input()
+  def editor_input(rules) do
+    {approval, approval_valid?} = approval_input(rules)
+
+    %{
+      defaults: rules |> defaults_for() |> normalize_defaults() |> enforce_monotonic(),
+      overrides: Enum.map(overrides_for(rules), &normalize_override/1),
+      approval: approval,
+      approval_valid?: approval_valid?
+    }
+  end
+
+  @doc """
+  Apply one round of operator edits to `input`. `changes` is domain-shaped: a
+  partial `%{tier => decision}` map, an override list ordered like the current
+  rows, and an already-parsed approval gate — the transport layer owns form
+  strings and indexed maps.
+
+  An unknown decision or a non-string name/action keeps the current value, rows
+  past the server-owned ones are ignored, and the tiers are re-lifted to
+  low→critical monotonic restrictiveness so the operator never holds a
+  combination the changeset rejects. `approval_valid?` rides through: only a
+  successful save rebuilds it from persisted rules.
+  """
+  @spec update_editor_input(editor_input(), editor_changes()) :: editor_input()
+  def update_editor_input(%{approval_valid?: approval_valid?} = input, changes) do
+    defaults = input.defaults |> merge_defaults(changes[:defaults]) |> enforce_monotonic()
+
+    %{
+      defaults: defaults,
+      overrides: merge_overrides(input.overrides, changes[:overrides]),
+      approval: merge_approval(input.approval, changes[:approval]),
+      approval_valid?: approval_valid?
+    }
+  end
+
+  @doc """
+  A fresh override row for the editor's add affordance. An intentional new row
+  starts at `allow`; only a corrupt STORED decision repairs to `deny`.
+  """
+  @spec empty_override() :: %{String.t() => String.t()}
+  def empty_override, do: %{"name" => "", "action" => "", "decision" => "allow"}
+
+  @doc """
+  The canonical schema-v2 rules an editor authors: the tier defaults and
+  approval gate as-is, overrides in order with their name/action trimmed and
+  blank-action rows dropped.
+
+  Authoring construction only — `save_rules/2`, dispatch, and the changeset
+  still take the rules a caller hands them, so no save path silently normalizes
+  arbitrary input.
+  """
+  @spec build_rules(editor_input()) :: map()
+  def build_rules(%{defaults: defaults, overrides: overrides, approval: approval}) do
+    authored = overrides |> Enum.map(&authored_override/1) |> Enum.reject(&blank_action?/1)
+
+    %{
+      "schema_version" => 2,
+      "defaults" => defaults,
+      "overrides" => authored,
+      "approval" => approval
+    }
+  end
+
+  defp approval_input(rules) do
+    case approval_settings_for(rules) do
+      {:ok, approval} ->
+        {%{
+           "min_approvals" => approval.min_approvals,
+           "allow_self_approval" => approval.allow_self_approval
+         }, true}
+
+      {:error, :invalid_policy_approval} ->
+        {%{"min_approvals" => 1, "allow_self_approval" => false}, false}
+    end
+  end
+
+  defp normalize_defaults(defaults),
+    do: Map.new(@risk_tiers, fn tier -> {tier, normalize_decision(defaults[tier])} end)
+
+  defp normalize_override(override) when is_map(override) do
+    action = override_text(override["action"])
+
+    %{
+      "name" => override_text(override["name"]),
+      "action" => String.trim(action),
+      "decision" => normalized_override_decision(override["decision"], action)
+    }
+  end
+
+  # A stored entry that isn't even an object still becomes a row the operator can
+  # see and delete; blank fields plus deny keep it inert until they do.
+  defp normalize_override(_override), do: %{"name" => "", "action" => "", "decision" => "deny"}
+
+  defp override_text(value) when is_binary(value), do: value
+  defp override_text(_value), do: ""
+
+  defp normalized_override_decision(decision, action) do
+    if action == String.trim(action), do: normalize_decision(decision), else: "deny"
+  end
+
+  defp merge_defaults(defaults, changes) when is_map(changes) do
+    Map.new(@risk_tiers, fn tier -> {tier, posted_decision(changes[tier], defaults[tier])} end)
+  end
+
+  defp merge_defaults(defaults, _changes), do: defaults
+
+  # Walk low→critical, lifting any tier more permissive than its predecessor to
+  # the predecessor's rank — so setting `low` to deny bumps the rest, and the
+  # operator never sees a transient state the server would reject. A decision's
+  # position in @decisions IS its `decision_rank/1`, so the ladder has one source.
+  defp enforce_monotonic(defaults) do
+    @risk_tiers
+    |> Enum.reduce({defaults, 0}, fn tier, {acc, floor_rank} ->
+      rank = max(decision_rank(acc[tier]), floor_rank)
+      {Map.put(acc, tier, Enum.at(@decisions, rank)), rank}
+    end)
+    |> elem(0)
+  end
+
+  # Rows are server-owned: a posted list longer than the current one is ignored,
+  # so a crafted event can't append an override nobody added.
+  defp merge_overrides(overrides, changes) when is_list(changes) do
+    overrides
+    |> Enum.with_index()
+    |> Enum.map(fn {override, index} -> merge_override(override, Enum.at(changes, index)) end)
+  end
+
+  defp merge_overrides(overrides, _changes), do: overrides
+
+  defp merge_approval(current, approval) do
+    case approval_settings_for(%{"approval" => approval}) do
+      {:ok, parsed} ->
+        %{
+          "min_approvals" => parsed.min_approvals,
+          "allow_self_approval" => parsed.allow_self_approval
+        }
+
+      {:error, :invalid_policy_approval} ->
+        current
+    end
+  end
+
+  defp merge_override(override, change) when is_map(change) do
+    %{
+      "name" => posted_text(change["name"], override["name"]),
+      "action" => posted_text(change["action"], override["action"]),
+      "decision" => posted_decision(change["decision"], override["decision"])
+    }
+  end
+
+  defp merge_override(override, _change), do: override
+
+  defp posted_text(posted, _current) when is_binary(posted), do: posted
+  defp posted_text(_posted, current), do: current
+
+  defp posted_decision(posted, _current) when posted in @decisions, do: posted
+  defp posted_decision(_posted, current), do: normalize_decision(current)
+
+  defp authored_override(override) do
+    %{
+      "name" => trimmed(override["name"]),
+      "action" => trimmed(override["action"]),
+      "decision" => override["decision"]
+    }
+  end
+
+  defp trimmed(value) when is_binary(value), do: String.trim(value)
+  defp trimmed(_value), do: ""
+
+  defp blank_action?(%{"action" => ""}), do: true
+  defp blank_action?(_override), do: false
 
   @doc """
   Changeset for the policy editor form (no Subject — like

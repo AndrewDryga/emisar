@@ -72,6 +72,82 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute critical =~ ~r/<option(?=[^>]*\bvalue="deny")(?=[^>]*\bdisabled)[^>]*>/
     end
 
+    test "a repaired non-monotonic stored policy stays dirty until its stricter rules are saved",
+         %{
+           conn: conn
+         } do
+      {conn, _user, account} = register_and_log_in(conn)
+      policy = Policies.peek_policy_for_account(account.id)
+
+      corrupt_rules =
+        put_in(policy.rules, ["defaults"], %{
+          "low" => "require_approval",
+          "medium" => "allow",
+          "high" => "deny",
+          "critical" => "require_approval"
+        })
+
+      policy
+      |> Ecto.Changeset.change(rules: corrupt_rules)
+      |> Emisar.Repo.update!()
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~
+               ~r/name="policy\[defaults\]\[medium\]".*?<option value="require_approval" selected/s
+
+      assert html =~ ~r/name="policy\[defaults\]\[critical\]".*?<option value="deny" selected/s
+      assert has_element?(lv, "#policy-form-account button.bg-brand-500", "Save")
+
+      lv |> form("#policy-form-account") |> render_submit()
+      repaired = Policies.peek_policy_for_account(account.id)
+
+      assert repaired.rules["defaults"] == %{
+               "low" => "require_approval",
+               "medium" => "require_approval",
+               "high" => "deny",
+               "critical" => "deny"
+             }
+
+      assert {:require_approval, [], "Default for medium-risk actions"} =
+               Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "medium"})
+    end
+
+    test "a padded stored allow override repairs to deny before it can become active", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      policy = Policies.peek_policy_for_account(account.id)
+
+      corrupt_rules =
+        Map.put(policy.rules, "overrides", [
+          %{"name" => "reads", "action" => " linux.* ", "decision" => "allow"}
+        ])
+
+      policy
+      |> Ecto.Changeset.change(rules: corrupt_rules)
+      |> Emisar.Repo.update!()
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~ ~s(value="linux.*")
+
+      assert html =~
+               ~r/name="policy\[overrides\]\[0\]\[decision\]".*?<option selected[^>]*value="deny"/s
+
+      assert has_element?(lv, "#policy-form-account button.bg-brand-500", "Save")
+
+      lv |> form("#policy-form-account") |> render_submit()
+      repaired = Policies.peek_policy_for_account(account.id)
+
+      assert repaired.rules["overrides"] == [
+               %{"name" => "reads", "action" => "linux.*", "decision" => "deny"}
+             ]
+
+      assert {:deny, ["reads"], "Override: reads"} =
+               Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "low"})
+    end
+
     test "tweak defaults + add an override → save → persisted as v2 JSON", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
@@ -859,6 +935,33 @@ defmodule EmisarWeb.PoliciesLiveTest do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       %{conn: conn, account: account, subject: Fixtures.Subjects.subject_for(user, account)}
+    end
+
+    test "a corrupt default approval gate blocks new rulesets until it is repaired", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
+      policy = Policies.peek_policy_for_account(account.id)
+      corrupt_rules = Map.delete(policy.rules, "approval")
+
+      policy
+      |> Ecto.Changeset.change(rules: corrupt_rules)
+      |> Emisar.Repo.update!()
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~
+               ~r/<button(?=[^>]*phx-click="add_ruleset")(?=[^>]*\bdisabled)[^>]*>/
+
+      html = render_hook(lv, "add_ruleset", %{})
+      assert html =~ "Repair and save the default policy before adding a ruleset."
+      refute html =~ ~s(name="uid" value="new-)
+
+      lv |> form("#policy-form-account") |> render_submit()
+      html = render_hook(lv, "add_ruleset", %{})
+
+      assert html =~ ~s(name="uid" value="new-)
     end
 
     test "an existing runner ruleset renders as a card labelled with the runner name", %{
