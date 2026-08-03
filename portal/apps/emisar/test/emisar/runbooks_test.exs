@@ -521,6 +521,42 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "fetch_execution_recovery_identity/2" do
+    test "returns account-scoped provenance after current runner scope narrows" do
+      fixture = mcp_execution_fixture()
+
+      fixture.account.id
+      |> Fixtures.Memberships.fetch_membership(fixture.owner.actor.id)
+      |> Fixtures.Memberships.force_runner_access(Emisar.Accounts.RunnerAccess.none())
+
+      assert {:ok, execution} =
+               Runbooks.fetch_execution_recovery_identity(
+                 fixture.execution_id,
+                 fixture.subject
+               )
+
+      assert execution.id == fixture.execution_id
+      assert execution.kind == :published
+    end
+
+    test "denies a principal without visibility and isolates another account" do
+      fixture = mcp_execution_fixture()
+      runner_subject = Subject.for_runner(fixture.runner, fixture.account)
+
+      assert Runbooks.fetch_execution_recovery_identity(
+               fixture.execution_id,
+               runner_subject
+             ) == {:error, :unauthorized}
+
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runbooks.fetch_execution_recovery_identity(
+               fixture.execution_id,
+               other_subject
+             ) == {:error, :not_found}
+    end
+  end
+
   describe "fetch_execution_result/2" do
     test "returns durable stages, items, and only the latest physical attempt" do
       fixture = mcp_execution_fixture()
@@ -1835,7 +1871,7 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "create_or_replay_mcp_draft_test/2" do
+  describe "create_or_replay_mcp_execution/2 with allow_draft" do
     test "executes the exact current draft through the scheduler and replays it" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
@@ -1843,16 +1879,23 @@ defmodule Emisar.RunbooksTest do
       runner = trusted_runner(account, owner)
       Runners.subscribe_runner_transport(runner)
       draft = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
-      facts = mcp_draft_test_facts(draft)
+
+      facts =
+        mcp_execution_facts(draft,
+          allow_draft: true,
+          reason: "test draft on the selected fleet"
+        )
+
+      definition_sha256 = Runbooks.Definition.digest(draft.definition)
 
       assert {:ok, :created, execution} =
-               Runbooks.create_or_replay_mcp_draft_test(facts, subject)
+               Runbooks.create_or_replay_mcp_execution(facts, subject)
 
       assert execution.kind == :draft_test
-      assert execution.definition_sha256 == facts.definition_sha256
+      assert execution.definition_sha256 == definition_sha256
 
       assert execution.id ==
-               MCPOperations.resource_id(facts.operation_id, :test_runbook_draft, subject)
+               MCPOperations.resource_id(facts.operation_id, :execute_runbook, subject)
 
       assert [%{runbook_step_id: "uptime"}] =
                Runs.list_runs_for_runbook_execution(account.id, execution.id)
@@ -1864,32 +1907,27 @@ defmodule Emisar.RunbooksTest do
                )
 
       assert payload["execution_kind"] == "draft_test"
-      assert payload["definition_sha256"] == facts.definition_sha256
+      assert payload["definition_sha256"] == definition_sha256
 
       assert {:ok, :replay, replayed} =
-               Runbooks.create_or_replay_mcp_draft_test(facts, subject)
+               Runbooks.create_or_replay_mcp_execution(facts, subject)
 
       assert replayed.id == execution.id
       assert Repo.aggregate(RunbookExecution, :count) == 1
     end
 
-    test "rejects a stale hash and another account without persisting an operation" do
+    test "hides another account's draft without persisting an operation" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      subject = api_client_subject(account, owner, "draft test")
       runner = trusted_runner(account, owner)
       draft = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
-      stale = %{mcp_draft_test_facts(draft) | definition_sha256: String.duplicate("0", 64)}
-
-      assert Runbooks.create_or_replay_mcp_draft_test(stale, subject) ==
-               {:error, :draft_changed}
 
       {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
       _other_policy = Fixtures.Policies.create_policy(account_id: other_account.id)
       other_subject = api_client_subject(other_account, other_owner, "foreign draft test")
 
-      assert Runbooks.create_or_replay_mcp_draft_test(
-               mcp_draft_test_facts(draft),
+      assert Runbooks.create_or_replay_mcp_execution(
+               mcp_execution_facts(draft, allow_draft: true),
                other_subject
              ) == {:error, :draft_not_found}
 
@@ -1905,23 +1943,26 @@ defmodule Emisar.RunbooksTest do
       first = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
       assert {:ok, second} = Runbooks.save_new_version(first, %{}, owner)
 
-      assert Runbooks.create_or_replay_mcp_draft_test(mcp_draft_test_facts(first), subject) ==
+      assert Runbooks.create_or_replay_mcp_execution(
+               mcp_execution_facts(first, allow_draft: true),
+               subject
+             ) ==
                {:error, :draft_changed}
 
-      head_facts = mcp_draft_test_facts(second)
+      head_facts = mcp_execution_facts(second, allow_draft: true)
 
-      assert Runbooks.create_or_replay_mcp_draft_test(
+      assert Runbooks.create_or_replay_mcp_execution(
                head_facts,
                without_permission(subject, Runbooks.Authorizer.draft_runbooks_permission())
              ) == {:error, :unauthorized}
 
-      assert Runbooks.create_or_replay_mcp_draft_test(
+      assert Runbooks.create_or_replay_mcp_execution(
                head_facts,
                without_permission(subject, Runs.Authorizer.dispatch_run_permission())
              ) == {:error, :unauthorized}
 
-      # A draft head is reachable only through the draft-test path: ordinary
-      # execution still resolves published versions only.
+      # A draft head is reachable only with explicit consent: default execution
+      # still resolves published versions only.
       assert Runbooks.create_or_replay_mcp_execution(mcp_execution_facts(second), subject) ==
                {:error, :not_found}
 
@@ -1952,7 +1993,10 @@ defmodule Emisar.RunbooksTest do
       draft = create_runbook(owner, slug: "draft-approval", definition: definition(runner.group))
 
       assert {:ok, :created, execution} =
-               Runbooks.create_or_replay_mcp_draft_test(mcp_draft_test_facts(draft), subject)
+               Runbooks.create_or_replay_mcp_execution(
+                 mcp_execution_facts(draft, allow_draft: true),
+                 subject
+               )
 
       assert execution.status == :pending_approval
       assert execution.kind == :draft_test
@@ -2712,6 +2756,7 @@ defmodule Emisar.RunbooksTest do
     %{
       operation_id: Keyword.get(opts, :operation_id, operation_id()),
       runbook_ref: Keyword.get(opts, :runbook_ref, "#{runbook.slug}@#{runbook.version}"),
+      allow_draft: Keyword.get(opts, :allow_draft, false),
       reason: Keyword.get(opts, :reason, "inspect fleet"),
       input_values: Keyword.get(opts, :input_values, %{})
     }
@@ -2725,16 +2770,6 @@ defmodule Emisar.RunbooksTest do
       title: Keyword.get(opts, :title, runbook.title),
       description: Keyword.get(opts, :description, runbook.description),
       definition: Keyword.get(opts, :definition, runbook.definition)
-    }
-  end
-
-  defp mcp_draft_test_facts(runbook, opts \\ []) do
-    %{
-      operation_id: Keyword.get(opts, :operation_id, operation_id()),
-      runbook_ref: "#{runbook.slug}@#{runbook.version}",
-      definition_sha256: Runbooks.Definition.digest(runbook.definition),
-      reason: Keyword.get(opts, :reason, "test draft on the selected fleet"),
-      input_values: Keyword.get(opts, :input_values, %{})
     }
   end
 

@@ -19,13 +19,12 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     execute_runbook
     create_runbook_draft
     update_runbook_draft
-    test_runbook_draft
   )
 
-  test "publishes exactly the fourteen normative descriptors in contract order" do
+  test "publishes exactly the thirteen normative descriptors in contract order" do
     tools = SchemaRegistry.tools()
 
-    assert length(tools) == 14
+    assert length(tools) == 13
     assert SchemaRegistry.tool_names() == @tool_names
     assert Enum.map(tools, & &1["name"]) == @tool_names
 

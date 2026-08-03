@@ -68,7 +68,7 @@
             returns capabilities and operating instructions (2025-11-25 / 2025-06-18).
           </li>
           <li><code>ping</code> remains responsive while another request waits.</li>
-          <li><code>tools/list</code> always returns the same fourteen tool descriptors.</li>
+          <li><code>tools/list</code> always returns the same thirteen tool descriptors.</li>
           <li><code>tools/call</code> invokes one fixed tool.</li>
           <li>
             <code>notifications/cancelled</code> stops observation of one in-flight request and
@@ -81,7 +81,7 @@
           a request ID so its operation can be recovered safely.
         </p>
 
-        <h2 id="tools">Fourteen fixed tools</h2>
+        <h2 id="tools">Thirteen fixed tools</h2>
         <p>
           Actions are data, not MCP tool descriptors. Runner and pack changes appear in discovery
           results, so clients never need a hand-maintained action allowlist and never load hundreds
@@ -107,10 +107,9 @@
                 {"recent_runs", "Inspect scoped run history with exact identity filters."},
                 {"list_runbooks", "List published runbooks, or explicitly list current drafts."},
                 {"get_runbook", "Read one exact published revision or current draft."},
-                {"execute_runbook", "Execute one published runbook through policy and approval."},
+                {"execute_runbook", "Execute one published runbook or an explicitly allowed current draft."},
                 {"create_runbook_draft", "Start a new runbook family as a draft."},
-                {"update_runbook_draft", "Save the next draft revision without changing the family slug."},
-                {"test_runbook_draft", "Run one exact draft through normal policy and approval gates."}
+                {"update_runbook_draft", "Save the next draft revision without changing the family slug."}
               ] do %>
                 <tr>
                   <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{tool}</td>
@@ -196,8 +195,8 @@
 
         <h2 id="operations">Operations and recovery</h2>
         <p>
-          Every <code>run_action</code>, <code>execute_runbook</code>, <code>create_runbook_draft</code>, <code>update_runbook_draft</code>, and
-          <code>test_runbook_draft</code>
+          Every <code>run_action</code>, <code>execute_runbook</code>, <code>create_runbook_draft</code>, and
+          <code>update_runbook_draft</code>
           receives a private <code>operation_id</code>. The stdio bridge derives it from its private
           process nonce and request sequence; for native HTTP clients, the portal derives it from
           the exact request and credential lineage — the API key together with its automatic-rotation
@@ -234,8 +233,9 @@
           version keeps the family slug and remains a draft.
         </p>
         <p>
-          Drafts never enter ordinary discovery or <code>execute_runbook</code>. List or read them
-          with <code>status: "draft"</code>, then pass the exact ref and hash to <code>test_runbook_draft</code>. A draft test uses the same target, trust, policy,
+          Drafts never enter ordinary discovery or default execution. List or read them with <code>status: "draft"</code>, then pass the exact ref to
+          <code>execute_runbook</code>
+          with <code>allow_draft: true</code>. A draft test uses the same target, trust, policy,
           approval, scheduler, runner, and audit path as published execution. It can cause the
           actions' real effects, but it does not publish the draft; publication remains a human
           action in the console.

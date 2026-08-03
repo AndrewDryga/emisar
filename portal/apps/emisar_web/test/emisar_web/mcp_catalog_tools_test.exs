@@ -42,7 +42,6 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
              execute_runbook
              create_runbook_draft
              update_runbook_draft
-             test_runbook_draft
            )
 
     # Response schemas stay internal to the validation registry; the wire
@@ -90,7 +89,14 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     assert by_name["run_action"]["annotations"] == destructive_annotations
     assert by_name["execute_runbook"]["annotations"] == destructive_annotations
-    assert by_name["test_runbook_draft"]["annotations"] == destructive_annotations
+
+    assert get_in(by_name, ["execute_runbook", "inputSchema", "properties", "allow_draft"]) ==
+             %{
+               "type" => "boolean",
+               "default" => false,
+               "description" =>
+                 "Set true only to execute the exact current draft. Draft execution also requires draft-authoring permission and is recorded as a draft test."
+             }
 
     assert by_name["create_runbook_draft"]["annotations"] == %{
              "readOnlyHint" => false,

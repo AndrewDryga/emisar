@@ -29,7 +29,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     :target_contract_changed
   ]
 
-  @doc "Executes one of the six fixed runbook tools."
+  @doc "Executes one of the five fixed runbook tools."
   def call(conn, "list_runbooks", args, _operation_id), do: list_runbooks(conn, args)
   def call(conn, "get_runbook", args, _operation_id), do: get_runbook(conn, args)
 
@@ -41,9 +41,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   def call(conn, "update_runbook_draft", args, operation_id),
     do: update_draft(conn, args, operation_id)
-
-  def call(conn, "test_runbook_draft", args, operation_id),
-    do: test_draft(conn, args, operation_id)
 
   defp list_runbooks(conn, args) do
     query = args["query"]
@@ -196,6 +193,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     facts = %{
       operation_id: operation_id,
       runbook_ref: args["runbook_ref"],
+      allow_draft: args["allow_draft"] || false,
       reason: args["reason"],
       input_values: args["input_values"] || %{}
     }
@@ -221,83 +219,25 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:error, :unauthorized} ->
         not_allowed(conn, facts.runbook_ref)
 
-      {:error, reason} ->
-        execution_rejected(conn, facts.runbook_ref, reason)
-    end
-  end
-
-  defp test_draft(conn, args, operation_id) do
-    facts = %{
-      operation_id: operation_id,
-      runbook_ref: args["runbook_ref"],
-      definition_sha256: args["definition_sha256"],
-      reason: args["reason"],
-      input_values: args["input_values"] || %{}
-    }
-
-    with {:ok, _outcome, execution} <-
-           Runbooks.create_or_replay_mcp_draft_test(facts, conn.assigns.current_subject),
-         {:ok, payload} <- execution_payload(conn, execution.id) do
-      {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
-    else
-      {:error, :operation_conflict} ->
-        {:error,
-         error("operation_conflict", "This operation_id already belongs to another mutation.")}
-
-      {:error, :operation_incomplete} ->
-        {:error,
-         error(
-           "operation_incomplete",
-           "The operation committed without its execution resource.",
-           true,
-           %{operation_id: operation_id}
-         )}
-
-      {:error, :unauthorized} ->
-        :ok =
-          ValidationError.log_dispatch_rejected(conn, "test_runbook_draft", "not_allowed",
-            runbook_ref: facts.runbook_ref
-          )
-
-        {:error, error("not_allowed", "This key cannot test this runbook draft.")}
-
       {:error, reason} when reason in [:draft_not_found, :draft_changed] ->
-        :ok =
-          ValidationError.log_dispatch_rejected(conn, "test_runbook_draft", "draft_changed",
-            runbook_ref: facts.runbook_ref
-          )
-
-        {:error,
-         error(
-           "draft_changed",
-           "That draft is no longer current or its definition hash changed. Inspect the current draft before testing again."
-         )}
+        draft_changed(conn, facts.runbook_ref)
 
       {:error, reason} ->
-        draft_test_rejected(conn, facts.runbook_ref, reason)
+        execution_rejected(conn, facts.runbook_ref, reason, facts.allow_draft)
     end
   end
 
-  defp draft_test_rejected(conn, runbook_ref, [%{code: _code, path: _path} | _rest] = reason) do
-    :ok = log_draft_contract_changed(conn, runbook_ref)
-    {:error, execution_failure(reason)}
-  end
+  defp draft_changed(conn, runbook_ref) do
+    :ok =
+      ValidationError.log_dispatch_rejected(conn, "execute_runbook", "draft_changed",
+        runbook_ref: runbook_ref
+      )
 
-  defp draft_test_rejected(conn, runbook_ref, reason) when reason in @hidden_contract_reasons do
-    :ok = log_draft_contract_changed(conn, runbook_ref)
-    {:error, error("draft_not_found", "No current runbook draft has that exact ref.")}
-  end
-
-  defp draft_test_rejected(_conn, _runbook_ref, reason),
-    do: {:error, execution_failure(reason)}
-
-  defp log_draft_contract_changed(conn, runbook_ref) do
-    ValidationError.log_dispatch_rejected(
-      conn,
-      "test_runbook_draft",
-      "target_contract_changed",
-      runbook_ref: runbook_ref
-    )
+    {:error,
+     error(
+       "draft_changed",
+       "That draft is no longer current. List drafts and inspect the current head before executing again."
+     )}
   end
 
   defp not_allowed(conn, runbook_ref) do
@@ -309,17 +249,24 @@ defmodule EmisarWeb.MCP.RunbookTools do
     {:error, error("not_allowed", "This key cannot execute this runbook.")}
   end
 
-  defp execution_rejected(conn, runbook_ref, [%{code: _code, path: _path} | _rest] = reason) do
+  defp execution_rejected(
+         conn,
+         runbook_ref,
+         [%{code: _code, path: _path} | _rest] = reason,
+         allow_draft
+       ) do
     :ok = log_target_contract_changed(conn, runbook_ref)
-    {:error, execution_failure(reason)}
+    {:error, execution_failure(reason, allow_draft)}
   end
 
-  defp execution_rejected(conn, runbook_ref, reason) when reason in @hidden_contract_reasons do
+  defp execution_rejected(conn, runbook_ref, reason, allow_draft)
+       when reason in @hidden_contract_reasons do
     :ok = log_target_contract_changed(conn, runbook_ref)
-    {:error, execution_failure(reason)}
+    {:error, execution_failure(reason, allow_draft)}
   end
 
-  defp execution_rejected(_conn, _runbook_ref, reason), do: {:error, execution_failure(reason)}
+  defp execution_rejected(_conn, _runbook_ref, reason, allow_draft),
+    do: {:error, execution_failure(reason, allow_draft)}
 
   defp log_target_contract_changed(conn, runbook_ref) do
     ValidationError.log_dispatch_rejected(conn, "execute_runbook", "target_contract_changed",
@@ -328,18 +275,24 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   @doc false
-  def execution_failure(reason) when reason in @hidden_contract_reasons do
+  def execution_failure(reason), do: execution_failure(reason, false)
+
+  defp execution_failure(reason, false) when reason in @hidden_contract_reasons do
     error("runbook_not_found", "No published runbook has that exact ref.")
   end
 
-  def execution_failure(:runner_requires_attestation) do
+  defp execution_failure(reason, true) when reason in @hidden_contract_reasons do
+    error("draft_not_found", "No current runbook draft has that exact ref.")
+  end
+
+  defp execution_failure(:runner_requires_attestation, _allow_draft) do
     error(
       "signed_runbook_unsupported",
       "A runbook cannot execute on a signed-only runner because the bridge signs only direct run_action calls."
     )
   end
 
-  def execution_failure(:runbook_capacity_exceeded) do
+  defp execution_failure(:runbook_capacity_exceeded, _allow_draft) do
     "runbook_capacity_exceeded"
     |> error(
       "This account already has 1,024 active runbook items. Wait for an execution to finish or cancel one, then try again."
@@ -347,10 +300,13 @@ defmodule EmisarWeb.MCP.RunbookTools do
     |> put_in([:error, :retryable], true)
   end
 
-  def execution_failure([%{code: _code, message: _message, path: _path} | _rest] = issues),
-    do: issue_error(issues)
+  defp execution_failure(
+         [%{code: _code, message: _message, path: _path} | _rest] = issues,
+         _allow_draft
+       ),
+       do: issue_error(issues)
 
-  def execution_failure(_reason) do
+  defp execution_failure(_reason, _allow_draft) do
     error("execution_failed", "The runbook could not be started.")
   end
 

@@ -1471,7 +1471,7 @@
     },
     "execute_runbook": {
       "title": "Execute runbook",
-      "description": "Execute one exact published runbook_ref through Emisar scope, policy, approval, and audit. A runbook may contain destructive steps; inspect it with get_runbook first. Emisar evaluates policy and handles any required human approval.",
+      "description": "Execute one exact runbook_ref through Emisar scope, policy, approval, and audit. Published runbooks are the default; set allow_draft only to deliberately execute the exact current draft. A runbook may contain destructive steps; inspect it with get_runbook first. Emisar evaluates policy and handles any required human approval.",
       "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
@@ -1479,6 +1479,11 @@
         "additionalProperties": false,
         "properties": {
           "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+          "allow_draft": {
+            "type": "boolean",
+            "default": false,
+            "description": "Set true only to execute the exact current draft. Draft execution also requires draft-authoring permission and is recorded as a draft test."
+          },
           "reason": {"$ref": "#/$defs/reason"},
           "input_values": {
             "type": "object",
@@ -1600,38 +1605,6 @@
               "status": {"const": "draft"},
               "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
               "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
-            }
-          }
-        ]
-      }
-    },
-    "test_runbook_draft": {
-      "title": "Test runbook draft",
-      "description": "Execute one exact current draft on real infrastructure through Emisar scope, trust, policy, approval, audit, and runner verification. This is a live execution, not a dry-run; inspect the draft and copy its definition hash first.",
-      "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
-      "inputSchema": {
-        "type": "object",
-        "required": ["runbook_ref", "definition_sha256", "reason"],
-        "additionalProperties": false,
-        "properties": {
-          "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
-          "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
-          "reason": {"$ref": "#/$defs/reason"},
-          "input_values": {"type": "object", "default": {}, "x-maxEncodedUtf8Bytes": 32768}
-        }
-      },
-      "outputSchema": {
-        "type": "object",
-        "oneOf": [
-          {"$ref": "#/$defs/error_result"},
-          {
-            "type": "object",
-            "required": ["ok", "operation_id", "execution"],
-            "additionalProperties": false,
-            "properties": {
-              "ok": {"const": true},
-              "operation_id": {"$ref": "#/$defs/operation_id"},
-              "execution": {"$ref": "#/$defs/runbook_execution"}
             }
           }
         ]

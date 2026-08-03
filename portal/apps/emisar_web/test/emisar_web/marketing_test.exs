@@ -1214,7 +1214,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "execute_runbook"
       assert html =~ "create_runbook_draft"
       assert html =~ "update_runbook_draft"
-      assert html =~ "test_runbook_draft"
+      assert html =~ "allow_draft: true"
+      refute html =~ "test_runbook_draft"
     end
 
     test "the runbooks walkthrough uses the seeded Caddy procedure and current screenshots", %{
@@ -1264,10 +1265,13 @@ defmodule EmisarWeb.MarketingTest do
       for tool <- ~w(
         list_packs list_runners find_actions get_action run_action get_operation
         wait_for_run recent_runs list_runbooks get_runbook execute_runbook create_runbook_draft
-        update_runbook_draft test_runbook_draft
+        update_runbook_draft
       ) do
         assert html =~ tool
       end
+
+      assert html =~ "allow_draft: true"
+      refute html =~ "test_runbook_draft"
 
       assert html =~ "60 seconds"
       assert html =~ "eight requests"

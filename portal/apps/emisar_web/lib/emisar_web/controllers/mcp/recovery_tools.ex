@@ -61,37 +61,18 @@ defmodule EmisarWeb.MCP.RecoveryTools do
      }}
   end
 
-  defp operation_projection(_conn, %{tool: :execute_runbook} = operation) do
-    {:ok,
-     %{
-       operation_id: operation.operation_id,
-       kind: "runbook",
-       runbook_execution_id: operation.resource_id,
-       runbook_ref: operation.resource_ref,
-       next: %{
-         tool: "wait_for_run",
-         arguments: %{runbook_execution_id: operation.resource_id, timeout: "0"}
-       }
-     }}
-  end
+  defp operation_projection(conn, %{tool: :execute_runbook} = operation) do
+    case Runbooks.fetch_execution_recovery_identity(
+           operation.resource_id,
+           conn.assigns.current_subject
+         ) do
+      {:ok, %{kind: :draft_test} = execution} ->
+        {:ok, runbook_operation_projection(operation, execution.definition_sha256)}
 
-  defp operation_projection(conn, %{tool: :test_runbook_draft} = operation) do
-    case RunbookTools.execution_payload(conn, operation.resource_id) do
-      {:ok, execution} ->
-        {:ok,
-         %{
-           operation_id: operation.operation_id,
-           kind: "runbook_draft_test",
-           runbook_execution_id: operation.resource_id,
-           runbook_ref: operation.resource_ref,
-           definition_sha256: execution.definition_sha256,
-           next: %{
-             tool: "wait_for_run",
-             arguments: %{runbook_execution_id: operation.resource_id, timeout: "0"}
-           }
-         }}
+      {:ok, _execution} ->
+        {:ok, runbook_operation_projection(operation)}
 
-      _ ->
+      {:error, _reason} ->
         {:error, :operation_resource_missing}
     end
   end
@@ -116,6 +97,26 @@ defmodule EmisarWeb.MCP.RecoveryTools do
       _ ->
         {:error, :operation_resource_missing}
     end
+  end
+
+  defp runbook_operation_projection(operation) do
+    %{
+      operation_id: operation.operation_id,
+      kind: "runbook",
+      runbook_execution_id: operation.resource_id,
+      runbook_ref: operation.resource_ref,
+      next: %{
+        tool: "wait_for_run",
+        arguments: %{runbook_execution_id: operation.resource_id, timeout: "0"}
+      }
+    }
+  end
+
+  defp runbook_operation_projection(operation, definition_sha256) do
+    operation
+    |> runbook_operation_projection()
+    |> Map.put(:kind, "runbook_draft_test")
+    |> Map.put(:definition_sha256, definition_sha256)
   end
 
   defp wait_for_run(conn, args) do

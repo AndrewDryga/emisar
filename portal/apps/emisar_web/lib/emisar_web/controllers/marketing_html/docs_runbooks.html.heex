@@ -466,11 +466,11 @@
       </p>
       <p class="mt-5 text-base text-zinc-400">
         Draft reads require <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "draft"</code>.
-        An agent can run the exact current draft with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">test_runbook_draft</code>,
-        which requires the definition hash returned by Emisar and uses the normal policy and
-        approval path. Ordinary
+        An agent can run the exact current draft with
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
-        accepts published revisions only. Testing never publishes a draft; an operator still
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_draft: true</code>.
+        Without that explicit flag, execution accepts published revisions only. Draft testing uses
+        the normal policy and approval path and never publishes the draft; an operator still
         reviews and publishes it in the console. While work or approval remains, the response names
         the blocking reason and returns an exact
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>

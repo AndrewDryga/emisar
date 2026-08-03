@@ -97,7 +97,7 @@ rather than this specification.
 
 ## Fixed tool catalog
 
-`tools/list` returns exactly these fourteen tools:
+`tools/list` returns exactly these thirteen tools:
 
 | Tool | Purpose |
 | --- | --- |
@@ -111,10 +111,9 @@ rather than this specification.
 | `recent_runs` | Inspect and paginate scoped run activity. |
 | `list_runbooks` | List published runbooks, or explicitly list current working drafts. |
 | `get_runbook` | Inspect one immutable published revision, or one exact current draft. |
-| `execute_runbook` | Execute a published runbook on eligible runners. |
+| `execute_runbook` | Execute one exact published runbook, or an explicitly allowed current draft. |
 | `create_runbook_draft` | Save an agent-proposed draft for human review. |
 | `update_runbook_draft` | Save the next immutable working revision in an existing runbook family. |
-| `test_runbook_draft` | Execute one exact current draft through normal policy and approval gates. |
 
 The server advertises `tools.listChanged: false`. Runner and pack changes appear
 in tool results, never by growing the MCP tool catalog.
@@ -124,7 +123,7 @@ serialized JSON in one text content block for clients that do not consume
 structured results. Each fixed wire descriptor publishes its complete
 `inputSchema`, carrying only the canonical `$defs` it transitively references.
 The wire descriptors intentionally omit the optional MCP `outputSchema`:
-resolving the full response schemas into all fourteen descriptors grows
+resolving the full response schemas into all thirteen descriptors grows
 `tools/list` from roughly 17 KiB to roughly 140 KiB, and a client that relays
 descriptors into model context would pay that on every session — recreating the
 large-catalog problem this API exists to avoid. The complete response schemas remain normative
@@ -367,7 +366,7 @@ authorization, and approval decision:
 - `create_runbook_draft` and `update_runbook_draft` advertise `readOnlyHint: false`,
   `destructiveHint: false`, `idempotentHint: false`, and
   `openWorldHint: false`: they save only portal-local proposals.
-- `run_action`, `execute_runbook`, and `test_runbook_draft` advertise `readOnlyHint: false`,
+- `run_action` and `execute_runbook` advertise `readOnlyHint: false`,
   `destructiveHint: true`, `idempotentHint: false`, and `openWorldHint: true`.
   Each static tool spans low-risk through critical operations, including packs
   that call public cloud APIs or alter internet-facing production services, so
@@ -880,14 +879,13 @@ rotation. For `run_action`, in one transaction it:
    allowed runs.
 
 The mutation fingerprint is tool-specific and versioned. `run_action` uses the
-facts above; published and draft-test execution use exact runbook ref, reason,
-and typed inputs, with a draft test also binding the caller-inspected definition
-SHA-256. Draft creation uses fixed JSON over its validated title, slug,
-description, and definition. Draft revision additionally binds the exact source
-ref and source definition SHA-256. Tool name is always part of the fingerprint,
-so different mutations cannot collide.
-`execute_runbook`, `create_runbook_draft`, `update_runbook_draft`, and
-`test_runbook_draft` reserve the same lineage-local operation identity and
+facts above; `execute_runbook` uses exact runbook ref, explicit draft consent,
+reason, and typed inputs. Draft creation uses fixed JSON over its validated
+title, slug, description, and definition. Draft revision additionally binds
+the exact source ref and source definition SHA-256. Tool name is always part of
+the fingerprint, so different mutations cannot collide.
+`execute_runbook`, `create_runbook_draft`, and `update_runbook_draft` reserve
+the same lineage-local operation identity and
 persist their fingerprint atomically with the execution or draft described
 below; they do not use the action-specific run-set steps above.
 
@@ -1532,8 +1530,9 @@ status-specific not-found error:
 ```
 
 An explicit draft read also returns `draft_id`. The `definition_sha256` is the
-server-issued digest required by draft revision and test mutations; callers
-copy it exactly and never recompute identity from a modified document.
+server-issued digest required by draft revision; callers copy it exactly and
+never recompute identity from a modified document. Execution records their
+definition digest server-side.
 
 For a published read, `definition` is the same strict JSON-compatible v1
 contract used by the console, validation, and compilation. It allows no aliases
@@ -1546,8 +1545,8 @@ pool must be inside the caller's current scope or preflight returns generic
 `not_allowed` without refs or counts; partial-fleet execution is never inferred.
 
 A draft read uses the bounded canonical v1 object envelope but may still be
-incomplete. Publication and draft testing apply the complete definition
-contract before any action can run.
+incomplete. Publication and explicit draft execution apply the complete
+definition contract before any action can run.
 
 One definition is at most 64 KiB and contains at most 32 inputs, 16 stages, 32
 steps total, 16 target refs per step, and 256 resolved logical items. The
@@ -1560,9 +1559,11 @@ same canonical definition limits.
 Input requires exact `runbook_ref` and nonblank `reason` (the same bound as
 `run_action`, including rejection of whitespace-only values). Optional
 `input_values` is an object whose values must satisfy the definition's typed
-input declarations. The bridge injects an operation ID using the common
-mutation-idempotency contract; the authenticated request does not carry a
-generic signature.
+input declarations. `allow_draft` defaults to false, so the ref resolves only
+an immutable published version. Setting it to true is explicit consent to run
+the exact current draft and additionally requires draft-authoring permission.
+The bridge injects an operation ID using the common mutation-idempotency
+contract; the authenticated request does not carry a generic signature.
 
 Before creation, the portal validates the strict definition and typed inputs;
 expands every target to exact current runner refs; validates complete caller
@@ -1687,6 +1688,14 @@ stable code and message plus the applicable stage, step, and runner identity.
 It describes whole-execution approval, a scheduled wait, or the terminal cause.
 Both `pending_approval` and `active` executions include `next`.
 
+An explicitly allowed draft enters this identical path and may cause the
+actions' real effects. Its durable execution carries `kind: "draft_test"` and
+the server-derived definition hash in execution, approval, dispatch evidence,
+and recovery. A superseded or non-draft ref returns `draft_changed` before an
+operation or execution is committed. Testing never changes draft status or
+publishes it. `get_operation` recovers the same execution as
+`kind: "runbook_draft_test"` with its exact draft ref and definition hash.
+
 A `pending_approval` execution also carries the same bounded `approval` object
 a pending action run gets — the request ID, the console approval URL the model
 relays to the operator, and the hard expiry — plus `wait_until` set to that
@@ -1799,27 +1808,6 @@ objects use the same complete draft shape as `create_runbook_draft`.
 Saving a revision does not publish it. Human review and publication remain the
 only way to replace the family's published version.
 
-### `test_runbook_draft`
-
-Input requires the exact current draft `runbook_ref`, its server-issued
-`definition_sha256`, a nonblank reason, and optional typed `input_values`. This
-is the only execution tool that accepts a draft; `execute_runbook` continues to
-resolve published versions only.
-
-The portal locks and rechecks the draft identity, then runs the normal compiler,
-target expansion, current scope and trust checks, policy evaluation, approval,
-scheduler, runner delivery, and audit path. The durable execution carries
-`kind: "draft_test"` and the pinned definition hash in execution, approval, and
-dispatch evidence. It may therefore cause the same external effects as the
-draft's actions, and policy may allow, hold, or deny them exactly as it would a
-published runbook. A stale ref or hash returns `draft_changed` before an
-execution is created.
-
-The accepted response uses the normal runbook execution shape and
-continuations. `get_operation` recovers it as `kind: "runbook_draft_test"` with
-the execution ID, draft ref, definition hash, and `wait_for_run` continuation.
-Testing never changes draft status and never publishes it.
-
 ## Error taxonomy
 
 Malformed JSON-RPC, invalid IDs, unknown methods, and invalid tool-call
@@ -1850,7 +1838,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | --- | --- | --- |
 | `action_unavailable` | Exact visible contract is not executable. | Follow returned diagnostics. |
 | `dispatch_failed` | The atomic action operation did not commit. | Safe to retry with the same operation ID. |
-| `draft_changed` | The requested draft head or definition hash is stale. | List drafts, inspect the current head, and decide whether to reapply the change. |
+| `draft_changed` | The requested draft is no longer the current head. | List drafts, inspect the current head, and decide whether to execute or revise it. |
 | `draft_not_found` | Exact current draft is absent or no longer visible. | List drafts; do not substitute a published ref. |
 | `execution_failed` | The atomic runbook operation did not commit. | Safe to retry with the same operation ID. |
 | `ambiguous_pack_version` | The selected pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
@@ -2009,8 +1997,8 @@ production actions.
   immediately before execution.
 - Operation identity is durable in the portal across API-key rotation and portal
   delivery retries. The bridge reuses it for retries of one live tool call;
-  `get_operation` covers action, published execution, draft revision, and draft
-  test mutations without inventing resources.
+  `get_operation` covers action execution, published or explicitly allowed
+  draft execution, and draft authoring without inventing resources.
 - For signed actions, `reason` is part of the client-signed execution intent; it
   remains agent-supplied audit context, not proof of human intent.
 - Free-form metadata and output never become policy inputs.
@@ -2043,7 +2031,7 @@ production actions.
 
 1. **Trusted catalog**: expand the trusted pack snapshot to the complete bounded
    manifest; add scoped pack, runner, candidate, and exact-action reads.
-2. **Portal MCP boundary**: generate the fixed fourteen descriptors from
+2. **Portal MCP boundary**: generate the fixed thirteen descriptors from
    `portal/apps/emisar_web/priv/mcp/api-schemas.json`; publish strict JSON Schema 2020-12
    inputs/outputs, common results, live cursors, deterministic search, and
    authenticated operation idempotency without a second signature over HTTPS.

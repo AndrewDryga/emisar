@@ -248,27 +248,25 @@ defmodule Emisar.MCPOperationsTest do
              ) == draft_id
     end
 
-    test "separates the draft revision and draft test resources", %{key_subject: key_subject} do
+    test "separates draft revisions from the shared runbook execution resource", %{
+      key_subject: key_subject
+    } do
       revision = MCPOperations.resource_id(@operation_id, :update_runbook_draft, key_subject)
-      draft_test = MCPOperations.resource_id(@operation_id, :test_runbook_draft, key_subject)
+      execution = MCPOperations.resource_id(@operation_id, :execute_runbook, key_subject)
 
       assert Ecto.UUID.cast(revision) == {:ok, revision}
-      assert Ecto.UUID.cast(draft_test) == {:ok, draft_test}
+      assert Ecto.UUID.cast(execution) == {:ok, execution}
 
       assert MCPOperations.resource_id(@operation_id, :update_runbook_draft, key_subject) ==
                revision
 
-      assert MCPOperations.resource_id(@operation_id, :test_runbook_draft, key_subject) ==
-               draft_test
-
       peers = [
         revision,
-        draft_test,
         MCPOperations.resource_id(@operation_id, :create_runbook_draft, key_subject),
-        MCPOperations.resource_id(@operation_id, :execute_runbook, key_subject)
+        execution
       ]
 
-      assert length(Enum.uniq(peers)) == 4
+      assert length(Enum.uniq(peers)) == 3
     end
   end
 

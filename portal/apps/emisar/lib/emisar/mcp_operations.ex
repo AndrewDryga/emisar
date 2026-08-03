@@ -139,8 +139,7 @@ defmodule Emisar.MCPOperations do
              tool in [
                :execute_runbook,
                :create_runbook_draft,
-               :update_runbook_draft,
-               :test_runbook_draft
+               :update_runbook_draft
              ] do
     seed =
       Enum.join(

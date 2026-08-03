@@ -55,6 +55,22 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert call(conn, "list_runbooks", %{"limit" => 10})["runbooks"] == []
   end
 
+  test "execute_runbook requires boolean draft consent", %{conn: conn} do
+    invalid =
+      call(conn, "execute_runbook", %{
+        "runbook_ref" => "database-health@1",
+        "allow_draft" => "true",
+        "reason" => "Do not coerce draft consent"
+      })
+
+    assert invalid["error"]["details"] == %{
+             "schema_version" => 1,
+             "stage" => "arguments",
+             "kind" => "type",
+             "issues" => [%{"path" => "$.allow_draft", "code" => "type"}]
+           }
+  end
+
   test "list_runbooks rejects a constructed cursor with restart guidance", %{conn: conn} do
     stale = call(conn, "list_runbooks", %{"cursor" => "not-a-cursor"})
 
@@ -388,7 +404,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Repo.aggregate(Runbook, :count) == 2
   end
 
-  test "test_runbook_draft executes the exact current draft and recovers by operation", %{
+  test "execute_runbook explicitly executes the current draft and recovers by operation", %{
     conn: conn,
     account: account,
     subject: subject
@@ -400,11 +416,11 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     args = %{
       "runbook_ref" => "cache-health@1",
-      "definition_sha256" => draft_hash,
+      "allow_draft" => true,
       "reason" => "Verify the draft before publishing"
     }
 
-    tested = call(conn, "test_runbook_draft", args)
+    tested = call(conn, "execute_runbook", args)
     execution_id = tested["execution"]["runbook_execution_id"]
 
     assert tested["execution"]["kind"] == "draft_test"
@@ -412,7 +428,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert tested["execution"]["runbook_ref"] == "cache-health@1"
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
 
-    replayed = call(conn, "test_runbook_draft", args)
+    replayed = call(conn, "execute_runbook", args)
     assert replayed["execution"]["runbook_execution_id"] == execution_id
     refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
@@ -423,24 +439,16 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert recovered["operation"]["definition_sha256"] == draft_hash
     assert recovered["operation"]["runbook_ref"] == "cache-health@1"
 
-    stale =
-      call(
-        conn,
-        "test_runbook_draft",
-        Map.put(args, "definition_sha256", String.duplicate("0", 64))
-      )
-
-    assert stale["error"]["code"] == "draft_changed"
     assert Repo.aggregate(RunbookExecution, :count) == 1
   end
 
-  test "another account's key can neither read nor test this draft", %{
+  test "another account's key can neither read nor execute this draft", %{
     conn: conn,
     account: account,
     subject: subject
   } do
     runner = setup_runner!(account, subject, "db-primary")
-    draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
+    _draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
     foreign_conn = foreign_key_conn()
 
     assert call(foreign_conn, "list_runbooks", %{"status" => "draft"})["runbooks"] == []
@@ -451,9 +459,9 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert foreign_read["error"]["code"] == "draft_not_found"
 
     foreign_test =
-      call(foreign_conn, "test_runbook_draft", %{
+      call(foreign_conn, "execute_runbook", %{
         "runbook_ref" => "cache-health@1",
-        "definition_sha256" => Runbooks.Definition.digest(draft.definition),
+        "allow_draft" => true,
         "reason" => "Borrow another tenant's draft"
       })
 
@@ -563,12 +571,12 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     test_args = %{
       "runbook_ref" => "database-health@2",
-      "definition_sha256" => draft_hash,
+      "allow_draft" => true,
       "reason" => "Validate the working revision"
     }
 
     tested =
-      call(conn, "test_runbook_draft", test_args, "op_724NN9NMDZ1T76NARWCKM5A0D6")
+      call(conn, "execute_runbook", test_args, "op_724NN9NMDZ1T76NARWCKM5A0D6")
 
     execution_id = tested["execution"]["runbook_execution_id"]
     assert tested["execution"]["kind"] == "draft_test"
@@ -576,7 +584,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
 
     replayed =
-      call(conn, "test_runbook_draft", test_args, "op_724NN9NMDZ1T76NARWCKM5A0D6")
+      call(conn, "execute_runbook", test_args, "op_724NN9NMDZ1T76NARWCKM5A0D6")
 
     assert replayed["execution"]["runbook_execution_id"] == execution_id
     refute_receive {:cloud_to_runner, _generation, _payload}, 100
@@ -588,15 +596,15 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert recovered["operation"]["runbook_execution_id"] == execution_id
     assert recovered["operation"]["definition_sha256"] == draft_hash
 
-    stale_test =
+    conflicting_retry =
       call(
         conn,
-        "test_runbook_draft",
-        %{test_args | "definition_sha256" => String.duplicate("0", 64)},
-        "op_324NN9NMDZ1T76NARWCKM5A0D6"
+        "execute_runbook",
+        %{test_args | "allow_draft" => false},
+        "op_724NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert stale_test["error"]["code"] == "draft_changed"
+    assert conflicting_retry["error"]["code"] == "operation_conflict"
     assert Repo.aggregate(Operation, :count) == 2
   end
 

@@ -351,6 +351,23 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  @doc "Fetches account-scoped execution identity for recovery. Requires `view_runbooks`."
+  def fetch_execution_recovery_identity(execution_id, %Subject{} = subject)
+      when is_binary(execution_id) do
+    # Later scope changes may hide details, but not whether an earlier
+    # lineage-owned operation committed.
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         true <- Repo.valid_uuid?(execution_id) do
+      RunbookExecution.Query.by_id(execution_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(RunbookExecution.Query)
+    else
+      false -> {:error, :not_found}
+      other -> other
+    end
+  end
+
   @doc """
   Fetches the bounded execution result needed by console and MCP projections.
 
@@ -1000,15 +1017,18 @@ defmodule Emisar.Runbooks do
   Creates or replays one MCP runbook execution under its operation identity.
 
   `facts` carries the model's exact call: `:operation_id`, the exact
-  `:runbook_ref`, `:reason`, and `:input_values`. Requires the dispatch-run
-  permission.
+  `:runbook_ref`, `:reason`, `:input_values`, and `:allow_draft`.
+  Published execution requires dispatch permission. Explicit draft execution
+  also requires draft-authoring permission and accepts only the current family
+  head.
 
   The operation is reserved first; only the fresh winner resolves the current
-  published runbook, rechecks membership, reason, and current scope, seeds
-  target selection, compiles the immutable plan, and composes the execution in
-  the same transaction — so a rejected preflight rolls the reservation back
-  with it. An exact replay re-reads the committed execution without touching
-  current runbook or catalog state. Returns
+  exact published runbook or explicitly allowed current draft, rechecks
+  membership, reason, and current scope, seeds target selection, compiles the
+  immutable plan, and composes the execution in the same transaction — so a
+  rejected preflight rolls the reservation back with it. An exact replay
+  re-reads the committed execution without touching current runbook or catalog
+  state. Returns
   `{:ok, :created | :replay, execution}`, `{:error, :operation_conflict}`,
   `{:error, :operation_incomplete}`, or the first rejection.
   """
@@ -1017,54 +1037,39 @@ defmodule Emisar.Runbooks do
         %Subject{actor: %ApiKeys.ApiKey{}} = subject
       )
       when is_binary(operation_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Emisar.Runs.Authorizer.dispatch_run_permission()
-           ) do
+    kind = mcp_execution_kind(facts)
+
+    with :ok <- ensure_mcp_execution_permissions(kind, subject) do
       execution_id = MCPOperations.resource_id(operation_id, :execute_runbook, subject)
-      operation_attrs = mcp_execution_operation_attrs(facts, execution_id, :published)
-      commit_mcp_execution(facts, execution_id, operation_attrs, :published, subject)
+      operation_attrs = mcp_execution_operation_attrs(facts, execution_id, kind)
+      commit_mcp_execution(facts, execution_id, operation_attrs, kind, subject)
     end
   end
 
   def create_or_replay_mcp_execution(_facts, %Subject{}), do: {:error, :unauthorized}
 
-  @doc """
-  Creates or replays one exact draft test through the normal runbook scheduler.
+  defp mcp_execution_kind(%{allow_draft: true}), do: :draft_test
+  defp mcp_execution_kind(_facts), do: :published
 
-  A test executes real actions. It therefore requires both draft-authoring and
-  dispatch authority, re-reads the current draft head under lock, verifies the
-  server-issued definition hash, then applies the same compiler, scope, trust,
-  policy, approval, capacity, audit, and per-attempt gates as published work.
-  """
-  def create_or_replay_mcp_draft_test(
-        %{operation_id: operation_id} = facts,
-        %Subject{actor: %ApiKeys.ApiKey{}} = subject
-      )
-      when is_binary(operation_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.draft_runbooks_permission()
-           ),
-         :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Emisar.Runs.Authorizer.dispatch_run_permission()
-           ) do
-      execution_id = MCPOperations.resource_id(operation_id, :test_runbook_draft, subject)
-      operation_attrs = mcp_execution_operation_attrs(facts, execution_id, :draft_test)
-      commit_mcp_execution(facts, execution_id, operation_attrs, :draft_test, subject)
-    end
+  defp ensure_mcp_execution_permissions(:published, %Subject{} = subject) do
+    Auth.Authorizer.ensure_has_permissions(
+      subject,
+      Emisar.Runs.Authorizer.dispatch_run_permission()
+    )
   end
 
-  def create_or_replay_mcp_draft_test(_facts, %Subject{}), do: {:error, :unauthorized}
+  defp ensure_mcp_execution_permissions(:draft_test, %Subject{} = subject) do
+    Auth.Authorizer.ensure_has_permissions(subject, [
+      Authorizer.draft_runbooks_permission(),
+      Emisar.Runs.Authorizer.dispatch_run_permission()
+    ])
+  end
 
-  defp mcp_execution_operation_attrs(facts, execution_id, :published) do
+  defp mcp_execution_operation_attrs(facts, execution_id, kind) do
     fingerprint =
       MCPOperations.mutation_fingerprint("execute_runbook", %{
         "runbook_ref" => facts.runbook_ref,
+        "allow_draft" => kind == :draft_test,
         "reason" => facts.reason,
         "input_values" => facts.input_values
       })
@@ -1072,24 +1077,6 @@ defmodule Emisar.Runbooks do
     %{
       operation_id: facts.operation_id,
       tool: :execute_runbook,
-      fingerprint: fingerprint,
-      resource_id: execution_id,
-      resource_ref: facts.runbook_ref
-    }
-  end
-
-  defp mcp_execution_operation_attrs(facts, execution_id, :draft_test) do
-    fingerprint =
-      MCPOperations.mutation_fingerprint("test_runbook_draft", %{
-        "runbook_ref" => facts.runbook_ref,
-        "definition_sha256" => facts.definition_sha256,
-        "reason" => facts.reason,
-        "input_values" => facts.input_values
-      })
-
-    %{
-      operation_id: facts.operation_id,
-      tool: :test_runbook_draft,
       fingerprint: fingerprint,
       resource_id: execution_id,
       resource_ref: facts.runbook_ref
@@ -1167,11 +1154,9 @@ defmodule Emisar.Runbooks do
              repo: Repo,
              lock: true
            ),
-         :ok <- ensure_family_head(runbook, subject),
-         true <- Definition.digest(runbook.definition) == facts.definition_sha256 do
+         :ok <- ensure_family_head(runbook, subject) do
       {:ok, runbook}
     else
-      false -> {:error, :draft_changed}
       {:error, :not_found} -> {:error, :draft_not_found}
       {:error, :draft_changed} -> {:error, :draft_changed}
       {:error, reason} -> {:error, reason}
@@ -1196,19 +1181,15 @@ defmodule Emisar.Runbooks do
         do: Scheduler.advance_execution(execution_id),
         else: :ok
 
-    with {:ok, execution} <- fetch_mcp_execution(execution_id, subject) do
-      {:ok, if(reservation.fresh?, do: :created, else: :replay), execution}
-    end
-  end
+    case fetch_execution_recovery_identity(execution_id, subject) do
+      {:ok, execution} ->
+        {:ok, if(reservation.fresh?, do: :created, else: :replay), execution}
 
-  defp fetch_mcp_execution(execution_id, %Subject{} = subject) do
-    queryable =
-      RunbookExecution.Query.by_account_id(subject.account.id)
-      |> RunbookExecution.Query.by_id(execution_id)
+      {:error, :not_found} ->
+        {:error, :operation_incomplete}
 
-    case Repo.fetch(queryable, RunbookExecution.Query) do
-      {:ok, execution} -> {:ok, execution}
-      {:error, :not_found} -> {:error, :operation_incomplete}
+      other ->
+        other
     end
   end
 
