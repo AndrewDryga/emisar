@@ -121,6 +121,16 @@ defmodule Emisar.SSOTest do
   defp role_of(account_id, user_id),
     do: Fixtures.Memberships.fetch_membership(account_id, user_id).role
 
+  defp map_group(provider, subject, external_group_id, role) do
+    attrs = %{external_group_id: external_group_id, role: role}
+    {:ok, mapping} = SSO.create_group_mapping(provider, attrs, subject)
+    mapping
+  end
+
+  # One SCIM `members` PATCH operation over the given member externalIds.
+  defp members_op(verb, external_ids),
+    do: %{"op" => verb, "path" => "members", "value" => Enum.map(external_ids, &%{"value" => &1})}
+
   # -- list_providers_for_account/2 ------------------------------------
 
   describe "list_providers_for_account/2" do
@@ -3104,6 +3114,198 @@ defmodule Emisar.SSOTest do
                SSO.scim_patch_group_members(provider, "grp-adm", [], ["okta|patch"])
 
       assert role_of(account.id, identity.user_id) == :viewer
+    end
+  end
+
+  # -- scim_patch_group/3 (provider-scoped) ----------------------------
+
+  describe "scim_patch_group/3" do
+    setup do
+      scim_provider()
+    end
+
+    test "add then remove applies both in wire order", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: kept} = provision(provider, "okta|kept")
+      %{identity: dropped} = provision(provider, "okta|dropped")
+      map_group(provider, subject, "grp-ops", :operator)
+
+      operations = [
+        members_op("Add", ["okta|kept", "okta|dropped"]),
+        members_op("remove", ["okta|dropped"])
+      ]
+
+      assert {:ok, %{external_group_id: "grp-ops", member_external_ids: ["okta|kept"]}} =
+               SSO.scim_patch_group(provider, "grp-ops", operations)
+
+      assert role_of(account.id, kept.user_id) == :operator
+      assert role_of(account.id, dropped.user_id) == :viewer
+    end
+
+    test "a whole-set replace hands over the absolute set a later remove applies to", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: kept} = provision(provider, "okta|kept")
+      %{identity: victim} = provision(provider, "okta|victim")
+      map_group(provider, subject, "grp-adm", :admin)
+
+      # An IdP rewriting a group and then offboarding in one request: the remove
+      # applies to the replaced set, not to a set the batch already superseded.
+      operations = [
+        members_op("replace", ["okta|kept", "okta|victim"]),
+        members_op("remove", ["okta|victim"])
+      ]
+
+      assert {:ok, %{member_external_ids: ["okta|kept"]}} =
+               SSO.scim_patch_group(provider, "grp-adm", operations)
+
+      assert role_of(account.id, kept.user_id) == :admin
+      assert role_of(account.id, victim.user_id) == :viewer
+    end
+
+    test "Okta's filtered remove takes the named member out", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity} = provision(provider, "okta|filtered")
+      map_group(provider, subject, "grp-adm", :admin)
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-adm",
+          member_external_ids: ["okta|filtered"]
+        })
+
+      assert role_of(account.id, identity.user_id) == :admin
+
+      operations = [%{"op" => "remove", "path" => ~s(members[value eq "okta|filtered"])}]
+
+      assert {:ok, _summary} = SSO.scim_patch_group(provider, "grp-adm", operations)
+      assert role_of(account.id, identity.user_id) == :viewer
+    end
+
+    test "Okta's pathless `{id, displayName}` settle renames the group it addresses", %{
+      provider: provider,
+      subject: subject
+    } do
+      mapping = map_group(provider, subject, "grp-ops", :operator)
+
+      operations = [
+        %{"op" => "replace", "value" => %{"id" => "grp-ops", "displayName" => "Platform"}}
+      ]
+
+      assert {:ok, %{external_group_id: "grp-ops", display: "Platform"}} =
+               SSO.scim_patch_group(provider, "grp-ops", operations)
+
+      assert Repo.reload!(mapping).external_group_display == "Platform"
+    end
+
+    test "an unacceptable rename takes the membership change batched with it", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity} = provision(provider, "okta|atomic")
+      map_group(provider, subject, "grp-adm", :admin)
+
+      operations = [
+        %{"op" => "replace", "path" => "displayName", "value" => String.duplicate("n", 300)},
+        members_op("add", ["okta|atomic"])
+      ]
+
+      assert SSO.scim_patch_group(provider, "grp-adm", operations) ==
+               {:error, :invalid_scim_group}
+
+      # The privilege change must not land under a rename we refuse.
+      assert role_of(account.id, identity.user_id) == :viewer
+    end
+
+    test "an operation list past the cap is refused before anything is applied", %{
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      %{identity: identity} = provision(provider, "okta|flood")
+      map_group(provider, subject, "grp-adm", :admin)
+      operations = List.duplicate(members_op("add", ["okta|flood"]), 101)
+
+      assert SSO.scim_patch_group(provider, "grp-adm", operations) ==
+               {:error, :invalid_scim_group}
+
+      assert role_of(account.id, identity.user_id) == :viewer
+    end
+
+    test "one pathless map cannot expand past the operation cap", %{provider: provider} do
+      value = Map.new(1..101, &{"attribute#{&1}", &1})
+      operations = [%{"op" => "replace", "value" => value}]
+
+      assert SSO.scim_patch_group(provider, "grp-adm", operations) ==
+               {:error, :invalid_scim_group}
+    end
+
+    test "member changes past the AGGREGATE cap are refused, not just one oversized op", %{
+      provider: provider
+    } do
+      half = for n <- 1..2600, do: "okta|#{n}"
+      rest = for n <- 2601..5200, do: "okta|#{n}"
+
+      assert SSO.scim_patch_group(provider, "grp-adm", [
+               members_op("add", half),
+               members_op("add", rest)
+             ]) == {:error, :invalid_scim_group}
+    end
+
+    test "an operation on an attribute we do not model is refused, not a silent no-op", %{
+      provider: provider
+    } do
+      operations = [%{"op" => "replace", "path" => "description", "value" => "Ops team"}]
+
+      assert SSO.scim_patch_group(provider, "grp-adm", operations) ==
+               {:error, :unsupported_scim_patch}
+    end
+
+    test "an externalId settle alone answers with the group as it stands", %{provider: provider} do
+      provision(provider, "okta|settled")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-ops",
+          display: "Ops",
+          member_external_ids: ["okta|settled"]
+        })
+
+      # Entra reads a group back and PATCHes `externalId` to the value it already
+      # has; answering 400 stopped that group's sync dead.
+      operations = [%{"op" => "replace", "path" => "externalId", "value" => "grp-ops"}]
+
+      assert SSO.scim_patch_group(provider, "grp-ops", operations) ==
+               {:ok,
+                %{
+                  external_group_id: "grp-ops",
+                  display: "Ops",
+                  member_external_ids: ["okta|settled"]
+                }}
+    end
+
+    test "a member externalId belonging to another account is ignored, never reached", %{
+      provider: provider_a,
+      subject: subject_a
+    } do
+      %{provider: provider_b, subject: subject_b, account: account_b} = scim_provider()
+      %{identity: identity_b} = provision(provider_b, "okta|b-only")
+      map_group(provider_a, subject_a, "grp-adm", :admin)
+      map_group(provider_b, subject_b, "grp-adm", :admin)
+
+      operations = [members_op("add", ["okta|b-only"])]
+
+      assert {:ok, _summary} = SSO.scim_patch_group(provider_a, "grp-adm", operations)
+      assert role_of(account_b.id, identity_b.user_id) == :viewer
     end
   end
 

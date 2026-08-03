@@ -51,6 +51,13 @@ defmodule Emisar.SSOSCIMTest do
     )
   end
 
+  # A directory user under a known name, so a rename has something to move.
+  defp provisioned(provider, external_id, full_name) do
+    attrs = scim_attrs(%{external_id: external_id, full_name: full_name})
+    {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+    %{user: user, identity: identity}
+  end
+
   # -- Token auth ------------------------------------------------------
 
   describe "authenticate_scim_token/1" do
@@ -266,6 +273,140 @@ defmodule Emisar.SSOSCIMTest do
 
       assert Fixtures.Memberships.fetch_membership(account_a.id, user.id)
       refute Fixtures.Memberships.fetch_membership(account_b.id, user.id)
+    end
+  end
+
+  # -- PATCH reduction -------------------------------------------------
+
+  describe "scim_patch_user/3" do
+    setup do
+      scim_provider()
+    end
+
+    test "the LAST operation to touch an attribute decides, name and lifecycle alike", %{
+      provider: provider,
+      account: account
+    } do
+      %{user: user} = provisioned(provider, "okta|ordered", "Old Name")
+
+      operations = [
+        %{"op" => "replace", "path" => "active", "value" => true},
+        %{"op" => "replace", "path" => "displayName", "value" => "Interim"},
+        %{"op" => "replace", "path" => "displayName", "value" => "Final Name"},
+        %{"op" => "replace", "path" => "active", "value" => false}
+      ]
+
+      assert {:ok, %{membership: membership}} =
+               SSO.scim_patch_user(provider, "okta|ordered", operations)
+
+      assert membership.disabled_at
+      assert Repo.reload!(user).full_name == "Final Name"
+      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+    end
+
+    test "a case-insensitive verb and Entra's pathless value map are both recognized", %{
+      provider: provider,
+      account: account
+    } do
+      %{user: user} = provisioned(provider, "okta|pathless", "Old Name")
+
+      operations = [
+        %{"op" => "Add", "value" => %{"active" => "False", "displayName" => "Pathless Name"}}
+      ]
+
+      assert {:ok, _result} = SSO.scim_patch_user(provider, "okta|pathless", operations)
+
+      assert Repo.reload!(user).full_name == "Pathless Name"
+      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+    end
+
+    test "a whole name wins over the components batched around it", %{provider: provider} do
+      %{user: user} = provisioned(provider, "okta|whole", "Old Name")
+
+      operations = [
+        %{"op" => "add", "path" => "name.givenName", "value" => "Given"},
+        %{"op" => "replace", "path" => "displayName", "value" => "Whole Name"},
+        %{"op" => "add", "path" => "name.familyName", "value" => "Family"}
+      ]
+
+      assert {:ok, _result} = SSO.scim_patch_user(provider, "okta|whole", operations)
+      assert Repo.reload!(user).full_name == "Whole Name"
+    end
+
+    test "a component-only rename keeps the half the batch does not name", %{provider: provider} do
+      %{user: user} = provisioned(provider, "okta|component", "Ada Lovelace")
+
+      operations = [%{"op" => "Add", "path" => "name.givenName", "value" => "Augusta"}]
+
+      assert {:ok, _result} = SSO.scim_patch_user(provider, "okta|component", operations)
+      assert Repo.reload!(user).full_name == "Augusta Lovelace"
+    end
+
+    test "a batch past the operation cap is refused before any of it is applied", %{
+      provider: provider,
+      account: account
+    } do
+      %{user: user} = provisioned(provider, "okta|flood", "Old Name")
+      operation = %{"op" => "replace", "path" => "active", "value" => false}
+
+      assert SSO.scim_patch_user(provider, "okta|flood", List.duplicate(operation, 101)) ==
+               {:error, :too_many_scim_operations}
+
+      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      assert Repo.reload!(user).full_name == "Old Name"
+    end
+
+    test "an unparseable `active` takes the rename batched with it", %{provider: provider} do
+      %{user: user} = provisioned(provider, "okta|badactive", "Old Name")
+
+      operations = [
+        %{"op" => "replace", "path" => "displayName", "value" => "New Name"},
+        %{"op" => "replace", "path" => "active", "value" => "maybe"}
+      ]
+
+      assert SSO.scim_patch_user(provider, "okta|badactive", operations) ==
+               {:error, :invalid_scim_active}
+
+      assert Repo.reload!(user).full_name == "Old Name"
+    end
+
+    test "a batch asking for nothing we model is refused, not silently accepted", %{
+      provider: provider
+    } do
+      provisioned(provider, "okta|nothing", "Old Name")
+
+      operations = [%{"op" => "add", "path" => "nickName", "value" => "nick"}]
+
+      assert SSO.scim_patch_user(provider, "okta|nothing", operations) ==
+               {:error, :unsupported_scim_patch}
+    end
+
+    test "a supported operation cannot hide an unsupported one", %{provider: provider} do
+      %{user: user} = provisioned(provider, "okta|mixed", "Old Name")
+
+      operations = [
+        %{"op" => "replace", "path" => "displayName", "value" => "New Name"},
+        %{"op" => "replace", "path" => "title", "value" => "Administrator"}
+      ]
+
+      assert SSO.scim_patch_user(provider, "okta|mixed", operations) ==
+               {:error, :unsupported_scim_patch}
+
+      assert Repo.reload!(user).full_name == "Old Name"
+    end
+
+    test "another provider's externalId is not found (the provider scopes the write)", %{
+      provider: provider_a
+    } do
+      %{provider: provider_b, account: account_b} = scim_provider()
+      %{user: user} = provisioned(provider_b, "okta|elsewhere", "B Person")
+
+      operations = [%{"op" => "replace", "path" => "active", "value" => false}]
+
+      assert SSO.scim_patch_user(provider_a, "okta|elsewhere", operations) ==
+               {:error, :not_found}
+
+      refute Fixtures.Memberships.fetch_membership(account_b.id, user.id).disabled_at
     end
   end
 

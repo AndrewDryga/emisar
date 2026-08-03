@@ -21,7 +21,7 @@ defmodule Emisar.SSO do
   alias Emisar.SSO.GroupRoleMapping
   alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC}
-  alias Emisar.SSO.{SCIMUser, SCIMUserUpdate, UserIdentity}
+  alias Emisar.SSO.{SCIMGroupPatch, SCIMUser, SCIMUserPatch, SCIMUserUpdate, UserIdentity}
   require Logger
 
   def start_link(opts),
@@ -1403,6 +1403,22 @@ defmodule Emisar.SSO do
   defp scim_active_from(attrs), do: Map.get(attrs, :active, Map.get(attrs, "active", true))
 
   @doc """
+  Internal — SCIM `PATCH /Users/{id}`: reduce the IdP's ordered RFC 7644 §3.5.2
+  operation list into one desired state and apply it as `scim_update_user/3`
+  does. The wire boundary hands the raw operations straight through — which
+  attributes a batch may touch, how its order resolves, and how big it may get
+  are decided here. `{:error, :too_many_scim_operations | :invalid_scim_active |
+  :unsupported_scim_patch}` for a batch we refuse, plus every
+  `scim_update_user/3` error for one we apply.
+  """
+  def scim_patch_user(%IdentityProvider{} = provider, external_id, operations)
+      when is_list(operations) do
+    with {:ok, update} <- SCIMUserPatch.reduce(operations) do
+      scim_update_user(provider, external_id, update)
+    end
+  end
+
+  @doc """
   Internal — SCIM update (PATCH / PUT / DELETE): apply one directory user's
   desired name and lifecycle state (`%SCIMUserUpdate{}`) as ONE transaction.
   The identity is re-read and locked under the provider's scope, a partial
@@ -2010,6 +2026,70 @@ defmodule Emisar.SSO do
         {:ok,
          %{external_group_id: external_group_id, added: length(added), removed: length(removed)}}
       end
+    end
+  end
+
+  @doc """
+  Internal — SCIM `PATCH /Groups/{id}`: reduce the IdP's ordered RFC 7644 §3.5.2
+  operation list into one transition and apply it through the same group writes a
+  PUT takes, so a batch carrying both a rename and a membership change commits as
+  one. The wire boundary hands the raw operations straight through — the ordering,
+  the recognized attributes, and the caps are decided here.
+
+  `{:ok, group_summary}` carrying the `member_external_ids` the response renders;
+  `{:error, :invalid_scim_group | :unsupported_scim_patch}` for a batch we refuse,
+  plus every group-write error for one we apply.
+  """
+  def scim_patch_group(%IdentityProvider{} = provider, external_group_id, operations)
+      when is_list(operations) do
+    with {:ok, command} <- SCIMGroupPatch.reduce(operations, external_group_id) do
+      apply_scim_group_patch(provider, external_group_id, command)
+    end
+  end
+
+  # The batch asked for nothing we had to write — answer with the group as it stands.
+  defp apply_scim_group_patch(%IdentityProvider{} = provider, external_group_id, :unchanged),
+    do: scim_fetch_group(provider, external_group_id)
+
+  defp apply_scim_group_patch(
+         %IdentityProvider{} = provider,
+         external_group_id,
+         {:rename, display}
+       ) do
+    with {:ok, _summary} <- scim_rename_group(provider, external_group_id, display) do
+      {:ok, %{external_group_id: external_group_id, display: display, member_external_ids: []}}
+    end
+  end
+
+  defp apply_scim_group_patch(
+         %IdentityProvider{} = provider,
+         external_group_id,
+         {:replace, display, member_external_ids}
+       ) do
+    attrs = %{
+      external_id: external_group_id,
+      display: display,
+      member_external_ids: member_external_ids
+    }
+
+    with {:ok, summary} <- scim_upsert_group(provider, attrs) do
+      {:ok, Map.put(summary, :member_external_ids, member_external_ids)}
+    end
+  end
+
+  defp apply_scim_group_patch(
+         %IdentityProvider{} = provider,
+         external_group_id,
+         {:delta, display, add_ids, remove_ids}
+       ) do
+    with {:ok, _summary} <-
+           scim_patch_group_members(provider, external_group_id, add_ids, remove_ids, display) do
+      {:ok,
+       %{
+         external_group_id: external_group_id,
+         display: display,
+         member_external_ids: add_ids
+       }}
     end
   end
 

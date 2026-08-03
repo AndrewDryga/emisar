@@ -8,10 +8,12 @@ defmodule EmisarWeb.SCIM.UserController do
   authorization (IL-15: re-read on every action, never trust the connection).
 
   The SCIM resource `id` is the IdP's externalId (see `SSO.SCIMUser`), so
-  `:id` here is the externalId the domain keys on. Every mutation — PATCH,
-  PUT, DELETE — parses into one typed `SSO.SCIMUserUpdate` and hands it to
-  `SSO.scim_update_user/3`, which commits the rename and the lifecycle
-  change together or not at all; this controller only parses and renders.
+  `:id` here is the externalId the domain keys on. Every mutation resolves to
+  one typed `SSO.SCIMUserUpdate` the domain commits atomically — PATCH hands
+  its raw operation list to `SSO.scim_patch_user/3`, which owns the RFC 7644
+  §3.5.2 reduction; PUT and DELETE state the desired update directly — so a
+  rename and a lifecycle change land together or not at all. This controller
+  decodes the wire envelope and renders.
   Deprovisioning is a SUSPEND, never a delete: both `PATCH active:false`
   and `DELETE` ask for `active: false` (R8).
   """
@@ -73,29 +75,14 @@ defmodule EmisarWeb.SCIM.UserController do
     end
   end
 
-  # PATCH /scim/v2/Users/:id — RFC 7644 §3.5.2 Operations. Honors the `active`
-  # replace (lifecycle) and the `displayName` replace (the IdP owns a synced
-  # user's name); any other op is an honest SCIM error, never a silent no-op.
-  # The same cap the Group PATCH carries: an operation list is attacker-supplied
-  # and every entry is scanned, so it is bounded before anything reads it. No IdP
-  # sends a batch anywhere near this.
-  @max_patch_operations 100
-
-  def update(conn, %{"id" => _external_id, "Operations" => operations})
-      when is_list(operations) and length(operations) > @max_patch_operations,
-      do: bad_request(conn, "tooMany", "PATCH carries too many operations.")
-
+  # PATCH /scim/v2/Users/:id — RFC 7644 §3.5.2 Operations. `SSO.scim_patch_user/3`
+  # reduces the ordered batch into one desired state and applies it; this action
+  # only judges the envelope's shape and renders the answer.
   def update(conn, %{"id" => external_id, "Operations" => operations})
       when is_list(operations) do
-    case {name_from_operations(operations), active_from_operations(operations)} do
-      {_name, :error} ->
-        bad_request(conn, "invalidValue", "Unparseable PATCH `active` value.")
-
-      {:keep, :keep} ->
-        unsupported_patch(conn)
-
-      {name, active} ->
-        apply_update(conn, external_id, %SSO.SCIMUserUpdate{name: name, active: active})
+    case SSO.scim_patch_user(conn.assigns.scim_provider, external_id, operations) do
+      {:ok, _result} -> render_current(conn, :ok, external_id)
+      {:error, reason} -> render_error(conn, reason)
     end
   end
 
@@ -126,8 +113,8 @@ defmodule EmisarWeb.SCIM.UserController do
   defp put_name(nil), do: :keep
   defp put_name(full_name), do: {:replace, full_name}
 
-  # The one write behind PATCH and PUT: the domain commits everything the
-  # operation asked for — rename and lifecycle — or nothing.
+  # The write behind PUT: the domain commits everything the request asked for —
+  # rename and lifecycle — or nothing.
   defp apply_update(conn, external_id, %SSO.SCIMUserUpdate{} = update) do
     case SSO.scim_update_user(conn.assigns.scim_provider, external_id, update) do
       {:ok, _result} -> render_current(conn, :ok, external_id)
@@ -145,117 +132,6 @@ defmodule EmisarWeb.SCIM.UserController do
       {:error, reason} -> render_error(conn, reason)
     end
   end
-
-  # -- PATCH parsing (RFC 7644 §3.5.2) --------------------------------
-
-  # Find the operation that sets `active`. `op` is case-insensitive
-  # ("replace"/"Replace"/"add"); `path` is either "active" or omitted with the
-  # value carrying `{"active": ...}` (Entra omits path, Okta sends it).
-  # Returns the `SSO.SCIMUserUpdate` active shape — `:keep` (no active op
-  # present) or the desired boolean — or `:error` (an active op whose value
-  # can't be parsed).
-  # RFC 7644 §3.5.2 applies a PatchOp's operations IN ORDER, so the LAST one that
-  # touches an attribute decides its final value. Halting on the first match read
-  # a batch backwards: `[active: true, active: false]` — an IdP reinstating and
-  # then offboarding in one request — left the member active.
-  defp active_from_operations(operations) do
-    Enum.reduce_while(operations, :keep, fn op, acc ->
-      case operation_active(op) do
-        :skip -> {:cont, acc}
-        :error -> {:halt, :error}
-        active when is_boolean(active) -> {:cont, active}
-      end
-    end)
-  end
-
-  defp operation_active(%{} = op) do
-    if replace_or_add?(Map.get(op, "op")) do
-      active_from_op(Map.get(op, "path"), Map.get(op, "value"))
-    else
-      :skip
-    end
-  end
-
-  defp operation_active(_op), do: :skip
-
-  defp replace_or_add?(op) when is_binary(op), do: String.downcase(op) in ["replace", "add"]
-  defp replace_or_add?(_), do: false
-
-  # path "active" → the value is the boolean; pathless → the value is a map
-  # that may carry "active". Anything else is not an active op.
-  defp active_from_op(path, value) when is_binary(path) do
-    if String.downcase(path) == "active",
-      do: parse_active_value(value),
-      else: :skip
-  end
-
-  defp active_from_op(nil, %{"active" => value}), do: parse_active_value(value)
-  defp active_from_op(_path, _value), do: :skip
-
-  defp parse_active_value(value) do
-    case Resource.parse_active(value, nil) do
-      nil -> :error
-      active -> active
-    end
-  end
-
-  # Find the operation that replaces `displayName` — same op/path/pathless
-  # handling as `active_from_operations/1`. A non-string or empty value is
-  # not a rename (the IdP sent nothing usable), never an error. Returns the
-  # `SSO.SCIMUserUpdate` name shape: `:keep`, `{:replace, full_name}`, or
-  # `{:merge, components}`.
-  # Last write wins, for the same ordering reason as `active` above.
-  # A whole name wins outright: once one is seen, no later component overrides it,
-  # because a component names half of something the batch has already stated in
-  # full. Among components themselves the last mention of each half wins, which is
-  # the wire-order rule the rest of PATCH follows.
-  defp name_from_operations(operations) do
-    Enum.reduce(operations, :keep, fn op, acc ->
-      case operation_name(op) do
-        :skip -> acc
-        {:replace, full_name} -> {:replace, full_name}
-        {:component, part, value} -> put_component(acc, part, value)
-      end
-    end)
-  end
-
-  # A whole name already won; components cannot override it.
-  defp put_component({:replace, full_name}, _part, _value), do: {:replace, full_name}
-
-  defp put_component({:merge, components}, part, value),
-    do: {:merge, Map.put(components, part, value)}
-
-  defp put_component(_acc, part, value), do: {:merge, %{part => value}}
-
-  defp operation_name(%{} = op) do
-    if replace_or_add?(Map.get(op, "op")) do
-      name_from_op(Map.get(op, "path"), Map.get(op, "value"))
-    else
-      :skip
-    end
-  end
-
-  defp operation_name(_op), do: :skip
-
-  # Entra renames by sending the name COMPONENTS and no `displayName`:
-  #   {"op": "Add", "path": "name.givenName",  "value": "Renamed"},
-  #   {"op": "Add", "path": "name.familyName", "value": "Entra R3"}
-  # Recognizing only `displayName` answered 400 to both, so an Entra rename
-  # retried and failed forever.
-  defp name_from_op(path, value) when is_binary(path) and is_binary(value) and value != "" do
-    case String.downcase(path) do
-      "displayname" -> {:replace, value}
-      "name.formatted" -> {:replace, value}
-      "name.givenname" -> {:component, :given, value}
-      "name.familyname" -> {:component, :family, value}
-      _ -> :skip
-    end
-  end
-
-  defp name_from_op(nil, %{"displayName" => value}) when is_binary(value) and value != "",
-    do: {:replace, value}
-
-  defp name_from_op(_path, _value), do: :skip
 
   # -- filter parsing (RFC 7644 §3.4.2.2, the `attr eq "value"` subset) --
 
@@ -332,6 +208,14 @@ defmodule EmisarWeb.SCIM.UserController do
     |> put_status(:conflict)
     |> json(Resource.error(409, "uniqueness", "That email address is not available."))
   end
+
+  defp render_error(conn, :too_many_scim_operations),
+    do: bad_request(conn, "tooMany", "PATCH carries too many operations.")
+
+  defp render_error(conn, :invalid_scim_active),
+    do: bad_request(conn, "invalidValue", "Unparseable PATCH `active` value.")
+
+  defp render_error(conn, :unsupported_scim_patch), do: unsupported_patch(conn)
 
   defp render_error(conn, %Ecto.Changeset{}),
     do: bad_request(conn, "invalidValue", "The SCIM User payload was rejected.")
