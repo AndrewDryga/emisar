@@ -405,6 +405,12 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     includes a badge, copy affordance, or other sibling control opts out of a metadata
     field's single-text truncation and wraps as a complete unit. Sweep: `truncate`
     parents around chips, tooltips, or buttons.
+36. **A result summary stays with the collection it quantifies.** Search/filter feedback
+    such as `1 matching action` or `12 results` renders immediately before or beside the
+    result rows. It never joins durable record facts such as `first seen`, hash, owner, or
+    timestamps in one middot-separated metadata sentence. Sweep: result counts and
+    no-match/search summaries inside meta strips, detail fact lines, or other entity
+    metadata instead of adjacent to their result collection.
 
 ### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
 

@@ -1689,7 +1689,15 @@ defmodule EmisarWeb.PacksLiveTest do
       # the pack's other (low) one.
       assert has_element?(lv, ~s(button[aria-expanded="true"]))
       assert html =~ "postgres.kill_backend"
-      assert html =~ "1 matching action"
+      assert has_element?(lv, ~s([data-role="pack-action-match-summary"]), "1 matching action")
+
+      assert has_element?(
+               lv,
+               ~s([data-role="pack-action-match-summary"] + ul),
+               "postgres.kill_backend"
+             )
+
+      refute has_element?(lv, ~s([data-role="pack-version-facts"]), "matching action")
     end
 
     test "a combined filter two DIFFERENT actions satisfy keeps the pack collapsed", %{

@@ -603,10 +603,7 @@ defmodule EmisarWeb.PacksLive do
 
     ~H"""
     <div class="mt-2 pl-8">
-      <p class="text-[11px] text-zinc-500">
-        <span :if={@matched} class="font-medium text-brand-300">
-          {match_count_label(@shown)} ·
-        </span>
+      <p data-role="pack-version-facts" class="text-[11px] text-zinc-500">
         first seen
         <.local_time
           id={"pack-version-first-#{@version.id}"}
@@ -621,7 +618,18 @@ defmodule EmisarWeb.PacksLive do
       <p :if={@inspected == []} class="mt-2 text-[11px] text-zinc-500">
         No actions advertised for this version right now.
       </p>
-      <.pack_action_list :if={@shown not in [nil, []]} actions={@shown} class="mt-2" />
+      <p
+        :if={not is_nil(@matched) and @shown not in [nil, []]}
+        data-role="pack-action-match-summary"
+        class="mt-2 text-[11px] font-medium text-brand-300"
+      >
+        {match_count_label(@shown)}
+      </p>
+      <.pack_action_list
+        :if={@shown not in [nil, []]}
+        actions={@shown}
+        class={if @matched, do: "mt-1.5", else: "mt-2"}
+      />
     </div>
     """
   end
