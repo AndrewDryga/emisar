@@ -382,12 +382,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("validate", %{"provider" => params} = event, socket) do
-    params =
-      params
-      |> prefill_fixed_issuer()
-      |> prefill_identifier_claim()
-      |> normalize_provider_access(socket.assigns.runners)
-
+    params = normalize_provider_access(params, socket.assigns.runners)
     changeset = SSO.change_provider(%SSO.IdentityProvider{}, params) |> LiveForm.on_change(event)
 
     {:noreply, socket |> assign_form(changeset) |> assign(:test_result, nil)}
@@ -692,7 +687,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp do_create(socket, params) do
-    case SSO.configure_provider(strip_blank_secret(params), socket.assigns.current_subject) do
+    case SSO.configure_provider(params, socket.assigns.current_subject) do
       {:ok, provider} ->
         # Land on the new connection's detail, not the overview — it's where the
         # next steps live (test a sign-in, enable directory sync, map groups).
@@ -1285,13 +1280,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     )
   end
 
-  # An empty client_secret on submit means "leave the stored one" (write-only
-  # field): drop the key so the changeset doesn't clobber the secret with "".
-  defp strip_blank_secret(%{"client_secret" => secret} = params) when secret in ["", nil],
-    do: Map.delete(params, "client_secret")
-
-  defp strip_blank_secret(params), do: params
-
   defp error_message(:sso_not_available), do: "Single sign-on requires a Team or Enterprise plan."
   defp error_message(:unauthorized), do: "You don't have permission to configure single sign-on."
   defp error_message(:not_found), do: "That no longer exists — it may have just been removed."
@@ -1306,6 +1294,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp error_message(:identity_namespace_locked) do
     "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed — changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
+  end
+
+  defp error_message(:scim_not_supported) do
+    "This provider can't push a directory to emisar, so there's no SCIM token to issue. Members provision on their first sign-in instead."
   end
 
   defp error_message(:blocked_discovery_endpoint) do
@@ -1367,18 +1359,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "provider", id: "create-provider"))
 
-  # The inline edit form. client_secret is WRITE-ONLY — the display data has
-  # its stored value cleared so the password input is never pre-filled with the
-  # real secret; a typed value still shows (it lands in the changeset's
-  # `changes`, which `Phoenix.HTML.Form` prefers over the data). The actual
-  # `update_provider` runs against the real struct, so leaving the field blank
-  # keeps the stored secret — unless the edit repoints the issuer or client id,
-  # which the domain refuses without one.
+  # The inline edit form. `change_provider` returns a presentation-safe
+  # changeset — the stored, write-only client_secret is never in it — so leaving
+  # the field blank keeps the stored secret, unless the edit repoints the issuer
+  # or client id, which the domain refuses without one.
   defp edit_form(provider, params \\ %{}, action \\ nil) do
-    changeset =
-      %{provider | client_secret: nil}
-      |> SSO.change_provider(params)
-      |> maybe_put_action(action)
+    changeset = provider |> SSO.change_provider(params) |> maybe_put_action(action)
 
     to_form(changeset, as: "provider", id: "edit-provider-#{provider.id}")
   end
@@ -1386,11 +1372,9 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Render the changeset the WRITE returned. Rebuilding a fresh one from the same
   # params re-runs only the in-process validations, so the database's verdict — a
   # second connection claiming an allowed email domain already taken — was
-  # dropped and the form came back with no error at all. Only the STORED secret
-  # is redacted; the errors survive.
+  # dropped and the form came back with no error at all.
   defp edit_form_from(%Ecto.Changeset{} = changeset, provider) do
     changeset
-    |> Map.put(:data, %{changeset.data | client_secret: nil})
     |> Map.put(:action, :update)
     |> to_form(as: "provider", id: "edit-provider-#{provider.id}")
   end
@@ -2209,7 +2193,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         />
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div class="sm:col-span-2">
-            <%= if fixed = fixed_issuer(@kind) do %>
+            <%= if fixed = SSO.provider_fixed_issuer(@kind) do %>
               <%!-- A constant for this provider — show it locked + prefilled, not
                    an input the operator must copy exactly. --%>
               <.label>Issuer URL</.label>
@@ -2424,7 +2408,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         </:step>
         <%!-- Dropped for providers whose issuer is a constant — it's already
              locked + prefilled below, so there's no step to follow. --%>
-        <:step :if={is_nil(fixed_issuer(@kind))}>
+        <:step :if={is_nil(SSO.provider_fixed_issuer(@kind))}>
           Set the <span class="text-zinc-300">Issuer URL</span>
           below to <span class="font-mono text-zinc-300">{issuer_hint(@kind)}</span>.
           <span class="text-zinc-400">{issuer_where_hint(@kind)}</span>
@@ -2516,9 +2500,13 @@ defmodule EmisarWeb.SSOSettingsLive do
        else: options ++ [{"#{current} — stored on this connection", to_string(current)}]
   end
 
-  defp identifier_claim_options("entra"), do: [{"oid — Microsoft Entra", "oid"}]
-
-  defp identifier_claim_options(_), do: [{"sub — OIDC standard", "sub"}]
+  # The claim itself is the domain's — this only words it.
+  defp identifier_claim_options(kind) do
+    case SSO.provider_identifier_claim(kind) do
+      :oid -> [{"oid — Microsoft Entra", "oid"}]
+      _sub_or_unknown -> [{"sub — OIDC standard", "sub"}]
+    end
+  end
 
   # Entra's `sub` differs per application, so `oid` is the only claim that joins
   # sign-in to the directory — which is why it is the only one offered. The
@@ -2593,46 +2581,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   # the loaded struct carries a boolean).
   defp checkbox_on?(field), do: field.value in [true, "true"]
 
-  # Google Workspace and JumpCloud have a single, fixed OIDC issuer — prefill it
-  # when that provider is picked and the operator hasn't typed one, so they don't
-  # hunt for a value that's always the same. Switching to a non-fixed provider
-  # clears an issuer we'd prefilled (never one they typed).
-  # Providers whose OIDC issuer is one fixed value for every customer — no
-  # per-org URL to look up. The field is shown LOCKED + prefilled and its setup
-  # step is dropped, so the operator never types (or mistypes) a constant.
-  @fixed_issuers %{
-    "google_workspace" => "https://accounts.google.com",
-    "jumpcloud" => "https://oauth.id.jumpcloud.com/"
-  }
-
-  defp fixed_issuer(kind), do: Map.get(@fixed_issuers, kind)
-
-  defp prefill_fixed_issuer(%{"kind" => kind} = params) do
-    current = Map.get(params, "issuer", "")
-
-    case fixed_issuer(kind) do
-      nil ->
-        if current in Map.values(@fixed_issuers), do: Map.put(params, "issuer", ""), else: params
-
-      issuer ->
-        if current in ["", nil], do: Map.put(params, "issuer", issuer), else: params
-    end
-  end
-
-  defp prefill_fixed_issuer(params), do: params
-
-  # Entra's `sub` is PAIRWISE — a different value per application — so `oid` is the
-  # right identifier there, and offering it while leaving `sub` selected would let
-  # an admin accept a default that costs them a broken directory join later.
-  # Switching away restores the OIDC standard, the only option other kinds have.
-  defp prefill_identifier_claim(%{"kind" => "entra"} = params),
-    do: Map.put(params, "identifier_claim", "oid")
-
-  defp prefill_identifier_claim(%{"kind" => kind} = params) when kind not in ["", nil],
-    do: Map.put(params, "identifier_claim", "sub")
-
-  defp prefill_identifier_claim(params), do: params
-
   # Where to FIND the issuer — it's an org/realm-level value, not on the app
   # page, which is the usual point of confusion.
   defp issuer_where_hint("okta") do
@@ -2682,13 +2630,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp scim_location_hint(_), do: "in your provider's SCIM / user-provisioning settings"
-
-  # The directory synced within the last day — setup is done, so the "point your IdP
-  # at this connection" instructions are hidden until sync goes stale again.
-  defp recently_synced?(%{scim_last_seen_at: %DateTime{} = at}),
-    do: DateTime.diff(DateTime.utc_now(), at) < 24 * 60 * 60
-
-  defp recently_synced?(_), do: false
 
   # The kind currently selected in the form (string), for the live setup guide;
   # defaults to the first option — what the select shows before any change.
@@ -2843,7 +2784,7 @@ defmodule EmisarWeb.SSOSettingsLive do
              synced within the last day (setup's done) — unless a token was just revealed,
              since you need these steps to re-point the IdP at the new bearer. --%>
         <details
-          :if={@revealed_token || not recently_synced?(@provider)}
+          :if={@revealed_token || not SSO.provider_sync_recent?(@provider)}
           class="group"
           {if(@revealed_token, do: %{open: ""}, else: %{})}
         >

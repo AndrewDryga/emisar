@@ -271,7 +271,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
       # Submit the edit with a BLANK client_secret (the field is never
-      # pre-filled). strip_blank_secret drops it, so the stored value is kept.
+      # pre-filled). Whether blank means "keep the stored one" is the domain's
+      # call, and it keeps it.
       lv
       |> form("#edit-provider-#{provider.id}", %{
         "provider_id" => provider.id,
@@ -287,6 +288,61 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       reloaded = Repo.reload!(provider)
       assert reloaded.name == "Renamed"
       assert reloaded.client_secret == "stored-secret-value"
+    end
+
+    test "a rejected edit re-renders the error with no secret in the page", %{
+      conn: conn,
+      account: account
+    } do
+      provider = insert_provider(account, %{client_secret: "stored-secret-value"})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
+
+      html =
+        lv
+        |> form("#edit-provider-#{provider.id}", %{
+          "provider_id" => provider.id,
+          "provider" => %{
+            "name" => "Renamed",
+            "issuer" => "http://idp.test",
+            "client_id" => "cid",
+            "client_secret" => "typed-replacement"
+          }
+        })
+        |> render_submit()
+
+      # The write's own changeset comes back (so the database's verdict survives),
+      # and the domain has stripped both secrets out of it first.
+      assert html =~ "must be an https URL"
+      refute html =~ "stored-secret-value"
+      refute html =~ "typed-replacement"
+    end
+
+    test "an edit can't repoint a fixed-issuer connection", %{conn: conn, account: account} do
+      google =
+        insert_provider(account, %{
+          name: "Acme Google",
+          kind: :google_workspace,
+          issuer: "https://accounts.google.com"
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{google.id}/edit")
+
+      # The rendered issuer is locked to the constant (LiveViewTest won't even let
+      # a form set another value), so a different one can only arrive as a
+      # crafted event — which is what this pushes.
+      render_submit(lv, "update", %{
+        "provider_id" => google.id,
+        "provider" => %{
+          "name" => "Renamed",
+          "issuer" => "https://evil.test",
+          "client_id" => "cid"
+        }
+      })
+
+      # Google's issuer is a constant: posting around the lock changes nothing.
+      reloaded = Repo.reload!(google)
+      assert reloaded.name == "Renamed"
+      assert reloaded.issuer == "https://accounts.google.com"
     end
 
     test "an invalid issuer renders inline on the field, not in a flash", %{
@@ -919,6 +975,23 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # a newline mid-phrase.
       assert html =~ "has no inbound SCIM"
       refute html =~ "enable_scim"
+    end
+
+    test "a crafted enable on Google Workspace is refused, not merely hidden", %{
+      conn: conn,
+      account: account
+    } do
+      google = insert_provider(account, %{name: "Acme Google", kind: :google_workspace})
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{google.id}")
+
+      # The panel is hidden, so the event has to come from a crafted push — the
+      # domain is what refuses it, and the page says why.
+      shown = render_click(lv, "enable_scim", %{"id" => google.id})
+
+      assert shown =~ "can&#39;t push a directory to emisar"
+      refute Repo.reload!(google).scim_enabled
+      assert is_nil(Repo.reload!(google).scim_token_prefix)
     end
 
     test "Keycloak keeps the enable panel, and its setup hint names the plugin", %{

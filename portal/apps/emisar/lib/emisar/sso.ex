@@ -20,7 +20,7 @@ defmodule Emisar.SSO do
   alias Emisar.SSO.{Authorizer, DirectoryGroup, DirectoryGroupMember}
   alias Emisar.SSO.GroupRoleMapping
   alias Emisar.SSO.GroupRunnerAccessMapping
-  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC}
+  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, ProviderKind}
   alias Emisar.SSO.{SCIMGroupPatch, SCIMUser, SCIMUserPatch, SCIMUserUpdate, UserIdentity}
   require Logger
 
@@ -150,9 +150,24 @@ defmodule Emisar.SSO do
     end
   end
 
-  @doc "Changeset for the SSO provider config form (phx-change validation)."
-  def change_provider(%IdentityProvider{} = provider \\ %IdentityProvider{}, attrs \\ %{}),
-    do: IdentityProvider.Changeset.form(provider, attrs)
+  @doc """
+  Changeset for the SSO provider config form (phx-change validation). A new
+  connection normalizes against the SUBMITTED kind (create is where it's chosen);
+  an existing one against its stored kind. The changeset is presentation-safe —
+  it validates against the real row but never carries its stored `client_secret`,
+  which is write-only and must not reach a rendered form. A secret the operator
+  is typing stays in `changes`, so the field keeps what they entered.
+  """
+  def change_provider(provider \\ %IdentityProvider{}, attrs \\ %{})
+
+  def change_provider(%IdentityProvider{id: nil} = provider, attrs),
+    do: IdentityProvider.Changeset.form(provider, new_provider_attrs(attrs))
+
+  def change_provider(%IdentityProvider{} = provider, attrs) do
+    provider
+    |> IdentityProvider.Changeset.form(edit_provider_attrs(provider, attrs))
+    |> hide_stored_secret()
+  end
 
   @doc """
   Changeset for the group→role mapping form. From a `%IdentityProvider{}` it's a
@@ -182,11 +197,11 @@ defmodule Emisar.SSO do
 
   @doc "Create an SSO connection. `manage_sso` + the Team or Enterprise plan. `{:ok, provider} | {:error, reason}`."
   def configure_provider(attrs, %Subject{account: account} = subject) do
-    changeset = IdentityProvider.Changeset.create(account.id, attrs)
-
-    default_role = Ecto.Changeset.get_field(changeset, :default_role)
-
+    # Authorization first: nothing is parsed, normalized or built from
+    # caller-supplied attrs until the subject has proven it may configure SSO.
     with :ok <- ensure_can_configure_sso(subject),
+         changeset = IdentityProvider.Changeset.create(account.id, new_provider_attrs(attrs)),
+         default_role = Ecto.Changeset.get_field(changeset, :default_role),
          # Creation checked runner access but never the role it hands every new
          # member. The changeset only excludes :owner, so an admin could stand up
          # a connection defaulting to a role they cannot themselves grant.
@@ -211,6 +226,9 @@ defmodule Emisar.SSO do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(IdentityProvider.Query,
         with: fn loaded_provider ->
+          # Judged from the PERSISTED kind, under the row lock — an edit never
+          # chooses the kind, so a submitted one is not evidence of anything.
+          attrs = edit_provider_attrs(loaded_provider, attrs)
           supplied_secret? = client_secret_supplied?(attrs)
           changeset = IdentityProvider.Changeset.update(loaded_provider, drop_blank_secret(attrs))
 
@@ -245,6 +263,10 @@ defmodule Emisar.SSO do
         end,
         after_commit: &on_provider_updated/2
       )
+      |> case do
+        {:error, %Ecto.Changeset{} = invalid} -> {:error, hide_secrets(invalid)}
+        result -> result
+      end
     end
   end
 
@@ -357,26 +379,111 @@ defmodule Emisar.SSO do
   end
 
   defp client_secret_supplied?(attrs) do
-    case fetch_client_secret(attrs) do
+    case fetch_attr(attrs, :client_secret) do
       {:ok, secret} when is_binary(secret) -> String.trim(secret) != ""
       _ -> false
     end
   end
 
   defp drop_blank_secret(attrs) do
-    if client_secret_supplied?(attrs),
-      do: attrs,
-      else: attrs |> Map.delete("client_secret") |> Map.delete(:client_secret)
+    if client_secret_supplied?(attrs), do: attrs, else: drop_attr(attrs, :client_secret)
   end
 
-  defp fetch_client_secret(%{} = attrs) do
-    case Map.fetch(attrs, "client_secret") do
-      {:ok, secret} -> {:ok, secret}
-      :error -> Map.fetch(attrs, :client_secret)
+  # The stored secret is write-only: it validates the write but never travels
+  # back through a changeset the console renders and holds in socket state.
+  defp hide_stored_secret(%Ecto.Changeset{} = changeset),
+    do: %{changeset | data: %{changeset.data | client_secret: nil}}
+
+  # A rejected write returns its changeset to the form, so the replacement secret
+  # the operator submitted goes too — retyping it is the cost of not parking a
+  # live credential in a browser DOM and a long-lived socket assign. A form reads
+  # a field from changes, then params, then data, so all three are cleared.
+  defp hide_secrets(%Ecto.Changeset{} = changeset) do
+    changeset = hide_stored_secret(changeset)
+
+    %{
+      changeset
+      | changes: Map.delete(changeset.changes, :client_secret),
+        params: drop_attr(changeset.params || %{}, :client_secret)
+    }
+  end
+
+  # Create + new-form normalization: the kind comes from the SUBMITTED attrs,
+  # because a create is where it's chosen. An unrecognized kind normalizes
+  # nothing — the changeset's enum rejects it.
+  defp new_provider_attrs(attrs) do
+    attrs = drop_blank_secret(attrs)
+
+    case fetch_attr_kind(attrs) do
+      {:ok, metadata} ->
+        attrs
+        |> put_kind_issuer(metadata)
+        # One right answer per kind, so the claim is derived rather than offered:
+        # a stale select value left over from switching provider (Entra's `oid`
+        # under Okta) would otherwise be saved as the identity namespace.
+        |> put_attr(:identifier_claim, metadata.identifier_claim)
+
+      :error ->
+        attrs
     end
   end
 
-  defp fetch_client_secret(_attrs), do: :error
+  # Update + edit-form normalization, from the PERSISTED kind — an edit never
+  # chooses the kind, so a submitted one is dropped outright rather than read.
+  # A kind whose issuer is one constant for every customer likewise has no
+  # editable issuer: the submitted value is dropped rather than compared, so a
+  # forged one can't repoint the connection AND a stored value that predates the
+  # invariant stays exactly as it is instead of being silently migrated.
+  defp edit_provider_attrs(%IdentityProvider{} = provider, attrs) do
+    attrs = drop_attr(attrs, :kind)
+
+    case ProviderKind.fetch(provider.kind) do
+      {:ok, %{fixed_issuer: nil}} -> attrs
+      {:ok, _metadata} -> drop_attr(attrs, :issuer)
+      :error -> attrs
+    end
+  end
+
+  # Switching to a per-customer provider clears an issuer WE prefilled — never
+  # one the operator typed.
+  defp put_kind_issuer(attrs, %{fixed_issuer: nil}) do
+    prefilled? =
+      case fetch_attr(attrs, :issuer) do
+        {:ok, issuer} -> issuer in ProviderKind.fixed_issuers()
+        :error -> false
+      end
+
+    if prefilled?, do: put_attr(attrs, :issuer, ""), else: attrs
+  end
+
+  defp put_kind_issuer(attrs, %{fixed_issuer: issuer}), do: put_attr(attrs, :issuer, issuer)
+
+  defp fetch_attr_kind(attrs) do
+    case fetch_attr(attrs, :kind) do
+      {:ok, kind} -> ProviderKind.fetch(kind)
+      :error -> :error
+    end
+  end
+
+  defp fetch_attr(%{} = attrs, key) do
+    case Map.fetch(attrs, Atom.to_string(key)) do
+      {:ok, value} -> {:ok, value}
+      :error -> Map.fetch(attrs, key)
+    end
+  end
+
+  defp fetch_attr(_attrs, _key), do: :error
+
+  defp drop_attr(attrs, key), do: attrs |> Map.delete(Atom.to_string(key)) |> Map.delete(key)
+
+  # Form params arrive with string keys and direct callers with atom keys, and
+  # Ecto refuses a map that mixes them — so a normalized field is written back in
+  # whichever style its attrs already use.
+  defp put_attr(attrs, key, value) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1),
+      do: Map.put(attrs, Atom.to_string(key), to_string(value)),
+      else: Map.put(attrs, key, value)
+  end
 
   # Repointing is refused once an identity is bound, so it is allowed exactly
   # while none is — which is also when pending link requests exist. Those were
@@ -2593,12 +2700,17 @@ defmodule Emisar.SSO do
   Enable directory sync on a provider: mint a SCIM bearer, store its
   prefix + hash + `scim_enabled: true`, and return the raw token ONCE
   (`{:ok, provider, raw_token}` — write-only, like every emisar secret).
-  `manage_sso` on the enterprise plan.
+  `manage_sso` on the enterprise plan; a kind that can't push SCIM is
+  `{:error, :scim_not_supported}` and keeps its token and flag untouched.
   """
   def enable_scim(%IdentityProvider{} = provider, %Subject{} = subject),
     do: write_scim_token(provider, subject, enabled: true)
 
-  @doc "Rotate a provider's SCIM bearer (invalidates the old one). Returns the new raw token once. `manage_sso` + enterprise."
+  @doc """
+  Rotate a provider's SCIM bearer (invalidates the old one). Returns the new raw
+  token once. `manage_sso` + enterprise; a kind that can't push SCIM is
+  `{:error, :scim_not_supported}`.
+  """
   def rotate_scim_token(%IdentityProvider{} = provider, %Subject{} = subject),
     do: write_scim_token(provider, subject, enabled: true)
 
@@ -2610,7 +2722,15 @@ defmodule Emisar.SSO do
       |> IdentityProvider.Query.by_id(id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(IdentityProvider.Query,
-        with: &IdentityProvider.Changeset.scim_token(&1, prefix, hash, enabled),
+        # Judged on the locked row, not on the console's copy: a kind with no
+        # inbound SCIM must never end up holding a live bearer that authenticates
+        # a directory it can't have. Disable stays open, so a token minted before
+        # this can still be retired.
+        with: fn loaded_provider ->
+          if ProviderKind.supports_scim?(loaded_provider.kind),
+            do: IdentityProvider.Changeset.scim_token(loaded_provider, prefix, hash, enabled),
+            else: :scim_not_supported
+        end,
         audit: &Audit.Events.identity_provider_updated(subject, &1)
       )
       |> case do
@@ -3450,11 +3570,56 @@ defmodule Emisar.SSO do
 
   # -- Capabilities ----------------------------------------------------
 
-  @doc "All supported identity-provider kinds."
-  def identity_provider_kinds, do: IdentityProvider.kinds()
+  @doc "All supported identity-provider kinds, in the order the console offers them."
+  def identity_provider_kinds, do: ProviderKind.all()
+
+  @doc """
+  The one issuer this kind serves every customer from — the value the console
+  shows locked, and the one a create is normalized to. Nil when the issuer is
+  per-customer or the kind is unknown. Takes the atom or its string form.
+  """
+  def provider_fixed_issuer(kind) do
+    case ProviderKind.fetch(kind) do
+      {:ok, metadata} -> metadata.fixed_issuer
+      :error -> nil
+    end
+  end
+
+  @doc """
+  The claim this kind carries a stable identity in (`:sub`, or `:oid` for Entra's
+  pairwise `sub`) — what a new connection is created with. Nil for an unknown
+  kind. Takes the atom or its string form.
+  """
+  def provider_identifier_claim(kind) do
+    case ProviderKind.fetch(kind) do
+      {:ok, metadata} -> metadata.identifier_claim
+      :error -> nil
+    end
+  end
 
   @doc "True when directory sync (SCIM) is available for this provider kind."
-  def supports_scim?(kind), do: IdentityProvider.supports_scim?(kind)
+  def supports_scim?(kind), do: ProviderKind.supports_scim?(kind)
+
+  @doc """
+  True when this connection's directory has pushed to us within the last day —
+  directory sync is enabled on a SCIM-capable connection whose
+  `scim_last_seen_at` is between now and 24 hours old. Setup is done, so the console stops showing the
+  "point your IdP at this connection" steps. Never synced, disabled, a kind that
+  can't sync, a future stamp, or a full day of silence are all false.
+  """
+  def provider_sync_recent?(provider, now \\ DateTime.utc_now())
+
+  def provider_sync_recent?(
+        %IdentityProvider{scim_enabled: true, scim_last_seen_at: %DateTime{} = at} = provider,
+        %DateTime{} = now
+      ) do
+    age = DateTime.diff(now, at, :microsecond)
+
+    ProviderKind.supports_scim?(provider.kind) and age >= 0 and
+      age < 24 * 60 * 60 * 1_000_000
+  end
+
+  def provider_sync_recent?(%IdentityProvider{}, %DateTime{}), do: false
 
   @doc "True when sessions via this provider satisfy MFA (decision 4 / N2) — drives the TOTP skip + `require_mfa` exemption."
   def provider_satisfies_mfa?(%IdentityProvider{satisfies_mfa: satisfies}), do: satisfies

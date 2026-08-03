@@ -355,6 +355,64 @@ defmodule Emisar.SSOTest do
 
       assert "must be an https URL" in errors_on(changeset).issuer
     end
+
+    test "a new connection takes its kind's fixed issuer and identifier claim" do
+      google = SSO.change_provider(%IdentityProvider{}, %{"kind" => "google_workspace"})
+      jumpcloud = SSO.change_provider(%IdentityProvider{}, %{"kind" => "jumpcloud"})
+      entra = SSO.change_provider(%IdentityProvider{}, %{"kind" => "entra"})
+      okta = SSO.change_provider(%IdentityProvider{}, %{"kind" => "okta"})
+
+      assert Ecto.Changeset.get_field(google, :issuer) == "https://accounts.google.com"
+      assert Ecto.Changeset.get_field(jumpcloud, :issuer) == "https://oauth.id.jumpcloud.com/"
+      assert Ecto.Changeset.get_field(entra, :identifier_claim) == :oid
+      assert Ecto.Changeset.get_field(okta, :identifier_claim) == :sub
+      # A per-customer issuer is the operator's to type.
+      assert Ecto.Changeset.get_field(okta, :issuer) == nil
+    end
+
+    test "a fixed issuer we prefilled is cleared when the kind switches away from it" do
+      params = %{"kind" => "okta", "issuer" => "https://accounts.google.com"}
+      changeset = SSO.change_provider(%IdentityProvider{}, params)
+
+      assert "can't be blank" in errors_on(changeset).issuer
+    end
+
+    test "an existing connection's changeset never carries its stored client secret" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account, %{client_secret: "stored-secret-value"})
+
+      changeset = SSO.change_provider(provider, %{"name" => "Renamed"})
+
+      assert changeset.data.client_secret == nil
+      # A secret being typed still renders — it rides in `changes`, not in data.
+      typed = SSO.change_provider(provider, %{"client_secret" => "being-typed"})
+      assert Ecto.Changeset.get_change(typed, :client_secret) == "being-typed"
+    end
+
+    test "an edit derives from the PERSISTED kind — a submitted kind is ignored" do
+      account = Fixtures.Accounts.create_account()
+      google = provider_fixture(account, %{kind: :google_workspace})
+
+      params = %{"kind" => "okta", "issuer" => "https://evil.test", "name" => "Renamed"}
+      changeset = SSO.change_provider(google, params)
+
+      # kind is create-only, and Google's issuer is not an editable field at all.
+      assert Ecto.Changeset.get_change(changeset, :kind) == nil
+      assert Ecto.Changeset.get_change(changeset, :issuer) == nil
+      assert Ecto.Changeset.get_change(changeset, :name) == "Renamed"
+    end
+
+    test "an unrelated edit leaves a stored identifier claim alone" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account, %{kind: :keycloak, identifier_claim: :oid})
+
+      changeset = SSO.change_provider(provider, %{"name" => "Renamed"})
+
+      # Narrowing the claim list must not retype a connection people already
+      # sign in through — the form tells the truth about what is stored.
+      assert Ecto.Changeset.get_change(changeset, :identifier_claim) == nil
+      assert Ecto.Changeset.get_field(changeset, :identifier_claim) == :oid
+    end
   end
 
   # -- change_group_mapping/2 ------------------------------------------
@@ -574,7 +632,7 @@ defmodule Emisar.SSOTest do
     test "JumpCloud is an accepted provider kind" do
       {_user, _account, subject} = enterprise_owner()
 
-      assert :jumpcloud in IdentityProvider.kinds()
+      assert :jumpcloud in SSO.identity_provider_kinds()
 
       assert {:ok, %IdentityProvider{kind: :jumpcloud}} =
                SSO.configure_provider(
@@ -599,6 +657,53 @@ defmodule Emisar.SSOTest do
                )
 
       assert "must be an https URL" in errors_on(changeset).issuer
+    end
+
+    test "a fixed-issuer kind stores its own issuer, whatever was submitted" do
+      {_user, _account, subject} = enterprise_owner()
+
+      attrs = %{
+        kind: :google_workspace,
+        name: "Google",
+        issuer: "https://evil.test",
+        client_id: "cid",
+        client_secret: "secret"
+      }
+
+      # Google serves one issuer for every customer, so it is an invariant of the
+      # connection — not a console prefill a crafted request can step around.
+      assert {:ok, provider} = SSO.configure_provider(attrs, subject)
+      assert provider.issuer == "https://accounts.google.com"
+    end
+
+    test "the identifier claim comes from the kind — oid for Entra, sub elsewhere" do
+      {_user, _account, subject} = enterprise_owner()
+
+      entra_attrs = %{
+        kind: :entra,
+        name: "Entra",
+        issuer: "https://login.microsoftonline.com/tenant/v2.0",
+        client_id: "cid",
+        client_secret: "secret"
+      }
+
+      keycloak_attrs = %{
+        kind: :keycloak,
+        name: "Keycloak",
+        issuer: "https://kc.test/realms/main",
+        client_id: "cid",
+        client_secret: "secret",
+        identifier_claim: :oid
+      }
+
+      # Entra's `sub` is pairwise, so sign-in and directory sync only agree on
+      # `oid`; every other provider joins on the OIDC-standard `sub`, and a
+      # submitted claim doesn't get to pick a different namespace.
+      assert {:ok, entra} = SSO.configure_provider(entra_attrs, subject)
+      assert entra.identifier_claim == :oid
+
+      assert {:ok, keycloak} = SSO.configure_provider(keycloak_attrs, subject)
+      assert keycloak.identifier_claim == :sub
     end
 
     test "an https issuer with no host is rejected" do
@@ -947,14 +1052,54 @@ defmodule Emisar.SSOTest do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account, %{client_secret: "keep-this-secret"})
 
-      # The LV strips a blank secret from the params before it reaches the
-      # context, so the changeset never casts client_secret — the stored value
-      # survives an otherwise-unrelated edit.
+      # A secret nobody can read back must survive an unrelated edit — the
+      # context drops the key rather than casting a missing value over it.
       assert {:ok, _} = SSO.update_provider(provider, %{name: "Renamed"}, subject)
 
       reloaded = Repo.reload!(provider)
       assert reloaded.name == "Renamed"
       assert reloaded.client_secret == "keep-this-secret"
+    end
+
+    test "a blank or whitespace-only client_secret keeps the stored one" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{client_secret: "keep-this-secret"})
+
+      # The form posts the empty field on every save, and a stray space is the
+      # same "I didn't type one" — neither may clobber the credential.
+      assert {:ok, _} = SSO.update_provider(provider, %{"client_secret" => ""}, subject)
+      assert Repo.reload!(provider).client_secret == "keep-this-secret"
+
+      assert {:ok, _} = SSO.update_provider(provider, %{"client_secret" => "   "}, subject)
+      assert Repo.reload!(provider).client_secret == "keep-this-secret"
+    end
+
+    test "a rejected update returns a changeset holding no secret at all" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{client_secret: "stored-secret-value"})
+      attrs = %{"issuer" => "http://idp.test", "client_secret" => "typed-replacement"}
+
+      assert {:error, changeset} = SSO.update_provider(provider, attrs, subject)
+
+      # The console renders this changeset and holds it in socket state, so
+      # neither the stored credential nor the replacement travels with it.
+      assert "must be an https URL" in errors_on(changeset).issuer
+      assert changeset.data.client_secret == nil
+      refute Map.has_key?(changeset.changes, :client_secret)
+    end
+
+    test "a fixed-issuer connection ignores a submitted issuer" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{kind: :google_workspace})
+
+      # Google's issuer is a constant, so the field is not editable — a forged
+      # one can't repoint the connection at infrastructure the caller controls,
+      # and the stored value is left exactly as it is.
+      attrs = %{"issuer" => "https://evil.test", "client_secret" => "supplied", "name" => "G"}
+
+      assert {:ok, updated} = SSO.update_provider(provider, attrs, subject)
+      assert updated.issuer == provider.issuer
+      assert updated.name == "G"
     end
 
     test "kind is immutable on edit — a kind change in attrs is ignored" do
@@ -3470,6 +3615,20 @@ defmodule Emisar.SSOTest do
 
       assert {:error, :not_found} = SSO.enable_scim(provider, sb)
     end
+
+    test "a kind that can't push SCIM is refused, and keeps no token" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{kind: :google_workspace})
+
+      # Google has no inbound SCIM for a custom app, so a bearer minted here
+      # could only ever authenticate a directory that cannot exist.
+      assert {:error, :scim_not_supported} = SSO.enable_scim(provider, subject)
+
+      reloaded = Repo.reload!(provider)
+      refute reloaded.scim_enabled
+      assert is_nil(reloaded.scim_token_prefix)
+      assert is_nil(reloaded.scim_token_hash)
+    end
   end
 
   # -- rotate_scim_token/2 ---------------------------------------------
@@ -3499,6 +3658,13 @@ defmodule Emisar.SSOTest do
       provider: provider
     } do
       assert {:error, :unauthorized} = SSO.rotate_scim_token(provider, viewer_in(account))
+    end
+
+    test "a kind that can't push SCIM is refused", %{account: account, subject: subject} do
+      google = provider_fixture(account, %{kind: :google_workspace, name: "Google"})
+
+      assert {:error, :scim_not_supported} = SSO.rotate_scim_token(google, subject)
+      assert is_nil(Repo.reload!(google).scim_token_prefix)
     end
 
     test "cross-account: account B cannot rotate account A's SCIM bearer → :not_found", %{
@@ -5104,10 +5270,102 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "provider_fixed_issuer/1" do
+    test "only Google Workspace and JumpCloud serve one issuer for every customer" do
+      assert SSO.provider_fixed_issuer(:google_workspace) == "https://accounts.google.com"
+      assert SSO.provider_fixed_issuer(:jumpcloud) == "https://oauth.id.jumpcloud.com/"
+      assert SSO.provider_fixed_issuer(:okta) == nil
+      assert SSO.provider_fixed_issuer(:entra) == nil
+      assert SSO.provider_fixed_issuer(:keycloak) == nil
+      assert SSO.provider_fixed_issuer(:openid_connect) == nil
+    end
+
+    test "reads the string form the console posts, and nil for anything unknown" do
+      assert SSO.provider_fixed_issuer("jumpcloud") == "https://oauth.id.jumpcloud.com/"
+      assert SSO.provider_fixed_issuer("okta") == nil
+      assert SSO.provider_fixed_issuer("not_a_provider") == nil
+      assert SSO.provider_fixed_issuer(:not_a_provider) == nil
+      assert SSO.provider_fixed_issuer("") == nil
+      assert SSO.provider_fixed_issuer(nil) == nil
+    end
+  end
+
+  describe "provider_identifier_claim/1" do
+    test "Entra joins on oid; every other kind on the OIDC-standard sub" do
+      assert SSO.provider_identifier_claim(:entra) == :oid
+      assert SSO.provider_identifier_claim(:google_workspace) == :sub
+      assert SSO.provider_identifier_claim(:okta) == :sub
+      assert SSO.provider_identifier_claim(:jumpcloud) == :sub
+      assert SSO.provider_identifier_claim(:keycloak) == :sub
+      assert SSO.provider_identifier_claim(:openid_connect) == :sub
+    end
+
+    test "reads the string form the console posts, and nil for anything unknown" do
+      assert SSO.provider_identifier_claim("entra") == :oid
+      assert SSO.provider_identifier_claim("not_a_provider") == nil
+      assert SSO.provider_identifier_claim(:not_a_provider) == nil
+      assert SSO.provider_identifier_claim("") == nil
+      assert SSO.provider_identifier_claim(nil) == nil
+    end
+  end
+
   describe "supports_scim?/1" do
     test "Google Workspace has no inbound SCIM; the other kinds do" do
       refute SSO.supports_scim?(:google_workspace)
       assert SSO.supports_scim?(:okta)
+      assert SSO.supports_scim?(:entra)
+      assert SSO.supports_scim?(:jumpcloud)
+      assert SSO.supports_scim?(:keycloak)
+      assert SSO.supports_scim?(:openid_connect)
+    end
+
+    test "an unknown kind fails closed" do
+      refute SSO.supports_scim?("not_a_provider")
+      refute SSO.supports_scim?(:not_a_provider)
+      refute SSO.supports_scim?(nil)
+    end
+  end
+
+  describe "provider_sync_recent?/2" do
+    test "true for enabled directory sync on a capable connection within the day" do
+      now = ~U[2026-08-03 12:00:00.000000Z]
+      provider = %IdentityProvider{kind: :okta, scim_enabled: true, scim_last_seen_at: now}
+
+      assert SSO.provider_sync_recent?(provider, now)
+
+      assert SSO.provider_sync_recent?(
+               %{provider | scim_last_seen_at: DateTime.add(now, -86_399)},
+               now
+             )
+
+      # The one-arity form reads the current time.
+      assert SSO.provider_sync_recent?(%{provider | scim_last_seen_at: DateTime.utc_now()})
+    end
+
+    test "false when the connection never synced, is off, or can't sync at all" do
+      now = ~U[2026-08-03 12:00:00.000000Z]
+      provider = %IdentityProvider{kind: :okta, scim_enabled: true, scim_last_seen_at: now}
+
+      refute SSO.provider_sync_recent?(%{provider | scim_last_seen_at: nil}, now)
+      refute SSO.provider_sync_recent?(%{provider | scim_enabled: false}, now)
+      refute SSO.provider_sync_recent?(%{provider | kind: :google_workspace}, now)
+    end
+
+    test "false at exactly a day old, past it, and for a stamp in the future" do
+      now = ~U[2026-08-03 12:00:00.000000Z]
+      provider = %IdentityProvider{kind: :okta, scim_enabled: true}
+
+      a_day_ago = %{provider | scim_last_seen_at: DateTime.add(now, -86_400)}
+      last_week = %{provider | scim_last_seen_at: DateTime.add(now, -7 * 86_400)}
+      ahead_of_us = %{provider | scim_last_seen_at: DateTime.add(now, 60)}
+      barely_ahead = %{provider | scim_last_seen_at: DateTime.add(now, 1, :microsecond)}
+
+      # A clock-skewed IdP must not read as freshly synced — the window is
+      # "between now and a day ago", both ends closed against nonsense.
+      refute SSO.provider_sync_recent?(a_day_ago, now)
+      refute SSO.provider_sync_recent?(last_week, now)
+      refute SSO.provider_sync_recent?(ahead_of_us, now)
+      refute SSO.provider_sync_recent?(barely_ahead, now)
     end
   end
 

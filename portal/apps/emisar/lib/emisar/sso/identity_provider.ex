@@ -8,14 +8,13 @@ defmodule Emisar.SSO.IdentityProvider do
   """
   use Emisar, :schema
   alias Emisar.Auth
+  alias Emisar.SSO.ProviderKind
 
-  @kinds [:google_workspace, :okta, :entra, :jumpcloud, :keycloak, :openid_connect]
-  @provisioners [:jit, :manual]
   @runner_access_modes Emisar.Accounts.RunnerAccess.modes()
 
   schema "sso_identity_providers" do
-    field :kind, Ecto.Enum, values: @kinds
-    field :provisioner, Ecto.Enum, values: @provisioners, default: :jit
+    field :kind, Ecto.Enum, values: ProviderKind.all()
+    field :provisioner, Ecto.Enum, values: [:jit, :manual], default: :jit
     field :name, :string
     field :issuer, :string
     field :client_id, :string
@@ -57,23 +56,4 @@ defmodule Emisar.SSO.IdentityProvider do
 
     timestamps()
   end
-
-  @doc "The supported provider kinds, for the config UI's select."
-  def kinds, do: @kinds
-
-  @doc """
-  True when this provider kind can push SCIM directory sync to emisar's inbound
-  SCIM 2.0 endpoint. Google Workspace has no inbound SCIM for a custom app —
-  members provision on first sign-in — so its detail page hides the directory-
-  sync sections rather than offer a feature that can't connect. Keycloak keeps
-  the surface even though it ships no outbound SCIM client itself: emisar's
-  endpoint is plain SCIM 2.0 with a bearer token, so a third-party Keycloak
-  extension can drive it, and refusing the connection would block an operator who
-  already runs one.
-  """
-  def supports_scim?(:google_workspace), do: false
-  def supports_scim?(kind) when kind in @kinds, do: true
-
-  @doc "The new-user provisioning modes (JIT auto-provision vs manual admin approval), for the config UI's select."
-  def provisioners, do: @provisioners
 end
