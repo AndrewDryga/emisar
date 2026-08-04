@@ -240,7 +240,12 @@ If the portal's own persistence fails after it received the result, it sends a
 `finalize_failed` error frame (portal→runner) naming the `request_id`; the
 runner replays that one durable terminal result once on the same socket, so a
 transient persistence fault recovers without waiting for a reconnect. The
-reconnect replay remains the backstop. The portal finalizes it idempotently. It carries terminal status, exit code,
+reconnect replay remains the backstop. A portal-originated error frame carries
+one fixed, bounded, operator-safe message per `code`, safe to write to a runner
+log. It never echoes the internal failure reason, changeset, arguments,
+attestation, output, or credentials — the `code` and `request_id` are the whole
+correlation contract, and every rejection sharing a code is indistinguishable on
+the wire. The portal finalizes it idempotently. It carries terminal status, exit code,
 duration, emitted stream hashes/counts, total and dropped progress-chunk counts,
 truncation flags, redaction counts, masked executed command, reason, and the
 local audit event ID. A successful action with an opted-in `output.schema` also

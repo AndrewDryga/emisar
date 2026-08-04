@@ -98,11 +98,8 @@ defmodule EmisarWeb.RunnerSocket do
         {:ok, %{"type" => type} = msg} ->
           handle_versioned_envelope(type, msg, state)
 
-        {:ok, _} ->
-          {:push, error_frame(nil, "bad_envelope", "missing type field"), state}
-
-        {:error, _} ->
-          {:push, error_frame(nil, "bad_envelope", "malformed JSON"), state}
+        _ ->
+          {:push, error_frame(nil, "bad_envelope"), state}
       end
     else
       {:stop, :normal, {1008, "Runner connection ownership was superseded."}, state}
@@ -313,8 +310,10 @@ defmodule EmisarWeb.RunnerSocket do
         end
 
       {:error, reason} ->
-        Logger.warning("runner_state ingest failed for #{state.runner_id}: #{inspect(reason)}")
-        {:push, error_frame(nil, "runner_state_failed", to_string(inspect(reason))), state}
+        Logger.warning(
+          "runner_state ingest failed for #{state.runner_id}: #{failure_diagnostic(reason)}"
+        )
+        {:push, error_frame(nil, "runner_state_failed"), state}
     end
   end
 
@@ -410,8 +409,8 @@ defmodule EmisarWeb.RunnerSocket do
 
         {:error, reason} ->
           # Transient persist failure — do NOT remember; the runner retries.
-          Logger.error("finalize_from_connection failed: #{inspect(reason)}")
-          {:push, error_frame(request_id, "finalize_failed", inspect(reason)), state}
+          Logger.error("finalize_from_connection failed: #{failure_diagnostic(reason)}")
+          {:push, error_frame(request_id, "finalize_failed"), state}
       end
     end
   end
@@ -457,6 +456,18 @@ defmodule EmisarWeb.RunnerSocket do
 
   defp runner_error_failure(%Ecto.Changeset{}), do: :invalid_audit_event
   defp runner_error_failure(_reason), do: :persistence_error
+
+  # A failure reason can CARRY the runner's own bytes — an oversized
+  # `action_result` field lands in the rejecting changeset's `changes` — so a
+  # portal diagnostic names the shape and never inspects the value. Changeset
+  # errors are portal-authored field/message pairs, and `{:invalid_catalog, _}`
+  # carries a portal-authored sentence; everything else is categorized.
+  defp failure_diagnostic(%Ecto.Changeset{} = changeset),
+    do: "invalid: #{inspect(changeset.errors)}"
+
+  defp failure_diagnostic({:invalid_catalog, message}), do: "invalid_catalog: #{message}"
+  defp failure_diagnostic(reason) when is_atom(reason), do: to_string(reason)
+  defp failure_diagnostic(_reason), do: "unrecognized failure"
 
   defp valid_envelope_request_id?(type, msg)
        when type in @required_request_id_message_types,
@@ -524,12 +535,23 @@ defmodule EmisarWeb.RunnerSocket do
      })}
   end
 
-  defp error_frame(request_id, code, message) do
+  # Portal→runner error text is FIXED per code, never derived from a failure
+  # reason: the reason can embed the runner's own bytes, and this frame goes
+  # straight back on the wire and into the runner's log. `Map.fetch!` keeps the
+  # set closed — a new code declares its message here or the frame raises.
+  @error_messages %{
+    "bad_envelope" => "The portal could not read this message.",
+    "runner_state_failed" => "The portal could not process the runner state.",
+    "finalize_failed" =>
+      "The portal could not persist this action result. The runner will retry."
+  }
+
+  defp error_frame(request_id, code) do
     payload = %{
       type: "error",
       protocol_version: @protocol_version,
       code: code,
-      message: message
+      message: Map.fetch!(@error_messages, code)
     }
 
     payload = if request_id, do: Map.put(payload, :request_id, request_id), else: payload

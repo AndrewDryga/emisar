@@ -461,15 +461,36 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert decode(frame) == %{
                "type" => "error",
                "code" => "bad_envelope",
-               "message" => "malformed JSON",
+               "message" => "The portal could not read this message.",
                "protocol_version" => 1
              }
     end
 
-    test "valid JSON with no type field is answered with bad_envelope", %{state: state} do
+    test "valid JSON with no type field is answered with the same bad_envelope", %{state: state} do
       raw = Jason.encode!(%{"request_id" => "req_x", "status" => "success"})
       assert {:push, frame, ^state} = RunnerSocket.handle_in({raw, text()}, state)
-      assert %{"code" => "bad_envelope", "message" => "missing type field"} = decode(frame)
+
+      assert decode(frame) == %{
+               "type" => "error",
+               "code" => "bad_envelope",
+               "message" => "The portal could not read this message.",
+               "protocol_version" => 1
+             }
+    end
+
+    test "a rejected runner_state is answered with a fixed runner_state_failed message", %{
+      state: state
+    } do
+      raw = runner_frame(%{"type" => "runner_state", "packs" => "not-an-object", "actions" => []})
+
+      assert {:push, frame, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      assert decode(frame) == %{
+               "type" => "error",
+               "code" => "runner_state_failed",
+               "message" => "The portal could not process the runner state.",
+               "protocol_version" => 1
+             }
     end
 
     test "unknown type is logged-and-ignored, socket stays up", %{state: state} do
@@ -573,6 +594,29 @@ defmodule EmisarWeb.RunnerSocketTest do
       finalized = Repo.get!(ActionRun, run.id)
       assert finalized.status == :success
       assert finalized.structured_output == %{"ratio" => 0.12345678901234568}
+    end
+
+    test "an unpersistable result answers finalize_failed without echoing runner bytes", %{
+      state: state,
+      run: run
+    } do
+      secret = "sentinel-#{System.unique_integer([:positive])}-do-not-echo"
+      oversized_error = secret <> String.duplicate("x", 16_385)
+      frame_in = result_frame(run.request_id, "error", error: oversized_error)
+
+      assert {:push, {:text, json} = frame, ^state} =
+               RunnerSocket.handle_in({frame_in, text()}, state)
+
+      assert decode(frame) == %{
+               "type" => "error",
+               "code" => "finalize_failed",
+               "message" =>
+                 "The portal could not persist this action result. The runner will retry.",
+               "protocol_version" => 1,
+               "request_id" => run.request_id
+             }
+
+      refute String.contains?(json, secret)
     end
 
     test "a result for an unknown request_id is acked and remembered", %{state: state} do
