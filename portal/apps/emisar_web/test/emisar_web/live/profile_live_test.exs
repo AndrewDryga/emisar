@@ -742,11 +742,12 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # Regenerate to reveal a fresh one-shot set, then dismiss it — the reveal
       # is gone and a fresh mount never re-renders the plaintext codes.
-      shown = render_click(lv, "regenerate_recovery_codes", %{})
+      render_click(lv, "regenerate_recovery_codes", %{})
       assert has_element?(lv, "#mfa-recovery-codes")
 
       # Codes are lowercase base32 (Crypto.mfa_recovery_code/0) — pull one out of
       # the reveal to prove it's gone after dismissal.
+      shown = lv |> element("#mfa-recovery-codes") |> render()
       [_, a_code | _] = Regex.run(~r/([a-z2-7]{16})/, shown)
       assert is_binary(a_code)
 
