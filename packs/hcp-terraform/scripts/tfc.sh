@@ -194,8 +194,10 @@ def collection($name; $kind):
 # truthful-looking summary of a plan whose semantics are unknown. Released
 # Terraform emits 0.1/0.2 (the 0.12–0.14 era) and 1.x, OpenTofu emits 1.x, so
 # majors 0 and 1 are the supported set — spelled without test() for the same
-# reason as controls_collapsed. Oniguruma's $ also matches before a trailing
-# newline, so "1.1\n" used to pass "^[01]\.[0-9]+$"; this refuses it.
+# reason as controls_collapsed. In Oniguruma the $ anchor also matches before a
+# trailing newline, so "1.1\n" used to pass "^[01]\.[0-9]+$"; this refuses it.
+# (No apostrophes in a comment from here down: it is inside a single-quoted
+# shell string, and one would end the string and break the whole script.)
 def all_digits: length > 0 and (explode | all(.[]; . >= 48 and . <= 57));
 
 def plan_format_supported($version):
