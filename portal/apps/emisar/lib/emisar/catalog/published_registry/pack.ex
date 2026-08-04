@@ -52,9 +52,8 @@ defmodule Emisar.Catalog.PublishedRegistry.Pack do
     retired_below: nil,
     # detect is the service-presence signal for `emisar pack suggest`:
     # the binaries/processes/ports that mean "this service runs here".
-    # Computed at compile time = the pack's declared `detect` block, else
-    # requires_binaries minus ubiquitous helpers (curl, nc, …). A pack with
-    # an all-empty detect (e.g. a remote-API pack) is never auto-suggested.
+    # It contains only the pack's declared `detect` block; runtime requirements
+    # are never promoted into evidence. An all-empty pack is not suggested.
     detect: %{binaries: [], processes: [], ports: []},
     actions: []
   ]

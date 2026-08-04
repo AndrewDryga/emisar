@@ -43,10 +43,11 @@ defmodule Emisar.Catalog.PublishedRegistry do
   @doc """
   Lean index for `emisar pack suggest` — per pack, only what host-matching
   needs: id, name, OS allowlist, and the detect signal (binaries/processes/
-  ports, with ubiquitous helpers already stripped in the catalog). Packs
-  whose detect is all-empty are omitted: with no signal there's nothing to
-  suggest them on (e.g. remote-API packs like cloudflare), and leaving them
-  out keeps the payload small and the runner honest.
+  ports) exactly as the pack authored it; a runtime requirement is never
+  promoted into a signal. Packs whose detect is all-empty are omitted: with
+  no authored evidence there's nothing to suggest them on (e.g. remote-API
+  packs like cloudflare), and leaving them out keeps the payload small and
+  the runner honest.
   """
   @spec suggest_index() :: [map()]
   def suggest_index do
