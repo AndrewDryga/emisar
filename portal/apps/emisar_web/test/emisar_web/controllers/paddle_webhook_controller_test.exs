@@ -5,7 +5,8 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
 
     * a valid delivery applies the subscription side effect (the right
       plan is written) and returns 200,
-    * a missing signature is rejected (400) with no side effect,
+    * a missing or unverifiable signature is rejected (400) with no side
+      effect,
     * a re-delivery of the same `event_id` is deduped — 200, applied
       exactly once,
     * a billing-disabled deployment (no webhook secret configured)
@@ -13,11 +14,10 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
 
   Signature note: the test/dev Paddle client
   (`Emisar.Billing.PaddleClient.Stub`) does NOT verify the HMAC — it
-  just `Jason.decode`s the body and returns the event. So the
-  controller's *present-but-wrong* signature branch can't be exercised
-  here without the live client; only the *missing* signature branch
-  (which short-circuits in the controller before the client is called)
-  is. The HMAC math itself lives in `PaddleClient.Live.verify_signature/3`.
+  just `Jason.decode`s the body and returns the event. A test that needs
+  the *present-but-wrong* signature branch binds
+  `Emisar.Billing.PaddleClient.Live` for its own process instead; its
+  webhook verification is pure HMAC math and makes no HTTP request.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Billing
@@ -27,9 +27,9 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
   @secret "pdl_ntfset_whsec_test"
   @price_team "pri_team_test"
 
-  # The controller reads the secret from app env (nil on the
+  # Billing reads the secret from app env (nil on the
   # EMISAR_DISABLE_BILLING deployment → 503). test.exs leaves it unset,
-  # so set it for the suite and restore the prior value on exit.
+  # so set it for every test in this file.
   setup do
     Emisar.Config.put_override(:emisar, :paddle_webhook_secret, @secret)
     :ok
@@ -69,13 +69,17 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
   end
 
   # Post a JSON body with a (stub-accepted) signature header. The stub
-  # ignores the signature value, so any non-empty header passes the
-  # controller's `get_req_header` guard and reaches the client.
+  # ignores the signature value, so any single header passes the
+  # controller's one-header guard and reaches billing.
   defp post_webhook(conn, body, signature \\ "ts=1;h1=deadbeef") do
+    post_raw_webhook(conn, Jason.encode!(body), signature)
+  end
+
+  defp post_raw_webhook(conn, payload, signature) do
     conn
     |> put_req_header("content-type", "application/json")
     |> put_req_header("paddle-signature", signature)
-    |> post(~p"/webhooks/paddle", Jason.encode!(body))
+    |> post(~p"/webhooks/paddle", payload)
   end
 
   defp post_duplicate_signature_webhook(conn, body) do
@@ -87,6 +91,13 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
     conn = Map.update!(conn, :req_headers, &[{"paddle-signature", "ts=1;h1=second"} | &1])
 
     post(conn, ~p"/webhooks/paddle", Jason.encode!(body))
+  end
+
+  # A header the live client accepts: HMAC-SHA256 over `<ts>:<raw_body>`.
+  defp signature_for(payload, timestamp) do
+    digest = :crypto.mac(:hmac, :sha256, @secret, "#{timestamp}:#{payload}")
+
+    "ts=#{timestamp};h1=" <> Base.encode16(digest, case: :lower)
   end
 
   defp subscription_for(account_id) do
@@ -143,6 +154,43 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
 
       assert json_response(conn, 400) == %{"error" => "invalid"}
       assert subscription_for(account.id) == nil
+    end
+
+    test "invalid signature leaves the exact raw event retryable with a valid signature", %{
+      conn: conn
+    } do
+      import ExUnit.CaptureLog
+
+      # The stub accepts any signature, so reaching real verification means
+      # binding the live client for this process — its webhook verification
+      # is pure HMAC math and makes no HTTP request.
+      Emisar.Config.put_override(:emisar, :paddle_client, Emisar.Billing.PaddleClient.Live)
+
+      account = account_with_customer("ctm_badsig")
+      event = subscription_event(customer_id: "ctm_badsig")
+      payload = Jason.encode!(event)
+      timestamp = System.system_time(:second)
+      invalid_signature = "ts=#{timestamp};h1=deadbeef"
+      valid_signature = signature_for(payload, timestamp)
+
+      log =
+        capture_log(fn ->
+          invalid = post_raw_webhook(conn, payload, invalid_signature)
+          assert json_response(invalid, 400) == %{"error" => "invalid"}
+          assert subscription_for(account.id) == nil
+
+          accepted = post_raw_webhook(conn, payload, valid_signature)
+          assert json_response(accepted, 200) == %{"received" => true}
+
+          duplicate = post_raw_webhook(conn, payload, valid_signature)
+          assert json_response(duplicate, 200) == %{"received" => true, "duplicate" => true}
+        end)
+
+      assert subscription_for(account.id).status == "active"
+      refute log =~ "ctm_badsig"
+      refute log =~ invalid_signature
+      refute log =~ valid_signature
+      refute log =~ @secret
     end
   end
 
@@ -223,10 +271,10 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
     end
   end
 
-  # Sanity: the public apply function the controller delegates to is
-  # idempotent on its own, independent of the HTTP edge.
-  describe "Billing.record_and_apply_event/3" do
-    test "second call with the same event id reports :duplicate", %{conn: _conn} do
+  # Sanity: the Billing ingest the controller delegates to verifies,
+  # dedups, and applies on its own, independent of the HTTP edge.
+  describe "ingest_paddle_webhook/2" do
+    test "second call with the same event id reports :duplicate" do
       account = account_with_customer("ctm_ctx")
 
       event =
@@ -236,10 +284,11 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
           subscription_id: "sub_ctx"
         )
 
-      assert :ok = Billing.record_and_apply_event("evt_ctx", "subscription.created", event)
+      payload = Jason.encode!(event)
+      signature = "ts=1;h1=deadbeef"
 
-      assert {:duplicate, "evt_ctx"} =
-               Billing.record_and_apply_event("evt_ctx", "subscription.created", event)
+      assert :ok = Billing.ingest_paddle_webhook(payload, signature)
+      assert {:duplicate, "evt_ctx"} = Billing.ingest_paddle_webhook(payload, signature)
 
       assert subscription_for(account.id).paddle_subscription_id == "sub_ctx"
     end
@@ -295,9 +344,9 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
     @tag capture_log: true
     test "a body the client can't decode is rejected as invalid → 400" do
       # Direct controller call, skipping the endpoint: Plug.Parsers would
-      # 400 unparseable JSON itself, so this is the only way to reach the
-      # controller's own rejection branch — and the `read_body/1` fallback
-      # (no CachedBodyReader ran, so `assigns[:raw_body]` is unset).
+      # 400 unparseable JSON itself, so this is the only way to reach
+      # billing's verification-failure branch — and the `read_body/1`
+      # fallback (no CachedBodyReader ran, so `assigns[:raw_body]` is unset).
       conn =
         build_conn(:post, "/webhooks/paddle", "not-json{{")
         |> put_req_header("paddle-signature", "ts=1;h1=deadbeef")
@@ -306,10 +355,36 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
       assert json_response(conn, 400) == %{"error" => "invalid"}
     end
 
+    test "a decode failure after a valid signature never logs the raw body" do
+      import ExUnit.CaptureLog
+
+      # The stub reports its own `:invalid_payload` atom, so reaching the
+      # `Jason.DecodeError` — which carries the raw bytes — means binding the
+      # live client and signing a body that passes the HMAC gate.
+      Emisar.Config.put_override(:emisar, :paddle_client, Emisar.Billing.PaddleClient.Live)
+
+      payload = ~s({"event_id":"evt_decode_fail","customer_id":"ctm_decode_leak_marker"{{)
+      signature = signature_for(payload, System.system_time(:second))
+
+      log =
+        capture_log(fn ->
+          conn =
+            build_conn(:post, "/webhooks/paddle", payload)
+            |> put_req_header("paddle-signature", signature)
+            |> EmisarWeb.PaddleWebhookController.call(
+              EmisarWeb.PaddleWebhookController.init(:create)
+            )
+
+          assert json_response(conn, 400) == %{"error" => "invalid"}
+        end)
+
+      refute log =~ "ctm_decode_leak_marker"
+    end
+
     test "an apply failure → 500, logging field names but never payload values", %{conn: conn} do
       import ExUnit.CaptureLog
 
-      _account = account_with_customer("ctm_apply_fail")
+      account_with_customer("ctm_apply_fail")
 
       event =
         subscription_event(
@@ -328,9 +403,9 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
           assert json_response(conn, 500) == %{"error" => "apply_failed"}
         end)
 
-      assert log =~ "event_id=evt_apply_fail"
       assert log =~ "invalid_changeset[status]"
-      # The redaction contract: field names only, no payload values.
+      # The redaction contract: field names only, no payload-derived values.
+      refute log =~ "evt_apply_fail"
       refute log =~ "ctm_apply_fail"
       refute log =~ "sub_apply_fail"
     end

@@ -316,8 +316,8 @@ defmodule Emisar.Billing do
 
   @doc false
   # Internal write — called from webhook handlers and the subscription sync job,
-  # which run on already-trusted server contexts. Subject-less because
-  # the Paddle webhook signature is the auth gate at the edge.
+  # which run on already-trusted server contexts. Subject-less because the
+  # webhook's signature gate ran first, in `ingest_paddle_webhook/2`.
   #
   # Deliberately peek-then-insert/update rather than an `on_conflict` true-upsert:
   # webhook payloads carry PARTIAL attr sets (e.g. cancel carries only `status`),
@@ -778,9 +778,57 @@ defmodule Emisar.Billing do
   def redacted_paddle_error(reason), do: reason
 
   @doc """
-  Internal — the Paddle webhook controller's entry point; the request's
-  signature is the auth gate at the edge, so there's no Subject here. Not
-  exposed to LiveView/MCP.
+  Internal — the unauthenticated Paddle webhook ingress. `payload` is the RAW
+  request body and `signature` the request's `paddle-signature` header; both
+  are attacker-controlled. There is no Subject here because the CONFIGURED
+  client's signature verification against `:paddle_webhook_secret` IS the auth
+  gate — nothing in the payload is trusted until it verifies. Not exposed to
+  LiveView/MCP.
+
+  Returns:
+
+    * `{:error, :billing_disabled}` — no webhook secret configured (the
+      EMISAR_DISABLE_BILLING deployment); the client is never called,
+    * `{:error, {:verification_failed, reason}}` — the signature or the
+      payload decoding was rejected, so a caller can tell a hostile delivery
+      from a post-verification failure,
+    * `{:error, :malformed_event}` — verified, but carrying no binary
+      `event_id`/`event_type`,
+    * otherwise the `record_and_apply_event/3` outcome: `:ok`,
+      `{:duplicate, event_id}`, or `{:error, reason}`.
+  """
+  def ingest_paddle_webhook(payload, signature)
+      when is_binary(payload) and is_binary(signature) do
+    with {:ok, secret} <- fetch_webhook_secret(),
+         {:ok, event} <- verify_webhook_event(payload, signature, secret) do
+      record_verified_event(event)
+    end
+  end
+
+  defp fetch_webhook_secret do
+    case Emisar.Config.get_env(:emisar, :paddle_webhook_secret) do
+      nil -> {:error, :billing_disabled}
+      secret -> {:ok, secret}
+    end
+  end
+
+  defp verify_webhook_event(payload, signature, secret) do
+    case PaddleClient.construct_webhook_event(payload, signature, secret) do
+      {:ok, event} -> {:ok, event}
+      {:error, reason} -> {:error, {:verification_failed, reason}}
+    end
+  end
+
+  defp record_verified_event(%{"event_id" => event_id, "event_type" => event_type} = event)
+       when is_binary(event_id) and is_binary(event_type),
+       do: record_and_apply_event(event_id, event_type, event)
+
+  defp record_verified_event(_event), do: {:error, :malformed_event}
+
+  @doc """
+  Internal — records and applies one already-VERIFIED Paddle event; the
+  signature gate lives in `ingest_paddle_webhook/2`, so there's no Subject
+  here. Not exposed to LiveView/MCP.
 
   Atomically:
 

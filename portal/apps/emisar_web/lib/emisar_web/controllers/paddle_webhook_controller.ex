@@ -1,74 +1,70 @@
 defmodule EmisarWeb.PaddleWebhookController do
   @moduledoc """
-  Paddle webhook ingest. Verifies the HMAC-SHA256 signature
-  (`paddle-signature: ts=<unix>;h1=<hex>` over `<ts>:<raw_body>`),
-  then hands the event off to `Emisar.Billing.apply_webhook_event/1`.
-  Returns 200 on duplicate (already-processed) and no-op events —
-  Paddle retries any non-2xx.
+  Paddle webhook ingest. Reads the raw request body plus its single
+  `paddle-signature` header and hands both to
+  `Emisar.Billing.ingest_paddle_webhook/2`, which owns signature
+  verification and the dedup/apply sequencing; this controller only maps
+  its outcome onto HTTP. Returns 200 on duplicate (already-processed) and
+  no-op events — Paddle retries any non-2xx.
   """
   use EmisarWeb, :controller
   alias Emisar.Billing
   require Logger
 
   def create(conn, _params) do
-    # nil on the EMISAR_DISABLE_BILLING deployment, where the secret is
-    # never configured — short-circuit to 503 rather than raising a 500.
-    case Emisar.Config.get_env(:emisar, :paddle_webhook_secret) do
-      nil ->
-        conn |> put_status(:service_unavailable) |> json(%{error: "billing_disabled"})
-
-      secret ->
-        verify_and_handle(conn, secret)
-    end
-  end
-
-  defp verify_and_handle(conn, secret) do
     with {:ok, body} <- raw_body(conn),
-         [signature] <- get_req_header(conn, "paddle-signature"),
-         {:ok, event} <- Billing.PaddleClient.construct_webhook_event(body, signature, secret) do
-      handle_event(conn, event)
+         [signature] <- get_req_header(conn, "paddle-signature") do
+      respond(conn, Billing.ingest_paddle_webhook(body, signature))
     else
       [] ->
         conn |> put_status(:bad_request) |> json(%{error: "missing_signature"})
 
-      {:error, :timestamp_too_old} ->
-        Logger.warning("paddle webhook rejected: timestamp outside tolerance window")
-        conn |> put_status(:bad_request) |> json(%{error: "timestamp_too_old"})
-
-      {:error, reason} ->
-        Logger.warning("paddle webhook rejected: #{inspect(reason)}")
-        conn |> put_status(:bad_request) |> json(%{error: "invalid"})
-
+      # Duplicate signature headers, or a body we couldn't read — neither
+      # reaches billing, and neither is loggable without echoing the request.
       _ ->
         conn |> put_status(:bad_request) |> json(%{error: "invalid"})
     end
   end
 
-  defp handle_event(conn, %{"event_id" => event_id, "event_type" => type} = event)
-       when is_binary(event_id) and is_binary(type) do
-    case Billing.record_and_apply_event(event_id, type, event) do
-      :ok ->
-        json(conn, %{received: true})
+  defp respond(conn, :ok), do: json(conn, %{received: true})
 
-      {:duplicate, _existing} ->
-        # Paddle retries the same event on any non-2xx — replying 200
-        # on the dup avoids double-applying the same subscription change.
-        json(conn, %{received: true, duplicate: true})
-
-      {:error, reason} ->
-        # Log the event id + a short reason summary, never `inspect(reason)`:
-        # an apply failure carries an Ecto changeset whose error term can echo
-        # Paddle payload fragments (customer ids, amounts) into the log drain.
-        Logger.error(
-          "paddle webhook apply failed event_id=#{event_id} reason=#{reason_summary(reason)}"
-        )
-
-        conn |> put_status(:internal_server_error) |> json(%{error: "apply_failed"})
-    end
+  defp respond(conn, {:duplicate, _event_id}) do
+    # Paddle retries the same event on any non-2xx — replying 200
+    # on the dup avoids double-applying the same subscription change.
+    json(conn, %{received: true, duplicate: true})
   end
 
-  defp handle_event(conn, _malformed) do
+  defp respond(conn, {:error, :billing_disabled}) do
+    # No secret on the EMISAR_DISABLE_BILLING deployment — say so with a
+    # retryable 503 rather than raising a 500.
+    conn |> put_status(:service_unavailable) |> json(%{error: "billing_disabled"})
+  end
+
+  defp respond(conn, {:error, {:verification_failed, :timestamp_too_old}}) do
+    Logger.warning("paddle webhook rejected: timestamp outside tolerance window")
+    conn |> put_status(:bad_request) |> json(%{error: "timestamp_too_old"})
+  end
+
+  defp respond(conn, {:error, {:verification_failed, reason}}) do
+    # Not every verification reason is one of the client's own atoms: a body
+    # that passes the signature gate and then fails to decode arrives as a
+    # `Jason.DecodeError` carrying the raw request bytes, so summarize rather
+    # than inspect.
+    Logger.warning("paddle webhook rejected: #{reason_summary(reason)}")
+    conn |> put_status(:bad_request) |> json(%{error: "invalid"})
+  end
+
+  defp respond(conn, {:error, :malformed_event}) do
     conn |> put_status(:bad_request) |> json(%{error: "malformed_event"})
+  end
+
+  defp respond(conn, {:error, reason}) do
+    # Log a short reason summary, never `inspect(reason)`: an apply failure
+    # carries an Ecto changeset whose error term can echo Paddle payload
+    # fragments (customer ids, amounts) into the log drain.
+    Logger.error("paddle webhook apply failed reason=#{reason_summary(reason)}")
+
+    conn |> put_status(:internal_server_error) |> json(%{error: "apply_failed"})
   end
 
   # A loggable summary that never carries payload values. For a changeset
