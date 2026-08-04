@@ -8,7 +8,7 @@ description: >
   quantity, read from the Cloud Billing export in BigQuery. This is the
   breakdown that names what a spend increase actually bought.
 side_effects:
-  - One gcloud token read and one BigQuery query billed by bytes scanned.
+  - One gcloud token read, one table lookup that resolves the standard or detailed export, and one BigQuery query billed by bytes scanned.
   - The query fails rather than scanning past max_scan_gb.
   - Recent days are still settling, so the window is an estimate rather than the invoice.
 args:

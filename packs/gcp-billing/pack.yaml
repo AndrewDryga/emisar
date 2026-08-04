@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-billing
 name: Google Cloud billing and cost analytics
-version: 0.1.0
+version: 0.2.0
 description: >
   Read-only Google Cloud spend analytics — cost by service, project, and SKU,
   a daily trend, and export freshness — read from the Cloud Billing export in
@@ -30,8 +30,10 @@ setup:
       example: /etc/emisar/gcp-billing-reader.json
   notes:
     - "Any credential/config env you set must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
-    - "The cost actions read the standard billing export table gcp_billing_export_v1_<BILLING_ACCOUNT_ID>. Turn on Billing export to BigQuery first — it is not retroactive and takes up to a day to populate, so a fresh export answers recent windows only."
-    - "The principal needs roles/billing.viewer on the billing account for the account, project, and budget reads, plus roles/bigquery.jobUser on the query project and roles/bigquery.dataViewer on the export dataset for the cost queries."
+    - "The cost actions read whichever billing export the account turned on — the standard gcp_billing_export_v1_<BILLING_ACCOUNT_ID> table, or the detailed gcp_billing_export_resource_v1_<BILLING_ACCOUNT_ID> one — and name the table they read. Turn on Billing export to BigQuery first: it is not retroactive and takes up to a day to populate, so a fresh export answers recent windows only."
+    - "A detailed export splits the same charges into resource-level rows, so the same window scans more of it and a wide one may need a higher max_scan_gb."
+    - "The account, project, and budget reads need roles/billing.viewer bound on the billing account itself; a project-level binding does not reach it, and gcloud then reports that the caller does not have permission to access the billing account."
+    - "The cost queries additionally need roles/bigquery.jobUser on the query project and roles/bigquery.dataViewer on the export dataset, which also carries the table read that resolves the export."
     - "Budget reads need billingbudgets.googleapis.com enabled on the quota project."
     - "BigQuery bills every cost query by bytes scanned, so each cost action sends maximumBytesBilled from its max_scan_gb argument: an over-broad window fails outright instead of billing an unbounded scan."
     - "Cost rows settle for several days after usage, and credits post on their own schedule, so a recent window is an estimate rather than the invoice."

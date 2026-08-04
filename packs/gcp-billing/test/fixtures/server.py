@@ -6,6 +6,18 @@ from urllib.parse import urlparse
 ACCESS_TOKEN = "packtest-canary-gcp-billing-access-token-7f3c"
 BILLING_ACCOUNT = "billingAccounts/01B678-5ED3E1-AD1F9F"
 GIB = 1073741824
+STANDARD_TABLE = "gcp_billing_export_v1_01B678_5ED3E1_AD1F9F"
+DETAILED_TABLE = "gcp_billing_export_resource_v1_01B678_5ED3E1_AD1F9F"
+
+# Each dataset stands in for one export an account can have turned on: the
+# standard table, the detailed table with resource-level rows, and a dataset
+# where billing export was never enabled at all.
+DATASET_TABLES = {
+    "billing_export": (STANDARD_TABLE,),
+    "slow_export": (STANDARD_TABLE,),
+    "detailed_export": (DETAILED_TABLE,),
+    "no_export": (),
+}
 
 
 def table(*columns):
@@ -71,6 +83,16 @@ def query_response(sql):
     return None
 
 
+def table_path(path):
+    """Split a BigQuery tables.get path, or None for another endpoint."""
+    parts = path.strip("/").split("/")
+    if len(parts) != 8 or parts[:3] != ["bigquery", "v2", "projects"]:
+        return None
+    if parts[4] != "datasets" or parts[6] != "tables":
+        return None
+    return parts[3], parts[5], parts[7]
+
+
 def billing_response(path):
     if path == "/v1/billingAccounts":
         return {
@@ -114,6 +136,10 @@ class Handler(BaseHTTPRequestHandler):
             self.write_json(200, {"ok": True})
             return
         if not self.authorized():
+            return
+        reference = table_path(path)
+        if reference is not None:
+            self.table_reference(*reference)
             return
         payload = billing_response(path)
         if payload is None:
@@ -164,6 +190,22 @@ class Handler(BaseHTTPRequestHandler):
             return True
         self.error_json(401, "invalid token")
         return False
+
+    def table_reference(self, project, dataset, table):
+        if table not in DATASET_TABLES.get(dataset, ()):
+            self.error_json(
+                404,
+                f"Not found: Table {project}:{dataset}.{table} "
+                "was not found in location US",
+            )
+            return
+        self.write_json(200, {
+            "tableReference": {
+                "projectId": project,
+                "datasetId": dataset,
+                "tableId": table,
+            }
+        })
 
     def not_found(self, path):
         self.error_json(404, f"unhandled path {path}")

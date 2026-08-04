@@ -28,6 +28,23 @@ cases:
         - '"net_cost":"128.5"'
         - '"credits":"-11.5"'
 
+  # An account that turned on the detailed export has no standard table at all,
+  # so a fixed table name answers that whole fleet with a 404.
+  - name: gcp.cost-by-service-reads-the-detailed-export
+    action: gcp.cost_by_service
+    args:
+      project: example-prod
+      dataset: detailed_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 30
+      limit: 50
+    expect:
+      stdout_contains:
+        - gcp_billing_export_resource_v1_01B678_5ED3E1_AD1F9F
+        - '"net_cost":"128.5"'
+      stdout_not_contains:
+        - gcp_billing_export_v1_01B678_5ED3E1_AD1F9F
+
   - action: gcp.cost_by_project
     args:
       project: example-prod
@@ -121,6 +138,25 @@ cases:
       status: failure
       exit: [1]
       stderr_contains: [BigQuery did not finish the query]
+
+  # With neither export in the dataset, the failure has to name both tables it
+  # looked for — otherwise an export nobody turned on reads like a bug in the
+  # action.
+  - name: gcp.cost-export-freshness-names-both-export-tables
+    action: gcp.cost_export_freshness
+    args:
+      project: example-prod
+      dataset: no_export
+      billing_account: 01B678-5ED3E1-AD1F9F
+      days: 7
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains:
+        - no readable billing export table in example-prod.no_export
+        - gcp_billing_export_v1_01B678_5ED3E1_AD1F9F (standard export)
+        - gcp_billing_export_resource_v1_01B678_5ED3E1_AD1F9F (detailed export)
+        - was not found in location US
 
   - name: gcp.cost-by-service-rejects-http-endpoint
     action: gcp.cost_by_service

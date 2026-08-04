@@ -44,7 +44,49 @@ case "$api_base" in
     ;;
 esac
 
-table="$project.$dataset.gcp_billing_export_v1_$(printf '%s' "$billing_account" | tr -- '-' '_')"
+umask 077
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/emisar-gcp-billing.XXXXXX")
+trap 'rm -rf -- "$tmp"' EXIT HUP INT TERM
+
+# The token rides a curl config document on stdin so it never reaches argv.
+auth_config() {
+  printf 'header = "Authorization: Bearer %s"\n' "$access_token"
+  printf 'header = "Content-Type: application/json"\n'
+}
+
+# A billing account exports to the standard table or to the detailed one that
+# adds resource-level rows, and an account may have turned on either. Every
+# column these queries read exists in both, so the export that is actually
+# there is the one to query — asking for a fixed name answers a fleet that
+# enabled the other kind with a 404 it can do nothing about.
+account_suffix=$(printf '%s' "$billing_account" | tr -- '-' '_')
+standard_table="gcp_billing_export_v1_$account_suffix"
+detailed_table="gcp_billing_export_resource_v1_$account_suffix"
+
+table_id=""
+for candidate in "$standard_table" "$detailed_table"; do
+  if auth_config | curl -q --config - --fail-with-body --silent --show-error --globoff \
+    --proto '=https' --connect-timeout 10 --max-time 30 --max-filesize 1048576 \
+    --output "$tmp/table.json" \
+    "$api_base/bigquery/v2/projects/$project/datasets/$dataset/tables/$candidate?fields=tableReference" \
+    2>"$tmp/table.err"; then
+    table_id=$candidate
+    break
+  fi
+done
+
+if [ -z "$table_id" ]; then
+  # The last probe's own words separate an export that was never enabled from a
+  # dataset the principal cannot read.
+  detail=$(jq -r '.error.message // empty' "$tmp/table.json" 2>/dev/null || true)
+  if [ -z "$detail" ]; then
+    detail=$(tail -n 1 "$tmp/table.err" 2>/dev/null || true)
+  fi
+  printf '%s\n' "no readable billing export table in $project.$dataset — looked for $standard_table (standard export) then $detailed_table (detailed export): ${detail:-not found}" >&2
+  exit 1
+fi
+
+table="$project.$dataset.$table_id"
 max_bytes=$((max_scan_gb * 1073741824))
 
 # Credits post as a repeated field and are negative, so net cost is the gross
@@ -131,10 +173,6 @@ case "$mode" in
     ;;
 esac
 
-umask 077
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/emisar-gcp-billing.XXXXXX")
-trap 'rm -rf -- "$tmp"' EXIT HUP INT TERM
-
 jq -nc \
   --arg query "$sql" \
   --arg days "$days" \
@@ -153,11 +191,6 @@ jq -nc \
        {name: "service", parameterType: {type: "STRING"}, parameterValue: {value: $service}}
      ]
    }' >"$tmp/request.json"
-
-auth_config() {
-  printf 'header = "Authorization: Bearer %s"\n' "$access_token"
-  printf 'header = "Content-Type: application/json"\n'
-}
 
 if ! auth_config | curl -q --config - --fail-with-body --silent --show-error --globoff \
   --proto '=https' --connect-timeout 10 --max-time 120 --max-filesize 8388608 \
