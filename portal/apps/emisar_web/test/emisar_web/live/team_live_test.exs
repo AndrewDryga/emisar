@@ -355,6 +355,12 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ "Resend confirmation"
 
+      assert has_element?(
+               lv,
+               "button.border-zinc-800[phx-click='resend_confirmation']",
+               "Resend confirmation"
+             )
+
       html = lv |> element("button", "Resend confirmation") |> render_click()
       assert html =~ "Confirmation email sent"
     end
@@ -822,6 +828,9 @@ defmodule EmisarWeb.TeamLiveTest do
                "Resend invite"
              )
 
+      assert has_element?(lv, "summary", "Actions")
+      refute has_element?(lv, "button[phx-click='resend_invitation'] span[class*='hero-']")
+
       subscribe_team(account)
       html = render_click(lv, "resend_invitation", %{"membership_id" => membership.id})
 
@@ -855,6 +864,34 @@ defmodule EmisarWeb.TeamLiveTest do
                lv,
                "button[phx-click='resend_invitation'][phx-value-membership_id='#{membership.id}']"
              )
+    end
+
+    test "an active member's row opens the labeled Actions menu with label-only rows", %{
+      lv: lv,
+      member: member
+    } do
+      assert has_element?(lv, "summary", "Actions")
+      assert has_element?(lv, "details a[href*='actor_id=#{member.id}']", "View activity")
+      refute has_element?(lv, "details a[href*='actor_id=#{member.id}'] span[class*='hero-']")
+    end
+
+    test "an admin manager gets the same labeled Actions menu", %{
+      account: account,
+      member: member
+    } do
+      admin = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "summary", "Actions")
+      assert has_element?(lv, "details a[href*='actor_id=#{member.id}']", "View activity")
     end
 
     test "inviting a suppressed address warns on the success step, not a silent success", %{

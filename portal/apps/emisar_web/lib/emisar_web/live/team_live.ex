@@ -1985,8 +1985,8 @@ defmodule EmisarWeb.TeamLive do
         <div class="flex shrink-0 items-center gap-2">
           <.button
             :if={@member.resend_confirmation?}
-            variant={:ghost}
-            tone={:brand}
+            variant={:secondary}
+            tone={:neutral}
             size={:sm}
             phx-click="resend_confirmation"
           >
@@ -2021,7 +2021,6 @@ defmodule EmisarWeb.TeamLive do
             navigate={
               ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
             }
-            icon="hero-clipboard-document-list"
           >
             View activity
           </.menu_item>
@@ -2060,7 +2059,6 @@ defmodule EmisarWeb.TeamLive do
             :if={@member.resend_invitation?}
             phx-click="resend_invitation"
             phx-value-membership_id={@membership.id}
-            icon="hero-paper-airplane"
           >
             Resend invite
           </.menu_item>
