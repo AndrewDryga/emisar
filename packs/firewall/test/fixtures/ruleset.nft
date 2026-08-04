@@ -1,0 +1,10 @@
+#!/usr/sbin/nft -f
+
+# A disposable table for fw.nft_port_rules. Every case owns a fresh network
+# namespace, so the table cannot collide with state from another case.
+table inet packtest {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		tcp dport 443 accept comment "packtest https"
+	}
+}

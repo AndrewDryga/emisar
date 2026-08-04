@@ -50,6 +50,28 @@ cases:
         /OriginUrl: https://origin.example.test/assets
         /MonthlyBandwidthUsed: 987654321
 
+  # The same read under the jq built --with-oniguruma=no: stripping the
+  # origin credentials used to be a test() plus capture() pair, and a jq
+  # without the regex family raises rather than degrading the moment one is
+  # reached — after the API call, on exactly the field that carries the
+  # secret. The shared client image builds that jq at /opt/jq-without-regex;
+  # putting it first on PATH is how a case opts in, and every other case here
+  # keeps running against the packaged Oniguruma-enabled jq. The defaults
+  # already forbid the password; naming both halves of the userinfo here is
+  # what makes this case the proof that the strip still happens.
+  - name: bunny.get_pull_zone-strips-origin-credentials-without-jq-regex-support
+    action: bunny.get_pull_zone
+    args: {pull_zone_id: 123456}
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      stdout_not_contains:
+        - origin-user
+        - packtest-canary-origin-password
+      json:
+        /Id: 123456
+        /OriginUrl: https://origin.example.test/assets
+
   - action: bunny.list_regions
     expect:
       json:

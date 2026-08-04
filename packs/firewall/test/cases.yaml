@@ -1,0 +1,37 @@
+services: [firewall]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
+cases:
+  # The port projection reads every rule in the ruleset, so its numeric parse
+  # is on the path of every answer. That parse used to be test("^[0-9]+$"),
+  # which a jq built --with-oniguruma=no refuses rather than degrades — after
+  # the ruleset has already been read. The shared client image builds that jq
+  # at /opt/jq-without-regex and the case puts it ahead of the system jq. The
+  # fixture bin comes first only so its nft wrapper can hand the action the
+  # string operands nft itself never emits.
+  - name: fw.nft_port_rules-projects-a-string-operand-without-jq-regex-support
+    action: fw.nft_port_rules
+    args: {port: 443}
+    runner_user: root
+    runner_reason: >
+      Reading an nftables ruleset is a netlink operation reserved to
+      CAP_NET_ADMIN, so a non-root runner sees no rules at all rather than a
+      subset — the pack says as much in its setup notes.
+    env:
+      PATH: /packs/firewall/test/fixtures/bin:/opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - name: load the disposable ruleset
+        argv: [/usr/sbin/nft, -f, /packs/firewall/test/fixtures/ruleset.nft]
+    expect:
+      # The operand reached the action as a JSON string, which is the branch
+      # this case exists to run.
+      stdout_contains: ['"right":"443"']
+      json:
+        /port: 443
+        /direct_matches/0/family: inet
+        /direct_matches/0/table: packtest
+        /direct_matches/0/chain: input
+        /direct_matches/0/port_evaluation: direct_match
+        /unresolved: []

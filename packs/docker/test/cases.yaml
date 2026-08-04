@@ -1,0 +1,32 @@
+services: [docker-cli]
+versions:
+  - version: "29.7.1-cli"
+    digest: "@sha256:27a51d5ab1cd38d9eeaba7b415b8c07bc10c31e1cf1ec8d78f6413fcfab3f44f"
+    default: true
+cases:
+  # docker.compose_config is the one action in this pack that needs no daemon —
+  # it parses a file — which is what makes it testable in a disposable project
+  # without handing the runner a Docker socket. It is also where the summary's
+  # clip lives: that clip used to be a gsub call, and jq links the regex family
+  # only when it was built against Oniguruma, so on the supported
+  # --with-oniguruma=no build the action failed after the parse had succeeded.
+  # The shared client image builds that jq at /opt/jq-without-regex, and
+  # putting it first on PATH is how this case opts in.
+  #
+  # The fixture is 25 services against a 24-entry sample, so `truncated` counts
+  # the one it dropped, and its first name is past the 48-character clip — the
+  # ellipsis is the clip's own evidence.
+  - name: docker.compose_config-summarizes-a-stack-without-jq-regex-support
+    action: docker.compose_config
+    args: {file: /opt/stack/docker-compose.yml}
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      json:
+        /valid: true
+        /file: /opt/stack/docker-compose.yml
+        /services/0: "a-deliberately-long-compose-service-name-for-cl…"
+        /services/1: svc-01
+        /images/0: busybox:1.36
+        /truncated/services: 1
+        /truncated/images: 0

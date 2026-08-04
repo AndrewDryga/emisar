@@ -89,10 +89,24 @@ bytes, plus the non-string inputs the helper coerces — and diff the output. Th
 differential is what made this change safe to ship; jq's regex build is what
 made it necessary.
 
-**How it's enforced.** Behavior cases, today. `dev/test-packs/Dockerfile` builds
-jq `--with-oniguruma=no --disable-shared` into the shared client image at
-`/opt/jq-without-regex/jq`, and a case opts in by putting that directory first
-on `PATH`:
+**How it's enforced.** An authoring-time lint, plus behavior cases over the
+branches it cannot execute.
+
+`./run pack check <name>` and `./run gate packs` run `validatePackJQFilters`
+(`tools/internal/devtool/pack_jq.go`), which reads every jq program a pack can
+actually execute — an action's `/bin/sh -c` argv and each packaged
+`scripts/*.sh` — and fails on a call to the regex family or `split/2`, naming
+the action and the builtin. It skips comments in both languages, strings (so a
+`"x5t#S256"` key stays a key), and the `awk`/`sed`/`perl` spans that have their
+own `match`/`sub`/`gsub`. That is what closes every executable path in the
+catalog, which a case cannot: the failure is raised when the builtin is
+*reached*, so a case only ever proves the paths it runs.
+
+The cases prove the other half — that the core-jq rewrite still answers the way
+the regex spelling did on the host where the regex spelling never ran.
+`dev/test-packs/Dockerfile` builds jq `--with-oniguruma=no --disable-shared`
+into the shared client image at `/opt/jq-without-regex/jq`, and a case opts in
+by putting that directory first on `PATH`:
 
 ```yaml
     env:
@@ -106,13 +120,15 @@ copied into the final image silently resolves Debian's libjq — Oniguruma and a
 — so the image asserts its own claim (`! jq -n '"a" | test("a")'`) after the
 `COPY`.
 
-Because the failure is raised when the builtin is *reached*, a case only proves
-the paths it executes. The authoring-time check that closes the gap for every
-pack lands with the sweep below.
+`terraform-readonly`, `hcp-terraform`, `docker`, `oidc-jwks`, `firewall`,
+`nomad`, and `bunnycdn` each carry one over the branch that used to call a
+regex builtin: a control-collapsing clip, a plan-format gate, a numeric-string
+port operand, a case-insensitive event match, a credential strip.
 
 **Sweep.**
 `rg -n 'gsub|\btest\(|\bmatch\(|capture\(|scan\(|splits\(|\bsub\(' packs/*/scripts/*.sh packs/*/actions/*.yaml`,
 then read each hit: jq, or the `awk`/`sed` in the same pipeline (both have their
-own `match`/`sub`/`gsub` and are unaffected). As of 2026-08-04 the terraform
-packs are clean; `docker`, `oidc-jwks`, `firewall`, `nomad`, and `bunnycdn` are
-not — see the packs task `2026-08-04-sweep-the-remaining-packs-off-jq-s-optional-rege`.
+own `match`/`sub`/`gsub` and are unaffected). The lint is the mechanical version
+of this grep and runs in the gate, so the grep is for the places it does not
+reach — a test fixture, a repository tool, a document. As of 2026-08-04 every
+pack in the catalog is on core jq.

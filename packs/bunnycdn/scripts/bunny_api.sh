@@ -41,10 +41,29 @@ request_json() {
 }
 
 safe_pull_zone() {
+  # An origin URL can carry credentials in its userinfo, so they are cut out
+  # before the zone leaves the runner. The obvious spelling needs test() and
+  # capture(), which exist only in a jq linked against Oniguruma — on the
+  # supported --with-oniguruma=no build every pull-zone read would fail after
+  # the API call. strip_userinfo says the same thing on core jq: after the
+  # scheme, a non-empty userinfo segment must end at the first @, and that @
+  # must come before any / (an @ inside a path is not userinfo). split is the
+  # cut rather than index, whose offsets are bytes while a slice counts
+  # codepoints.
   jq -ce '
+    def strip_userinfo($scheme):
+      ltrimstr($scheme) as $rest
+      | if $rest == . then null
+        else ($rest | split("@")) as $parts
+          | if ($parts | length) < 2 or ($parts[0] | length) == 0 or
+               ($parts[0] | contains("/"))
+            then null
+            else $scheme + ($parts[1:] | join("@"))
+            end
+        end;
     def sanitize_origin:
-      if type == "string" and test("^https?://[^/@]+@") then
-        capture("^(?<scheme>https?://)[^/@]+@(?<rest>.*)$") | .scheme + .rest
+      if type == "string" then
+        strip_userinfo("https://") // strip_userinfo("http://") // .
       else . end;
     walk(
       if type == "object" then

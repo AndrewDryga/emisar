@@ -7,9 +7,16 @@ nft -j -n -a -t list ruleset | jq -ce --argjson port "$port" '
   def is_port_match:
     (.left.payload.field? == "sport" or .left.payload.field? == "dport");
 
+  # test("^[0-9]+$") needs Oniguruma, which the supported
+  # --with-oniguruma=no jq build omits, and every projected rule reaches this
+  # filter. Oniguruma also matched $ before a trailing newline, so "443\n"
+  # used to parse as a port; refusing it is deliberate — a right operand
+  # carrying a newline is not a number nft emitted.
+  def all_digits: length > 0 and (explode | all(.[]; . >= 48 and . <= 57));
+
   def numeric:
     if type == "number" then .
-    elif type == "string" and test("^[0-9]+$") then tonumber
+    elif type == "string" and all_digits then tonumber
     else null
     end;
 

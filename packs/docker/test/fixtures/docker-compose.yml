@@ -1,0 +1,56 @@
+# A stack big enough to exercise the service sample and clip bounds:
+# 25 services against a 24-entry sample (one omitted) and a service name past
+# the 48-character clip. busybox is inert — nothing here is ever started; the
+# action only parses the file.
+
+services:
+  a-deliberately-long-compose-service-name-for-clipping:
+    image: busybox:1.36
+  svc-01:
+    image: busybox:1.36
+  svc-02:
+    image: busybox:1.36
+  svc-03:
+    image: busybox:1.36
+  svc-04:
+    image: busybox:1.36
+  svc-05:
+    image: busybox:1.36
+  svc-06:
+    image: busybox:1.36
+  svc-07:
+    image: busybox:1.36
+  svc-08:
+    image: busybox:1.36
+  svc-09:
+    image: busybox:1.36
+  svc-10:
+    image: busybox:1.36
+  svc-11:
+    image: busybox:1.36
+  svc-12:
+    image: busybox:1.36
+  svc-13:
+    image: busybox:1.36
+  svc-14:
+    image: busybox:1.36
+  svc-15:
+    image: busybox:1.36
+  svc-16:
+    image: busybox:1.36
+  svc-17:
+    image: busybox:1.36
+  svc-18:
+    image: busybox:1.36
+  svc-19:
+    image: busybox:1.36
+  svc-20:
+    image: busybox:1.36
+  svc-21:
+    image: busybox:1.36
+  svc-22:
+    image: busybox:1.36
+  svc-23:
+    image: busybox:1.36
+  svc-24:
+    image: busybox:1.36

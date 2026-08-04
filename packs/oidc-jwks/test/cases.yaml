@@ -123,6 +123,32 @@ cases:
         /truncated/missing_from_consumer: 4
         /truncated/extra_in_consumer: 4
 
+  # The same worst case under the jq built --with-oniguruma=no: the clip that
+  # produces those ellipses used to be a gsub call, and a jq without the regex
+  # family raises rather than degrading the moment one is reached. The shared
+  # client image builds that jq at /opt/jq-without-regex; putting it first on
+  # PATH is how a case opts in, and every other case here keeps running
+  # against the packaged Oniguruma-enabled jq an operator's host usually has.
+  - name: oidc.compare_key_ids-clips-without-jq-regex-support
+    action: oidc.compare_key_ids
+    args:
+      authoritative_key_ids_json: '["auth-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00","auth-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01"]'
+      consumer_key_ids_json: '["cons-ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc00"]'
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      json:
+        /relation: consumer_missing_and_extra
+        /authoritative_count: 2
+        /consumer_count: 1
+        /missing_count: 2
+        /extra_count: 1
+        # A clipped ID still ends in the ellipsis the byte budget is sized for.
+        /missing_from_consumer/0: "auth-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…"
+        /extra_in_consumer/0: "cons-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc…"
+        /truncated/missing_from_consumer: 0
+        /truncated/extra_in_consumer: 0
+
   # Every recognized header field at its exact byte bound plus crit at its
   # 16x64 maximum. The action declares output.schema, so the runner enforces
   # the 8 KiB structured cap — success IS the worst-case byte proof.

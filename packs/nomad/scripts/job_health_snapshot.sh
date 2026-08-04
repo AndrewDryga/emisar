@@ -80,6 +80,9 @@ jq -cn \
 			fails_task: (.FailsTask // false),
 			message: (.DisplayMessage | message)
 		};
+	# Event types are matched case-insensitively without test(...; "i"): jq
+	# links the regex family only when it was built against Oniguruma, and
+	# every snapshot that carries a task state reaches these two filters.
 	def task_state($event_limit):
 		. as $state
 		| ($state.value.Events // []) as $events
@@ -92,13 +95,14 @@ jq -cn \
 			finished_at: $state.value.FinishedAt,
 			recent_restart_events: [
 				$events[]
-				| select((.Type // "") | test("Restart"; "i"))
+				| select(((.Type // "") | ascii_downcase) | contains("restart"))
 			] | reverse | .[:$event_limit] | map(event),
 			recent_failed_events: [
 				$events[]
 				| select(
 					(.FailsTask // false) or
-					((.Type // "") | test("Failed|Not Restarting"; "i"))
+					(((.Type // "") | ascii_downcase)
+					 | contains("failed") or contains("not restarting"))
 				)
 			] | reverse | .[:$event_limit] | map(event)
 		};

@@ -1,0 +1,29 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/docker/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-29.7.1-cli}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-docker-tools:latest
+    volumes:
+      # docker.compose_config only accepts a path under an approved deployment
+      # root, so the fixture is mounted where a real stack would live.
+      - ${EMISAR_ROOT}/packs/docker/test/fixtures/docker-compose.yml:/opt/stack/docker-compose.yml:ro
+
+  # The version matrix's product under test. `docker compose config` parses a
+  # file and reaches no daemon, so this service exists to pin and prove the CLI
+  # version rather than to serve the case — no dind, no privileged mode, and no
+  # socket is mounted anywhere.
+  docker-cli:
+    image: docker:${PACKTEST_VERSION:-29.7.1-cli}${PACKTEST_DIGEST-}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["docker compose version >/dev/null && sleep 3600"]
+    healthcheck:
+      test: ["CMD", "docker", "compose", "version"]
+      interval: 2s
+      start_period: 20s
+      start_interval: 1s
+      retries: 20

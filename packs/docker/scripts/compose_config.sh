@@ -51,6 +51,16 @@ profiles=$(bounded_json_list \
 # would deterministically fail on exactly the stacks worth summarizing. The
 # caps and clips are sized so all lists at their worst escaped case stay well
 # under the cap.
+#
+# controls_collapsed is the clip's cleanup on core jq. The obvious spelling,
+# gsub("[[:cntrl:]]+"; " "), needs Oniguruma, which jq's own supported
+# --with-oniguruma=no build omits: there the call raises "jq was compiled
+# without ONIGURUMA regex library" the first time it runs, so this summary
+# fails on that host and nowhere else. The class Oniguruma matched is exactly
+# Unicode Cc, U+0000–U+001F and U+007F–U+009F, so each of those codepoints
+# becomes 0 — itself a control, so no ordinary character collides with the
+# marker — a run keeps only its first, and the survivor becomes a space. A
+# space already in the text is left alone.
 COMPOSE_FILE=$file \
   COMPOSE_SERVICES=$services \
   COMPOSE_IMAGES=$images \
@@ -60,8 +70,13 @@ COMPOSE_FILE=$file \
   jq -nce '
     def lines($name):
       env[$name] | split("\n") | map(select(length > 0)) | unique | sort;
+    def controls_collapsed:
+      (explode | map(if . <= 31 or (. >= 127 and . <= 159) then 0 else . end)) as $cs
+      | [range($cs | length) | select(. == 0 or $cs[.] != 0 or $cs[. - 1] != 0) | $cs[.]]
+      | map(if . == 0 then 32 else . end)
+      | implode;
     def clipped($chars; $bytes):
-      (tostring | gsub("[[:cntrl:]]+"; " ")) as $clean
+      (tostring | controls_collapsed) as $clean
       | ($clean | .[:$chars] | until(utf8bytelength <= $bytes; .[:-1])) as $cut
       | if $cut == $clean then $clean else ($cut | .[:$chars - 1]) + "…" end;
     def capped($names; $cap; $size):

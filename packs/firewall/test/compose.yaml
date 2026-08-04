@@ -1,0 +1,27 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/firewall/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+    image: emisar-packtest-firewall-tools:latest
+    # A ruleset belongs to a network namespace, so the client has to live in
+    # the SUT's — and needs CAP_NET_ADMIN there to create and read one. The
+    # capability is granted on its own; nothing here runs privileged.
+    network_mode: service:firewall
+    cap_add: [NET_ADMIN]
+
+  # The SUT owns the disposable network namespace the case installs its rules
+  # into. It runs nothing: nft comes from the client image above, so the
+  # version matrix pins the namespace's base image and no more.
+  firewall:
+    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    command: [sleep, infinity]
+    cap_add: [NET_ADMIN]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

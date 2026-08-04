@@ -77,6 +77,31 @@ cases:
         - '"deployments":[{"id":"'
         - '"desired_total":2'
         - '"allocations":[]'
+  # The same snapshot under the jq built --with-oniguruma=no: the two event
+  # filters used to be test(...; "i") calls, and a jq without the regex family
+  # raises rather than degrading the moment one is reached. The shared client
+  # image builds that jq at /opt/jq-without-regex; putting it first on PATH is
+  # how a case opts in, and every other case here keeps running against the
+  # packaged Oniguruma-enabled jq an operator's host usually has.
+  - name: nomad.job_health_snapshot-without-jq-regex-support
+    action: nomad.job_health_snapshot
+    args:
+      job: packtest-health
+      allocation_limit: 5
+      events_per_task: 3
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [nomad, job, run, -detach, /packs/nomad/test/fixtures/health.nomad.hcl]
+    expect:
+      stdout_contains:
+        - '"id":"packtest-health"'
+        - '"desired":2'
+        - '"desired_allocations":2'
+        - '"image":"busybox:1.36"'
+        - '"deployments":[{"id":"'
+        - '"desired_total":2'
+        - '"allocations":[]'
   - action: nomad.server_members
     expect:
       stdout_contains: ['"Status":"alive"', '"ServerName"']

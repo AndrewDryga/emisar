@@ -1,0 +1,16 @@
+#!/bin/bash
+# The action's string-numeric branch, sourced from a real ruleset.
+#
+# nft -j reports a port operand as a JSON number, so nft's own output never
+# reaches the branch that accepts a numeric STRING — the one that used to call
+# test("^[0-9]+$") and therefore needed the regex family jq links only when it
+# was built against Oniguruma. This wrapper sits first on PATH for the action
+# alone (the case arranges its ruleset through /usr/sbin/nft directly): it runs
+# the real nft, propagates its failure, and rewrites only the match right
+# operands from numbers to strings. Every rule the action then reads is still
+# one the kernel is holding.
+set -euo pipefail
+
+ruleset=$(/usr/sbin/nft "$@")
+printf '%s' "$ruleset" |
+	/usr/bin/jq -c '(.nftables[]?.rule?.expr[]?.match?.right | numbers) |= tostring'
