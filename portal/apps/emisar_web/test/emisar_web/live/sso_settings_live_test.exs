@@ -54,7 +54,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     test "Add a connection is its own page with the per-provider setup guide",
          %{conn: conn, account: account} do
       {:ok, _lv, new_html} = live(conn, ~p"/app/#{account}/settings/sso/new")
-      assert new_html =~ "Add an identity provider"
+      assert new_html =~ "Add connection"
+      refute new_html =~ "Add an identity provider"
+      assert new_html =~ "Member provisioning"
+      refute new_html =~ "User provisioning"
       assert new_html =~ "/sign_in/sso/callback"
     end
 
@@ -577,7 +580,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         assert html =~ "Single sign-on"
       end
 
-      assert add =~ "Add an identity provider"
+      assert add =~ "Add connection"
+      refute add =~ "Add an identity provider"
       assert detail =~ "Acme Okta"
       assert edit =~ "Edit connection"
 
@@ -612,7 +616,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, _lv, synced} = live(conn, ~p"/app/#{account}/settings/sso/#{on.id}")
 
       for note <- [
-            "Your IdP pushes users and groups over SCIM",
+            "Your IdP pushes members and groups over SCIM",
             "Sets the role a group&#39;s members land at",
             "Adds runners on top of the connection default",
             "What your IdP has actually pushed",
@@ -916,9 +920,43 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Point your IdP at this connection"
       assert html =~ "externalId"
 
+      sync_controls = lv |> element("#directory-sync-#{provider.id}") |> render()
+      assert has_element?(lv, "#rotate-scim-#{provider.id}")
+      assert has_element?(lv, "#disable-scim-#{provider.id}")
+      assert sync_controls =~ "Rotate token"
+      assert sync_controls =~ "Disable"
+      refute sync_controls =~ "Enabled"
+
       reloaded = Repo.reload!(provider)
       assert reloaded.scim_enabled
       assert reloaded.scim_token_prefix
+    end
+
+    test "a downgraded account can still disable existing directory sync", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      user: user
+    } do
+      owner = Fixtures.Subjects.subject_for(user, account)
+      {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
+
+      {_deleted, _} =
+        Emisar.Billing.Subscription.Query.all()
+        |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
+        |> Repo.delete_all()
+
+      refute Emisar.Billing.sso_available?(account)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert html =~ "Disable directory sync"
+      refute html =~ "Turn off directory sync"
+      assert has_element?(lv, "#disable-scim-#{provider.id}")
+
+      disabled = render_click(lv, "disable_scim", %{"id" => provider.id})
+      assert disabled =~ "Directory sync disabled."
+      refute Repo.reload!(provider).scim_enabled
     end
 
     test "the token is never rendered back after dismissal / reload", %{
@@ -1051,7 +1089,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
-  describe "synced users" do
+  describe "synced members" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
@@ -1066,7 +1104,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account, provider: provider, membership: membership}
     end
 
-    test "lists the provisioned user and suspends them from the connection page", %{
+    test "lists the provisioned member and suspends them from the connection page", %{
       conn: conn,
       account: account,
       provider: provider,
@@ -1074,7 +1112,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert html =~ "Synced users"
+      assert html =~ "Synced members"
       assert html =~ "Dana Sync"
       refute Emisar.Accounts.Membership.disabled?(membership)
 
@@ -1092,7 +1130,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{unsynced.id}")
 
       assert html =~ "No one has been provisioned through this connection yet"
-      refute html =~ "Synced users couldn&#39;t be loaded"
+      refute html =~ "Synced members couldn&#39;t be loaded"
     end
 
     test "a failed membership read asks for a retry instead of claiming nobody is there", %{
@@ -1113,10 +1151,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       html = render_patch(lv, ~p"/app/#{account}/settings/sso/#{provider.id}?reload=1")
 
-      assert html =~ "Synced users couldn&#39;t be loaded"
+      assert html =~ "Synced members couldn&#39;t be loaded"
 
       assert html =~
-               "Refresh the page to try again. This connection may still have provisioned users."
+               "Refresh the page to try again. This connection may still have provisioned members."
 
       refute html =~ "No one has been provisioned"
       refute html =~ "Dana Sync"
@@ -1171,7 +1209,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       %{conn: conn, user: user, account: account, provider: provider, owner: owner}
     end
 
-    test "creates, lists, and deletes a group mapping", %{
+    test "creates, lists, and deletes a role mapping", %{
       conn: conn,
       account: account,
       provider: provider,
@@ -1196,7 +1234,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
         |> render_submit()
 
-      assert html =~ "Group mapping added."
+      assert html =~ "Role mapping added."
       # The row renders with its display + role.
       assert html =~ "Admins"
       assert html =~ "00g-admins"
@@ -1205,7 +1243,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       # Delete it — the gated event removes the row.
       deleted = render_click(lv, "delete_mapping", %{"id" => mapping.id})
-      assert deleted =~ "Group mapping deleted."
+      assert deleted =~ "Role mapping deleted."
 
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
     end
@@ -1241,7 +1279,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
         |> render_submit()
 
-      assert html =~ "Group mapping updated."
+      assert html =~ "Role mapping updated."
 
       {:ok, [updated], _meta} = SSO.list_group_mappings(provider, owner)
       assert updated.id == mapping.id
@@ -1366,7 +1404,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
     end
 
-    test "a non-admin viewer cannot create a group mapping", %{
+    test "a non-admin viewer cannot create a role mapping", %{
       conn: conn,
       account: account,
       user: user,
@@ -1388,7 +1426,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
     end
 
-    test "a non-admin viewer cannot update or delete a group mapping (forged events)", %{
+    test "a non-admin viewer cannot update or delete a role mapping (forged events)", %{
       conn: conn,
       account: account,
       user: user,
@@ -1472,9 +1510,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
   end
 
-  # Placed at the end (not in the "synced users" describe above) only to keep a clean
+  # Placed at the end (not in the "synced members" describe above) only to keep a clean
   # commit apart from that describe's in-flight rework — logically it belongs there.
-  describe "synced users — a directory-synced role is read-only" do
+  describe "synced members — a directory-synced role is read-only" do
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})

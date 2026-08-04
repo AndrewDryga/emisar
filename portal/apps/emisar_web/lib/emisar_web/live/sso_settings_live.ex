@@ -32,7 +32,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   @mapping_role_options @role_options
 
-  # The synced-users list re-roles a real membership, so its select offers ALL
+  # The synced-members list re-roles a real membership, so its select offers ALL
   # roles (incl. owner) — unlike the JIT/mapping selects. update_membership_role
   # still enforces the owner / last-owner / self guards server-side.
   @member_role_options Enum.map(
@@ -40,12 +40,12 @@ defmodule EmisarWeb.SSOSettingsLive do
                          &{Emisar.Auth.role_label(&1), Atom.to_string(&1)}
                        )
 
-  # New-user provisioning modes for the form's select. JIT auto-creates a user on
+  # New member provisioning modes for the form's select. JIT adds the membership on
   # first sign-in; manual parks first sign-ins as pending requests an admin
   # approves. Bespoke prose labels, so a literal list (not capitalized atoms).
   @provisioner_options [
-    {"Auto-provision new users on first sign-in", "jit"},
-    {"Manual — an admin approves each new user", "manual"}
+    {"Auto-provision new members on first sign-in", "jit"},
+    {"Manual — an admin approves each new member", "manual"}
   ]
 
   def mount(_params, _session, socket) do
@@ -69,7 +69,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         :can_manage_team?,
         Accounts.subject_can_manage_team?(socket.assigns.current_subject)
       )
-      # The provider's synced users (identity + membership), loaded on :show.
+      # The connection's synced members (identity + membership), loaded on :show.
       |> assign(:synced_members, [])
       |> assign(:synced_members_load_error?, false)
       |> assign(:edit_form, nil)
@@ -226,7 +226,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # The users provisioned through this connection, each paired with its account
   # membership (nil if the person was fully removed but the identity lingers) — so
-  # the "Synced users" card can show state and act on the membership. Two reads
+  # the "Synced members" card can show state and act on the membership. Two reads
   # (SSO identities + Accounts memberships), zipped by user id; either failing
   # keeps uncertainty explicit instead of asserting that nobody was provisioned.
   defp load_synced_members(socket, provider) do
@@ -656,7 +656,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("confirm_reset", _params, socket),
     do: {:noreply, ConfirmDialog.reset(socket)}
 
-  # -- Synced users — member lifecycle (acts on the Accounts membership) ---
+  # -- Synced members — member lifecycle (acts on the Accounts membership) ---
   # These mutate a real membership, so they gate on manage_team, not the page's
   # manage_sso view gate; Accounts enforces the owner / last-owner / self guards.
 
@@ -869,7 +869,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         {:ok, _mapping} ->
           {:noreply,
            socket
-           |> put_flash(:info, "Group mapping added.")
+           |> put_flash(:info, "Role mapping added.")
            |> put_mapping_form(provider_id, mapping_form(provider))
            |> reload_mappings(provider)}
 
@@ -892,7 +892,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           {:ok, updated} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Group mapping updated.")
+             |> put_flash(:info, "Role mapping updated.")
              |> assign(:editing_mapping_id, nil)
              |> assign(:mapping_edit_form, nil)
              |> reload_mappings_for_id(updated.provider_id)}
@@ -916,7 +916,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           {:ok, deleted} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Group mapping deleted.")
+             |> put_flash(:info, "Role mapping deleted.")
              |> reload_mappings_for_id(deleted.provider_id)}
 
           {:error, reason} ->
@@ -1394,7 +1394,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.detail_header
               back="Single sign-on"
               navigate={sso_card_path(@current_account)}
-              title="Add an identity provider"
+              title="Add connection"
             />
           <% {:edit, [provider | _]} -> %>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
@@ -1439,7 +1439,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       <div :if={@can_configure?} class="space-y-6">
         <.page_intro :if={@live_action == :index}>
           Connect your organization's identity provider so members sign in through it. New
-          users are provisioned on first sign-in; you choose the role they land with.
+          members are provisioned on first sign-in; you choose the role they land with.
           <.doc_link href="/docs/sso">Single sign-on docs</.doc_link>
         </.page_intro>
 
@@ -1733,7 +1733,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   <span class="font-mono text-zinc-300">{provider.issuer}</span>
                 </.meta_field>
                 <div class="grid grid-cols-2 gap-x-10 gap-y-6">
-                  <.meta_field label="New users">
+                  <.meta_field label="New members">
                     <span class="text-zinc-300">{provisioner_label(provider.provisioner)}</span>
                   </.meta_field>
                   <.meta_field label="Default role">
@@ -1784,7 +1784,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <%!-- The provider kind only says SCIM is supported; it does not mean
                  this connection has enabled provisioning. --%>
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              Your IdP pushes users and groups over SCIM. Removing someone there removes them here.
+              Your IdP pushes members and groups over SCIM. Removing someone there removes them here.
             </.section_note>
 
             <%!-- This kind can't push SCIM (e.g. Google Workspace) — say so once
@@ -1800,7 +1800,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             </p>
             <.section_spacer :if={not SSO.supports_scim?(provider.kind)} />
 
-            <.group_mapping_section
+            <.role_mapping_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               provider={provider}
               mappings={Map.get(@group_mappings, provider.id, [])}
@@ -1841,7 +1841,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               the connection's default role.
             </.section_note>
 
-            <.synced_users_section
+            <.synced_members_section
               members={@synced_members}
               load_error?={@synced_members_load_error?}
               member_role_options={@member_role_options}
@@ -1951,22 +1951,22 @@ defmodule EmisarWeb.SSOSettingsLive do
              working sign-in. Offering only "delete the connection" made it. --%>
         <.confirm_zone
           :if={@provider.scim_enabled}
-          title="Turn off directory sync"
+          title="Disable directory sync"
           phx-click={show_confirm_dialog("disable-scim-#{@provider.id}")}
         >
           <:body>
             Clears this connection's directory token, so your identity provider stops pushing
-            users and the token stops authenticating. Sign-in through this connection is
+            members and the token stops authenticating. Sign-in through this connection is
             unaffected. Members keep the roles the directory last gave them.
           </:body>
-          Turn off directory sync
+          Disable directory sync
         </.confirm_zone>
 
         <.confirm_dialog
           :if={@provider.scim_enabled}
           id={"disable-scim-#{@provider.id}"}
-          title="Turn off directory sync"
-          confirm_label="Turn off"
+          title="Disable directory sync"
+          confirm_label="Disable sync"
           on_confirm={
             JS.push("disable_scim", value: %{id: @provider.id})
             |> hide_confirm_dialog("disable-scim-#{@provider.id}")
@@ -2093,7 +2093,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :editing?, :boolean, default: false
 
   # The connection form's fields, grouped into NAKED sibling sections (Provider ·
-  # OIDC connection · User provisioning · Security) — §8.1: the fields are the
+  # OIDC connection · Member provisioning · Security) — §8.1: the fields are the
   # controls; a panel per group was an island per group. Shared by both actions;
   # the outer <.simple_form> spaces the sections and renders the submit footer.
   defp provider_fields(assigns) do
@@ -2212,7 +2212,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       </section>
 
       <section>
-        <.section_header title="User provisioning">
+        <.section_header title="Member provisioning">
           <:subtitle>How members map in when they sign in through this connection.</:subtitle>
         </.section_header>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -2220,18 +2220,18 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.input
               field={@form[:provisioner]}
               type="select"
-              label="New-user provisioning"
+              label="New member provisioning"
               options={@provisioner_options}
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               <span class="font-medium text-zinc-400">Auto-provision</span>
-              creates a user on first sign-in. <span class="font-medium text-zinc-400">Manual</span>
+              adds a member on first sign-in. <span class="font-medium text-zinc-400">Manual</span>
               holds first-time sign-ins as pending requests for an admin to approve. Either way
               they land at the default role below.
             </p>
           </div>
           <div class="sm:col-span-2">
-            <.label>Default role for new users</.label>
+            <.label>Default role for new members</.label>
             <%!-- Radio cards, not a bare select — the role a new member lands at is
                  a privilege choice, so each option shows what it grants (matches the
                  team-invite picker). --%>
@@ -2251,7 +2251,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.choice_cards>
           </div>
           <div class="sm:col-span-2">
-            <.label>Default runner access for new users</.label>
+            <.label>Default runner access for new members</.label>
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
               Role controls what a new member can do. Runner access controls where it applies.
             </p>
@@ -2655,10 +2655,9 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :revealed_token, revealed_token)
 
     ~H"""
-    <section>
+    <section id={"directory-sync-#{@provider.id}"}>
       <.section_header title="Directory sync (SCIM)">
         <:actions>
-          <.status_badge :if={@provider.scim_enabled} status="enabled" />
           <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
           <div class="ml-auto flex items-center gap-2">
             <.button
@@ -2688,7 +2687,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               id={"disable-scim-#{@provider.id}"}
               title="Disable directory sync?"
               confirm_label="Disable sync"
-              variant={:ghost}
+              variant={:secondary}
               tone={:rose}
               size={:sm}
               on_confirm={JS.push("disable_scim", value: %{id: @provider.id})}
@@ -2802,7 +2801,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   # confirm-to-delete), an empty hint when there are none, then the add form.
   # role_label renders the data role value (rendering a label is fine; never
   # branch authz on it).
-  defp group_mapping_section(assigns) do
+  defp role_mapping_section(assigns) do
     ~H"""
     <section>
       <.section_header title="Role mapping" count={length(@mappings)} count_tone={:neutral}>
@@ -2851,7 +2850,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                    server-authz-gated. --%>
               <.confirm_button
                 id={"delete-mapping-#{mapping.id}"}
-                title="Delete this group mapping?"
+                title="Delete this role mapping?"
                 confirm_label="Delete mapping"
                 variant={:ghost}
                 tone={:rose}
@@ -2901,7 +2900,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       </ul>
 
       <.empty_state :if={@mappings == []} variant={:hint} class="mt-4">
-        No group mappings yet. New members land at the connection's default role until you map a
+        No role mappings yet. New members land at the connection's default role until you map a
         directory group to a higher one.
       </.empty_state>
 
@@ -3227,17 +3226,17 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :current_user_id, :string, required: true
   attr :scim_enabled, :boolean, required: true
 
-  # The users provisioned through this connection (SCIM sync / SSO first-login /
+  # The members provisioned through this connection (SCIM sync / SSO first-login /
   # approved link), with portal-based lifecycle actions per row — re-role or
   # suspend/reactivate. The controls act on the Accounts membership (manage_team,
   # which enforces owner / last-owner / self); someone removed from the account
   # whose identity lingers shows "Removed" with no actions. A failed read keeps
   # its count off the header — "0" would assert a roster size we don't know.
-  defp synced_users_section(assigns) do
+  defp synced_members_section(assigns) do
     ~H"""
     <section>
       <.section_header
-        title="Synced users"
+        title="Synced members"
         count={if @load_error?, do: nil, else: length(@members)}
         count_tone={:neutral}
       />
@@ -3358,13 +3357,13 @@ defmodule EmisarWeb.SSOSettingsLive do
         variant={:hint}
         tone={:danger}
         icon="hero-exclamation-triangle"
-        title="Synced users couldn't be loaded"
+        title="Synced members couldn't be loaded"
         class="mt-4"
       >
-        Refresh the page to try again. This connection may still have provisioned users.
+        Refresh the page to try again. This connection may still have provisioned members.
       </.empty_state>
       <.empty_state :if={@members == [] and not @load_error?} variant={:hint} class="mt-4">
-        No one has been provisioned through this connection yet. Users appear here after they sign in
+        No one has been provisioned through this connection yet. Members appear here after they sign in
         through it, or after directory sync provisions them.
       </.empty_state>
     </section>
@@ -3408,14 +3407,14 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :provider, :map, required: true
   attr :stats, :map, required: true
 
-  # The overview health line for one connection: how many users + distinct groups
+  # The overview health line for one connection: how many members + distinct groups
   # the directory has actually synced through it, and — for a SCIM connection — how
   # fresh the last sync is (green when synced, amber "never synced" while it waits
   # on the IdP).
   defp sync_meta(assigns) do
     ~H"""
     <div class="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-zinc-400">
-      <span class="tabular-nums">{count_label(@stats.users, "user")}</span>
+      <span class="tabular-nums">{count_label(@stats.users, "member")}</span>
       <span class="tabular-nums">· {count_label(@stats.groups, "group")}</span>
       <span :if={@provider.scim_enabled and @provider.scim_last_seen_at} class="text-brand-300/90">
         · synced
