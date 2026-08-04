@@ -213,6 +213,10 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 				obj.Path, hex.EncodeToString(sha256Sum(data)), hex.EncodeToString(sha256Sum(stored)))
 		}
 		return false, nil
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return false, fmt.Errorf(
+			"catalog: upload %s: HTTP %d: %s; refresh local credentials with GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) and retry; if the error persists, verify bucket access",
+			obj.Path, resp.StatusCode, string(respBody))
 	default:
 		return false, fmt.Errorf("catalog: upload %s: HTTP %d: %s", obj.Path, resp.StatusCode, string(respBody))
 	}

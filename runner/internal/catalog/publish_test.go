@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -425,6 +426,70 @@ func TestPublish_ServerErrorFails(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error on 500")
+	}
+}
+
+func TestPutObject_HTTPFailures(t *testing.T) {
+	const (
+		token      = "publisher-secret-token"
+		objectPath = "v1/catalog.json"
+		refresh    = "GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)"
+	)
+	tests := []struct {
+		name        string
+		status      int
+		body        string
+		wantRefresh bool
+	}{
+		{
+			name:        "expired token",
+			status:      http.StatusUnauthorized,
+			body:        `{"error":{"message":"Invalid Credentials"}}`,
+			wantRefresh: true,
+		},
+		{
+			name:        "forbidden token",
+			status:      http.StatusForbidden,
+			body:        `{"error":{"message":"Request had invalid authentication credentials."}}`,
+			wantRefresh: true,
+		},
+		{
+			name:   "server error",
+			status: http.StatusInternalServerError,
+			body:   `{"error":{"message":"backend unavailable"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+					t.Errorf("Authorization = %q, want bearer token", got)
+				}
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			t.Cleanup(srv.Close)
+
+			_, err := putObject(context.Background(), srv.Client(), srv.URL, token, "test-bucket", Object{
+				Path:        objectPath,
+				ContentType: "application/json",
+			}, []byte(`{}`))
+			if err == nil {
+				t.Fatal("putObject error = nil, want HTTP failure")
+			}
+			got := err.Error()
+			wantContext := fmt.Sprintf("catalog: upload %s: HTTP %d: %s", objectPath, tt.status, tt.body)
+			if !strings.Contains(got, wantContext) {
+				t.Errorf("error = %q, want context %q", got, wantContext)
+			}
+			if strings.Contains(got, token) {
+				t.Errorf("error leaked publisher token: %q", got)
+			}
+			if gotRefresh := strings.Contains(got, refresh); gotRefresh != tt.wantRefresh {
+				t.Errorf("error contains refresh command = %v, want %v: %q", gotRefresh, tt.wantRefresh, got)
+			}
+		})
 	}
 }
 
