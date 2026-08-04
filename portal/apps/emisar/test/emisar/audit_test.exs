@@ -585,7 +585,7 @@ defmodule Emisar.AuditTest do
       assert length(page1) == 3
       assert is_binary(cursor)
 
-      {:ok, page2, %{next_page_cursor: cursor2}} =
+      {:ok, page2, %{next_page_cursor: cursor2, previous_page_cursor: back_cursor}} =
         Audit.list_events(subject, page: [cursor: cursor, limit: 3])
 
       assert length(page2) == 3
@@ -599,6 +599,11 @@ defmodule Emisar.AuditTest do
       # No row repeated across pages — keyset pagination invariant.
       ids = Enum.map(page1 ++ page2 ++ page3, & &1.id)
       assert ids == Enum.uniq(ids)
+
+      # Page 2's Prev cursor walks back to page 1, in the feed's own order —
+      # the :before page is read backwards and re-reversed before it returns.
+      assert {:ok, ^page1, _metadata} =
+               Audit.list_events(subject, page: [cursor: back_cursor, limit: 3])
     end
 
     test "filter list narrows to matching event_types only", %{
@@ -694,14 +699,14 @@ defmodule Emisar.AuditTest do
 
       # Event's keyset is [{:events, :desc, :occurred_at}, {:events, :asc, :id}].
       # Forge a cursor that decodes cleanly (a real DateTime + a string) but
-      # carries a string where the UUID `id` column is expected — it survives
-      # the :safe decode + nil-check and only fails when the keyset WHERE is
-      # bound. Previously that raised a self-inflicted 500.
+      # carries a string where the UUID `id` column is expected — every typed
+      # leaf is well-formed, so it only fails when the keyset WHERE is bound.
+      # Previously that raised a self-inflicted 500.
       now_ns = DateTime.to_unix(DateTime.utc_now(), :nanosecond)
 
       cursor =
-        {:after, [{DateTime, now_ns}, {:t, "not-a-uuid"}]}
-        |> :erlang.term_to_binary()
+        ["after", [["datetime", now_ns], ["binary", "not-a-uuid"]]]
+        |> Jason.encode!()
         |> Base.url_encode64(padding: false)
 
       assert {:error, :invalid_cursor} =
