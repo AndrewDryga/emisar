@@ -15,6 +15,18 @@ defmodule EmisarWeb.MarketingHTML do
   def action_icon("script"), do: "hero-code-bracket"
   def action_icon(_), do: "hero-cube"
 
+  # One lowercased blob per docs-index row for the client-side filter —
+  # the page's title, description, its top-level group, its display
+  # subgroup, and its optional extra keywords. Building it server-side is
+  # what keeps `docs_filter.js` a plain textContent/attribute matcher with
+  # no index of its own.
+  def docs_search_terms(page, group_label, section_label) do
+    [page.title, page.desc, group_label, section_label, page[:keywords]]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
+    |> String.downcase()
+  end
+
   # Heroicon per pack-registry category (slug from
   # `EmisarWeb.PacksRegistry.@pack_categories`).
   # The icon varies for scannability; the accent stays brand — one accent, by design.

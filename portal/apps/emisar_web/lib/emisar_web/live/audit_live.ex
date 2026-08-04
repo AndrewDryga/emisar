@@ -317,7 +317,7 @@ defmodule EmisarWeb.AuditLive do
       width={:table}
     >
       <:title>Audit log</:title>
-      <%!-- Sub-feature side door — streaming config is its own page; its entry
+      <%!-- Sub-feature side door — export config is its own page; its entry
            rides the TITLE row (the pattern for a page's secondary surface),
            not the intro prose and never below the rows. --%>
       <:actions>
@@ -343,11 +343,11 @@ defmodule EmisarWeb.AuditLive do
               size={:md}
               navigate={~p"/app/#{@current_account}/audit/export"}
             >
-              Stream to SIEM
+              SIEM export
             </.button>
           <% else %>
-            <.upgrade_button tip="SIEM streaming is on the Team plan — upgrade to turn it on">
-              Stream to SIEM
+            <.upgrade_button tip="SIEM export is on the Team plan — upgrade to turn it on">
+              SIEM export
             </.upgrade_button>
           <% end %>
         <% end %>

@@ -37,6 +37,14 @@
           <li>The run or operation ID and the exact redacted error</li>
           <li>What you expected to happen</li>
         </ul>
+        <p class="mt-5 text-sm leading-6 text-zinc-400">
+          The full checklist — component versions, the UTC window,
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar doctor</code>
+          output, and what to redact before you attach anything — is in <.link
+            navigate={~p"/docs/troubleshooting" <> "#evidence"}
+            class="font-medium text-brand-300 hover:text-brand-200"
+          >troubleshooting</.link>, which also tells you whether the answer is a page away.
+        </p>
       </div>
       <div>
         <h2 class="text-xl font-semibold text-zinc-50">Keep secrets out of email</h2>
@@ -68,6 +76,13 @@
           class="font-medium text-brand-300 hover:text-brand-200"
         >security@emisar.dev</a>. For our disclosure process and supported versions, read the <.external_link href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md">
           security policy</.external_link>.
+      </p>
+      <p class="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
+        If a credential of yours has leaked, contain it first and mail us second — the order that
+        preserves evidence while it revokes authority is <.link
+          navigate={~p"/docs/security-incidents"}
+          class="font-medium text-brand-300 hover:text-brand-200"
+        >security incidents</.link>.
       </p>
     </div>
   </section>

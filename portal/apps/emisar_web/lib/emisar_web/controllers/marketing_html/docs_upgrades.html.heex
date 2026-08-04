@@ -1,0 +1,368 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="upgrades"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_upgrades.html.heex"
+      toc={[
+        {"what-moves", "What upgrades on its own"},
+        {"versions", "Find the versions you run"},
+        {"compatibility", "Compatibility status"},
+        {"plan", "Plan the rollout"},
+        {"canary", "Upgrade one runner"},
+        {"verify", "Verify the canary"},
+        {"fleet", "Roll through the fleet"},
+        {"bridges", "Upgrade local bridges"},
+        {"rollback", "Return to a known-good release"}
+      ]}
+    >
+      <.docs_header current="upgrades">
+        <:dek>
+          Move a runner fleet and your local MCP bridges onto a new release through one canary,
+          with a verification you can point at and a way back to the version you were running.
+        </:dek>
+      </.docs_header>
+
+      <.docs_prerequisites>
+        <:item>
+          Owner or admin in the account, so you can read runner versions and run history.
+        </:item>
+        <:item>
+          Root or sudo on each runner host — the installer writes to
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>
+          and the service unit.
+        </:item>
+        <:item>One non-critical runner to go first.</:item>
+        <:item>
+          The release you are currently on, written down. You need the exact tag to go back to it.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="what-moves">What upgrades on its own</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Four things version separately. Upgrading one never upgrades another.
+      </p>
+      <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
+        <table class="w-full min-w-[680px] text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Component</th>
+              <th class="px-4 py-3">Who upgrades it</th>
+              <th class="px-4 py-3">How</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Control plane</td>
+              <td class="px-4 py-3">We do</td>
+              <td class="px-4 py-3">
+                Nothing for you to run. Shipped changes land in the <.link
+                  navigate={~p"/changelog"}
+                  class="text-brand-300 hover:text-brand-200"
+                >changelog</.link>.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Runner binary</td>
+              <td class="px-4 py-3">You, per host</td>
+              <td class="px-4 py-3">
+                Re-run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh</code>. Stops and restarts the service.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">emisar-mcp bridge</td>
+              <td class="px-4 py-3">You, per workstation</td>
+              <td class="px-4 py-3">
+                Re-run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install-mcp.sh</code>. Cloud OAuth clients run no bridge.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Action packs</td>
+              <td class="px-4 py-3">You, per runner</td>
+              <td class="px-4 py-3">
+                A separate lifecycle with its own trust decision — <.link
+                  navigate={~p"/docs/pack-updates"}
+                  class="text-brand-300 hover:text-brand-200"
+                >Roll out and roll back packs</.link>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <.docs_h2 id="versions">Find the versions you run</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The console reports what each peer last told it: the Runners list carries each runner's
+        version, and the Agents page carries each key's bridge version (blank for a cloud client,
+        which has no bridge). On the host, ask the binary itself.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># one machine-readable line: "emisar version 0.16.0"</span>
+<span class="text-zinc-500">$</span> emisar --version
+
+<span class="text-zinc-500"># the same version plus Go, platform, and build metadata</span>
+<span class="text-zinc-500">$</span> emisar version
+
+<span class="text-zinc-500"># the bridge, on the workstation that runs your LLM client</span>
+<span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A locally built binary reports <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">dev</code>, which is neither current nor stale — it is
+        simply unclassifiable, and the control plane never blocks it.
+      </p>
+
+      <.docs_h2 id="compatibility">Compatibility status</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The control plane classifies every reported runner and bridge version against two
+        thresholds it publishes: a minimum it still supports and a recommended version it would
+        rather you were on. Today those are
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">{Emisar.Compat.runner_minimum()}</code>
+        for the runner and
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">{Emisar.Compat.mcp_minimum()}</code>
+        for the bridge.
+      </p>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">outdated</strong>
+            is above the minimum but behind the recommended version. It runs normally; the console
+            shows a version chip and nothing else changes.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">unsupported</strong>
+            is below the minimum. Enforcement is a deployment-level switch and is off today, so an
+            unsupported peer is warned about rather than refused. When it is turned on, the control
+            plane rejects an unsupported runner at connect and an unsupported bridge at <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">initialize</code>, naming the minimum in the error.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A version the control plane cannot parse is never blocked</strong>, even
+            with enforcement on. The version is self-reported, so it is an operational hygiene
+            signal — not an authorization control.
+          </span>
+        </li>
+      </ul>
+      <.docs_callout kind={:warn} title="Before 1.0, components move together.">
+        <p>
+          These thresholds are operational warning lines, not a certified interoperability matrix:
+          no pair of 0.x artifacts is cross-version tested. Roll the portal, runner, and bridge
+          releases that shipped together, and treat a mixed-vintage fleet as a state you pass
+          through during a rollout, not one you park in.
+        </p>
+      </.docs_callout>
+
+      <.docs_h2 id="plan">Plan the rollout</.docs_h2>
+      <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
+        <li>
+          Read the
+          <.link navigate={~p"/changelog"} class="text-brand-300 hover:text-brand-200">changelog</.link>
+          for the releases between your current version and the target.
+        </li>
+        <li>
+          Write down the version you run today. That tag is your way back; nothing in the product
+          remembers it for you.
+        </li>
+        <li>
+          Check the Runs list for work in flight on the hosts you are about to touch. Filter to
+          running and sent, and let anything long-lived finish first.
+        </li>
+        <li>
+          Pick one non-critical runner as the canary — ideally in a group whose actions you can
+          exercise safely.
+        </li>
+      </ol>
+
+      <.docs_h2 id="canary">Upgrade one runner</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Re-running the installer is the upgrade. Pin the release rather than taking whatever is
+        latest, and pass an explicit empty pack set so a binary upgrade stays a binary upgrade —
+        without it, the installer offers host-matched pack recommendations.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># on the canary host</span>
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --version &lt;target-version&gt; --packs ""</.docs_code>
+      <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        What survives the upgrade:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
+        (an existing file is left alone),
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>
+        and the cached runner token, the installed packs under <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/packs</code>, the durable dispatch log, and the local audit journal. The
+        installer downloads and stages the new binary, verifies its checksum, executes it to
+        confirm the version, and checks the staged binary can read this host's dispatch state —
+        all before touching the running service.
+      </p>
+      <.docs_callout kind={:warn} title="The service does stop.">
+        <p>
+          Once the preflight passes, the installer stops the service, swaps the binary, and starts
+          it again. A runner kills its children when it exits, so an action in flight on that host
+          is interrupted. Drain the host first — do not treat a binary upgrade as invisible to
+          running work.
+        </p>
+      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        If any step after that fails, the installer restores the previous binary, the previous
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>
+        and cached token, and restarts the service if it had been running, then exits non-zero.
+        That is a restore of the runner and its service state — not a snapshot of the whole
+        filesystem, so packs it already installed in that run stay installed.
+      </p>
+
+      <.docs_h2 id="verify">Verify the canary</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Six checks, in order. Stop at the first one that fails.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># 1. the binary is the version you pinned</span>
+<span class="text-zinc-500">$</span> emisar --version
+
+<span class="text-zinc-500"># 2. the service came back and stayed up</span>
+<span class="text-zinc-500">$</span> systemctl status emisar
+
+<span class="text-zinc-500"># 3. config, credential, packs, action binaries, and reachability</span>
+<span class="text-zinc-500">$</span> sudo emisar doctor
+
+<span class="text-zinc-500"># 4. the packs and hashes this host will advertise</span>
+<span class="text-zinc-500">$</span> sudo emisar pack list</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Then, in the console: the runner shows online with the new version and its expected
+        actions (5), and one low-risk read-only action against it succeeds and lands in the
+        <.link navigate={~p"/docs/audit-and-siem"} class="text-brand-300 hover:text-brand-200">audit trail</.link>
+        (6). A run you can find in the audit trail is the completion condition — a green
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
+        alone only proves the host is ready, not that dispatch works end to end.
+      </p>
+
+      <.docs_h2 id="fleet">Roll through the fleet</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Repeat the same two steps — upgrade, then the full verification — in bounded batches, one
+        runner group at a time. Halt the batch and stop rolling when any of these happens:
+      </p>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            The installer exits non-zero. That host is already back on its previous binary; read
+            the output before you touch the next host.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar doctor</code>
+            reports a failed check, or the runner does not come back online within its usual
+            reconnect window.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            The advertised action set changed in a way the release notes did not describe, or a
+            pack lands as pending trust on the Packs page.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <.link navigate={~p"/docs/deployment"} class="text-brand-300 hover:text-brand-200">Production rollout</.link>
+        owns fleet shape and batch sizing;
+        <.link
+          navigate={~p"/docs/runners"}
+          class="text-brand-300 hover:text-brand-200"
+        >Runner fleet</.link>
+        owns groups, labels, and host-side removal.
+      </p>
+
+      <.docs_h2 id="bridges">Upgrade local bridges</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The bridge upgrades per workstation, on its own schedule. Its installer stages the new
+        binary beside the current one, verifies the checksum and reported version, hard-links the
+        old executable as a rollback, activates each install with a rename, re-verifies the
+        installed digests, and only then discards the backups — a failure anywhere rolls every
+        path back.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># replaces the emisar-mcp binary in place</span>
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install-mcp.sh | sudo bash
+
+<span class="text-zinc-500"># confirm the new version</span>
+<span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Client config and API key are untouched.</strong>
+            The installer replaces the binary; an existing emisar entry in a detected client config
+            is left as it is.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A running client keeps the binary it already loaded.</strong>
+            The client spawns the bridge as a child process, so replacing the file on disk does not
+            change the process already running. Restart the client to pick the new one up.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Then prove it works from the client.</strong>
+            Ask the agent to list runners or find an action. A discovery call that returns is the
+            completion condition; a version string alone does not prove the client relaunched the
+            bridge.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Claude.ai and ChatGPT reach the control plane directly over OAuth, so there is no bridge on
+        those connections and nothing to upgrade.
+        <.link
+          navigate={~p"/docs/keys"}
+          class="text-brand-300 hover:text-brand-200"
+        >API keys</.link>
+        owns the bridge's key handling and its version chip.
+      </p>
+
+      <.docs_h2 id="rollback">Return to a known-good release</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Going back is the same installer with the tag you wrote down, followed by the same
+        verification.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># runner — the release you were on before</span>
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --version &lt;known-good-version&gt; --packs ""
+
+<span class="text-zinc-500"># bridge — same idea, with its own release tag</span>
+<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --version &lt;known-good-version&gt;</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Two limits worth knowing before you rely on this. Only an immutable published release
+        installs — the installer refuses a release GitHub still reports as mutable. And the
+        dispatch-state preflight runs with the older binary you are installing: if it cannot read
+        the state a newer runner wrote, the installer refuses the swap and leaves the current
+        install running rather than handing you a crash-looping host.
+      </p>
+      <.docs_callout
+        kind={:note}
+        title="This is a return to a coordinated release, not a downgrade guarantee."
+      >
+        <p>
+          Before 1.0 there is no promise that an arbitrary older runner or bridge interoperates
+          with the current control plane. Go back to the release you were actually running against
+          this control plane — and if the portal has moved on since, say so when you open a support
+          request rather than reaching further back.
+        </p>
+      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Packs do not move with the binary in either direction. If the problem is an action's
+        behavior rather than the runner, the version to change is the pack's — see <.link
+          navigate={~p"/docs/pack-updates"}
+          class="text-brand-300 hover:text-brand-200"
+        >Roll out and roll back packs</.link>.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

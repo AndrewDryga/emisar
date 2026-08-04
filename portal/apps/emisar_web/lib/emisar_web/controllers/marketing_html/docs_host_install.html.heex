@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="host-install"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_host_install.html.heex"
       toc={[
         {"install", "The install command"},
         {"flags", "Flags and environment"},
@@ -152,7 +154,7 @@
               {"RUNNER_GROUP", "The cloud UI's auto-grouping key, written to runner.group. Defaults to the host's short hostname."},
               {"RUNNER_LABEL_<KEY>", "Bake a free-form runner label into config.yaml, e.g. RUNNER_LABEL_ROLE=web or RUNNER_LABEL_ENVIRONMENT=prod. Set as many as you like; the cloud UI filters and searches on them."},
               {"--packs LIST", "Install these packs during setup, e.g. --packs linux-core,docker."},
-              {"-y / --yes", "Skip the confirmation prompts for unattended installs. Requires EMISAR_PACKS set explicitly (even to empty)."},
+              {"-y / --yes", "Skip the confirmation prompts for unattended installs. Requires an explicit --packs LIST or EMISAR_PACKS (an empty value installs none)."},
               {"--version TAG", "Pin a specific release instead of latest."},
               {"--no-start", "Install everything but don't start the service yet — for image bakes."},
               {"--no-service", "Binary only: skip the service user, unit, and activation. For containers and CI — see Containers."}

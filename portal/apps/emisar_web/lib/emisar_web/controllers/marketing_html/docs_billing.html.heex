@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="billing"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_billing.html.heex"
       toc={[
         {"plans", "Plans and limits"},
         {"entitlements", "What each plan unlocks"},
@@ -117,7 +119,7 @@
           <span>
             <strong class="text-zinc-200">Audit export.</strong>
             Every plan keeps the full audit trail in the console; taking the data <em>out</em>
-            — the CSV download and the streaming NDJSON API a SIEM reads — is the paid surface. See <.link
+            — the CSV download and the NDJSON export API a SIEM polls — is the paid surface. See <.link
               navigate={~p"/docs/audit-and-siem"}
               class="text-brand-400 hover:text-brand-300"
             >audit &amp; SIEM</.link>.
@@ -254,8 +256,8 @@
         Retention prunes run daily, and both the plan change and every prune are recorded in the
         audit log itself.
       </p>
-      <.docs_callout kind={:tip} title="Ship to your SIEM ahead of the window.">
-        If you keep audit history longer than your plan's retention, stream it to your SIEM before
+      <.docs_callout kind={:tip} title="Ingest ahead of the window.">
+        If you keep audit history longer than your plan's retention, poll it into your SIEM before
         the horizon passes — then how long it's kept becomes your SIEM's policy, not ours. The
         <.link navigate={~p"/docs/audit-and-siem"}>export API</.link>
         is built for exactly this.

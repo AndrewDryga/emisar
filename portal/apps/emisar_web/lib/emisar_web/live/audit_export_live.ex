@@ -2,7 +2,7 @@ defmodule EmisarWeb.AuditExportLive do
   @moduledoc """
   SIEM export configuration — mint/revoke the admin-only `:audit_export`
   tokens and point a collector at `/api/audit`. Split off the audit log
-  itself: streaming CONFIG is a one-time admin task, not part of reading
+  itself: export CONFIG is a one-time admin task, not part of reading
   the trail, and it sat stranded below hundreds of rows there.
   """
   use EmisarWeb, :live_view
@@ -137,7 +137,7 @@ defmodule EmisarWeb.AuditExportLive do
       </:title>
 
       <.page_intro>
-        Stream audit events as NDJSON to your SIEM for independent, long-term
+        Your SIEM reads audit events as NDJSON from this endpoint, for independent, long-term
         retention. Mint a read-only export token, then point your collector at <code class="font-mono text-zinc-300">{@base_audit_url}</code>.
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
       </.page_intro>

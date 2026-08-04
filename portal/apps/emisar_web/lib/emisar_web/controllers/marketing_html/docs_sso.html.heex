@@ -237,12 +237,33 @@
         last active connection while the requirement remains on. Turn off Require SSO before
         retiring that last connection.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        It gates account browser access and new OAuth consent for every member, including owners.
+        Bearer credentials are a separate lifecycle: an MCP key, an audit-export token, the SCIM
+        bearer, and an already issued OAuth access token keep working, and enabling the requirement
+        revokes none of them. See
+        <.link
+          navigate={~p"/docs/authentication" <> "#enforcement"}
+          class="text-brand-300 hover:text-brand-200"
+        >what Require SSO covers</.link>
+        for the full boundary.
+      </p>
 
       <.docs_h3 id="rotate-secret">Rotate a client secret</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Create the replacement secret at your IdP, paste it into the connection, and save. The
         secret is write-only, so leaving the field blank keeps the existing value. Do not delete
-        the old IdP secret until a new sign-in succeeds through the saved connection.
+        the old IdP secret until a new sign-in succeeds through the saved connection. The same
+        sequence beside every other credential emisar issues is in <.link
+          navigate={~p"/docs/credentials" <> "#idp"}
+          class="text-brand-300 hover:text-brand-200"
+        >rotate and revoke credentials</.link>; if you believe the secret leaked rather than aged,
+        follow
+        <.link
+          navigate={~p"/docs/security-incidents" <> "#idp"}
+          class="text-brand-300 hover:text-brand-200"
+        >security incidents</.link>
+        instead.
       </p>
 
       <.docs_h3 id="move-provider">Move to another issuer or client</.docs_h3>
@@ -451,6 +472,13 @@
       </p>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Sign-in symptoms and their checks. If the symptom is somewhere else in the product, start
+        from <.link
+          navigate={~p"/docs/troubleshooting" <> "#identity"}
+          class="text-brand-300 hover:text-brand-200"
+        >troubleshooting</.link>, which routes each one to its owner page.
+      </p>
       <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
         <table class="w-full text-left text-sm">
           <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">

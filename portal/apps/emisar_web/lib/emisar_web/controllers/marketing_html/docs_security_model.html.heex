@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="security-model"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_security_model.html.heex"
       toc={[
         {"trust-boundary", "The trust boundary"},
         {"what-its-not", "What emisar is not"},
@@ -101,12 +103,13 @@
           <strong>Searchable cloud audit + hash-chained runner journal.</strong>
           Cloud-side, every mutation — dispatch, approval, runner state change,
           policy edit, sign-in — appends an account-scoped audit event. Those events
-          ship as NDJSON over <code>GET /api/audit</code>
+          are read as NDJSON from <code>GET /api/audit</code>
           — forward-only with keyset
           cursor pagination and RFC 5988 <code>Link</code>
           headers — gated on a read-only <strong>audit-export</strong>
-          token minted from the audit page. Point any
-          SIEM that speaks HTTP at it; that token reads events but never executes an action.
+          token minted from the audit page. It is a pull API: emisar never pushes, so a SIEM with a
+          cursor-aware HTTP input polls it directly and anything else polls through a collector.
+          That token reads events but never executes an action.
           Runner-side, every action
           attempt writes a JSONL line to <code>/var/log/emisar/events.jsonl</code>
           with a previous-line hash — that's the host-side
@@ -192,15 +195,83 @@
           The <code>user:</code>
           drop only works because the OS already permits it.
         </li>
+        <li>
+          <strong>Redaction is pattern-based, so it is not a guarantee.</strong>
+          A secret in a shape none of the rules match reaches the control plane in the run output.
+          Keep provider credentials in the runner environment rather than in arguments, and treat
+          masking as the second line, not the first.
+        </li>
+        <li>
+          <strong>There is no per-certificate revocation for signed dispatch.</strong>
+          A leaked leaf key stays usable until its certificate expires. Short lifetimes bound the
+          routine case; the immediate lever is removing the trusted CA from every runner, which is a
+          fleet operation, not a switch in the console.
+        </li>
+        <li>
+          <strong>Audit is evidence, not prevention.</strong>
+          The trail proves what happened; policy, scope, and trust are what stop it. And because
+          the export is a pull API, a stalled collector means your SIEM is blind while the control
+          plane keeps recording normally.
+        </li>
       </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        When one of these limits turns into an actual event — a leaked key, a pack hash you can't
+        explain, a host you no longer trust — the containment order that preserves evidence while it
+        revokes authority is <.link
+          navigate={~p"/docs/security-incidents"}
+          class="text-brand-400 hover:text-brand-300"
+        >security incidents</.link>.
+      </p>
 
       <.docs_h2 id="data-residency">Where your data lives</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The runner, its packs, and its local journal live on your hosts. emisar's control plane —
         the dashboard, the audit log, run history, and the MCP API — is a hosted service on <strong class="text-zinc-200">Google Cloud in the United States</strong>. Data is encrypted
         at rest with provider-managed keys and in transit with TLS, and the runner only ever dials
-        out, so nothing reaches back into your hosts. For the full posture — subprocessors, backups,
-        and how to verify a release yourself — see the
+        out, so nothing reaches back into your hosts. Which component owns which decision, and what
+        happens when one of them drops out, is <.link
+          navigate={~p"/docs/architecture"}
+          class="text-brand-400 hover:text-brand-300"
+        >architecture and failure behavior</.link>; this table is what is kept, where, and for how
+        long.
+      </p>
+      <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-800">
+        <table class="w-full min-w-[760px] text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">What</th>
+              <th class="px-4 py-3">Where it lives</th>
+              <th class="px-4 py-3">How long</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <%= for {what, where, how_long} <- [
+              {"Audit events", "Control plane, United States", "Your plan's window, stamped on each event when it is written — 7 days on Free, 90 on Team, 365 on Enterprise. A plan change applies to new events only."},
+              {"Run history and redacted output", "Control plane, United States", "The same account window as audit. Terminal runs and their progress events are pruned past it."},
+              {"Account, members, policies, trusted pack hashes, runbooks", "Control plane, United States", "Until you change or delete them."},
+              {"Bearer credentials we issue", "Control plane, as a hash only", "Until revoked or deleted. A database copy yields nothing replayable."},
+              {"Packs and the local event journal", "Your host", "Yours to rotate and retain; --purge deletes them with the runner."},
+              {"Signing keys", "Leaf in the operator's own MCP client, CA offline", "We never hold either. There is no per-certificate revocation list."},
+              {"Pack and provider credentials", "Your host's protected runner environment", "Keep them out of call arguments; the runner supplies them from its environment instead of sending them to the control plane."}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top font-medium text-zinc-200">{what}</td>
+                <td class="px-4 py-3 align-top leading-6">{where}</td>
+                <td class="px-4 py-3 align-top leading-6">{how_long}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Retention is a ceiling, not a promise to keep evidence for you: if you need it longer,
+        ingest it before the window closes —
+        <.link
+          navigate={~p"/docs/audit-and-siem" <> "#retention"}
+          class="text-brand-400 hover:text-brand-300"
+        >Audit &amp; SIEM</.link>
+        owns that. For the rest of the posture — subprocessors, backups, and how to verify a release
+        yourself — see the
         <.link href={~p"/security"} class="text-brand-400 hover:text-brand-300">
           security overview
         </.link>

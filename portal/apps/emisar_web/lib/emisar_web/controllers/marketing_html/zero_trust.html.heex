@@ -110,8 +110,8 @@
                  "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired — one click to allow or deny, recorded forever."},
                 {"Just-in-time / just-enough access", "Advanced",
                  "One-use approvals and scoped standing grants. The agent gets the capability for the task, not standing access that outlives it."},
-                {"Real-time streaming to SIEM", "Advanced",
-                 "NDJSON audit export over a dedicated read-only audit key with cursor pagination — your SIEM correlates emisar activity without ever holding a token that can execute an action."},
+                {"Continuous audit ingest by your SIEM", "Advanced",
+                 "NDJSON audit export over a dedicated read-only audit-export token with cursor pagination. emisar does not push: a SIEM with a cursor-aware HTTP input polls it directly, otherwise a collector polls and forwards — either way your SIEM correlates emisar activity without ever holding a token that can execute an action."},
                 {"Cryptographic non-origination — the platform can't act for you", "Advanced",
                  "A runner can be set to run only an action a real person signed in their own MCP client (Ed25519, key never on the platform). A compromised control plane can relay that signed request — it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform, not throttled. Opt-in per runner."}
               ] do %>

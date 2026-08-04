@@ -4,10 +4,12 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="mcp-reference"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_mcp_reference.html.heex"
       toc={[
         {"calling-the-endpoint", "Calling the endpoint"},
         {"protocol-methods", "Protocol methods"},
-        {"tools", "Fourteen fixed tools"},
+        {"tools", "Thirteen fixed tools"},
         {"discovery", "Discovery"},
         {"running-an-action", "Running an action"},
         {"operations", "Operations and recovery"},
@@ -280,6 +282,14 @@
             </tbody>
           </table>
         </div>
+
+        <p>
+          These codes are the contract. When you have a symptom instead of a code — the client
+          won't connect, the bridge reports itself outdated, a tool call is refused — start from <.link navigate={
+            ~p"/docs/troubleshooting#mcp"
+          }>troubleshooting</.link>, which routes back
+          here once it knows what you're looking at.
+        </p>
 
         <p>
           Every dispatch, approval, denial, and terminal result is recorded. See

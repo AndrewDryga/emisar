@@ -4,10 +4,13 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="deployment"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_deployment.html.heex"
       toc={[
         {"fleet-shape", "The shape of a production fleet"},
         {"phased-rollout", "Roll out in phases"},
         {"worked-examples", "Two worked examples"},
+        {"monitoring", "What to watch once it's live"},
         {"go-live-checklist", "Go-live checklist"}
       ]}
     >
@@ -175,10 +178,11 @@
           sessions killed, keys revoked — with no checklist. <.plan_note tier={:team} />
         </li>
         <li>
-          <strong class="text-zinc-200">Ship the audit to your SIEM.</strong>
+          <strong class="text-zinc-200">Ingest the audit into your SIEM.</strong>
           Mint an <code class="font-mono">audit-export</code>
-          token, point your collector at the NDJSON feed, and alert on the handful of events that
-          actually mean something (below) — see <.link
+          token and point a collector at the NDJSON export API — emisar doesn't push, so something
+          on your side polls it — then alert on the handful of events that actually mean something
+          (below) — see <.link
             navigate={~p"/docs/audit-and-siem"}
             class="text-brand-400 hover:text-brand-300"
           >audit &amp; SIEM</.link>. <.plan_note tier={:team} />
@@ -277,6 +281,87 @@
         </p>
       </div>
 
+      <.docs_h2 id="monitoring">What to watch once it's live</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Five signals cover a governed fleet. Each one has a place it's visible today and a
+        consequence if you ignore it — that consequence is the reason it's on the list, not the
+        metric itself.
+      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Runners online, and on which version.</strong>
+            The Runners page shows both. An offline runner cannot accept new dispatches; a queued
+            run ends as an error after the grace period if the host stays away, while an action
+            already executing may continue and settle after reconnect. Watch the version alongside
+            it: unsupported peers are warned about today and can be refused when compatibility
+            enforcement is enabled — see <.link
+              navigate={~p"/docs/upgrades" <> "#compatibility"}
+              class="text-brand-400 hover:text-brand-300"
+            >compatibility status</.link>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Failed, errored, and denied runs.</strong>
+            Failures are the fleet talking; denials are the policy talking. A rising denial rate
+            from one actor usually means a scope or ruleset no longer matches how people work —
+            fix the rule rather than the symptom.
+            <.link
+              navigate={~p"/docs/runs"}
+              class="text-brand-400 hover:text-brand-300"
+            >Runs &amp; history</.link>
+            owns the states.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">How long approvals wait.</strong>
+            A request nobody answers is an outage with a polite name: the run never dispatches and
+            the person who asked eventually works around you. Track the age of the oldest pending
+            request against whatever your on-call promises.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Pending trust and drifted packs.</strong>
+            New bytes on a runner are pending until someone trusts the exact hash, and a hash that
+            no longer matches blocks dispatch by design. Both are visible on the Packs page, and
+            both mean actions are unavailable until a human looks.
+            <.link
+              navigate={~p"/docs/pack-updates"}
+              class="text-brand-400 hover:text-brand-300"
+            >Roll out and roll back packs</.link>
+            owns the procedure.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Your audit collector's cursor.</strong>
+            The export is a pull API, so a stalled poller is silent — the console keeps recording
+            while your SIEM sees nothing. Alert on the cursor not advancing and on repeated failed
+            polls, and fix it before the oldest un-ingested event ages out of retention.
+            <.link
+              navigate={~p"/docs/audit-and-siem" <> "#health"}
+              class="text-brand-400 hover:text-brand-300"
+            >Audit &amp; SIEM</.link>
+            owns poller health.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Prove all five before you widen anything: run one bounded canary — a single low-risk,
+        read-only action on one non-critical runner — and confirm it succeeds, appears in the run
+        history, and lands in your SIEM through the collector rather than through the console. That
+        last step is the one people skip, and it's the only one that tests the whole path. Repeat it
+        after every runner upgrade and every pack rollout.
+      </p>
+
       <.docs_h2 id="go-live-checklist">Go-live checklist</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The list to walk before you point production at emisar — the same one a security reviewer
@@ -343,9 +428,10 @@
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>
-              Audit is streaming to your SIEM through an
+              A collector is polling the audit export API with an
               <code class="font-mono">audit-export</code>
-              token, with alerts on policy changes and admission blocks.
+              token, its cursor is advancing, and alerts are wired on policy changes and admission
+              blocks.
             </span>
           </li>
         </ul>

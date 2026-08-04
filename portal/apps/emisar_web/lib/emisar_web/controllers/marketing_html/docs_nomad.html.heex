@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="nomad"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_nomad.html.heex"
       toc={[
         {"system-job", "The system job"},
         {"visibility", "Driver and visibility"},
@@ -28,7 +30,8 @@
         stanza, passes <code class="font-mono">EMISAR_URL</code>
         and a <strong class="text-zinc-200">reusable enrollment key</strong>
         through the environment, and persists <code class="font-mono">/var/lib/emisar</code>
-        on a host volume so each node's runner keeps a stable identity across reschedules — the
+        on a host volume so each node's runner keeps its token and durable dispatch state across
+        reschedules — the
         <.link
           navigate={~p"/docs/containers" <> "#building-blocks"}
           class="text-brand-400 hover:text-brand-300"
@@ -51,7 +54,7 @@
       driver = <span class="text-brand-300">"raw_exec"</span>
 
       <span class="text-sky-300">artifact</span> &#123;
-        source = <span class="text-brand-300">"https://github.com/andrewdryga/emisar/releases/download/v&lt;version&gt;/emisar-&lt;version&gt;-linux-amd64.tar.gz"</span>
+        source = <span class="text-brand-300">"https://github.com/andrewdryga/emisar/releases/download/runner-v&lt;version&gt;/emisar-&lt;version&gt;-linux-amd64.tar.gz"</span>
       &#125;
 
       <span class="text-sky-300">config</span> &#123;

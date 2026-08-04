@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-cli"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_runner_cli.html.heex"
       toc={[
         {"running", "Running the CLI"},
         {"connect", "The connect daemon"},
@@ -86,7 +88,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             <%= for {what, path} <- [
               {"Config", "/etc/emisar/config.yaml"},
               {"Packs", "/etc/emisar/packs"},
-              {"Data dir (identity, dispatch log, signing nonces)", "/var/lib/emisar"},
+              {"Data dir (dispatch log, signing nonces)", "/var/lib/emisar"},
               {"Cached runner token", "/var/lib/emisar/token"},
               {"Events journal", "/var/log/emisar/events.jsonl"}
             ] do %>
@@ -312,7 +314,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <.docs_h2 id="diagnose">Diagnose and audit</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         When a runner won't connect or an action fails, these read-only verbs answer why without
-        opening a cloud session.
+        opening a cloud session. What each answer means, and which page owns the fix, is in <.link
+          navigate={~p"/docs/troubleshooting"}
+          class="text-brand-400 hover:text-brand-300"
+        >troubleshooting</.link>.
       </p>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[660px] text-left text-sm">
@@ -361,7 +366,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
         proves the on-host journal hasn't been edited in place, but root on the host can truncate the
         tail and re-chain it. The record that can't be forged from the host is the off-host cloud
-        audit — stream both and cross-reference them. See <.link
+        audit — carry both into your SIEM and cross-reference them. See <.link
           navigate={~p"/docs/audit-and-siem"}
           class="text-brand-400 hover:text-brand-300"
         >Audit &amp; SIEM</.link>.
@@ -455,7 +460,11 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         The binary is installed and upgraded by the same script; it isn't self-updating. Re-running
         the installer upgrades in place and preserves config and packs. It requires systemd on Linux
         (use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
-        for hosts without a real init).
+        for hosts without a real init). This section is the flag reference; running an upgrade
+        across a fleet — canary, verification, batches, rollback — is <.link
+          navigate={~p"/docs/upgrades"}
+          class="text-brand-400 hover:text-brand-300"
+        >upgrade runners and MCP bridges</.link>.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># install or upgrade in place (config + packs preserved)</span>
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash
@@ -519,13 +528,14 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </span>
         </li>
       </ul>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># remove the binary, service, cached token, and identity — keep config + journal</span>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># remove the binary, service, and cached token — keep config + journal</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
 <span class="text-zinc-500"># …or delete everything, including config, data, and logs</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         After uninstalling, delete the runner in the dashboard — its run history and audit events
-        survive the host. Removing a runner cleanly, including manual identity resets, is covered in <.link
+        survive the host. Removing a runner cleanly, and what changing its enrollment key does, is
+        covered in <.link
           navigate={~p"/docs/runners"}
           class="text-brand-400 hover:text-brand-300"
         >the runner fleet guide</.link>.

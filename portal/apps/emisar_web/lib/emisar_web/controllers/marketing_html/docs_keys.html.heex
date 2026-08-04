@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="keys"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_keys.html.heex"
       toc={[
         {"what-is-a-key", "What an MCP key is"},
         {"no-scope", "A key has no scope of its own"},
@@ -204,9 +206,9 @@
         page, that does one thing: read your
         account's events from the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/audit</code>
-        stream. It can't list runners, discover the catalog, or run an action — present it to the MCP
-        endpoint and emisar rejects it as the wrong key kind. An MCP key is the mirror image: it
-        drives tools but can't read the audit stream. Keeping them distinct means a log-shipping
+        export API. It can't list runners, discover the catalog, or run an action — present it to the
+        MCP endpoint and emisar rejects it as the wrong key kind. An MCP key is the mirror image: it
+        drives tools but can't read the audit trail. Keeping them distinct means a log-shipping
         credential sitting in your SIEM config can never be turned into one that dispatches actions.
         The export setup is in <.link
           navigate={~p"/docs/audit-and-siem"}

@@ -54,6 +54,13 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/runner-cli
     /docs/billing
     /docs/limits
+    /docs/upgrades
+    /docs/credentials
+    /docs/pack-updates
+    /docs/network-requirements
+    /docs/troubleshooting
+    /docs/security-incidents
+    /docs/architecture
     /changelog
     /about
     /support
@@ -294,6 +301,70 @@ defmodule EmisarWeb.MarketingStructuralTest do
         assert marketing_title(html) =~ "#{title} · emisar", "wrong legal title on #{route}"
         assert html =~ ~s(<link rel="canonical" href="https://emisar.dev#{route}">)
       end
+    end
+  end
+
+  describe "docs page shell" do
+    test "every docs TOC anchor resolves to a section id on its own page", %{conn: conn} do
+      # `docs_layout` renders the "On this page" rail from the page's `toc`
+      # list; an entry whose id has no matching heading scrolls nowhere. The
+      # route list is DocsNav itself, so a new page inherits the check.
+      for page <- EmisarWeb.DocsNav.flat() do
+        html = conn |> get(page.path) |> html_response(200)
+
+        anchors =
+          ~r/data-toc-link="([^"]+)"/
+          |> Regex.scan(html, capture: :all_but_first)
+          |> List.flatten()
+
+        for anchor <- anchors do
+          assert html =~ ~s(id="#{anchor}"),
+                 "#{page.path} TOC anchor ##{anchor} has no section id"
+        end
+      end
+    end
+
+    test "every docs page carries a maintenance footer editing its own template", %{conn: conn} do
+      # `updated` + `source_path` are what render the review line and the
+      # "Suggest a change" edit link. The edit URL is only useful if it opens
+      # the template that actually rendered the page, so the path is resolved
+      # on disk and checked for this page's own `current` slug rather than
+      # matched against the GitHub prefix alone.
+      edit_link = ~r{https://github\.com/andrewdryga/emisar/edit/main/([^"]+)"}
+      repo_root = Path.expand("../../../../..", __DIR__)
+
+      for page <- EmisarWeb.DocsNav.flat() do
+        html = conn |> get(page.path) |> html_response(200)
+
+        assert html =~ "Suggest a change", "#{page.path}: no edit link"
+        assert html =~ "Last reviewed", "#{page.path}: no review date"
+
+        assert [source_path] = Regex.run(edit_link, html, capture: :all_but_first),
+               "#{page.path}: no GitHub edit link"
+
+        template = Path.join(repo_root, source_path)
+
+        assert File.exists?(template),
+               "#{page.path}: source_path #{source_path} is not a file in the repository"
+
+        assert File.read!(template) =~ ~s(current="#{page.slug}"),
+               "#{page.path}: source_path #{source_path} renders a different docs page"
+      end
+    end
+
+    test "docs_layout requires the maintenance attrs, so no page can omit them" do
+      # Compilation is the real enforcement — a `<.docs_layout>` missing either
+      # attr fails the build. This pins the declaration so the requirement
+      # can't be relaxed back to a silently-skippable default.
+      required =
+        EmisarWeb.DocsComponents.__components__()
+        |> get_in([:docs_layout, :attrs])
+        |> Enum.filter(& &1.required)
+        |> Enum.map(& &1.name)
+        |> Enum.sort()
+
+      assert :updated in required
+      assert :source_path in required
     end
   end
 

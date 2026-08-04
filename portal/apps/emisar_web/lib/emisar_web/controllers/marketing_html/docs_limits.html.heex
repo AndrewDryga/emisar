@@ -2,7 +2,11 @@
   <.marketing_nav current_user={@current_user} current={:docs} />
 
   <section class="py-12 sm:py-16">
-    <.docs_layout current="limits">
+    <.docs_layout
+      current="limits"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_limits.html.heex"
+    >
       <.docs_header current="limits">
         <:dek>
           The caps emisar enforces so one noisy action, one busy agent, or one aggressive export
@@ -10,6 +14,10 @@
           before you build against them.
         </:dek>
       </.docs_header>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Every cap says what you'll actually observe when you reach it. The name links to the page
+        that owns the behavior — the procedure lives there, not here.
+      </p>
 
       <div class="mt-8 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full border-collapse text-left text-sm">
@@ -22,7 +30,12 @@
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
             <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">Action output</td>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link
+                  navigate={~p"/docs/action-packs"}
+                  class="text-brand-300 hover:text-brand-200"
+                >Action output</.link>
+              </td>
               <td class="px-4 py-3 align-top leading-6">
                 Set per action in the pack, separately for stdout and stderr — 64 bytes to 16 MiB
                 across the shipped catalog
@@ -34,7 +47,7 @@
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
-                Live output in the dashboard
+                <.link navigate={~p"/docs/runs"} class="text-brand-300 hover:text-brand-200">Live output in the dashboard</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">The most recent 500 progress lines</td>
               <td class="px-4 py-3 align-top leading-6">
@@ -43,7 +56,12 @@
               </td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">MCP list pages</td>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link
+                  navigate={~p"/docs/mcp-reference"}
+                  class="text-brand-300 hover:text-brand-200"
+                >MCP list pages</.link>
+              </td>
               <td class="px-4 py-3 align-top leading-6">
                 15 per page by default (up to 50;
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">recent_runs</code>
@@ -57,7 +75,12 @@
               </td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">MCP long-poll wait</td>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link
+                  navigate={~p"/docs/mcp-reference"}
+                  class="text-brand-300 hover:text-brand-200"
+                >MCP long-poll wait</.link>
+              </td>
               <td class="px-4 py-3 align-top leading-6">Up to 60 seconds per call</td>
               <td class="px-4 py-3 align-top leading-6">
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>
@@ -68,7 +91,10 @@
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
-                MCP structured output
+                <.link
+                  navigate={~p"/docs/mcp-reference"}
+                  class="text-brand-300 hover:text-brand-200"
+                >MCP structured output</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 8 KiB per run, shared down when one response carries several
@@ -80,7 +106,12 @@
               </td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">MCP response size</td>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link
+                  navigate={~p"/docs/mcp-reference"}
+                  class="text-brand-300 hover:text-brand-200"
+                >MCP response size</.link>
+              </td>
               <td class="px-4 py-3 align-top leading-6">512 KiB per tool result</td>
               <td class="px-4 py-3 align-top leading-6">
                 Tools shrink themselves first — fewer rows, shorter output tails. A result that
@@ -90,7 +121,9 @@
               </td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">Runbooks</td>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link navigate={~p"/docs/runbooks"} class="text-brand-300 hover:text-brand-200">Runbooks</.link>
+              </td>
               <td class="px-4 py-3 align-top leading-6">
                 64 KiB definition; 32 inputs, 16 stages, 32 steps, 16 target refs per step, and 256
                 resolved items. A wait polls every 5 seconds to 1 hour for 2 to 100 attempts; a
@@ -101,7 +134,9 @@
               </td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">Runbook execution</td>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link navigate={~p"/docs/runbooks"} class="text-brand-300 hover:text-brand-200">Runbook execution</.link>
+              </td>
               <td class="px-4 py-3 align-top leading-6">
                 1 MiB frozen plan; 24 hours end to end, waits included
               </td>
@@ -111,19 +146,47 @@
               </td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">Audit export</td>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link
+                  navigate={~p"/docs/audit-and-siem"}
+                  class="text-brand-300 hover:text-brand-200"
+                >Audit export</.link>
+              </td>
               <td class="px-4 py-3 align-top leading-6">100 events per page, 1,000 maximum</td>
               <td class="px-4 py-3 align-top leading-6">
-                Cursor-paginated forward; page with the cursor each response returns.
+                A full page carries
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link: rel="next"</code>
+                and there may be more right now; keep paging from
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
+                while it does.
               </td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">Audit retention</td>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link
+                  navigate={~p"/docs/audit-and-siem"}
+                  class="text-brand-300 hover:text-brand-200"
+                >Audit export requests</.link>
+              </td>
+              <td class="px-4 py-3 align-top leading-6">60 requests a minute per token</td>
+              <td class="px-4 py-3 align-top leading-6">
+                Further requests answer <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">429</code>. A poller must hold
+                its cursor and retry rather than treat the failure as an empty page.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                <.link
+                  navigate={~p"/docs/audit-and-siem" <> "#retention"}
+                  class="text-brand-300 hover:text-brand-200"
+                >Audit retention</.link>
+              </td>
               <td class="px-4 py-3 align-top leading-6">
                 7 days on Free, 90 on Team, 365 on Enterprise
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Fixed per event when it's written; stream to your SIEM to keep it longer.
+                The horizon is fixed per event when it's written, and terminal runs and their
+                progress events follow the same window. Ingest into your SIEM to keep it longer.
               </td>
             </tr>
           </tbody>

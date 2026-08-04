@@ -116,8 +116,9 @@
 
   <h2 id="rights">5. Your rights</h2>
   <p>
-    You can export your data at any time. Audit events stream out of the <code>/api/audit</code>
-    endpoint as NDJSON for any SIEM that speaks HTTP, using any read-only audit API key. For a
+    You can export your data at any time. Audit events come out of the <code>/api/audit</code>
+    endpoint as NDJSON — poll it from any SIEM or collector that speaks HTTP, using a read-only
+    audit-export token. For a
     full account snapshot (audit + packs + configuration), email
     <a href={EmisarWeb.MailTo.support()}>support@emisar.dev</a>
     and we'll generate it for you. We're working on a one-click export in the dashboard.

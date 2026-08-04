@@ -1,0 +1,391 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="architecture"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_architecture.html.heex"
+      toc={[
+        {"components", "The four pieces"},
+        {"flow", "One action, end to end"},
+        {"ownership", "Who owns which decision"},
+        {"state", "What each component stores"},
+        {"failure", "When something drops out"},
+        {"delivery", "Delivery, and what it does not promise"},
+        {"approvals", "What a wait revalidates"},
+        {"boundary", "The hosted boundary"}
+      ]}
+    >
+      <.docs_header current="architecture">
+        <:dek>
+          Which component decides what, what crosses each boundary, and exactly what happens when
+          one of them disappears while work is in flight.
+        </:dek>
+      </.docs_header>
+
+      <.docs_prerequisites>
+        <:item>
+          Nothing installed. This page is reference reading — for a security review, a design
+          discussion, or the moment something failed and you need to know what should have
+          happened.
+        </:item>
+        <:item>
+          A rough picture of the product from <.link
+            navigate={~p"/how-it-works"}
+            class="text-brand-300 hover:text-brand-200"
+          >How it works</.link>, if this is
+          your first page.
+        </:item>
+      </.docs_prerequisites>
+
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        Everything below is behavior the wire protocol, the MCP contract, and the runner's own
+        lifecycle actually implement. Where a boundary is honest about what it cannot promise, that
+        is stated in the same paragraph rather than a footnote. Threats, guarantees, and
+        limitations are a different page —
+        <.link navigate={~p"/docs/security-model"} class="text-brand-300 hover:text-brand-200">Security model</.link>
+        owns those; this page owns topology, state, and failure.
+      </p>
+
+      <.docs_h2 id="components">The four pieces</.docs_h2>
+      <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
+        <table class="w-full min-w-[760px] text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Component</th>
+              <th class="px-4 py-3">Where it runs</th>
+              <th class="px-4 py-3">What it is responsible for</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <%= for {component, where, responsibility} <- [
+              {"Control plane",
+               "Hosted by us",
+               "Authenticates every caller, applies account and runner scope, pins the trusted pack version and hash, evaluates policy, runs approvals, composes runbooks, and keeps the searchable audit history."},
+              {"Runner",
+               "Your host, one per host, outbound only",
+               "Loads and hashes local packs, decides what this host advertises, re-validates every argument, executes, redacts output before it leaves, and writes a hash-chained local journal."},
+              {"MCP bridge",
+               "Optional, on the operator's workstation as a child process of the LLM client",
+               "Translates the client's stdio JSON-RPC into HTTPS calls to the control plane. It holds the API key and, where signing is used, the operator's signing key. It implements no policy and no action behavior."},
+              {"Action packs",
+               "Versioned artifacts, installed on each runner from a registry",
+               "The executable contract: which actions exist, their arguments and limits, the exact program each one runs, and its redaction rules. A trusted content hash is the unit you review."}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top font-semibold text-zinc-100">{component}</td>
+                <td class="px-4 py-3 align-top leading-6">{where}</td>
+                <td class="px-4 py-3 align-top leading-6">{responsibility}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        One connection carries all of it: the runner dials out over TLS and keeps a websocket open.
+        There is no listener on the runner host and nothing to expose — the ports and hosts a
+        runner needs are in <.link
+          navigate={~p"/docs/network-requirements"}
+          class="text-brand-300 hover:text-brand-200"
+        >Network requirements</.link>. Cloud LLM clients reach the control plane directly over
+        OAuth and run no bridge at all.
+      </p>
+
+      <.docs_h2 id="flow">One action, end to end</.docs_h2>
+      <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
+        <li>
+          <strong class="text-zinc-200">The runner decides what it offers.</strong>
+          At boot and on every reload it validates its installed packs, computes their content
+          hashes, applies its local admission rules, and advertises the resulting catalog upward.
+        </li>
+        <li>
+          <strong class="text-zinc-200">A caller asks for one declared action.</strong>
+          The control plane authenticates them — an operator session, an API key, or an OAuth
+          client — and narrows what they can see to their account and their runner scope.
+        </li>
+        <li>
+          <strong class="text-zinc-200">The control plane resolves the exact pack.</strong>
+          The model-facing contract comes from the trusted manifest for one exact hash, not from
+          what a runner claims. A runner whose advertisement disagrees is excluded from the
+          targets.
+        </li>
+        <li>
+          <strong class="text-zinc-200">Policy decides.</strong>
+          Allow, deny, or require a human. A denial ends the run before any host is contacted; a
+          require-approval decision parks it until an approver acts.
+        </li>
+        <li>
+          <strong class="text-zinc-200">One dispatch goes down the connection.</strong>
+          It carries the action id, the exact argument bytes, the reason, the operation id, the
+          expected pack hash, and — where the operator's client signs — their signed attestation.
+        </li>
+        <li>
+          <strong class="text-zinc-200">The runner decides again.</strong>
+          It re-hashes the pack, checks its own admission rules, verifies the signature where it
+          enforces one, re-validates every argument against the declared schema, clamps the call's
+          options to the action's envelope, and renders the pack-authored program.
+        </li>
+        <li>
+          <strong class="text-zinc-200">It executes, redacts, and reports.</strong>
+          Output is bounded and redacted on the host before any chunk is sent. The runner writes
+          its local journal line, streams progress, and sends one terminal result, which the
+          control plane stores as the searchable record.
+        </li>
+      </ol>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The two decision points are the shape of the whole system: the control plane decides
+        whether something <em>should</em>
+        run, and the runner decides whether it <em>will</em>. Neither can talk the other into
+        skipping its own check.
+      </p>
+
+      <.docs_h2 id="ownership">Who owns which decision</.docs_h2>
+      <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
+        <table class="w-full min-w-[880px] text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Decision or data</th>
+              <th class="px-4 py-3">Owner</th>
+              <th class="px-4 py-3">What that means in practice</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <%= for {subject, owner, meaning} <- [
+              {"Who the caller is", "Control plane",
+               "Sessions, API keys, OAuth clients, and runner tokens all authenticate here. Every bearer credential is stored hashed."},
+              {"Which hosts a person or key may touch", "Control plane",
+               "Runner scope narrows the catalog itself, so an out-of-scope host is invisible rather than refused."},
+              {"Which pack version and hash is trusted", "Control plane",
+               "Trust binds one exact content hash. Installing bytes on a host does not trust them."},
+              {"Allow, deny, or ask a human", "Control plane",
+               "Policy is default-deny: no matching rule means the dispatch is refused."},
+              {"What this host will advertise or run at all", "Runner",
+               "Local admission filters by action id and a risk ceiling. A rule in the host's config overrides anything the control plane asks for."},
+              {"Whether the arguments are valid", "Both, in that order",
+               "The control plane validates before it dispatches; the runner re-validates against the declared schema immediately before execution."},
+              {"What OS privileges an action gets", "You, on the host",
+               "Through the runner's service user and whatever sudo, capabilities, or per-action user you configured. emisar does not sandbox an action from the host."},
+              {"The raw output bytes", "Runner, and they stay there",
+               "Redaction runs on the host before a chunk is sent. The control plane only ever receives the redacted stream."},
+              {"The searchable fleet history", "Control plane",
+               "The durable record of what ran, who asked, which rule matched, and what came back."},
+              {"The local forensic record", "Runner",
+               "A hash-chained JSONL journal per host, appended to and never rewritten by the runner."}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top font-semibold text-zinc-100">{subject}</td>
+                <td class="px-4 py-3 align-top leading-6">{owner}</td>
+                <td class="px-4 py-3 align-top leading-6">{meaning}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <.docs_h2 id="state">What each component stores</.docs_h2>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">The control plane</strong>
+            holds your account and members, policies and approvals, the trusted pack references and
+            their hashes, runbooks, every run with its redacted output, and the audit trail. Every
+            bearer credential it issues is stored as a hash, so a database copy yields nothing
+            replayable.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A runner</strong>
+            holds its own long-lived token, its durable dispatch state, the packs installed on that
+            host, the nonce store it needs when it enforces signed dispatch, and the local journal.
+            The dispatch and nonce state is what makes a replayed dispatch fail rather than execute
+            twice — and only one runner process may own it at a time.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">The bridge</strong>
+            holds the operator's API key in their own config directory, plus the signing key and
+            certificate when signed dispatch is in use. It keeps no history and no policy.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A registry</strong>
+            holds immutable published pack artifacts. Distribution and trust stay separate on
+            purpose: fetching bytes from a registry is not a decision to run them.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Residency, retention windows, and what we deliberately never store are in <.link
+          navigate={~p"/docs/security-model"}
+          class="text-brand-300 hover:text-brand-200"
+        >Security model</.link>.
+      </p>
+
+      <.docs_h2 id="failure">When something drops out</.docs_h2>
+      <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
+        <table class="w-full min-w-[900px] text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">What happens</th>
+              <th class="px-4 py-3">What the system does</th>
+              <th class="px-4 py-3">What you do</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <%= for {event, behavior, response} <- [
+              {"The control plane is unreachable before a dispatch",
+               "Nothing new is authorized, created, or sent — there is no offline dispatch path. An action already executing on a runner keeps running, and its result is delivered when the connection returns.",
+               "Wait. No cleanup is needed for work that had not been dispatched."},
+              {"The runner is disconnected before its dispatch",
+               "Nothing executes. The run waits and is delivered as soon as that runner reconnects and re-advertises. If the host is still gone after a short grace window, the sweep ends the run as Error rather than leaving it queued.",
+               "Bring the host back and dispatch again through the normal path. Nothing is retried behind your back."},
+              {"The network drops while an action is running",
+               "The runner process is still alive, so the child process keeps running. The runner reconnects with backoff, re-advertises, and replays its progress and terminal result until the control plane acknowledges them.",
+               "Nothing. The run settles on its real outcome once the connection is back."},
+              {"The runner process or its host dies mid-execution",
+               "The child may have completed, may still be winding down, or may have been terminated with the runner or host. If the terminal result was not durable, the runner reports execution_outcome_unknown after restart and never executes that dispatch again automatically.",
+               "Check the target system before you re-run. The side effect happened outside emisar's control, and only you can tell whether it landed."},
+              {"The LLM client cancels, or the bridge disconnects",
+               "An operation the control plane already admitted keeps going. Cancellation stops the bridge's wait and suppresses its reply; closing the client's input lets already-admitted requests finish.",
+               "Recover by operation id, with the same credential lineage that made the call. Never repeat the mutation because the response was lost."},
+              {"An approval waits while the fleet changes",
+               "The decision is rechecked against current facts, and the send rechecks them again. A fact that moved makes the approval fail rather than dispatch something else.",
+               "Read the checks below, fix what moved, and dispatch again."},
+              {"A pack changes after a runbook execution started",
+               "The execution runs the steps and exact pack references frozen at preflight. Later pack changes do not rewrite a frozen plan; a frozen fact that is no longer valid halts the execution instead of quietly substituting another.",
+               "Re-run the runbook once the fleet is where you want it."},
+              {"A runner or bridge is older than the supported minimum",
+               "It is classified and surfaced as unsupported. Enforcement is a deployment-level switch and is off today, so an unsupported peer is warned about rather than refused; a version that cannot be parsed is never blocked.",
+               "Upgrade it. Before 1.0 the components are released together and are not cross-version tested."}
+            ] do %>
+              <tr>
+                <td class="px-4 py-3 align-top font-semibold text-zinc-100">{event}</td>
+                <td class="px-4 py-3 align-top leading-6">{behavior}</td>
+                <td class="px-4 py-3 align-top leading-6">{response}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Upgrading a fleet and its bridges — including what a binary upgrade interrupts and how to
+        get back to a known-good release — is <.link
+          navigate={~p"/docs/upgrades"}
+          class="text-brand-300 hover:text-brand-200"
+        >Upgrade runners and MCP bridges</.link>. What
+        each run status means, and how to tell a real failure from a gate, is <.link
+          navigate={~p"/docs/runs"}
+          class="text-brand-300 hover:text-brand-200"
+        >Runs &amp; history</.link>; starting from a
+        symptom instead is <.link
+          navigate={~p"/docs/troubleshooting"}
+          class="text-brand-300 hover:text-brand-200"
+        >Troubleshooting</.link>.
+      </p>
+
+      <.docs_h2 id="delivery">Delivery, and what it does not promise</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Messages between a runner and the control plane are delivered at least once. A result is
+        replayed across reconnects until it is acknowledged, and a lost acknowledgement can produce
+        a duplicate — so the control plane consumes them idempotently: it applies neither the
+        output nor the terminal state a second time, and a delivery retry of the same dispatch
+        returns the recorded state rather than starting a second execution.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        That is idempotent handling of duplicates, not a promise that an action executes exactly
+        once. The honest boundary is the one in the table above: when a host dies between starting
+        a process and durably recording its outcome, nobody — not the runner, not the control plane
+        — can tell you whether the side effect landed. emisar says so with
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
+        and refuses to guess by re-running it.
+      </p>
+
+      <.docs_h2 id="approvals">What a wait revalidates</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        An approval can sit for hours, and the fleet moves underneath it. When the approver decides,
+        these facts are checked again before the run is released, and the ones that guard delivery
+        are checked once more when it is actually sent:
+      </p>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            The run is still parked and still approvable — a cancellation or an expiry in the
+            meantime makes the approval fail rather than resurrect it.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            The pack hash currently trusted for that runner and action still matches the hash frozen
+            on the run, and the action's program is still available on that host. A trust decision
+            that moved underneath the wait stops the dispatch instead of shipping different bytes
+            than the approver saw.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            The account is still active, the target runner still exists and is active, the
+            membership that initiated the run is still active and still has that runner in scope,
+            and the API key behind it — if there was one — is still usable.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            For a signed run, the original attestation is still inside its freshness window and its
+            certificate's validity window. An approved run is re-dispatched with the signature it
+            was created with, so a slow approval can outlive it — set both comfortably above your
+            approval turnaround, as
+            <.link
+              navigate={~p"/docs/signed-dispatch"}
+              class="text-brand-300 hover:text-brand-200"
+            >Signed dispatch</.link>
+            describes.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        These are stop conditions, not a second policy evaluation: the decision the approver made
+        is the decision that stands, and what is rechecked is whether it can still be carried out
+        as approved. Approval rules, expiry, and standing grants are owned by <.link
+          navigate={~p"/docs/policies-and-approvals"}
+          class="text-brand-300 hover:text-brand-200"
+        >Policies &amp; approvals</.link>.
+      </p>
+
+      <.docs_h2 id="boundary">The hosted boundary</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The control plane is ours to run, and there is nothing for you to upgrade there — shipped
+        changes land in the <.link
+          navigate={~p"/changelog"}
+          class="text-brand-300 hover:text-brand-200"
+        >changelog</.link>. The components you do own —
+        runners, bridges, and packs — move on your schedule. The repository contains deployable
+        control-plane code for evaluation, but supported self-hosted and air-gapped deployments are
+        not generally available today.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        What that means for a review: the hosts and their privileges stay yours, raw action output
+        never leaves them, and action data crosses the boundary as a dispatch going down and a
+        redacted result coming back. Catalog advertisements, heartbeats, and acknowledgements share
+        the same outbound connection. The threat model behind that boundary, including what it
+        deliberately does not defend against, is in <.link
+          navigate={~p"/docs/security-model"}
+          class="text-brand-300 hover:text-brand-200"
+        >Security model</.link>.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

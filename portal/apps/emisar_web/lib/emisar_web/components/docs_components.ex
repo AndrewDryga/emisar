@@ -18,8 +18,14 @@ defmodule EmisarWeb.DocsComponents do
   """
   attr :current, :string, required: true
   attr :toc, :list, default: []
-  attr :updated, :string, default: nil
-  attr :source_path, :string, default: nil
+
+  attr :updated, :string,
+    required: true,
+    doc: "the date this page's claims were last checked against the implementation"
+
+  attr :source_path, :string,
+    required: true,
+    doc: "this template's repository-relative path, which the edit link points at"
 
   attr :evidence, :string,
     default: nil,
@@ -63,7 +69,6 @@ defmodule EmisarWeb.DocsComponents do
         <div class="min-w-0 max-w-2xl [&_p]:leading-7 [&_li]:leading-7">
           {render_slot(@inner_block)}
           <.docs_maintenance
-            :if={@updated && @source_path}
             updated={@updated}
             evidence={@evidence}
             source_path={@source_path}
@@ -100,13 +105,15 @@ defmodule EmisarWeb.DocsComponents do
   attr :evidence, :string, default: nil
   attr :source_path, :string, required: true
 
-  # A page whose claim rests on a real check states that check instead of the
-  # review date — "verified against a live org" and "reviewed" are different
-  # promises, and only the guide's owner knows which one it earned.
+  # Provider evidence and editorial review are different promises. Keep both
+  # visible so a live-org certification date never masquerades as page freshness.
   defp docs_maintenance(assigns) do
     ~H"""
     <div class="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-5 text-sm text-zinc-400">
-      <p>{@evidence || "Last reviewed #{@updated}"}</p>
+      <div>
+        <p>Last reviewed {@updated}</p>
+        <p :if={@evidence} class="mt-1 text-xs text-zinc-500">{@evidence}</p>
+      </div>
       <a
         href={"https://github.com/andrewdryga/emisar/edit/main/" <> @source_path}
         target="_blank"
@@ -123,18 +130,31 @@ defmodule EmisarWeb.DocsComponents do
 
   defp docs_nav_groups(assigns) do
     ~H"""
-    <div :for={{{label, pages}, group_index} <- Enum.with_index(DocsNav.groups())}>
+    <div :for={{group, group_index} <- Enum.with_index(DocsNav.groups())}>
       <p class={[
         "font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500",
         if(group_index == 0, do: "mt-0", else: "mt-8")
       ]}>
-        {label}
+        {group.label}
       </p>
-      <ul class="mt-3 space-y-0.5">
-        <li :for={page <- pages}>
-          <.docs_nav_link page={page} current={@current} />
-        </li>
-      </ul>
+      <%!-- A subgroup label is wayfinding only — a quieter member of the group
+           label's family, never a link and never a breadcrumb level. --%>
+      <div :for={{section, section_index} <- Enum.with_index(group.sections)}>
+        <p
+          :if={section.label}
+          class={[
+            "px-2.5 font-mono text-[10px] font-medium uppercase tracking-wide text-zinc-500",
+            if(section_index == 0, do: "mt-3", else: "mt-5")
+          ]}
+        >
+          {section.label}
+        </p>
+        <ul class={["space-y-0.5", if(section.label, do: "mt-1.5", else: "mt-3")]}>
+          <li :for={page <- section.pages}>
+            <.docs_nav_link page={page} current={@current} />
+          </li>
+        </ul>
+      </div>
     </div>
     """
   end

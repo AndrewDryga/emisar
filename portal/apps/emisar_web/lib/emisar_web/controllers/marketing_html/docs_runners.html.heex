@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runners"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_runners.html.heex"
       toc={[
         {"groups-labels", "Groups and labels"},
         {"enrollment-keys", "Enrollment keys"},
@@ -137,6 +139,21 @@ execution:
         changed pack hash lands as <strong class="text-zinc-200">pending</strong> on the Packs
         page until someone trusts it.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Those are the two commands. Rolling them across a fleet — canary, verification, batches, and
+        the way back — is
+        <.link
+          navigate={~p"/docs/upgrades"}
+          class="text-brand-400 hover:text-brand-300"
+        >upgrade runners and MCP bridges</.link>
+        for the binary and
+        <.link
+          navigate={~p"/docs/pack-updates"}
+          class="text-brand-400 hover:text-brand-300"
+        >roll out and roll back packs</.link>
+        for pack bytes. A binary upgrade never moves packs, and a pack update never moves the
+        binary.
+      </p>
 
       <.docs_h2 id="toolbox">The host-side toolbox</.docs_h2>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> journalctl -u emisar -f          <span class="text-zinc-500"># service logs</span>
@@ -159,6 +176,14 @@ execution:
       </p>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The four host-side failures you'll actually meet. To start from a symptom anywhere else —
+        a run that won't dispatch, an LLM client that can't connect, sign-in or directory sync, a
+        poller that stopped — use <.link
+          navigate={~p"/docs/troubleshooting"}
+          class="text-brand-400 hover:text-brand-300"
+        >troubleshooting</.link>, which routes each one to its owner page.
+      </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -220,6 +245,16 @@ execution:
         journal, configuration, and
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>
         secrets too, so export the journal first if you keep host-side forensics.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        That is the routine retirement. If you are removing the host because you no longer trust it,
+        the order changes — evidence first, then containment — and deleting the runner is terminal
+        where disabling is not. Follow
+        <.link
+          navigate={~p"/docs/security-incidents" <> "#runner-host"}
+          class="text-brand-400 hover:text-brand-300"
+        >security incidents</.link>
+        instead.
       </p>
 
       <.docs_h3 id="changing-enrollment-key">Changing the enrollment key</.docs_h3>

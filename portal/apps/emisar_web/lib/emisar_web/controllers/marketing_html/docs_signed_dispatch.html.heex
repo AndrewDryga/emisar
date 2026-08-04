@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="signed-dispatch"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_signed_dispatch.html.heex"
       toc={[
         {"how-it-works", "How it works"},
         {"turn-on", "Turn it on"},
@@ -70,9 +72,10 @@
         (a group or labels). The
         exact runner set is bound into every v4 signature with generation-bound refs shaped as
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">name~sha256-prefix</code>
-        — the suffix comes from the runner's durable local id, so a reinstalled runner is a new
-        <em>generation</em>
-        even under the same name, and an old signature can't be replayed onto it.
+        — the suffix is derived from the runner's own external identity (its hostname, or the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+        you pinned), so a replacement host is a new <em>generation</em>
+        even under a reused display name, and an old signature can't be replayed onto it.
         Certificate scope is an independent, coarser group/label ceiling asserted by the CA and
         matched against the runner's local identity.
       </.docs_callout>

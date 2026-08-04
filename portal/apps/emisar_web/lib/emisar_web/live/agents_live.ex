@@ -832,7 +832,7 @@ defmodule EmisarWeb.AgentsLive do
     >
       <:title>
         <%!-- The connect flow is a title-row CTA (the Runners "Connect a runner" /
-             audit "Stream to SIEM" pattern) — except while the inline panel IS
+             audit "SIEM export" pattern) — except while the inline panel IS
              the page (onboarding / a secret reveal), where a second CTA to the
              same flow would just duplicate it. --%>
         <%= if @live_action == :connect do %>

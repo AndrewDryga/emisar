@@ -4,6 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="autoscaling-fleets"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_autoscaling_fleets.html.heex"
       toc={[
         {"model", "How it works"},
         {"key", "Create a reusable key"},
@@ -164,29 +166,32 @@ curl -sSL https://emisar.dev/install.sh \
 
       <.docs_h2 id="identity">A new runner each boot</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A runner's identity is a UUID it writes under
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>
-        the first time it starts. A disposable instance with an ephemeral disk has none, so it mints
-        a fresh one and registers as a <strong class="text-zinc-200">new</strong>
-        runner every boot. That's the shape of an ephemeral fleet — scaling out by ten gives
-        you ten new runners, not ten reconnects — and it's fine. Two things follow from it:
+        A runner's identity is its hostname, unless you pin
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+        yourself. A scale-out instance boots with a hostname the group generated for it, so it
+        registers as a <strong class="text-zinc-200">new</strong>
+        runner; a reboot keeps the hostname and reconnects the same one. That's the shape of an
+        ephemeral fleet — scaling out by ten gives you ten new runners, not ten reconnects — and
+        it's fine. Two things follow from it:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Never bake an identity into an image.</strong>
-            If you install on a build host and snapshot its <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>, every
-            instance launched from that image claims the same identity — and emisar rejects the
-            second one to connect as a cloned data directory.
+            <strong class="text-zinc-200">Never bake a credential into an image.</strong>
+            The runner writes the per-runner token it gets at first connect into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>, so a build
+            host you snapshot after it enrolled ships one runner's credential to every instance
+            launched from that image. Build the image with
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>
+            and let each instance enroll on its own boot.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Want a stable id?</strong>
-            On instances that persist — or where you want one runner to map to one machine across
-            reboots — pin <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+            <strong class="text-zinc-200">Want an id that isn't the hostname?</strong>
+            Where the group recycles hostnames, or they carry nothing an operator recognizes, pin
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
             in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>
             from the instance's own metadata in the boot script; the cloud's instance id makes a
             natural, unique runner id.

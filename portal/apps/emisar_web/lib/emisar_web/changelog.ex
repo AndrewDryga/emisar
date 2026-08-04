@@ -491,7 +491,7 @@ defmodule EmisarWeb.Changelog do
       details: [
         {"Audit",
          [
-           "Streaming audit events to a SIEM moved to its own managers-only page, off the browse view."
+           "SIEM export configuration moved to its own managers-only page, off the browse view."
          ]}
       ]
     },

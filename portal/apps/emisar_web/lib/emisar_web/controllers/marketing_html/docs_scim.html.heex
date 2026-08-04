@@ -198,6 +198,18 @@
         returns those fields to owner/admin control. Re-enabling starts with no trusted group
         snapshot until the directory pushes groups again.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Because there is no overlap, the connector is unauthenticated between the rotate and the
+        paste — plan for that gap rather than discovering it. The rotation sequence, and how a SCIM
+        bearer compares with every other credential emisar issues, is in <.link
+          navigate={~p"/docs/credentials" <> "#idp"}
+          class="text-brand-300 hover:text-brand-200"
+        >rotate and revoke credentials</.link>. A bearer you believe leaked is a containment job:
+        see <.link
+          navigate={~p"/docs/security-incidents" <> "#idp"}
+          class="text-brand-300 hover:text-brand-200"
+        >security incidents</.link>.
+      </p>
 
       <.docs_screenshot
         src="/images/docs/sso/scim-synced-users.webp"
@@ -434,6 +446,13 @@
       </.docs_callout>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Directory-side symptoms and their checks. If you're not yet sure the problem is
+        provisioning, start from <.link
+          navigate={~p"/docs/troubleshooting" <> "#identity"}
+          class="text-brand-300 hover:text-brand-200"
+        >troubleshooting</.link>, which routes each visible symptom to the page that owns it.
+      </p>
       <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
         <table class="w-full text-left text-sm">
           <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">

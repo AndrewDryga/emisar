@@ -299,8 +299,8 @@ defmodule EmisarWeb.RunnersLive do
       <%!-- The wizard IS the add flow, so the button (→ the same wizard) is
            redundant while an empty fleet shows it inline. --%>
       <:actions :if={not @show_wizard?}>
-        <%!-- Enrollment keys are the fleet's OWN sub-feature (the audit "Stream to
-             SIEM" pattern) — a quiet secondary door on the owning page, not a
+        <%!-- Enrollment keys are the fleet's OWN sub-feature (the audit "SIEM
+             export" pattern) — a quiet secondary door on the owning page, not a
              nav item of their own. --%>
         <.button
           :if={Runners.subject_can_manage_enrollment_keys?(@current_subject)}

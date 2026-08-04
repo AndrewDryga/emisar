@@ -38,6 +38,13 @@ defmodule EmisarWeb.MarketingTest do
     /docs/runner-cli
     /docs/billing
     /docs/limits
+    /docs/upgrades
+    /docs/credentials
+    /docs/pack-updates
+    /docs/network-requirements
+    /docs/troubleshooting
+    /docs/security-incidents
+    /docs/architecture
     /changelog
     /about
     /support
@@ -729,6 +736,83 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs") |> html_response(200)
       assert html =~ ~s(mailto:support@emisar.dev)
     end
+
+    test "the docs index server-renders every DocsNav page under its group", %{conn: conn} do
+      html = conn |> get(~p"/docs") |> html_response(200)
+
+      # The filter only hides rows, so the crawlable index must carry the whole
+      # tree before any JS runs.
+      for page <- EmisarWeb.DocsNav.flat() do
+        assert html =~ ~s(href="#{page.path}"), "docs index doesn't link #{page.path}"
+      end
+
+      group_labels =
+        ~r/data-docs-group="([^"]+)"/
+        |> Regex.scan(html, capture: :all_but_first)
+        |> List.flatten()
+
+      # "Team & account" renders escaped in the attribute.
+      expected = Enum.map(EmisarWeb.DocsNav.groups(), &String.replace(&1.label, "&", "&amp;"))
+
+      assert group_labels == expected
+      refute "Integrations" in group_labels
+
+      # One filterable block per section, so a group with subgroups hides them
+      # independently.
+      sections = Enum.sum_by(EmisarWeb.DocsNav.groups(), &length(&1.sections))
+      assert length(String.split(html, "data-docs-subgroup")) - 1 == sections
+    end
+
+    test "the docs index renders the display-only subgroup headings", %{conn: conn} do
+      html = conn |> get(~p"/docs") |> html_response(200)
+
+      for label <- ["Access", "Identity providers", "Account"] do
+        assert html =~ ~r{<h3[^>]*>\s*#{label}\s*</h3>},
+               "docs index is missing the #{label} subgroup heading"
+      end
+    end
+
+    test "a subgrouped docs page keeps a three-part breadcrumb and a subgrouped sidebar",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/sso") |> html_response(200)
+
+      # The subgroup is wayfinding in the rail only — the breadcrumb stays
+      # Docs → top-level group → page.
+      assert html =~ "Identity providers"
+      assert html =~ "Team &amp; account"
+
+      crumbs =
+        ~r/<nav[^>]+aria-label="Breadcrumb".*?<\/nav>/s
+        |> Regex.run(html)
+        |> hd()
+
+      assert crumbs =~ "Team &amp; account"
+      refute crumbs =~ "Identity providers"
+    end
+
+    test "the docs index filter is labelled, searchable, and has an empty state", %{conn: conn} do
+      html = conn |> get(~p"/docs") |> html_response(200)
+
+      assert html =~ ~s(id="docs-filter")
+      assert html =~ ~s(aria-label="Filter documentation")
+      assert html =~ ~s(id="docs-filter-empty")
+      assert html =~ ~s(role="status")
+
+      # Every row carries the metadata the filter matches on: title,
+      # description, group, subgroup, and the page's DocsNav keywords.
+      terms =
+        ~r/data-docs-page="([^"]+)"/
+        |> Regex.scan(html, capture: :all_but_first)
+        |> List.flatten()
+
+      # One row per DocsNav page, plus the hosting & plans row.
+      assert length(terms) == length(EmisarWeb.DocsNav.flat()) + 1
+
+      okta = Enum.find(terms, &String.contains?(&1, "okta end to end"))
+      assert okta =~ "team &amp; account"
+      assert okta =~ "identity providers"
+      assert okta =~ "scim"
+    end
   end
 
   describe "support" do
@@ -830,7 +914,7 @@ defmodule EmisarWeb.MarketingTest do
       # The concrete claims a security reviewer scans for.
       assert html =~ "20 built-in patterns"
       assert html =~ "RFC 6238"
-      assert html =~ "read-only audit key"
+      assert html =~ "read-only audit-export token"
 
       # The honest not-affiliated note (this is a security product; the
       # framing is "we implement it", never "they endorse us").
@@ -1484,7 +1568,7 @@ defmodule EmisarWeb.MarketingTest do
     test "the audit-and-siem page renders the SIEM curl and journal verify", %{conn: conn} do
       html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
 
-      # The SIEM stream contract — endpoint, params, bearer auth, cursor.
+      # The SIEM export contract — endpoint, params, bearer auth, cursor.
       assert html =~ "https://emisar.dev/api/audit"
       assert html =~ "since="
       assert html =~ "limit="
@@ -1589,6 +1673,624 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
+  describe "day-two operations pages" do
+    # These four pages are procedures an operator runs against production, so
+    # what's pinned here is the part that would be dangerous if it silently
+    # changed: the commands, the limits stated beside them, and the
+    # ownership boundaries between the four lifecycles. Not paragraphs.
+
+    test "upgrades derives its compatibility thresholds instead of hard-coding a snapshot",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+
+      # The page interpolates the requirement strings, so the rendered form is
+      # escaped (">= 0.10.0" arrives as "&gt;= 0.10.0").
+      for requirement <- [Emisar.Compat.runner_minimum(), Emisar.Compat.mcp_minimum()] do
+        assert html =~ Phoenix.HTML.safe_to_string(Phoenix.HTML.html_escape(requirement))
+      end
+    end
+
+    test "upgrades states the verified version commands and the interruption they cause",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+
+      assert html =~ "emisar --version"
+      assert html =~ "emisar-mcp --version"
+      assert html =~ "emisar doctor"
+      assert html =~ "install.sh"
+      assert html =~ "install-mcp.sh"
+
+      # A binary upgrade stops the service, so the page must not read as
+      # zero-downtime — and rollback restores the runner, not the filesystem.
+      assert html =~ "The service does stop"
+      assert html =~ "restores the previous binary"
+      refute html =~ "no interruption"
+    end
+
+    test "upgrades pins a placeholder release, never an example tag that ages", %{conn: conn} do
+      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+
+      assert html =~ "--version &lt;target-version&gt;"
+      assert html =~ "--version &lt;known-good-version&gt;"
+
+      # A literal tag in a runnable installer line ages into advice to install
+      # an old release; the thresholds beside it stay derived from Emisar.Compat.
+      refute html =~ "--version 0."
+    end
+
+    test "upgrades keeps packs, bridges, and downgrades honestly bounded", %{conn: conn} do
+      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+
+      assert html =~ "A running client keeps the binary it already loaded"
+      assert html =~ "Client config and API key are untouched"
+      assert html =~ "not a downgrade guarantee"
+      assert html =~ "Packs do not move with the binary"
+    end
+
+    test "credentials opens with a matrix carrying every field the reader compares on",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/credentials") |> html_response(200)
+
+      columns = [
+        "Credential",
+        "Where it is used and stored",
+        "Authority",
+        "Routine rotation",
+        "Immediate containment",
+        "Overlap",
+        "Effect on sessions and runners",
+        "Owner page"
+      ]
+
+      for column <- columns do
+        assert html =~ ~r{<th[^>]*>#{column}</th>},
+               "the credentials matrix is missing the #{column} column"
+      end
+
+      # Every row hands the reader off to a real docs page.
+      for owner <- ~w(/docs/keys /docs/audit-and-siem /docs/runners /docs/sso /docs/scim
+                      /docs/signed-dispatch) do
+        assert html =~ ~s(href="#{owner}")
+      end
+    end
+
+    test "credentials cuts the audit poller over on its own persisted cursor", %{conn: conn} do
+      html = conn |> get(~p"/docs/credentials") |> html_response(200)
+
+      assert html =~ "own state, not the token"
+      assert html =~ "resumes from exactly the cursor"
+
+      # One clean poll proves the credential and the write path, not that a
+      # re-read or a gap has become impossible.
+      assert html =~ "guarantee of exactly-once delivery"
+    end
+
+    test "credentials separates the two emk- kinds and their revocation reach", %{conn: conn} do
+      html = conn |> get(~p"/docs/credentials") |> html_response(200)
+
+      assert html =~ "emk-"
+      assert html =~ "wrong kind"
+      assert html =~ "Revocation is terminal and it cascades"
+      assert html =~ "OAuth-backed keys do not rotate"
+    end
+
+    test "credentials keeps enrollment keys, runner tokens, and SCIM distinct", %{conn: conn} do
+      html = conn |> get(~p"/docs/credentials") |> html_response(200)
+
+      assert html =~ "Revocation blocks registrations, not connections"
+      assert html =~ "Disable is reversible"
+      assert html =~ "Delete is terminal"
+      assert html =~ "immediately with no overlap"
+      assert html =~ "does not sign anyone out"
+    end
+
+    test "credentials keeps the no-leaf-revocation limit visible", %{conn: conn} do
+      html = conn |> get(~p"/docs/credentials") |> html_response(200)
+
+      assert html =~ "no per-certificate kill switch"
+      assert html =~ "Every runner reloaded"
+    end
+
+    test "pack updates states the install-versus-trust boundary and its invariants",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/pack-updates") |> html_response(200)
+
+      assert html =~ "Installing is not trusting"
+      assert html =~ "Trust binds one exact content hash"
+      assert html =~ "A published version is immutable"
+      assert html =~ "Binary upgrades do not move packs"
+      assert html =~ "Retirement blocks dispatch, not installation"
+    end
+
+    test "pack updates uses real runner commands and claims no universal rollback",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/pack-updates") |> html_response(200)
+
+      assert html =~ "emisar pack update --dry-run"
+      assert html =~ "emisar pack install redis=0.2.3 --hash"
+      assert html =~ "There is no rollback command"
+      assert html =~ "crash-atomic"
+      assert html =~ "Several packs update independently"
+    end
+
+    test "network requirements names the real runner endpoints and no inbound listener",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/network-requirements") |> html_response(200)
+
+      assert html =~ "/runner/register"
+      assert html =~ "/runner/socket/websocket"
+      assert html =~ "/api/mcp/rpc"
+      assert html =~ "registry.emisar.dev"
+      assert html =~ "api.github.com"
+      assert html =~ "needs no open port"
+    end
+
+    test "network requirements claims only the transport behavior the clients implement",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/network-requirements") |> html_response(200)
+
+      assert html =~ "HTTPS_PROXY"
+      assert html =~ "TLS 1.2 or newer"
+      assert html =~ "Redirects are refused"
+
+      # No SSE/WebSocket/session on the bridge, and the page says outright
+      # that emisar owns no trust-store, pinning, or client-certificate knob.
+      assert html =~ "no session for a network appliance"
+      assert html =~ "certificate pinning, or client-certificate configuration"
+      refute html =~ "mutual TLS"
+    end
+
+    test "network requirements opens with a table carrying the rule an operator writes",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/network-requirements") |> html_response(200)
+
+      columns = [
+        "Operation and component",
+        "Direction",
+        "Destination and port",
+        "Protocol",
+        "Why",
+        "When required"
+      ]
+
+      for column <- columns do
+        assert html =~ ~r{<th[^>]*>#{column}</th>},
+               "the network table is missing the #{column} column"
+      end
+
+      assert html =~ "TCP 443"
+      assert html =~ "Only while install.sh or install-mcp.sh runs"
+    end
+
+    test "network requirements ends with completion conditions, not a made-up probe",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/network-requirements") |> html_response(200)
+
+      assert html =~ ~s(id="verify")
+      assert html =~ "no emisar command that tests your firewall"
+
+      assert html =~ "sudo emisar doctor"
+      assert html =~ "emisar-mcp --version"
+      assert html =~ "one discovery call from the LLM client"
+    end
+
+    test "the wide day-two tables scroll sideways instead of clipping", %{conn: conn} do
+      # Eight columns cannot fit the docs measure, so the wrapper must scroll
+      # and the table must keep a readable minimum width.
+      for {path, min_width} <- [
+            {~p"/docs/credentials", "1280px"},
+            {~p"/docs/network-requirements", "1120px"},
+            {~p"/docs/upgrades", "680px"}
+          ] do
+        html = conn |> get(path) |> html_response(200)
+
+        assert html =~
+                 ~r{overflow-x-auto rounded-xl border border-zinc-800">\s*<table class="w-full min-w-\[#{min_width}\]},
+               "#{path} clips its table instead of scrolling it"
+      end
+    end
+  end
+
+  describe "recovery and reference pages" do
+    # Troubleshooting routes, Security incidents contains, Architecture
+    # explains. What's pinned is the part a reader would act on and we would
+    # regret getting wrong: the lifecycle distinctions, the revocation reach,
+    # and the failure semantics — never paragraphs.
+
+    test "troubleshooting covers every symptom and sends each to its owner", %{conn: conn} do
+      html = conn |> get(~p"/docs/troubleshooting") |> html_response(200) |> squish()
+
+      for anchor <- ~w(never-appears offline crash-loop packs dispatch runs mcp identity audit) do
+        assert html =~ ~s(id="#{anchor}"), "troubleshooting is missing the ##{anchor} symptom"
+      end
+
+      # Each symptom hands off rather than restating the reference.
+      for owner <- ~w(/docs/runners /docs/host-install /docs/pack-updates /docs/action-packs
+                      /docs/runs /docs/mcp-reference /docs/keys /docs/audit-and-siem
+                      /docs/network-requirements /docs/policies-and-approvals) do
+        assert html =~ ~s(href="#{owner}"), "troubleshooting never links #{owner}"
+      end
+    end
+
+    test "troubleshooting keeps the runner and run lifecycles distinct", %{conn: conn} do
+      html = conn |> get(~p"/docs/troubleshooting") |> html_response(200) |> squish()
+
+      # Disable is recoverable without host access; delete is terminal.
+      assert html =~ "keeps retrying with its existing token"
+      assert html =~ "A deleted runner is terminal"
+
+      # A queued run is waiting, not lost; an interrupted one is never rerun
+      # behind the operator's back.
+      assert html =~ "delivered as soon as that runner reconnects"
+      assert html =~ "execution_outcome_unknown"
+      assert html =~ "never re-runs that dispatch automatically"
+    end
+
+    test "troubleshooting recovers a lost MCP response by operation, never by repeating it",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/troubleshooting") |> html_response(200) |> squish()
+
+      assert html =~ "get_operation"
+      assert html =~ "same credential lineage"
+      assert html =~ "does not roll back work the control plane already admitted"
+      assert html =~ "target_contract_changed"
+    end
+
+    test "troubleshooting names the evidence, the redaction rule, and both escalation paths",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/troubleshooting") |> html_response(200) |> squish()
+
+      for evidence <- [
+            "emisar --version",
+            "emisar-mcp --version",
+            "The UTC time window",
+            "runner name and group",
+            "The identifiers",
+            "sudo emisar doctor",
+            "journalctl -u emisar -n 200",
+            "emisar events tail --lines 100",
+            "The exact error text"
+          ] do
+        assert html =~ evidence, "the evidence checklist is missing #{evidence}"
+      end
+
+      assert html =~ "Redact before you send"
+      assert html =~ "Never paste a raw token"
+      assert html =~ ~s(href="/support")
+      assert html =~ "security@emisar.dev"
+      assert html =~ ~s(href="/docs/security-incidents")
+    end
+
+    test "security incidents leads with one sequence and a playbook per credential",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/security-incidents") |> html_response(200) |> squish()
+
+      for step <- [
+            "Contain.",
+            "Preserve the evidence.",
+            "Rotate or revoke the rest.",
+            "Restore a known-good path.",
+            "Verify both directions.",
+            "Review the audit trail."
+          ] do
+        assert html =~ step, "the containment sequence is missing #{step}"
+      end
+
+      for anchor <- ~w(evidence mcp-key audit-token enrollment-key runner-host pack
+                       signing-leaf signing-ca idp) do
+        assert html =~ ~s(id="#{anchor}"), "security incidents is missing the ##{anchor} playbook"
+      end
+    end
+
+    test "security incidents states how far each revocation actually reaches", %{conn: conn} do
+      html = conn |> get(~p"/docs/security-incidents") |> html_response(200) |> squish()
+
+      # An MCP key is revoked, not rotated — and revocation takes the chain and
+      # the OAuth credentials backed by it.
+      assert html =~ "Revoke it — do not rotate it"
+      assert html =~ "every successor in that key's rotation chain"
+      assert html =~ "OAuth access and refresh token backed by it"
+
+      # An enrollment key does not hold the fleet online.
+      assert html =~ "It blocks new registrations"
+      assert html =~ "connected on its own long-lived token"
+
+      # A possibly-copied runner token is replaced, never paused and resumed.
+      assert html =~ "disabling an identity keeps its token"
+      assert html =~ "Delete the runner identity"
+
+      # An audit-export token cannot execute anything.
+      assert html =~ "separate credential kind from an MCP key"
+    end
+
+    test "security incidents preserves immutable evidence before it cleans up", %{conn: conn} do
+      html = conn |> get(~p"/docs/security-incidents") |> html_response(200) |> squish()
+
+      assert html =~ "sudo emisar audit verify --all"
+      assert html =~ "exact pack hashes"
+      assert html =~ "deletes the journal"
+      assert html =~ "do not erase an immutable published artifact"
+      assert html =~ "never send its value"
+    end
+
+    test "security incidents keeps the signing and identity limits visible", %{conn: conn} do
+      html = conn |> get(~p"/docs/security-incidents") |> html_response(200) |> squish()
+
+      # No per-leaf CRL: short TTLs bound it, CA rotation is the only lever.
+      assert html =~ "no per-certificate revocation list"
+      assert html =~ "Remove the old CA and reload every runner"
+      assert html =~ "still accepts certificates signed by it"
+
+      # Replacing an OIDC secret is not a session revocation; SCIM has no overlap.
+      assert html =~ "does not sign anybody out"
+      assert html =~ "leaves API keys and OAuth credentials untouched"
+      assert html =~ "Rotating replaces it immediately, with no overlap"
+    end
+
+    test "architecture states each failure case the way the system behaves", %{conn: conn} do
+      html = conn |> get(~p"/docs/architecture") |> html_response(200) |> squish()
+
+      assert html =~ "there is no offline dispatch path"
+      assert html =~ "An action already executing on a runner keeps running"
+      assert html =~ "The runner process is still alive, so the child process keeps running"
+      assert html =~ "may still be winding down, or may have been terminated"
+      assert html =~ "execution_outcome_unknown after restart"
+      assert html =~ "never executes that dispatch again automatically"
+      assert html =~ "already admitted keeps going"
+      assert html =~ "exact pack references frozen at preflight"
+      assert html =~ "warned about rather than refused"
+    end
+
+    test "architecture claims at-least-once delivery, never exactly-once execution",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/architecture") |> html_response(200) |> squish()
+
+      assert html =~ "delivered at least once"
+      assert html =~ "consumes them idempotently"
+      assert html =~ "not a promise that an action executes exactly once"
+    end
+
+    test "architecture lists only the approval rechecks the code performs", %{conn: conn} do
+      html = conn |> get(~p"/docs/architecture") |> html_response(200) |> squish()
+
+      assert html =~ "still parked and still approvable"
+      assert html =~ "still matches the hash frozen"
+      assert html =~ "still has that runner in scope"
+      assert html =~ "inside its freshness window"
+
+      # The approver's decision is not re-litigated; only its preconditions.
+      assert html =~ "not a second policy evaluation"
+    end
+
+    test "architecture owns topology and hands threats to the security model", %{conn: conn} do
+      html = conn |> get(~p"/docs/architecture") |> html_response(200) |> squish()
+
+      assert html =~ "There is no listener on the runner host"
+      assert html =~ "nothing for you to upgrade there"
+      assert html =~ ~s(href="/docs/security-model")
+
+      # Ownership and state are tables, not a decorative diagram.
+      assert html =~ ~s(id="ownership")
+      assert html =~ ~s(id="state")
+    end
+  end
+
+  describe "the audit export contract across public surfaces" do
+    # The export is a PULL API — cursor-paginated NDJSON read with an
+    # :audit_export bearer. Copy that implies emisar pushes ("real-time
+    # streaming to SIEM") sends operators looking for a log sink that does not
+    # exist, so the contract facts and the absence of push claims are both
+    # pinned here rather than left to a reviewer's memory.
+
+    test "audit & SIEM states the whole contract in one place", %{conn: conn} do
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+
+      assert html =~ "GET /api/audit"
+      assert html =~ "audit-export"
+      assert html =~ "X-Next-Cursor"
+      assert html =~ ~s(rel="next")
+      assert html =~ "60 requests a minute"
+
+      # The two headers mean different things, and neither rides an empty page.
+      assert html =~ "An empty page is an answer."
+      assert html =~ "it is not a promise that another event"
+
+      # A cursor is a position, not a scoped handle — so the filters are the
+      # caller's responsibility for the life of the chain.
+      assert html =~ "Keep the filters identical for the life of a cursor."
+    end
+
+    test "audit & SIEM says plainly that emisar does not push", %{conn: conn} do
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+
+      assert html =~ "emisar does not push events."
+      assert html =~ "There is no managed log sink, webhook, or streaming transport."
+
+      # Direct-polling SIEM vs. a collector in front of one — the distinction
+      # that decides whether an operator has anything to run at all.
+      assert html =~ "otherwise a collector polls emisar and forwards"
+      assert html =~ "Collector is a role, not another service you have to run"
+    end
+
+    test "audit & SIEM ships a poller that checkpoints after handoff", %{conn: conn} do
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+
+      assert html =~ ~s(id="polling")
+
+      # Bootstrap once, resume from the persisted cursor after that.
+      assert html =~ "used only when there is no cursor yet"
+      assert html =~ "identical for the life of this cursor"
+
+      # A failed request must not read as an empty page, and the cursor must
+      # not move when one happens.
+      assert html =~ "curl -fsS"
+      assert html =~ "does not move on failure"
+
+      # Hand off, then persist; empty means caught up; Link means keep paging.
+      assert html =~ "x-next-cursor"
+      assert html =~ "Hand off first, persist second"
+      assert html =~ ~s(if ! <span class="text-brand-300">"$SINK"</span> &lt;)
+      assert html =~ "exits nonzero on rejection; that leaves the cursor unchanged for retry"
+
+      {sink_position, _} = :binary.match(html, ~s(if ! <span class="text-brand-300">"$SINK"))
+
+      {checkpoint_position, _} =
+        :binary.match(html, ~s(cursor=<span class="text-brand-300">"$next"))
+
+      assert sink_position < checkpoint_position
+
+      assert html =~ "awk exits successfully"
+      assert html =~ "caught up, keep the cursor"
+      assert html =~ "keep paging while it does"
+
+      # The token is environment, the cursor is state — which is what makes a
+      # credential swap not a re-read of history.
+      assert html =~ "The token lives in the environment"
+      assert html =~ ~s(href="/docs/credentials#audit-tokens")
+    end
+
+    test "audit & SIEM explains its own exports without calling them activity", %{conn: conn} do
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+
+      assert html =~ ~s(id="health")
+      assert html =~ "audit.exported"
+      assert html =~ "as operator activity"
+
+      # Each read can create the event the next read finds, so "drain until
+      # empty" is a loop that feeds itself.
+      assert html =~ "never poll until a page comes back empty"
+    end
+
+    test "audit & SIEM owns alerting, retention, and journal correlation", %{conn: conn} do
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+
+      for anchor <- ~w(alerting retention journal) do
+        assert html =~ ~s(id="#{anchor}"), "audit & SIEM lost its #{anchor} section"
+      end
+
+      assert html =~ "policy.updated"
+      assert html =~ "action_blocked_by_admission"
+      assert html =~ "7 days on Free, 90 on Team, 365 on Enterprise"
+
+      # The two records are evidence together; a mismatch starts an
+      # investigation, while the poll interval alone is not a gap.
+      assert html =~ "A mismatch is an investigation signal"
+      assert html =~ "first allow for the collector's poll interval"
+    end
+
+    test "no public page claims emisar streams or pushes the audit anywhere", %{conn: conn} do
+      push_claims = [
+        ~r/real[-\s]time streaming/i,
+        ~r/streaming NDJSON/i,
+        ~r/stream(s|ing|ed)? (it |them |the )?(audit )?to (your |a )?SIEM/i,
+        ~r/streamable to your SIEM/i
+      ]
+
+      surfaces = ~w(
+        /docs/audit-and-siem /docs/deployment /docs/billing /docs/limits /docs/runs
+        /docs/security-model /docs/keys /docs/runner-cli /docs/troubleshooting
+        /docs/credentials /how-it-works /zero-trust /security /trust / /privacy /dpa
+        /compare/copy-paste-ai-ops /compare/custom-mcp-server
+      )
+
+      for path <- surfaces, claim <- push_claims do
+        html = conn |> get(path) |> html_response(200)
+
+        refute html =~ claim,
+               "#{path} still claims emisar pushes the audit trail (#{inspect(claim)})"
+      end
+    end
+
+    test "the audit-and-siem page metadata describes the pull API it documents", %{conn: conn} do
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+
+      assert html =~ "polling the NDJSON export API"
+      assert html =~ "read-only audit-export token"
+
+      # The credential kind never had a `audit:read` scope name.
+      refute html =~ "audit:read"
+    end
+  end
+
+  describe "owner pages route to the day-two pages that own the procedure" do
+    # Each of these pages keeps its reference detail and hands off the
+    # procedure. A missing link is how a reader ends up reinventing a rollout,
+    # a rotation, or an incident response from a reference table.
+
+    @owner_links [
+      {"/docs/runners",
+       ~w(/docs/upgrades /docs/pack-updates /docs/troubleshooting /docs/security-incidents)},
+      {"/docs/runner-cli", ~w(/docs/upgrades /docs/troubleshooting)},
+      {"/docs/authentication",
+       ~w(/docs/credentials /docs/security-incidents /docs/troubleshooting)},
+      {"/docs/sso", ~w(/docs/credentials /docs/security-incidents /docs/troubleshooting)},
+      {"/docs/scim", ~w(/docs/credentials /docs/security-incidents /docs/troubleshooting)},
+      {"/docs/mcp-reference", ~w(/docs/troubleshooting)},
+      {"/support", ~w(/docs/troubleshooting /docs/security-incidents)},
+      {"/docs/deployment", ~w(/docs/upgrades /docs/pack-updates /docs/audit-and-siem)},
+      {"/docs/security-model",
+       ~w(/docs/architecture /docs/security-incidents /docs/audit-and-siem)},
+      {"/docs/audit-and-siem", ~w(/docs/credentials /docs/policies-and-approvals)}
+    ]
+
+    for {path, owners} <- @owner_links do
+      test "#{path} links the pages that own what it defers", %{conn: conn} do
+        html = conn |> get(unquote(path)) |> html_response(200)
+
+        for owner <- unquote(owners) do
+          assert html =~ ~r/href="#{owner}(#[a-z-]+)?"/,
+                 "#{unquote(path)} no longer routes to #{owner}"
+        end
+      end
+    end
+
+    test "every operational limit names the page that owns its behavior", %{conn: conn} do
+      html = conn |> get(~p"/docs/limits") |> html_response(200)
+
+      for owner <- ~w(/docs/action-packs /docs/runs /docs/mcp-reference /docs/runbooks
+                      /docs/audit-and-siem) do
+        assert html =~ ~r/href="#{owner}(#[a-z-]+)?"/,
+               "the limits table stopped linking #{owner}"
+      end
+
+      # The rate limit is a cap operators hit before any other one, and its
+      # observable consequence is a status code, not a slower page.
+      assert html =~ "60 requests a minute per token"
+      assert html =~ "429"
+    end
+
+    test "the changelog stays the release notes the upgrade page points at", %{conn: conn} do
+      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+
+      assert html =~ ~s(href="/changelog")
+    end
+  end
+
+  describe "Require SSO states its boundary" do
+    # Require SSO is a browser sign-in control. Reading it as an account-wide
+    # kill switch is the dangerous misunderstanding: an operator who believes
+    # it revoked API credentials will not go and revoke them.
+
+    test "authentication scopes Require SSO to browser sign-in, with no bypass", %{conn: conn} do
+      html = conn |> get(~p"/docs/authentication") |> html_response(200)
+
+      assert html =~ "with no bypass"
+      assert html =~ "It does not authenticate an MCP bearer"
+      assert html =~ "Turning it on revokes no existing API key"
+      assert html =~ "applies only while at least one"
+
+      # Not a fail-open: an enabled-but-broken provider keeps the gate shut.
+      assert html =~ "does not open the gate"
+    end
+
+    test "sso repeats only the boundary, and points at the owner", %{conn: conn} do
+      html = conn |> get(~p"/docs/sso") |> html_response(200)
+
+      assert html =~ "It gates account browser access and new OAuth consent"
+      assert html =~ ~s(href="/docs/authentication#enforcement")
+    end
+  end
+
   describe "plan notes on plan-gated docs (the upsell markers)" do
     test "docs/sso marks SSO login as Team+, linking to pricing", %{conn: conn} do
       html = conn |> get(~p"/docs/sso") |> html_response(200)
@@ -1638,6 +2340,27 @@ defmodule EmisarWeb.MarketingTest do
       "/docs/runbooks" =>
         ~w(/docs/policies-and-approvals /docs/connect-an-llm /docs/action-packs),
       "/docs/authentication" => ~w(/docs/teams-and-access /docs/sso /docs/scim),
+      "/docs/upgrades" =>
+        ~w(/changelog /docs/pack-updates /docs/keys /docs/deployment /docs/runners),
+      "/docs/credentials" =>
+        ~w(/docs/keys /docs/audit-and-siem /docs/runners /docs/sso /docs/scim /docs/signed-dispatch),
+      "/docs/pack-updates" =>
+        ~w(/docs/upgrades /docs/action-packs /docs/publishing-packs /docs/pack-registry /packs),
+      "/docs/network-requirements" =>
+        ~w(/docs/host-install /docs/upgrades /docs/pack-registry /docs/containers /docs/kubernetes /docs/nomad /docs/runners),
+      "/docs/troubleshooting" =>
+        ~w(/docs/runners /docs/host-install /docs/pack-updates /docs/action-packs /docs/runs
+           /docs/mcp-reference /docs/keys /docs/credentials /docs/upgrades /docs/audit-and-siem
+           /docs/network-requirements /docs/policies-and-approvals /docs/teams-and-access
+           /docs/signed-dispatch /docs/security-incidents /support),
+      "/docs/security-incidents" =>
+        ~w(/docs/credentials /docs/audit-and-siem /docs/pack-updates /docs/pack-registry
+           /docs/signed-dispatch /docs/sso /docs/scim /docs/authentication /docs/troubleshooting
+           /support),
+      "/docs/architecture" =>
+        ~w(/docs/security-model /docs/network-requirements /docs/upgrades /docs/runs
+           /docs/troubleshooting /docs/policies-and-approvals /docs/signed-dispatch /how-it-works
+           /changelog),
       "/docs/teams-and-access" =>
         ~w(/docs/sso /docs/connect-an-llm /docs/policies-and-approvals /docs/audit-and-siem),
       "/use-cases/ingress-502" =>
@@ -1991,6 +2714,12 @@ defmodule EmisarWeb.MarketingTest do
     |> String.replace("&quot;", "\"")
     |> String.replace("&amp;", "&")
   end
+
+  # Rendered prose carries the template's own line breaks and indentation, so
+  # a sentence that reads as one line in the page is several in the HTML.
+  # Collapsing runs of whitespace lets a copy assertion pin the sentence
+  # instead of the formatter's wrapping.
+  defp squish(html), do: html |> String.split() |> Enum.join(" ")
 
   # Pull every external (`href="http…"`) anchor out of rendered HTML so a
   # test can assert the whole set carries the safe-rel pair, not just the

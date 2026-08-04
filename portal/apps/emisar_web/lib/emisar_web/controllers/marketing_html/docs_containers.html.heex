@@ -4,8 +4,8 @@
   reach). The official image (ghcr.io/andrewdryga/emisar-runner,
   published per runner release by runner-release.yml) covers the
   container observation set; extension is FROM + tools + emisar
-  pack install. Identity persistence: cloud.token_path + runner.id,
-  since containers lack a stable /etc/machine-id; EMISAR_GROUP /
+  pack install. State persistence: cloud.token_path + the dispatch log;
+  external identity follows the hostname unless runner.id is pinned. EMISAR_GROUP /
   EMISAR_RUNNER_ID env overrides relabel without a config mount. Kubernetes
   (DaemonSet) and Nomad (system job) build on this page. Facts
   verified against runner/release/Dockerfile, install.sh, and
@@ -17,6 +17,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="containers"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_containers.html.heex"
       toc={[
         {"what-it-sees", "What a containerized runner sees"},
         {"official-image", "The official image"},
@@ -227,7 +229,7 @@ USER 65532</.docs_code>
             — a <code class="font-mono">system</code>
             job placing one instance on every client node, with the release binary fetched in an
             <code class="font-mono">artifact</code>
-            stanza and identity persisted on a host volume.
+            stanza and the token and dispatch state persisted on a host volume.
           </span>
         </li>
       </ul>

@@ -23,98 +23,154 @@
 
   <%!-- The docs tree, sourced from EmisarWeb.DocsNav so the index, the shell
        sidebar, and prev/next never drift. The first group (Get started) is the
-       featured band; the rest render as dense grouped link lists. --%>
+       featured band; the rest render as dense grouped link lists, with the
+       display-only subgroups (Team & account's Access / Identity providers /
+       Account) as a quieter heading inside their group.
+
+       Every row is server-rendered and crawlable; `docs_filter.js` only hides
+       rows, subgroups, and groups whose metadata doesn't match the input, so
+       a no-JS visitor still gets the whole tree. --%>
   <section class="pb-16 sm:pb-20">
     <div class="mx-auto max-w-7xl px-6 lg:px-8">
-      <% [{_get_started, featured} | rest_groups] = EmisarWeb.DocsNav.groups() %>
+      <% [get_started | rest_groups] = EmisarWeb.DocsNav.groups() %>
+      <% featured = Enum.flat_map(get_started.sections, & &1.pages) %>
       <% last_index = length(rest_groups) - 1 %>
 
-      <%!-- Start here: the two get-started pages, featured by SCALE (big icon
+      <div class="relative max-w-md">
+        <.icon
+          name="hero-magnifying-glass"
+          class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+        />
+        <input
+          id="docs-filter"
+          type="search"
+          autocomplete="off"
+          aria-label="Filter documentation"
+          placeholder="Filter documentation — runners, packs, SSO, audit…"
+          class="w-full rounded-lg border-0 bg-zinc-900/80 py-2 pl-9 pr-3 text-sm text-zinc-100 ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+        />
+      </div>
+
+      <%!-- Start here: the get-started page, featured by SCALE (big icon
            tile, xl title) but on the same flush-left row grammar as every
            other section — the -mx/px pair cancels at rest, so the tile's left
            edge lands exactly on the eyebrow line like the group rows' icons. --%>
-      <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">Start here</h2>
-      <div class="mt-5 grid grid-cols-1 gap-x-8 gap-y-2 md:grid-cols-2">
-        <.link
-          :for={page <- featured}
-          href={page.path}
-          class="group -mx-4 flex items-start gap-4 rounded-xl px-4 py-4 transition-colors hover:bg-zinc-900/50"
-        >
-          <div class="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name={page.icon} class="h-6 w-6" />
-          </div>
-          <div class="min-w-0">
-            <h3 class="text-xl font-semibold text-zinc-50 group-hover:text-brand-300">
-              {page.title}
-            </h3>
-            <p class="mt-1 text-sm leading-relaxed text-zinc-400">{page.desc}</p>
-            <p class="mt-2 text-sm font-semibold text-brand-300">
-              Read it
-              <span
-                aria-hidden="true"
-                class="inline-block transition-transform group-hover:translate-x-0.5"
-              >
-                &rarr;
-              </span>
-            </p>
-          </div>
-        </.link>
-      </div>
-
-      <%!-- Everything else, dense: eyebrow + a two-column list of linked rows --%>
-      <div :for={{{label, pages}, group_index} <- Enum.with_index(rest_groups)} class="mt-14">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">{label}</h2>
-        <div class="mt-5 grid gap-x-8 gap-y-1 md:grid-cols-2">
+      <div data-docs-group={get_started.label} class="mt-10">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">Start here</h2>
+        <div data-docs-subgroup class="mt-5 grid grid-cols-1 gap-x-8 gap-y-2 md:grid-cols-2">
           <.link
-            :for={page <- pages}
+            :for={page <- featured}
             href={page.path}
-            class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
+            data-docs-page={docs_search_terms(page, get_started.label, nil)}
+            class="group -mx-4 flex items-start gap-4 rounded-xl px-4 py-4 transition-colors hover:bg-zinc-900/50"
           >
-            <%!-- Integration rows carry the provider's own mark instead of an
-                 emisar icon. It sits on a white chip because several of these
-                 marks are dark (JumpCloud is #002B49, Okta's is black) and are
-                 illegible straight on the near-black page — the tile keeps every
-                 vendor's true colours rather than recolouring their trademark to
-                 suit our theme. alt="" because the row's title says the name
-                 already. --%>
-            <span
-              :if={page[:logo]}
-              class="mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-white"
-            >
-              <img src={~p"/images/logos/#{page.logo}"} alt="" class="h-4 w-4" />
-            </span>
-            <.icon
-              :if={!page[:logo]}
-              name={page.icon}
-              class="mt-0.5 h-5 w-5 flex-none text-brand-400/80"
-            />
-            <div>
-              <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
-                {page.title}
-              </span>
-              <p class="mt-0.5 text-[13px] leading-snug text-zinc-500">{page.desc}</p>
+            <div class="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
+              <.icon name={page.icon} class="h-6 w-6" />
             </div>
-          </.link>
-
-          <%!-- One extra, non-DocsNav row after Reference: hosting + plans. --%>
-          <.link
-            :if={group_index == last_index}
-            href="/pricing"
-            class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
-          >
-            <.icon name="hero-credit-card" class="mt-0.5 h-5 w-5 flex-none text-brand-400/80" />
-            <div>
-              <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
-                Hosting &amp; plans
-              </span>
-              <p class="mt-0.5 text-[13px] leading-snug text-zinc-500">
-                The supported product is the hosted emisar control plane today; plans and audit
-                retention are on the pricing page.
+            <div class="min-w-0">
+              <h3 class="text-xl font-semibold text-zinc-50 group-hover:text-brand-300">
+                {page.title}
+              </h3>
+              <p class="mt-1 text-sm leading-relaxed text-zinc-400">{page.desc}</p>
+              <p class="mt-2 text-sm font-semibold text-brand-300">
+                Read it
+                <span
+                  aria-hidden="true"
+                  class="inline-block transition-transform group-hover:translate-x-0.5"
+                >
+                  &rarr;
+                </span>
               </p>
             </div>
           </.link>
         </div>
       </div>
+
+      <%!-- Everything else, dense: eyebrow + a two-column list of linked rows --%>
+      <div
+        :for={{group, group_index} <- Enum.with_index(rest_groups)}
+        data-docs-group={group.label}
+        class="mt-14"
+      >
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-zinc-400">
+          {group.label}
+        </h2>
+        <div :for={section <- group.sections} data-docs-subgroup>
+          <h3
+            :if={section.label}
+            class="mt-6 text-xs font-medium uppercase tracking-wider text-zinc-400"
+          >
+            {section.label}
+          </h3>
+          <div class={[
+            "grid gap-x-8 gap-y-1 md:grid-cols-2",
+            if(section.label, do: "mt-3", else: "mt-5")
+          ]}>
+            <.link
+              :for={page <- section.pages}
+              href={page.path}
+              data-docs-page={docs_search_terms(page, group.label, section.label)}
+              class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
+            >
+              <%!-- Integration rows carry the provider's own mark instead of an
+                   emisar icon. It sits on a white chip because several of these
+                   marks are dark (JumpCloud is #002B49, Okta's is black) and are
+                   illegible straight on the near-black page — the tile keeps every
+                   vendor's true colours rather than recolouring their trademark to
+                   suit our theme. alt="" because the row's title says the name
+                   already. --%>
+              <span
+                :if={page[:logo]}
+                class="mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-white"
+              >
+                <img src={~p"/images/logos/#{page.logo}"} alt="" class="h-4 w-4" />
+              </span>
+              <.icon
+                :if={!page[:logo]}
+                name={page.icon}
+                class="mt-0.5 h-5 w-5 flex-none text-brand-400/80"
+              />
+              <div>
+                <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
+                  {page.title}
+                </span>
+                <p class="mt-0.5 text-[13px] leading-snug text-zinc-500">{page.desc}</p>
+              </div>
+            </.link>
+
+            <%!-- One extra, non-DocsNav row after Reference (a single-section
+                 group, so it lands once): hosting + plans. --%>
+            <.link
+              :if={group_index == last_index}
+              href="/pricing"
+              data-docs-page="hosting &amp; plans pricing hosted control plane audit retention"
+              class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
+            >
+              <.icon name="hero-credit-card" class="mt-0.5 h-5 w-5 flex-none text-brand-400/80" />
+              <div>
+                <span class="text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
+                  Hosting &amp; plans
+                </span>
+                <p class="mt-0.5 text-[13px] leading-snug text-zinc-500">
+                  The supported product is the hosted emisar control plane today; plans and audit
+                  retention are on the pricing page.
+                </p>
+              </div>
+            </.link>
+          </div>
+        </div>
+      </div>
+
+      <p
+        id="docs-filter-empty"
+        hidden
+        role="status"
+        aria-live="polite"
+        class="mt-12 text-center text-sm text-zinc-500"
+      >
+        No page matches that filter — it reads page titles, descriptions, and groups, not full page
+        text. Try a product word like runner, pack, policy, audit, or SSO.
+      </p>
     </div>
   </section>
 

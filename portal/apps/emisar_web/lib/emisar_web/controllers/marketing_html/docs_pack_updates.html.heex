@@ -1,0 +1,312 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="pack-updates"
+      updated="August 3, 2026"
+      source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_pack_updates.html.heex"
+      toc={[
+        {"rules", "Five rules that decide everything"},
+        {"record", "Record what you run today"},
+        {"review", "Read what actually changed"},
+        {"preview", "Preview the update"},
+        {"canary", "Update one runner"},
+        {"trust", "Trust the exact hash"},
+        {"fleet", "Roll through the fleet"},
+        {"rollback", "Go back to the prior version"},
+        {"retirement", "Retired versions"}
+      ]}
+    >
+      <.docs_header current="pack-updates">
+        <:dek>
+          A pack update changes the bytes a host may execute, so it takes two decisions: putting
+          the new version on a runner, and letting the account dispatch it. Here is how to do both
+          through a canary, and how to get back to the exact version you were on.
+        </:dek>
+      </.docs_header>
+
+      <.docs_prerequisites>
+        <:item>Admin or owner, to review and trust a pack version for the account.</:item>
+        <:item>
+          Root or sudo on each runner host — packs live under
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/packs</code>
+          and the tree is owned by root.
+        </:item>
+        <:item>One non-critical runner to update first.</:item>
+        <:item>
+          The pack id, version, and content hash you run today. The rollback below needs the exact
+          version.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="rules">Five rules that decide everything</.docs_h2>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Installing is not trusting.</strong>
+            The runner command puts bytes on a host. Whether those bytes may be dispatched is an
+            account decision made in the console.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Trust binds one exact content hash.</strong>
+            A version advertising a hash the account has not adopted lands as pending and dispatch
+            for that pack version is refused until someone trusts or rejects it.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A published version is immutable.</strong>
+            Its tarball is content-addressed and the registry is append-only. The same id and
+            version with different bytes is drift, not an update — the fix is to publish a new
+            version, never to republish the old one.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Binary upgrades do not move packs.</strong>
+            Re-running the runner installer leaves the installed packs where they are. See
+            <.link
+              navigate={~p"/docs/upgrades"}
+              class="text-brand-300 hover:text-brand-200"
+            >Upgrade runners and MCP bridges</.link>
+            for that lifecycle.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Retirement blocks dispatch, not installation.</strong>
+            Nothing here deletes an immutable artifact or erases the history of a run that used it.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="record">Record what you run today</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Start from the host, because that is where the bytes are. Write down the id, version, and
+        hash for the pack you are about to move, and note which runners or groups carry it.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># id, version, action count, and content hash per installed pack</span>
+<span class="text-zinc-500">$</span> sudo emisar pack list
+
+<span class="text-zinc-500"># one pack's setup requirements and action profile</span>
+<span class="text-zinc-500">$</span> sudo emisar pack info redis</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The console's Packs page is the account-side view of the same facts: each version, the hash
+        the account trusts, and the hash each runner is advertising.
+      </p>
+
+      <.docs_h2 id="review">Read what actually changed</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Before you move any bytes, look at what the new version changes in the action contract —
+        that is what an LLM and your runbooks are written against. Open the pack on
+        <.link
+          navigate={~p"/packs"}
+          class="text-brand-300 hover:text-brand-200"
+        >the registry</.link>
+        and compare against the version you run now. Four kinds of change deserve a pause:
+      </p>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>An action that was added, removed, or renamed — a removed id breaks any runbook step that names it.</span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>An argument whose name, type, default, or validation moved, which changes what callers may send.</span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>A risk tier that went up, which can newly route the action through approval under your policy.</span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>A new required binary or environment variable, which is a host-readiness change rather than a code one.</span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The full action schema and what each field means is in <.link
+          navigate={~p"/docs/action-packs"}
+          class="text-brand-300 hover:text-brand-200"
+        >Pack reference</.link>.
+      </p>
+
+      <.docs_h2 id="preview">Preview the update</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack update</code>
+        compares each installed pack's content hash against the registry's index and reports what
+        it would do. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--dry-run</code>
+        stops there and changes nothing.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># every installed pack, no changes made</span>
+<span class="text-zinc-500">$</span> sudo emisar pack update --dry-run
+
+<span class="text-zinc-500">  redis                  v0.2.3 → v0.2.4 (update available)</span>
+<span class="text-zinc-500">  linux-core             up to date (v0.4.1)</span>
+<span class="text-zinc-500">  billing-tools          not in registry — left as-is</span>
+
+<span class="text-zinc-500"># or validate a tree you are about to install, without loading it</span>
+<span class="text-zinc-500">$</span> sudo emisar pack validate ./redis</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A pack the registry does not carry — one you authored yourself — is reported and left
+        alone.
+      </p>
+
+      <.docs_h2 id="canary">Update one runner</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Name the packs you mean rather than updating everything at once, and do it on one
+        non-critical runner first.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># move one pack to the registry's current version</span>
+<span class="text-zinc-500">$</span> sudo emisar pack update redis
+
+<span class="text-zinc-500"># or pin an exact published version and its hash</span>
+<span class="text-zinc-500">$</span> sudo emisar pack install redis=0.2.4 --hash sha256:… --force</.docs_code>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">The new tree is verified before it is activated.</strong>
+            The tarball is fetched, validated, and hash-checked against the registry index, staged
+            beside the live pack, and only then swapped in. An activation failure restores the
+            previous tree immediately. This is a staged replacement with a deterministic backup, not
+            a crash-atomic one — a host that loses power mid-swap can be left with the backup
+            beside the pack, which the next install or update recovers.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A running runner reloads itself.</strong>
+            The command signals the daemon so it re-reads the catalog and re-advertises. No
+            restart, and runs in flight are not dropped.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Several packs update independently.</strong>
+            Each one succeeds or fails on its own; the command prints per-pack lines and a count,
+            and exits non-zero if any failed. A partial success is a normal outcome — read the
+            lines, not just the exit code.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="trust">Trust the exact hash</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The canary now advertises new bytes. On the Packs page that version shows as
+        <strong class="text-zinc-200">pending</strong>
+        with the exact hash it is advertising, and dispatch for it is refused. Check that hash
+        against the one
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack list</code>
+        printed on the host, then review and trust that version. Trusting snapshots the complete
+        action set for those exact bytes, so a later advertisement that disagrees is caught rather
+        than absorbed.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Then prove it: run one low-risk read-only action from the pack against the canary and
+        confirm it succeeds and appears in the audit trail. If a published runbook uses actions
+        from this pack, run its preflight before you go any wider — that is where a changed
+        argument or a removed action surfaces as a broken step rather than as a failed run at
+        three in the morning.
+      </p>
+      <.docs_callout kind={:note} title="Reject is the other answer.">
+        <p>
+          Rejecting the pending hash keeps the version's existing trusted bytes in force and
+          remembers the refused ones, so a runner re-advertising the same rejected bytes stays
+          quiet instead of re-opening the review. Only genuinely new bytes ask again.
+        </p>
+      </.docs_callout>
+
+      <.docs_h2 id="fleet">Roll through the fleet</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Repeat the update on bounded runner groups. Because trust is account-wide and bound to the
+        hash, a second runner arriving at the same version and hash you already trusted needs no
+        second decision — a runner that lands on a <em>different</em>
+        hash for that version is drift, and it will stop and ask. After each group, confirm the
+        advertised versions and hashes match what you trusted and run one representative action.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Group and label mechanics are in <.link
+          navigate={~p"/docs/runners"}
+          class="text-brand-300 hover:text-brand-200"
+        >Runner fleet</.link>; batch sizing for a production fleet is in <.link
+          navigate={~p"/docs/deployment"}
+          class="text-brand-300 hover:text-brand-200"
+        >Production rollout</.link>.
+      </p>
+
+      <.docs_h2 id="rollback">Go back to the prior version</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        There is no rollback command. Recovery is installing the exact earlier version again, which
+        works precisely because published versions are immutable — the bytes you had are still
+        there, at the same address, with the same hash.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># the version and hash you recorded before the update</span>
+<span class="text-zinc-500">$</span> sudo emisar pack install redis=0.2.3 --hash sha256:… --force</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--hash</code>
+        pin is what makes this a recovery rather than a hope: the install aborts unless the
+        computed hash matches exactly. Each version carries its own trust decision, so going back
+        to bytes the account already trusted resumes dispatch without a new review; going back to a
+        version this account never trusted lands as pending, exactly as any first sighting would.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Do this per runner, in the same bounded groups you rolled forward in, and verify the same
+        way. A pack you no longer want on a host at all comes off with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack uninstall</code>, which
+        reloads the runner so its actions leave the advertised catalog.
+      </p>
+
+      <.docs_h2 id="retirement">Retired versions</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        When a published pack ships a security or critical-correctness fix, it declares a
+        retirement floor and every version below it is retired. A runner still advertising a
+        retired version fails closed at dispatch with a message telling the operator to update the
+        pack. An admin can deliberately re-trust a retired version on the Packs page; that override
+        is audited, and revoking trust clears it so a later re-trust has to decide again.
+      </p>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            The floor only moves upward. Once published it cannot be lowered or dropped, so a
+            version that has been retired stays retired.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            Retirement is release-controlled: it comes from the catalog the control plane ships
+            with, not from the mutable published one, so nothing remote can mass-retire your fleet
+            or auto-trust bytes on it.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            A retired version stays installable. The defense is at the trust gate, so rolling back
+            <em>into</em>
+            a retired version leaves you with a pack that cannot dispatch — check the floor before
+            you plan a rollback that far back.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        If you maintain the pack yourself, publishing, versioning, and declaring a retirement floor
+        are in
+        <.link navigate={~p"/docs/publishing-packs"} class="text-brand-300 hover:text-brand-200">Author your own pack</.link>
+        and <.link navigate={~p"/docs/pack-registry"} class="text-brand-300 hover:text-brand-200">Host your own registry</.link>.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

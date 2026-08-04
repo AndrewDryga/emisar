@@ -100,6 +100,22 @@
           </span>
         </li>
       </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Be precise about what Require SSO covers, because it is a control on <em>people signing in
+        with a browser</em>, not on credentials that already exist. It gates the account's console
+        pages, the audit CSV download, and the OAuth consent screen that mints a client key — every
+        member, including owners and admins, with no bypass. It does not authenticate an MCP bearer
+        token, the audit export API, SCIM, an OAuth token or refresh exchange, or an OAuth access
+        token that was already issued. Turning it on revokes no existing API key and no existing
+        OAuth grant: bounce the sessions you want gone and revoke the credentials you want gone,
+        through <.link
+          navigate={~p"/docs/credentials"}
+          class="text-brand-400 hover:text-brand-300"
+        >rotate and revoke credentials</.link>. The requirement applies only while at least one
+        provider is enabled — which is why emisar refuses to remove the last one — and a provider
+        that is enabled but broken or unreachable does not open the gate; sign-in simply fails until
+        it works.
+      </p>
       <.docs_callout kind={:warn} title="Complete a real SSO sign-in before requiring it">
         <p>
           Test connection proves discovery and endpoint reachability; it does not prove your client
@@ -259,6 +275,18 @@
           </span>
         </li>
       </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Offboarding a person ends what that membership issued. It does not touch account-level
+        credentials someone else still holds — enrollment keys, audit-export tokens, the SCIM
+        bearer, signing material. Rotating those is <.link
+          navigate={~p"/docs/credentials"}
+          class="text-brand-400 hover:text-brand-300"
+        >rotate and revoke credentials</.link>; doing it under pressure, in the order that preserves
+        evidence, is <.link
+          navigate={~p"/docs/security-incidents"}
+          class="text-brand-400 hover:text-brand-300"
+        >security incidents</.link>.
+      </p>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -275,7 +303,11 @@
           SCIM troubleshooting
         </.link>
         and check the connection's <strong class="text-zinc-200">Last sync</strong>
-        signal first.
+        signal first. Both are reachable from the identity section of <.link
+          navigate={~p"/docs/troubleshooting" <> "#identity"}
+          class="text-brand-300 hover:text-brand-200"
+        >troubleshooting</.link>, which is where to start when you're not yet sure the problem is
+        identity at all.
         For an account lockout with no working owner session, email <a
           href={EmisarWeb.MailTo.support()}
           class="text-brand-300 hover:text-brand-200"

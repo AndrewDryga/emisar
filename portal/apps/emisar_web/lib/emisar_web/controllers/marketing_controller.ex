@@ -115,7 +115,7 @@ defmodule EmisarWeb.MarketingController do
      "Production rollout — deploying a governed emisar fleet",
      "From one runner to a governed fleet: how to shape and scope the fleet, a reversible phased rollout, two worked examples, and a go-live checklist your security review will recognize. The rollout process applies to any runtime — VMs, bare metal, or Kubernetes."},
     {"/docs/audit-and-siem", :docs_audit, :docs_audit, "The audit trail & SIEM export",
-     "What emisar records, reading it in the dashboard, streaming NDJSON to your SIEM with a read-only audit:read key and cursor pagination, and verifying the hash-chained runner journal."},
+     "What emisar records, reading it in the dashboard, ingesting it by polling the NDJSON export API with a read-only audit-export token and cursor pagination, what to alert on, and verifying the hash-chained runner journal."},
     {"/docs/host-install", :docs_host_install, :docs_host_install, "Install the runner on a host",
      "The full emisar runner install on a Linux or macOS host: the one-command install and its flags, what the installer does (the unprivileged service user, the hardened systemd unit or launchd plist, /usr/local/bin, /etc/emisar), the config.yaml reference, and the sudoers/setuid model for privileged actions."},
     {"/docs/containers", :docs_containers, :docs_containers,
@@ -139,7 +139,25 @@ defmodule EmisarWeb.MarketingController do
     {"/docs/billing", :docs_billing, :docs_billing, "Plans & billing",
      "The emisar plans and their limits — runner and member caps, audit retention, feature tiers, and how upgrades, invoices, and payment failures work."},
     {"/docs/limits", :docs_limits, :docs_limits, "Operational limits",
-     "The caps emisar enforces — per-action output, live-output lines, MCP list pages, long-poll waits, response size, runbook projection, audit-export pages, and audit retention — and what happens at each."}
+     "The caps emisar enforces — per-action output, live-output lines, MCP list pages, long-poll waits, response size, runbook projection, audit-export pages, and audit retention — and what happens at each."},
+    {"/docs/upgrades", :docs_upgrades, :docs_upgrades, "Upgrade runners and MCP bridges",
+     "Move an emisar runner fleet and your local emisar-mcp bridges onto a new release: what versions independently, how to read the supported/outdated/unsupported status, a canary with an explicit verification, bounded fleet batches, and how to return to a known-good release."},
+    {"/docs/credentials", :docs_credentials, :docs_credentials, "Rotate and revoke credentials",
+     "Every secret emisar issues and how it behaves: MCP keys and audit-export tokens, runner enrollment keys and per-runner tokens, OIDC client secrets and SCIM bearers, signed-dispatch keys, and pack credentials — which rotate with an overlap, which do not, and what revocation actually reaches."},
+    {"/docs/pack-updates", :docs_pack_updates, :docs_pack_updates,
+     "Roll out and roll back action packs",
+     "Update the executable pack bytes on an emisar fleet: preview the change, update one canary runner, trust the exact content hash, roll through bounded groups, and reinstall the exact prior immutable version if validation fails."},
+    {"/docs/network-requirements", :docs_network_requirements, :docs_network_requirements,
+     "Network requirements",
+     "What an emisar runner host and a workstation must reach outbound — the control-plane HTTPS registration and long-lived WebSocket, the release and pack-registry hosts, provider traffic, proxy and TLS-inspection behavior, DNS and clock — and why nothing needs an inbound rule."},
+    {"/docs/troubleshooting", :docs_troubleshooting, :docs_troubleshooting, "Troubleshooting",
+     "Start from the symptom: a runner that will not connect, a pack or action that is missing, an action that will not dispatch, a run that failed or looks stuck, an MCP client or bridge error, sign-in and directory sync, and a stalled audit poller — each with its first check, the page that owns the fix, and the evidence to send if you need us."},
+    {"/docs/security-incidents", :docs_security_incidents, :docs_security_incidents,
+     "Security incidents",
+     "Respond to a leaked emisar credential: one containment sequence, the evidence to preserve first, and compact playbooks for MCP keys, audit-export tokens, enrollment keys, runner tokens and hosts, packs and registries, signed-dispatch keys and CAs, and OIDC or SCIM credentials."},
+    {"/docs/architecture", :docs_architecture, :docs_architecture,
+     "Architecture and failure behavior",
+     "How emisar is put together: the hosted control plane, the outbound-only runner, the optional MCP bridge, and versioned packs — who owns each decision, what each component stores, and exactly what happens when one disconnects, dies mid-execution, or falls behind while work is in flight."}
   ]
 
   # Home FAQ — the single source of truth for both the visible FAQ
