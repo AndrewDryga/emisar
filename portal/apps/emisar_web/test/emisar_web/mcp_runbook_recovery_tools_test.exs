@@ -1359,17 +1359,20 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     {:ok, [run]} = Runs.list_runs_by_runbook_execution(execution_id, subject)
     test_pid = self()
 
-    Task.start(fn ->
-      Ecto.Adapters.SQL.Sandbox.allow(Repo, test_pid, self())
-      # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
-      Process.sleep(50)
-      {:ok, _finished} = Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 5})
-    end)
+    finish_task =
+      Task.async(fn ->
+        Ecto.Adapters.SQL.Sandbox.allow(Repo, test_pid, self())
+        # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
+        Process.sleep(50)
+
+        Fixtures.Runs.finish(run, %{"status" => "success", "duration_ms" => 5})
+      end)
 
     started_at = System.monotonic_time(:millisecond)
     result = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "5s"})
     elapsed = System.monotonic_time(:millisecond) - started_at
 
+    assert {:ok, _finished} = Task.await(finish_task)
     assert result["run"]["status"] == "success"
     assert elapsed < 1_500
   end
@@ -1512,12 +1515,13 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     cursor = first["next"]["arguments"]["cursor"]
     test_pid = self()
 
-    Task.start(fn ->
-      Ecto.Adapters.SQL.Sandbox.allow(Repo, test_pid, self())
-      # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
-      Process.sleep(50)
-      append_progress!(run, 2, "stdout", "second\n")
-    end)
+    progress_task =
+      Task.async(fn ->
+        Ecto.Adapters.SQL.Sandbox.allow(Repo, test_pid, self())
+        # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
+        Process.sleep(50)
+        append_progress!(run, 2, "stdout", "second\n")
+      end)
 
     started_at = System.monotonic_time(:millisecond)
 
@@ -1528,6 +1532,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     elapsed = System.monotonic_time(:millisecond) - started_at
 
+    assert %Runs.RunEvent{} = Task.await(progress_task)
     assert tailed["output"] == [%{"stream" => "stdout", "text" => "second\n"}]
     assert elapsed < 1_500
   end
