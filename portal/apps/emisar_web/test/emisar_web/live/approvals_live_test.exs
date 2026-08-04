@@ -147,23 +147,48 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute html =~ ">Database maintenance<"
   end
 
-  test "a pending request shows its expiry, amber only when it's about to lapse", %{conn: conn} do
+  test "a pending request shows its expiry, amber only inside the two-hour window", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request!(account, user.id, "kernel patch")
+    now = DateTime.utc_now()
 
     # Default 24h TTL → expiry shown but muted (not urgent yet).
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     assert html =~ "expires"
     refute html =~ "text-amber-400"
 
+    # The page projects its OWN `now` milliseconds after these deadlines are
+    # stored, so each side of the 7200-second boundary carries a minute of
+    # slack. The exact boundary seconds (7200 amber, 7201 muted) are pinned in
+    # the component test, which takes them as facts and reads no clock.
+    Fixtures.Approvals.set_request_expiry(request, DateTime.add(now, 7260, :second))
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+    refute html =~ "text-amber-400"
+
     # Under two hours left → amber so an approver triages it ahead of fresher
     # but less-urgent requests.
-    request
-    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), 1800, :second))
-    |> Emisar.Repo.update!()
+    Fixtures.Approvals.set_request_expiry(request, DateTime.add(now, 7140, :second))
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     assert html =~ "text-amber-400"
+  end
+
+  test "a pending request at its deadline reads expired, not urgent", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request!(account, user.id, "kernel patch")
+
+    # The sweep hasn't flipped the row yet, so the queue still lists it as
+    # pending — Approvals' effective status is what makes the badge past-tense
+    # instead of an ambiguous static "expires just now", and lapsed is moot
+    # rather than urgent.
+    Fixtures.Approvals.set_request_expiry(request, DateTime.utc_now())
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert html =~ "expired"
+    assert html =~ "hero-no-symbol"
+    refute html =~ "text-amber-400"
   end
 
   test "an approval_updated broadcast reloads the queue", %{conn: conn} do
@@ -184,9 +209,8 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     # Backdate its TTL and run the real expiry sweep — it lands in Recent
     # decisions as :expired with no decider; the status badge carries the outcome.
-    request
-    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -3600, :second))
-    |> Emisar.Repo.update!()
+    lapsed_at = DateTime.add(DateTime.utc_now(), -3600, :second)
+    Fixtures.Approvals.set_request_expiry(request, lapsed_at)
 
     assert Approvals.expire_overdue_requests() == 1
 

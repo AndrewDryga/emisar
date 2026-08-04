@@ -5443,13 +5443,27 @@ defmodule EmisarWeb.CoreComponents do
   defp risk_classes(_), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
 
   @doc """
-  "expires in 3h" badge for a held approval request — amber when under two
-  hours remain so an approver can triage by urgency (the requester's run
+  "expires in 3h" badge for a held approval request, rendered from the
+  lifecycle facts `Approvals.request_facts/2` projects — this component reads
+  no clock, so every row of one page agrees about a deadline. Amber when under
+  two hours remain so an approver can triage by urgency (the requester's run
   auto-cancels at expiry). Renders nothing without an expiry.
 
-      <.approval_expiry id={"expiry-\#{@request.id}"} expires_at={@request.expires_at} />
+      <.approval_expiry
+        id={"expiry-\#{@request.id}"}
+        expires_at={@facts.expires_at}
+        expired?={@facts.expired?}
+        expires_in_seconds={@facts.expires_in_seconds}
+      />
   """
   attr :expires_at, :any, default: nil
+  # Required, not defaulted: what a deadline MEANS is Approvals' to decide, so a
+  # caller that forgets these facts must fail to compile rather than render a
+  # silently never-expired badge.
+  attr :expired?, :boolean, required: true
+  # Seconds left on the deadline, clamped at 0 by Approvals — the urgency tone
+  # reads from this rather than diffing the timestamp here.
+  attr :expires_in_seconds, :integer, required: true
   attr :class, :string, default: nil
 
   attr :id, :string,
@@ -5457,14 +5471,18 @@ defmodule EmisarWeb.CoreComponents do
     doc:
       "Row-stable id threaded to the inner <.local_time> for list rows (e.g. id={\"expiry-\#{request.id}\"})."
 
+  # tabular-nums: the relative countdown ticks live, so its digits must not
+  # change the badge's width under it.
   def approval_expiry(assigns) do
-    assigns = assign(assigns, :expired?, approval_expired?(assigns.expires_at))
-
     ~H"""
     <span
       :if={@expires_at}
       title={expiry_title(@expired?)}
-      class={["inline-flex items-center gap-1 text-xs", expiry_class(@expires_at), @class]}
+      class={[
+        "inline-flex items-center gap-1 text-xs tabular-nums",
+        expiry_class(@expires_in_seconds),
+        @class
+      ]}
     >
       <%!-- Past tense once it's lapsed ("expired 2m ago") so an at-the-wire
            approval isn't an ambiguous static "expires just now"; {" "} is a
@@ -5480,11 +5498,6 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp approval_expired?(%DateTime{} = expires_at),
-    do: DateTime.compare(expires_at, DateTime.utc_now()) == :lt
-
-  defp approval_expired?(_), do: false
-
   defp expiry_title(true),
     do: "Expired without a decision — it was auto-denied; the action won't run."
 
@@ -5492,14 +5505,12 @@ defmodule EmisarWeb.CoreComponents do
     do: "If no one decides by then, it's auto-denied — the action won't run."
 
   # Under two hours left → amber: an approval lapsing soon needs to stand out
-  # in the queue. Already-expired (the sweeper hasn't cancelled it yet) is moot,
-  # not urgent — keep it muted.
-  defp expiry_class(%DateTime{} = expires_at) do
-    seconds_left = DateTime.diff(expires_at, DateTime.utc_now(), :second)
-    if seconds_left > 0 and seconds_left <= 7200, do: "text-amber-400", else: "text-zinc-400"
-  end
+  # in the queue. At or past the deadline (the sweeper hasn't cancelled it yet)
+  # is moot, not urgent — keep it muted.
+  defp expiry_class(seconds) when is_integer(seconds) and seconds > 0 and seconds <= 7200,
+    do: "text-amber-400"
 
-  defp expiry_class(_), do: "text-zinc-400"
+  defp expiry_class(_seconds), do: "text-zinc-400"
 
   @doc """
   A bounded, static preview of the command and tail output for an action run.

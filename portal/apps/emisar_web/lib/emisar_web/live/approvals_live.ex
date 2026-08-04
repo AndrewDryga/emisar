@@ -139,8 +139,15 @@ defmodule EmisarWeb.ApprovalsLive do
         )
       )
 
+    # ONE projection time for the whole page: two rows must not disagree about a
+    # deadline that falls between their renders, and what an expiry MEANS
+    # (lapsed? how long left?) is Approvals', not the badge's, to decide.
+    now = DateTime.utc_now()
+    pending_facts = Map.new(pending, &{&1.id, Approvals.request_facts(&1, now)})
+
     socket
     |> assign(:pending, pending)
+    |> assign(:pending_request_facts, pending_facts)
     |> assign(:pending_metadata, pending_meta)
     |> assign(:pending_error?, pending_error?)
     |> assign(:grants, grants)
@@ -394,6 +401,7 @@ defmodule EmisarWeb.ApprovalsLive do
               <%!-- Canvas rows, not amber boxes — amber stays on the STATUS (the
                  pending dot, the expiry), the dashboard's approvals grammar. --%>
               <:item :let={request}>
+                <% facts = @pending_request_facts[request.id] %>
                 <li>
                   <.link
                     navigate={~p"/app/#{@current_account}/approvals/#{request.id}"}
@@ -438,7 +446,9 @@ defmodule EmisarWeb.ApprovalsLive do
                          approver can triage by urgency, not just arrival. --%>
                       <.approval_expiry
                         id={"expiry-#{request.id}"}
-                        expires_at={request.expires_at}
+                        expires_at={facts.expires_at}
+                        expired?={facts.expired?}
+                        expires_in_seconds={facts.expires_in_seconds}
                         class="mt-0.5 justify-end"
                       />
                     </div>

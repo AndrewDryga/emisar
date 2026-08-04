@@ -140,6 +140,13 @@ defmodule Emisar.Fixtures.Approvals do
     |> Repo.insert!()
   end
 
+  @doc "Moves a held request's deadline; the TTL is stamped at creation, so expiry cases set it."
+  def set_request_expiry(%Approvals.Request{} = request, %DateTime{} = expires_at) do
+    request
+    |> change(expires_at: expires_at)
+    |> Repo.update!()
+  end
+
   @doc """
   Test-side inspector: the unrevoked grants minted against an API key,
   newest first. Verifies `approve_request/4` side effects without
