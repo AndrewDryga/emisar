@@ -24,7 +24,9 @@ defmodule EmisarWeb.PostmarkWebhookController do
         if authorized?(conn, secret) do
           handle_event(conn, params)
         else
-          Logger.warning("postmark webhook rejected: bad credentials")
+          # No log line here: the route is unauthenticated and publicly POSTable,
+          # so a per-request rejection log is free log amplification. Request
+          # telemetry already records the 401.
           conn |> put_status(:unauthorized) |> json(%{error: "unauthorized"})
         end
     end

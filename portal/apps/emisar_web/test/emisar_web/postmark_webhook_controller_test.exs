@@ -6,6 +6,7 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
   DOES to that list is `Emisar.Mail`'s policy and is tested there.
   """
   use EmisarWeb.ConnCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.Mail
   alias Emisar.Repo
 
@@ -89,13 +90,20 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
     refute Mail.suppressed?("x@example.com")
   end
 
-  test "a wrong Basic-Auth password is rejected", %{conn: conn} do
-    conn =
-      conn
-      |> auth("wrong-secret")
-      |> post_json(%{"RecordType" => "SpamComplaint", "Email" => "y@example.com"})
+  # The route is unauthenticated and publicly POSTable, so rejecting a request
+  # must not write a log line an anonymous caller can amplify.
+  test "a wrong Basic-Auth password is rejected without logging", %{conn: conn} do
+    log =
+      capture_log(fn ->
+        response =
+          conn
+          |> auth("wrong-secret")
+          |> post_json(%{"RecordType" => "SpamComplaint", "Email" => "y@example.com"})
 
-    assert json_response(conn, 401)
+        assert json_response(response, 401)
+      end)
+
+    assert log == ""
     refute Mail.suppressed?("y@example.com")
   end
 
