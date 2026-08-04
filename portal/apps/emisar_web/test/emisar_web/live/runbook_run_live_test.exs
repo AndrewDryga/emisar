@@ -502,6 +502,21 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute render(lv) =~ "Plan blocked"
       assert has_element?(lv, "#start-runbook-button:not([disabled])")
     end
+
+    test "a runbook deleted after mount cannot dispatch from the stale page", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      Fixtures.Runbooks.mark_runbook_as_deleted(runbook)
+
+      assert start(lv) =~ "The runbook did not start. Re-run preflight and try again."
+      refute Repo.one(RunbookExecution)
+    end
   end
 
   describe "durable staged results" do

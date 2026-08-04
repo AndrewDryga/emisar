@@ -1859,6 +1859,23 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.dispatch_runbook(draft, "inspect the database", subject) ==
                {:error, :not_published}
     end
+
+    test "refuses a runbook soft-deleted after it was read" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+
+      runbook =
+        create_runbook(subject, definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      Fixtures.Runbooks.mark_runbook_as_deleted(runbook)
+
+      assert Runbooks.dispatch_runbook(runbook, "inspect the database", subject) ==
+               {:error, :not_found}
+
+      refute Repo.exists?(RunbookExecution)
+    end
   end
 
   describe "create_or_replay_mcp_execution/2" do

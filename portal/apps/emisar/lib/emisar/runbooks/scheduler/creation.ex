@@ -4,7 +4,7 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
   alias Ecto.Multi
   alias Emisar.{Accounts, Approvals, Audit, Policies, Repo}
   alias Emisar.Auth.Subject
-  alias Emisar.Runbooks.{Definition, ExecutionItem, ExecutionStage, Runbook}
+  alias Emisar.Runbooks.{Authorizer, Definition, ExecutionItem, ExecutionStage, Runbook}
   alias Emisar.Runbooks.{RunbookExecution, Scheduler}
 
   @max_active_execution_items_per_account 1_024
@@ -84,6 +84,17 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
     multi
     |> Multi.run({:runbook_capacity, execution_id}, fn repo, _changes ->
       reserve_account_capacity(repo, runbook.account_id, length(items))
+    end)
+    |> Multi.run({:runbook_current, execution_id}, fn repo, _changes ->
+      # A mounted page holds a pre-transaction struct. Lock the current row
+      # after the account lock so deletion serializes with execution creation;
+      # published versions are immutable, so the compiled definition stays valid.
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(runbook.id)
+      |> Runbook.Query.by_account_id(runbook.account_id)
+      |> Runbook.Query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+      |> repo.fetch(Runbook.Query)
     end)
     |> Multi.run({:runbook_policy_snapshot, execution_id}, fn _repo, _changes ->
       validate_policy_snapshot(compiled.items, runbook.account_id)
