@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="action-packs"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_action_packs.html.heex"
       toc={[
         {"layout", "Layout"},
@@ -162,10 +162,12 @@ examples:
       <.docs_h2 id="pack-trust">Pack trust</.docs_h2>
       <p class="mt-3 text-base leading-6 text-zinc-300">
         Every pack is content-addressed by a SHA-256 over all its files. The control plane pins
-        the hash an admin trusted; the runner recomputes it and refuses to run a pack whose
-        on-disk bytes don't match. A new, changed, or custom pack blocks dispatch until an admin
-        trusts its hash — a tampered mirror is rejected, not silently run. This is content
-        integrity, not publisher signing: the runner trusts the exact bytes you approved.
+        the exact hash the account trusts; the runner recomputes it and refuses to run a pack
+        whose on-disk bytes don't match. A hash the published catalog carries is trusted on sight.
+        Everything else — a pack you authored, a hand-edited tree, any hash the catalog doesn't
+        carry — blocks dispatch until an admin trusts it, so bytes that differ from the expected
+        hash are rejected rather than silently run. This is content integrity, not publisher
+        signing: the hash binds the bytes, and the catalog or an admin decides whether they may run.
       </p>
       <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">

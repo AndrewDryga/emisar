@@ -55,8 +55,9 @@
   <p>
     Actions are grouped into packs. A pack contains its manifest, action definitions, and any scripts
     those actions use. The version gives people a release name; the content hash identifies the exact
-    bytes installed on the runner and approved by an operator. If an action, validation rule, or
-    script changes, the hash changes and the new pack must be trusted separately.
+    bytes installed on the runner. A hash in the portal's configured catalog auto-pins; any other
+    hash needs an operator decision. If an action, validation rule, or script changes, the hash
+    changes and the new pack needs its own trust decision.
   </p>
   <p>
     Anything not described by an installed and trusted action is not expressible through emisar. If

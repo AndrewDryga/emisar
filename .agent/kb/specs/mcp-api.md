@@ -24,14 +24,13 @@ The product problem is broader than catalog size. Operators routinely receive a
 shell command, Python script, or copied configuration they do not fully
 understand. Repetition turns that into blind copy-paste: an agent chose the
 operation, but a person still executes opaque text outside policy and audit.
-Emisar should instead expose a bounded vocabulary of declared, typed,
-operator-trusted actions and execute them through the same governed path every
-time.
+Emisar should instead expose a bounded vocabulary of declared, typed, currently
+trusted actions and execute them through the same governed path every time.
 
 ## Goals
 
 - Keep `tools/list` fixed and small.
-- Let a model browse all actions in an operator-trusted observed pack with one
+- Let a model browse all actions in a currently trusted observed pack with one
   bounded call.
 - Make natural-language retrieval deterministic, explainable, and measurable.
 - Publish exact input schemas once in `tools/list` without repeating action
@@ -101,7 +100,7 @@ rather than this specification.
 
 | Tool | Purpose |
 | --- | --- |
-| `list_packs` | Browse operator-trusted observed pack capabilities and deployment problems. |
+| `list_packs` | Browse currently trusted observed pack capabilities and deployment problems. |
 | `list_runners` | Inspect the scoped fleet, connectivity, and pack deployments. |
 | `find_actions` | Retrieve compact action candidates by task or exact filter. |
 | `get_action` | Fetch one exact argument contract and compatible targets. |
@@ -286,13 +285,13 @@ improve an agent decision.
 ### Trusted descriptors
 
 Executable titles, summaries, descriptions, risk, side effects, schemas,
-examples, and search terms come only from an operator-trusted complete pack
+examples, and search terms come only from a currently trusted complete pack
 manifest:
 
-- Registry packs use the manifest authenticated with the exact registry
-  artifact.
-- Custom packs snapshot the complete manifest when an operator trusts the exact
-  hash.
+- Packs in the configured published catalog use the manifest that catalog binds
+  to the exact registry artifact.
+- Every other pack snapshots the complete manifest when an operator trusts the
+  exact hash.
 - Runner advertisements prove deployment only. They never become trusted model
   content merely because one runner sent them.
 
@@ -475,7 +474,7 @@ The response shape never changes with `availability`; only which pack refs and
 actions qualify changes. `issues` and each action's `availability` are always
 present. The default returns only pack refs with at least one executable action
 and includes only their executable actions. `all` returns every currently
-operator-trusted exact observed ref and every action from its trusted manifest,
+trusted exact observed ref and every action from its trusted manifest,
 including unavailable actions for deployment diagnosis. Pending, rejected,
 missing, hash-mismatched, retirement-blocked, and incomplete exact refs do not
 enter any MCP catalog projection. They are reviewed by operators on the Packs
@@ -1983,7 +1982,7 @@ production actions.
 ## Security invariants
 
 - Discovery never widens account or runner scope and never authorizes execution.
-- Only exact operator-trusted complete pack manifests enter discovery. Pending,
+- Only exact currently trusted complete pack manifests enter discovery. Pending,
   rejected, revoked, and retirement-blocked refs remain operator-only catalog
   facts. A run already authorized against a then-visible ref may report that its
   selected contract later became undeliverable; that lifecycle status never

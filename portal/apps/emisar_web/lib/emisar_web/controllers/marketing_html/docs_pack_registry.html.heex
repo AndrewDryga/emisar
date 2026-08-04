@@ -1,7 +1,8 @@
 <%!-- ============================================================
   Docs / Host your own pack registry — private pack distribution on
   customer infrastructure, built with the same tool (packctl) that
-  publishes the public registry. Distribution ≠ trust.
+  publishes the public registry. Distribution ≠ trust, unless a deployment
+  configures this registry as its catalog.
 ============================================================ --%>
 
 <div class="bg-zinc-950 text-zinc-100">
@@ -10,7 +11,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="pack-registry"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_pack_registry.html.heex"
       toc={[
         {"author", "Author & validate"},
@@ -34,12 +35,16 @@
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Distribution and trust are deliberately separate: <strong class="text-zinc-200">trust never
-          rests on the registry</strong>. Installs pin a
-        <code>sha256</code>
-        content hash, the runner re-hashes every pack at load time, and the portal requires an
-        operator to trust each <code>pack@hash</code>
-        per account before its actions can run. A registry — ours or yours — only moves bytes.
+        Distribution and trust are separate decisions, and one setting decides which one your
+        registry makes. Installs always pin a <code>sha256</code>
+        content hash and the runner re-hashes every pack at load time. Trust is per account: the
+        portal auto-trusts an exact <code>pack@version/hash</code>
+        that appears in
+        <strong class="text-zinc-200">the catalog it is configured to read</strong>
+        — <code>registry.emisar.dev</code>
+        on the hosted setup — and holds everything else pending until an admin trusts it on the
+        Packs page. A registry you host only to move bytes is not that catalog, so your packs
+        arrive pending and you review each hash once.
       </p>
 
       <.agent_skill_cta
@@ -221,18 +226,23 @@ packctl catalog build --packs ./packs --out ./dist \
           checkout — onto an internal host. Nothing phones home.
         </li>
         <li class="list-disc">
-          <strong class="text-zinc-200">Discovery stays public-registry-only.</strong>
-          The dashboard's catalog browser and <code>emisar pack suggest</code>
-          list the public index; your private packs appear in the portal the moment a runner
-          advertises them, just not in those browse surfaces.
+          <strong class="text-zinc-200">Discovery follows two explicit settings.</strong>
+          The dashboard's catalog browser follows the portal's
+          <code>EMISAR_PACK_CATALOG_URL</code>; <code>emisar pack suggest</code>
+          follows the runner CLI's <code>--registry</code> or
+          <code>EMISAR_PACKS_REGISTRY</code>. Both default to emisar's public index. A private pack
+          still appears in the portal when a runner advertises it, but it enters either browse
+          surface only when that surface points at your registry.
         </li>
         <li class="list-disc">
           <strong class="text-zinc-200">No CRL-style revocation.</strong>
           Retire a version by <strong class="text-zinc-200">revoking its trust</strong>
-          per account — dispatch then refuses it. (<code>retired_below</code>
-          gates dispatch only for emisar's shipped packs, so on your own registry it's authoring
-          metadata, not a fleet kill-switch.) Hash pinning means an already-reviewed install never
-          changes underneath you.
+          per account — dispatch then refuses it. <code>retired_below</code>
+          is enforced from whichever catalog the portal reads: on the hosted setup that's ours, so
+          floors in your own registry are authoring metadata rather than a fleet kill-switch; on a
+          deployment configured to read your catalog, publishing a floor retires those versions
+          fleet-wide after its next successful refresh. Hash pinning means an already-reviewed
+          install never changes underneath you.
         </li>
       </ul>
 

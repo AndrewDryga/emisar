@@ -940,7 +940,7 @@
   "tools": {
     "list_packs": {
       "title": "List packs",
-      "description": "List operator-trusted exact pack refs observed on in-scope runners, with their bounded action catalogs. The all view includes trusted but currently unavailable deployments; packs without current trust are omitted.",
+      "description": "List currently trusted exact pack refs observed on in-scope runners, with their bounded action catalogs. The all view includes trusted but currently unavailable deployments; packs without current trust are omitted.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -981,7 +981,7 @@
     },
     "list_runners": {
       "title": "List runners",
-      "description": "Inspect in-scope runners, connectivity, and compatibility issues for operator-trusted packs and actions. Use the exact returned runner_ref values for dispatch.",
+      "description": "Inspect in-scope runners, connectivity, and compatibility issues for currently trusted packs and actions. Use the exact returned runner_ref values for dispatch.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",

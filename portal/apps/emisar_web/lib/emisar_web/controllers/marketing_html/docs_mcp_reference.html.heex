@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="mcp-reference"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_mcp_reference.html.heex"
       toc={[
         {"calling-the-endpoint", "Calling the endpoint"},
@@ -99,7 +99,7 @@
             </thead>
             <tbody class="divide-y divide-zinc-900 text-zinc-400">
               <%= for {tool, purpose} <- [
-                {"list_packs", "List operator-trusted in-scope packs with bounded action summaries and deployment issues."},
+                {"list_packs", "List currently trusted in-scope packs with bounded action summaries and deployment issues."},
                 {"list_runners", "Inspect runner connectivity, compatibility, and exact runner refs."},
                 {"find_actions", "Find a bounded set of actions by task or exact identifiers."},
                 {"get_action", "Read one immutable action contract and its compatible runners."},

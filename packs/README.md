@@ -113,18 +113,21 @@ parsers, execution users, and redaction, is at
 ## Trust and drift
 
 The runner computes a SHA-256 content hash from the complete pack. The control
-plane pins the exact hash an administrator trusts, and the runner recomputes it
-before every dispatch. A new, custom, or changed pack blocks until an admin
-trusts that version and hash.
+plane pins the exact hash the account trusts, and the runner recomputes it
+before every dispatch.
 
-Official catalog versions can be auto-trusted because their bytes match the
-catalog compiled into the portal release. Hand-editing the same version on one
-host creates a different hash; the Packs page reports that as drift rather than
-silently treating it as the published pack.
+A version whose hash matches the published catalog the portal is configured to
+read — its current entry or one of the previous versions it retains — auto-pins
+as trusted. Everything else blocks until an admin trusts that exact version and
+hash on the Packs page: a custom pack, a pack from a registry this deployment
+has not configured as its catalog, and any hash the catalog does not carry.
+Hand-editing a version on one host creates a different hash; the Packs page
+reports that as drift rather than silently treating it as the published pack.
 
-This is content integrity, not publisher identity. Trusting a hash means
-trusting the action definitions, including their declared risk and side effects.
-Review custom and third-party packs as code.
+This is content integrity, not publisher identity. The hash binds an expected
+value to exact bytes; the catalog or an operator supplies the decision to trust
+them. Trusting a hash means trusting the action definitions, including their
+declared risk and side effects. Review custom and third-party packs as code.
 
 ## Credentials stay on the runner
 

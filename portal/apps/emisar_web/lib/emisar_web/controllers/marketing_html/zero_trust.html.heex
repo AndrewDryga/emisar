@@ -103,7 +103,7 @@
                 {"Parameter validation, tool-side", "Foundation",
                  "The runner re-validates every argument against the action schema and clamps options to their min/max before exec — argv arrays, never a shell string."},
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
-                 "Packs are versioned, content-addressed YAML. A changed hash blocks dispatch until an admin trusts it; the runner recomputes the hash and refuses a mismatch."},
+                 "Packs are versioned, content-addressed YAML. A hash the published catalog carries is trusted on sight; an unrecognized or changed one blocks dispatch until an admin reviews it, and the runner recomputes the hash and refuses a mismatch."},
                 {"Tamper-evident, hash-chained host journal", "Enterprise",
                  "Every action is recorded to the searchable off-host portal audit and to a hash-chained JSONL journal retained on the runner. emisar audit verify reports breaks in that retained chain; the two evidence layers remain separate."},
                 {"Human-in-the-loop approval for high-risk actions", "Advanced",

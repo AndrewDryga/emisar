@@ -139,8 +139,10 @@ portal ignores the field, and an older runner never sends it.
 ```
 
 Runner advertisements prove deployment only. MCP model-facing descriptors come
-from the operator-trusted manifest for the exact pack hash. A mismatch excludes
-that runner/action from execution. Descriptor timeout fields are integer
+from the trusted manifest for the exact pack hash — the manifest the account
+currently trusts, whether that trust was auto-pinned from the configured
+published catalog or decided by an operator. A mismatch excludes that
+runner/action from execution. Descriptor timeout fields are integer
 nanoseconds, matching Go's `time.Duration` wire representation.
 
 ## `run_action`

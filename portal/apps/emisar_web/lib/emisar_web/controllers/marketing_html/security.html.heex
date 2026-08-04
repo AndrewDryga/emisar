@@ -324,9 +324,10 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-pinned packs</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            Action packs are content-addressed. New, custom, or changed hashes block dispatch
-            until an admin trusts the contents. Before execution, the runner recomputes the
-            cloud-pinned hash and rejects a mismatch.
+            Action packs are content-addressed. A hash the published catalog carries is trusted on
+            sight; a custom or changed one blocks dispatch until an admin reviews the contents.
+            Before execution, the runner recomputes the control-plane-pinned hash and rejects a
+            mismatch.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">

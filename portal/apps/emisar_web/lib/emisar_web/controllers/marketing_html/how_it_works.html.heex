@@ -137,16 +137,17 @@
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
               Before your rules even come into it, emisar checks the basics: the action really
-              is in your catalog, it comes from a pack your admin trusts — a pack whose content
-              changed is blocked until someone re-approves it — the arguments fit the schema,
-              and this agent is allowed to touch that server.
+              is in your catalog, it comes from a pack version your account trusts — an exact hash
+              in the published catalog auto-pins, and a pack whose content changed on the host is
+              blocked until an admin reviews it — the arguments fit the schema, and this agent is
+              allowed to touch that server.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
                 the checks
               </div>
               <pre class="overflow-x-auto p-4 font-mono text-[11.5px] leading-5 text-zinc-300"><span class="text-brand-400">✓</span> <span class="text-zinc-500">action</span>   systemd.unit_restart <span class="text-zinc-500">— in your catalog</span>
-<span class="text-brand-400">✓</span> <span class="text-zinc-500">pack</span>     linux @ 4e91ab27… <span class="text-zinc-500">— trusted by your admin</span>
+<span class="text-brand-400">✓</span> <span class="text-zinc-500">pack</span>     linux @ 4e91ab27… <span class="text-zinc-500">— trusted for this account</span>
 <span class="text-brand-400">✓</span> <span class="text-zinc-500">args</span>     unit = <span class="text-brand-300">"checkout-api.service"</span> <span class="text-zinc-500">— fits the schema</span>
 <span class="text-brand-400">✓</span> <span class="text-zinc-500">runner</span>   api-iad-02 <span class="text-zinc-500">— allowed for this agent</span></pre>
             </div>

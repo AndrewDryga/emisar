@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="architecture"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_architecture.html.heex"
       toc={[
         {"components", "The four pieces"},
@@ -157,7 +157,7 @@
               {"Which hosts a person or key may touch", "Control plane",
                "Runner scope narrows the catalog itself, so an out-of-scope host is invisible rather than refused."},
               {"Which pack version and hash is trusted", "Control plane",
-               "Trust binds one exact content hash. Installing bytes on a host does not trust them."},
+               "Trust binds one exact content hash — auto-pinned when the published catalog it reads carries that hash, decided by an admin otherwise. Installing bytes on a host does not trust them."},
               {"Allow, deny, or ask a human", "Control plane",
                "Policy is default-deny: no matching rule means the dispatch is refused."},
               {"What this host will advertise or run at all", "Runner",

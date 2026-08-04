@@ -1280,8 +1280,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "/v1/packs/"
       assert html =~ "--hash sha256:"
       assert html =~ "aws s3 sync"
-      # Trust never rests on the registry — the page must say so.
-      assert html =~ "trust never"
+
+      # Trust follows the CONFIGURED catalog, and a registry that only moves bytes
+      # leaves its packs pending — the page must state both halves.
+      assert html =~ "the catalog it is configured to read"
+      assert html =~ "arrive pending"
+      assert html =~ "EMISAR_PACK_CATALOG_URL"
     end
 
     test "the policies-and-approvals page renders the approval TTL and standing grants",

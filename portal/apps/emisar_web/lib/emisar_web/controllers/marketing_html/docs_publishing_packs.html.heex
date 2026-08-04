@@ -9,7 +9,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="publishing-packs"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_publishing_packs.html.heex"
       toc={[
         {"layout", "Lay out the directory"},
@@ -192,7 +192,8 @@ examples:
 emisar pack validate ./my-pack
 sudo emisar pack install ./my-pack</.docs_code>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            Because your pack isn't one emisar publishes, it has no baseline hash — so it lands in
+            Because your pack isn't in the catalog your portal reads, there's no published hash for
+            it to match — so it lands in
             the dashboard's <strong class="text-zinc-200">Packs</strong>
             page as <strong class="text-zinc-200">pending</strong>, with dispatch held until you
             approve it. Open <strong class="text-zinc-200">Packs</strong>, review the content hash,

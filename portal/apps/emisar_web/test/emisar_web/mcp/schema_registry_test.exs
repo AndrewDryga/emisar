@@ -52,7 +52,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     wait_for_run = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "wait_for_run"))
 
     assert list_packs["description"] ==
-             "List operator-trusted exact pack refs observed on in-scope runners, with their bounded action catalogs. The all view includes trusted but currently unavailable deployments; packs without current trust are omitted."
+             "List currently trusted exact pack refs observed on in-scope runners, with their bounded action catalogs. The all view includes trusted but currently unavailable deployments; packs without current trust are omitted."
 
     find_actions = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "find_actions"))
 

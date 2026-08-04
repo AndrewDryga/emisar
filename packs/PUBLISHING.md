@@ -33,9 +33,12 @@ replaced. The two mutable pointers are overwritten each publish; the bucket's
 **object versioning** keeps every prior generation fetchable.
 
 `content_hash` is the runner's load-time hash (`emisar pack validate` prints the
-same value) — the single trust source. Install snippets pin `--hash sha256:…`
-and the runner rejects any tampered tarball after download, so the public
-transport adds no trust the hash doesn't already carry.
+same value). It binds an expected value to exact bytes; it does not authenticate
+the publisher or say the bytes are safe. The trust decision comes from the
+catalog a portal is configured to read, or from an operator on the Packs page.
+Install snippets pin `--hash sha256:…` and the runner rejects any tampered
+tarball after download. Downloading from a registry that is not the portal's
+configured catalog does not by itself make those bytes trusted.
 
 ## Build
 
@@ -64,7 +67,7 @@ so a carried-forward version whose tarball never published fails the run
 loudly. To restore the exact prior history instead, recover the pointer from a
 bucket generation first (see Rollback). After the build, copy
 `dist/packs/v1/catalog.json` to `portal/apps/emisar/priv/packs/catalog.json`
-so the portal's compiled trust baseline and the next CD publication use the
+so the portal's bundled boot catalog and the next CD publication use the
 same bytes.
 
 ## Publish
@@ -145,10 +148,14 @@ retire **every** older version so a runner still advertising an old version
 fails closed at dispatch.
 Retirement is authored in the pack itself — a `retired_below` floor in
 `pack.yaml` — so the decision and its exact floor live in the pack's git
-history, get reviewed in the PR, and ship through the normal publish. It is
-still release-controlled: it takes effect on the deploy that ships the fixed
-pack's auto-trust, so a compromised remote catalog can neither auto-trust a
-new hash nor mass-retire the fleet.
+history, get reviewed in the PR, and ship through the normal publish. It needs
+no portal deploy: each portal instance refreshes on a ten-minute timer and
+starts refusing the retired version after its own next successful refresh.
+That cuts both ways — whoever can write the catalog a portal reads can set,
+lower, drop, or raise floors, authorize bytes already installed on a host, and
+choose the risk and kind that policy evaluates for those bytes. They still
+cannot install bytes, bypass the runner's descriptor and argument checks or
+local admission, or erase audit.
 
 ```yaml
 # 1. Fix the pack, BUMP its version, and declare the floor in packs/redis/pack.yaml.
@@ -168,23 +175,28 @@ curl -fsS https://registry.emisar.dev/v1/catalog.json -o ./current-catalog.json
 packctl catalog build --packs ./packs --out ./dist/packs --previous ./current-catalog.json
 packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
 
-# 3. Regenerate the BUNDLED catalog the portal compiles in, in the SAME
-#    commit as the pack edit (retired_below is baked into PackBaseline):
+# 3. Regenerate the BUNDLED catalog in the SAME commit as the pack edit — it is
+#    the portal's boot seed, so a fresh VM carries the floor before its first
+#    refresh:
 cp ./dist/packs/v1/catalog.json ./portal/apps/emisar/priv/packs/catalog.json
 #    then from portal/apps/emisar/:
 #      mix test test/emisar/catalog/pack_baseline_test.exs \
 #        test/emisar/catalog/published_registry/cache_test.exs
 
-# 4. Deploy the portal. Retirement takes effect on that deploy — the same
-#    motion that ships the fix. Verify in a test account: a runner pinned to
-#    the retired version now blocks with `pack_retired` at dispatch, telling
-#    the operator to update the pack (an admin can still explicitly re-trust
-#    the retired version on the Packs page — a deliberate, audited override).
+# 4. Verify in a test account after the next refresh (no deploy needed): a
+#    runner pinned to the retired version now blocks with `pack_retired` at
+#    dispatch, telling the operator to update the pack (an admin can still
+#    explicitly re-trust the retired version on the Packs page — a deliberate,
+#    audited override).
 ```
 
-Retirement is permanent and monotonic: once `retired_below` is published the
-build refuses to lower or drop it, so a stale `--previous` can never un-retire
-a version, and the pack always tells the full truth about its floor.
+The build keeps the floor monotonic relative to the catalog supplied through
+`--previous`: once `retired_below` is present there, the build refuses to lower
+or drop it. That is why the procedure above always fetches the live catalog.
+The portal does not re-enforce the floor at runtime — a structurally valid
+catalog that lowers or drops a watermark is logged as a regression and still
+served — so treat the publication procedure and write access to the bucket as
+what actually hold the floor.
 
 ## Installing a specific version
 

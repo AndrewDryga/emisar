@@ -116,22 +116,27 @@ participates in descriptor trust and drift comparison; a descriptor without one
 simply omits the key. Pack and action YAML loading is strict about unknown
 fields. Schema versions are exact-match gates, not ranges. The catalog keeps
 the current pack plus up to `K=3` previous published versions in
-`previous_versions` for the trust window. A pack's `retired_below` watermark is
-permanent and monotonic once published.
+`previous_versions` for the trust window. `packctl catalog build --previous`
+keeps a pack's `retired_below` watermark monotonic in the normal publication
+path by refusing to lower or drop an already-published one; the portal runtime
+logs a lowered or dropped watermark as a regression and still serves the
+catalog, so that monotonicity is a publisher guarantee rather than a runtime
+invariant.
 
 **What happens on skew.** A runner that cannot read a newer pack or action
 schema rejects it closed and does not advertise it. A consumer that sees a
 newer catalog or trusted-manifest schema gets an explicit unsupported-schema
 error. It does not guess at the format.
 
-Within the trust window, a slightly older pack can remain auto-trusted. A pack
-outside the window may need an operator trust decision. A version strictly
-below `retired_below` is not dispatchable: the portal refuses it as retired,
-untrusted, or hash-mismatched and does not create the run. Its immutable
-tarball remains installable, and an administrator can use the audited override
-when there is a reason to do so. The current bundled catalog carries monotonic
-`retired_below` watermarks across published packs, so retirement is represented
-in product metadata rather than only synthetic fixtures.
+The window is read from the catalog the portal is configured to fetch, so a
+slightly older published version can remain auto-trusted. A pack outside that
+catalog's current-or-retained entries needs an operator trust decision. A
+version strictly below `retired_below` is not dispatchable: the portal refuses
+it as retired, untrusted, or hash-mismatched and does not create the run. Its
+immutable tarball remains installable, and an administrator can use the audited
+override when there is a reason to do so. Both the bundled boot catalog and the
+published one carry `retired_below` watermarks across real packs, so retirement
+is represented in product metadata rather than only synthetic fixtures.
 
 The content hash is part of this contract. Reusing a pack version with changed
 bytes is not a compatible edit; publish a new version. See

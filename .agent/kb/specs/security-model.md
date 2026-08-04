@@ -160,17 +160,21 @@ its actions from itself:
 | Action outlives a dying runner           | `Pdeathsig` (Linux) + process-group SIGTERM/SIGKILL on cancel/timeout. |
 | Inbound surface attacked                 | There is none.                                                |
 | Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor — a host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
-| TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A compiled-baseline pack's risk is inside the trusted hash; a TOFU pack (no baseline) has no such anchor. Pin risk at trust-time if you need it author-independent. |
+| TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A pack whose hash matches the configured published catalog carries its risk inside the hash that catalog authorized; a TOFU pack (no catalog entry) has no such anchor. Pin risk at trust-time if you need it author-independent. |
+| Compromised publisher of the configured catalog     | Accepted, bounded: whoever can write the catalog a portal fetches can authorize matching bytes already installed on a host, choose the trusted risk and kind that policy evaluates for those bytes, and set, lower, drop, or raise retirement floors. They cannot install bytes, bypass the runner's descriptor equality, argument validation, or local admission checks, or erase audit. The catalog is fetched over HTTPS, validated as a complete document, and its tarball URLs are pinned under the configured registry base, so an off-base or malformed document is refused and the last accepted snapshot is kept. |
 | Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v4 Ed25519 client signature over an unambiguous claim containing canonical origin, action, immutable pack, exact-args digest, complete generation-bound runner-ref digest, reason, operation, nonce, and time, under a leaf key vouched for by a trusted offline CA. The cloud holds neither private key, so it cannot forge the claim or widen its signed targets; the freshness window and bounded, fsynced replay journal prevent reuse without evicting live nonces, and CA scope adds a group/label ceiling. Limitations: the cloud can withhold a call or lie about the display-name/suffix mapping during discovery, and a queued call can become stale. Verify suffixes out of band and use narrow cert scopes for the highest-trust workflows. See [`signed-dispatch.md`](signed-dispatch.md). |
 
 ## Threats *not* considered (yet)
 
 - Local privilege escalation via the executor user. emisar runs `argv`
   exactly as declared; the OS still owns access decisions.
-- Pack *publisher* signature verification. The current model relies on the
-  image build pipeline being trusted; pack signing becomes useful when
-  third-party packs join the catalog. (Distinct from *dispatch* signing —
-  client-attested dispatch above, which is shipped.)
+- Pack-catalog publisher signature verification. The current model accepts a
+  structurally valid catalog fetched over HTTPS from the configured origin;
+  storage write controls and the publication workflow authenticate that
+  publisher operationally, not cryptographically. Catalog signing would add an
+  independent publisher-identity check for first- or third-party catalogs.
+  (Distinct from *dispatch* signing — client-attested dispatch above, which is
+  shipped.)
 - Cryptographic signing or external anchoring of the local JSONL chain.
   The hash chain detects mutation within the retained file, but a privileged
   attacker can replace the entire file. Cloud audit is the durable fleet

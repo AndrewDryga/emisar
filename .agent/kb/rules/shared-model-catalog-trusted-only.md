@@ -1,10 +1,11 @@
 # shared: model catalogs expose only trusted pack refs
 
 **Rule.** Every model-facing discovery surface exposes only exact pack refs
-whose account, pack ID, version, and hash have a current operator-trusted,
-complete manifest and are not retirement-blocked. Filter them at the shared
-catalog projection before deriving actions, runner compatibility, runbooks,
-version skew, issues, or continuations.
+whose account, pack ID, version, and hash are currently trusted for that
+account — auto-pinned from the configured published catalog or decided by an
+operator — with a complete manifest and no retirement block. Filter them at the
+shared catalog projection before deriving actions, runner compatibility,
+runbooks, version skew, issues, or continuations.
 
 Pending, rejected, revoked, missing, hash-mismatched, incomplete, and retired
 refs are operator-only facts. Show them on the Packs page and in audit history,

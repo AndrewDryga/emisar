@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="pack-updates"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_pack_updates.html.heex"
       toc={[
         {"rules", "Five rules that decide everything"},
@@ -46,16 +46,19 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Installing is not trusting.</strong>
-            The runner command puts bytes on a host. Whether those bytes may be dispatched is an
-            account decision made in the console.
+            The runner command puts bytes on a host. Whether those bytes may be dispatched is a
+            separate account-level decision — settled by the published catalog when it carries
+            that exact hash, and yours to make in the console otherwise.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Trust binds one exact content hash.</strong>
-            A version advertising a hash the account has not adopted lands as pending and dispatch
-            for that pack version is refused until someone trusts or rejects it.
+            A hash the published catalog carries is trusted for the account on sight. Any other
+            hash — a pack you maintain, a hand-edited tree, a version the catalog no longer
+            carries — lands as pending, and dispatch for that pack version is refused until
+            someone trusts or rejects it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -202,8 +205,9 @@
 
       <.docs_h2 id="trust">Trust the exact hash</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The canary now advertises new bytes. On the Packs page that version shows as
-        <strong class="text-zinc-200">pending</strong>
+        The canary now advertises new bytes. When that hash is one the published catalog carries,
+        the Packs page already shows the version as trusted and there is nothing to click — skip
+        to the proof below. Anything else shows as <strong class="text-zinc-200">pending</strong>
         with the exact hash it is advertising, and dispatch for it is refused. Check that hash
         against the one
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack list</code>
@@ -255,9 +259,11 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--hash</code>
         pin is what makes this a recovery rather than a hope: the install aborts unless the
-        computed hash matches exactly. Each version carries its own trust decision, so going back
-        to bytes the account already trusted resumes dispatch without a new review; going back to a
-        version this account never trusted lands as pending, exactly as any first sighting would.
+        computed hash matches exactly. Each version carries its own trust decision. Going back to
+        bytes the account already trusted resumes dispatch without a new review, and so does an
+        exact hash the published catalog still carries — that one never needed a click here in the
+        first place. On first sight, a version the catalog has dropped or any other hash the
+        account has never trusted lands as pending.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Do this per runner, in the same bounded groups you rolled forward in, and verify the same
@@ -277,16 +283,18 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The floor only moves upward. Once published it cannot be lowered or dropped, so a
-            version that has been retired stays retired.
+            Floors move upward at publish time. The build that produces a catalog refuses to lower
+            or drop a floor already in it, so a routine republish cannot quietly un-retire a
+            version.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Retirement is release-controlled: it comes from the catalog the control plane ships
-            with, not from the mutable published one, so nothing remote can mass-retire your fleet
-            or auto-trust bytes on it.
+            Retirement arrives with the catalog, not with a deploy. The control plane tries to
+            refresh its configured pack catalog every ten minutes and keeps the last accepted
+            snapshot on a fetch or validation failure, so a new floor starts blocking after the
+            next successful refresh.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
