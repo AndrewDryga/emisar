@@ -90,8 +90,14 @@ table="$project.$dataset.$table_id"
 max_bytes=$((max_scan_gb * 1073741824))
 
 # Credits post as a repeated field and are negative, so net cost is the gross
-# charge plus their sum — the number the invoice eventually shows.
+# charge plus their sum — the number the invoice eventually shows. BigQuery
+# renders a FLOAT64 past 1e7 with an exponent ("1.2436E7"), which is not a
+# number an operator or a model should have to decode, so every amount is cast
+# to NUMERIC and arrives as a plain decimal at any size.
 credits='SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0))'
+amounts="CAST(ROUND(SUM(cost), 6) AS NUMERIC) AS gross_cost,
+           CAST(ROUND($credits, 6) AS NUMERIC) AS credits,
+           CAST(ROUND(SUM(cost) + $credits, 6) AS NUMERIC) AS net_cost"
 window='usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)'
 service_clause='(@service = "" OR service.description = @service)'
 
@@ -99,9 +105,7 @@ case "$mode" in
   cost-by-service)
     sql="SELECT
            service.description AS service,
-           ROUND(SUM(cost), 6) AS gross_cost,
-           ROUND($credits, 6) AS credits,
-           ROUND(SUM(cost) + $credits, 6) AS net_cost,
+           $amounts,
            ANY_VALUE(currency) AS currency
          FROM \`$table\`
          WHERE $window AND $service_clause
@@ -114,9 +118,7 @@ case "$mode" in
     sql="SELECT
            IFNULL(project.id, '(unattributed)') AS project_id,
            ANY_VALUE(project.name) AS project_name,
-           ROUND(SUM(cost), 6) AS gross_cost,
-           ROUND($credits, 6) AS credits,
-           ROUND(SUM(cost) + $credits, 6) AS net_cost,
+           $amounts,
            ANY_VALUE(currency) AS currency
          FROM \`$table\`
          WHERE $window AND $service_clause
@@ -129,11 +131,9 @@ case "$mode" in
     sql="SELECT
            service.description AS service,
            sku.description AS sku,
-           ROUND(SUM(cost), 6) AS gross_cost,
-           ROUND($credits, 6) AS credits,
-           ROUND(SUM(cost) + $credits, 6) AS net_cost,
+           $amounts,
            ANY_VALUE(currency) AS currency,
-           ROUND(SUM(usage.amount_in_pricing_units), 6) AS usage_amount,
+           CAST(ROUND(SUM(usage.amount_in_pricing_units), 6) AS NUMERIC) AS usage_amount,
            ANY_VALUE(usage.pricing_unit) AS usage_unit
          FROM \`$table\`
          WHERE $window AND $service_clause
@@ -145,9 +145,7 @@ case "$mode" in
   cost-daily-trend)
     sql="SELECT
            DATE(usage_start_time) AS usage_date,
-           ROUND(SUM(cost), 6) AS gross_cost,
-           ROUND($credits, 6) AS credits,
-           ROUND(SUM(cost) + $credits, 6) AS net_cost,
+           $amounts,
            ANY_VALUE(currency) AS currency
          FROM \`$table\`
          WHERE $window AND $service_clause
@@ -157,11 +155,14 @@ case "$mode" in
     ;;
 
   export-freshness)
+    # A bare TIMESTAMP comes back as epoch seconds ("1.785853200971549E9"), so
+    # every one is formatted here — this action's whole job is telling an
+    # operator how stale the export is.
     sql="SELECT
-           MAX(export_time) AS latest_export_time,
+           FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', MAX(export_time)) AS latest_export_time,
            TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX(export_time), HOUR) AS export_lag_hours,
-           MAX(usage_end_time) AS latest_usage_end_time,
-           MIN(usage_start_time) AS earliest_usage_start_time,
+           FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', MAX(usage_end_time)) AS latest_usage_end_time,
+           FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', MIN(usage_start_time)) AS earliest_usage_start_time,
            COUNT(*) AS rows_in_window
          FROM \`$table\`
          WHERE $window"

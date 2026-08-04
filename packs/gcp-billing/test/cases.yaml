@@ -25,8 +25,10 @@ cases:
       stdout_contains:
         - gcp_billing_export_v1_01B678_5ED3E1_AD1F9F
         - Compute Engine
-        - '"net_cost":"128.5"'
-        - '"credits":"-11.5"'
+        # A fleet's monthly spend passes 1e7, where an uncast FLOAT64 would
+        # report itself as 1.2298386515E7.
+        - '"net_cost":"12298386.515"'
+        - '"credits":"-138.008554"'
 
   # An account that turned on the detailed export has no standard table at all,
   # so a fixed table name answers that whole fleet with a 404.
@@ -41,7 +43,7 @@ cases:
     expect:
       stdout_contains:
         - gcp_billing_export_resource_v1_01B678_5ED3E1_AD1F9F
-        - '"net_cost":"128.5"'
+        - '"net_cost":"12298386.515"'
       stdout_not_contains:
         - gcp_billing_export_v1_01B678_5ED3E1_AD1F9F
 
@@ -70,6 +72,9 @@ cases:
         - N2 Instance Core running in Americas
         - '"net_cost":"86.5"'
         - '"usage_unit":"hour"'
+        # Counted usage runs to nine figures, which an uncast FLOAT64 reports
+        # as 5.16694142E8.
+        - '"usage_amount":"516694142"'
 
   - action: gcp.cost_daily_trend
     args:
@@ -90,6 +95,10 @@ cases:
       days: 7
     expect:
       stdout_contains:
+        # BigQuery hands back a bare TIMESTAMP as epoch seconds, and staleness
+        # is the one thing this action exists to report.
+        - '"latest_export_time":"2026-08-01T06:00:00Z"'
+        - '"earliest_usage_start_time":"2026-07-25T00:00:00Z"'
         - '"export_lag_hours":"3"'
         - '"rows_in_window":"8241"'
 

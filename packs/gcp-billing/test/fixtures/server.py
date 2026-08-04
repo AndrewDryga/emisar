@@ -35,13 +35,25 @@ def table(*columns):
     }
 
 
+def numeric(sql, cast, floating):
+    """A NUMERIC column arrives as a plain decimal; a bare FLOAT64 past 1e7
+    arrives with an exponent, which is what the casts in the query avoid."""
+    return cast if "AS NUMERIC" in sql else floating
+
+
 def query_response(sql):
     if "MAX(export_time)" in sql:
+        # A bare TIMESTAMP arrives as epoch seconds, so an unformatted query
+        # gets that shape back and the case that reads a date fails.
+        formatted = "FORMAT_TIMESTAMP" in sql
         return table(
-            ("latest_export_time", ["2026-08-01 06:00:00"]),
+            ("latest_export_time",
+             ["2026-08-01T06:00:00Z" if formatted else "1.7858532E9"]),
             ("export_lag_hours", ["3"]),
-            ("latest_usage_end_time", ["2026-08-01 05:00:00"]),
-            ("earliest_usage_start_time", ["2026-07-25 00:00:00"]),
+            ("latest_usage_end_time",
+             ["2026-08-01T05:00:00Z" if formatted else "1.7858496E9"]),
+            ("earliest_usage_start_time",
+             ["2026-07-25T00:00:00Z" if formatted else "1.7852832E9"]),
             ("rows_in_window", ["8241"]),
         )
     if "GROUP BY usage_date" in sql:
@@ -54,14 +66,14 @@ def query_response(sql):
         )
     if "GROUP BY service, sku" in sql:
         return table(
-            ("service", ["Compute Engine", "Cloud SQL"]),
-            ("sku", ["N2 Instance Core running in Americas", "Cloud SQL for PostgreSQL: Zonal - vCPU"]),
+            ("service", ["Compute Engine", "Networking"]),
+            ("sku", ["N2 Instance Core running in Americas", "Networking Cloud Cdn Cache Lookups"]),
             ("gross_cost", ["96.0", "48.0"]),
             ("credits", ["-9.5", "0.0"]),
             ("net_cost", ["86.5", "48.0"]),
             ("currency", ["USD", "USD"]),
-            ("usage_amount", ["720.0", "360.0"]),
-            ("usage_unit", ["hour", "hour"]),
+            ("usage_amount", numeric(sql, ["720", "516694142"], ["720.0", "5.16694142E8"])),
+            ("usage_unit", ["hour", "count"]),
         )
     if "GROUP BY project_id" in sql:
         return table(
@@ -75,9 +87,9 @@ def query_response(sql):
     if "GROUP BY service" in sql:
         return table(
             ("service", ["Compute Engine", "Cloud SQL"]),
-            ("gross_cost", ["140.0", "70.0"]),
-            ("credits", ["-11.5", "-5.75"]),
-            ("net_cost", ["128.5", "64.25"]),
+            ("gross_cost", numeric(sql, ["12436395.069", "70"], ["1.2436395069E7", "70.0"])),
+            ("credits", ["-138.008554", "-5.75"]),
+            ("net_cost", numeric(sql, ["12298386.515", "64.25"], ["1.2298386515E7", "64.25"])),
             ("currency", ["USD", "USD"]),
         )
     return None
