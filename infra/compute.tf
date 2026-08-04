@@ -254,8 +254,10 @@ resource "google_compute_region_instance_group_manager" "emisar" {
   # A blank database is bootstrapped before any application VM may start. The
   # reviewed readiness attestation raises this from zero after the IAM verifier
   # succeeds; restores already contain the owner role and skip that ceremony.
-  target_size                      = var.database_owner_role_ready ? var.instance_count : 0
-  distribution_policy_target_shape = "EVEN"
+  target_size = var.database_owner_role_ready ? var.instance_count : 0
+  # Prefer available capacity within the selected zones. Zonal scarcity may
+  # temporarily leave the fleet uneven instead of pinning a rollout to a full zone.
+  distribution_policy_target_shape = "BALANCED"
   distribution_policy_zones        = var.zones
 
   # Block `terraform apply` until the rollout is healthy, so a broken deploy FAILS
@@ -279,15 +281,15 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     initial_delay_sec = 240
   }
 
-  # Create a healthy replacement in every zone before removing an old VM.
-  # Combined with LB readiness and connection draining, this keeps target
-  # capacity serving throughout the rollout.
+  # Create healthy replacements before removing old VMs. The per-zone surge may
+  # temporarily exceed the configured target; BALANCED placement can use
+  # whichever selected zone has capacity.
   update_policy {
     type                         = "PROACTIVE"
     minimal_action               = "REPLACE"
     max_surge_fixed              = length(var.zones)
     max_unavailable_fixed        = 0
-    instance_redistribution_type = "PROACTIVE"
+    instance_redistribution_type = "NONE"
   }
 
   timeouts {
