@@ -39,7 +39,7 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> validate_hashes()
   end
 
-  @doc "Restore a release-frozen complete manifest on an already trusted hash."
+  @doc "Restore a published complete manifest on an already trusted hash."
   def restore_baseline_manifest(%PackVersion{} = pack_version, %{} = trusted_manifest) do
     change(pack_version, trusted_manifest: trusted_manifest)
   end

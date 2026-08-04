@@ -1,7 +1,8 @@
 defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   @moduledoc """
   Parses and validates a published `catalog.json` document into
-  `Emisar.Catalog.PublishedRegistry.Pack` structs.
+  `Emisar.Catalog.PublishedRegistry.Pack` structs plus the trust snapshot
+  `Emisar.Catalog.PackBaseline` judges runner advertisements against.
 
   The catalog is produced out-of-band by `emisar pack catalog build`
   (the runner's loader is the single source of the content hash, so the
@@ -16,7 +17,12 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   `Emisar.Catalog.TrustedManifest`, the one owner of that contract — that
   every action is a complete trusted descriptor, so the declared `args`
   the command preview renders and masks by are as trustworthy as the
-  template itself.
+  template itself. The trust snapshot adds the checks that used to run at
+  build time: every version — current, retained history, and retirement
+  watermark — is SemVer, each `(pack_id, version)` appears exactly once,
+  and the current version's actions build a complete manifest. Those now
+  fail the *document* at refresh, so a bad publish holds the last-good
+  catalog instead of taking the portal down.
 
   Pure — no Repo, no HTTP, no side effects. The cache
   (`Emisar.Catalog.PublishedRegistry.Cache`) owns fetching and last-good
@@ -31,14 +37,33 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   @risks ~w(low medium high critical)
   @kinds ~w(exec script)
 
-  @doc """
-  Decode + validate a catalog (a JSON string or an already-decoded map)
-  into the full pack list, alphabetically by id.
-
-  `{:ok, [Pack.t()]}` on success; `{:error, message}` — a human-readable
-  reason for the operational log — on any malformation.
+  @typedoc """
+  What the published catalog says we publish: the canonical hash of every
+  `(pack_id, version)` in the trust window, the complete manifest for each
+  exact `(pack_id, version, hash)` the catalog still carries actions for, the
+  retirement watermarks, and each pack's current version.
   """
-  @spec parse(binary() | map()) :: {:ok, [Pack.t()]} | {:error, String.t()}
+  @type trust :: %{
+          baseline: %{{String.t(), String.t()} => String.t()},
+          manifests: %{{String.t(), String.t(), String.t()} => map()},
+          retired_below: %{String.t() => String.t()},
+          current_versions: %{String.t() => String.t()}
+        }
+
+  @doc """
+  Decode + validate a catalog (a JSON string or an already-decoded map) into
+  the full pack list, alphabetically by id, and the trust snapshot.
+
+  `{:ok, %{packs: packs, trust: trust}}` on success; `{:error, message}` — a
+  human-readable reason for the operational log — on any malformation.
+
+  Trust is built from the SAME decoded document in one pass rather than from
+  the returned structs: `Pack.previous_versions` carries no actions, so a
+  manifest map derived from it would silently drop every historical
+  descriptor.
+  """
+  @spec parse(binary() | map()) ::
+          {:ok, %{packs: [Pack.t()], trust: trust()}} | {:error, String.t()}
   def parse(json) when is_binary(json) do
     case Jason.decode(json) do
       {:ok, data} -> parse(data)
@@ -47,8 +72,9 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   end
 
   def parse(%{"schema_version" => @schema_version, "packs" => packs}) when is_list(packs) do
-    with {:ok, parsed} <- parse_packs(packs) do
-      {:ok, Enum.sort_by(parsed, & &1.id)}
+    with {:ok, parsed} <- parse_packs(packs),
+         {:ok, trust} <- parse_trust(packs) do
+      {:ok, %{packs: Enum.sort_by(parsed, & &1.id), trust: trust}}
     end
   end
 
@@ -74,6 +100,131 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
       end)
 
     with {:ok, {out, _pack_ids, _action_ids}} <- result, do: {:ok, out}
+  end
+
+  # Runs over the raw entries `parse_packs/1` has already proved structurally
+  # sound, so every read below is against a validated shape.
+  defp parse_trust(packs) do
+    empty = %{baseline: %{}, manifests: %{}, retired_below: %{}, current_versions: %{}}
+
+    Enum.reduce_while(packs, {:ok, empty}, fn raw, {:ok, trust} ->
+      case put_pack_trust(trust, raw) do
+        {:ok, trust} -> {:cont, {:ok, trust}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  # The current entry lands first so the history reduce can see it: a previous
+  # version repeating the current one is the same collision as two equal
+  # previous versions, and both are rejected there.
+  defp put_pack_trust(trust, %{"id" => id, "version" => version, "content_hash" => hash} = raw) do
+    watermark = raw["retired_below"]
+
+    with :ok <- validate_version(id, version),
+         :ok <- validate_watermark(id, watermark),
+         {:ok, manifest} <- current_manifest(id, version, raw["actions"]) do
+      trust = %{
+        trust
+        | baseline: Map.put(trust.baseline, {id, version}, hash),
+          manifests: Map.put(trust.manifests, {id, version, hash}, manifest),
+          retired_below: put_watermark(trust.retired_below, id, watermark),
+          current_versions: Map.put(trust.current_versions, id, version)
+      }
+
+      put_previous_trust(trust, id, raw["previous_versions"] || [])
+    end
+  end
+
+  defp put_previous_trust(trust, pack_id, previous_versions) do
+    Enum.reduce_while(previous_versions, {:ok, trust}, fn previous, {:ok, trust} ->
+      case put_previous_version(trust, pack_id, previous) do
+        {:ok, trust} -> {:cont, {:ok, trust}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  # A retained previous version always carries its baseline hash, so a runner
+  # on a slightly-older shipped version still auto-pins. Its complete manifest
+  # rides along only when the catalog still holds that version's actions —
+  # history published before descriptor retention has none, and that means "no
+  # retained descriptors", not a bad document.
+  defp put_previous_version(
+         trust,
+         pack_id,
+         %{"version" => version, "content_hash" => hash} = previous
+       ) do
+    with :ok <- validate_version(pack_id, version),
+         :ok <- ensure_unique_version(trust, pack_id, version) do
+      {:ok,
+       %{
+         trust
+         | baseline: Map.put(trust.baseline, {pack_id, version}, hash),
+           manifests:
+             put_previous_manifest(trust.manifests, {pack_id, version, hash}, previous["actions"])
+       }}
+    end
+  end
+
+  # Two entries for one `(pack_id, version)` would silently overwrite each
+  # other, so which bytes auto-trust that version would depend on document
+  # order — reject the publish instead of picking a winner.
+  defp ensure_unique_version(trust, pack_id, version) do
+    if Map.has_key?(trust.baseline, {pack_id, version}),
+      do: {:error, "pack #{inspect(pack_id)} lists version #{inspect(version)} more than once"},
+      else: :ok
+  end
+
+  defp put_previous_manifest(manifests, _key, nil), do: manifests
+
+  defp put_previous_manifest(manifests, key, actions) do
+    case TrustedManifest.from_catalog_actions(actions) do
+      {:ok, manifest} -> Map.put(manifests, key, manifest)
+      {:error, :invalid_manifest} -> manifests
+    end
+  end
+
+  # The current version's descriptors ARE what auto-trust pins, so an invalid
+  # manifest rejects the whole document — half a trusted pack would authorize
+  # and describe bytes we can't stand behind.
+  defp current_manifest(pack_id, version, actions) do
+    case TrustedManifest.from_catalog_actions(actions) do
+      {:ok, manifest} ->
+        {:ok, manifest}
+
+      {:error, :invalid_manifest} ->
+        {:error, "pack #{inspect(pack_id)} version #{version} has an invalid action manifest"}
+    end
+  end
+
+  defp put_watermark(watermarks, _pack_id, nil), do: watermarks
+  defp put_watermark(watermarks, pack_id, watermark), do: Map.put(watermarks, pack_id, watermark)
+
+  # Every version the catalog publishes must be SemVer, because the
+  # dispatch-time retirement compare relies on it. Junk fails the document at
+  # refresh — the cache holds its last-good copy — never a dispatch gate.
+  defp validate_version(pack_id, version) do
+    case Version.parse(version) do
+      {:ok, _parsed} ->
+        :ok
+
+      :error ->
+        {:error, "pack #{inspect(pack_id)} has an unparseable version #{inspect(version)}"}
+    end
+  end
+
+  defp validate_watermark(_pack_id, nil), do: :ok
+
+  defp validate_watermark(pack_id, watermark) do
+    case Version.parse(watermark) do
+      {:ok, _parsed} ->
+        :ok
+
+      :error ->
+        {:error,
+         "pack #{inspect(pack_id)} has an unparseable retired_below #{inspect(watermark)}"}
+    end
   end
 
   defp parse_pack(%{} = raw) do

@@ -151,8 +151,8 @@ defmodule Emisar.CatalogTest do
     pack_id <> "@1.0.0/" <> hash
   end
 
-  # The compiled PackBaseline is release-frozen, so a baseline decision can only
-  # be exercised against a pack the shipped catalog really carries.
+  # A baseline decision is judged against the installed published snapshot, which
+  # in test is the bundled catalog — so exercise it with a pack that really carries.
   defp shipped_pack do
     Application.app_dir(:emisar, "priv/packs/catalog.json")
     |> File.read!()
@@ -768,7 +768,7 @@ defmodule Emisar.CatalogTest do
       assert pack_version.trust_state == :trusted
     end
 
-    test "baseline auto-trust persists release-frozen prose, never the runner advertisement" do
+    test "baseline auto-trust persists the published prose, never the runner advertisement" do
       [pack | _] =
         Application.app_dir(:emisar, "priv/packs/catalog.json")
         |> File.read!()
@@ -862,7 +862,7 @@ defmodule Emisar.CatalogTest do
       assert pack_version.pending_hash == nil
     end
 
-    test "reconciliation trusts the release-frozen manifest, never the advertised prose" do
+    test "reconciliation trusts the published manifest, never the advertised prose" do
       pack = shipped_pack()
       [catalog_action | _] = pack["actions"]
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -2578,10 +2578,9 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  # The compiled PackBaseline can't be fixtured per-test (its watermarks are
-  # baked from the shipped catalog), so this pure fn — the dispatch seam
-  # check_pack_trusted composes with the real PackBaseline.retired?/2 —
-  # carries the exhaustive retirement branch coverage.
+  # This pure fn — the dispatch seam check_pack_trusted composes with
+  # PackBaseline.retired?/2 — carries the exhaustive retirement branch coverage,
+  # so the cases below never depend on which packs the catalog watermarks.
   describe "trusted_row_dispatch_decision/2" do
     test "not retired → {:ok, hash}" do
       pack_version = %PackVersion{hash: "sha256:OK", retirement_overridden_at: nil}
@@ -2602,7 +2601,7 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "pack_version_retirement/1" do
-    # Both branches compose over the compiled baseline: the shipped catalog
+    # Both branches compose over the installed published snapshot: the catalog
     # carries a retirement watermark per pack, so a version strictly below it
     # is `{:retired, current}` while baseline entries and custom packs stay
     # `:active`. The compare itself is unit-tested against synthetic
@@ -2632,7 +2631,7 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "pack_version_outdated/1" do
-    # Composes over the release-frozen baseline: a non-retired version below the
+    # Composes over the published baseline: a non-retired version below the
     # shipped current is {:outdated, successor}; a retired version defers to its
     # stronger treatment and reads :current. Version math is unit-tested in
     # PackBaselineTest; here we assert the retirement-precedence composition.

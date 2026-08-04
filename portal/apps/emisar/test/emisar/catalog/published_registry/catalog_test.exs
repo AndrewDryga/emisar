@@ -54,6 +54,17 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
     )
   end
 
+  defp previous(version, overrides \\ %{}) do
+    Map.merge(
+      %{
+        "version" => version,
+        "content_hash" => "sha256:#{String.duplicate("b", 64)}",
+        "tarball_url" => "https://registry.emisar.dev/v1/packs/redis/#{version}/x.tar.gz"
+      },
+      overrides
+    )
+  end
+
   defp put_in_pack(catalog, index, key, value) do
     update_in(catalog["packs"], fn packs ->
       List.update_at(packs, index, &Map.put(&1, key, value))
@@ -68,7 +79,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
 
   describe "parse/1" do
     test "decodes a valid catalog into packs sorted by id" do
-      assert {:ok, packs} = Catalog.parse(valid_catalog())
+      assert {:ok, %{packs: packs}} = Catalog.parse(valid_catalog())
       assert Enum.map(packs, & &1.id) == ["nginx", "redis"]
 
       redis = Enum.find(packs, &(&1.id == "redis"))
@@ -81,7 +92,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
     end
 
     test "a pack with no version window carries an empty history and no watermark" do
-      assert {:ok, packs} = Catalog.parse(valid_catalog())
+      assert {:ok, %{packs: packs}} = Catalog.parse(valid_catalog())
       redis = Enum.find(packs, &(&1.id == "redis"))
       assert redis.previous_versions == []
       assert redis.retired_below == nil
@@ -102,7 +113,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
         |> put_in_pack(0, "previous_versions", history)
         |> put_in_pack(0, "retired_below", "0.1.0")
 
-      assert {:ok, packs} = Catalog.parse(catalog)
+      assert {:ok, %{packs: packs}} = Catalog.parse(catalog)
       redis = Enum.find(packs, &(&1.id == "redis"))
 
       assert redis.version == "0.2.0"
@@ -165,7 +176,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
 
     test "decodes a valid catalog from a JSON string" do
       json = Jason.encode!(valid_catalog())
-      assert {:ok, packs} = Catalog.parse(json)
+      assert {:ok, %{packs: packs}} = Catalog.parse(json)
       assert length(packs) == 2
     end
 
@@ -173,7 +184,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
       script = action("redis.deep", %{"kind" => "script"})
       catalog = put_in_pack(valid_catalog(), 0, "actions", [script])
 
-      assert {:ok, packs} = Catalog.parse(catalog)
+      assert {:ok, %{packs: packs}} = Catalog.parse(catalog)
       redis = Enum.find(packs, &(&1.id == "redis"))
       assert [%{kind: "script", command: nil}] = redis.actions
     end
@@ -190,7 +201,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
 
       catalog = put_in_pack(valid_catalog(), 0, "actions", [documented])
 
-      assert {:ok, packs} = Catalog.parse(catalog)
+      assert {:ok, %{packs: packs}} = Catalog.parse(catalog)
       redis = Enum.find(packs, &(&1.id == "redis"))
       [info] = redis.actions
 
@@ -298,6 +309,111 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
       catalog = put_in_pack(valid_catalog(), 0, "actions", [bad])
       assert {:error, message} = Catalog.parse(catalog)
       assert message =~ "risk"
+    end
+  end
+
+  describe "parse/1 trust snapshot" do
+    test "carries every pack's current hash, manifest and version" do
+      hash = "sha256:#{String.duplicate("a", 64)}"
+      assert {:ok, %{trust: trust}} = Catalog.parse(valid_catalog())
+
+      assert trust.baseline[{"redis", "0.1.0"}] == hash
+      assert trust.current_versions == %{"redis" => "0.1.0", "nginx" => "0.1.0"}
+      assert trust.retired_below == %{}
+      assert Map.keys(trust.manifests[{"redis", "0.1.0", hash}]["actions"]) == ["redis.info"]
+    end
+
+    test "carries a previous version's hash, retained manifest and watermark" do
+      hash = "sha256:#{String.duplicate("b", 64)}"
+
+      catalog =
+        valid_catalog()
+        |> put_in_pack(0, "version", "0.2.0")
+        |> put_in_pack(0, "previous_versions", [
+          previous("0.1.0", %{"actions" => [action("redis.legacy")]})
+        ])
+        |> put_in_pack(0, "retired_below", "0.1.0")
+
+      assert {:ok, %{trust: trust}} = Catalog.parse(catalog)
+
+      assert trust.baseline[{"redis", "0.1.0"}] == hash
+      assert trust.current_versions["redis"] == "0.2.0"
+      assert trust.retired_below == %{"redis" => "0.1.0"}
+      assert Map.keys(trust.manifests[{"redis", "0.1.0", hash}]["actions"]) == ["redis.legacy"]
+    end
+
+    test "a previous version with no retained actions keeps its baseline entry" do
+      hash = "sha256:#{String.duplicate("b", 64)}"
+      catalog = put_in_pack(valid_catalog(), 0, "previous_versions", [previous("0.0.9")])
+
+      assert {:ok, %{trust: trust}} = Catalog.parse(catalog)
+
+      assert trust.baseline[{"redis", "0.0.9"}] == hash
+      assert trust.manifests[{"redis", "0.0.9", hash}] == nil
+    end
+
+    test "a previous version whose retained actions no longer validate keeps its baseline entry" do
+      hash = "sha256:#{String.duplicate("b", 64)}"
+      docless = Map.delete(action("redis.legacy"), "description")
+
+      catalog =
+        put_in_pack(valid_catalog(), 0, "previous_versions", [
+          previous("0.0.9", %{"actions" => [docless]})
+        ])
+
+      assert {:ok, %{trust: trust}} = Catalog.parse(catalog)
+
+      assert trust.baseline[{"redis", "0.0.9"}] == hash
+      assert trust.manifests[{"redis", "0.0.9", hash}] == nil
+    end
+
+    test "rejects an unparseable current version" do
+      catalog = put_in_pack(valid_catalog(), 0, "version", "0.1")
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "unparseable version \"0.1\""
+    end
+
+    test "rejects an unparseable previous version" do
+      catalog = put_in_pack(valid_catalog(), 0, "previous_versions", [previous("0.0")])
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "unparseable version \"0.0\""
+    end
+
+    test "rejects two previous_versions entries for the same version" do
+      # Both carry a hash for one (pack_id, version), so whichever bytes
+      # auto-trust would come down to document order.
+      other_hash = "sha256:#{String.duplicate("d", 64)}"
+      history = [previous("0.0.9"), previous("0.0.9", %{"content_hash" => other_hash})]
+      catalog = put_in_pack(valid_catalog(), 0, "previous_versions", history)
+
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ ~s(pack "redis" lists version "0.0.9" more than once)
+    end
+
+    test "rejects a previous version that repeats the current version" do
+      other_hash = "sha256:#{String.duplicate("d", 64)}"
+      history = [previous("0.1.0", %{"content_hash" => other_hash})]
+      catalog = put_in_pack(valid_catalog(), 0, "previous_versions", history)
+
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ ~s(pack "redis" lists version "0.1.0" more than once)
+    end
+
+    test "rejects an unparseable retirement watermark" do
+      catalog = put_in_pack(valid_catalog(), 0, "retired_below", "0.1")
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "unparseable retired_below \"0.1\""
+    end
+
+    test "rejects a current version whose actions cannot build one complete manifest" do
+      # Every action is a valid descriptor on its own; the pack blows the
+      # manifest's action cap, so the version auto-trust would pin has no
+      # manifest at all — reject the document rather than trust half of it.
+      actions = Enum.map(1..81, &action("redis.a#{&1}"))
+      catalog = put_in_pack(valid_catalog(), 0, "actions", actions)
+
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "invalid action manifest"
     end
   end
 end

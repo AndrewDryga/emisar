@@ -54,12 +54,12 @@ defmodule Emisar.Catalog.TrustedManifest do
   @doc "Maximum actions a complete trusted pack manifest may contain."
   def max_actions, do: @max_actions
 
-  @doc "Build a trusted manifest from release-frozen catalog action objects."
+  @doc "Build a trusted manifest from published catalog action objects."
   @spec from_catalog_actions([map()]) :: {:ok, map()} | {:error, :invalid_manifest}
   def from_catalog_actions(actions) when is_list(actions) do
     case build(actions, &catalog_descriptor/1) do
       {:ok, manifest} -> {:ok, manifest}
-      # Release-frozen actions have no runner to blame — a conflicting
+      # Published catalog actions have no runner to blame — a conflicting
       # duplicate id in the baseline is a build defect, plain invalidity.
       {:error, _reason} -> {:error, :invalid_manifest}
     end

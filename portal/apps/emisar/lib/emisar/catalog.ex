@@ -22,8 +22,8 @@ defmodule Emisar.Catalog do
       * Same as trusted hash → no-op (touch last_seen).
       * Different → keep trusted, set pending_hash. Dispatch refuses.
       * Same as a never-trusted pending hash the baseline now carries →
-        auto-pin trusted on the release's manifest. A newer release
-        publishing those exact bytes IS the answer to the review.
+        auto-pin trusted on the published manifest. A later publish of
+        those exact bytes IS the answer to the review.
 
     * **Rejected rows remember the refused bytes** — a rejected
       advertisement keeps its hash in `pending_hash` (and a revoked
@@ -367,12 +367,16 @@ defmodule Emisar.Catalog do
   # actions in the same batch should still persist).
   defp observe_pack(_account_id, _entry, _now), do: :ok
 
-  # The pin these advertised bytes earn, judged purely against the
-  # release-frozen baseline. The conflict path recomputes the SAME verdict, so
-  # a row pinned before this release shipped the pack is judged by today's rule
-  # instead of waiting forever on a decision the release has since made.
+  # The pin these advertised bytes earn, judged purely against the published
+  # baseline. ONE trust snapshot answers both halves of the verdict — the
+  # canonical hash and the manifest for that exact hash — so a refresh landing
+  # mid-judgement can never pin one catalog's hash against another's
+  # descriptors. The conflict path recomputes the SAME verdict, so a row pinned
+  # before we published the pack is judged by today's catalog instead of
+  # waiting forever on a decision the registry has since made.
   defp baseline_verdict(pack_id, version, advertised) do
-    baseline = PackBaseline.lookup(pack_id, version)
+    trust = PublishedRegistry.Cache.trust_snapshot()
+    baseline = Map.get(trust.baseline, {pack_id, version})
 
     cond do
       is_binary(baseline) and baseline == advertised ->
@@ -381,7 +385,7 @@ defmodule Emisar.Catalog do
           trusted_hash: advertised,
           pending_hash: nil,
           trust_state: :trusted,
-          trusted_manifest: PackBaseline.manifest(pack_id, version, advertised),
+          trusted_manifest: Map.get(trust.manifests, {pack_id, version, advertised}),
           audit_event: :pack_trust_baseline_match
         }
 
@@ -391,7 +395,7 @@ defmodule Emisar.Catalog do
           trusted_hash: baseline,
           pending_hash: advertised,
           trust_state: :pending,
-          trusted_manifest: PackBaseline.manifest(pack_id, version, baseline),
+          trusted_manifest: Map.get(trust.manifests, {pack_id, version, baseline}),
           audit_event: :pack_trust_baseline_mismatch
         }
 
@@ -441,12 +445,12 @@ defmodule Emisar.Catalog do
 
   # A never-trusted row whose parked bytes this release now publishes: the
   # decision the operator was asked for has since been made by the release
-  # itself, so adopt it on the release's own manifest instead of leaving a
+  # itself, so adopt it on the published manifest instead of leaving a
   # question nobody can answer differently. Anything else keeps its state — a
   # rejected row stays refused, a row with a trusted hash keeps it (adopting
   # drift is an operator's call), and bytes the baseline doesn't carry stay
-  # pending — as does a historical artifact the release ships no manifest for,
-  # because trust snapshots that manifest.
+  # pending — as does a historical artifact the catalog retains no manifest
+  # for, because trust snapshots that manifest.
   defp reconcile_baseline_pending(
          %PackVersion{trust_state: :pending, hash: nil} = pack_version,
          advertised,
@@ -475,7 +479,7 @@ defmodule Emisar.Catalog do
   defp reconcile_baseline_pending(%PackVersion{}, _advertised, _verdict), do: :ok
 
   # Rows trusted before complete manifests existed are upgraded only from the
-  # release-frozen catalog and only when the exact trusted hash still matches.
+  # published catalog and only when the exact trusted hash still matches.
   # Runner-advertised prose never becomes trusted through this repair path.
   defp restore_baseline_manifest(%PackVersion{} = pack_version) do
     case TrustedManifest.validate(pack_version.trusted_manifest) do
@@ -534,8 +538,9 @@ defmodule Emisar.Catalog do
       end)
       # Trusting a RETIRED version IS the override — an explicit,
       # permission-gated action. Compute it inside the transaction (retirement
-      # is release-controlled, so this can't race the lock) and thread it to
-      # both the changeset and the audit payload from one source.
+      # is a lock-free read of the published snapshot, so this can't race the
+      # lock) and thread it to both the changeset and the audit payload from
+      # one source.
       |> Multi.run(:retired, fn _repo, %{before: pack_version} ->
         {:ok, PackBaseline.retired?(pack_version.pack_id, pack_version.version)}
       end)
@@ -644,7 +649,7 @@ defmodule Emisar.Catalog do
 
   @doc """
   Explicitly re-trust an already-trusted pack version whose version the
-  shipped catalog has RETIRED — the deliberate, audited admin override that
+  published catalog has RETIRED — the deliberate, audited admin override that
   lets it dispatch again. The `Trust` action covers a still-pending retired
   version; this covers a row that was trusted BEFORE its version was retired.
   Requires the same manage-catalog permission as Trust; returns
@@ -1136,7 +1141,7 @@ defmodule Emisar.Catalog do
   reference the version by string with no FK, so a missing row must never read
   as trusted.
 
-  A trusted row whose version the shipped catalog has RETIRED
+  A trusted row whose version the published catalog has RETIRED
   (`PackBaseline.retired?/2`) refuses with a distinct `{:error,
   :pack_retired, pack_version}` unless an admin has overridden it — the
   operator action differs (update the pack vs. review a hash).
@@ -1282,10 +1287,9 @@ defmodule Emisar.Catalog do
 
   @doc """
   Internal — the dispatch decision for a TRUSTED pack-version row, given
-  whether the shipped catalog retired its version. Pattern-matched clause
-  heads carry the exhaustive branch coverage because the compiled
-  `PackBaseline` can't be fixtured; `check_pack_trusted/1` composes this
-  with the real `PackBaseline.retired?/2`.
+  whether the published catalog retired its version. Pattern-matched clause
+  heads carry the exhaustive branch coverage over that boolean;
+  `check_pack_trusted/1` composes this with `PackBaseline.retired?/2`.
 
   Not retired → hand back the trusted hash so the caller can SNAPSHOT it onto
   the run; never the pending one, so the runner verifies the bytes the
@@ -1309,11 +1313,11 @@ defmodule Emisar.Catalog do
       do: {:error, :pack_retired, pack_version}
 
   @doc """
-  Retirement state of a pack row against the shipped catalog, for the Packs
+  Retirement state of a pack row against the published catalog, for the Packs
   page: `:active`, or `{:retired, current_version}` when the row's version is
   below its pack's retirement watermark — `current_version` is the fixed
-  version to update to (`nil` if we no longer ship the pack). Pure over the
-  release-frozen `PackBaseline`. An already-overridden row still reports
+  version to update to (`nil` if we no longer publish the pack). Pure over the
+  published `PackBaseline` snapshot. An already-overridden row still reports
   `{:retired, _}`; the override is a row field (`retirement_overridden_at`) the
   caller reads alongside.
   """
@@ -1327,14 +1331,14 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  Whether a trusted pack version has a newer shipped successor to update to —
-  `{:outdated, successor}` for a NON-retired version below the current shipped
-  version, else `:current`. A convenience signal, not a warning: a security fix
+  Whether a trusted pack version has a newer published successor to update to —
+  `{:outdated, successor}` for a NON-retired version below the current
+  published version, else `:current`. A convenience signal, not a warning: a security fix
   RETIRES a version (packs retire only on security/critical fixes), so an
   outdated-but-not-retired version is safe by construction and still dispatches.
   Retirement takes precedence — a retired version reads `:current` here so the
   stronger rose retired block shows alone, never the gentle hint on top of it.
-  Pure over the release-frozen `PackBaseline`; the packs LiveView reads it.
+  Pure over the published `PackBaseline` snapshot; the packs LiveView reads it.
   """
   @spec pack_version_outdated(PackVersion.t()) :: {:outdated, String.t()} | :current
   def pack_version_outdated(%PackVersion{pack_id: pack_id, version: version}) do
@@ -1347,10 +1351,10 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  The content hash the release ships for `(pack_id, version)`, or nil when we
-  don't ship it — the `--hash` integrity pin for an `emisar pack install`
-  command that updates a runner to a shipped version. Pure over the
-  release-frozen `PackBaseline`.
+  The content hash we publish for `(pack_id, version)`, or nil when we don't
+  publish it — the `--hash` integrity pin for an `emisar pack install`
+  command that updates a runner to a published version. Pure over the
+  published `PackBaseline` snapshot.
   """
   @spec shipped_hash(String.t(), String.t() | nil) :: String.t() | nil
   def shipped_hash(pack_id, version) when is_binary(pack_id) and is_binary(version),
@@ -1360,9 +1364,9 @@ defmodule Emisar.Catalog do
 
   @doc """
   A version awaiting an operator decision: a pending trust review, or a
-  trusted version whose shipped-catalog retirement blocks dispatch until an
+  trusted version whose published-catalog retirement blocks dispatch until an
   admin overrides, updates, revokes, or deletes it. Rejected and overridden
-  rows are decided. Pure over the release-frozen `PackBaseline`; drives the
+  rows are decided. Pure over the published `PackBaseline` snapshot; drives the
   sidebar badge and the packs page attention notices.
   """
   def pack_version_needs_decision?(%PackVersion{trust_state: :pending}), do: true
@@ -1464,7 +1468,7 @@ defmodule Emisar.Catalog do
       # `kind`/`risk` are RUNNER-ADVERTISED. The dispatch gate reads them
       # catalog-authoritative (runs.ex) so the MCP/operator CALLER can't spoof
       # "low", but the runner that ships the pack authors them: for a pack with a
-      # compiled baseline the risk lives inside the trusted hash; for a TOFU pack
+      # published baseline the risk lives inside the trusted hash; for a TOFU pack
       # (no baseline) trusting the hash = trusting the declared risk — an accepted
       # limitation, like the runner-declared group. See .agent/kb/specs/security-model.md.
       kind: descriptor["kind"] || "exec",
@@ -2508,7 +2512,7 @@ defmodule Emisar.Catalog do
 
   # Rows whose rendering needs to know WHO is on the version: a pending or
   # rejected review (the trust decision's blast radius) and a trusted row the
-  # shipped catalog retired (its remedy differs when hosts are still on it).
+  # published catalog retired (its remedy differs when hosts are still on it).
   defp advertiser_facts_needed?(%PackVersion{trust_state: state})
        when state in [:pending, :rejected],
        do: true
@@ -2858,9 +2862,9 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # Retirement is compile-time data (`PackBaseline`), so the version
-  # comparison happens in Elixir over a narrow read: trusted, unoverridden
-  # rows of the packs that carry a watermark at all.
+  # Retirement lives in the published catalog snapshot (`PackBaseline`), not in
+  # a column, so the version comparison happens in Elixir over a narrow read:
+  # trusted, unoverridden rows of the packs that carry a watermark at all.
   defp count_retired_blocked(%Subject{} = subject) do
     watermarked_pack_ids = Map.keys(PackBaseline.retired_below())
 

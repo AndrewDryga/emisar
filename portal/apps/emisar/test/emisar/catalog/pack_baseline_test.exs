@@ -1,15 +1,97 @@
 defmodule Emisar.Catalog.PackBaselineTest do
-  use ExUnit.Case, async: true
+  # The published snapshot lives in a global `:persistent_term`, so the tests
+  # that install a synthetic catalog swap it and restore it afterwards.
+  use ExUnit.Case, async: false
   alias Emisar.Catalog.PackBaseline
+  alias Emisar.Catalog.PublishedRegistry.Cache
+
+  @catalog_url "https://registry.emisar.dev/v1/catalog.json"
+  @current_hash "sha256:#{String.duplicate("a", 64)}"
+  @previous_hash "sha256:#{String.duplicate("b", 64)}"
+  @unretained_hash "sha256:#{String.duplicate("c", 64)}"
+
+  # A two-pack catalog with a retirement watermark, one previous version whose
+  # descriptors the catalog still carries, and one it no longer does.
+  defp published_catalog do
+    %{
+      "schema_version" => 1,
+      "packs" => [
+        pack("redis", %{
+          "version" => "0.3.0",
+          "retired_below" => "0.2.0",
+          "previous_versions" => [
+            %{
+              "version" => "0.2.0",
+              "content_hash" => @previous_hash,
+              "tarball_url" => "https://registry.emisar.dev/v1/packs/redis/0.2.0/x.tar.gz",
+              "actions" => [action("redis.legacy")]
+            },
+            %{
+              "version" => "0.2.1",
+              "content_hash" => @unretained_hash,
+              "tarball_url" => "https://registry.emisar.dev/v1/packs/redis/0.2.1/x.tar.gz"
+            }
+          ]
+        }),
+        pack("nginx", %{"version" => "1.0.0"})
+      ]
+    }
+  end
+
+  defp pack(id, overrides) do
+    Map.merge(
+      %{
+        "id" => id,
+        "name" => "#{id} operations",
+        "version" => "0.1.0",
+        "description" => "Ops for #{id}.",
+        "vendor" => "emisar",
+        "homepage" => "https://github.com/andrewdryga/emisar",
+        "source_url" => "https://github.com/andrewdryga/emisar/tree/main/packs/#{id}",
+        "content_hash" => @current_hash,
+        "tarball_url" => "https://registry.emisar.dev/v1/packs/#{id}/x.tar.gz",
+        "requires" => %{"os" => ["linux"], "binaries" => []},
+        "detect" => %{"binaries" => [], "processes" => [], "ports" => []},
+        "actions" => [action("#{id}.info")]
+      },
+      overrides
+    )
+  end
+
+  defp action(id) do
+    %{
+      "id" => id,
+      "title" => "Action #{id}",
+      "summary" => "What #{id} does.",
+      "description" => "What #{id} does, at length.",
+      "kind" => "exec",
+      "risk" => "low",
+      "side_effects" => ["Read-only."],
+      "args" => [],
+      "examples" => [],
+      "search_terms" => []
+    }
+  end
+
+  setup do
+    installed = Cache.snapshot()
+    on_exit(fn -> Cache.install_snapshot(installed) end)
+
+    {:ok, snapshot} = Cache.evaluate({:ok, Jason.encode!(published_catalog())}, @catalog_url)
+    Cache.install_snapshot(snapshot)
+    :ok
+  end
 
   describe "lookup/2" do
-    test "returns the canonical hash for a shipped (pack_id, version)" do
-      {{pack_id, version}, hash} = PackBaseline.all() |> Enum.at(0)
-
-      assert PackBaseline.lookup(pack_id, version) == hash
+    test "returns the canonical hash for a published (pack_id, version)" do
+      assert PackBaseline.lookup("redis", "0.3.0") == @current_hash
     end
 
-    test "returns nil for a pack the release does not ship" do
+    test "returns the canonical hash for a retained previous version" do
+      assert PackBaseline.lookup("redis", "0.2.0") == @previous_hash
+    end
+
+    test "returns nil for a pack the registry does not publish" do
       assert PackBaseline.lookup("definitely-not-a-real-pack", "9.9.9") == nil
     end
 
@@ -19,19 +101,37 @@ defmodule Emisar.Catalog.PackBaselineTest do
     end
   end
 
-  describe "current_version/1" do
-    test "returns the shipped current version for a pack, and it parses as SemVer" do
-      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
-
-      current = PackBaseline.current_version(pack_id)
-      assert is_binary(current)
-      assert {:ok, _} = Version.parse(current)
-      # The current version is the top of that pack's trust window and is never
-      # strictly below its own retirement watermark.
-      refute PackBaseline.retired?(pack_id, current)
+  describe "manifest/3" do
+    test "returns the complete manifest for an exact published (pack_id, version, hash)" do
+      manifest = PackBaseline.manifest("redis", "0.3.0", @current_hash)
+      assert Map.keys(manifest["actions"]) == ["redis.info"]
     end
 
-    test "returns nil for a pack the release does not ship" do
+    test "returns the retained manifest of a previous version" do
+      manifest = PackBaseline.manifest("redis", "0.2.0", @previous_hash)
+      assert Map.keys(manifest["actions"]) == ["redis.legacy"]
+    end
+
+    test "returns nil for a previous version whose descriptors are not retained" do
+      assert PackBaseline.manifest("redis", "0.2.1", @unretained_hash) == nil
+    end
+
+    test "returns nil for a hash the version does not carry" do
+      assert PackBaseline.manifest("redis", "0.3.0", @previous_hash) == nil
+    end
+
+    test "returns nil for non-binary arguments" do
+      assert PackBaseline.manifest(nil, "0.3.0", @current_hash) == nil
+    end
+  end
+
+  describe "current_version/1" do
+    test "returns the published current version for a pack" do
+      assert PackBaseline.current_version("redis") == "0.3.0"
+      assert PackBaseline.current_version("nginx") == "1.0.0"
+    end
+
+    test "returns nil for a pack the registry does not publish" do
       assert PackBaseline.current_version("definitely-not-a-real-pack") == nil
     end
 
@@ -42,55 +142,45 @@ defmodule Emisar.Catalog.PackBaselineTest do
 
   describe "newer_version/2" do
     test "returns the current version when the advertised one is strictly behind" do
-      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
-      current = PackBaseline.current_version(pack_id)
-
-      # "0.0.0" is below every shipped current, so the successor is the current.
-      assert PackBaseline.newer_version(pack_id, "0.0.0") == current
+      assert PackBaseline.newer_version("redis", "0.2.0") == "0.3.0"
     end
 
     test "returns nil when the advertised version already is the current one" do
-      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
-      current = PackBaseline.current_version(pack_id)
-
-      assert PackBaseline.newer_version(pack_id, current) == nil
+      assert PackBaseline.newer_version("redis", "0.3.0") == nil
     end
 
     test "returns nil when the advertised version is ahead of the current one" do
-      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
-
-      assert PackBaseline.newer_version(pack_id, "999.0.0") == nil
+      assert PackBaseline.newer_version("redis", "999.0.0") == nil
     end
 
-    test "returns nil for a pack the release does not ship" do
+    test "returns nil for a pack the registry does not publish" do
       assert PackBaseline.newer_version("definitely-not-a-real-pack", "0.0.0") == nil
     end
 
     test "returns nil (no false hint) for an unparseable advertised version" do
       # The OPPOSITE fail direction from retirement: junk yields nil, so a garbage
       # runner version never surfaces a bogus "update available".
-      {{pack_id, _version}, _hash} = PackBaseline.all() |> Enum.at(0)
-
-      assert PackBaseline.newer_version(pack_id, "not-a-semver") == nil
+      assert PackBaseline.newer_version("redis", "not-a-semver") == nil
     end
 
     test "returns nil for non-binary arguments" do
       assert PackBaseline.newer_version(nil, "0.0.0") == nil
-      assert PackBaseline.newer_version("consul", nil) == nil
+      assert PackBaseline.newer_version("redis", nil) == nil
     end
   end
 
   describe "retired?/2" do
-    # A retirement watermark removes only versions strictly below it; a
-    # shipping catalog never retires its own current version.
-    test "is false for every version in the shipped baseline" do
-      for {{pack_id, version}, _hash} <- PackBaseline.all() do
-        refute PackBaseline.retired?(pack_id, version),
-               "shipped #{pack_id}@#{version} must not be retired"
-      end
+    test "is true below the published watermark and false at or above it" do
+      assert PackBaseline.retired?("redis", "0.1.9")
+      refute PackBaseline.retired?("redis", "0.2.0")
+      refute PackBaseline.retired?("redis", "0.3.0")
     end
 
-    test "is false for a pack the release does not ship" do
+    test "is false for a pack with no watermark" do
+      refute PackBaseline.retired?("nginx", "0.0.1")
+    end
+
+    test "is false for a pack the registry does not publish" do
       refute PackBaseline.retired?("definitely-not-a-real-pack", "9.9.9")
     end
 
@@ -127,25 +217,48 @@ defmodule Emisar.Catalog.PackBaselineTest do
   end
 
   describe "all/0" do
-    test "is populated from the shipped catalog with well-formed sha256 hashes" do
-      baseline = PackBaseline.all()
+    test "carries every published version, current and retained" do
+      assert PackBaseline.all() == %{
+               {"redis", "0.3.0"} => @current_hash,
+               {"redis", "0.2.0"} => @previous_hash,
+               {"redis", "0.2.1"} => @unretained_hash,
+               {"nginx", "1.0.0"} => @current_hash
+             }
+    end
+  end
 
-      assert map_size(baseline) > 0
-
-      for {{pack_id, version}, hash} <- baseline do
-        assert is_binary(pack_id) and pack_id != ""
-        assert is_binary(version) and version != ""
-        assert hash =~ ~r/^sha256:[0-9a-f]{64}$/, "bad baseline hash for #{pack_id}@#{version}"
-      end
+  describe "all_manifests/0" do
+    test "carries a manifest per exact version+hash the catalog retains actions for" do
+      assert PackBaseline.all_manifests() |> Map.keys() |> Enum.sort() == [
+               {"nginx", "1.0.0", @current_hash},
+               {"redis", "0.2.0", @previous_hash},
+               {"redis", "0.3.0", @current_hash}
+             ]
     end
   end
 
   describe "retired_below/0" do
-    test "maps every retirement watermark to a parseable version" do
-      for {pack_id, watermark} <- PackBaseline.retired_below() do
-        assert is_binary(pack_id) and pack_id != ""
-        assert {:ok, _} = Version.parse(watermark)
-      end
+    test "carries only the packs the catalog watermarks" do
+      assert PackBaseline.retired_below() == %{"redis" => "0.2.0"}
+    end
+  end
+
+  describe "the published snapshot" do
+    test "the readers follow a registry refresh, without a redeploy" do
+      refute PackBaseline.retired?("nginx", "0.9.0")
+      assert PackBaseline.lookup("nginx", "2.0.0") == nil
+
+      refreshed = %{
+        "schema_version" => 1,
+        "packs" => [pack("nginx", %{"version" => "2.0.0", "retired_below" => "1.0.0"})]
+      }
+
+      {:ok, snapshot} = Cache.evaluate({:ok, Jason.encode!(refreshed)}, @catalog_url)
+      Cache.install_snapshot(snapshot)
+
+      assert PackBaseline.retired?("nginx", "0.9.0")
+      assert PackBaseline.lookup("nginx", "2.0.0") == @current_hash
+      assert PackBaseline.current_version("nginx") == "2.0.0"
     end
   end
 end
