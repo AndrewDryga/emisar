@@ -20,6 +20,11 @@ defmodule EmisarWeb.DocsComponents do
   attr :toc, :list, default: []
   attr :updated, :string, default: nil
   attr :source_path, :string, default: nil
+
+  attr :evidence, :string,
+    default: nil,
+    doc: "provider-specific verification or review evidence for the maintenance footer"
+
   slot :inner_block, required: true
 
   def docs_layout(assigns) do
@@ -60,6 +65,7 @@ defmodule EmisarWeb.DocsComponents do
           <.docs_maintenance
             :if={@updated && @source_path}
             updated={@updated}
+            evidence={@evidence}
             source_path={@source_path}
           />
           <.docs_prev_next current={@current} />
@@ -91,12 +97,16 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   attr :updated, :string, required: true
+  attr :evidence, :string, default: nil
   attr :source_path, :string, required: true
 
+  # A page whose claim rests on a real check states that check instead of the
+  # review date — "verified against a live org" and "reviewed" are different
+  # promises, and only the guide's owner knows which one it earned.
   defp docs_maintenance(assigns) do
     ~H"""
     <div class="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-5 text-sm text-zinc-400">
-      <p>Last reviewed {@updated}</p>
+      <p>{@evidence || "Last reviewed #{@updated}"}</p>
       <a
         href={"https://github.com/andrewdryga/emisar/edit/main/" <> @source_path}
         target="_blank"

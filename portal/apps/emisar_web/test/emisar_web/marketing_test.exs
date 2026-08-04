@@ -365,6 +365,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "/docs/integrations/#{path}"
     end
 
+    assert html =~ "Verified against a live Okta Integrator org on July 27, 2026."
+    assert html =~ "Verified against a live JumpCloud tenant on July 31, 2026."
+
     # The oid cross-reference goes straight to the Entra guide, not the
     # one-line provider bullet on this same page.
     refute html =~ "/docs/sso#entra"
@@ -1407,15 +1410,32 @@ defmodule EmisarWeb.MarketingTest do
             /docs/teams-and-access
             /docs/sso
             /docs/scim
-            /docs/integrations/okta
-            /docs/integrations/entra
-            /docs/integrations/jumpcloud
-            /docs/integrations/keycloak
-            /docs/integrations/google-workspace
           ) do
         html = conn |> get(route) |> html_response(200)
 
         assert html =~ "Last reviewed July 31, 2026", "missing review date on #{route}"
+        assert html =~ "Suggest a change", "missing feedback link on #{route}"
+
+        assert html =~ "github.com/andrewdryga/emisar/edit/main/",
+               "wrong feedback link on #{route}"
+      end
+    end
+
+    test "each provider guide publishes the evidence its claim rests on", %{conn: conn} do
+      evidence = [
+        {"/docs/integrations/okta",
+         "Verified against a live Okta Integrator org on July 27, 2026."},
+        {"/docs/integrations/jumpcloud",
+         "Verified against a live JumpCloud tenant on July 31, 2026."},
+        {"/docs/integrations/entra", "Guide reviewed July 31, 2026."},
+        {"/docs/integrations/google-workspace", "Guide reviewed July 31, 2026."},
+        {"/docs/integrations/keycloak", "Guide reviewed July 31, 2026."}
+      ]
+
+      for {route, sentence} <- evidence do
+        html = conn |> get(route) |> html_response(200)
+
+        assert html =~ sentence, "missing or drifted evidence on #{route}"
         assert html =~ "Suggest a change", "missing feedback link on #{route}"
 
         assert html =~ "github.com/andrewdryga/emisar/edit/main/",
