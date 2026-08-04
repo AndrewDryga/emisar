@@ -1687,6 +1687,33 @@ defmodule Emisar.AuditTest do
       refute Map.has_key?(refs["api_key_owner"], key_b.id)
     end
 
+    test "a former member's key resolves no owner, but its own name still resolves", %{
+      account: account
+    } do
+      departed_user = Fixtures.Users.create_user()
+
+      departed_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: departed_user.id,
+          role: "owner"
+        )
+
+      {_raw, api_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: departed_user.id)
+
+      Fixtures.Memberships.mark_membership_as_deleted(departed_membership)
+
+      {:ok, event} =
+        Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: api_key.id)
+
+      refs = Audit.resolve_references([event])
+
+      # No owner entry is the UI's cue to fall back to the key name.
+      refute Map.has_key?(refs["api_key_owner"], api_key.id)
+      assert refs["api_key"][api_key.id] == api_key.name
+    end
+
     test "missing records (deleted since the event) are simply absent" do
       account = Fixtures.Accounts.create_account()
       ghost_id = Ecto.UUID.generate()

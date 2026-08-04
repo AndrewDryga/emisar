@@ -290,6 +290,127 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "owner_labels_for_ids/2" do
+    test "names the minter the way the key's own account knows them" do
+      user = Fixtures.Users.create_user(full_name: "Ada Lovelace")
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      other_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      Fixtures.Memberships.sync_display_name(membership, "Ada from Ops")
+      Fixtures.Memberships.sync_display_name(other_membership, "Ada from Staging")
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      assert ApiKeys.owner_labels_for_ids([key.id], account.id) == %{key.id => "Ada from Ops"}
+    end
+
+    test "a blank directory name falls back to the nonblank full name, then the email" do
+      account = Fixtures.Accounts.create_account()
+      named_user = Fixtures.Users.create_user(full_name: "Grace Hopper")
+      unnamed_user = Fixtures.Users.create_user(full_name: "   ")
+
+      named_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: named_user.id,
+          role: "owner"
+        )
+
+      Fixtures.Memberships.sync_display_name(named_membership, "   ")
+
+      {_raw, named_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: named_user.id)
+
+      {_raw, unnamed_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: unnamed_user.id)
+
+      assert ApiKeys.owner_labels_for_ids([named_key.id, unnamed_key.id], account.id) ==
+               %{named_key.id => "Grace Hopper", unnamed_key.id => unnamed_user.email}
+    end
+
+    test "a soft-deleted or suspended membership resolves no owner label" do
+      account = Fixtures.Accounts.create_account()
+      departed_user = Fixtures.Users.create_user()
+      suspended_user = Fixtures.Users.create_user()
+
+      departed_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: departed_user.id,
+          role: "owner"
+        )
+
+      suspended_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: suspended_user.id,
+          role: "owner"
+        )
+
+      {_raw, departed_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: departed_user.id)
+
+      {_raw, suspended_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: suspended_user.id)
+
+      Fixtures.Memberships.mark_membership_as_deleted(departed_membership)
+      Fixtures.Memberships.suspend_membership(suspended_membership)
+
+      assert ApiKeys.owner_labels_for_ids([departed_key.id, suspended_key.id], account.id) == %{}
+    end
+
+    test "a key minted in another account resolves no label here" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user(full_name: "Ada Lovelace")
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      {_raw, other_key} =
+        Fixtures.ApiKeys.create_api_key(account_id: other_account.id, created_by_id: user.id)
+
+      assert ApiKeys.owner_labels_for_ids([other_key.id], account.id) == %{}
+    end
+
+    test "nil and duplicate ids are normalized; no ids means no lookup" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user(full_name: "Ada Lovelace")
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      assert ApiKeys.owner_labels_for_ids([], account.id) == %{}
+
+      assert ApiKeys.owner_labels_for_ids([nil, key.id, key.id], account.id) ==
+               %{key.id => "Ada Lovelace"}
+    end
+  end
+
   describe "key_facts/2" do
     test "the activity ladder turns over exactly at 5 minutes and 24 hours" do
       now = ~U[2026-08-02 12:00:00.000000Z]

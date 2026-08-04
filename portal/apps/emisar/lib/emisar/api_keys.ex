@@ -165,6 +165,31 @@ defmodule Emisar.ApiKeys do
     end
   end
 
+  @doc """
+  Internal — label resolver for audit attribution: batch `%{key_id => label}`
+  naming the human who minted each key, the way `account_id` knows them
+  (directory name → nonblank full name → email). Takes ids and an explicit
+  already-authorized `account_id` rather than a `%Subject{}` — the caller is
+  Audit's subject-less reference resolver. A key outside the account, or one
+  whose minting membership is gone, suspended, or in another account, resolves
+  to no label, so the caller falls back to the key's own name.
+  """
+  def owner_labels_for_ids(ids, account_id) when is_list(ids) and is_binary(account_id) do
+    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    case ids do
+      [] ->
+        %{}
+
+      ids ->
+        ApiKey.Query.all()
+        |> ApiKey.Query.by_account_id(account_id)
+        |> ApiKey.Query.select_owner_labels(ids, account_id)
+        |> Repo.all()
+        |> Map.new()
+    end
+  end
+
   # -- Key facts -------------------------------------------------------
 
   @doc """

@@ -123,18 +123,38 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   end
 
   @doc """
-  Audit owner-label lookup: `{key_id, owner name-or-email}` via the key's
-  creating user, so the audit trail can name the accountable HUMAN behind an
-  API-key/MCP actor. INNER join — a key whose owner was deleted resolves no
-  row, and the trail degrades to the key name.
+  Audit owner-label lookup: `{key_id, owner label}` for `ids`, naming the
+  accountable HUMAN behind an API-key/MCP actor the way `account_id` knows
+  them. Joins the key's EXACT minting membership — another membership of the
+  same person never stands in — so the label follows that account's directory
+  name, then the user's own name, then their email. INNER joins throughout: a
+  key whose minting membership is gone, suspended, or in another account (or
+  whose user was deleted) resolves no row, and the trail degrades to the key
+  name.
   """
-  def select_owner_labels(queryable, ids) do
+  def select_owner_labels(queryable, ids, account_id) do
+    owner_membership =
+      Emisar.Accounts.Membership.Query.not_deleted()
+      |> Emisar.Accounts.Membership.Query.not_disabled()
+      |> Emisar.Accounts.Membership.Query.by_account_id(account_id)
+
     queryable
     |> where([api_keys: k], k.id in ^ids)
-    |> join(:inner, [api_keys: k], u in assoc(k, :created_by), as: :owner)
+    |> join(:inner, [api_keys: k], m in ^owner_membership,
+      on: m.id == k.created_by_membership_id,
+      as: :owner_membership
+    )
+    |> join(:inner, [owner_membership: m], u in ^Emisar.Users.User.Query.not_deleted(),
+      on: u.id == m.user_id,
+      as: :owner
+    )
     |> select(
-      [api_keys: k, owner: u],
-      {k.id, coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)}
+      [api_keys: k, owner_membership: m, owner: u],
+      {k.id,
+       coalesce(
+         fragment("NULLIF(BTRIM(?), '')", m.directory_display_name),
+         coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)
+       )}
     )
   end
 

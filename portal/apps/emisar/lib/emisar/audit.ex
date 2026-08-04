@@ -684,18 +684,14 @@ defmodule Emisar.Audit do
   end
 
   # The owner map keys off the "api_key" actor/target ids (a key IS the actor);
-  # the join select projects each key id to its creator's name/email.
+  # ApiKeys names each key's minter the way THIS account knows them, so a person
+  # whose membership here ended resolves nothing and the trail shows the key name.
   defp fetch_owner_labels(ids_by_kind, account_id) do
+    # Mirrors fetch_labels/5: with no ids there is no account to scope to
+    # either — an empty event list carries no account_id.
     case Map.get(ids_by_kind, "api_key", []) do
-      [] ->
-        %{}
-
-      ids ->
-        Emisar.ApiKeys.ApiKey.Query.all()
-        |> Emisar.ApiKeys.ApiKey.Query.by_account_id(account_id)
-        |> Emisar.ApiKeys.ApiKey.Query.select_owner_labels(ids)
-        |> Repo.all()
-        |> Map.new()
+      [] -> %{}
+      ids -> Emisar.ApiKeys.owner_labels_for_ids(ids, account_id)
     end
   end
 
