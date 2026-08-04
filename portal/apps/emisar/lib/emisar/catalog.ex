@@ -3,7 +3,7 @@ defmodule Emisar.Catalog do
   Pack and action observation, plus per-pack trust pinning.
 
   Every time a runner advertises `runner_state` we upsert
-  `pack_versions` (with TOFU/baseline pinning) and the runner's
+  `pack_versions` (with baseline pinning and pending review) and the runner's
   actions, and prune actions that disappeared.
 
   ## Trust model
@@ -16,7 +16,8 @@ defmodule Emisar.Catalog do
       * Hash matches `PackBaseline.lookup/2` → auto-pin trusted.
       * Hash differs from baseline → pin baseline as trusted,
         record advertised as pending (operator review required).
-      * No baseline (third-party pack) → TOFU pin advertised.
+      * No baseline (third-party pack) → record advertised as pending
+        with no trusted hash (operator review required).
 
     * **Subsequent sight** —
       * Same as trusted hash → no-op (touch last_seen).
