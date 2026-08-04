@@ -89,3 +89,22 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 		os.Exit(1)
 	}
 }
+
+// showHelp is the RunE every command group carries. Cobra short-circuits a
+// command with no Run/RunE straight to help — before its Args validator runs —
+// so a group without one answers `emisar pack lst` with usage and exit 0, and a
+// typo reads as success. With this RunE plus `Args: cobra.NoArgs`, bare
+// `emisar pack` still prints help while a stray operand is rejected.
+func showHelp(cmd *cobra.Command, _ []string) error { return cmd.Help() }
+
+// requireOne is cobra.ExactArgs(1) that names the command's own placeholder
+// when nothing was passed: "accepts 1 arg(s), received 0" tells an operator how
+// many, never which.
+func requireOne(placeholder string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("%s requires %s", cmd.CommandPath(), placeholder)
+		}
+		return cobra.ExactArgs(1)(cmd, args)
+	}
+}

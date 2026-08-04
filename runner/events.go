@@ -22,6 +22,8 @@ func eventsCmd() *cobra.Command {
 		Long: `Local JSONL events are intended for on-host forensics. The control
 plane is the system of record for fleet audit; for cluster-wide queries
 use the console.`,
+		Args: cobra.NoArgs,
+		RunE: showHelp,
 	}
 	cmd.AddCommand(eventsTailCmd())
 	cmd.AddCommand(eventsCatCmd())

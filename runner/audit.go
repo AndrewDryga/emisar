@@ -21,6 +21,8 @@ func auditCmd() *cobra.Command {
 carries the hash of the previous serialized line. Tampering with any
 line invalidates every subsequent event, which 'emisar audit verify'
 detects.`,
+		Args: cobra.NoArgs,
+		RunE: showHelp,
 	}
 	cmd.AddCommand(auditVerifyCmd())
 	return cmd

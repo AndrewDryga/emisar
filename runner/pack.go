@@ -43,6 +43,8 @@ https://emisar.dev/docs/pack-registry`,
 
   # Validate a pack you're authoring
   emisar pack validate ./my-pack`,
+		Args: cobra.NoArgs,
+		RunE: showHelp,
 	}
 	cmd.AddGroup(
 		&cobra.Group{ID: "install", Title: "Discover & install:"},
@@ -143,7 +145,7 @@ This is the same summary 'pack install' prints after a successful
 install. Resolves the pack from the configured packs dirs (or --packs-dir).
 Once a config is found (auto-discovered, or via --config), it also flags
 any required env var missing from the runner's inherit_env allowlist.`,
-		Args: cobra.ExactArgs(1),
+		Args: requireOne("<id>"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			dirs, err := resolvePackDirs()
 			if err != nil {
@@ -171,7 +173,7 @@ func packValidateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "validate <path>",
 		Short: "Validate a pack on disk without loading it into the runner",
-		Args:  cobra.ExactArgs(1),
+		Args:  requireOne("<path>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reg, err := packs.LoadOne(args[0], packs.LoadOptions{})
 			if err != nil {
@@ -231,7 +233,7 @@ without one, reload manually: systemctl reload emisar.
   emisar pack install redis=0.2.3 --hash sha256:...
   emisar pack install redis --hash sha256:...
   emisar pack install ./my-pack`,
-		Args: cobra.ExactArgs(1),
+		Args: requireOne("<name|path|url>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			arg := args[0]
 			if registry == "" {
@@ -367,7 +369,7 @@ advertised catalog; without one, reload manually: systemctl reload emisar.
 
   emisar pack uninstall redis
   emisar pack rm redis`,
-		Args: cobra.ExactArgs(1),
+		Args: requireOne("<name>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 

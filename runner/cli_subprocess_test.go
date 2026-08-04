@@ -297,6 +297,140 @@ func TestCLI_JSONFlagHonoredOnlyWhereBranched(t *testing.T) {
 	})
 }
 
+// --- argument admission — a typo never reads as success --------------------
+
+// A command group rejects a stray operand instead of answering it with help and
+// exit 0: `emisar pack lst` is a typo, not a request for usage. `state` is the
+// sharp case — it carries a RunE, so an unignored operand used to be dropped on
+// the floor while the runner_state JSON printed as if the typo were the command
+// the operator asked for.
+func TestCLI_ParentCommandsRejectStrayOperands(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		typo string // the operand the error must name
+	}{
+		{"pack typo", []string{"pack", "lst"}, "lst"},
+		{"pack surplus operands", []string{"pack", "instal", "redis"}, "instal"},
+		{"action typo", []string{"action", "lst"}, "lst"},
+		{"action surplus operands", []string{"action", "descibe", "linux.ping"}, "descibe"},
+		{"events typo", []string{"events", "tial"}, "tial"},
+		{"audit typo", []string{"audit", "verfy"}, "verfy"},
+		{"signing typo", []string{"signing", "new-key"}, "new-key"},
+		{"state typo", []string{"--config", "/nope/missing.yaml", "state", "bogus"}, "bogus"},
+		{"state surplus operands", []string{"--config", "/nope/missing.yaml", "state", "bogus", "more"}, "bogus"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stdout, stderr, code := runCLI(t, c.args, nil)
+			if code != 1 {
+				t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
+			}
+			if !strings.Contains(stderr, "unknown command") || !strings.Contains(stderr, c.typo) {
+				t.Errorf("stderr should name the rejected operand %q, got %q", c.typo, stderr)
+			}
+			if stdout != "" {
+				t.Errorf("a rejected operand prints nothing to stdout, got %q", stdout)
+			}
+			// The rejection lands before config load and state rendering, so a
+			// typo can never be mistaken for a successful advertise preview.
+			if strings.Contains(stdout, "runner_state") {
+				t.Errorf("a typo must not render the runner_state message:\n%s", stdout)
+			}
+		})
+	}
+}
+
+// Rejecting operands must not cost the groups their help: bare `emisar pack`
+// (and friends) still print usage and exit 0, and bare `emisar state` still
+// executes its RunE against a real config.
+func TestCLI_BareParentCommandsUnchanged(t *testing.T) {
+	cfg := writeRunnableConfig(t, t.TempDir(), false)
+	cases := []struct {
+		name      string
+		args      []string
+		wantOut   string
+		wantChild string
+	}{
+		{"pack", []string{"pack"}, "Usage:", "install"},
+		{"pack --help", []string{"pack", "--help"}, "Usage:", "install"},
+		{"action", []string{"action"}, "Usage:", "describe"},
+		{"events", []string{"events"}, "Usage:", "tail"},
+		{"audit", []string{"audit"}, "Usage:", "verify"},
+		{"signing", []string{"signing"}, "Usage:", "new-ca"},
+		{"state", []string{"--config", cfg, "state"}, `"runner_state"`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stdout, stderr, code := runCLI(t, c.args, nil)
+			if code != 0 {
+				t.Fatalf("exit = %d, want 0; stderr=%q", code, stderr)
+			}
+			if !strings.Contains(stdout, c.wantOut) {
+				t.Errorf("stdout missing %q:\n%s", c.wantOut, stdout)
+			}
+			if c.wantChild != "" && !strings.Contains(stdout, c.wantChild) {
+				t.Errorf("help missing child command %q:\n%s", c.wantChild, stdout)
+			}
+			if stderr != "" {
+				t.Errorf("nothing should reach stderr, got %q", stderr)
+			}
+		})
+	}
+}
+
+// A command declaring one required placeholder names THAT placeholder when it's
+// missing — "accepts 1 arg(s), received 0" says how many, never which. Exact-one
+// semantics are otherwise unchanged: surplus operands still fail.
+func TestCLI_RequiredArgErrorsNameTheirPlaceholder(t *testing.T) {
+	cfg := writeRunnableConfig(t, t.TempDir(), false)
+	cases := []struct {
+		name        string
+		args        []string
+		placeholder string
+	}{
+		{"pack info", []string{"pack", "info"}, "<id>"},
+		{"pack validate", []string{"pack", "validate"}, "<path>"},
+		{"pack install", []string{"pack", "install"}, "<name|path|url>"},
+		{"pack uninstall", []string{"pack", "uninstall"}, "<name>"},
+		{"pack rm alias", []string{"pack", "rm"}, "<name>"},
+		{"action describe", []string{"action", "describe"}, "<action-id>"},
+		{"action run", []string{"action", "run"}, "<action-id>"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			base := append([]string{"--config", cfg}, c.args...)
+
+			t.Run("no args names the placeholder", func(t *testing.T) {
+				stdout, stderr, code := runCLI(t, base, nil)
+				if code != 1 {
+					t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
+				}
+				if !strings.Contains(stderr, c.placeholder) {
+					t.Errorf("stderr should name %s, got %q", c.placeholder, stderr)
+				}
+				if stdout != "" {
+					t.Errorf("a rejected invocation prints nothing to stdout, got %q", stdout)
+				}
+			})
+
+			t.Run("surplus args still rejected", func(t *testing.T) {
+				surplus := append(append([]string{}, base...), "one", "two")
+				stdout, stderr, code := runCLI(t, surplus, nil)
+				if code != 1 {
+					t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
+				}
+				if !strings.Contains(stderr, "accepts 1 arg(s), received 2") {
+					t.Errorf("stderr should reject the surplus operands, got %q", stderr)
+				}
+				if stdout != "" {
+					t.Errorf("the rejection short-circuits before any work, stdout=%q", stdout)
+				}
+			})
+		})
+	}
+}
+
 // --- RUN-013/014 — boot/config failure exits 1 ------------------------------
 
 // A read-only command (`action list`, `action describe`) over an unresolvable

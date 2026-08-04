@@ -18,6 +18,8 @@ func actionCmd() *cobra.Command {
 		Use:     "action",
 		Aliases: []string{"actions"},
 		Short:   "List, describe, and run actions locally",
+		Args:    cobra.NoArgs,
+		RunE:    showHelp,
 	}
 	cmd.AddCommand(actionListCmd())
 	cmd.AddCommand(actionDescribeCmd())
@@ -57,7 +59,7 @@ func actionDescribeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "describe <action-id>",
 		Short: "Print full action definition",
-		Args:  cobra.ExactArgs(1),
+		Args:  requireOne("<action-id>"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -86,7 +88,7 @@ func actionRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run <action-id>",
 		Short: "Run an action locally (bypasses cloud — for debugging packs)",
-		Args:  cobra.ExactArgs(1),
+		Args:  requireOne("<action-id>"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			rt, err := boot()
 			if err != nil {

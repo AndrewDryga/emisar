@@ -279,6 +279,8 @@ func signingCmd() *cobra.Command {
 every action, so a compromised control plane can relay but never mint a
 dispatch. "signing init" is the one-shot on-ramp; "new-ca" and "new-cert" are
 the granular operations for CA rotation and routine cert renewal.`,
+		Args: cobra.NoArgs,
+		RunE: showHelp,
 	}
 	cmd.AddCommand(signingInitCmd())
 	cmd.AddCommand(signingNewCACmd())

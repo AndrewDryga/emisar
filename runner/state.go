@@ -22,6 +22,7 @@ to the control plane or touching a live session.
 
 Use it to preview what a config or pack change will publish before
 starting the runner, and to diff two hosts that should look identical.`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
