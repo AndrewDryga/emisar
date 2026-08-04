@@ -21,18 +21,26 @@ import (
 
 func TestCheckCredential(t *testing.T) {
 	t.Run("token file 0600 present", func(t *testing.T) {
-		path := writeToken(t, "tok", 0o600)
+		path := writeToken(t, validTokenFile, 0o600)
 		got := checkCredential(&config.Config{Cloud: config.Cloud{TokenPath: path, EnrollmentKeyEnv: "X"}})
 		if got.status != checkOK {
 			t.Fatalf("status = %v, want ok (%s)", got.status, got.detail)
 		}
 	})
 
-	t.Run("token file group-readable warns", func(t *testing.T) {
-		path := writeToken(t, "tok", 0o644)
+	// connect refuses to reuse an exposed token and will not re-register over
+	// it, so the runner stays down until the mode is fixed — that's a failure,
+	// and the remedy has to name the file and the exact fix.
+	t.Run("token file group-readable fails with the chmod remedy", func(t *testing.T) {
+		path := writeToken(t, validTokenFile, 0o644)
 		got := checkCredential(&config.Config{Cloud: config.Cloud{TokenPath: path}})
-		if got.status != checkWarn {
-			t.Fatalf("status = %v, want warn (%s)", got.status, got.detail)
+		if got.status != checkFail {
+			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
+		}
+		for _, want := range []string{path, "0644", "chmod 600"} {
+			if !strings.Contains(got.detail, want) {
+				t.Errorf("detail %q should contain %q", got.detail, want)
+			}
 		}
 	})
 
@@ -57,18 +65,88 @@ func TestCheckCredential(t *testing.T) {
 			t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
 		}
 	})
-
-	t.Run("empty token file falls back to env", func(t *testing.T) {
-		t.Setenv("EMISAR_ENROLLMENT_KEY", "emk-secret")
-		path := writeToken(t, "", 0o600)
-		got := checkCredential(&config.Config{
-			Cloud: config.Cloud{TokenPath: path, EnrollmentKeyEnv: "EMISAR_ENROLLMENT_KEY"},
-		})
-		if got.status != checkOK || !strings.Contains(got.detail, "EMISAR_ENROLLMENT_KEY") {
-			t.Fatalf("got %v %q, want ok via env", got.status, got.detail)
-		}
-	})
 }
+
+// A cached token file connect would REJECT is never rescued by an enrollment
+// key: connect refuses to register over a rejected cache (that would mint a
+// fresh token on top of the evidence), so the runner stays down and doctor has
+// to say so — naming the path and the cause instead of reporting a healthy
+// credential. Only a missing file is the pre-enrollment case, covered above.
+func TestCheckCredentialRejectsWhatConnectRejects(t *testing.T) {
+	tests := map[string]struct {
+		// setup returns the token path to check.
+		setup     func(t *testing.T) string
+		wantCause string
+	}{
+		"group-readable": {
+			setup:     func(t *testing.T) string { return writeToken(t, validTokenFile, 0o644) },
+			wantCause: "chmod 600",
+		},
+		"malformed json": {
+			setup:     func(t *testing.T) string { return writeToken(t, `{"token":`, 0o600) },
+			wantCause: "decode token file",
+		},
+		"unknown field": {
+			setup:     func(t *testing.T) string { return writeToken(t, `{"token":"tok","extra":1}`, 0o600) },
+			wantCause: "decode token file",
+		},
+		"empty file": {
+			setup:     func(t *testing.T) string { return writeToken(t, "", 0o600) },
+			wantCause: "decode token file",
+		},
+		"empty token": {
+			setup:     func(t *testing.T) string { return writeToken(t, `{"token":""}`, 0o600) },
+			wantCause: "empty token",
+		},
+		"symlinked path": {
+			// The target is a perfectly good token; connect still refuses to
+			// follow a symlink at the cache path (O_NOFOLLOW).
+			setup: func(t *testing.T) string {
+				target := writeToken(t, validTokenFile, 0o600)
+				link := filepath.Join(t.TempDir(), "token.link")
+				if err := os.Symlink(target, link); err != nil {
+					t.Fatal(err)
+				}
+				return link
+			},
+		},
+		"not a regular file": {
+			// A directory at the cache path: the open succeeds but the read
+			// can't, standing in for any unreadable cache without depending on
+			// permission tricks that a root test runner would defeat.
+			setup: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "token")
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("EMISAR_ENROLLMENT_KEY", "emk-secret")
+			path := tc.setup(t)
+			got := checkCredential(&config.Config{
+				Cloud: config.Cloud{TokenPath: path, EnrollmentKeyEnv: "EMISAR_ENROLLMENT_KEY"},
+			})
+			if got.status != checkFail {
+				t.Fatalf("status = %v, want fail (%s)", got.status, got.detail)
+			}
+			if !strings.Contains(got.detail, path) {
+				t.Errorf("detail %q should name the token path %s", got.detail, path)
+			}
+			if tc.wantCause != "" && !strings.Contains(got.detail, tc.wantCause) {
+				t.Errorf("detail %q should carry the cause %q", got.detail, tc.wantCause)
+			}
+		})
+	}
+}
+
+// validTokenFile is the on-disk shape connect writes and accepts — a strict
+// {"token": …} document, not raw token bytes.
+const validTokenFile = `{"token":"tok"}`
 
 func writeToken(t *testing.T, body string, perm os.FileMode) string {
 	t.Helper()
@@ -162,6 +240,15 @@ func TestCheckPacks_ReportsDegraded(t *testing.T) {
 	}
 	if !strings.Contains(got.detail, brokenDir) || !strings.Contains(got.detail, "1 loaded") {
 		t.Fatalf("detail should name the broken dir and the healthy count: %q", got.detail)
+	}
+	// `pack update <id>` is the repair path for an already-installed pack (it
+	// re-fetches and swaps the tree); `pack install` refuses an existing id
+	// without --force, so guidance must never send the operator there.
+	if !strings.Contains(got.detail, "emisar pack update <id>") || !strings.Contains(got.detail, "installer") {
+		t.Errorf("detail should offer the update + re-run-the-installer remedies: %q", got.detail)
+	}
+	if strings.Contains(got.detail, "pack install") {
+		t.Errorf("detail must not send the operator to 'pack install' for an installed pack: %q", got.detail)
 	}
 }
 
@@ -365,7 +452,7 @@ func TestCheckCloudReportsRecentTerminalShutdown(t *testing.T) {
 				Timestamp: now.Add(-time.Minute),
 			},
 			wantStatus: checkFail,
-			wantDetail: []string{"cloud rejected this runner", "runner_version_unsupported", "upgrade to 1.2.3", "upgrade the runner"},
+			wantDetail: []string{"the control plane rejected this runner", "runner_version_unsupported", "upgrade to 1.2.3", "upgrade the runner"},
 		},
 		{
 			name: "recent revoked runner is actionable",
@@ -375,7 +462,7 @@ func TestCheckCloudReportsRecentTerminalShutdown(t *testing.T) {
 				Timestamp: now.Add(-time.Minute),
 			},
 			wantStatus: checkFail,
-			wantDetail: []string{"cloud rejected this runner", "runner_revoked", "runner removed", "re-register"},
+			wantDetail: []string{"the control plane rejected this runner", "runner_revoked", "runner removed", "re-register"},
 		},
 		{
 			name: "stale rejection falls back to reachability",
@@ -446,7 +533,7 @@ func TestDoctorCmd_AllPassExitZero(t *testing.T) {
 	// absolute-path binary the doctor stats on disk) so the action-tools check
 	// passes — /bin/true isn't at that path on macOS.
 	packDir := writeShPack(t, filepath.Join(dir, "packs"), "linux")
-	tokenPath := writeToken(t, "tok", 0o600)
+	tokenPath := writeToken(t, validTokenFile, 0o600)
 	flagConfig = writeDoctorConfig(t, dir, packDir, "ws://"+hostOf(srv.URL), tokenPath)
 
 	var execErr error

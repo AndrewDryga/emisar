@@ -425,6 +425,29 @@ func TestPackInstall_NoDestNoConfigErrors(t *testing.T) {
 	}
 }
 
+// The install/uninstall help examples show only what the operator must type:
+// --dest defaults to the configured packs dir, so an example that carries it
+// teaches a flag nobody needs. The automatic-SIGHUP prose stays — it's the
+// behavior, and the manual systemctl line is the honest fallback.
+func TestPackHelpExamplesOmitDefaultDest(t *testing.T) {
+	for name, help := range map[string]string{
+		"install":   packInstallCmd().Long,
+		"uninstall": packUninstallCmd().Long,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if strings.Contains(help, "--dest /etc/emisar/packs") {
+				t.Errorf("%s help still shows the default-valued --dest in an example:\n%s", name, help)
+			}
+			if !strings.Contains(help, "automatically (SIGHUP)") {
+				t.Errorf("%s help must keep the automatic-reload behavior:\n%s", name, help)
+			}
+			if !strings.Contains(help, "systemctl reload emisar") {
+				t.Errorf("%s help must keep the manual reload fallback:\n%s", name, help)
+			}
+		})
+	}
+}
+
 // `pack uninstall <id>` RemoveAll's the installed pack dir and prints the
 // reload reminder (pack.go:369-374). The pack has a pack.yaml so it clears the
 // not-a-pack guard, and the safe-segment guard, so the happy path runs to the
@@ -609,6 +632,30 @@ func TestResolvePackSource_VersionedParsing(t *testing.T) {
 			if _, _, err := resolvePackSource(context.Background(), arg, reg); err == nil {
 				t.Errorf("resolvePackSource(%q) should reject the spec", arg)
 			}
+		}
+	})
+
+	// A bare name is checked BEFORE the fetch: `redis@0.2.3` is the common
+	// wrong pin syntax, and a 404 from the registry teaches the operator
+	// nothing. The httptest server would serve any path, so reaching it at all
+	// means the name was never validated.
+	t.Run("invalid bare name is rejected before any fetch", func(t *testing.T) {
+		var fetched bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			fetched = true
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		_, _, err := resolvePackSource(context.Background(), "redis@0.2.3", srv.URL)
+		if err == nil {
+			t.Fatal("resolvePackSource accepted an invalid bare pack name")
+		}
+		if fetched {
+			t.Error("an invalid bare name must not reach the registry")
+		}
+		if !strings.Contains(err.Error(), "<name>=<version>") || !strings.Contains(err.Error(), "redis=0.2.3") {
+			t.Errorf("error %q should teach the <name>=<version> pin syntax with an example", err)
 		}
 	})
 

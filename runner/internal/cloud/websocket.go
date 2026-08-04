@@ -167,7 +167,9 @@ type agentToken struct {
 }
 
 func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, error) {
-	if existing, err := d.readToken(); err == nil && existing.Raw != "" {
+	existing, err := d.readToken()
+	switch {
+	case err == nil:
 		// Reuse the cached token unless the operator has rotated the auth
 		// key under it (e.g. moving the runner to another account): a
 		// configured key whose fingerprint no longer matches the one stamped
@@ -179,6 +181,14 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 		d.logger().Info("cloud.enrollment_key_rotated",
 			"path", d.TokenPath,
 			"detail", "configured enrollment key no longer matches the cached token; re-registering")
+	case errors.Is(err, os.ErrNotExist):
+		// No cache yet — first boot, the normal enrollment path below.
+	default:
+		// Every other rejection (insecure perms, a symlink, malformed or
+		// unreadable contents) is a host problem, never a reason to mint a
+		// fresh token over it: re-registering would overwrite the evidence and
+		// silently reward whoever tampered with the cache.
+		return agentToken{}, fmt.Errorf("cached runner token %s is unusable: %w", d.TokenPath, err)
 	}
 
 	if d.EnrollmentKey == "" {
@@ -198,6 +208,17 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 	return token, nil
 }
 
+// ValidateTokenFile reports whether the cached runner token at path is one
+// connect would accept, running the exact secure open, permission check, and
+// strict parse the dial path uses. Only the error is returned — never the
+// token — so diagnostics can mirror connect without handling the secret. A
+// missing file is reported as os.ErrNotExist, the one rejection that means
+// "not enrolled yet" rather than "this host is broken".
+func ValidateTokenFile(path string) error {
+	_, err := (&WebsocketDialer{TokenPath: path}).readToken()
+	return err
+}
+
 func (d *WebsocketDialer) readToken() (agentToken, error) {
 	if d.TokenPath == "" {
 		return agentToken{}, errors.New("no token path")
@@ -205,8 +226,9 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 
 	// The token is a bearer secret, so treat its path as hostile. The platform
 	// helper must refuse symlink traversal; a non-0600 file means the token was
-	// exposed (bad umask, manual edit, tampering), so reject it and let the
-	// caller re-register. We always write 0600, so a clean install never trips.
+	// exposed (bad umask, manual edit, tampering), so reject it — the caller
+	// fails the dial rather than registering over rejected cache state. We
+	// always write 0600, so a clean install never trips.
 	f, err := openTokenFile(d.TokenPath)
 	if err != nil {
 		return agentToken{}, err
@@ -218,7 +240,7 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 		return agentToken{}, err
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return agentToken{}, fmt.Errorf("token file %s has insecure perms %#o (want 0600); refusing to reuse it", d.TokenPath, perm)
+		return agentToken{}, fmt.Errorf("insecure perms %#o (want 0600); chmod 600 %s", perm, d.TokenPath)
 	}
 
 	contents, err := io.ReadAll(f)

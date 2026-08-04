@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andrewdryga/emisar/runner/internal/hostscan"
 )
 
 // writeCatalogFile drops a suggest.json with the given pack entries under a
@@ -68,6 +70,25 @@ func TestPackSuggest_BaselineRecommended(t *testing.T) {
 	// The install line is part of the human guide.
 	if !strings.Contains(out, "emisar pack install linux-core") {
 		t.Errorf("suggest should print an install line per pack; output:\n%s", out)
+	}
+}
+
+// The reload guidance matches what installing actually does: `pack install`
+// SIGHUPs a live daemon itself and prints the manual fallback only when that
+// attempt fails. Suggest must not prescribe an unconditional extra step.
+func TestWriteSuggestions_ReloadGuidance(t *testing.T) {
+	suggestions := []hostscan.Suggestion{{ID: "linux-core", Name: "Linux core", Evidence: []string{"baseline"}}}
+
+	var buf strings.Builder
+	writeSuggestions(&buf, suggestions)
+	out := buf.String()
+	for _, want := range []string{"reloads a running runner automatically", "if it cannot", "prints the manual reload step"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("guidance should contain %q; output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Then reload") || strings.Contains(out, "systemctl reload emisar") {
+		t.Errorf("suggest must not prescribe an unconditional manual reload; output:\n%s", out)
 	}
 }
 

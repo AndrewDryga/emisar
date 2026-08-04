@@ -102,7 +102,7 @@ EMISAR_ENROLLMENT_KEY, RUNNER_GROUP, RUNNER_LABEL_<KEY>.
 EMISAR_URL + EMISAR_ENROLLMENT_KEY are baked into config.yaml + runner.env
 at install time so the runner boots without a follow-up edit.
 RUNNER_GROUP defaults to `hostname -s`. Each RUNNER_LABEL_<KEY>=<value>
-(e.g. RUNNER_LABEL_ROLE=web) is baked in as a runner label the cloud UI
+(e.g. RUNNER_LABEL_ROLE=web) is baked in as a runner label the console
 filters on; set as many as you like.
 
 Setting EMISAR_PACKS (the env form of --packs), even to an empty string,
@@ -495,12 +495,12 @@ config_skeleton() {
 schema_version: 1
 
 runner:
-  # group is the cloud UI's auto-grouping key. Defaults to the host's
+  # group is the console's auto-grouping key. Defaults to the host's
   # short hostname; override by editing this line or by passing
   # RUNNER_GROUP=... to install.sh next time.
   group: ${group}
   labels:
-    # Free-form tags. The cloud UI uses these for filtering / search.
+    # Free-form tags. The console uses these for filtering / search.
     # Set RUNNER_LABEL_<KEY>=<value> at install time to bake them in
     # (e.g. RUNNER_LABEL_ROLE=web), or uncomment + edit below.
 EOF
@@ -1489,8 +1489,9 @@ EOF
 Action packs:
   Installed:  ${installed:-(none)}
   Suggest:    ${BIN_DIR}/emisar pack suggest             (host-matched packs for what's running)
-  Add more:   sudo ${BIN_DIR}/emisar pack install <name>      (then reload the runner)
-  Remove:     sudo ${BIN_DIR}/emisar pack uninstall <name>    (then reload the runner)
+  Add more:   sudo ${BIN_DIR}/emisar pack install <name>
+  Remove:     sudo ${BIN_DIR}/emisar pack uninstall <name>
+  Reload:     automatic via SIGHUP; commands print a manual fallback if needed
   Browse:     https://emisar.dev/packs
 EOF
 

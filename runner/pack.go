@@ -34,7 +34,7 @@ content hash with --hash, and the runner always re-hashes packs on load.
 Author your own packs and host a private registry with packctl — the same tool
 that builds and publishes the public registry. Guide:
 https://emisar.dev/docs/pack-registry`,
-		Example: `  # See what fits this host, then install with the hash the portal advertises
+		Example: `  # See what fits this host, then install with the hash the control plane advertises
   emisar pack suggest
   emisar pack install redis --hash sha256:...
 
@@ -220,17 +220,17 @@ The source can be:
 The pack is validated (same checks as 'pack validate') and its content
 hash is computed. If --hash is given, the install aborts unless the
 computed hash matches exactly — this pins the install to the exact pack
-content the portal advertised, so a tampered or mismatched copy is
+content the control plane advertised, so a tampered or mismatched copy is
 rejected before it reaches the runner.
 
 The pack is copied to <dest>/<pack-id>. A running daemon is reloaded
 automatically (SIGHUP) so it re-reads the catalog and re-advertises;
 without one, reload manually: systemctl reload emisar.
 
-  emisar pack install redis --dest /etc/emisar/packs
-  emisar pack install redis=0.2.3 --hash sha256:... --dest /etc/emisar/packs
-  emisar pack install redis --hash sha256:... --dest /etc/emisar/packs
-  emisar pack install ./my-pack --dest /etc/emisar/packs`,
+  emisar pack install redis
+  emisar pack install redis=0.2.3 --hash sha256:...
+  emisar pack install redis --hash sha256:...
+  emisar pack install ./my-pack`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			arg := args[0]
@@ -322,7 +322,13 @@ func resolvePackSource(ctx context.Context, arg, registry string) (dir string, c
 			banner("fetching pack %q version %s from %s", name, version, base)
 			return packs.Fetch(ctx, url, nil)
 		}
-		// Bare name → current-version registry URL.
+		// Bare name → current-version registry URL. Check the name before
+		// spending a fetch on it: the common miss is `redis@0.2.3`, which
+		// would otherwise fail as a bare 404 instead of teaching the pin
+		// syntax.
+		if !packspec.ValidPackID(arg) {
+			return "", nil, fmt.Errorf("invalid pack name %q: use a pack id, pin a version as <name>=<version> (e.g. redis=0.2.3), or pass a local path", arg)
+		}
 		url := fmt.Sprintf("%s/packs/%s/pack.tar.gz", base, arg)
 		banner("fetching pack %q from %s", arg, base)
 		return packs.Fetch(ctx, url, nil)
@@ -359,7 +365,7 @@ config paths.packs[0]) and removes <dest>/<name>. A running daemon is
 reloaded automatically (SIGHUP) so it drops the pack's actions from the
 advertised catalog; without one, reload manually: systemctl reload emisar.
 
-  emisar pack uninstall redis --dest /etc/emisar/packs
+  emisar pack uninstall redis
   emisar pack rm redis`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

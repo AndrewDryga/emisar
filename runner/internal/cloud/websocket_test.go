@@ -159,15 +159,19 @@ func TestWebsocketDialerRegistersAndConnects(t *testing.T) {
 func TestWebsocketDialerDoesNotConnectBeforeTokenPersistence(t *testing.T) {
 	fc, srv := newFakeCloud(t)
 	dir := t.TempDir()
-	blocker := filepath.Join(dir, "not-a-directory")
-	if err := os.WriteFile(blocker, []byte("block"), 0o600); err != nil {
+	// A token directory that reads as "no token yet" (so the dialer takes the
+	// enrollment path) but can never be created: the path component is a
+	// symlink to nothing, so the open resolves to ENOENT and the later
+	// SecureMkdirAll refuses to replace the dangling link.
+	stateDir := filepath.Join(dir, "state")
+	if err := os.Symlink(filepath.Join(dir, "missing"), stateDir); err != nil {
 		t.Fatal(err)
 	}
 
 	d := &WebsocketDialer{
 		URL:           srv.URL,
 		EnrollmentKey: fc.enrollmentKey,
-		TokenPath:     filepath.Join(blocker, "token.json"),
+		TokenPath:     filepath.Join(stateDir, "token.json"),
 		Hostname:      "test-host",
 		Group:         "default",
 		Version:       "0.test",
@@ -305,6 +309,10 @@ func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
 	if err := os.WriteFile(loose, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// WriteFile honors umask; force the exact bits under test.
+	if err := os.Chmod(loose, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := (&WebsocketDialer{TokenPath: loose}).readToken(); err == nil {
 		t.Error("0644 token should be refused")
 	}
@@ -317,6 +325,34 @@ func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
 	}
 	if _, err := (&WebsocketDialer{TokenPath: link}).readToken(); err == nil {
 		t.Error("symlinked token path should be refused")
+	}
+}
+
+// ValidateTokenFile is what diagnostics use to judge a cached token without
+// touching the secret. Its one load-bearing distinction: a missing file is
+// os.ErrNotExist (not enrolled yet), while every other rejection is a host
+// problem callers must surface. The parser itself is covered above.
+func TestValidateTokenFile(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "token.json")
+	if err := os.WriteFile(good, []byte(`{"token":"t"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateTokenFile(good); err != nil {
+		t.Errorf("a 0600 token file connect accepts should validate: %v", err)
+	}
+
+	missing := filepath.Join(dir, "absent.json")
+	if err := ValidateTokenFile(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("missing token = %v, want os.ErrNotExist", err)
+	}
+
+	malformed := filepath.Join(dir, "malformed.json")
+	if err := os.WriteFile(malformed, []byte(`{"token":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateTokenFile(malformed); err == nil || errors.Is(err, os.ErrNotExist) {
+		t.Errorf("malformed token = %v, want a rejection distinct from os.ErrNotExist", err)
 	}
 }
 
@@ -337,6 +373,71 @@ func TestReadTokenRejectsUnsupportedShapes(t *testing.T) {
 			}
 			if _, err := (&WebsocketDialer{TokenPath: path}).readToken(); err == nil {
 				t.Fatal("readToken accepted an unsupported token-file shape")
+			}
+		})
+	}
+}
+
+// A token cache the reader REJECTS (exposed perms, malformed contents) is a
+// host problem, not a first-boot enrollment cue: Dial fails naming the path and
+// the cause, and never registers over the file — doing so would mint a fresh
+// token on top of the evidence, exactly what tampering wants.
+func TestWebsocketDialerRefusesToRegisterOverRejectedTokenCache(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		perm os.FileMode
+		// wantCauses are all the fragments the failure must carry — the cause,
+		// and for a fixable host problem the exact remedy, so the operator can
+		// act on the connect error without reaching for doctor.
+		wantCauses []string
+	}{
+		"insecure perms": {`{"token":"rnrtok-cached"}`, 0o644, []string{"insecure perms", "chmod 600"}},
+		"malformed":      {`{"token":`, 0o600, []string{"decode token file"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fc, srv := newFakeCloud(t)
+
+			tokenPath := filepath.Join(t.TempDir(), "token.json")
+			if err := os.WriteFile(tokenPath, []byte(tc.body), tc.perm); err != nil {
+				t.Fatal(err)
+			}
+			// WriteFile honors umask; force the exact bits under test.
+			if err := os.Chmod(tokenPath, tc.perm); err != nil {
+				t.Fatal(err)
+			}
+
+			// An enrollment key is configured: registration is available and
+			// must still not happen.
+			d := &WebsocketDialer{
+				URL:           srv.URL,
+				EnrollmentKey: fc.enrollmentKey,
+				TokenPath:     tokenPath,
+				Hostname:      "test-host",
+				Group:         "default",
+				ExternalID:    "stable-id-123",
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			conn, err := d.Dial(ctx)
+			if err == nil {
+				conn.Close()
+				t.Fatal("Dial accepted a rejected token cache")
+			}
+			if !strings.Contains(err.Error(), tokenPath) {
+				t.Errorf("error = %v, want it to name the token path %s", err, tokenPath)
+			}
+			for _, want := range tc.wantCauses {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %v, want it to preserve %q", err, want)
+				}
+			}
+			if fc.registerSeen != 0 {
+				t.Errorf("register hit %d times, want 0 — a rejected cache is never re-registered over", fc.registerSeen)
+			}
+			if body, err := os.ReadFile(tokenPath); err != nil || string(body) != tc.body {
+				t.Errorf("token file = %q (%v), want it left untouched for the operator", body, err)
 			}
 		})
 	}

@@ -35,7 +35,7 @@ func auditVerifyCmd() *cobra.Command {
 from each preceding line. Exits 0 if every entry chains correctly; exits
 1 (with line + event_id) on the first break.
 
-With no path, verifies the configured events.jsonl from the agent's
+With no path, verifies the configured events.jsonl from the runner's
 config. Pass a path to verify a specific (or rotated) file:
 
     emisar audit verify /var/log/emisar/events.jsonl

@@ -277,6 +277,10 @@ func installedPackIDs() map[string]bool {
 	return out
 }
 
+// writeSuggestions renders the human guide. Each resulting `pack install`
+// attempts the reload itself and prints a manual fallback only when needed,
+// so suggest describes that conditional behavior without prescribing a
+// separate reload step.
 func writeSuggestions(w io.Writer, suggestions []hostscan.Suggestion) {
 	if len(suggestions) == 0 {
 		fmt.Fprintln(w, "No new packs to suggest — the installed packs already cover this host.")
@@ -299,6 +303,7 @@ func writeSuggestions(w io.Writer, suggestions []hostscan.Suggestion) {
 	for _, s := range suggestions {
 		fmt.Fprintf(w, "  emisar pack install %s\n", s.ID)
 	}
-	fmt.Fprintln(w, "\nThen reload the runner: sudo systemctl reload emisar")
+	fmt.Fprintln(w, "\nEach install reloads a running runner automatically; if it cannot,")
+	fmt.Fprintln(w, "the install command prints the manual reload step.")
 	fmt.Fprintln(w, "Browse the full catalog: "+defaultRegistry+"/packs")
 }

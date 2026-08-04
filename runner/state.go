@@ -15,7 +15,13 @@ import (
 func stateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "state",
-		Short: "Print the runner_state message this runner would advertise to cloud",
+		Short: "Print the runner_state message this runner would advertise to the control plane",
+		Long: `Render the runner_state message locally — the same catalog, admission
+policy, and signing trust the daemon would advertise — without connecting
+to the control plane or touching a live session.
+
+Use it to preview what a config or pack change will publish before
+starting the runner, and to diff two hosts that should look identical.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

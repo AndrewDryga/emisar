@@ -14,7 +14,7 @@ import (
 // best-effort from the usual locations.
 func announceReload(w io.Writer, cfg *config.Config, manualHint string) {
 	if notifyRunnerReload(cfg) {
-		fmt.Fprintln(w, "Reloaded the runner — it re-reads packs and re-advertises to cloud.")
+		fmt.Fprintln(w, "Reloaded the runner — it re-reads packs and re-advertises to the control plane.")
 	} else {
 		fmt.Fprintln(w, manualHint)
 	}

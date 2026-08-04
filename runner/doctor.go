@@ -61,9 +61,9 @@ control-plane credential, the pack directories and the packs they hold, the
 host binaries the installed actions need on PATH, and that the control plane
 is reachable over TLS.
 
-No cloud session is opened and a failing check never aborts the rest, so a
-single run surfaces every problem at once. Exit status is non-zero if any
-check fails.`,
+No control-plane session is opened and a failing check never aborts the
+rest, so a single run surfaces every problem at once. Exit status is
+non-zero if any check fails.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			results := runDoctor(cmd.Context())
 			if fails := reportDoctor(os.Stdout, results); fails > 0 {
@@ -128,20 +128,27 @@ func checkConfig() (*config.Config, checkResult) {
 }
 
 // checkCredential mirrors what the connect path needs: either a persisted
-// per-runner token file, or the bootstrap enrollment key in the configured env var
-// (which mints a token on first connect). A token file readable by group/other
-// is a warning — it's a host secret.
+// per-runner token file connect would accept, or the bootstrap enrollment key
+// in the configured env var (which mints a token on first connect). The cached
+// file is judged by the connect reader itself (cloud.ValidateTokenFile), so
+// doctor can't pass a token the dial would reject. Only "no file yet" is the
+// normal pre-enrollment case; every other rejection — exposed perms, a symlink,
+// malformed or unreadable contents — keeps the runner down, and an enrollment
+// key does not rescue it: connect refuses to register over a rejected cache
+// rather than mint a fresh token over the evidence.
 func checkCredential(cfg *config.Config) checkResult {
 	tokenPath := cfg.Cloud.TokenPath
 	envName := cfg.Cloud.EnrollmentKeyEnv
 
 	if tokenPath != "" {
-		if info, err := os.Stat(tokenPath); err == nil && info.Size() > 0 {
-			if info.Mode().Perm()&0o077 != 0 {
-				return checkResult{"credential", checkWarn, fmt.Sprintf(
-					"token %s is %#o — others can read it; chmod 600", tokenPath, info.Mode().Perm())}
-			}
+		err := cloud.ValidateTokenFile(tokenPath)
+		switch {
+		case err == nil:
 			return checkResult{"credential", checkOK, fmt.Sprintf("token present at %s", tokenPath)}
+		case !errors.Is(err, os.ErrNotExist):
+			return checkResult{"credential", checkFail, fmt.Sprintf(
+				"token %s is unusable: %v — connect refuses it, so the runner stays down until it's fixed",
+				tokenPath, err)}
 		}
 	}
 
@@ -222,7 +229,7 @@ func checkPacks(dirs []string) (*packs.Registry, checkResult) {
 			details[i] = fmt.Sprintf("%s (%s)", d.Dir, d.Reason)
 		}
 		return registry, checkResult{"packs", checkFail,
-			fmt.Sprintf("%d loaded; %d broken and skipped: %s — reinstall each (emisar pack install <id>) or re-run the installer",
+			fmt.Sprintf("%d loaded; %d broken and skipped: %s — repair each (emisar pack update <id>) or re-run the installer",
 				len(registry.Packs()), len(degraded), strings.Join(details, "; "))}
 	}
 	loaded := registry.Packs()
@@ -322,7 +329,7 @@ func checkCloud(ctx context.Context, cfg *config.Config, client *http.Client) ch
 }
 
 func terminalShutdownDetail(shutdown *cloud.TerminalShutdownState) string {
-	detail := fmt.Sprintf("cloud rejected this runner: %s", shutdown.Reason)
+	detail := fmt.Sprintf("the control plane rejected this runner: %s", shutdown.Reason)
 	if shutdown.Message != "" {
 		detail += " — " + shutdown.Message
 	}

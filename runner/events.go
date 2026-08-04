@@ -19,9 +19,9 @@ func eventsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "events",
 		Short: "Inspect the local JSONL event log",
-		Long: `Local JSONL events are intended for on-host forensics. The cloud
-control plane is the system of record for fleet audit; for cluster-wide
-queries use the cloud UI.`,
+		Long: `Local JSONL events are intended for on-host forensics. The control
+plane is the system of record for fleet audit; for cluster-wide queries
+use the console.`,
 	}
 	cmd.AddCommand(eventsTailCmd())
 	cmd.AddCommand(eventsCatCmd())
