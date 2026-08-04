@@ -3349,7 +3349,7 @@ defmodule Emisar.ApprovalsTest do
 
       # …and stops matching the moment the account flips the kill switch —
       # no revocation required.
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 0)
 
       assert Approvals.peek_matching_grant(
                account.id,
@@ -3432,6 +3432,29 @@ defmodule Emisar.ApprovalsTest do
       # rolls back with it — no use is burned without a durable run.
       assert {:error, changeset} = Runs.dispatch_run(Map.put(attrs, :args, huge), subject)
       assert "is too large (max 32768 bytes)" in errors_on(changeset).args_raw
+      assert Repo.reload!(grant).uses_count == 0
+    end
+
+    test "a grant matched before the kill switch landed can no longer be consumed" do
+      %{subject: subject, grant: grant} = grant_dispatch_setup([])
+
+      # Dispatch peeked this grant while the account was uncapped…
+      assert %Grant{} =
+               Approvals.peek_matching_grant(
+                 subject.account.id,
+                 grant.api_key_id,
+                 grant.action_id,
+                 grant.pack_ref,
+                 nil,
+                 "sha"
+               )
+
+      # …and the kill switch commits before the run's transaction consumes it.
+      # The cap recheck under the account row lock is what stops the use.
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(subject.account, 0)
+      multi = Approvals.consume_grant_in_multi(Multi.new(), :run, grant)
+
+      assert {:error, :grant_use, :grant_unusable, _changes} = Repo.transaction(multi)
       assert Repo.reload!(grant).uses_count == 0
     end
 
@@ -3582,7 +3605,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "refuses a windowed duration beyond the account cap (the IL-15 server gate)",
          %{account: account, run: run, request: request, operator: operator} do
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 86_400})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 86_400)
 
       assert {:error, :grant_exceeds_account_max_lifetime} =
                Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days})
@@ -3593,7 +3616,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "allows a duration within the cap",
          %{account: account, run: run, request: request, operator: operator} do
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 86_400})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 86_400)
 
       assert {:ok, %Grant{}} =
                Approvals.create_grant(request, run, operator.id, %{duration: :one_day})
@@ -3604,7 +3627,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "exempts :once (single-use, not a standing grant) even under a tight cap",
          %{account: account, run: run, request: request, operator: operator} do
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 60})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 60)
 
       assert {:ok, %Grant{}} =
                Approvals.create_grant(request, run, operator.id, %{duration: :once})
@@ -3618,7 +3641,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "cap 0 (standing grants disabled) refuses every windowed duration, :once still works",
          %{account: account, run: run, request: request, operator: operator} do
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 0)
 
       assert {:error, :grant_exceeds_account_max_lifetime} =
                Approvals.create_grant(request, run, operator.id, %{duration: :one_hour})
@@ -3638,12 +3661,12 @@ defmodule Emisar.ApprovalsTest do
 
       # A 1-day cap drops the over-cap windows but keeps :once + the in-cap ones,
       # matching exactly what create_grant/4's server gate would accept.
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 86_400})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 86_400)
 
       assert Approvals.allowed_grant_durations(account.id) == [:once, :one_hour, :one_day]
 
       # Cap 0 = standing grants disabled — only single-use remains.
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 0)
       assert Approvals.allowed_grant_durations(account.id) == [:once]
     end
 
@@ -3835,6 +3858,237 @@ defmodule Emisar.ApprovalsTest do
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
       assert Approvals.revoke_all_grants(operator_subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "change_grant_lifetime_settings/1" do
+    test "no attrs means no cap at all" do
+      changeset = Approvals.change_grant_lifetime_settings()
+
+      assert changeset.valid?
+      assert changeset.changes == %{}
+      assert {:ok, input} = Ecto.Changeset.apply_action(changeset, :insert)
+      assert input.seconds == nil
+    end
+
+    test "casts the guardrail form's string cap" do
+      changeset = Approvals.change_grant_lifetime_settings(%{"seconds" => "86400"})
+
+      assert changeset.valid?
+      assert changeset.changes == %{seconds: 86_400}
+    end
+
+    test "a blank cap removes the cap" do
+      changeset = Approvals.change_grant_lifetime_settings(%{"seconds" => ""})
+
+      assert changeset.valid?
+      assert changeset.changes == %{}
+    end
+
+    test "zero is valid — it is the kill switch, not a missing value" do
+      changeset = Approvals.change_grant_lifetime_settings(%{"seconds" => "0"})
+
+      assert changeset.valid?
+      assert changeset.changes == %{seconds: 0}
+    end
+
+    test "a malformed cap is a field error" do
+      changeset = Approvals.change_grant_lifetime_settings(%{"seconds" => "forever"})
+
+      refute changeset.valid?
+      assert "is invalid" in errors_on(changeset).seconds
+    end
+
+    test "a negative cap is a field error" do
+      changeset = Approvals.change_grant_lifetime_settings(seconds: -1)
+
+      refute changeset.valid?
+      assert "must be greater than or equal to 0" in errors_on(changeset).seconds
+    end
+  end
+
+  describe "update_grant_lifetime_settings/3" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+
+      {_secret, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      %{account: account, user: user, subject: subject, key: key}
+    end
+
+    test "an owner caps the lifetime with the raw form value", %{
+      account: account,
+      subject: subject
+    } do
+      assert {:ok, %{account: updated, revoked_count: 0}} =
+               Approvals.update_grant_lifetime_settings(account, %{"seconds" => "86400"}, subject)
+
+      assert updated.settings.max_grant_lifetime_seconds == 86_400
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.max_grant_lifetime_seconds == 86_400
+
+      {:ok, events, _} = Audit.list_events(subject)
+      assert [audit] = Enum.filter(events, &(&1.event_type == "account.max_grant_lifetime_set"))
+      assert audit.target_id == account.id
+    end
+
+    test "a blank cap removes it and leaves standing grants alone", %{
+      account: account,
+      user: user,
+      subject: subject,
+      key: key
+    } do
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 3_600)
+      grant = insert_grant(account, key, action_id: "a.one", granted_by_id: user.id)
+
+      assert {:ok, %{account: updated, revoked_count: 0}} =
+               Approvals.update_grant_lifetime_settings(account, %{"seconds" => ""}, subject)
+
+      assert updated.settings.max_grant_lifetime_seconds == nil
+      refute Repo.reload!(grant).revoked_at
+    end
+
+    test "0 disables standing grants and revokes every one with its own audit row", %{
+      account: account,
+      user: user,
+      subject: subject,
+      key: key
+    } do
+      insert_grant(account, key, action_id: "a.one", granted_by_id: user.id)
+      insert_grant(account, key, action_id: "a.two", granted_by_id: user.id)
+
+      assert {:ok, %{account: updated, revoked_count: 2}} =
+               Approvals.update_grant_lifetime_settings(account, %{"seconds" => "0"}, subject)
+
+      assert updated.settings.max_grant_lifetime_seconds == 0
+
+      unrevoked =
+        Grant.Query.not_revoked() |> Grant.Query.by_account_id(account.id) |> Repo.all()
+
+      assert unrevoked == []
+
+      {:ok, events, _} = Audit.list_events(subject)
+      revoked = Enum.filter(events, &(&1.event_type == "approval.grant_revoked"))
+      assert length(revoked) == 2
+      assert Enum.any?(events, &(&1.event_type == "account.max_grant_lifetime_set"))
+    end
+
+    test "0 revokes grants beyond the manager's own runner access", %{
+      account: account,
+      user: user,
+      subject: subject,
+      key: key
+    } do
+      db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      db_grant = insert_grant(account, key, runner_id: db_runner.id, granted_by_id: user.id)
+      web_grant = insert_grant(account, key, runner_id: web_runner.id, granted_by_id: user.id)
+      wildcard = insert_grant(account, key, runner_id: nil, granted_by_id: user.id)
+      {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
+      restricted_subject = subject_with_runner_access(subject, database_access)
+
+      assert {:ok, %{revoked_count: 3}} =
+               Approvals.update_grant_lifetime_settings(
+                 account,
+                 %{"seconds" => "0"},
+                 restricted_subject
+               )
+
+      assert Repo.reload!(db_grant).revoked_at
+      assert Repo.reload!(web_grant).revoked_at
+      assert Repo.reload!(wildcard).revoked_at
+
+      {:ok, events, _} = Audit.list_events(subject)
+      revoked = Enum.filter(events, &(&1.event_type == "approval.grant_revoked"))
+      assert length(revoked) == 3
+    end
+
+    test "a malformed cap is a field error and writes nothing", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 3_600)
+
+      assert {:error, changeset} =
+               Approvals.update_grant_lifetime_settings(
+                 account,
+                 %{"seconds" => "forever"},
+                 subject
+               )
+
+      assert "is invalid" in errors_on(changeset).seconds
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.max_grant_lifetime_seconds == 3_600
+    end
+
+    test "a negative cap is a field error and writes nothing", %{
+      account: account,
+      subject: subject
+    } do
+      assert {:error, changeset} =
+               Approvals.update_grant_lifetime_settings(account, %{"seconds" => "-1"}, subject)
+
+      assert "must be greater than or equal to 0" in errors_on(changeset).seconds
+      refute Repo.reload!(account).settings.max_grant_lifetime_seconds
+    end
+
+    test "an operator (no manage_grants) is refused and nothing is written", %{account: account} do
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+
+      assert Approvals.update_grant_lifetime_settings(
+               account,
+               %{"seconds" => "0"},
+               operator_subject
+             ) == {:error, :unauthorized}
+
+      refute Repo.reload!(account).settings.max_grant_lifetime_seconds
+
+      refute Enum.any?(
+               Repo.all(Audit.Event),
+               &(&1.event_type in ["account.max_grant_lifetime_set", "approval.grant_revoked"])
+             )
+    end
+
+    test "another account's owner gets :not_found and cannot disable this account's grants", %{
+      account: account,
+      user: user,
+      key: key
+    } do
+      grant = insert_grant(account, key, action_id: "a.one", granted_by_id: user.id)
+      other_account = Fixtures.Accounts.create_account()
+      other_user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: other_user.id,
+        role: "owner"
+      )
+
+      other_subject = Fixtures.Subjects.subject_for(other_user, other_account, role: :owner)
+
+      assert Approvals.update_grant_lifetime_settings(account, %{"seconds" => "0"}, other_subject) ==
+               {:error, :not_found}
+
+      refute Repo.reload!(account).settings.max_grant_lifetime_seconds
+      refute Repo.reload!(grant).revoked_at
     end
   end
 

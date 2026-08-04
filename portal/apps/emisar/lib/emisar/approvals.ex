@@ -23,7 +23,7 @@ defmodule Emisar.Approvals do
   alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.ApiKeys
-  alias Emisar.Approvals.{Authorizer, Decision, DecisionInput, Grant, Request}
+  alias Emisar.Approvals.{Authorizer, Decision, DecisionInput, Grant, GrantLifetimeInput, Request}
   alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs, Users}
   alias Emisar.Auth.Subject
   require Logger
@@ -1698,13 +1698,31 @@ defmodule Emisar.Approvals do
   defp nested_multi_key(key, :run), do: key
   defp nested_multi_key(key, run_key), do: {key, run_key}
 
+  # `peek_matching_grant/6` checks the kill switch BEFORE this transaction
+  # opens, so a concurrent "disable standing grants" could commit in between and
+  # this consume would still burn a use on a grant that is already inert. Taking
+  # the account row lock here — the same row the cap write locks — serializes
+  # the two: whichever commits first wins, and after a committed cap of 0 no
+  # later consume succeeds.
   defp consume_grant(repo, %Grant{} = grant) do
-    now = DateTime.utc_now()
-    query = Grant.Query.consumable_by_id(grant.id, now) |> Grant.Query.consume_one(now)
+    case Accounts.fetch_and_lock_account(grant.account_id, repo: repo) do
+      {:ok, account} -> consume_grant_under_cap(repo, grant, account)
+      # A deleted or disabled account dispatches nothing; its grants are inert.
+      {:error, :not_found} -> {:error, :grant_unusable}
+    end
+  end
 
-    case repo.update_all(query, []) do
-      {1, _} -> {:ok, :consumed}
-      {0, _} -> {:error, :grant_unusable}
+  defp consume_grant_under_cap(repo, %Grant{} = grant, %Accounts.Account{} = account) do
+    if account.settings.max_grant_lifetime_seconds == 0 do
+      {:error, :grant_unusable}
+    else
+      now = DateTime.utc_now()
+      query = Grant.Query.consumable_by_id(grant.id, now) |> Grant.Query.consume_one(now)
+
+      case repo.update_all(query, []) do
+        {1, _} -> {:ok, :consumed}
+        {0, _} -> {:error, :grant_unusable}
+      end
     end
   end
 
@@ -1845,7 +1863,11 @@ defmodule Emisar.Approvals do
   Revokes EVERY un-revoked grant in the subject's account — the "disable
   standing grants" sweep. Each grant goes through `revoke_grant/2` (its own
   row lock + audit event), so the trail records every capability that was
-  cut. Returns `{:ok, count}`. `%Subject{}` needs `manage_grants`.
+  cut. Returns `{:ok, count}`, or
+  `{:error, :grants_partially_revoked, count, reason}` when one grant's
+  revocation failed — the `count` already revoked stays revoked, and the caller
+  decides what to tell the operator about the rest. `%Subject{}` needs
+  `manage_grants`.
   """
   def revoke_all_grants(%Subject{} = subject) do
     with :ok <-
@@ -1859,12 +1881,119 @@ defmodule Emisar.Approvals do
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      Enum.each(grants, fn grant ->
-        {:ok, _} = revoke_grant(grant, subject)
-      end)
-
-      {:ok, length(grants)}
+      revoke_each_grant(grants, &revoke_grant(&1, subject))
     end
+  end
+
+  # The one sweep contract, shared by the subject-scoped public sweep and the
+  # account-wide kill-switch sweep: stop at the first failure and report how
+  # many were actually cut, so a caller never reads a partial sweep as complete.
+  defp revoke_each_grant(grants, revoke_one) do
+    Enum.reduce_while(grants, {:ok, 0}, fn grant, {:ok, revoked_count} ->
+      case revoke_one.(grant) do
+        {:ok, _grant} ->
+          {:cont, {:ok, revoked_count + 1}}
+
+        {:error, reason} ->
+          {:halt, {:error, :grants_partially_revoked, revoked_count, reason}}
+      end
+    end)
+  end
+
+  @doc """
+  Changeset for the account's standing-grant guardrail — the raw `seconds` cap,
+  where a blank value means no cap and `0` disables standing grants entirely.
+  Accepts the rail form's string keys or an atom-keyed map / keyword list; a
+  malformed or negative cap is a field error. Pure.
+  """
+  def change_grant_lifetime_settings(attrs \\ %{}), do: GrantLifetimeInput.changeset(attrs)
+
+  @doc """
+  Set how long an approved standing grant may keep skipping the prompt.
+  Requires `manage_grants`, and `account` must be the subject's own. `attrs` is
+  validated through `change_grant_lifetime_settings/1` before anything is
+  written, so an invalid cap never reaches the stored setting.
+
+  A `0` cap is the account kill switch, which is one use case rather than two:
+  the audited cap write commits FIRST — from that moment mint and match both
+  refuse, so every existing grant is inert — and only then is each un-revoked
+  grant in the ACCOUNT revoked with its own audit row, including grants on
+  runners outside the subject's own runner access (the cap is account-wide, so
+  a partial sweep would leave inert grants unaudited). Returns:
+
+    * `{:ok, %{account: account, revoked_count: count}}` — `count` is 0 for any
+      cap other than `0`, which revokes nothing.
+    * `{:error, :grants_partially_revoked, %{account: account, revoked_count:
+      count, reason: reason}}` — the cap stands (the remaining grants can no
+      longer authorize anything) but the sweep could not finish. Deliberately
+      NOT rolled back: re-arming the cap to keep the audit tidy would hand those
+      grants their capability back.
+    * `{:error, %Ecto.Changeset{} | :unauthorized | :not_found}`.
+  """
+  def update_grant_lifetime_settings(%Accounts.Account{} = account, attrs, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_grants_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account.id),
+         {:ok, %GrantLifetimeInput{seconds: seconds}} <- grant_lifetime_input(attrs),
+         {:ok, updated_account} <-
+           Accounts.put_account_max_grant_lifetime_seconds(account.id, seconds, subject) do
+      sweep_disabled_grants(updated_account, seconds, subject)
+    end
+  end
+
+  defp grant_lifetime_input(attrs) do
+    attrs
+    |> change_grant_lifetime_settings()
+    |> Ecto.Changeset.apply_action(:insert)
+  end
+
+  defp sweep_disabled_grants(%Accounts.Account{} = account, 0, %Subject{} = subject) do
+    case revoke_account_grants(account, subject) do
+      {:ok, revoked_count} ->
+        {:ok, %{account: account, revoked_count: revoked_count}}
+
+      {:error, :grants_partially_revoked, revoked_count, reason} ->
+        {:error, :grants_partially_revoked,
+         %{account: account, revoked_count: revoked_count, reason: reason}}
+    end
+  end
+
+  defp sweep_disabled_grants(%Accounts.Account{} = account, _seconds, _subject),
+    do: {:ok, %{account: account, revoked_count: 0}}
+
+  # Internal, already authorized: `update_grant_lifetime_settings/3` has passed
+  # `manage_grants`, tenancy, and input validation, and the cap of 0 is
+  # committed. The cap is an ACCOUNT-wide fact, so the sweep is too — it scopes
+  # by the updated account's explicit id and deliberately skips the subject's
+  # runner-visibility filter (`revoke_all_grants/1` keeps that, and its
+  # restricted-manager semantics). A grant the manager cannot see is already
+  # inert under the cap; leaving it un-revoked would leave it unaudited and
+  # make `revoked_count` read as a complete sweep when it is not.
+  defp revoke_account_grants(%Accounts.Account{} = account, %Subject{} = subject) do
+    grants =
+      Grant.Query.not_revoked()
+      |> Grant.Query.by_account_id(account.id)
+      |> Repo.all()
+
+    revoke_each_grant(grants, &revoke_grant_in_account(&1, account.id, subject))
+  end
+
+  # The account-scoped twin of `revoke_grant/2`: the same locked re-read,
+  # revoke changeset, and `approval.grant_revoked` audit row, scoped by the
+  # explicit account id instead of the subject's runner access.
+  defp revoke_grant_in_account(%Grant{} = grant, account_id, %Subject{} = subject) do
+    by_user_id = Subject.actor_id(subject)
+
+    Grant.Query.all()
+    |> Grant.Query.by_id(grant.id)
+    |> Grant.Query.by_account_id(account_id)
+    |> Repo.fetch_and_update(Grant.Query,
+      with: &Grant.Changeset.revoke(&1, by_user_id),
+      audit: &Audit.Events.approval_grant_revoked(subject, &1)
+    )
   end
 
   @doc """

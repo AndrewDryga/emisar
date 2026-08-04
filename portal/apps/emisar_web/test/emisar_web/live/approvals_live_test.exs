@@ -536,13 +536,26 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     end
 
     test "an owner removes the cap", %{conn: conn, account: account} do
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 3600})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 3600)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
       assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => ""}) =~
                "Grant-lifetime cap removed"
 
       refute Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds
+    end
+
+    test "a malformed cap is refused by the domain, not parsed here", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 3600)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+      assert render_change(lv, "set_max_grant_lifetime", %{"seconds" => "forever"}) =~
+               "Pick a valid grant-lifetime cap."
+
+      assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 3600
     end
 
     test "an operator is refused at the event level (IL-15 — owners + admins only)", %{

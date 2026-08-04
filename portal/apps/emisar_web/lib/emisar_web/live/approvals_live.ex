@@ -14,7 +14,7 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Approvals, Runners}
+  alias Emisar.{Approvals, Runners}
   alias EmisarWeb.{LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -66,13 +66,35 @@ defmodule EmisarWeb.ApprovalsLive do
   end
 
   # The max grant-lifetime cap (account setting) governs how long the standing
-  # grants below can keep auto-approving, so it's edited here, beside them —
-  # owner/admin only; server-enforced in Approvals.create_grant.
-  def handle_event("set_max_grant_lifetime", %{"seconds" => raw}, socket) do
-    if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
-      apply_grant_lifetime_cap(socket, parse_grant_lifetime(raw))
-    else
-      {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+  # grants below can keep auto-approving, so it's edited here, beside them.
+  # Approvals owns what the raw value MEANS — including that 0 disables standing
+  # grants and revokes the ones already out there; this only maps the outcome.
+  def handle_event("set_max_grant_lifetime", %{"seconds" => _} = attrs, socket) do
+    case Approvals.update_grant_lifetime_settings(
+           socket.assigns.current_account,
+           attrs,
+           socket.assigns.current_subject
+         ) do
+      {:ok, %{account: account, revoked_count: revoked_count}} ->
+        {:noreply, cap_updated(socket, account, revoked_count)}
+
+      # The cap stuck, so the grants left behind are already inert — show the
+      # swept page and say plainly what could not be cleaned up.
+      {:error, :grants_partially_revoked, %{account: account, revoked_count: revoked_count}} ->
+        {:noreply,
+         socket
+         |> assign(:current_account, account)
+         |> load(socket.assigns.filter_params)
+         |> put_flash(:error, grants_partially_revoked_flash(revoked_count))}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Pick a valid grant-lifetime cap.")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not update the grant-lifetime cap.")}
     end
   end
 
@@ -267,63 +289,19 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp grant_args_line(%{args_sha256: sha}) when is_binary(sha), do: "sha256:#{sha}"
 
-  defp apply_grant_lifetime_cap(socket, :error) do
-    {:noreply, put_flash(socket, :error, "Pick a valid grant-lifetime cap.")}
+  # Disabling swept the grants listed below, so those tables have to re-read;
+  # any other cap only changes the guardrail copy.
+  defp cap_updated(socket, %{settings: %{max_grant_lifetime_seconds: 0}} = account, revoked_count) do
+    socket
+    |> assign(:current_account, account)
+    |> load(socket.assigns.filter_params)
+    |> put_flash(:info, grants_disabled_flash(revoked_count))
   end
 
-  # Disabling is a SWEEP, not just a cap: every active grant is revoked (each
-  # with its own audit row) so nothing lingers as a listed-but-inert
-  # capability; the matching kill switch stays as the backstop for races.
-  defp apply_grant_lifetime_cap(socket, {:ok, 0}) do
-    case Accounts.update_account(
-           socket.assigns.current_account,
-           %{settings: %{max_grant_lifetime_seconds: 0}},
-           socket.assigns.current_subject
-         ) do
-      {:ok, account} ->
-        {:ok, revoked} = Approvals.revoke_all_grants(socket.assigns.current_subject)
-
-        {:noreply,
-         socket
-         |> assign(:current_account, account)
-         |> load(socket.assigns.filter_params)
-         |> put_flash(:info, grants_disabled_flash(revoked))}
-
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not update the grant-lifetime cap.")}
-    end
-  end
-
-  defp apply_grant_lifetime_cap(socket, {:ok, seconds}) do
-    case Accounts.update_account(
-           socket.assigns.current_account,
-           %{settings: %{max_grant_lifetime_seconds: seconds}},
-           socket.assigns.current_subject
-         ) do
-      {:ok, account} ->
-        {:noreply,
-         socket
-         |> assign(:current_account, account)
-         |> put_flash(:info, grant_lifetime_flash(seconds))}
-
-      {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not update the grant-lifetime cap.")}
-    end
-  end
-
-  defp parse_grant_lifetime(""), do: {:ok, nil}
-
-  defp parse_grant_lifetime(raw) do
-    case Integer.parse(raw) do
-      {seconds, ""} when seconds >= 0 -> {:ok, seconds}
-      _ -> :error
-    end
+  defp cap_updated(socket, account, _revoked_count) do
+    socket
+    |> assign(:current_account, account)
+    |> put_flash(:info, grant_lifetime_flash(account.settings.max_grant_lifetime_seconds))
   end
 
   # 0 is the kill switch: minting AND matching refuse account-wide.
@@ -340,6 +318,12 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp grants_disabled_flash(n),
     do: "Standing grants disabled — #{n} active grants revoked; every approval is now single-use."
+
+  defp grants_partially_revoked_flash(revoked_count) do
+    "Standing grants are disabled — every approval is now single-use — but only " <>
+      "#{revoked_count} #{plural(revoked_count, "grant")} could be revoked. The rest can no " <>
+      "longer authorize anything; try again to clear them from the list."
+  end
 
   defp grant_lifetime_label(3_600), do: "1 hour"
   defp grant_lifetime_label(86_400), do: "1 day"
@@ -667,7 +651,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 >
                   {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
                 </p>
-                <%= if Accounts.subject_can_manage_account_security?(@current_subject) do %>
+                <%= if Approvals.subject_can_manage_grants?(@current_subject) do %>
                   <form id="max-grant-lifetime-form" phx-change="set_max_grant_lifetime" class="mt-3">
                     <.select
                       name="seconds"

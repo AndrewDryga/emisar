@@ -552,6 +552,30 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc """
+  Internal — Approvals owns the standing-grant cap contract (permission,
+  tenancy, the value's validation, and the revocation sweep a zero cap
+  triggers); this writes the canonical result to
+  `settings.max_grant_lifetime_seconds` on the active account, audited as
+  `account.max_grant_lifetime_set` in the same transaction. `nil` removes the
+  cap; `0` disables standing grants. Returns `{:ok, account}` or
+  `{:error, %Ecto.Changeset{} | :not_found}`.
+  """
+  def put_account_max_grant_lifetime_seconds(account_id, seconds, %Subject{} = subject)
+      when is_nil(seconds) or (is_integer(seconds) and seconds >= 0) do
+    if Repo.valid_uuid?(account_id) do
+      Account.Query.active()
+      |> Account.Query.by_id(account_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Account.Query,
+        with: &Account.Changeset.put_max_grant_lifetime_seconds(&1, seconds),
+        audit: &account_update_audit(&1, &2, subject)
+      )
+    else
+      {:error, :not_found}
+    end
+  end
+
   # Requiring SSO with no enabled connection locks EVERYONE out, owners included.
   # That check lived only in the Team page's click handler, so any other caller
   # could set it, and even through the UI it was a read taken outside the write's
@@ -587,11 +611,13 @@ defmodule Emisar.Accounts do
   end
 
   # The `settings` embed carries both security knobs and plain preferences, so
-  # "is this a security change?" is FIELD-aware: only require_mfa, require_sso,
-  # and max_grant_lifetime_seconds need manage_security_settings. A preference
-  # like monthly_report_opt_out rides the same embed but is not security — over-
-  # gating it at the most-privileged level would wrongly block low-privilege edits.
-  @security_settings_fields ~w[require_mfa require_sso max_grant_lifetime_seconds]a
+  # "is this a security change?" is FIELD-aware: only require_mfa and require_sso
+  # need manage_security_settings. A preference like monthly_report_opt_out rides
+  # the same embed but is not security — over-gating it at the most-privileged
+  # level would wrongly block low-privilege edits. The standing-grant cap is a
+  # security knob too, but Approvals owns it: this path refuses the field
+  # outright (`Account.Settings`), so there is nothing here to gate.
+  @security_settings_fields ~w[require_mfa require_sso]a
 
   defp security_setting_changed?(%Ecto.Changeset{} = changeset) do
     settings_changes = settings_changes(changeset)

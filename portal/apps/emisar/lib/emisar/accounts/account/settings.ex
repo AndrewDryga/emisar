@@ -27,8 +27,13 @@ defmodule Emisar.Accounts.Account.Settings do
     field :runner_inactive_retention_hours, :integer
   end
 
-  @fields ~w[require_mfa require_sso max_grant_lifetime_seconds monthly_report_opt_out
-             pack_unseen_retention_days]a
+  @fields ~w[require_mfa require_sso monthly_report_opt_out pack_unseen_retention_days]a
+  # `Emisar.Approvals` owns the standing-grant cap end to end — the permission,
+  # the meaning of 0 (the account-wide kill switch), and the revocation sweep
+  # that has to follow it — so the generic settings path casts it only to refuse
+  # it. A caller that could set it here would arm or disarm that kill switch
+  # past every one of those gates, leaving live grants behind it.
+  @approvals_owned_field :max_grant_lifetime_seconds
   # `Emisar.Runners` owns the inactivity window end to end — the permission, the
   # unrestricted-runner-access requirement, and the period's validation — so the
   # generic settings path casts it only to refuse it. A caller that could set it
@@ -38,8 +43,20 @@ defmodule Emisar.Accounts.Account.Settings do
 
   def changeset(%__MODULE__{} = settings, attrs) do
     settings
-    |> cast(attrs, [@runners_owned_field | @fields])
-    |> reject_runners_owned_change()
+    |> cast(attrs, [@approvals_owned_field, @runners_owned_field | @fields])
+    |> reject_owned_change(@approvals_owned_field, "is set through the approval settings")
+    |> reject_owned_change(@runners_owned_field, "is set through the runner settings")
+    |> validate_bounds()
+  end
+
+  @doc """
+  Internal — the standing-grant cap `Emisar.Approvals` has already authorized
+  and validated; the one path allowed to write it. `nil` removes the cap, `0`
+  disables standing grants.
+  """
+  def max_grant_lifetime_changeset(%__MODULE__{} = settings, attrs) do
+    settings
+    |> cast(attrs, [@approvals_owned_field])
     |> validate_bounds()
   end
 
@@ -53,13 +70,10 @@ defmodule Emisar.Accounts.Account.Settings do
     |> validate_bounds()
   end
 
-  defp reject_runners_owned_change(changeset) do
-    case fetch_change(changeset, @runners_owned_field) do
-      {:ok, _hours} ->
-        add_error(changeset, @runners_owned_field, "is set through the runner settings")
-
-      :error ->
-        changeset
+  defp reject_owned_change(changeset, field, message) do
+    case fetch_change(changeset, field) do
+      {:ok, _value} -> add_error(changeset, field, message)
+      :error -> changeset
     end
   end
 

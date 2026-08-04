@@ -56,6 +56,13 @@ defmodule Emisar.Fixtures.Accounts do
     |> Repo.update!()
   end
 
+  @doc "Test helper: set the Approvals-owned grant cap the generic settings path refuses."
+  def set_max_grant_lifetime_seconds(%Account{} = account, seconds) do
+    account
+    |> Account.Changeset.put_max_grant_lifetime_seconds(seconds)
+    |> Repo.update!()
+  end
+
   @doc "Test helper: arm the Runners-owned inactivity window the generic settings path refuses."
   def set_runner_inactive_retention_hours(%Account{} = account, hours) do
     account

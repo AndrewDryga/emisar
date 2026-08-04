@@ -442,7 +442,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "the duration menu hides options above the account's grant-lifetime cap", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     # Cap standing grants at 1 day — the 30/90-day windows must not be offered.
-    Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 86_400})
+    Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 86_400)
 
     request = pending_request(account, user)
 
@@ -456,7 +456,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   test "cap 0 replaces the reuse menu with the standing-grants-disabled note", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 0})
+    Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 0)
 
     request = pending_request(account, user)
 

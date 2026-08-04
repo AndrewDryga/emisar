@@ -37,7 +37,7 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       end
     end
 
-    test "installs default settings and validates the grant-lifetime cap" do
+    test "installs default settings" do
       assert %Account.Settings{
                require_mfa: false,
                require_sso: false,
@@ -45,12 +45,14 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
                pack_unseen_retention_days: nil,
                runner_inactive_retention_hours: nil
              } = changeset() |> apply_changes() |> Map.fetch!(:settings)
+    end
 
-      invalid = changeset(settings: %{max_grant_lifetime_seconds: -1})
+    test "refuses the standing-grant cap Approvals owns" do
+      invalid = changeset(settings: %{max_grant_lifetime_seconds: 3_600})
 
       refute invalid.valid?
 
-      assert "must be greater than or equal to 0" in errors_on(invalid).settings.max_grant_lifetime_seconds
+      assert "is set through the approval settings" in errors_on(invalid).settings.max_grant_lifetime_seconds
     end
 
     test "validates the pack-retention window is at least one day" do
@@ -67,6 +69,48 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       refute invalid.valid?
 
       assert "is set through the runner settings" in errors_on(invalid).settings.runner_inactive_retention_hours
+    end
+  end
+
+  describe "put_max_grant_lifetime_seconds/2" do
+    setup do
+      %{account: Fixtures.Accounts.create_account()}
+    end
+
+    test "writes the cap the generic path refuses", %{account: account} do
+      changeset = Account.Changeset.put_max_grant_lifetime_seconds(account, 3_600)
+
+      assert changeset.valid?
+      assert apply_changes(changeset).settings.max_grant_lifetime_seconds == 3_600
+    end
+
+    test "0 disables standing grants and nil removes the cap", %{account: account} do
+      disabled = Account.Changeset.put_max_grant_lifetime_seconds(account, 0)
+
+      assert disabled.valid?
+      assert apply_changes(disabled).settings.max_grant_lifetime_seconds == 0
+
+      account = Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 3_600)
+      uncapped = Account.Changeset.put_max_grant_lifetime_seconds(account, nil)
+
+      assert uncapped.valid?
+      assert apply_changes(uncapped).settings.max_grant_lifetime_seconds == nil
+    end
+
+    test "leaves the other settings alone", %{account: account} do
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+
+      changeset = Account.Changeset.put_max_grant_lifetime_seconds(account, 60)
+
+      assert apply_changes(changeset).settings.require_mfa
+    end
+
+    test "rejects a negative cap", %{account: account} do
+      invalid = Account.Changeset.put_max_grant_lifetime_seconds(account, -1)
+
+      refute invalid.valid?
+
+      assert "must be greater than or equal to 0" in errors_on(invalid).settings.max_grant_lifetime_seconds
     end
   end
 

@@ -318,7 +318,7 @@ defmodule Emisar.AccountsTest do
   describe "fetch_account_settings/1" do
     test "returns the account's embedded settings value" do
       account = Fixtures.Accounts.create_account()
-      Fixtures.Accounts.set_account_settings(account, %{max_grant_lifetime_seconds: 3_600})
+      Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 3_600)
 
       assert {:ok, account_settings} = Accounts.fetch_account_settings(account.id)
       assert %Account.Settings{max_grant_lifetime_seconds: 3_600} = account_settings
@@ -923,92 +923,38 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "update_account/3 — max_grant_lifetime_seconds (security setting)" do
-    test "an owner can set the grant-lifetime cap" do
+  describe "update_account/3 — max_grant_lifetime_seconds (owned by Approvals)" do
+    test "an owner cannot set the standing-grant cap through the generic update" do
       account = Fixtures.Accounts.create_account()
       owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
-      assert {:ok, %Account{settings: %{max_grant_lifetime_seconds: 86_400}}} =
+      assert {:error, changeset} =
                Accounts.update_account(
                  account,
                  %{settings: %{max_grant_lifetime_seconds: 86_400}},
                  owner_subject
                )
-    end
 
-    test "an admin can set the cap (security setting)" do
-      account = Fixtures.Accounts.create_account()
-      admin = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
-
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
-
-      assert {:ok, %Account{settings: %{max_grant_lifetime_seconds: 3_600}}} =
-               Accounts.update_account(
-                 account,
-                 %{settings: %{max_grant_lifetime_seconds: 3_600}},
-                 admin_subject
-               )
-    end
-
-    test "an operator cannot set the cap (no manage_security_settings)" do
-      account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
-
-      assert Accounts.update_account(
-               account,
-               %{settings: %{max_grant_lifetime_seconds: 3_600}},
-               operator_subject
-             ) == {:error, :unauthorized}
+      assert "is set through the approval settings" in errors_on(changeset).settings.max_grant_lifetime_seconds
 
       refute Repo.reload!(account).settings.max_grant_lifetime_seconds
+      assert Repo.all(Audit.Event) == []
     end
 
-    test "the cap accepts 0 (standing grants disabled) but never a negative" do
+    test "the kill switch is refused here too — disabling grants is one domain use case" do
       account = Fixtures.Accounts.create_account()
       owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
-      assert {:ok, %Account{settings: %{max_grant_lifetime_seconds: 0}}} =
+      assert {:error, changeset} =
                Accounts.update_account(
                  account,
                  %{settings: %{max_grant_lifetime_seconds: 0}},
                  owner_subject
                )
 
-      assert {:error, changeset} =
-               Accounts.update_account(
-                 account,
-                 %{settings: %{max_grant_lifetime_seconds: -1}},
-                 owner_subject
-               )
+      assert "is set through the approval settings" in errors_on(changeset).settings.max_grant_lifetime_seconds
 
-      assert "must be greater than or equal to 0" in errors_on(changeset).settings.max_grant_lifetime_seconds
-    end
-
-    test "an owner of another account can't set this account's cap (cross-account)" do
-      account_a = Fixtures.Accounts.create_account()
-      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-
-      assert Accounts.update_account(
-               account_a,
-               %{settings: %{max_grant_lifetime_seconds: 3_600}},
-               subject_b
-             ) == {:error, :unauthorized}
-
-      refute Repo.reload!(account_a).settings.max_grant_lifetime_seconds
+      refute Repo.reload!(account).settings.max_grant_lifetime_seconds
     end
   end
 
@@ -1024,26 +970,15 @@ defmodule Emisar.AccountsTest do
       assert {:ok, %Account{settings: settings}} =
                Accounts.update_account(
                  account,
-                 %{
-                   settings: %{
-                     require_mfa: true,
-                     require_sso: true,
-                     max_grant_lifetime_seconds: 3_600
-                   }
-                 },
+                 %{settings: %{require_mfa: true, require_sso: true}},
                  subject
                )
 
       assert settings.require_mfa
       assert settings.require_sso
-      assert settings.max_grant_lifetime_seconds == 3_600
 
       assert Enum.sort(Enum.map(Repo.all(Audit.Event), & &1.event_type)) ==
-               [
-                 "account.max_grant_lifetime_set",
-                 "account.require_mfa_set",
-                 "account.require_sso_set"
-               ]
+               ["account.require_mfa_set", "account.require_sso_set"]
     end
   end
 
@@ -1278,6 +1213,80 @@ defmodule Emisar.AccountsTest do
                {:error, :not_found}
 
       assert Repo.reload!(account).settings.runner_inactive_retention_hours == nil
+    end
+  end
+
+  describe "put_account_max_grant_lifetime_seconds/3" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      %{account: account, subject: subject}
+    end
+
+    test "writes the canonical cap Approvals validated, with its own audit event", %{
+      account: account,
+      subject: subject
+    } do
+      assert {:ok, updated} =
+               Accounts.put_account_max_grant_lifetime_seconds(account.id, 86_400, subject)
+
+      assert updated.settings.max_grant_lifetime_seconds == 86_400
+
+      assert Enum.map(Repo.all(Audit.Event), & &1.event_type) ==
+               ["account.max_grant_lifetime_set"]
+    end
+
+    test "0 disables standing grants and nil removes the cap", %{
+      account: account,
+      subject: subject
+    } do
+      assert {:ok, disabled} =
+               Accounts.put_account_max_grant_lifetime_seconds(account.id, 0, subject)
+
+      assert disabled.settings.max_grant_lifetime_seconds == 0
+
+      assert {:ok, uncapped} =
+               Accounts.put_account_max_grant_lifetime_seconds(account.id, nil, subject)
+
+      assert uncapped.settings.max_grant_lifetime_seconds == nil
+    end
+
+    test "leaves every other setting alone", %{account: account, subject: subject} do
+      Fixtures.Accounts.set_account_settings(account, %{
+        require_mfa: true,
+        pack_unseen_retention_days: 30
+      })
+
+      assert {:ok, updated} =
+               Accounts.put_account_max_grant_lifetime_seconds(account.id, 3_600, subject)
+
+      assert updated.settings.require_mfa
+      assert updated.settings.pack_unseen_retention_days == 30
+      assert updated.settings.max_grant_lifetime_seconds == 3_600
+    end
+
+    test "a deleted account is :not_found", %{account: account, subject: subject} do
+      Fixtures.Accounts.mark_account_as_deleted(account)
+
+      assert Accounts.put_account_max_grant_lifetime_seconds(account.id, 0, subject) ==
+               {:error, :not_found}
+    end
+
+    test "a malformed id is :not_found, never a query", %{subject: subject} do
+      assert Accounts.put_account_max_grant_lifetime_seconds("not-a-uuid", 0, subject) ==
+               {:error, :not_found}
+    end
+
+    test "another account's subject is :not_found", %{account: account} do
+      other_account = Fixtures.Accounts.create_account()
+
+      other_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
+
+      assert Accounts.put_account_max_grant_lifetime_seconds(account.id, 0, other_subject) ==
+               {:error, :not_found}
+
+      refute Repo.reload!(account).settings.max_grant_lifetime_seconds
     end
   end
 

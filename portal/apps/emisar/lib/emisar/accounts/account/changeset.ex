@@ -24,6 +24,17 @@ defmodule Emisar.Accounts.Account.Changeset do
   end
 
   @doc """
+  Internal — writes the standing-grant cap `Emisar.Approvals` owns, the field
+  `update/2` refuses. `nil` removes the cap; `0` disables standing grants.
+  """
+  def put_max_grant_lifetime_seconds(%Account{} = account, seconds) do
+    account
+    |> cast(%{settings: %{max_grant_lifetime_seconds: seconds}}, [])
+    |> cast_embed(:settings, with: &Account.Settings.max_grant_lifetime_changeset/2)
+    |> changeset()
+  end
+
+  @doc """
   Internal — writes the inactivity window `Emisar.Runners` owns, the field
   `update/2` refuses. `nil` turns the sweep off.
   """
