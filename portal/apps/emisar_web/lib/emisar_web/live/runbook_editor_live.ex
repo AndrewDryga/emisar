@@ -530,7 +530,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   end
 
   defp canonical_definition(draft),
-    do: draft |> RunbookDraft.command() |> Runbooks.Authoring.build_v1()
+    do: draft |> RunbookDraft.command() |> Runbooks.build_definition_v1()
 
   defp mark_dirty(socket) do
     assign(

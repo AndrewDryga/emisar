@@ -61,6 +61,34 @@ defmodule Emisar.MailTest do
     end
   end
 
+  describe "build_deliverability_event/2" do
+    test "builds a report the context acts on, bounding the advisory diagnostics" do
+      assert {:ok, event} =
+               Mail.build_deliverability_event(:bounce, %{
+                 email: "  dead@example.com  ",
+                 inactive: true,
+                 type: "HardBounce",
+                 description: String.duplicate("x", 2_000)
+               })
+
+      assert event.kind == :bounce
+      assert event.email == "dead@example.com"
+      assert event.inactive
+      assert String.length(event.description) == 1_000
+    end
+
+    test "refuses a report the domain can't act on" do
+      unknown_kind = Mail.build_deliverability_event(:delivered, %{email: "ok@example.com"})
+      no_email = Mail.build_deliverability_event(:spam_complaint, %{email: "  "})
+      # A bounce that doesn't say whether the address was deactivated is unusable.
+      undecided = Mail.build_deliverability_event(:bounce, %{email: "dead@example.com"})
+
+      assert unknown_kind == {:error, :invalid_deliverability_event}
+      assert no_email == {:error, :invalid_deliverability_event}
+      assert undecided == {:error, :invalid_deliverability_event}
+    end
+  end
+
   describe "handle_deliverability_event/1" do
     test "a deactivating bounce is suppressed as a hard bounce, with the reported detail" do
       {:ok, event} =

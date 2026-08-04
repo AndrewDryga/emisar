@@ -266,7 +266,7 @@ defmodule EmisarWeb.RunnerScope do
 
   @doc ~s(The `"group:x"`/`"runner:id"` selection strings for a persisted {groups, runner_ids} scope — the selector format Accounts owns and parses back.)
   def to_values(groups, runner_ids),
-    do: Accounts.RunnerAccess.selection_values(groups, runner_ids)
+    do: Accounts.runner_access_selection_values(groups, runner_ids)
 
   defp runners_in_group(runners, group),
     do: runners |> Enum.filter(&(&1.group == group)) |> Enum.sort_by(& &1.name)

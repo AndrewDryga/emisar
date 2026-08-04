@@ -48,7 +48,7 @@ defmodule EmisarWeb.SitemapController do
     # Static marketing routes + derived guide paths + a synthesized entry per
     # published pack (so /packs/linux-core etc. show up in search engines
     # without having to hand-maintain a list here).
-    pack_paths = Enum.map(Catalog.PublishedRegistry.list(), &"/packs/#{&1.id}")
+    pack_paths = Enum.map(Catalog.list_published_packs(), &"/packs/#{&1.id}")
 
     urls =
       Enum.map_join(paths() ++ pack_paths, "\n", fn path ->

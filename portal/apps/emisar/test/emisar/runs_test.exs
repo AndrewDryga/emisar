@@ -4377,6 +4377,43 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "build_runner_error/4" do
+    test "keeps the socket's identities and bounds the runner-controlled diagnostics" do
+      account_id = Ecto.UUID.generate()
+      runner_id = Ecto.UUID.generate()
+
+      attrs = %{
+        code: String.duplicate("c", 200),
+        message: String.duplicate("m", 900),
+        request_id: "req-1"
+      }
+
+      command = Runs.build_runner_error(account_id, runner_id, attrs, %RequestContext{})
+
+      assert command.account_id == account_id
+      assert command.runner_id == runner_id
+      assert String.length(command.code) == 100
+      assert String.length(command.message) == 500
+      assert command.request_id == "req-1"
+    end
+
+    test "drops a diagnostic that isn't a string instead of walking it into the domain" do
+      attrs = %{code: %{"crafted" => true}, message: 42, request_id: ["not-an-id"]}
+
+      command =
+        Runs.build_runner_error(
+          Ecto.UUID.generate(),
+          Ecto.UUID.generate(),
+          attrs,
+          %RequestContext{}
+        )
+
+      assert command.code == nil
+      assert command.message == nil
+      assert command.request_id == nil
+    end
+  end
+
   describe "handle_runner_error/1" do
     test "requeues a cap-refused dispatch, audits it, and redelivers it after a slot opens" do
       account = Fixtures.Accounts.create_account()

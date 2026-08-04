@@ -234,8 +234,8 @@ defmodule EmisarWeb.MarketingController do
         "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, and a hash-chained audit trail.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
-      pack_count: Catalog.PublishedRegistry.pack_count(),
-      action_count: delimit_int(Catalog.PublishedRegistry.action_count()),
+      pack_count: Catalog.published_pack_count(),
+      action_count: delimit_int(Catalog.published_action_count()),
       json_ld: org_ld
     )
   end
@@ -690,12 +690,12 @@ defmodule EmisarWeb.MarketingController do
   #
   # `/packs` lists every published pack; `/packs/:id` is the per-pack
   # detail page (description, actions, install snippet, source link).
-  # `Emisar.Catalog.PublishedRegistry` owns the catalog data; this
+  # `Emisar.Catalog` owns the published catalog data; this
   # controller only renders it, grouped for display by
   # `EmisarWeb.PacksRegistry`.
 
   def packs(conn, _params) do
-    packs = Catalog.PublishedRegistry.list()
+    packs = Catalog.list_published_packs()
 
     json_ld =
       Jason.encode!(
@@ -729,8 +729,8 @@ defmodule EmisarWeb.MarketingController do
 
     render(conn, :packs,
       grouped: EmisarWeb.PacksRegistry.grouped(packs),
-      pack_count: Catalog.PublishedRegistry.pack_count(),
-      action_count: delimit_int(Catalog.PublishedRegistry.action_count()),
+      pack_count: Catalog.published_pack_count(),
+      action_count: delimit_int(Catalog.published_action_count()),
       page_title: "Action packs registry",
       meta_description:
         "Browse the registry of action packs you can install on your emisar runner — Postgres, Cassandra, Linux core, Docker, AWS, and more. Each pack ships a typed catalog of actions an LLM can call.",
@@ -740,7 +740,7 @@ defmodule EmisarWeb.MarketingController do
   end
 
   def pack_detail(conn, %{"id" => id}) do
-    case Catalog.PublishedRegistry.get(id) do
+    case Catalog.get_published_pack(id) do
       nil ->
         conn
         |> Plug.Conn.put_status(:not_found)

@@ -106,7 +106,7 @@ defmodule EmisarWeb.RunbookDraft do
       "title" => draft["title"] || "",
       "slug" => draft["slug"] || "",
       "description" => draft["description"] || "",
-      "definition" => draft |> command() |> Runbooks.Authoring.build_v1()
+      "definition" => draft |> command() |> Runbooks.build_definition_v1()
     }
     |> Jason.encode!()
   end

@@ -60,6 +60,17 @@ defmodule EmisarWeb.OnboardingLiveTest do
       refute html =~ "phx-trigger-action=\"true\""
     end
 
+    test "a name whose derived slug is too short renders the slug error inline", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/onboarding")
+
+      html = lv |> form("#onboarding_form", %{"account" => %{"name" => "x"}}) |> render_submit()
+
+      assert html =~ "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars"
+      assert html =~ ~s(value="x")
+      refute html =~ "phx-trigger-action=\"true\""
+    end
+
     test "an unexpected transaction error keeps the typed name and reports the failure", %{
       conn: conn
     } do

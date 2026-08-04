@@ -54,7 +54,7 @@ defmodule EmisarWeb.PostmarkWebhookController do
   # any other type we don't act on is unsupported; a bounce or complaint whose
   # fields don't validate carries the command's own error.
   defp deliverability_event(%{"RecordType" => "Bounce"} = params) do
-    Mail.DeliverabilityEvent.new(:bounce, %{
+    Mail.build_deliverability_event(:bounce, %{
       email: params["Email"],
       inactive: params["Inactive"],
       type: params["Type"],
@@ -63,7 +63,7 @@ defmodule EmisarWeb.PostmarkWebhookController do
   end
 
   defp deliverability_event(%{"RecordType" => "SpamComplaint"} = params) do
-    Mail.DeliverabilityEvent.new(:spam_complaint, %{
+    Mail.build_deliverability_event(:spam_complaint, %{
       email: params["Email"],
       type: params["Type"],
       description: params["Description"]

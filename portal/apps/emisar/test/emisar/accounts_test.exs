@@ -798,6 +798,45 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "create_account_with_owner_from_name/2" do
+    test "derives the slug from the typed name and seeds the owner membership" do
+      user = Fixtures.Users.create_user()
+
+      assert {:ok, %Account{} = account} =
+               Accounts.create_account_with_owner_from_name("Acme Co!", user)
+
+      assert account.name == "Acme Co!"
+      assert account.slug =~ ~r/^acme-co/
+
+      assert membership = Repo.one(Membership)
+      assert membership.role == :owner
+      assert membership.account_id == account.id
+    end
+
+    test "reports a rejected derived slug on :name, the only field the form has" do
+      # "x" passes the name validation but derives a 1-character slug the
+      # account slug format rejects — an error with no input of its own.
+      user = Fixtures.Users.create_user()
+
+      assert {:error, changeset} = Accounts.create_account_with_owner_from_name("x", user)
+
+      assert "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars" in errors_on(
+               changeset
+             ).name
+
+      refute Repo.one(Account)
+    end
+
+    test "leaves an existing :name error alone" do
+      user = Fixtures.Users.create_user()
+
+      assert {:error, changeset} = Accounts.create_account_with_owner_from_name("", user)
+
+      assert "can't be blank" in errors_on(changeset).name
+      assert length(errors_on(changeset).name) == 1
+    end
+  end
+
   describe "update_account/3 — require_sso (owner + admin security setting)" do
     test "refuses to require SSO when no enabled connection exists" do
       # The lockout this prevents: require_sso on with nothing to sign in
@@ -2700,6 +2739,21 @@ defmodule Emisar.AccountsTest do
       refute AuditEvent.Query.all()
              |> AuditEvent.Query.by_event_type("session.account_switched")
              |> Repo.one()
+    end
+  end
+
+  describe "membership_disabled?/1" do
+    test "is true only once the membership has been suspended" do
+      account = Fixtures.Accounts.create_account()
+      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      refute Accounts.membership_disabled?(membership)
+
+      assert {:ok, suspended} = Accounts.suspend_membership(membership, owner_subject)
+      assert Accounts.membership_disabled?(suspended)
     end
   end
 

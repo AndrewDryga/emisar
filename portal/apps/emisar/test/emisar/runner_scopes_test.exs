@@ -403,6 +403,47 @@ defmodule Emisar.RunnerAccessTest do
     end
   end
 
+  describe "build_runner_access/3" do
+    test "canonicalizes a picker's selection and fails closed on an unknown ref" do
+      database = %{id: Ecto.UUID.generate(), group: "database"}
+      web = %{id: Ecto.UUID.generate(), group: "web"}
+      runners = [database, web]
+      values = ["group:database", "runner:#{database.id}", "runner:#{web.id}"]
+
+      assert Accounts.build_runner_access("restricted", values, runners) ==
+               {:ok, %RunnerAccess{mode: :restricted, groups: ["database"], runner_ids: [web.id]}}
+
+      assert Accounts.build_runner_access("all", [], runners) == {:ok, RunnerAccess.all()}
+
+      assert Accounts.build_runner_access(
+               "restricted",
+               ["runner:#{Ecto.UUID.generate()}"],
+               runners
+             ) == {:error, :invalid_runner_access}
+    end
+  end
+
+  describe "runner_access_selection_values/2" do
+    test "renders a persisted scope back as the selector values the picker submits" do
+      runner_id = Ecto.UUID.generate()
+
+      assert Accounts.runner_access_selection_values(["database"], [runner_id]) ==
+               ["group:database", "runner:#{runner_id}"]
+
+      assert Accounts.runner_access_selection_values([], []) == []
+    end
+  end
+
+  describe "empty_runner_access/0" do
+    test "is explicit none, which covers nothing but itself" do
+      assert Accounts.empty_runner_access() ==
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []}
+
+      assert RunnerAccess.covers?(RunnerAccess.all(), Accounts.empty_runner_access())
+      refute RunnerAccess.covers?(Accounts.empty_runner_access(), RunnerAccess.all())
+    end
+  end
+
   describe "runner_access_for_subject/1" do
     test "re-reads the current active membership instead of trusting subject state" do
       {account, owner, subject} = account_with_owner()

@@ -73,10 +73,7 @@ defmodule EmisarWeb.OnboardingLive do
   def handle_event("create", %{"account" => %{"name" => name}}, socket) do
     user = socket.assigns.current_user
 
-    case Accounts.create_account_with_owner(
-           %{name: name, slug: Accounts.suggest_unique_slug(name)},
-           user
-         ) do
+    case Accounts.create_account_with_owner_from_name(name, user) do
       {:ok, account} ->
         # `trigger_submit: true` fires the form's `action=` POST in the
         # next browser tick — `AccountSwitchController` validates the
@@ -87,12 +84,11 @@ defmodule EmisarWeb.OnboardingLive do
          |> assign(:created_account_id, account.id)
          |> assign(:trigger_submit, true)}
 
-      # A blank/invalid name renders inline on the name field; the slug is
-      # derived from the name on submit, so surface its error on :name too —
-      # otherwise a too-short name fails silently on a field with no input.
+      # A blank/invalid name renders inline on the name field; Accounts already
+      # moved a derived-slug error onto :name, the only field this form has.
       # Membership and policy changesets do not belong to this form.
       {:error, %Ecto.Changeset{data: %Accounts.Account{}} = changeset} ->
-        {:noreply, assign_form(socket, surface_slug_error_on_name(changeset))}
+        {:noreply, assign_form(socket, changeset)}
 
       {:error, _reason} ->
         changeset = Accounts.change_account(%Accounts.Account{}, %{"name" => name})
@@ -101,19 +97,6 @@ defmodule EmisarWeb.OnboardingLive do
          socket
          |> assign_form(changeset)
          |> put_flash(:error, "Couldn't create this workspace. Try again.")}
-    end
-  end
-
-  # The form has only a :name input, but the slug is derived from the name. When
-  # the name validated yet the derived slug didn't (a 1-2 char name yields a
-  # too-short slug), copy the slug error onto :name so the operator sees why the
-  # workspace wasn't created instead of a silent no-op.
-  defp surface_slug_error_on_name(%Ecto.Changeset{} = changeset) do
-    changeset = Map.put(changeset, :action, :insert)
-
-    case {changeset.errors[:name], changeset.errors[:slug]} do
-      {nil, {message, opts}} -> Ecto.Changeset.add_error(changeset, :name, message, opts)
-      _ -> changeset
     end
   end
 

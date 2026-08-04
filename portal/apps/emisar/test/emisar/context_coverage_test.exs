@@ -32,7 +32,7 @@ defmodule Emisar.ContextCoverageTest do
     [Path.join(__DIR__, ".."), Path.join([__DIR__, "..", "..", "..", "emisar_web", "test"])]
     |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.exs")))
     |> Enum.flat_map(fn file ->
-      ~r/describe\s+"([a-z_]+[!?]?)\/(\d+)/
+      ~r/describe\s+"([a-z_][a-z_0-9]*[!?]?)\/(\d+)/
       |> Regex.scan(File.read!(file))
       |> Enum.map(fn [_match, name, arity] -> {name, String.to_integer(arity)} end)
     end)

@@ -716,6 +716,15 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Builds one runner-reported `error` envelope from the socket's authenticated
+  account and runner identities plus the runner-controlled `:code`, `:message`,
+  and `:request_id` diagnostics, which are bounded here before the domain reads
+  them.
+  """
+  def build_runner_error(account_id, runner_id, attrs, context),
+    do: RunnerError.new(account_id, runner_id, attrs, context)
+
+  @doc """
   Internal — runner socket: record one runner-reported error envelope and apply
   its dispatch consequence in a single transaction.
 

@@ -415,6 +415,37 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc """
+  Internal — onboarding from the workspace form, which has one input: derive
+  the unique slug from the operator-typed `name` and create the account with
+  `user` as `:owner`. No `%Subject{}` can exist for this new tenant yet. A
+  rejected slug is reported on `:name` — the only field the operator can
+  correct it through. Returns
+  `{:ok, account} | {:error, %Ecto.Changeset{} | reason}`.
+  """
+  def create_account_with_owner_from_name(name, %Users.User{} = user) do
+    case create_account_with_owner(%{name: name, slug: suggest_unique_slug(name)}, user) do
+      {:ok, account} ->
+        {:ok, account}
+
+      {:error, %Ecto.Changeset{data: %Account{}} = changeset} ->
+        {:error, surface_slug_error_on_name(changeset)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # A 1-2 character name passes the name validation but derives a slug the
+  # account slug format rejects. The form has no slug input, so that error would
+  # be orphaned — copy it onto the field the operator controls.
+  defp surface_slug_error_on_name(%Ecto.Changeset{} = changeset) do
+    case {changeset.errors[:name], changeset.errors[:slug]} do
+      {nil, {message, opts}} -> Ecto.Changeset.add_error(changeset, :name, message, opts)
+      _ -> changeset
+    end
+  end
+
   # The workspace half of standing up a new tenant, shared by both entry points
   # above; each seeds the owner into a `:user` step first. The form-owned inserts
   # run through `Multi.run` so a rejected changeset carries the step that owns
@@ -1299,6 +1330,23 @@ defmodule Emisar.Accounts do
   defp directory_provider_version(_provider, _managed?), do: 0
 
   @doc """
+  Canonical runner access for a picker's explicit mode plus the raw
+  `"group:<name>"` / `"runner:<id>"` values it submitted, allowlisted against
+  `runners` (a runner list, or a `%{groups: _, runners: _}` fact map). Returns
+  `{:ok, access} | {:error, :invalid_runner_access}`, so a crafted selection
+  can never widen reach.
+  """
+  def build_runner_access(mode, values, runners),
+    do: RunnerAccess.from_selection(mode, values, runners)
+
+  @doc ~s(The `"group:<name>"` / `"runner:<id>"` selector values a persisted `{groups, runner_ids}` scope renders as.)
+  def runner_access_selection_values(groups, runner_ids),
+    do: RunnerAccess.selection_values(groups, runner_ids)
+
+  @doc "Explicit no-runner access — the fail-closed value a caller grants when it grants nothing."
+  def empty_runner_access, do: RunnerAccess.none()
+
+  @doc """
   Internal - current runner access for an authenticated subject. The membership
   is re-read on every call and must still be active in the subject's account.
   Missing, unbound, cross-account, or inconsistent data returns explicit none.
@@ -1776,6 +1824,12 @@ defmodule Emisar.Accounts do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  @doc """
+  Whether a membership is currently disabled — the roster's per-row state for
+  suspended and directory-deactivated members alike.
+  """
+  def membership_disabled?(%Membership{} = membership), do: Membership.disabled?(membership)
 
   @doc """
   Internal — predicate composed by the web session checks (`UserAuth`) /

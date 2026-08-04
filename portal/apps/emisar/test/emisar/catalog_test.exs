@@ -1,7 +1,7 @@
 defmodule Emisar.CatalogTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Catalog, Repo, Runners}
-  alias Emisar.Catalog.{PackVersion, RunnerAction}
+  alias Emisar.Catalog.{PackVersion, PublishedRegistry, RunnerAction}
   alias Emisar.Fixtures
 
   @dispatch_hash "sha256:" <> String.duplicate("d", 64)
@@ -4905,6 +4905,68 @@ defmodule Emisar.CatalogTest do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
       assert Catalog.count_pack_versions_needing_decision(no_view) == 0
+    end
+  end
+
+  describe "list_published_packs/0" do
+    test "returns the whole published catalog, alphabetically by id" do
+      ids = Catalog.list_published_packs() |> Enum.map(& &1.id)
+
+      assert ids != []
+      assert ids == Enum.sort(ids)
+      assert "linux-core" in ids
+    end
+  end
+
+  describe "published_pack_count/0" do
+    test "counts every pack the catalog carries" do
+      assert Catalog.published_pack_count() == length(Catalog.list_published_packs())
+    end
+  end
+
+  describe "published_action_count/0" do
+    test "counts every action declared across the catalog" do
+      declared = Catalog.list_published_packs() |> Enum.map(&length(&1.actions)) |> Enum.sum()
+
+      assert Catalog.published_action_count() == declared
+      assert Catalog.published_action_count() > Catalog.published_pack_count()
+    end
+  end
+
+  describe "published_pack_suggestion_index/0" do
+    test "carries authored detect evidence and omits packs that declare none" do
+      by_id = Map.new(Catalog.published_pack_suggestion_index(), &{&1.id, &1})
+
+      assert "grafana-server" in by_id["grafana"].detect.processes
+      # A remote-API pack has no host evidence, so it is nothing to suggest on.
+      refute Map.has_key?(by_id, "cloudflare")
+    end
+  end
+
+  describe "published_pack_tarball_url/1" do
+    test "resolves a pack's immutable tarball and refuses an unknown id" do
+      pack = Catalog.get_published_pack("redis")
+
+      assert Catalog.published_pack_tarball_url("redis") == {:ok, pack.tarball_url}
+      assert Catalog.published_pack_tarball_url("nope") == :error
+    end
+  end
+
+  describe "published_pack_tarball_url/2" do
+    test "resolves an exact version and refuses one the catalog never carried" do
+      pack = Catalog.get_published_pack("redis")
+
+      assert Catalog.published_pack_tarball_url("redis", pack.version) == {:ok, pack.tarball_url}
+      assert Catalog.published_pack_tarball_url("redis", "9.9.9") == :error
+    end
+  end
+
+  describe "get_published_pack/1" do
+    test "fetches one pack by id, nil when the catalog doesn't carry it" do
+      assert %PublishedRegistry.Pack{id: "linux-core", actions: [_ | _]} =
+               Catalog.get_published_pack("linux-core")
+
+      assert Catalog.get_published_pack("nope") == nil
     end
   end
 

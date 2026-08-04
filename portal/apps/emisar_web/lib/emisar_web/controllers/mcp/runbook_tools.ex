@@ -599,7 +599,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     %{
       operation_id: operation_id,
       title: args["title"],
-      slug: Runbooks.Naming.resolve_slug(args["title"], args["slug"]),
+      slug: Runbooks.resolve_slug(args["title"], args["slug"]),
       description: args["description"],
       definition: args["definition"]
     }

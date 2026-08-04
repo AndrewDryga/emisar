@@ -95,6 +95,53 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "build_definition_v1/1" do
+    test "canonicalizes a typed editor command into a definition this context accepts" do
+      command = %{
+        context_markdown: "Confirm the incident first.",
+        inputs: [],
+        stages: []
+      }
+
+      definition = Runbooks.build_definition_v1(command)
+
+      assert definition["schema_version"] == 1
+      assert definition["context_markdown"] == "Confirm the incident first."
+      assert definition["stages"] == []
+      assert Runbooks.validate_draft_definition(definition) == {:ok, definition}
+    end
+  end
+
+  describe "sync_definition_argument/2" do
+    test "lets the descriptor own the metadata while the operator keeps their binding" do
+      typed = %{"name" => "path", "type" => "path", "required" => true}
+
+      fresh = Runbooks.sync_definition_argument(typed, nil)
+
+      assert fresh.name == "path"
+      assert fresh.type == "path"
+      assert fresh.required?
+      assert fresh.source == "literal"
+
+      existing = %{fresh | value: "/var/lib/postgresql"}
+      sensitive = %{"name" => "path", "type" => "path", "required" => true, "sensitive" => true}
+
+      synced = Runbooks.sync_definition_argument(sensitive, existing)
+
+      # A now-sensitive argument can no longer carry a typed literal.
+      assert synced.sensitive?
+      assert synced.source == "input"
+    end
+  end
+
+  describe "resolve_slug/2" do
+    test "keeps the operator's candidate and derives one only when none was typed" do
+      assert Runbooks.resolve_slug("Check database fleet", "db-health") == "db-health"
+      assert Runbooks.resolve_slug("Check database fleet", nil) == "check-database-fleet"
+      assert Runbooks.resolve_slug("Check database fleet", "  ") == "check-database-fleet"
+    end
+  end
+
   describe "runbook_filters/0" do
     test "carries the Runbooks table's filters" do
       assert Enum.map(Runbooks.runbook_filters(), & &1.name) == [:status]

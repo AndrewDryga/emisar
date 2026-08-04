@@ -337,7 +337,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     command = RunbookDraft.argument_command(existing)
 
     spec
-    |> Runbooks.Authoring.sync_argument(command)
+    |> Runbooks.sync_definition_argument(command)
     |> RunbookDraft.argument_from_command()
   end
 

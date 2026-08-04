@@ -13,8 +13,9 @@ defmodule Emisar.Runbooks do
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Crypto, MCPOperations, Repo, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.{Catalog, Runners}
-  alias Emisar.Runbooks.{Authorizer, Compiler, Definition, Runbook, RunbookExecution, Scheduler}
-  alias Emisar.Runbooks.{EditorProjection, ExecutionItem, ExecutionProjection}
+  alias Emisar.Runbooks.{Authoring, Authorizer, Compiler, Definition, EditorProjection}
+  alias Emisar.Runbooks.{ExecutionItem, ExecutionProjection, Naming, Runbook}
+  alias Emisar.Runbooks.{RunbookExecution, Scheduler}
   alias Emisar.Users
 
   # One runbook list page is 35 rows; 64 bounds the batch without capping the
@@ -77,6 +78,25 @@ defmodule Emisar.Runbooks do
   @doc "Stable SHA-256 identity for one JSON-compatible definition."
   @spec definition_digest(map()) :: String.t()
   def definition_digest(definition), do: Definition.digest(definition)
+
+  @doc "The canonical v1 definition built from one lossless typed editor command."
+  @spec build_definition_v1(Authoring.command()) :: map()
+  def build_definition_v1(command), do: Authoring.build_v1(command)
+
+  @doc """
+  One editor argument row reconciled against the action descriptor it binds:
+  the descriptor owns the metadata, the operator keeps their source and value.
+  """
+  @spec sync_definition_argument(map(), Authoring.argument() | nil) :: Authoring.argument()
+  def sync_definition_argument(spec, existing), do: Authoring.sync_argument(spec, existing)
+
+  @doc """
+  The operator's slug candidate when it carries a value, otherwise one derived
+  from the title. An invalid candidate is returned verbatim so the changeset
+  reports it rather than silently replacing what they typed.
+  """
+  @spec resolve_slug(String.t() | nil, String.t() | nil) :: String.t()
+  def resolve_slug(title, candidate), do: Naming.resolve_slug(title, candidate)
 
   # -- Reads -----------------------------------------------------------
 

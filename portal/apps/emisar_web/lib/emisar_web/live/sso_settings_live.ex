@@ -1003,7 +1003,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     with_request(socket, id, fn request ->
       case SSO.approve_link_request(
              request,
-             Accounts.RunnerAccess.none(),
+             Accounts.empty_runner_access(),
              socket.assigns.current_subject
            ) do
         {:ok, _result} ->
@@ -3252,7 +3252,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               </span>
               <.chip :if={is_nil(member.membership)} tone={:rose}>Removed</.chip>
               <.chip
-                :if={member.membership && Accounts.Membership.disabled?(member.membership)}
+                :if={member.membership && Accounts.membership_disabled?(member.membership)}
                 tone={:amber}
               >
                 Suspended
@@ -3313,7 +3313,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <%!-- Suspend is reversible (Reactivate undoes it), so it stays a
                    neutral ghost — rose is reserved for the irreversible Delete. --%>
               <.confirm_button
-                :if={not Accounts.Membership.disabled?(member.membership)}
+                :if={not Accounts.membership_disabled?(member.membership)}
                 id={"suspend-scim-#{member.membership.id}"}
                 title="Suspend this member?"
                 confirm_label="Suspend member"
@@ -3328,7 +3328,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 Suspend
               </.confirm_button>
               <.button
-                :if={Accounts.Membership.disabled?(member.membership) and member.identity.scim_active}
+                :if={Accounts.membership_disabled?(member.membership) and member.identity.scim_active}
                 variant={:ghost}
                 tone={:brand}
                 size={:sm}
@@ -3341,7 +3341,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                  is the IdP's to make (its active:true re-syncs), so no Reactivate here. --%>
               <span
                 :if={
-                  Accounts.Membership.disabled?(member.membership) and not member.identity.scim_active
+                  Accounts.membership_disabled?(member.membership) and not member.identity.scim_active
                 }
                 class="text-xs text-zinc-400"
               >

@@ -63,6 +63,13 @@ defmodule Emisar.Mail do
   end
 
   @doc """
+  Builds one provider-neutral deliverability report of `kind` from the fields a
+  webhook boundary mapped out of its provider's payload. Returns
+  `{:ok, event} | {:error, :invalid_deliverability_event}`.
+  """
+  def build_deliverability_event(kind, attrs), do: DeliverabilityEvent.new(kind, attrs)
+
+  @doc """
   Internal — applies one deliverability report (from a provider webhook).
 
   A bounce the provider deactivated the address for, and every spam complaint,

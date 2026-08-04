@@ -68,7 +68,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
   defp canonical_definition(draft) do
     draft
     |> RunbookDraft.command()
-    |> Runbooks.Authoring.build_v1()
+    |> Runbooks.build_definition_v1()
     |> Jason.encode!(pretty: true)
   end
 

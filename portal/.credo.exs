@@ -110,7 +110,8 @@
           {Emisar.Checks.TestNoProcessSleep, []},
           {Emisar.Checks.VendorViaWrapper, []},
           {Emisar.Checks.WebNoAuditLog, []},
-          {Emisar.Checks.WebNoContextChangeset, []},
+          {Emisar.Checks.WebNoChangesetConstruction, []},
+          {Emisar.Checks.WebNoNestedDomainCalls, []},
           {Emisar.Checks.WebNoRepoCalls, []},
 
           #

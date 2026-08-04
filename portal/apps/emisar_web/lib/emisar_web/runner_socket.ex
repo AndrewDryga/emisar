@@ -432,7 +432,7 @@ defmodule EmisarWeb.RunnerSocket do
 
   defp handle_envelope("error", msg, state) do
     runner_error =
-      Runs.RunnerError.new(
+      Runs.build_runner_error(
         state.account_id,
         state.runner_id,
         %{code: msg["code"], message: msg["message"], request_id: msg["request_id"]},

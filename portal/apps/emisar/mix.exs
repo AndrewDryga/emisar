@@ -78,7 +78,13 @@ defmodule Emisar.MixProject do
       {:jason, "~> 1.4"},
       # Draft 2020-12 compilation at the runner-manifest trust boundary.
       # Wrapped by Emisar.OutputSchema; remote refs stay disabled.
-      {:jsonschex, "~> 0.8"}
+      {:jsonschex, "~> 0.8"},
+
+      # Already an umbrella-root dep (that's where `mix credo` runs); declared
+      # here too so `Emisar.WebBoundaryChecksTest` can parse a probe source and
+      # run the custom `credo/checks/*` modules directly. Test-only, never in
+      # the release.
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 

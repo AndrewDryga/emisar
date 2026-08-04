@@ -2800,6 +2800,47 @@ defmodule Emisar.Catalog do
     |> Enum.count(&pack_version_needs_decision?/1)
   end
 
+  # -- Published catalog ------------------------------------------------
+  #
+  # The published pack library is one public document, identical for every
+  # tenant, so these reads take no `%Auth.Subject{}`. They are the context's
+  # window onto `PublishedRegistry` for the marketing pages, the machine
+  # registry endpoints, and the sitemap.
+
+  @doc "Every published pack, ordered alphabetically by id."
+  @spec list_published_packs() :: [PublishedRegistry.Pack.t()]
+  def list_published_packs, do: PublishedRegistry.list()
+
+  @doc "How many packs the published catalog carries."
+  @spec published_pack_count() :: non_neg_integer()
+  def published_pack_count, do: PublishedRegistry.pack_count()
+
+  @doc "How many actions the published catalog declares across every pack."
+  @spec published_action_count() :: non_neg_integer()
+  def published_action_count, do: PublishedRegistry.action_count()
+
+  @doc "The lean host-matching index `emisar pack suggest` reads."
+  @spec published_pack_suggestion_index() :: [map()]
+  def published_pack_suggestion_index, do: PublishedRegistry.suggest_index()
+
+  @doc """
+  The immutable, content-addressed tarball URL for a published pack's current
+  version. Returns `{:ok, url} | :error`.
+  """
+  @spec published_pack_tarball_url(String.t()) :: {:ok, String.t()} | :error
+  def published_pack_tarball_url(id), do: PublishedRegistry.tarball_url(id)
+
+  @doc """
+  The immutable tarball URL for one published pack VERSION — its current one or
+  a remembered prior one. Returns `{:ok, url} | :error`.
+  """
+  @spec published_pack_tarball_url(String.t(), String.t()) :: {:ok, String.t()} | :error
+  def published_pack_tarball_url(id, version), do: PublishedRegistry.tarball_url(id, version)
+
+  @doc "One published pack by id, or nil when the catalog doesn't carry it."
+  @spec get_published_pack(String.t()) :: PublishedRegistry.Pack.t() | nil
+  def get_published_pack(id), do: PublishedRegistry.get(id)
+
   # -- PubSub ----------------------------------------------------------
 
   @doc "Subscribe the caller to the account's pack-trust badge signal (`{:pack_trust_changed, account_id}`)."

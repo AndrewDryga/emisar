@@ -140,7 +140,7 @@ defmodule EmisarWeb.TeamLive do
     mode = Map.get(params, "runner_access_mode", socket.assigns.scope_access_mode)
     scope = List.wrap(params["scope"])
 
-    case Accounts.RunnerAccess.from_selection(mode, scope, socket.assigns.runners) do
+    case Accounts.build_runner_access(mode, scope, socket.assigns.runners) do
       {:ok, %Accounts.RunnerAccess{} = access} ->
         {:noreply,
          socket
@@ -291,7 +291,7 @@ defmodule EmisarWeb.TeamLive do
     mode = params["runner_access_mode"]
     scope = List.wrap(params["scope"])
 
-    case Accounts.RunnerAccess.from_selection(mode, scope, socket.assigns.runners) do
+    case Accounts.build_runner_access(mode, scope, socket.assigns.runners) do
       {:ok, access} ->
         {:noreply,
          socket
@@ -367,7 +367,7 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
     with_membership(socket, id, fn membership ->
-      case Accounts.RunnerAccess.from_selection(
+      case Accounts.build_runner_access(
              params["runner_access_mode"],
              List.wrap(params["scope"]),
              socket.assigns.runners
@@ -869,7 +869,7 @@ defmodule EmisarWeb.TeamLive do
 
         scope = List.wrap(params["scope"])
 
-        case Accounts.RunnerAccess.from_selection(mode, scope, socket.assigns.runners) do
+        case Accounts.build_runner_access(mode, scope, socket.assigns.runners) do
           {:ok, access} ->
             approve_request_with_access(socket, request, access)
 
