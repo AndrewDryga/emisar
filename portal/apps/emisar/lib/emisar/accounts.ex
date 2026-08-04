@@ -470,7 +470,9 @@ defmodule Emisar.Accounts do
   When `require_mfa` is flipped on, every signed-in user without
   `mfa_enabled_at` is funneled to MFA setup by
   `EmisarWeb.UserAuth.on_mount(:ensure_mfa_compliant)` until they enroll
-  (owners included). A security change is audited as `account.require_mfa_set`,
+  (owners included) — so turning it on requires the caller to be enrolled
+  themselves (`{:error, :mfa_enrollment_required}`). Turning it off is always
+  allowed. A security change is audited as `account.require_mfa_set`,
   everything else as `account.updated`.
   """
   def update_account(%Account{} = account, attrs, %Subject{} = subject) do
@@ -492,6 +494,7 @@ defmodule Emisar.Accounts do
           changeset = Account.Changeset.update(loaded_account, attrs)
 
           with :ok <- ensure_security_change_permitted(changeset, subject),
+               :ok <- ensure_mfa_requirement_has_an_enrolled_actor(changeset, subject),
                :ok <- ensure_sso_requirement_has_a_way_in(loaded_account, changeset) do
             changeset
           else
@@ -587,6 +590,22 @@ defmodule Emisar.Accounts do
   # Judged here, on the FRESH changeset under the account row lock, so the
   # invariant holds for every caller and the provider read is serialized against
   # the other half by the same lock the disable path takes.
+  # Enforcing MFA funnels the actor too, so an unenrolled caller flipping it on
+  # locks themselves out. It is a domain invariant, not a Team-page courtesy: the
+  # check runs inside the locked write on the actor's CURRENT row, so a stale
+  # socket snapshot (or a forged event) cannot carry an unenrolled owner past it.
+  defp ensure_mfa_requirement_has_an_enrolled_actor(
+         %Ecto.Changeset{} = changeset,
+         %Subject{} = subject
+       ) do
+    if Map.get(settings_changes(changeset), :require_mfa) == true and
+         not actor_mfa_enrolled?(subject) do
+      {:error, :mfa_enrollment_required}
+    else
+      :ok
+    end
+  end
+
   defp ensure_sso_requirement_has_a_way_in(%Account{} = account, %Ecto.Changeset{} = changeset) do
     if Map.get(settings_changes(changeset), :require_sso) == true and
          SSO.list_enabled_providers_for_account(account.id) == [] do
@@ -708,6 +727,126 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  One page of the team roster as presentation facts: each visible membership plus
+  the security state the roster renders and the member actions it may offer. Owns
+  the membership page, its user preload, and ONE batched runner-scope read, so the
+  web never derives a capability from an invitation, MFA, suspension, or directory
+  column itself.
+
+  Requires `view_own_account` and that `subject` is in `account`; scoped by the
+  explicit account id alongside `Authorizer.for_subject/2`. Returns
+  `{:ok, [facts], %Paginator.Metadata{}}`.
+  """
+  def list_team_member_facts(%Account{id: account_id}, %Subject{} = subject, opts \\ []) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_own_account_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized),
+         {:ok, memberships, metadata} <- list_team_memberships(account_id, subject, opts) do
+      access_by_membership = runner_access_for_memberships(memberships)
+      facts = Enum.map(memberships, &team_member_facts(&1, access_by_membership, subject))
+
+      {:ok, facts, metadata}
+    end
+  end
+
+  defp list_team_memberships(account_id, %Subject{} = subject, opts) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.with_preloaded_user()
+    |> Authorizer.for_subject(subject)
+    |> Repo.list(Membership.Query, opts)
+  end
+
+  @doc """
+  One team member's facts, read FRESH from the subject's account — the gate an
+  inline editor opens on. The roster a page loaded minutes ago cannot answer
+  whether a directory has claimed this member since, so the editor asks again
+  rather than trusting the row it rendered.
+
+  Requires `view_own_account`; scoped by `Authorizer.for_subject/2`. Returns
+  `{:ok, facts}` or `{:error, :not_found | :unauthorized}`.
+  """
+  def fetch_team_member_facts(membership_id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_own_account_permission()
+           ),
+         {:ok, membership} <- fetch_team_membership(membership_id, subject) do
+      access_by_membership = runner_access_for_memberships([membership])
+
+      {:ok, team_member_facts(membership, access_by_membership, subject)}
+    end
+  end
+
+  defp fetch_team_membership(membership_id, %Subject{} = subject) do
+    if Repo.valid_uuid?(membership_id) do
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(membership_id)
+      |> Membership.Query.with_preloaded_user()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Membership.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  # Suspension and a still-open invitation are independent facts — a suspended
+  # member who never accepted is both — so each keeps its own boolean and the
+  # actions that depend on the pair say so (`resend_invitation?`).
+  defp team_member_facts(%Membership{} = membership, access_by_membership, %Subject{} = subject) do
+    pending_invitation? = pending_invitation?(membership)
+    disabled? = Membership.disabled?(membership)
+    mfa_enrolled? = member_mfa_enrolled?(membership.user)
+    confirmation_pending? = member_confirmation_pending?(membership.user)
+    self_owner? = self_owner?(membership, subject)
+
+    %{
+      # The digest is credential material behind the join link; the roster needs
+      # the pending STATE, never the secret that satisfies it.
+      membership: %{membership | invitation_token_digest: nil},
+      pending_invitation?: pending_invitation?,
+      self_owner?: self_owner?,
+      disabled?: disabled?,
+      mfa_enrolled?: mfa_enrolled?,
+      confirmation_pending?: confirmation_pending?,
+      runner_access: Map.get(access_by_membership, membership.id, RunnerAccess.none()),
+      runner_access_editable?: not membership.runner_access_directory_managed,
+      role_editable?: not self_owner? and not membership.directory_managed,
+      resend_invitation?: pending_invitation? and not disabled?,
+      resend_confirmation?: confirmation_pending? and membership.user_id == subject.actor.id,
+      reset_mfa?: mfa_enrolled?
+    }
+  end
+
+  defp pending_invitation?(%Membership{
+         invitation_accepted_at: nil,
+         invitation_token_digest: digest
+       })
+       when is_binary(digest),
+       do: true
+
+  defp pending_invitation?(%Membership{}), do: false
+
+  defp member_mfa_enrolled?(%Users.User{mfa_enabled_at: %DateTime{}}), do: true
+  defp member_mfa_enrolled?(_user), do: false
+
+  defp member_confirmation_pending?(%Users.User{confirmed_at: nil}), do: true
+  defp member_confirmation_pending?(_user), do: false
+
+  # Only the ACTOR's own owner row is off-limits: an owner editing another owner,
+  # or an admin editing their own row, is ordinary team administration.
+  defp self_owner?(%Membership{user_id: user_id, role: :owner}, %Subject{
+         actor: %Users.User{id: user_id}
+       }),
+       do: true
+
+  defp self_owner?(%Membership{}, %Subject{}), do: false
+
+  @doc """
   The memberships for the given `user_ids` in `account`, each preloaded with its
   user — for surfacing and acting on synced members from the SSO connection page.
   Bounded (the caller passes a known set of ids), so it returns the full list, not
@@ -778,20 +917,26 @@ defmodule Emisar.Accounts do
   defp sole_owner?(_repo, %Membership{}), do: false
 
   @doc """
-  Account-wide 2FA enrollment for the team security stat: total members
-  and how many have completed MFA — real counts, not a per-page tally that
-  reads falsely reassuring on a multi-page team. Requires `view_own_account`
-  and that `subject` is in the account. Returns
-  `{:ok, %{total: non_neg_integer, enrolled: non_neg_integer}}`.
+  The account's security posture for the team rail, read from CURRENT state: 2FA
+  enrollment across every member, whether enforcement is on (and whether the
+  caller could turn it on without locking themselves out), and whether SSO is
+  required.
+
+  The denominator is every non-deleted membership — suspended and still-pending
+  included — so the count matches the roster rather than one page of it, and the
+  account row, its settings, and the actor's own enrollment are all re-read here
+  rather than taken from a long-lived socket snapshot. Requires
+  `view_own_account`. Returns `{:ok, facts}` or `{:error, :not_found |
+  :unauthorized}`.
   """
-  def team_mfa_stats(%Account{id: account_id}, %Subject{} = subject) do
+  def fetch_team_security_facts(%Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.view_own_account_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized) do
-      base = Membership.Query.not_deleted() |> Membership.Query.by_account_id(account_id)
+         {:ok, account} <- fetch_current_account(subject) do
+      base = Membership.Query.not_deleted() |> Membership.Query.by_account_id(account.id)
 
       total = base |> Authorizer.for_subject(subject) |> Repo.aggregate(:count)
 
@@ -801,9 +946,42 @@ defmodule Emisar.Accounts do
         |> Authorizer.for_subject(subject)
         |> Repo.aggregate(:count)
 
-      {:ok, %{total: total, enrolled: enrolled}}
+      {:ok,
+       %{
+         mfa_total: total,
+         mfa_enrolled: enrolled,
+         mfa_missing: total - enrolled,
+         mfa_enforcement: mfa_enforcement(account, subject),
+         sso_required?: account.settings.require_sso
+       }}
     end
   end
+
+  defp fetch_current_account(%Subject{} = subject) do
+    Account.Query.not_deleted()
+    |> Authorizer.for_subject(subject)
+    |> Repo.fetch(Account.Query)
+  end
+
+  # `:actor_not_enrolled` is why enforcement cannot be turned ON yet: the
+  # enforcement gate funnels the person who flipped it too, so an owner without a
+  # second factor would lock themselves out of the account they just secured.
+  defp mfa_enforcement(%Account{settings: %{require_mfa: true}}, %Subject{}), do: :enforced
+
+  defp mfa_enforcement(%Account{}, %Subject{} = subject) do
+    if actor_mfa_enrolled?(subject), do: :available, else: :actor_not_enrolled
+  end
+
+  # The subject's actor is a socket snapshot that can be hours old, so the
+  # enrollment question is answered from the user's current row.
+  defp actor_mfa_enrolled?(%Subject{actor: %Users.User{id: user_id}}) do
+    case Users.fetch_user_by_id(user_id) do
+      {:ok, %Users.User{mfa_enabled_at: %DateTime{}}} -> true
+      _ -> false
+    end
+  end
+
+  defp actor_mfa_enrolled?(%Subject{}), do: false
 
   @doc """
   Of this account's members and pending invitations, the set of emails on the

@@ -923,6 +923,40 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "update_account/3 — require_mfa self-lockout" do
+    test "an unenrolled owner cannot enable MFA enforcement" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(owner, account)
+
+      assert Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject) ==
+               {:error, :mfa_enrollment_required}
+
+      refute Repo.reload!(account).settings.require_mfa
+      assert Repo.all(Audit.Event) == []
+    end
+
+    test "an enrolled owner can enable MFA enforcement with a stale subject" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(owner, account)
+
+      enroll_mfa(owner)
+
+      assert {:ok, %Account{settings: %{require_mfa: true}}} =
+               Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject)
+    end
+
+    test "disabling MFA enforcement never requires enrollment" do
+      account = Fixtures.Accounts.create_account()
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+
+      assert {:ok, %Account{settings: %{require_mfa: false}}} =
+               Accounts.update_account(account, %{settings: %{require_mfa: false}}, subject)
+    end
+  end
+
   describe "update_account/3 — max_grant_lifetime_seconds (owned by Approvals)" do
     test "an owner cannot set the standing-grant cap through the generic update" do
       account = Fixtures.Accounts.create_account()
@@ -961,7 +995,9 @@ defmodule Emisar.AccountsTest do
   describe "update_account/3 — multi-setting audit" do
     test "records each changed security setting" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      owner = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(owner, account)
+      enroll_mfa(owner)
 
       # require_sso needs a way in — enabling it with no enabled connection would
       # lock everyone out, owners included, so the domain refuses it.
@@ -1346,6 +1382,288 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "list_team_member_facts/3" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      %{
+        account: account,
+        owner: owner,
+        owner_membership: owner_membership,
+        subject: Fixtures.Subjects.membership_subject(owner_membership)
+      }
+    end
+
+    test "returns one fact per member with its user preloaded", %{
+      account: account,
+      owner: owner,
+      subject: subject
+    } do
+      Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      assert length(facts) == 2
+      assert Enum.all?(facts, &match?(%User{}, &1.membership.user))
+      assert owner.id in Enum.map(facts, & &1.membership.user_id)
+    end
+
+    test "never hands the web an invitation token digest", %{account: account, subject: subject} do
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        invitation_token_digest: "digest"
+      )
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      invited = Enum.find(facts, & &1.pending_invitation?)
+
+      assert invited.membership.invitation_token_digest == nil
+    end
+
+    test "a pending invitation can be resent; a suspended one cannot", %{
+      account: account,
+      subject: subject
+    } do
+      pending =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          invitation_token_digest: "digest"
+        )
+
+      suspended =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          invitation_token_digest: "digest"
+        )
+        |> Fixtures.Memberships.suspend_membership()
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      facts_by_id = Map.new(facts, &{&1.membership.id, &1})
+
+      assert facts_by_id[pending.id].pending_invitation?
+      refute facts_by_id[pending.id].disabled?
+      assert facts_by_id[pending.id].resend_invitation?
+
+      # Both booleans stay true — a suspended invitee is pending AND disabled —
+      # and only the action they gate goes away.
+      assert facts_by_id[suspended.id].pending_invitation?
+      assert facts_by_id[suspended.id].disabled?
+      refute facts_by_id[suspended.id].resend_invitation?
+    end
+
+    test "MFA enrollment drives the badge and the reset action", %{
+      account: account,
+      owner_membership: owner_membership,
+      subject: subject
+    } do
+      enrolled = Fixtures.Users.create_user()
+      enroll_mfa(enrolled)
+
+      enrolled_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: enrolled.id)
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      facts_by_id = Map.new(facts, &{&1.membership.id, &1})
+
+      assert facts_by_id[enrolled_membership.id].mfa_enrolled?
+      assert facts_by_id[enrolled_membership.id].reset_mfa?
+      refute facts_by_id[owner_membership.id].mfa_enrolled?
+      refute facts_by_id[owner_membership.id].reset_mfa?
+    end
+
+    test "confirmation state drives the badge and only the actor's resend action", %{
+      account: account,
+      subject: subject
+    } do
+      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
+
+      unconfirmed_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: unconfirmed.id
+        )
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      facts_by_id = Map.new(facts, &{&1.membership.id, &1})
+
+      assert facts_by_id[unconfirmed_membership.id].confirmation_pending?
+      refute facts_by_id[unconfirmed_membership.id].resend_confirmation?
+
+      unconfirmed_subject = Fixtures.Subjects.membership_subject(unconfirmed_membership)
+
+      assert {:ok, self_facts, _metadata} =
+               Accounts.list_team_member_facts(account, unconfirmed_subject)
+
+      assert Enum.find(self_facts, &(&1.membership.id == unconfirmed_membership.id)).resend_confirmation?
+    end
+
+    test "self_owner? is true only for the ACTOR's own owner row", %{
+      account: account,
+      owner_membership: owner_membership,
+      subject: subject
+    } do
+      other_owner =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      self_admin = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: self_admin.id,
+          role: "admin"
+        )
+
+      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      facts_by_id = Map.new(facts, &{&1.membership.id, &1})
+
+      assert facts_by_id[owner_membership.id].self_owner?
+      refute facts_by_id[owner_membership.id].role_editable?
+      refute facts_by_id[other_owner.id].self_owner?
+      assert facts_by_id[other_owner.id].role_editable?
+
+      assert {:ok, admin_facts, _metadata} =
+               Accounts.list_team_member_facts(account, admin_subject)
+
+      admin_facts_by_id = Map.new(admin_facts, &{&1.membership.id, &1})
+      refute admin_facts_by_id[admin_membership.id].self_owner?
+      assert admin_facts_by_id[admin_membership.id].role_editable?
+    end
+
+    test "directory ownership closes role and runner-access editing", %{
+      account: account,
+      subject: subject
+    } do
+      synced_role =
+        Fixtures.Memberships.create_membership(account_id: account.id)
+        |> Fixtures.Memberships.mark_directory_managed()
+
+      synced_access =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          runner_access_directory_managed: true
+        )
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      facts_by_id = Map.new(facts, &{&1.membership.id, &1})
+
+      refute facts_by_id[synced_role.id].role_editable?
+      assert facts_by_id[synced_role.id].runner_access_editable?
+      assert facts_by_id[synced_access.id].role_editable?
+      refute facts_by_id[synced_access.id].runner_access_editable?
+    end
+
+    test "carries each member's persisted runner access", %{account: account, subject: subject} do
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      Fixtures.Memberships.force_runner_access(
+        membership,
+        Accounts.RunnerAccess.none()
+      )
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      facts_by_id = Map.new(facts, &{&1.membership.id, &1})
+
+      assert facts_by_id[membership.id].runner_access == Accounts.RunnerAccess.none()
+    end
+
+    test "a viewer of the account can read the roster", %{account: account} do
+      viewer = Fixtures.Users.create_user()
+
+      viewer_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      viewer_subject = Fixtures.Subjects.membership_subject(viewer_membership)
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, viewer_subject)
+      assert length(facts) == 2
+    end
+
+    test "a subject from another account is refused", %{account: account} do
+      {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Accounts.list_team_member_facts(account, other_subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "fetch_team_member_facts/2" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      %{
+        account: account,
+        owner_membership: owner_membership,
+        subject: Fixtures.Subjects.membership_subject(owner_membership)
+      }
+    end
+
+    test "reads the member's CURRENT state, not the caller's copy", %{
+      account: account,
+      subject: subject
+    } do
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert {:ok, facts} = Accounts.fetch_team_member_facts(membership.id, subject)
+      assert facts.runner_access_editable?
+
+      Fixtures.Memberships.create_membership(account_id: account.id)
+
+      {1, _} =
+        Membership.Query.all()
+        |> Membership.Query.by_id(membership.id)
+        |> Repo.update_all(set: [runner_access_directory_managed: true])
+
+      assert {:ok, refreshed} = Accounts.fetch_team_member_facts(membership.id, subject)
+      refute refreshed.runner_access_editable?
+    end
+
+    test "an unknown or malformed id is :not_found", %{subject: subject} do
+      assert Accounts.fetch_team_member_facts(Ecto.UUID.generate(), subject) ==
+               {:error, :not_found}
+
+      assert Accounts.fetch_team_member_facts("not-a-uuid", subject) == {:error, :not_found}
+    end
+
+    test "a subject with no account permission is refused", %{
+      account: account,
+      owner_membership: owner_membership
+    } do
+      stranger =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          user: Fixtures.Users.create_user(),
+          role: :runner
+        )
+
+      assert Accounts.fetch_team_member_facts(owner_membership.id, stranger) ==
+               {:error, :unauthorized}
+    end
+
+    test "another account's member is :not_found", %{account: account} do
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
+      {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Accounts.fetch_team_member_facts(membership.id, other_subject) ==
+               {:error, :not_found}
+    end
+  end
+
   describe "list_memberships_for_users/3" do
     test "returns the given users' memberships, user preloaded" do
       {owner, account, subject} = Fixtures.Subjects.owner_subject()
@@ -1379,7 +1697,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "team_mfa_stats/2" do
+  describe "fetch_team_security_facts/1" do
     test "counts members and MFA enrollment account-wide (not per page)" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
@@ -1411,7 +1729,30 @@ defmodule Emisar.AccountsTest do
         role: "viewer"
       )
 
-      assert {:ok, %{total: 3, enrolled: 2}} = Accounts.team_mfa_stats(account, subject)
+      assert {:ok, %{mfa_total: 3, mfa_enrolled: 2, mfa_missing: 1}} =
+               Accounts.fetch_team_security_facts(subject)
+    end
+
+    test "the denominator is every non-deleted membership — suspended and pending too" do
+      account = Fixtures.Accounts.create_account()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        invitation_token_digest: "digest"
+      )
+
+      Fixtures.Memberships.create_membership(account_id: account.id)
+      |> Fixtures.Memberships.suspend_membership()
+
+      Fixtures.Memberships.create_membership(account_id: account.id)
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      assert {:ok, %{mfa_total: 3}} = Accounts.fetch_team_security_facts(subject)
     end
 
     test "counts only the subject's own account" do
@@ -1438,14 +1779,65 @@ defmodule Emisar.AccountsTest do
         user_id: other_member.id
       )
 
-      assert {:ok, %{total: 1, enrolled: 1}} = Accounts.team_mfa_stats(account, subject)
+      assert {:ok, %{mfa_total: 1, mfa_enrolled: 1}} =
+               Accounts.fetch_team_security_facts(subject)
     end
 
-    test "refuses a subject from another account" do
+    test "the enforcement state and SSO requirement come from the CURRENT account row" do
       account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
+
+      assert {:ok, %{mfa_enforcement: :actor_not_enrolled, sso_required?: false}} =
+               Accounts.fetch_team_security_facts(subject)
+
+      # The subject still carries the pre-enrollment user and the pre-update
+      # account; both answers have to come from the rows, not that snapshot.
+      enroll_mfa(owner)
+
+      assert {:ok, %{mfa_enforcement: :available}} = Accounts.fetch_team_security_facts(subject)
+
+      Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
+
+      {:ok, _account} =
+        Accounts.update_account(
+          account,
+          %{settings: %{require_mfa: true, require_sso: true}},
+          subject
+        )
+
+      assert {:ok, %{mfa_enforcement: :enforced, sso_required?: true}} =
+               Accounts.fetch_team_security_facts(subject)
+    end
+
+    test "refuses a subject with no account permission" do
+      account = Fixtures.Accounts.create_account()
+
+      runner_subject =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          user: Fixtures.Users.create_user(),
+          role: :runner
+        )
+
+      assert Accounts.fetch_team_security_facts(runner_subject) == {:error, :unauthorized}
+    end
+
+    test "a subject from another account reads only its own totals" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.create_membership(account_id: account.id)
       {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
-      assert Accounts.team_mfa_stats(account, other_subject) == {:error, :unauthorized}
+      assert {:ok, %{mfa_total: 1}} = Accounts.fetch_team_security_facts(other_subject)
     end
   end
 

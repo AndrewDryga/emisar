@@ -168,34 +168,211 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- list_identities_for_users/2 -------------------------------------
+  # -- list_provider_facts/2 -------------------------------------------
 
-  describe "list_identities_for_users/2" do
-    test "returns the given users' SSO/SCIM identities, provider preloaded" do
+  describe "list_provider_facts/2" do
+    test "returns presentation facts, name-ordered, and no raw configuration" do
+      {_user, account, subject} = enterprise_owner()
+      _b = provider_fixture(account, %{kind: :keycloak, name: "B-Keycloak", enabled: false})
+      _a = provider_fixture(account, %{kind: :okta, name: "A-Okta"})
+
+      assert {:ok, [first, second], _meta} = SSO.list_provider_facts(subject)
+      assert Enum.map([first, second], & &1.name) == ["A-Okta", "B-Keycloak"]
+      assert first.enabled?
+      refute second.enabled?
+
+      assert Map.keys(first) |> Enum.sort() ==
+               ~w[directory_sync? enabled? id last_synced_at name]a
+    end
+
+    test "a viewer (no manage_sso) is denied" do
+      {_owner, account, _owner_subject} = enterprise_owner()
+      _provider = provider_fixture(account)
+
+      assert {:error, :unauthorized} = SSO.list_provider_facts(viewer_in(account))
+    end
+
+    test "is account-scoped — B never sees A's connections" do
+      {_ua, account_a, _sa} = enterprise_owner()
+      {_ub, _account_b, sb} = enterprise_owner()
+      _provider = provider_fixture(account_a)
+
+      assert {:ok, [], _meta} = SSO.list_provider_facts(sb)
+    end
+  end
+
+  # -- provider_facts/1 ------------------------------------------------
+
+  describe "provider_facts/1" do
+    test "projects identity, enablement, and directory-sync state" do
+      %{provider: provider} = scim_provider()
+
+      facts = SSO.provider_facts(provider)
+
+      assert facts.id == provider.id
+      assert facts.name == provider.name
+      assert facts.enabled?
+      assert facts.directory_sync?
+      assert facts.last_synced_at == provider.scim_last_seen_at
+    end
+
+    test "an OIDC-only connection reports no directory sync" do
+      {_user, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, %{enabled: false})
+
+      facts = SSO.provider_facts(provider)
+
+      refute facts.enabled?
+      refute facts.directory_sync?
+      assert facts.last_synced_at == nil
+    end
+  end
+
+  # -- fetch_account_connection_facts/1 --------------------------------
+
+  describe "fetch_account_connection_facts/1" do
+    test "counts the account's enabled connections" do
+      {_user, account, subject} = enterprise_owner()
+      _disabled = provider_fixture(account, %{kind: :keycloak, enabled: false})
+
+      assert SSO.fetch_account_connection_facts(subject) ==
+               {:ok, %{enabled?: false, enabled_count: 0}}
+
+      _enabled = provider_fixture(account, %{kind: :okta, enabled: true})
+
+      assert SSO.fetch_account_connection_facts(subject) ==
+               {:ok, %{enabled?: true, enabled_count: 1}}
+    end
+
+    test "a viewer holds the posture permission without manage_sso" do
+      {_owner, account, _owner_subject} = enterprise_owner()
+      _provider = provider_fixture(account, %{enabled: true})
+      viewer = viewer_in(account)
+
+      assert SSO.fetch_account_connection_facts(viewer) ==
+               {:ok, %{enabled?: true, enabled_count: 1}}
+
+      assert {:error, :unauthorized} = SSO.list_provider_facts(viewer)
+    end
+
+    test "an API client holds no posture permission" do
+      {_user, account, _subject} = enterprise_owner()
+
+      api_client =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          role: :api_client,
+          permissions: Emisar.Auth.Permissions.for_role(:api_client)
+        )
+
+      assert SSO.fetch_account_connection_facts(api_client) == {:error, :unauthorized}
+    end
+
+    test "is account-scoped — A's enabled connection doesn't count for B" do
+      {_ua, account_a, _sa} = enterprise_owner()
+      {_ub, _account_b, sb} = enterprise_owner()
+      _provider = provider_fixture(account_a, %{enabled: true})
+
+      assert SSO.fetch_account_connection_facts(sb) ==
+               {:ok, %{enabled?: false, enabled_count: 0}}
+    end
+  end
+
+  # -- member_directory_facts/2 ----------------------------------------
+
+  describe "member_directory_facts/2" do
+    test "attributes a synced member to their connection" do
       %{provider: provider, subject: subject} = scim_provider()
       %{identity: identity} = provision(provider, "okta|alice")
 
-      assert {:ok, [found]} = SSO.list_identities_for_users([identity.user_id], subject)
-      assert found.id == identity.id
-      assert found.provisioned_via == :scim
-      assert found.provider.id == provider.id
-      assert found.provider.name == provider.name
+      assert {:ok, facts} = SSO.member_directory_facts([identity.user_id], subject)
+      assert Map.keys(facts) == [identity.user_id]
+      member = facts[identity.user_id]
+      assert member.directory_managed?
+      assert member.identity.provider_id == provider.id
+      assert member.identity.provider_name == provider.name
+      assert member.identity.provisioned_via == :scim
+    end
+
+    test "several identities resolve deterministically — directory-managed first" do
+      %{provider: scim, account: account, subject: subject} = scim_provider()
+      %{identity: identity} = provision(scim, "okta|alice")
+
+      oidc =
+        provider_fixture(account, %{kind: :keycloak, name: "A-Keycloak", enabled: true})
+
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: oidc.id,
+        user_id: identity.user_id
+      )
+
+      assert {:ok, facts} = SSO.member_directory_facts([identity.user_id], subject)
+      member = facts[identity.user_id]
+
+      # A-Keycloak sorts first by name, but directory sync outranks the name.
+      assert member.directory_managed?
+      assert member.identity.provider_id == scim.id
+    end
+
+    test "turning directory sync off changes the answer for an already-read member" do
+      %{provider: provider, subject: subject} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|bob")
+
+      assert {:ok, %{} = before} = SSO.member_directory_facts([identity.user_id], subject)
+      assert before[identity.user_id].directory_managed?
+
+      {:ok, _provider} = SSO.disable_scim(provider, subject)
+
+      assert {:ok, %{} = after_disable} = SSO.member_directory_facts([identity.user_id], subject)
+      refute after_disable[identity.user_id].directory_managed?
+      assert after_disable[identity.user_id].identity.provider_id == provider.id
+    end
+
+    test "a deleted connection drops the attribution entirely" do
+      %{provider: provider, subject: subject} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|carol")
+
+      assert {:ok, facts} = SSO.member_directory_facts([identity.user_id], subject)
+      assert Map.has_key?(facts, identity.user_id)
+
+      {:ok, _provider} = SSO.delete_provider(provider, subject)
+
+      assert SSO.member_directory_facts([identity.user_id], subject) == {:ok, %{}}
+    end
+
+    test "the provider join matches the identity's own account" do
+      %{provider: provider, account: account, subject: subject} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|dave")
+
+      # Another account's connection sharing the id space must never resolve:
+      # re-point the identity at it and the join drops the row.
+      {_ub, account_b, _sb} = enterprise_owner()
+      foreign = provider_fixture(account_b, %{kind: :okta, name: "Foreign"})
+
+      {1, _} =
+        UserIdentity.Query.all()
+        |> UserIdentity.Query.by_id(identity.id)
+        |> Repo.update_all(set: [provider_id: foreign.id])
+
+      assert SSO.member_directory_facts([identity.user_id], subject) == {:ok, %{}}
+      assert account.id != account_b.id
     end
 
     test "a viewer (no manage_sso) is denied" do
       %{provider: provider, account: account} = scim_provider()
-      %{identity: identity} = provision(provider, "okta|bob")
+      %{identity: identity} = provision(provider, "okta|erin")
 
       assert {:error, :unauthorized} =
-               SSO.list_identities_for_users([identity.user_id], viewer_in(account))
+               SSO.member_directory_facts([identity.user_id], viewer_in(account))
     end
 
     test "is account-scoped — B never sees A's synced members" do
       %{provider: provider} = scim_provider()
-      %{identity: identity} = provision(provider, "okta|carol")
+      %{identity: identity} = provision(provider, "okta|frank")
       {_ub, _account_b, sb} = enterprise_owner()
 
-      assert {:ok, []} = SSO.list_identities_for_users([identity.user_id], sb)
+      assert SSO.member_directory_facts([identity.user_id], sb) == {:ok, %{}}
     end
   end
 
@@ -1614,26 +1791,6 @@ defmodule Emisar.SSOTest do
       _a = provider_fixture(account_a, %{name: "A"})
 
       assert SSO.list_enabled_providers_for_account(account_b.id) == []
-    end
-  end
-
-  describe "account_has_enabled_provider?/1" do
-    test "true with an enabled connection, false when only disabled ones exist" do
-      {_user, account, _subject} = enterprise_owner()
-      _off = provider_fixture(account, %{kind: :okta, name: "Off", enabled: false})
-
-      refute SSO.account_has_enabled_provider?(account.id)
-
-      _on = provider_fixture(account, %{kind: :keycloak, name: "On", enabled: true})
-      assert SSO.account_has_enabled_provider?(account.id)
-    end
-
-    test "is scoped to the account — another account's enabled provider doesn't count" do
-      {_ua, account_a, _sa} = enterprise_owner()
-      {_ub, account_b, _sb} = enterprise_owner()
-      _a = provider_fixture(account_a, %{enabled: true})
-
-      refute SSO.account_has_enabled_provider?(account_b.id)
     end
   end
 
@@ -4782,6 +4939,76 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
 
       assert {:ok, [], _meta} = SSO.list_pending_link_requests_for_account(sb)
+    end
+  end
+
+  describe "list_pending_link_request_facts/2" do
+    setup do
+      {_owner, account, subject} = enterprise_owner()
+      %{account: account, subject: subject}
+    end
+
+    test "carries the connection's identity and its current default runner access", %{
+      account: account,
+      subject: subject
+    } do
+      provider =
+        provider_fixture(account, %{
+          name: "Okta",
+          provisioner: :manual,
+          default_runner_access_mode: :all
+        })
+
+      request = capture_request(provider, %{"sub" => "okta|a", "email" => "a@acme.test"})
+
+      assert {:ok, [facts], _meta} = SSO.list_pending_link_request_facts(subject)
+      assert facts.request.id == request.id
+      assert facts.provider.id == provider.id
+      assert facts.provider.name == "Okta"
+      assert facts.provider.enabled?
+      assert facts.default_runner_access == RunnerAccess.all()
+      assert facts.request.provider == nil
+    end
+
+    test "a disabled connection keeps its defaults", %{account: account, subject: subject} do
+      provider =
+        provider_fixture(account, %{
+          provisioner: :manual,
+          default_runner_access_mode: :all
+        })
+
+      _request = capture_request(provider, %{"sub" => "okta|b", "email" => "b@acme.test"})
+      {:ok, _provider} = SSO.update_provider(provider, %{enabled: false}, subject)
+
+      assert {:ok, [facts], _meta} = SSO.list_pending_link_request_facts(subject)
+      refute facts.provider.enabled?
+      assert facts.default_runner_access == RunnerAccess.all()
+    end
+
+    test "a deleted connection makes its request unavailable, never a silent no-access default",
+         %{account: account, subject: subject} do
+      provider =
+        provider_fixture(account, %{
+          provisioner: :manual,
+          default_runner_access_mode: :all
+        })
+
+      _request = capture_request(provider, %{"sub" => "okta|c", "email" => "c@acme.test"})
+      {:ok, _provider} = SSO.delete_provider(provider, subject)
+
+      assert {:ok, [], _meta} = SSO.list_pending_link_request_facts(subject)
+    end
+
+    test "denies a viewer (no manage_sso)", %{account: account} do
+      assert {:error, :unauthorized} = SSO.list_pending_link_request_facts(viewer_in(account))
+    end
+
+    test "is account-scoped — B never sees A's pending", %{account: account} do
+      provider = provider_fixture(account, provisioner: :manual)
+      _ = capture_request(provider, %{"sub" => "okta|a", "email" => "a@acme.test"})
+      {_ub, _account_b, sb} = enterprise_owner()
+
+      assert {:ok, [], _meta} = SSO.list_pending_link_request_facts(sb)
     end
   end
 

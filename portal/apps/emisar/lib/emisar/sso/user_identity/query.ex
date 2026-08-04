@@ -90,6 +90,9 @@ defmodule Emisar.SSO.UserIdentity.Query do
 
   # Join (if needed) + preload the identity's provider — powers the team page's
   # "synced from <provider>" attribution and the provider's synced-users list.
+  # Matched on the account as well as the id: the identity carries its own
+  # `account_id`, so joining on the id alone would let a row whose provider was
+  # moved or mis-stamped resolve a connection from another tenant.
   def with_joined_provider(queryable) do
     with_named_binding(queryable, :provider, fn queryable, binding ->
       join(
@@ -97,10 +100,31 @@ defmodule Emisar.SSO.UserIdentity.Query do
         :inner,
         [identities: i],
         provider in ^Emisar.SSO.IdentityProvider.Query.not_deleted(),
-        on: i.provider_id == provider.id,
+        on: i.provider_id == provider.id and i.account_id == provider.account_id,
         as: ^binding
       )
     end)
+  end
+
+  # Directory-managed identities first, then provider name and id — a person who
+  # holds identities on several connections always attributes to the same one
+  # instead of whichever row the database happened to return first.
+  def ordered_by_directory_precedence(queryable) do
+    queryable
+    |> with_joined_provider()
+    |> order_by([identities: i, provider: p], desc: p.scim_enabled, asc: p.name, asc: p.id)
+  end
+
+  # `{user_id, provider_id, provider_name, provisioned_via, directory_managed?}` —
+  # the roster's narrow attribution projection. The connection's configuration
+  # (secrets, claim mapping, defaults) never leaves the query.
+  def select_directory_facts(queryable) do
+    queryable
+    |> with_joined_provider()
+    |> select(
+      [identities: i, provider: p],
+      {i.user_id, i.provider_id, p.name, i.provisioned_via, p.scim_enabled}
+    )
   end
 
   def with_preloaded_provider(queryable) do

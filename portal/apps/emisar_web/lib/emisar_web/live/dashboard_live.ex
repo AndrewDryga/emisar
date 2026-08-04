@@ -120,8 +120,8 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:pending_approvals, pending)
     |> assign(:agents, agents_summary(api_keys))
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
-    |> assign(:team_mfa, team_mfa(account, subject))
-    |> assign(:sso_enabled?, SSO.account_has_enabled_provider?(account.id))
+    |> assign(:team_security, team_security(subject))
+    |> assign(:sso_enabled?, sso_enabled?(subject))
     |> assign(:pending_packs_count, Catalog.count_pack_versions_needing_decision(subject))
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
@@ -170,23 +170,24 @@ defmodule EmisarWeb.DashboardLive do
     }
   end
 
-  # Team-MFA tile data, or :unavailable when the read fails — so the tile shows
-  # "—" rather than a misleading "0 / 0" that reads as an empty team. Uses the
-  # account-wide aggregate, NOT a per-page membership tally: a team past the
-  # first page read falsely reassuring before. `missing`/`required?` (the tile's
-  # tone inputs) are derived from the account-wide totals.
-  defp team_mfa(account, subject) do
-    case Accounts.team_mfa_stats(account, subject) do
-      {:ok, %{total: total, enrolled: enrolled}} ->
-        %{
-          total: total,
-          enrolled: enrolled,
-          missing: total - enrolled,
-          required?: account.settings.require_mfa
-        }
+  # The team tile's facts, or :unavailable when the read fails — so it shows "—"
+  # rather than a misleading "0 / 0" that reads as an empty team. Accounts owns
+  # the account-wide aggregate and the enforcement state; the dashboard never
+  # recombines raw settings with a per-page membership tally, which read falsely
+  # reassuring on a team past its first page.
+  defp team_security(subject) do
+    case Accounts.fetch_team_security_facts(subject) do
+      {:ok, facts} -> facts
+      {:error, _reason} -> :unavailable
+    end
+  end
 
-      _ ->
-        :unavailable
+  # SSO owns "is this account federated?" — a denied read reads as not connected,
+  # which is what the pillar's enable-vs-manage pitch already assumes.
+  defp sso_enabled?(subject) do
+    case SSO.fetch_account_connection_facts(subject) do
+      {:ok, %{enabled?: enabled?}} -> enabled?
+      {:error, _reason} -> false
     end
   end
 
@@ -226,7 +227,7 @@ defmodule EmisarWeb.DashboardLive do
         agents={@agents}
         billing={@billing}
         can_manage_billing={Billing.subject_can_manage_billing?(@current_subject)}
-        team_mfa={@team_mfa}
+        team_security={@team_security}
         sso_enabled?={@sso_enabled?}
         pending_packs_count={@pending_packs_count}
         current_account={@current_account}
@@ -266,7 +267,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :agents, :map, required: true
   attr :billing, :map, required: true
   attr :can_manage_billing, :boolean, default: false
-  attr :team_mfa, :any, required: true
+  attr :team_security, :any, required: true
   attr :sso_enabled?, :boolean, required: true
   attr :pending_packs_count, :integer, default: 0
   attr :current_account, :map, required: true
@@ -314,7 +315,7 @@ defmodule EmisarWeb.DashboardLive do
       actions_advertised?={@actions_advertised?}
       agents_connected={@agents.connected}
       agents_total={@agents.total}
-      team_total={if is_map(@team_mfa), do: @team_mfa.total, else: 0}
+      team_total={if is_map(@team_security), do: @team_security.mfa_total, else: 0}
       current_account={@current_account}
       can_install_runners?={@can_install_runners?}
       can_issue_agent_key?={@can_issue_agent_key?}
@@ -333,7 +334,7 @@ defmodule EmisarWeb.DashboardLive do
       />
       <.agents_pillar :if={@can_view_agents?} agents={@agents} current_account={@current_account} />
       <.team_pillar
-        team_mfa={@team_mfa}
+        team_security={@team_security}
         sso_enabled?={@sso_enabled?}
         current_account={@current_account}
       />
@@ -876,11 +877,11 @@ defmodule EmisarWeb.DashboardLive do
   # providers, not enabling what's already on. Per-member 2FA posture lives on
   # the Team settings roster, where it's actionable, not as a dashboard stat.
 
-  attr :team_mfa, :any, required: true
+  attr :team_security, :any, required: true
   attr :sso_enabled?, :boolean, required: true
   attr :current_account, :map, required: true
 
-  defp team_pillar(%{team_mfa: :unavailable} = assigns) do
+  defp team_pillar(%{team_security: :unavailable} = assigns) do
     ~H"""
     <.pillar
       label="Team"
@@ -896,7 +897,7 @@ defmodule EmisarWeb.DashboardLive do
   # Solo (just the owner): the honest member count, with inviting the team as the
   # forward action. SSO is premature until there IS a team to federate, so it
   # waits for the next state.
-  defp team_pillar(%{team_mfa: %{total: total}} = assigns) when total <= 1 do
+  defp team_pillar(%{team_security: %{mfa_total: total}} = assigns) when total <= 1 do
     ~H"""
     <.pillar
       label="Team"
@@ -920,7 +921,7 @@ defmodule EmisarWeb.DashboardLive do
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/team"}
     >
-      <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
+      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-500"> members</span></:value>
       <:action>Enable SSO</:action>
     </.pillar>
     """
@@ -933,7 +934,7 @@ defmodule EmisarWeb.DashboardLive do
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/team"}
     >
-      <:value>{@team_mfa.total}<span class="text-2xl text-zinc-500"> members</span></:value>
+      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-500"> members</span></:value>
       <:action>Manage SSO providers</:action>
     </.pillar>
     """

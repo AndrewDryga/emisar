@@ -377,6 +377,23 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Only owners and admins can invite"
       refute html =~ "Invite member"
     end
+
+    test "shows connection availability without exposing connection details", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      _provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Private IdP")
+
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      _ = Fixtures.Memberships.force_role(membership, "viewer")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert html =~ "Configured — owners and admins manage connections."
+      refute html =~ "Not configured — members sign in with a magic link."
+      refute html =~ "Private IdP"
+    end
   end
 
   describe "a non-manager (operator / viewer) sees the roster read-only" do

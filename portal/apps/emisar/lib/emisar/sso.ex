@@ -45,22 +45,94 @@ defmodule Emisar.SSO do
   end
 
   @doc """
-  The SSO identities for the given member `user_ids` in the subject's account,
-  each preloaded with its provider — powers the "synced from <provider>"
-  attribution on the team page. Requires `manage_sso`; scoped to the account.
-  Returns `{:ok, [%UserIdentity{}]}`.
+  The account's connections as presentation facts, name-ordered — what a
+  rendering caller needs about each one and nothing else. Requires `manage_sso`;
+  account-scoped. Returns `{:ok, [facts], %Paginator.Metadata{}}`.
   """
-  def list_identities_for_users(user_ids, %Subject{} = subject) when is_list(user_ids) do
+  def list_provider_facts(%Subject{} = subject, opts \\ []) do
+    with {:ok, providers, metadata} <- list_providers_for_account(subject, opts) do
+      {:ok, Enum.map(providers, &provider_facts/1), metadata}
+    end
+  end
+
+  @doc """
+  One connection's presentation facts — its identity, whether it is enabled,
+  whether it runs directory sync, and when that sync last ran. Pure: the raw
+  provider carries a client secret, a SCIM token hash, and the claim/default
+  configuration, none of which a rendering caller has any business reading.
+  """
+  def provider_facts(%IdentityProvider{} = provider) do
+    %{
+      id: provider.id,
+      name: provider.name,
+      enabled?: provider.enabled,
+      directory_sync?: provider.scim_enabled,
+      last_synced_at: provider.scim_last_seen_at
+    }
+  end
+
+  @doc """
+  The account's SSO connection posture: whether any connection is currently
+  enabled, and how many. Requires the narrow `view_sso_posture` (every human
+  role) — a non-admin learns the account's stance without being handed the
+  connections. Returns `{:ok, %{enabled?: boolean, enabled_count: non_neg_integer}}`.
+  """
+  def fetch_account_connection_facts(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_sso_posture_permission()
+           ) do
+      count =
+        IdentityProvider.Query.not_deleted()
+        |> IdentityProvider.Query.enabled()
+        |> Authorizer.for_subject(subject)
+        |> Repo.aggregate(:count)
+
+      {:ok, %{enabled?: count > 0, enabled_count: count}}
+    end
+  end
+
+  @doc """
+  Directory facts for the given member `user_ids` in the subject's account: which
+  connection provisioned each person, and whether that connection currently owns
+  their directory profile. Bounded — the caller passes the ids on its page.
+
+  Read from CURRENT rows, so turning directory sync off (or deleting the
+  connection) changes the answer for a roster loaded a moment earlier. A person
+  holding identities on several connections attributes deterministically: the
+  directory-managed one wins, then provider name, then id. Requires `manage_sso`;
+  account-scoped. Returns `{:ok, %{user_id => facts}}`.
+  """
+  def member_directory_facts(user_ids, %Subject{} = subject) when is_list(user_ids) do
     with :ok <- ensure_can_manage_sso(subject) do
-      identities =
+      rows =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.by_user_ids(user_ids)
-        |> UserIdentity.Query.with_preloaded_provider()
+        |> UserIdentity.Query.ordered_by_directory_precedence()
+        |> UserIdentity.Query.select_directory_facts()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, identities}
+      {:ok, member_directory_facts_by_user_id(rows)}
     end
+  end
+
+  # The rows arrive in precedence order, so the first one per person is both the
+  # display identity and the directory-managed answer.
+  defp member_directory_facts_by_user_id(rows) do
+    Enum.reduce(rows, %{}, fn {user_id, provider_id, provider_name, provisioned_via,
+                               directory_managed?},
+                              facts ->
+      Map.put_new(facts, user_id, %{
+        identity: %{
+          provider_id: provider_id,
+          provider_name: provider_name,
+          provisioned_via: provisioned_via
+        },
+        directory_managed?: directory_managed?
+      })
+    end)
   end
 
   @doc """
@@ -929,14 +1001,6 @@ defmodule Emisar.SSO do
     |> IdentityProvider.Query.by_account_id(account_id)
     |> IdentityProvider.Query.ordered_by_name()
     |> Repo.all()
-  end
-
-  @doc "Internal — whether the account has any enabled SSO connection (the dashboard pillar's enable-vs-manage fact)."
-  def account_has_enabled_provider?(account_id) when is_binary(account_id) do
-    IdentityProvider.Query.not_deleted()
-    |> IdentityProvider.Query.enabled()
-    |> IdentityProvider.Query.by_account_id(account_id)
-    |> Repo.exists?()
   end
 
   @doc "Internal — sign-in: an enabled provider by id, for the begin-auth redirect (pre-Subject)."
@@ -3317,6 +3381,45 @@ defmodule Emisar.SSO do
       |> Authorizer.for_subject(subject)
       |> Repo.list(LinkRequest.Query, opts)
     end
+  end
+
+  @doc """
+  The account's pending manual-link requests as the approval form's facts: the
+  request, the connection it arrived through, and the runner access that
+  connection currently defaults to.
+
+  The connection is joined in the SAME paginated read, so a request whose
+  provider was deleted is simply not listed — it can never be offered with a
+  silently defaulted `RunnerAccess.none()` behind it. A DISABLED connection keeps
+  its defaults; only deletion removes the request. `manage_sso` + Team or
+  Enterprise; account-scoped. Returns `{:ok, [facts], %Paginator.Metadata{}}`.
+  """
+  def list_pending_link_request_facts(%Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_can_manage_sso(subject),
+         {:ok, requests, metadata} <- list_pending_link_requests_with_provider(subject, opts) do
+      {:ok, Enum.map(requests, &pending_link_request_facts/1), metadata}
+    end
+  end
+
+  defp list_pending_link_requests_with_provider(%Subject{} = subject, opts) do
+    LinkRequest.Query.all()
+    |> LinkRequest.Query.with_preloaded_provider()
+    |> LinkRequest.Query.ordered_by_recent()
+    |> Authorizer.for_subject(subject)
+    |> Repo.list(LinkRequest.Query, opts)
+  end
+
+  # The provider rides along only so this module can derive the facts; a caller
+  # reads the connection through `provider` and the defaults through
+  # `default_runner_access`, never off the association.
+  defp pending_link_request_facts(
+         %LinkRequest{provider: %IdentityProvider{} = provider} = request
+       ) do
+    %{
+      request: %{request | provider: nil},
+      provider: provider_facts(provider),
+      default_runner_access: provider_runner_access(provider)
+    }
   end
 
   @doc """

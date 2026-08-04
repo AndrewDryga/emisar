@@ -77,7 +77,7 @@ defmodule EmisarWeb.TeamLive do
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
   def handle_event("start_edit", %{"membership_id" => id}, socket) do
-    case find_membership(socket, id) do
+    case find_member_membership(socket, id) do
       nil ->
         {:noreply, socket}
 
@@ -101,19 +101,15 @@ defmodule EmisarWeb.TeamLive do
     {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
   end
 
+  # Re-reads the member rather than trusting the roster this page rendered: a
+  # directory that claimed their runner access since mount has to CLOSE the
+  # editor, and the socket's copy would still open it.
   def handle_event("start_scope_edit", %{"membership_id" => id}, socket) do
-    case find_membership(socket, id) do
-      %Accounts.Membership{runner_access_directory_managed: true} ->
+    case Accounts.fetch_team_member_facts(id, socket.assigns.current_subject) do
+      {:ok, %{runner_access_editable?: false}} ->
         {:noreply, put_flash(socket, :error, error_message(:runner_access_managed_by_directory))}
 
-      %Accounts.Membership{} ->
-        access =
-          Map.get(
-            socket.assigns.runner_access_by_membership,
-            id,
-            Accounts.RunnerAccess.none()
-          )
-
+      {:ok, %{runner_access: access}} ->
         {:noreply,
          socket
          |> assign(:scope_editing_id, id)
@@ -123,7 +119,7 @@ defmodule EmisarWeb.TeamLive do
          |> assign(:editing_id, nil)
          |> assign(:edit_form, nil)}
 
-      nil ->
+      {:error, _reason} ->
         {:noreply, socket}
     end
   end
@@ -168,7 +164,8 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("toggle_require_mfa", _params, socket) do
-    value = not socket.assigns.current_account.settings.require_mfa
+    enforcement = socket.assigns.security_facts.mfa_enforcement
+    value = enforcement != :enforced
 
     cond do
       not Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) ->
@@ -176,14 +173,10 @@ defmodule EmisarWeb.TeamLive do
 
       # Prevent owners from locking themselves out — if they don't have
       # MFA enabled, they can't enforce it (since the enforcement gate
-      # would funnel them too).
-      value and is_nil(socket.assigns.current_user.mfa_enabled_at) ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Enable 2FA on your own profile first — otherwise you'd lock yourself out."
-         )}
+      # would funnel them too). The domain refuses it under the write lock
+      # regardless (`:mfa_enrollment_required`); this only saves the round trip.
+      value and enforcement == :actor_not_enrolled ->
+        {:noreply, put_flash(socket, :error, error_message(:mfa_enrollment_required))}
 
       true ->
         case Accounts.update_account(
@@ -195,6 +188,7 @@ defmodule EmisarWeb.TeamLive do
             {:noreply,
              socket
              |> assign(:current_account, account)
+             |> assign_security_facts()
              |> put_flash(
                :info,
                if value do
@@ -208,6 +202,9 @@ defmodule EmisarWeb.TeamLive do
             {:noreply,
              put_flash(socket, :error, "Only owners and admins can change this setting.")}
 
+          {:error, :mfa_enrollment_required} ->
+            {:noreply, put_flash(socket, :error, error_message(:mfa_enrollment_required))}
+
           {:error, _} ->
             {:noreply, put_flash(socket, :error, "Could not update 2FA setting.")}
         end
@@ -216,7 +213,7 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("toggle_require_sso", _params, socket) do
     account = socket.assigns.current_account
-    value = not account.settings.require_sso
+    value = not socket.assigns.security_facts.sso_required?
 
     if Accounts.subject_can_manage_account_security?(socket.assigns.current_subject) do
       case Accounts.update_account(
@@ -228,6 +225,7 @@ defmodule EmisarWeb.TeamLive do
           {:noreply,
            socket
            |> assign(:current_account, account)
+           |> assign_security_facts()
            |> assign_sso_state()
            |> put_flash(
              :info,
@@ -422,7 +420,7 @@ defmodule EmisarWeb.TeamLive do
     do: {:noreply, reset_invite_form(socket)}
 
   def handle_event("resend_invitation", %{"membership_id" => id}, socket) do
-    case find_membership(socket, id) do
+    case find_member_membership(socket, id) do
       nil -> {:noreply, socket}
       %Accounts.Membership{} = membership -> do_resend_invitation(socket, membership)
     end
@@ -430,7 +428,7 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
     with true <- role in @roles,
-         %Accounts.Membership{} = membership <- find_membership(socket, id) do
+         %Accounts.Membership{} = membership <- find_member_membership(socket, id) do
       # A directory-synced member's role is the IdP's — the DOMAIN refuses the
       # change (`:role_managed_by_directory`) off the membership's own
       # `directory_managed` flag, so the UI lock is a courtesy, not the guard (IL-15).
@@ -518,7 +516,15 @@ defmodule EmisarWeb.TeamLive do
   # that powers the portal-wide verify-email banner — so there's no
   # per-LV handler here.
 
-  defp find_membership(socket, id), do: Enum.find(socket.assigns.memberships, &(&1.id == id))
+  defp find_member_facts(socket, id),
+    do: Enum.find(socket.assigns.member_facts, &(&1.membership.id == id))
+
+  defp find_member_membership(socket, id) do
+    case find_member_facts(socket, id) do
+      nil -> nil
+      facts -> facts.membership
+    end
+  end
 
   defp tap_clear_scope_edit({:noreply, %{assigns: %{flash: %{"info" => _}}} = socket}),
     do: {:noreply, assign(socket, :scope_editing_id, nil)}
@@ -532,7 +538,7 @@ defmodule EmisarWeb.TeamLive do
 
   # Repetitive plumbing: look up the membership, run `fun`, flash + reload.
   defp with_membership(socket, id, fun) do
-    case find_membership(socket, id) do
+    case find_member_membership(socket, id) do
       nil ->
         {:noreply, socket}
 
@@ -571,6 +577,9 @@ defmodule EmisarWeb.TeamLive do
 
   defp error_message(:runner_access_exceeds_subject),
     do: "You can only grant runner access that you currently have."
+
+  defp error_message(:mfa_enrollment_required),
+    do: "Enable 2FA on your own profile first — otherwise you'd lock yourself out."
 
   defp error_message(:deactivated_in_idp),
     do: "That member is deactivated in your identity provider — reactivate them there first."
@@ -664,28 +673,27 @@ defmodule EmisarWeb.TeamLive do
   defp load(socket, params) do
     opts = LiveTable.params_to_opts(params)
 
-    case Accounts.list_memberships_for_account(
+    case Accounts.list_team_member_facts(
            socket.assigns.current_account,
            socket.assigns.current_subject,
-           Keyword.put(opts, :preload, [:user])
+           opts
          ) do
-      {:ok, memberships, meta} ->
-        runner_access_by_membership = Accounts.runner_access_for_memberships(memberships)
-
-        # Which of the visible members were provisioned by an SSO/SCIM connection
-        # (and which one), so the row can attribute + link them. manage_sso-gated,
-        # so a non-SSO-admin viewing the team simply sees no sync badge.
-        identity_by_user_id =
-          case SSO.list_identities_for_users(
-                 Enum.map(memberships, & &1.user_id),
+      {:ok, member_facts, meta} ->
+        # Which of the visible members a connection provisioned (and whether it
+        # still owns their directory profile), so the row can attribute + link
+        # them. manage_sso-gated, so a non-SSO-admin viewing the team simply sees
+        # no sync badge.
+        directory_by_user_id =
+          case SSO.member_directory_facts(
+                 Enum.map(member_facts, & &1.membership.user_id),
                  socket.assigns.current_subject
                ) do
-            {:ok, identities} -> Map.new(identities, &{&1.user_id, &1})
+            {:ok, facts} -> facts
             {:error, _} -> %{}
           end
 
         # A role without view_runners (billing_manager) gets no runners rather
-        # than a MatchError crash — mirror the identities load above.
+        # than a MatchError crash — mirror the directory load above.
         runners =
           case Emisar.Runners.list_runners_for_account(socket.assigns.current_subject) do
             {:ok, runners, _} -> runners
@@ -695,18 +703,14 @@ defmodule EmisarWeb.TeamLive do
         runners_by_id = Map.new(runners, &{&1.id, &1})
 
         socket
-        |> assign(:memberships, memberships)
+        |> assign(:member_facts, member_facts)
         |> assign(:metadata, meta)
-        |> assign(
-          :mfa_stats,
-          mfa_stats(socket.assigns.current_account, socket.assigns.current_subject)
-        )
+        |> assign_security_facts()
         |> assign(:filter_params, params)
-        |> assign(:runner_access_by_membership, runner_access_by_membership)
-        |> assign(:identity_by_user_id, identity_by_user_id)
+        |> assign(:directory_by_user_id, directory_by_user_id)
         |> assign(:runners, runners)
         |> assign(:runners_by_id, runners_by_id)
-        |> assign(:current_role, current_role(memberships, socket.assigns.current_user.id))
+        |> assign(:current_role, current_role(member_facts, socket.assigns.current_user.id))
         |> assign(
           :suppressed_emails,
           suppressed_emails(socket.assigns.current_account, socket.assigns.current_subject)
@@ -719,16 +723,16 @@ defmodule EmisarWeb.TeamLive do
       # always a member of your own team, so [] means the read failed).
       {:error, _} when map_size(params) == 0 ->
         socket
-        |> assign(:memberships, [])
+        |> assign(:member_facts, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
-        |> assign(:mfa_stats, %{total: 0, enrolled: 0})
+        |> assign(:security_facts, unavailable_security_facts())
         |> assign(:filter_params, params)
-        |> assign(:runner_access_by_membership, %{})
+        |> assign(:directory_by_user_id, %{})
         |> assign(:runners, [])
         |> assign(:runners_by_id, %{})
         |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
-        |> assign(:providers, [])
+        |> assign(:provider_facts, [])
         |> assign(:require_sso_available?, false)
         |> assign(:enabled_sso_provider_count, 0)
         |> assign(:pending_requests, [])
@@ -759,38 +763,58 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  # Account-wide, not page-scoped: a security stat computed from one
-  # paginated page reads "all enrolled" while page 2 has gaps.
-  defp mfa_stats(account, subject) do
-    case Accounts.team_mfa_stats(account, subject) do
-      {:ok, stats} -> stats
-      {:error, _} -> %{total: 0, enrolled: 0}
-    end
+  # Account-wide, not page-scoped: a security stat computed from one paginated
+  # page reads "all enrolled" while page 2 has gaps. Accounts owns the counts,
+  # the enforcement state, and the SSO requirement, all read fresh — the page
+  # never recombines them from its own assigns.
+  defp assign_security_facts(socket) do
+    facts =
+      case Accounts.fetch_team_security_facts(socket.assigns.current_subject) do
+        {:ok, facts} -> facts
+        {:error, _} -> unavailable_security_facts()
+      end
+
+    assign(socket, :security_facts, facts)
   end
 
-  # SSO state for the Single sign-on rail: the providers themselves (listed
+  # A denied/failed read shows an empty, unenforced stance rather than a partial
+  # one — the roster's own load error is what tells the operator it didn't load.
+  defp unavailable_security_facts do
+    %{
+      mfa_total: 0,
+      mfa_enrolled: 0,
+      mfa_missing: 0,
+      mfa_enforcement: :actor_not_enrolled,
+      sso_required?: false
+    }
+  end
+
+  # SSO state for the Single sign-on rail: the connections themselves (listed
   # right there — Subject-gated, so a non-SSO-admin sees the enforcement status
   # but not the connections), the enabled count (drives the status / lockout
-  # guard, read ungated so every member sees the same stance), and whether
-  # requiring SSO is even possible (≥1 enabled provider).
+  # guard), and whether requiring SSO is even possible (≥1 enabled connection).
   defp assign_sso_state(socket) do
-    providers =
-      case SSO.list_providers_for_account(socket.assigns.current_subject) do
-        {:ok, providers, _meta} -> providers
+    provider_facts =
+      case SSO.list_provider_facts(socket.assigns.current_subject) do
+        {:ok, facts, _meta} -> facts
         _ -> []
       end
 
-    # Counted from the Subject-gated read, not a second unscoped one. Both facts
-    # come from the same rows the operator is actually allowed to see, and the
-    # pre-Subject helper stays where it belongs — the anonymous sign-in page.
-    count = Enum.count(providers, & &1.enabled)
+    # Every human role can read the narrow posture even when it cannot inspect
+    # connection details. That keeps the account's enforcement stance honest
+    # without handing a viewer raw provider configuration.
+    count =
+      case SSO.fetch_account_connection_facts(socket.assigns.current_subject) do
+        {:ok, %{enabled_count: count}} -> count
+        {:error, _reason} -> 0
+      end
 
     # Manual-provisioning requests waiting on an admin, across every connection —
     # the SSO hub now lives on Team, so its needs-attention queue does too. Gated
     # (manage_sso + Team plan) inside the read, so a non-SSO-admin just gets [].
     pending_requests =
-      case SSO.list_pending_link_requests_for_account(socket.assigns.current_subject) do
-        {:ok, requests, _meta} -> requests
+      case SSO.list_pending_link_request_facts(socket.assigns.current_subject) do
+        {:ok, facts, _meta} -> facts
         _ -> []
       end
 
@@ -804,43 +828,31 @@ defmodule EmisarWeb.TeamLive do
       end
 
     socket
-    |> assign(:providers, providers)
+    |> assign(:provider_facts, provider_facts)
     |> assign(:enabled_sso_provider_count, count)
     |> assign(:require_sso_available?, count > 0)
     |> assign(:pending_requests, pending_requests)
-    |> assign_approval_access(pending_requests, providers)
+    |> assign_approval_access(pending_requests)
     |> assign(:sync_stats, sync_stats)
   end
 
-  defp assign_approval_access(socket, requests, providers) do
-    provider_by_id = Map.new(providers, &{&1.id, &1})
-
+  # Each request's form opens on the runner access its own connection currently
+  # defaults to — SSO derives it, so the page never reads a provider's default
+  # fields (or has to decide what a missing connection would mean).
+  defp assign_approval_access(socket, request_facts) do
     {modes, drafts} =
-      Map.new(requests, fn request ->
-        access =
-          case Map.get(provider_by_id, request.provider_id) do
-            %SSO.IdentityProvider{} = provider -> provider_default_runner_access(provider)
-            nil -> Accounts.RunnerAccess.none()
-          end
+      Enum.reduce(request_facts, {%{}, %{}}, fn facts, {modes, drafts} ->
+        access = facts.default_runner_access
+        id = facts.request.id
 
-        {request.id,
-         {to_string(access.mode), RunnerScope.to_values(access.groups, access.runner_ids)}}
-      end)
-      |> Enum.reduce({%{}, %{}}, fn {id, {mode, draft}}, {modes, drafts} ->
-        {Map.put(modes, id, mode), Map.put(drafts, id, draft)}
+        {Map.put(modes, id, to_string(access.mode)),
+         Map.put(drafts, id, RunnerScope.to_values(access.groups, access.runner_ids))}
       end)
 
     socket
     |> assign(:approval_access_modes, modes)
     |> assign(:approval_scope_drafts, drafts)
     |> assign(:approval_scope_errors, %{})
-  end
-
-  defp provider_default_runner_access(provider) do
-    case Accounts.RunnerAccess.from_prefixed_fields(provider, :default_runner) do
-      {:ok, access} -> access
-      {:error, _reason} -> Accounts.RunnerAccess.none()
-    end
   end
 
   # -- Pending SSO access requests (manual provisioning) ----------------
@@ -898,8 +910,12 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  defp find_pending_request(socket, id),
-    do: Enum.find(socket.assigns.pending_requests, &(&1.id == id))
+  defp find_pending_request(socket, id) do
+    case Enum.find(socket.assigns.pending_requests, &(&1.request.id == id)) do
+      nil -> nil
+      facts -> facts.request
+    end
+  end
 
   defp sync_count(count, word), do: "#{count} #{word}#{if count == 1, do: "", else: "s"}"
 
@@ -933,10 +949,10 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  defp current_role(memberships, user_id) do
-    case Enum.find(memberships, &(&1.user_id == user_id)) do
+  defp current_role(member_facts, user_id) do
+    case Enum.find(member_facts, &(&1.membership.user_id == user_id)) do
       nil -> nil
-      %Accounts.Membership{role: role} -> role
+      %{membership: %Accounts.Membership{role: role}} -> role
     end
   end
 
@@ -948,15 +964,6 @@ defmodule EmisarWeb.TeamLive do
 
   defp can_manage?(%{current_subject: subject}),
     do: Accounts.subject_can_manage_team?(subject)
-
-  defp pending_invitation?(%Accounts.Membership{
-         invitation_accepted_at: nil,
-         invitation_token_digest: token_digest
-       })
-       when is_binary(token_digest),
-       do: true
-
-  defp pending_invitation?(_membership), do: false
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset, as: "invite"))
@@ -1156,9 +1163,10 @@ defmodule EmisarWeb.TeamLive do
         />
         <ul class="divide-y divide-zinc-800/70">
           <li
-            :for={request <- @pending_requests}
+            :for={request_facts <- @pending_requests}
             class="flex flex-wrap items-center justify-between gap-3 py-3.5"
           >
+            <% request = request_facts.request %>
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <span class="truncate text-sm text-zinc-200">
@@ -1273,22 +1281,24 @@ defmodule EmisarWeb.TeamLive do
               layout={:cards}
               id="members"
               path={~p"/app/#{@current_account}/settings/team"}
-              rows={@memberships}
+              rows={@member_facts}
               metadata={@metadata}
               filter_params={@filter_params}
               wrapper_class="divide-y divide-zinc-800/70"
             >
               <%!-- CONTENT ON CANVAS: hairline member rows on the page rail. The
                avatar stays — it's the ONE identity disc, not decoration. --%>
-              <:item :let={membership}>
+              <:item :let={member}>
                 <li class="py-4">
+                  <% membership = member.membership %>
+                  <% directory = Map.get(@directory_by_user_id, membership.user_id) %>
                   <%!-- On a phone the role/Actions controls stack BELOW the
                    name+email instead of cramming the row (which truncated
                    "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
                   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                     <div class={[
                       "flex min-w-0 flex-1 items-start gap-4",
-                      Accounts.Membership.disabled?(membership) && "opacity-60"
+                      member.disabled? && "opacity-60"
                     ]}>
                       <.avatar name={Accounts.member_display_name(membership, membership.user) || "?"} />
 
@@ -1303,14 +1313,14 @@ defmodule EmisarWeb.TeamLive do
                           >
                             {Accounts.member_display_name(membership, membership.user) || "(unknown)"}
                           </span>
-                          <.chip :if={Accounts.Membership.disabled?(membership)} tone={:amber}>
+                          <.chip :if={member.disabled?} tone={:amber}>
                             Suspended
                           </.chip>
                           <%!-- Unconfirmed = signed up but never clicked the
                          email confirmation link. Useful signal when an
                          admin is wondering why a member can't sign in. --%>
                           <.chip
-                            :if={membership.user && is_nil(membership.user.confirmed_at)}
+                            :if={member.confirmation_pending?}
                             tone={:amber}
                             title="This user signed up but hasn't confirmed their email."
                           >
@@ -1340,17 +1350,14 @@ defmodule EmisarWeb.TeamLive do
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
                           <.mfa_badge
-                            user={membership.user}
-                            require_mfa?={@current_account.settings.require_mfa}
+                            enrolled?={member.mfa_enrolled?}
+                            require_mfa?={@security_facts.mfa_enforcement == :enforced}
                           />
                           <%!-- Provisioned by an SSO/SCIM connection? Attribute + link
                          it, so an admin can see where this member came from and
                          jump to the provider. Renders nothing for a manually-added
                          member (or when the viewer can't read SSO). --%>
-                          <.sync_badge
-                            identity={Map.get(@identity_by_user_id, membership.user_id)}
-                            account={@current_account}
-                          />
+                          <.sync_badge directory={directory} account={@current_account} />
                           <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
                             You
                           </.chip>
@@ -1370,12 +1377,7 @@ defmodule EmisarWeb.TeamLive do
                             mode={:relative}
                           /> ·{" "}<.sign_in_status user={membership.user} />
                         </div>
-                        <% access =
-                          Map.get(
-                            @runner_access_by_membership,
-                            membership.id,
-                            Emisar.Accounts.RunnerAccess.none()
-                          ) %>
+                        <% access = member.runner_access %>
                         <div class="mt-1 flex flex-wrap items-center gap-1">
                           <span class="text-[10px] uppercase tracking-wider text-zinc-400">
                             runner access:
@@ -1397,9 +1399,8 @@ defmodule EmisarWeb.TeamLive do
                     </div>
 
                     <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
-                      <% identity = Map.get(@identity_by_user_id, membership.user_id) %>
                       <%= cond do %>
-                        <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) and directory_managed?(identity) -> %>
+                        <% can_manage?(assigns) and not member.self_owner? and not member.role_editable? -> %>
                           <%!-- Synced role: the IdP owns it (a role mapping, or the
                          provider default), so directory sync recomputes it and a manual
                          change here silently reverts. Read-only, pointing to where the
@@ -1407,13 +1408,13 @@ defmodule EmisarWeb.TeamLive do
                           <.tooltip
                             id={"role-lock-#{membership.id}"}
                             class="shrink-0"
-                            text={"Role is managed by #{identity.provider.name} — change it in your identity provider"}
+                            text={"Role is managed by #{directory_label(directory)} — change it in your identity provider"}
                           >
                             <.chip icon="hero-lock-closed-mini">
                               {Emisar.Auth.role_label(membership.role)}
                             </.chip>
                           </.tooltip>
-                        <% can_manage?(assigns) and not self_owner?(membership, @current_user.id) -> %>
+                        <% can_manage?(assigns) and member.role_editable? -> %>
                           <%!-- A role change is a privilege grant — a dropdown (same skin as
                          the Actions menu beside it) whose items each OPEN their own styled
                          confirm modal (not a native data-confirm — we use our own dialogs
@@ -1445,12 +1446,12 @@ defmodule EmisarWeb.TeamLive do
                       <% end %>
 
                       <.member_actions
-                        membership={membership}
+                        member={member}
                         current_user_id={@current_user.id}
                         can_manage?={can_manage?(assigns)}
                         current_account={@current_account}
                         typed={@typed}
-                        name_locked?={directory_managed?(identity)}
+                        name_locked?={directory_managed?(directory)}
                       />
                     </div>
                   </div>
@@ -1462,7 +1463,7 @@ defmodule EmisarWeb.TeamLive do
                   <.confirm_dialog
                     :for={role <- @roles}
                     :if={
-                      can_manage?(assigns) and not self_owner?(membership, @current_user.id) and
+                      can_manage?(assigns) and member.role_editable? and
                         role != to_string(membership.role)
                     }
                     id={"change-role-#{membership.id}-#{role}"}
@@ -1603,7 +1604,7 @@ defmodule EmisarWeb.TeamLive do
           <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
 
           <%!-- ── Two-factor authentication ── --%>
-          <% unenrolled = @mfa_stats.total - @mfa_stats.enrolled %>
+          <% unenrolled = @security_facts.mfa_missing %>
           <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
           <div class="rounded-xl border border-zinc-800/80 p-4">
             <h4 class="text-sm font-medium text-zinc-100">Two-factor authentication</h4>
@@ -1618,32 +1619,37 @@ defmodule EmisarWeb.TeamLive do
                 <span class="text-zinc-400">
                   2FA enrolled:
                   <span id="mfa-enrolled-count" class="font-medium tabular-nums text-zinc-200">
-                    {@mfa_stats.enrolled}
+                    {@security_facts.mfa_enrolled}
                   </span>
-                  of <span class="font-medium tabular-nums text-zinc-200">{@mfa_stats.total}</span>
+                  of
+                  <span class="font-medium tabular-nums text-zinc-200">
+                    {@security_facts.mfa_total}
+                  </span>
                 </span>
               </span>
-              <.chip :if={@current_account.settings.require_mfa} tone={:brand}>Enforced</.chip>
+              <.chip :if={@security_facts.mfa_enforcement == :enforced} tone={:brand}>
+                Enforced
+              </.chip>
             </p>
             <div class="mt-4">
               <%= if Accounts.subject_can_manage_account_security?(@current_subject) do %>
-                <%= if mfa_enforcement_disabled?(@current_account, @current_user) do %>
+                <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
                   <.tooltip
                     text="Enable 2FA on your own profile first — otherwise you'd lock yourself out."
                     placement={:bottom}
                     class="shrink-0"
                   >
                     <.mfa_confirm_button
-                      require_mfa={@current_account.settings.require_mfa}
-                      total={@mfa_stats.total}
+                      require_mfa={false}
+                      total={@security_facts.mfa_total}
                       unenrolled={unenrolled}
                       disabled={true}
                     />
                   </.tooltip>
                 <% else %>
                   <.mfa_confirm_button
-                    require_mfa={@current_account.settings.require_mfa}
-                    total={@mfa_stats.total}
+                    require_mfa={@security_facts.mfa_enforcement == :enforced}
+                    total={@security_facts.mfa_total}
                     unenrolled={unenrolled}
                     disabled={false}
                   />
@@ -1670,17 +1676,17 @@ defmodule EmisarWeb.TeamLive do
             </p>
             <%!-- The whole list fits: a connection is unique per provider kind
                  (one Okta, one Google, …), so there are at most a handful. --%>
-            <ul :if={@providers != []} class="mt-3 space-y-0.5">
-              <li :for={provider <- @providers}>
+            <ul :if={@provider_facts != []} class="mt-3 space-y-0.5">
+              <li :for={provider <- @provider_facts}>
                 <.link
                   id={"sso-provider-#{provider.id}"}
                   navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                  class="group -mx-2 flex items-center gap-2.5 rounded-md px-2 py-2 transition hover:bg-white/[0.04]"
+                  class="group -mx-2 flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-white/[0.04]"
                 >
                   <div class="min-w-0 flex-1">
                     <span class="flex items-center gap-2 text-sm leading-tight text-zinc-200">
                       <span class="truncate">{provider.name}</span>
-                      <span :if={not provider.enabled} class="shrink-0 text-[10px] text-zinc-400">
+                      <span :if={not provider.enabled?} class="shrink-0 text-[10px] text-zinc-400">
                         Disabled
                       </span>
                     </span>
@@ -1689,20 +1695,20 @@ defmodule EmisarWeb.TeamLive do
                          groups) and how fresh it is. Only for a SCIM connection; JIT
                          provisions on sign-in and has nothing to show here. --%>
                     <span
-                      :if={provider.scim_enabled}
+                      :if={provider.directory_sync?}
                       class="mt-0.5 block text-[11px] leading-tight text-zinc-400"
                     >
                       <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
                       {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
-                      <span :if={provider.scim_last_seen_at} class="text-brand-300/90">
+                      <span :if={provider.last_synced_at} class="text-brand-300/90">
                         · synced
                         <.local_time
                           id={"provider-synced-#{provider.id}"}
-                          value={provider.scim_last_seen_at}
+                          value={provider.last_synced_at}
                           mode={:relative}
                         />
                       </span>
-                      <span :if={is_nil(provider.scim_last_seen_at)} class="text-amber-300/90">
+                      <span :if={is_nil(provider.last_synced_at)} class="text-amber-300/90">
                         · never synced
                       </span>
                     </span>
@@ -1715,10 +1721,16 @@ defmodule EmisarWeb.TeamLive do
               </li>
             </ul>
             <p
-              :if={@providers == [] and @enabled_sso_provider_count == 0}
+              :if={@provider_facts == [] and @enabled_sso_provider_count == 0}
               class="mt-3 text-xs text-zinc-400"
             >
               Not configured — members sign in with a magic link.
+            </p>
+            <p
+              :if={@provider_facts == [] and @enabled_sso_provider_count > 0}
+              class="mt-3 text-xs text-zinc-400"
+            >
+              Configured — owners and admins manage connections.
             </p>
             <div class="mt-4">
               <%= cond do %>
@@ -1740,7 +1752,7 @@ defmodule EmisarWeb.TeamLive do
             </div>
             <%!-- The branded sign-in link to hand to members — only once there's a
                  connection to sign in through. --%>
-            <div :if={@providers != []} class="mt-4 border-t border-zinc-800/70 pt-3">
+            <div :if={@provider_facts != []} class="mt-4 border-t border-zinc-800/70 pt-3">
               <p class="text-[11px] font-medium text-zinc-300">Team sign-in link</p>
               <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
                 Share this — it opens this team's sign-in page with your SSO connections.
@@ -1754,7 +1766,7 @@ defmodule EmisarWeb.TeamLive do
           <div class="rounded-xl border border-zinc-800/80 p-4">
             <div class="flex items-center justify-between gap-3">
               <h4 class="text-sm font-medium text-zinc-100">Require single sign-on</h4>
-              <.chip :if={@current_account.settings.require_sso} tone={:brand}>Required</.chip>
+              <.chip :if={@security_facts.sso_required?} tone={:brand}>Required</.chip>
             </div>
             <p class="mt-1 text-xs leading-relaxed text-zinc-400">
               When required, members sign in through this account's identity provider — magic-link
@@ -1764,7 +1776,7 @@ defmodule EmisarWeb.TeamLive do
               <%= cond do %>
                 <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
                   <span class="text-[11px] text-zinc-400">Owner/admin only</span>
-                <% @current_account.settings.require_sso -> %>
+                <% @security_facts.sso_required? -> %>
                   <.confirm_button
                     id="require-sso"
                     variant={:secondary}
@@ -1892,10 +1904,10 @@ defmodule EmisarWeb.TeamLive do
   end
 
   # Inline action menu for a single member row. Hidden for the actor's
-  attr :user, :map, default: nil
+  attr :enrolled?, :boolean, required: true
   attr :require_mfa?, :boolean, required: true
 
-  defp mfa_badge(%{user: %{mfa_enabled_at: %DateTime{}}} = assigns) do
+  defp mfa_badge(%{enrolled?: true} = assigns) do
     ~H"""
     <.chip
       tone={:brand}
@@ -1924,27 +1936,29 @@ defmodule EmisarWeb.TeamLive do
   # unenforced account carries zero discrimination (default ≠ signal).
   defp mfa_badge(assigns), do: ~H""
 
-  attr :identity, :any, default: nil
+  attr :directory, :any, default: nil
   attr :account, :map, required: true
 
   # A linked chip attributing a member to the SSO/SCIM connection that
   # provisioned them — SCIM directory sync, an SSO first-login (JIT), or an admin
   # approving a link request — and jumping to that provider. A manually-added
-  # member (nil identity) renders nothing.
-  defp sync_badge(%{identity: nil} = assigns), do: ~H""
+  # member (no directory facts) renders nothing.
+  defp sync_badge(%{directory: nil} = assigns), do: ~H""
 
   defp sync_badge(assigns) do
+    assigns = assign(assigns, :identity, assigns.directory.identity)
+
     ~H"""
     <.link
       navigate={~p"/app/#{@account}/settings/sso/#{@identity.provider_id}"}
       class="inline-flex items-center gap-1 rounded-md bg-zinc-800/70 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 ring-1 ring-inset ring-white/10 transition hover:bg-zinc-700/70 hover:text-zinc-100"
-      title={"Provisioned via #{provisioned_via_label(@identity.provisioned_via)} — #{@identity.provider.name}"}
+      title={"Provisioned via #{provisioned_via_label(@identity.provisioned_via)} — #{@identity.provider_name}"}
     >
       <%!-- A directory SOURCE is identity metadata, not a pass state — the sync
            glyph stays neutral zinc (brand green is reserved for healthy/pass),
            so a roster of synced members doesn't paint itself green. --%>
       <.icon name="hero-arrow-path" class="h-3 w-3 text-zinc-400" />
-      {provisioned_via_label(@identity.provisioned_via)} · {@identity.provider.name}
+      {provisioned_via_label(@identity.provisioned_via)} · {@identity.provider_name}
     </.link>
     """
   end
@@ -1955,7 +1969,7 @@ defmodule EmisarWeb.TeamLive do
   defp provisioned_via_label(_), do: "Synced"
 
   # own row (use Profile) and short-circuited for non-managers.
-  attr :membership, :map, required: true
+  attr :member, :map, required: true
   attr :current_user_id, :string, required: true
   attr :can_manage?, :boolean, required: true
   attr :current_account, :map, required: true
@@ -1963,12 +1977,14 @@ defmodule EmisarWeb.TeamLive do
   attr :name_locked?, :boolean, required: true
 
   defp member_actions(assigns) do
+    assigns = assign(assigns, :membership, assigns.member.membership)
+
     ~H"""
     <%= cond do %>
       <% @membership.user_id == @current_user_id -> %>
         <div class="flex shrink-0 items-center gap-2">
           <.button
-            :if={@membership.user && is_nil(@membership.user.confirmed_at)}
+            :if={@member.resend_confirmation?}
             variant={:ghost}
             tone={:brand}
             size={:sm}
@@ -2019,14 +2035,14 @@ defmodule EmisarWeb.TeamLive do
             Edit name
           </.menu_item>
           <.menu_item
-            :if={not @membership.runner_access_directory_managed}
+            :if={@member.runner_access_editable?}
             phx-click="start_scope_edit"
             phx-value-membership_id={@membership.id}
           >
             Set runner access
           </.menu_item>
           <.menu_item
-            :if={Emisar.Accounts.Membership.disabled?(@membership)}
+            :if={@member.disabled?}
             tone={:brand}
             phx-click="reinstate"
             phx-value-membership_id={@membership.id}
@@ -2034,17 +2050,14 @@ defmodule EmisarWeb.TeamLive do
             Restore access
           </.menu_item>
           <.menu_item
-            :if={not Emisar.Accounts.Membership.disabled?(@membership)}
+            :if={not @member.disabled?}
             tone={:amber}
             phx-click={open_confirm("suspend-#{@membership.id}")}
           >
             Suspend access
           </.menu_item>
           <.menu_item
-            :if={
-              pending_invitation?(@membership) and
-                not Emisar.Accounts.Membership.disabled?(@membership)
-            }
+            :if={@member.resend_invitation?}
             phx-click="resend_invitation"
             phx-value-membership_id={@membership.id}
             icon="hero-paper-airplane"
@@ -2058,7 +2071,7 @@ defmodule EmisarWeb.TeamLive do
                the confirm spells out the account-takeover risk if the
                admin is wrong about who's really asking. --%>
           <.menu_item
-            :if={@membership.user && not is_nil(@membership.user.mfa_enabled_at)}
+            :if={@member.reset_mfa?}
             tone={:amber}
             phx-click={open_confirm("reset-2fa-#{@membership.id}")}
           >
@@ -2083,7 +2096,7 @@ defmodule EmisarWeb.TeamLive do
              the typed Remove dialog below; each mirrors its trigger's `:if`
              so no orphan dialog renders when the action isn't offered. --%>
         <.confirm_dialog
-          :if={not Emisar.Accounts.Membership.disabled?(@membership)}
+          :if={not @member.disabled?}
           id={"suspend-#{@membership.id}"}
           title="Suspend this member?"
           confirm_label="Suspend member"
@@ -2096,7 +2109,7 @@ defmodule EmisarWeb.TeamLive do
         </.confirm_dialog>
 
         <.confirm_dialog
-          :if={@membership.user && not is_nil(@membership.user.mfa_enabled_at)}
+          :if={@member.reset_mfa?}
           id={"reset-2fa-#{@membership.id}"}
           title="Reset this member's 2FA?"
           confirm_label="Reset 2FA"
@@ -2150,14 +2163,6 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
-  defp self_owner?(%Accounts.Membership{user_id: uid, role: :owner}, user_id) when uid == user_id,
-    do: true
-
-  defp self_owner?(_, _), do: false
-
-  defp mfa_enforcement_disabled?(account, user),
-    do: not account.settings.require_mfa and is_nil(user.mfa_enabled_at)
-
   defp mfa_confirm_button(assigns) do
     ~H"""
     <.confirm_button
@@ -2189,14 +2194,17 @@ defmodule EmisarWeb.TeamLive do
     """
   end
 
-  # A member whose role is authoritatively the IdP's: they carry an identity for a
-  # provider with directory sync (SCIM) enabled, so the sync recomputes their role
-  # (group→role mapping, else the provider default) and any manual change here would
-  # be silently overwritten. Role is read-only for them — in the roster AND in the
-  # change_role handler. A nil identity (not synced) or an OIDC-only provider (no
-  # directory sync) stays editable.
+  # A member whose PROFILE is authoritatively the IdP's: they hold an identity on
+  # a connection that currently runs directory sync, so a rename here would be
+  # silently overwritten (the domain refuses it with `:directory_managed_profile`).
+  # No directory facts (not synced) or an OIDC-only connection stays editable.
   defp directory_managed?(nil), do: false
-  defp directory_managed?(identity), do: identity.provider.scim_enabled
+  defp directory_managed?(directory), do: directory.directory_managed?
+
+  # Names the connection a lock points at; a member the roster can see but whose
+  # directory facts the viewer can't read still gets a sentence that makes sense.
+  defp directory_label(nil), do: "your identity provider"
+  defp directory_label(directory), do: directory.identity.provider_name
 
   # A member the directory (SCIM) has deactivated (`scim_active: false`) — the IdP
   # revoked their access, so emisar keeps them suspended and won't reinstate them here

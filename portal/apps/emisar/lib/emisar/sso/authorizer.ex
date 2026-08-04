@@ -10,10 +10,17 @@ defmodule Emisar.SSO.Authorizer do
   alias Emisar.SSO.UserIdentity
 
   def manage_sso_permission, do: build(IdentityProvider, :manage)
+  # Deliberately narrower than manage_sso: it answers "is this account signing in
+  # through an identity provider?" and nothing else, so every human role can read
+  # the account's stance without being handed the connections themselves.
+  def view_sso_posture_permission, do: build(IdentityProvider, :view_posture)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
-    do: [manage_sso_permission()]
+    do: [manage_sso_permission(), view_sso_posture_permission()]
+
+  def list_permissions_for_role(role) when role in [:billing_manager, :operator, :viewer],
+    do: [view_sso_posture_permission()]
 
   def list_permissions_for_role(_), do: []
 

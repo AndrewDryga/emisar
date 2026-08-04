@@ -38,6 +38,30 @@ defmodule Emisar.SSO.LinkRequest.Query do
     |> preload([requests: r, account: account], account: account)
   end
 
+  # Join (if needed) the request's live connection, matched on the account as well
+  # as the id so a request can never resolve a provider from another tenant. Inner
+  # join by design: a request whose connection was deleted is unavailable rather
+  # than silently offered with no defaults behind it.
+  def with_joined_provider(queryable) do
+    with_named_binding(queryable, :provider, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [requests: r],
+        provider in ^Emisar.SSO.IdentityProvider.Query.not_deleted(),
+        on: r.provider_id == provider.id and r.account_id == provider.account_id,
+        as: ^binding
+      )
+    end)
+  end
+
+  @doc "Join (if needed) and preload the request's connection. See `with_joined_provider/1`."
+  def with_preloaded_provider(queryable) do
+    queryable
+    |> with_joined_provider()
+    |> preload([requests: r, provider: provider], provider: provider)
+  end
+
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:requests, :desc, :inserted_at}, {:requests, :desc, :id}]

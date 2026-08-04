@@ -9,16 +9,35 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   alias Emisar.{Accounts, Auth}
 
   setup %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    owner_subject = owner_subject(owner, account)
+    {_owner, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject)
 
     {:ok, account} =
       Accounts.update_account(
         account,
         %{settings: %{require_mfa: true}},
-        owner_subject(user, account)
+        owner_subject
       )
 
-    %{conn: conn, user: user, account: account}
+    user = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "viewer"
+      )
+
+    conn = build_conn() |> log_in_user(user)
+
+    %{
+      conn: conn,
+      user: user,
+      owner: owner,
+      subject: Fixtures.Subjects.membership_subject(membership),
+      account: account
+    }
   end
 
   test "a non-compliant member is forwarded from /app to the setup step", %{
@@ -80,13 +99,12 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
   test "an already-compliant member is sent straight to the dashboard", %{
     conn: conn,
-    user: user,
-    account: account
+    subject: subject
   } do
     secret = Auth.generate_mfa_secret()
 
     {:ok, _user, _codes} =
-      Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), owner_subject(user, account))
+      Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
 
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
   end
@@ -157,7 +175,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
   test "an account that stops requiring MFA mid-flow sends the member to the dashboard", %{
     conn: conn,
-    user: user,
+    owner: owner,
     account: account
   } do
     # the interstitial exists only to enforce `require_mfa`.
@@ -168,7 +186,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       Accounts.update_account(
         account,
         %{settings: %{require_mfa: false}},
-        owner_subject(user, account)
+        owner_subject(owner, account)
       )
 
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
@@ -207,7 +225,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     test "gate + setup page agree: an enrolled member is exempt from both", %{
       conn: conn,
-      user: user,
+      subject: subject,
       account: account
     } do
       # the gate's exemptions (enrolled / SSO-satisfies /
@@ -220,7 +238,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
         Auth.enable_mfa(
           secret,
           NimbleTOTP.verification_code(secret),
-          owner_subject(user, account)
+          subject
         )
 
       # Gate: a normal page mounts (no redirect to setup).
