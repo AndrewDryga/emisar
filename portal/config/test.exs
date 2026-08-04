@@ -52,6 +52,7 @@ config :logger, level: :warning
 # work stays inside the caller's sandbox checkout.
 config :emisar, Emisar.Accounts.Jobs.MonthlyReports, enabled: false
 config :emisar, Emisar.Approvals.Jobs.ExpireOverdueRequests, enabled: false
+config :emisar, Emisar.ApiKeys.Jobs.DeviceGrantCleanup, enabled: false
 config :emisar, Emisar.Audit.Jobs.Retention, enabled: false
 config :emisar, Emisar.Billing.Jobs.SyncPaddleCustomers, enabled: false
 config :emisar, Emisar.Billing.Jobs.SyncSubscriptions, enabled: false
