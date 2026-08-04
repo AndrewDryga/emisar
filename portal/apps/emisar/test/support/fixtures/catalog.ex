@@ -101,6 +101,38 @@ defmodule Emisar.Fixtures.Catalog do
     pack_version
   end
 
+  @doc """
+  Inserts a pack version row in an exact historical trust state — `trust_state`,
+  `hash`, and `pending_hash` are written verbatim. Every trust mutator judges the
+  current row before writing, so the states an earlier release left behind can
+  only be arranged here: a never-trusted `:pending` row whose bytes the compiled
+  baseline now carries, a `:rejected` row that still remembers the refused bytes,
+  or a trusted row with drift parked on it. Defaults to a never-trusted
+  `:pending` `acme-tools@9.9`.
+  """
+  def create_observed_pack_version(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    account_id = attrs[:account_id] || raise ":account_id is required"
+    now = DateTime.utc_now()
+
+    params = %{
+      account_id: account_id,
+      pack_id: attrs[:pack_id] || "acme-tools",
+      version: attrs[:version] || "9.9",
+      hash: if(attrs[:hash], do: pack_hash(attrs[:hash])),
+      pending_hash: pack_hash(attrs[:pending_hash] || "observed-fixture"),
+      trust_state: attrs[:trust_state] || :pending,
+      first_seen_at: now,
+      last_seen_at: now
+    }
+
+    {:ok, pack_version} =
+      Catalog.PackVersion.Changeset.insert(params)
+      |> Repo.insert()
+
+    pack_version
+  end
+
   @doc "Test helper: backdate a pack version's `last_seen_at` (retention sweeps)."
   def backdate_pack_version_last_seen(
         %Catalog.PackVersion{} = pack_version,

@@ -151,6 +151,32 @@ defmodule Emisar.CatalogTest do
     pack_id <> "@1.0.0/" <> hash
   end
 
+  # The compiled PackBaseline is release-frozen, so a baseline decision can only
+  # be exercised against a pack the shipped catalog really carries.
+  defp shipped_pack do
+    Application.app_dir(:emisar, "priv/packs/catalog.json")
+    |> File.read!()
+    |> Jason.decode!()
+    |> Map.fetch!("packs")
+    |> List.first()
+  end
+
+  defp shipped_pack_without_manifest do
+    Application.app_dir(:emisar, "priv/packs/catalog.json")
+    |> File.read!()
+    |> Jason.decode!()
+    |> Map.fetch!("packs")
+    |> Enum.find_value(fn pack ->
+      Enum.find(pack["previous_versions"] || [], &is_nil(&1["actions"]))
+      |> then(&if(&1, do: Map.put(&1, "id", pack["id"])))
+    end)
+  end
+
+  defp shipped_pack_payload(pack, hash, opts \\ []) do
+    packs = %{pack["id"] => %{"version" => pack["version"], "hash" => hash}}
+    state_payload(Keyword.put(opts, :packs, packs))
+  end
+
   # The model-facing reads expose only an exact hash an operator already
   # trusted, so every snapshot test arranges that decision explicitly.
   defp trust_advertised_packs(subject) do
@@ -813,6 +839,262 @@ defmodule Emisar.CatalogTest do
       assert {:ok, [repaired], _} = Catalog.list_pack_versions(subject)
       assert {:ok, manifest} = Catalog.trusted_manifest_for_static_reads(repaired)
       assert map_size(manifest["actions"]) == length(pack["actions"])
+    end
+
+    test "a never-trusted pending row is auto-trusted once the baseline carries its bytes" do
+      pack = shipped_pack()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        pending_hash: pack["content_hash"]
+      )
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner, shipped_pack_payload(pack, pack["content_hash"]))
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :trusted
+      assert pack_version.hash == pack["content_hash"]
+      assert pack_version.pending_hash == nil
+    end
+
+    test "reconciliation trusts the release-frozen manifest, never the advertised prose" do
+      pack = shipped_pack()
+      [catalog_action | _] = pack["actions"]
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        pending_hash: pack["content_hash"]
+      )
+
+      payload =
+        shipped_pack_payload(pack, pack["content_hash"],
+          actions: [
+            action(catalog_action["id"],
+              pack_id: pack["id"],
+              description: "attacker-authored replacement prose"
+            )
+          ]
+        )
+
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, manifest} = Catalog.trusted_manifest_for_static_reads(pack_version)
+      assert map_size(manifest["actions"]) == length(pack["actions"])
+
+      descriptor = manifest["actions"][catalog_action["id"]]
+      assert descriptor["description"] == catalog_action["description"]
+    end
+
+    test "reconciliation records its own system-actor audit event with the adopted hashes" do
+      pack = shipped_pack()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      stale =
+        Fixtures.Catalog.create_observed_pack_version(
+          account_id: account.id,
+          pack_id: pack["id"],
+          version: pack["version"],
+          pending_hash: pack["content_hash"]
+        )
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner, shipped_pack_payload(pack, pack["content_hash"]))
+
+      {:ok, events, _} = Audit.list_events(subject)
+      audit = Enum.find(events, &(&1.event_type == "pack_trust_baseline_reconciled"))
+
+      assert audit, "expected a pack_trust_baseline_reconciled audit row"
+      assert audit.actor_kind == "system"
+      assert audit.target_kind == "pack_version"
+      assert audit.target_id == stale.id
+      assert audit.target_label == "#{pack["id"]}@#{pack["version"]}"
+      # The payload reports the row AFTER the flip — the bytes are trusted now,
+      # and nothing is left pending.
+      assert audit.payload["trusted_hash"] == pack["content_hash"]
+      assert audit.payload["pending_hash"] == nil
+      assert audit.payload["advertised"] == pack["content_hash"]
+      assert audit.payload["baseline"] == pack["content_hash"]
+    end
+
+    test "reconciliation broadcasts the account's pack-trust change" do
+      pack = shipped_pack()
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      account_id = account.id
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account_id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        pending_hash: pack["content_hash"]
+      )
+
+      Catalog.subscribe_account_packs(account_id)
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner, shipped_pack_payload(pack, pack["content_hash"]))
+
+      assert_receive {:pack_trust_changed, ^account_id}
+    end
+
+    test "concurrent reconciliation records and broadcasts the transition once" do
+      pack = shipped_pack()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner_one = Fixtures.Runners.create_runner(account_id: account.id)
+      runner_two = Fixtures.Runners.create_runner(account_id: account.id)
+      account_id = account.id
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account_id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        pending_hash: pack["content_hash"]
+      )
+
+      Catalog.subscribe_account_packs(account_id)
+      payload = shipped_pack_payload(pack, pack["content_hash"])
+
+      results =
+        [runner_one, runner_two]
+        |> Task.async_stream(&Catalog.observe_state(&1, payload), max_concurrency: 2)
+        |> Enum.map(fn {:ok, result} -> result end)
+
+      assert Enum.all?(results, &match?({:ok, _}, &1))
+      assert_receive {:pack_trust_changed, ^account_id}
+      refute_receive {:pack_trust_changed, _}
+
+      {:ok, events, _} = Audit.list_events(subject)
+
+      assert Enum.count(events, &(&1.event_type == "pack_trust_baseline_reconciled")) == 1
+    end
+
+    test "a rejected row stays rejected even when the baseline carries its refused bytes" do
+      pack = shipped_pack()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        pending_hash: pack["content_hash"],
+        trust_state: :rejected
+      )
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner, shipped_pack_payload(pack, pack["content_hash"]))
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :rejected
+      assert pack_version.hash == nil
+      assert pack_version.pending_hash == pack["content_hash"]
+    end
+
+    test "drift over a trusted hash stays pending — adopting it remains the operator's call" do
+      pack = shipped_pack()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        hash: "operator-trusted",
+        pending_hash: pack["content_hash"]
+      )
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner, shipped_pack_payload(pack, pack["content_hash"]))
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :pending
+      assert pack_version.hash == Fixtures.Catalog.pack_hash("operator-trusted")
+      assert pack_version.pending_hash == pack["content_hash"]
+    end
+
+    test "a never-trusted pending hash the baseline does not carry stays pending" do
+      pack = shipped_pack()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        pending_hash: "rebuilt-locally"
+      )
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner, shipped_pack_payload(pack, "rebuilt-locally"))
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :pending
+      assert pack_version.hash == nil
+      assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("rebuilt-locally")
+    end
+
+    test "a baseline entry without a release manifest stays pending" do
+      pack = shipped_pack_without_manifest()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        pending_hash: pack["content_hash"]
+      )
+
+      payload =
+        state_payload(
+          packs: %{
+            pack["id"] => %{
+              "version" => pack["version"],
+              "hash" => pack["content_hash"]
+            }
+          }
+        )
+
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :pending
+      assert pack_version.hash == nil
+      assert pack_version.pending_hash == pack["content_hash"]
+      assert pack_version.trusted_manifest == nil
+    end
+
+    test "another account's stale pending row is untouched" do
+      pack = shipped_pack()
+      account_one = Fixtures.Accounts.create_account()
+      {_user, account_two, subject_two} = Fixtures.Subjects.owner_subject()
+      runner_one = Fixtures.Runners.create_runner(account_id: account_one.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account_two.id,
+        pack_id: pack["id"],
+        version: pack["version"],
+        pending_hash: pack["content_hash"]
+      )
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner_one, shipped_pack_payload(pack, pack["content_hash"]))
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject_two)
+      assert pack_version.trust_state == :pending
+      assert pack_version.hash == nil
+      assert pack_version.pending_hash == pack["content_hash"]
     end
   end
 

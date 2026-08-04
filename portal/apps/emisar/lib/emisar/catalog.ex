@@ -21,6 +21,9 @@ defmodule Emisar.Catalog do
     * **Subsequent sight** —
       * Same as trusted hash → no-op (touch last_seen).
       * Different → keep trusted, set pending_hash. Dispatch refuses.
+      * Same as a never-trusted pending hash the baseline now carries →
+        auto-pin trusted on the release's manifest. A newer release
+        publishing those exact bytes IS the answer to the review.
 
     * **Rejected rows remember the refused bytes** — a rejected
       advertisement keeps its hash in `pending_hash` (and a revoked
@@ -144,8 +147,9 @@ defmodule Emisar.Catalog do
       {:ok, updated_runner} ->
         case sync_catalog(updated_runner, packs, actions, connection) do
           {:ok, pending_changed?} ->
-            # Light up the pack-trust badge only when the pending set actually
-            # moved (drift / new custom pack), and only after the commit.
+            # Refresh pack-trust surfaces only when the pending set changes
+            # (opened by a new/drifted pack or resolved by the baseline), and
+            # only after the commit.
             if pending_changed?, do: broadcast_pack_trust(updated_runner.account_id)
 
             {:ok, updated_runner}
@@ -201,8 +205,8 @@ defmodule Emisar.Catalog do
 
   # One transaction for the catalog facts: pin/refresh every advertised
   # pack, upsert the advertised actions, prune the vanished ones.
-  # Returns {:ok, pending_changed?} — whether this advertisement put a
-  # new pack decision in front of the operator (drives the badge).
+  # Returns {:ok, pending_changed?} — whether this advertisement opened or
+  # resolved a pending pack decision (drives the badge and open Packs pages).
   #
   # Best-effort by design: the catalog re-syncs on the next runner_state,
   # so a raise must never crash the runner socket (the durable runner-row
@@ -295,7 +299,7 @@ defmodule Emisar.Catalog do
   # concurrent) sight only refreshes last_seen_at, and RETURNING hands
   # back the canonical row for the drift judgment. The conflict update
   # deliberately never touches the trust fields — the existing row's
-  # state machine must be JUDGED (judge_drift/3), not replaced; this is
+  # state machine must be JUDGED (judge_drift/4), not replaced; this is
   # the documented exception to the plain-upsert rule.
   #
   # Pin decision on first sight:
@@ -314,31 +318,17 @@ defmodule Emisar.Catalog do
   defp observe_pack(account_id, {pack_id, info}, now) when is_map(info) do
     version = info["version"] || "unknown"
     advertised = info["hash"]
-    baseline = PackBaseline.lookup(pack_id, version)
-
-    {trusted_hash, pending_hash, trust_state, trusted_manifest, audit_event} =
-      cond do
-        is_binary(baseline) and baseline == advertised ->
-          {advertised, nil, :trusted, PackBaseline.manifest(pack_id, version, advertised),
-           :pack_trust_baseline_match}
-
-        is_binary(baseline) ->
-          {baseline, advertised, :pending, PackBaseline.manifest(pack_id, version, baseline),
-           :pack_trust_baseline_mismatch}
-
-        true ->
-          {nil, advertised, :pending, nil, :pack_trust_review_required}
-      end
+    verdict = baseline_verdict(pack_id, version, advertised)
 
     changeset =
       PackVersion.Changeset.insert(%{
         account_id: account_id,
         pack_id: pack_id,
         version: version,
-        hash: trusted_hash,
-        pending_hash: pending_hash,
-        trust_state: trust_state,
-        trusted_manifest: trusted_manifest,
+        hash: verdict.trusted_hash,
+        pending_hash: verdict.pending_hash,
+        trust_state: verdict.trust_state,
+        trusted_manifest: verdict.trusted_manifest,
         first_seen_at: now,
         last_seen_at: now
       })
@@ -351,10 +341,18 @@ defmodule Emisar.Catalog do
       {:ok, %PackVersion{} = pack_version} ->
         if DateTime.compare(pack_version.first_seen_at, now) == :eq do
           # Fresh pin — this sighting inserted it.
-          Audit.record(Audit.Events.pack_pinned(pack_version, audit_event, advertised, baseline))
+          Audit.record(
+            Audit.Events.pack_pinned(
+              pack_version,
+              verdict.audit_event,
+              advertised,
+              verdict.baseline
+            )
+          )
+
           if pack_version.trust_state == :pending, do: :pending_changed, else: :ok
         else
-          judge_drift(pack_version, advertised, now)
+          judge_drift(pack_version, advertised, verdict, now)
         end
 
       {:error, _changeset} ->
@@ -369,19 +367,60 @@ defmodule Emisar.Catalog do
   # actions in the same batch should still persist).
   defp observe_pack(_account_id, _entry, _now), do: :ok
 
+  # The pin these advertised bytes earn, judged purely against the
+  # release-frozen baseline. The conflict path recomputes the SAME verdict, so
+  # a row pinned before this release shipped the pack is judged by today's rule
+  # instead of waiting forever on a decision the release has since made.
+  defp baseline_verdict(pack_id, version, advertised) do
+    baseline = PackBaseline.lookup(pack_id, version)
+
+    cond do
+      is_binary(baseline) and baseline == advertised ->
+        %{
+          baseline: baseline,
+          trusted_hash: advertised,
+          pending_hash: nil,
+          trust_state: :trusted,
+          trusted_manifest: PackBaseline.manifest(pack_id, version, advertised),
+          audit_event: :pack_trust_baseline_match
+        }
+
+      is_binary(baseline) ->
+        %{
+          baseline: baseline,
+          trusted_hash: baseline,
+          pending_hash: advertised,
+          trust_state: :pending,
+          trusted_manifest: PackBaseline.manifest(pack_id, version, baseline),
+          audit_event: :pack_trust_baseline_mismatch
+        }
+
+      true ->
+        %{
+          baseline: nil,
+          trusted_hash: nil,
+          pending_hash: advertised,
+          trust_state: :pending,
+          trusted_manifest: nil,
+          audit_event: :pack_trust_review_required
+        }
+    end
+  end
+
   # Known row + new advertisement. The upsert already refreshed
   # last_seen_at; the only state change worth writing (and auditing) is
   # a hash we haven't seen — trusted→pending or pending-on-a-new-hash.
   # A previously recorded pending_hash is deliberately kept until an
   # operator decides via Trust/Reject, not by whichever runner
-  # heartbeats next.
-  defp judge_drift(%PackVersion{} = pack_version, advertised, now) do
+  # heartbeats next — the one exception being bytes the release has since
+  # published itself (reconcile_baseline_pending/3).
+  defp judge_drift(%PackVersion{} = pack_version, advertised, verdict, now) do
     cond do
       pack_version.hash == advertised ->
         restore_baseline_manifest(pack_version)
 
       pack_version.pending_hash == advertised ->
-        :ok
+        reconcile_baseline_pending(pack_version, advertised, verdict)
 
       true ->
         result =
@@ -399,6 +438,41 @@ defmodule Emisar.Catalog do
         end
     end
   end
+
+  # A never-trusted row whose parked bytes this release now publishes: the
+  # decision the operator was asked for has since been made by the release
+  # itself, so adopt it on the release's own manifest instead of leaving a
+  # question nobody can answer differently. Anything else keeps its state — a
+  # rejected row stays refused, a row with a trusted hash keeps it (adopting
+  # drift is an operator's call), and bytes the baseline doesn't carry stay
+  # pending — as does a historical artifact the release ships no manifest for,
+  # because trust snapshots that manifest.
+  defp reconcile_baseline_pending(
+         %PackVersion{trust_state: :pending, hash: nil} = pack_version,
+         advertised,
+         %{trust_state: :trusted, trusted_manifest: %{} = manifest} = verdict
+       ) do
+    changeset = PackVersion.Changeset.trust(pack_version, manifest)
+
+    case Repo.update(changeset) do
+      {:ok, %PackVersion{} = updated} ->
+        Audit.record(
+          Audit.Events.pack_pinned(
+            updated,
+            :pack_trust_baseline_reconciled,
+            advertised,
+            verdict.baseline
+          )
+        )
+
+        :pending_changed
+
+      {:error, _changeset} ->
+        :ok
+    end
+  end
+
+  defp reconcile_baseline_pending(%PackVersion{}, _advertised, _verdict), do: :ok
 
   # Rows trusted before complete manifests existed are upgraded only from the
   # release-frozen catalog and only when the exact trusted hash still matches.

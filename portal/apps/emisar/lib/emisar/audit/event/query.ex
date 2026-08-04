@@ -42,6 +42,7 @@ defmodule Emisar.Audit.Event.Query do
     {"oauth.consent_granted", "OAuth client authorized"},
     {"pack_trust_baseline_match", "Pack auto-trusted (baseline match)"},
     {"pack_trust_baseline_mismatch", "Pack pinned to baseline (drift)"},
+    {"pack_trust_baseline_reconciled", "Pack auto-trusted (baseline caught up)"},
     {"pack_trust_review_required", "Pack pending review"},
     {"pack_trust_drift_detected", "Pack drift detected"},
     {"pack_trust_adopted", "Pack hash trusted"},
@@ -189,6 +190,7 @@ defmodule Emisar.Audit.Event.Query do
      [
        {"pack_trust_baseline_match", "Auto-trusted (baseline)"},
        {"pack_trust_baseline_mismatch", "Pinned to baseline (drift)"},
+       {"pack_trust_baseline_reconciled", "Auto-trusted (baseline caught up)"},
        {"pack_trust_review_required", "Pending review"},
        {"pack_trust_drift_detected", "Drift detected"},
        {"pack_trust_adopted", "Hash trusted"},
@@ -778,6 +780,9 @@ defmodule Emisar.Audit.Event.Query do
     "pack_trust_baseline_mismatch" =>
       {false, false, true,
        "A runner advertised a pack differing from the baseline — pinned pending review."},
+    "pack_trust_baseline_reconciled" =>
+      {false, false, true,
+       "A pack version awaiting review advertised bytes a later release publishes — auto-trusted."},
     "pack_trust_review_required" =>
       {false, false, true, "A pack version needs an operator's trust decision before it can run."},
     "pack_trust_drift_detected" =>
