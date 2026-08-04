@@ -2974,6 +2974,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :runners, :list, required: true
 
   defp group_runner_access_mapping_section(assigns) do
+    assigns = assign(assigns, :runners_by_id, Map.new(assigns.runners, &{&1.id, &1}))
+
     ~H"""
     <section>
       <.section_header
@@ -3008,8 +3010,17 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <.chip :for={group <- mapping.runner_scope_groups} tone={:neutral}>
                   Group: {group}
                 </.chip>
-                <.chip :for={runner_id <- mapping.runner_scope_runner_ids} tone={:neutral}>
-                  Runner: {String.slice(runner_id, 0, 8)}…
+                <%!-- The full runner id rides the chip's title; the label names the live
+                     runner, and falls back to the shared removed-runner label when the
+                     id no longer resolves. --%>
+                <.chip
+                  :for={runner_id <- mapping.runner_scope_runner_ids}
+                  tone={:neutral}
+                  title={runner_id}
+                >
+                  <% runner = Map.get(@runners_by_id, runner_id) %>
+                  <span :if={runner}>Runner: {runner.name}</span>
+                  <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
                 </.chip>
               </div>
             </div>

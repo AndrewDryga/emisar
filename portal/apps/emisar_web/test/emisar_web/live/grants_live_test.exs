@@ -81,7 +81,7 @@ defmodule EmisarWeb.GrantsLiveTest do
         max_uses: 5
       )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert html =~ "cassandra.repair"
     assert html =~ api_key.name
@@ -89,7 +89,7 @@ defmodule EmisarWeb.GrantsLiveTest do
     assert html =~ "exact"
     assert html =~ "not used yet · cap 5"
     refute html =~ "No active grants"
-    assert html =~ g.id |> String.slice(0, 6) || true
+    assert has_element?(lv, "#revoke-grant-#{g.id}")
   end
 
   test "hides revoked grants", %{conn: conn} do

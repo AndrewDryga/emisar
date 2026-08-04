@@ -786,6 +786,63 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) == access
     end
+
+    test "a scoped runner chip names the runner and carries its full id", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      email = "scoped5-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: membership}} =
+        Emisar.Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
+          subject
+        )
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r11", group: "web")
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [runner.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "span[title='#{runner.id}']", "Runner: r11")
+    end
+
+    test "a scoped runner that no longer resolves reads as a removed runner", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg6"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      email = "scoped6-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: membership}} =
+        Emisar.Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
+          subject
+        )
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r12", group: "web")
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [runner.id])
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      # The scope outlives the runner row; the grant is still real, so the chip
+      # says so honestly instead of printing an unreadable id prefix.
+      {:ok, _deleted} = Emisar.Runners.delete_runner(runner, subject)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "span[title='#{runner.id}']", "Removed runner")
+      refute html =~ "Runner: r12"
+    end
   end
 
   describe "member administration" do

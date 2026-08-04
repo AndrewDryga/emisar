@@ -942,13 +942,6 @@ defmodule EmisarWeb.TeamLive do
   defp runner_access_label(%Accounts.RunnerAccess{mode: :restricted}),
     do: "Selected runners"
 
-  defp runner_access_runner_label(runner_id, runners_by_id) do
-    case Map.get(runners_by_id, runner_id) do
-      %{name: name} -> name
-      _ -> String.slice(runner_id, 0, 8) <> "…"
-    end
-  end
-
   defp current_role(member_facts, user_id) do
     case Enum.find(member_facts, &(&1.membership.user_id == user_id)) do
       nil -> nil
@@ -1386,8 +1379,17 @@ defmodule EmisarWeb.TeamLive do
                           <.chip :for={group <- access.groups} tone={:neutral}>
                             Group: {group}
                           </.chip>
-                          <.chip :for={runner_id <- access.runner_ids} tone={:neutral}>
-                            Runner: {runner_access_runner_label(runner_id, @runners_by_id)}
+                          <%!-- The full runner id rides the chip's title; the label names
+                           the live runner, and falls back to the shared removed-runner
+                           label when the id no longer resolves. --%>
+                          <.chip
+                            :for={runner_id <- access.runner_ids}
+                            tone={:neutral}
+                            title={runner_id}
+                          >
+                            <% runner = Map.get(@runners_by_id, runner_id) %>
+                            <span :if={runner}>Runner: {runner.name}</span>
+                            <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
                           </.chip>
                           <%!-- No "managed by identity provider" note here: the sync badge
                            by the name already says the member is IdP-provisioned, and the

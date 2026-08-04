@@ -244,7 +244,7 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("approval.grant_used", p) do
     grant =
       case get(p, :grant_id) do
-        id when is_binary(id) -> [{"grant", String.slice(id, 0, 8)}]
+        id when is_binary(id) -> [{"grant", id}]
         _ -> []
       end
 

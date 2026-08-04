@@ -105,8 +105,8 @@ defmodule EmisarWeb.AuditSummaryTest do
                )
     end
 
-    test "grant_used names the action, then the grant" do
-      assert [{"action", "linux.uptime"}, {"grant", "0af3c2d1"}] ==
+    test "grant_used names the action, then the complete grant id" do
+      assert [{"action", "linux.uptime"}, {"grant", "0af3c2d1-aaaa-bbbb-cccc-000000000000"}] ==
                AuditSummary.summary_pairs(
                  ev("approval.grant_used", %{
                    "action" => "linux.uptime",
@@ -294,7 +294,7 @@ defmodule EmisarWeb.AuditSummaryTest do
         {"approval.approved", %{"grant_duration" => "1h", "grant_scope" => "action"},
          [{"duration", "1h"}, {"scope", "action"}]},
         {"approval.denied", %{"reason" => "too risky"}, [{"reason", "too risky"}]},
-        {"approval.grant_used", %{"grant_id" => "0193aaaa-bbbb"}, [{"grant", "0193aaaa"}]},
+        {"approval.grant_used", %{"grant_id" => "0193aaaa-bbbb"}, [{"grant", "0193aaaa-bbbb"}]},
         {"approval.grant_used", %{}, []},
         {"approval.grant_revoked", %{"action_id" => "linux.reboot"},
          [{"action", "linux.reboot"}]},

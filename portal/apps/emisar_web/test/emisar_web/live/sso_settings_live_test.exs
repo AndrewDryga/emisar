@@ -1373,6 +1373,63 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert {:ok, [], _meta} = SSO.list_group_runner_access_mappings(provider, owner)
     end
 
+    test "a mapped runner scope names the live runner and carries its full id", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      runner =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "r20", group: "database")
+
+      {:ok, _mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            "external_group_id" => "grp-database",
+            "external_group_display" => "Database team",
+            "runner_access_mode" => "restricted",
+            "scope" => ["runner:#{runner.id}"]
+          },
+          owner
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "span[title='#{runner.id}']", "Runner: r20")
+    end
+
+    test "a mapped runner scope that no longer resolves reads as a removed runner", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      runner =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "r21", group: "database")
+
+      {:ok, _mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            "external_group_id" => "grp-database",
+            "external_group_display" => "Database team",
+            "runner_access_mode" => "restricted",
+            "scope" => ["runner:#{runner.id}"]
+          },
+          owner
+        )
+
+      # The mapping outlives the runner row; the chip stays honest instead of
+      # printing an unreadable id prefix.
+      {:ok, _deleted} = Emisar.Runners.delete_runner(runner, owner)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "span[title='#{runner.id}']", "Removed runner")
+      refute html =~ "Runner: r21"
+    end
+
     test "the role select never offers Owner; a forced owner mapping is rejected inline", %{
       conn: conn,
       account: account,
