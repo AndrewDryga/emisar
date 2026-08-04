@@ -212,6 +212,7 @@ defmodule EmisarWeb.TeamLiveTest do
         |> render_submit()
 
       assert html =~ "Invitation sent"
+      assert html =~ "We emailed a join link to"
       assert html =~ "newbie@example.com"
       assert html =~ "Invite another"
       assert html =~ "Back to members"
@@ -914,6 +915,7 @@ defmodule EmisarWeb.TeamLiveTest do
         |> render_submit()
 
       refute html =~ "Invitation sent"
+      refute html =~ "We emailed a join link to"
       assert html =~ "Invitation saved, but we couldn&#39;t email it"
       assert html =~ "bounced or was marked spam"
       refute html =~ "another way"
