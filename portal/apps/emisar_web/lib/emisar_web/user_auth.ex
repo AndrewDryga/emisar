@@ -66,7 +66,7 @@ defmodule EmisarWeb.UserAuth do
   defp finish_log_in(conn, user, token, auth_method, mfa, registered?) do
     user_return_to = get_session(conn, :user_return_to)
     attribution = MarketingAttribution.current(conn)
-    if registered?, do: Marketing.Conversions.account_signed_up(user, attribution)
+    if registered?, do: Marketing.account_signed_up(user, attribution)
 
     conn
     |> renew_session()

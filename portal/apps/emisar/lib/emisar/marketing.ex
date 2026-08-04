@@ -1,11 +1,13 @@
 defmodule Emisar.Marketing do
   @moduledoc """
-  Public, unauthenticated capture from the marketing site — early-access /
-  product-update email signups. Like sign-up it's a pre-auth path: no
-  `%Subject{}`, no tenant scope, no Authorizer.
+  Public boundary for the unauthenticated marketing surface: early-access /
+  product-update email capture, plus best-effort reporting of a completed
+  signup for advertising attribution. Email capture is a pre-auth path; signup
+  conversion reporting is a non-tenant side effect. Neither requires a
+  `%Subject{}` or an Authorizer.
   """
-  alias Emisar.Marketing.Signup
-  alias Emisar.{Repo, RequestContext}
+  alias Emisar.Marketing.{Conversions, Signup}
+  alias Emisar.{Repo, RequestContext, Users}
 
   @doc """
   Captures an early-access email. Idempotent: a repeat address updates the
@@ -23,4 +25,15 @@ defmodule Emisar.Marketing do
       returning: true
     )
   end
+
+  @doc """
+  Reports a completed account signup for advertising attribution — best effort
+  and asynchronous. The provider receives only the click identifier, the
+  conversion time, and an opaque deduplication id; the user's email and id
+  never leave the system. Always returns `:ok`: attribution without an eligible
+  click identifier or an unconfigured provider sends nothing, and a delivery
+  failure is logged.
+  """
+  def account_signed_up(%Users.User{} = user, attribution),
+    do: Conversions.account_signed_up(user, attribution)
 end

@@ -12,8 +12,8 @@ defmodule EmisarWeb.Analytics do
 
   This Mixpanel path is first-party product analytics, not advertising
   conversion measurement, so it has no DNT/GPC opt-out gate. Provider click
-  attribution lives behind `Emisar.Marketing.Conversions` and does honor GPC.
-  This module owns the
+  attribution is privacy-filtered by `EmisarWeb.MarketingAttribution` before
+  `Emisar.Marketing` reports it. This module owns the
   request-derived bits Mixpanel can't see for a server-to-server call: the
   `$device:` identity + anon→user merge, the client IP (→ geo), the UA-parsed
   browser/OS/device, and the URL/referrer. Domain value-moment events live in
