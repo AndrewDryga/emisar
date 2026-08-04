@@ -78,7 +78,11 @@ while [ "$i" -lt 10 ]; do
 done
 printf '{"@level":"info","@module":"terraform.ui","type":"outputs","outputs":{%s}}\n' "${outputs%,}"
 
-diagnostic_summary=$(repeat 'deprecated attribute usage detected in a module far away ' 4)
+# A diagnostic summary is CLI-authored free text, so it is where this stream
+# carries the control bytes: ANSI colour, BEL, NUL, DEL and a C1 byte, written
+# as the JSON \u escapes a real CLI emits. The projection collapses each run to
+# one space, so no escape byte reaches the result.
+diagnostic_summary="deprecated:\\u001b[33m attr\\u0007bell\\u0000null\\u007fdel\\u0085c1 usage detected in a module far away $(repeat 'and further away ' 6)"
 i=0
 while [ "$i" -lt 20 ]; do
   printf '{"@level":"warn","@module":"terraform.ui","type":"diagnostic","diagnostic":{"severity":"warning","summary":"%s"}}\n' "$diagnostic_summary"

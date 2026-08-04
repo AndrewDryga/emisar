@@ -29,9 +29,25 @@ cli() {
 # the cut. This is the same bounded shape the hcp-terraform pack returns; each
 # pack is installed and hashed on its own, so the projection is necessarily
 # packaged with both rather than shared.
+#
+# controls_collapsed does that cleanup on core jq. The obvious spelling,
+# gsub("[[:cntrl:]]+"; " "), needs Oniguruma, which jq's own supported
+# --with-oniguruma=no build omits: there the call raises "jq was compiled
+# without ONIGURUMA regex library" the first time it runs, and since both
+# projections clip a field, both fail on such a host. The class Oniguruma
+# matched is exactly Unicode Cc, U+0000–U+001F and U+007F–U+009F, so each of
+# those codepoints becomes 0 — itself a control, so no ordinary character
+# collides with the marker — a run keeps only its first, and the survivor
+# becomes a space. A space already in the text is left alone.
 readonly projection='
+def controls_collapsed:
+  (explode | map(if . <= 31 or (. >= 127 and . <= 159) then 0 else . end)) as $cs
+  | [range($cs | length) | select(. == 0 or $cs[.] != 0 or $cs[. - 1] != 0) | $cs[.]]
+  | map(if . == 0 then 32 else . end)
+  | implode;
+
 def clipped($chars; $bytes):
-  (. // "" | tostring | gsub("[[:cntrl:]]+"; " ")) as $clean
+  (. // "" | tostring | controls_collapsed) as $clean
   | ($clean | .[:$chars] | until(utf8bytelength <= $bytes; .[:-1])) as $cut
   | if $cut == $clean then $clean else ($cut | .[:$chars - 1]) + "…" end;
 
@@ -147,9 +163,20 @@ def collection($name; $kind):
 # types while changing what the members mean, and would project as a
 # truthful-looking summary of a plan whose semantics are unknown. Released
 # Terraform emits 0.1/0.2 (the 0.12–0.14 era) and 1.x, OpenTofu emits 1.x, so
-# majors 0 and 1 are the supported set.
+# majors 0 and 1 are the supported set — spelled without test() for the same
+# reason as controls_collapsed. Oniguruma's $ also matches before a trailing
+# newline, so "1.1\n" used to pass "^[01]\.[0-9]+$"; this refuses it.
+def all_digits: length > 0 and (explode | all(.[]; . >= 48 and . <= 57));
+
+def plan_format_supported($version):
+  ($version | type) == "string"
+  and (($version | split(".")) as $parts
+       | ($parts | length) == 2
+       and ($parts[0] == "0" or $parts[0] == "1")
+       and ($parts[1] | all_digits));
+
 def supported_format_version:
-  if (.format_version | type) == "string" and (.format_version | test("^[01]\\.[0-9]+$")) then .
+  if plan_format_supported(.format_version) then .
     else error("format_version \(.format_version | tojson | clipped(32; 32)) in the plan document is not a supported 0.x or 1.x plan format, so the summary cannot be trusted")
     end;
 

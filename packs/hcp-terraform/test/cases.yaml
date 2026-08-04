@@ -85,10 +85,13 @@ cases:
   # The runner rejects a structured result over 8 KiB, so a full page at the
   # maximum advertised page_size must clear it against the nastiest messages a
   # workspace accumulates: whole CI commit lines, floods of the characters JSON
-  # escaping doubles, multibyte text, and raw ANSI/control bytes. Success here
-  # IS the byte-cap proof — an oversized page fails validation. The clipped
-  # projection cuts to 100 characters with an ellipsis and collapses control
-  # runs to one space, so no escape byte survives into the output.
+  # escaping doubles, multibyte text, and raw ANSI/control bytes — ESC, BEL,
+  # NUL, tab, newline, DEL and a C1 byte, which is the full span the cleanup
+  # claims (Unicode Cc, U+0000–U+001F and U+007F–U+009F). Success here IS the
+  # byte-cap proof — an oversized page fails validation. The clipped projection
+  # cuts to 100 characters with an ellipsis and collapses each control run to
+  # one space, leaving a space already in the text alone, so no escape byte
+  # survives into the output.
   - name: tfc.list_runs-fits-the-cap-at-the-maximum-page-size
     action: tfc.list_runs
     args: {workspace_id: ws-MaxPageWyXz9Qb7c, page_size: 12}
@@ -97,7 +100,30 @@ cases:
         - '\u001b'
       json:
         /runs/0/message: "Merge pull request #4821 from blitz/renovate/major-terraform-google-modules aaaaaaaaaaaaaaaaaaaaaaa…"
-        /runs/6/message: "deploy: [31m red  bell null tab line2 line3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+        /runs/6/message: "deploy: [31m red  bell null tab line2 del c1 line3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+        /runs/11/id: run-Worst00000000011
+        /next_page: 2
+
+  # jq's regex builtins are optional: a jq configured --with-oniguruma=no
+  # raises "jq was compiled without ONIGURUMA regex library" the moment a
+  # filter reaches one, so this pack's projections stay on core jq. The shared
+  # client image builds that jq at /opt/jq-without-regex, and these cases put
+  # it ahead of the packaged one on PATH — everything else here keeps running
+  # against the Oniguruma-enabled jq an operator's host actually has.
+  #
+  # This is the same worst page as the case above, asserted the same way: the
+  # control-run collapse, the clip, and the page bounds are what used to need
+  # gsub.
+  - name: tfc.list_runs-projects-the-worst-page-without-jq-regex-support
+    action: tfc.list_runs
+    args: {workspace_id: ws-MaxPageWyXz9Qb7c, page_size: 12}
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /runs/6/message: "deploy: [31m red  bell null tab line2 del c1 line3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
         /runs/11/id: run-Worst00000000011
         /next_page: 2
 
@@ -208,6 +234,34 @@ cases:
   - name: tfc.plan_summary-refuses-an-unsupported-format-version
     action: tfc.plan_summary
     args: {run_id: run-FutureFormatPlan}
+    expect:
+      status: failure
+      stderr_contains: ['format_version "2.0" in the plan document is not a supported 0.x or 1.x plan format']
+      stdout_not_contains: ['"total":0']
+
+  # The plan projection under the jq built without Oniguruma: the supported
+  # 1.x document still projects, and the 2.x document is still refused by name
+  # — the two sides of the version gate that used to be a test() call, plus the
+  # clip that builds that refusal message.
+  - name: tfc.plan_summary-projects-without-jq-regex-support
+    action: tfc.plan_summary
+    args: {run_id: run-4Qm7TvLpXsRbNc2d}
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      json:
+        /source: hcp_plan
+        /cli_version: 1.13.1
+        /summary/total: 3
+        /summary/delete: 1
+        /summary/replace: 1
+        /changes/0/address: aws_s3_bucket.legacy
+
+  - name: tfc.plan_summary-refuses-an-unsupported-format-version-without-jq-regex-support
+    action: tfc.plan_summary
+    args: {run_id: run-FutureFormatPlan}
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     expect:
       status: failure
       stderr_contains: ['format_version "2.0" in the plan document is not a supported 0.x or 1.x plan format']

@@ -204,10 +204,37 @@ cases:
         /changes/0/address: AAA-sentinel-delete-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
         /changes/0/action: delete
         /changes/1/address: "AAB-sentinel-delete-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+        # Each control run in the diagnostic collapses to one space and no
+        # escape byte survives into the result.
+        /diagnostics/0/summary: "deprecated: [33m attr bell null del c1 usage detected in a module far away and further away and fur…"
         /truncated/changes: 290
         /truncated/drift: 37
         /truncated/outputs: 36
         /truncated/diagnostics: 17
+
+  # jq's regex builtins are optional: a jq configured --with-oniguruma=no
+  # raises "jq was compiled without ONIGURUMA regex library" the moment a
+  # filter reaches one, so this projection stays on core jq. The shared client
+  # image builds that jq at /opt/jq-without-regex, and the three cases naming
+  # it put it ahead of the packaged one on PATH — every other case here keeps
+  # running against the Oniguruma-enabled jq an operator's host actually has.
+  #
+  # The same worst-case stream as the case above: the control-run collapse and
+  # the clip are what used to need gsub.
+  - name: tf.plan_summary-projects-a-worst-case-stream-without-jq-regex-support
+    action: tf.plan_summary
+    env:
+      TF_DIR: /packs/terraform-readonly/test/fixtures/plan
+      TF_BIN: /packs/terraform-readonly/test/fixtures/streams/worst-case-flood.sh
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      json:
+        /source: plan
+        /cli_version: "1.15.8-worst-case-build-with-a-…"
+        /summary/total: 300
+        /summary/delete: 120
+        /diagnostics/0/summary: "deprecated: [33m attr bell null del c1 usage detected in a module far away and further away and fur…"
+        /truncated/changes: 290
 
   # The saved-plan path at production scale with the real CLI: 150 resources
   # whose addresses exceed the 80-character clip and more outputs than the
@@ -283,6 +310,56 @@ cases:
           - /bin/sh
           - -c
           - "mkdir -p /tmp/tffuture/plans && touch /tmp/tffuture/plans/future.tfplan"
+    expect:
+      status: failure
+      stderr_contains: ['format_version "2.0" in the plan document is not a supported 0.x or 1.x plan format']
+      stdout_not_contains: ['"total":0']
+
+  # The saved-plan projection under the jq built without Oniguruma: a supported
+  # 1.x document still projects and a 2.x document is still refused by name —
+  # the two sides of the version gate that used to be a test() call, plus the
+  # clip that builds that refusal message.
+  - name: tf.plan_file_summary-projects-without-jq-regex-support
+    action: tf.plan_file_summary
+    args: {plan_file: review.tfplan}
+    env:
+      TF_DIR: /tmp/tfnoregex/workspace
+      TF_PLAN_DIR: /tmp/tfnoregex/plans
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - name: stage workspace
+        argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/tfnoregex/workspace /tmp/tfnoregex/plans && cp /packs/terraform-readonly/test/fixtures/plan/main.tf /tmp/tfnoregex/workspace/"
+      - name: initialize workspace
+        argv: [/bin/sh, -c, "cd /tmp/tfnoregex/workspace && terraform init -input=false"]
+      - name: save a plan the way CI would
+        argv:
+          - /bin/sh
+          - -c
+          - "cd /tmp/tfnoregex/workspace && terraform plan -input=false -out=/tmp/tfnoregex/plans/review.tfplan"
+    expect:
+      json:
+        /source: plan_file
+        /summary/total: 3
+        /summary/create: 3
+        /truncated/changes: 0
+
+  - name: tf.plan_file_summary-refuses-an-unsupported-format-version-without-jq-regex-support
+    action: tf.plan_file_summary
+    args: {plan_file: future.tfplan}
+    env:
+      TF_DIR: /packs/terraform-readonly/test/fixtures/plan
+      TF_BIN: /packs/terraform-readonly/test/fixtures/streams/future-format-show.sh
+      TF_PLAN_DIR: /tmp/tffuturenoregex/plans
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - name: stage a placeholder saved plan
+        argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/tffuturenoregex/plans && touch /tmp/tffuturenoregex/plans/future.tfplan"
     expect:
       status: failure
       stderr_contains: ['format_version "2.0" in the plan document is not a supported 0.x or 1.x plan format']

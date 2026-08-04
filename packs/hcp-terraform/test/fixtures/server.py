@@ -277,7 +277,7 @@ WORST_MESSAGES = [
     " " * 200,
     "\U0001f680" * 150,
     "部署基础设施变更并轮换生产环境的API密钥" * 10,
-    "deploy:\x1b[31m red \x07bell\x00null\ttab\nline2\nline3" + "x" * 200,
+    "deploy:\x1b[31m red \x07bell\x00null\ttab\nline2\x7f\x85del c1\nline3" + "x" * 200,
     "Rotate the API instance",
 ] + [
     f"ci: bump module versions and rotate credentials for stack {n} " + "long trailing commit body " * 20

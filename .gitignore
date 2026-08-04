@@ -5,6 +5,8 @@
 **/_build*/
 *.out
 /test-results/
+# A python pack fixture leaves bytecode beside itself when a behavior case runs.
+**/__pycache__/
 
 # Stray dev binaries — `go build` from inside a module dir writes here
 # (named after the dir). Build into /bin/ with `go build -o ../bin/…`.
