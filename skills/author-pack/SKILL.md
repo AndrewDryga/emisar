@@ -47,10 +47,12 @@ validator, installed help, or a public reference can confirm it.
   is something an LLM may execute on hosts. When in doubt, narrow the action,
   raise its risk tier, or leave it out. Never loosen validation, lower a risk
   label, or widen `execution.inherit_env` to make a check pass.
-- **Trust is the operator's decision, never yours.** Present the content hash,
-  the diff, and your risk assessment; the operator reviews and clicks Trust in
-  the portal. Do not press for approval, and never call a pack trusted or
-  certified before the operator has trusted that exact hash.
+- **Trust authority is a human decision, never yours.** Present the content
+  hash, the diff, and your risk assessment; on hosted Emisar an account admin
+  reviews the pending pack and clicks Trust in the portal. Do not press for
+  approval, never click Trust, and never change which catalog the portal reads
+  (step 6). Never call a pack trusted or certified until you have verified
+  that exact hash is trusted for the account.
 - **`emisar action run` executes locally and bypasses cloud policy and
   approvals.** Use it only for `risk: low` read actions, only on a
   development or staging runner, never on a production host. Prove mutating
@@ -200,7 +202,8 @@ On the authoring runner:
 
 1. `emisar pack validate ./my-pack` — the same checks the runner runs at
    load. Fix until it reports `pack <id> OK` and record the printed `sha256:`
-   content hash; that hash is what the operator will review and trust.
+   content hash; that exact tuple is what the portal catalog matches or an
+   account admin reviews.
 2. `sudo emisar pack install ./my-pack` — copies it into the runner's packs
    dir and reloads the running daemon itself (no restart, no dropped runs).
 3. `emisar action list` and `emisar action describe <id>` — confirm every
@@ -219,18 +222,18 @@ On the authoring runner:
 ## 5. Distribute it
 
 **A few hosts — install the directory, pinned.** On each runner, install the
-exact bytes the operator trusted; the install reloads the runner for you:
+exact bytes you validated and reviewed; the install reloads the runner for you:
 
 ```sh
-sudo emisar pack install ./my-pack --hash sha256:<the hash you trusted>
+sudo emisar pack install ./my-pack --hash sha256:<validated hash>
 ```
 
 Config management (Ansible, a base image) can drop the directory instead and
 reload the runner. Either way every host runs identical, reviewed bytes.
 
 **A fleet — host a private registry.** A registry is a static file tree over
-HTTPS; anything that serves files can be one. It moves bytes only — trust
-still happens per account in the portal.
+HTTPS; anything that serves files can be one. It moves bytes only — the portal
+still decides trust per account (step 6).
 
 1. Get `packctl` on the publishing workstation or CI job (never fleet hosts):
    `go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest`
@@ -278,18 +281,28 @@ packctl catalog build --packs ./packs --out ./dist \
 
 ## 6. Trust it, then certify end to end
 
-A custom pack has no baseline hash, so it lands on the portal's **Packs** page
-as pending with dispatch held. The operator opens it, compares the content
-hash against the `pack validate` output you recorded, reviews the actions, and
-clicks Trust. From then on that exact byte-for-byte version is the only one
-authorized.
+Trust is per account, and one deployment setting decides where it comes from:
+the portal trusts an exact `pack@version/hash` on sight when that tuple appears
+in the catalog it is configured to read (`EMISAR_PACK_CATALOG_URL`), and holds
+every other hash pending with dispatch held. On hosted Emisar that catalog is
+Emisar's published one, which your custom pack is not in — so it lands on the
+**Packs** page as pending. An account admin opens it, compares the content hash
+against the `pack validate` output you recorded, reviews the actions, and
+clicks Trust; from then on that exact byte-for-byte version is the only one
+authorized. Publishing to a registry confers no trust by itself. On a self-hosted
+deployment whose owner separately configured the portal to read that catalog,
+the exact tuple may be trusted after the portal observes it. The deployment
+owner chooses that catalog — never reconfigure it to skip a review, and verify
+the resulting trust state through `list_packs`.
 
-Then prove the whole chain through the customer's real MCP client:
+So verify which state your pack is actually in before certifying anything, then
+prove the whole chain through the customer's real MCP client:
 
 1. `list_packs` with `availability: "all"` — the pack's exact version and
-   hash appear as executable, with no descriptor or deployment issues. If the
-   ref is absent, return to the portal's **Packs** page; MCP does not expose
-   pending, rejected, revoked, or retirement-blocked refs.
+   hash appear as executable, with no descriptor or deployment issues. That is
+   your trust verification: MCP does not expose pending, rejected, revoked, or
+   retirement-blocked refs, so an absent ref sends you back to the portal's
+   **Packs** page to see which one it is.
 2. `find_actions` for the pack's job words — confirm the descriptions are
    discoverable the way an operator would ask.
 3. `get_action` for one action — the returned schema matches the authored
@@ -303,12 +316,14 @@ Then prove the whole chain through the customer's real MCP client:
    and appears in the account audit log.
 
 **Lifecycle.** Any pack change bumps `version`, re-validates, re-deploys, and
-re-trusts — the hash changes, the portal re-marks it pending, and that is the
-drift guard working, not a fault. On a security or critical fix — an
-under-bounded arg, a secret-emitting read, a path escape, a mislabeled risk —
-a version bump alone leaves vulnerable copies runnable: also set
-`retired_below: <fixed version>` in `pack.yaml` so runners still advertising
-older versions fail closed at dispatch. Registry publishes enforce that floor
+earns trust again — the hash changes, so the new tuple is pending until an
+admin reviews it, or trusted after the portal's configured catalog carries and
+the portal observes that exact tuple. That is the drift guard working, not a
+fault. On a security or critical fix — an under-bounded arg, a secret-emitting
+read, a path escape, or a mislabeled risk — a version bump alone leaves
+vulnerable copies runnable: also set `retired_below: <fixed version>` in
+`pack.yaml` so runners still advertising older versions fail closed at
+dispatch. Registry publishes enforce that floor
 monotonically (with `--previous`). Routine changes never retire — operators
 update at their own pace.
 
@@ -326,7 +341,7 @@ design review        PASS        actions, risk tiers, bounds decided and recorde
 validate             PASS        pack <id> OK, sha256:<hash>
 local proof          PASS        <action id> ran + out-of-bounds arg rejected
 distribution         PASS        <hosts or registry URL, hash-pinned>
-operator trust       PASS        trusted <hash> on Packs page (operator action)
+trust                PASS        <hash> trusted for the account (admin review | exact configured-catalog tuple)
 MCP functional       PASS        <action, runner_ref, run_id, terminal status>
 audit                PASS        run attributed in recent_runs
 lifecycle            PASS        version/retirement plan recorded
@@ -335,7 +350,7 @@ Shipped: <pack id>@<version>, sha256:<hash>, <n> actions, risk ceiling <tier>
 Open items: <owner + exact next action, or none>
 ```
 
-Overall is `PASS` only when every applicable check passes, including operator
+Overall is `PASS` only when every applicable check passes, including verified
 trust — an untrusted pack is authored, not shipped. A required `FAIL` makes it
 `FAIL`; a required `SKIPPED` makes it `NOT CERTIFIED`. Include exact ids,
 versions, hashes, refs, run IDs, and sanitized errors; never credential
