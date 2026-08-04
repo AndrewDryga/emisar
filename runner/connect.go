@@ -34,6 +34,7 @@ named by cloud.enrollment_key_env) to POST /runner/register, persists the
 returned per-runner token to cloud.token_path, then upgrades to the
 websocket. Subsequent boots reuse the cached token, so the enrollment key
 env var can be unset after the first successful connect.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

@@ -102,6 +102,7 @@ func packListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List installed packs",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			dirs, err := resolvePackDirs()
 			if err != nil {

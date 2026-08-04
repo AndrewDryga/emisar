@@ -72,6 +72,7 @@ func stateCheckDispatchLogCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check-dispatch-log",
 		Short: "Verify the durable dispatch log loads; exit nonzero if it is corrupt",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if dataDir == "" {
 				cfg, err := loadConfig()

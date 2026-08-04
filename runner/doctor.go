@@ -125,6 +125,7 @@ No control-plane session is opened and a failing check never aborts the
 rest, so a single run surfaces every problem at once. Exit status is
 non-zero if any check fails. --json reports the same checks as a
 machine-readable object.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			results := runDoctor(cmd.Context())
 			fails := 0

@@ -440,6 +440,38 @@ func TestCLI_BareParentCommandsUnchanged(t *testing.T) {
 	}
 }
 
+// A zero-argument leaf rejects a surplus operand instead of ignoring it: every
+// leaf declares its documented argument shape, so `emisar pack list surplus`
+// can't silently answer as if the operand had been asked for. The rejection
+// lands before the command's own work — no config load, no log read, no key
+// generation — so a missing config here is irrelevant and stdout stays empty.
+func TestCLI_ZeroArgLeavesRejectSurplusOperands(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		path string // the command path the error must name
+	}{
+		{"pack list", []string{"--config", "/nope/missing.yaml", "pack", "list", "surplus"}, "emisar pack list"},
+		{"events cat", []string{"--config", "/nope/missing.yaml", "events", "cat", "surplus"}, "emisar events cat"},
+		{"signing new-ca", []string{"signing", "new-ca", "surplus"}, "emisar signing new-ca"},
+		{"state check-dispatch-log", []string{"--config", "/nope/missing.yaml", "state", "check-dispatch-log", "surplus"}, "emisar state check-dispatch-log"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stdout, stderr, code := runCLI(t, c.args, nil)
+			if code != 1 {
+				t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
+			}
+			if !strings.Contains(stderr, `"surplus"`) || !strings.Contains(stderr, c.path) {
+				t.Errorf("stderr should reject %q for %q, got %q", "surplus", c.path, stderr)
+			}
+			if stdout != "" {
+				t.Errorf("the rejection short-circuits before any work, stdout=%q", stdout)
+			}
+		})
+	}
+}
+
 // A command declaring one required placeholder names THAT placeholder when it's
 // missing — "accepts 1 arg(s), received 0" says how many, never which. Exact-one
 // semantics are otherwise unchanged: surplus operands still fail.

@@ -147,6 +147,7 @@ The PUBLIC key goes in every runner's config under signing.trusted_cas (safe to
 commit). The PRIVATE key stays OFFLINE — keep it on an operator's machine or a
 vault, never on a runner and never on the control plane. You sign short-lived
 operator certs with it via "emisar signing new-cert --ca-key <private-key>".`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			id, pubHex, seedHex, err := generateEd25519(caID, "ca-")
 			if err != nil {
@@ -194,6 +195,7 @@ The CA private key is read locally from --ca-key and used only to sign; it is
 never transmitted. Prefer short --ttl values (24h) — a long TTL (e.g. 1y) is for
 solo / break-glass and trades away revocation granularity (there is no CRL yet;
 rotate the CA to revoke).`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if caID == "" {
 				return fmt.Errorf("--ca-id is required (it must match the runner's trusted_cas ca_id)")
@@ -299,6 +301,7 @@ func signingInitCmd() *cobra.Command {
 prints the full runner config block, the offline CA private key to store, and
 the two MCP env vars. The simplest on-ramp to client-attested dispatch — after
 this, mint fresh certs as they expire with "emisar signing new-cert".`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			scope, err := parseScope(scopeStr)
 			if err != nil {

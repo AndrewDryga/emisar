@@ -48,6 +48,7 @@ func eventsTailCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tail",
 		Short: "Print the last N events; optionally follow new ones",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			n, _ := cmd.Flags().GetInt("lines")
 			if n < 0 {
@@ -81,6 +82,7 @@ func eventsCatCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cat",
 		Short: "Print the entire JSONL log to stdout",
+		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			f, _, err := openJSONL()
 			if err != nil {
@@ -102,6 +104,7 @@ func eventsGrepCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "grep",
 		Short: "Filter the JSONL log by a few common fields",
+		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			f, _, err := openJSONL()
 			if err != nil {

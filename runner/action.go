@@ -31,6 +31,7 @@ func actionListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List loaded actions",
+		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

@@ -64,6 +64,7 @@ re-reads the catalog; without one: sudo systemctl reload emisar
   emisar pack update                  # check + update every installed pack
   emisar pack update redis postgres   # just these
   emisar pack update --dry-run`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if registry == "" {
 				registry = os.Getenv("EMISAR_PACKS_REGISTRY")
