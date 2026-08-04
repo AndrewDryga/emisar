@@ -1,8 +1,10 @@
 // Package hostscan inspects the local host to recommend which action
-// packs are worth installing. For each candidate pack it checks a
-// "detect" signal — service-specific binaries present, service processes
-// running, or service ports listening — and recommends the pack when any
-// of those fire.
+// packs are worth installing. For each candidate pack it checks the
+// "detect" signals that name a service — a service-specific binary
+// present, or a service process running — and recommends the pack when
+// one of those fires. A listening port names no owner (any process may
+// bind the port a pack declares), so it only corroborates a pack that
+// identity evidence already qualified.
 //
 // Detection is path-agnostic: a binary in /usr/local/bin or /opt counts
 // the same as one on $PATH. And the policy of WHICH binaries aren't a
@@ -44,7 +46,7 @@ type PackReq struct {
 	OS        []string
 	Binaries  []string // service-specific binaries (not generic helpers)
 	Processes []string // process names that indicate the service runs
-	Ports     []int    // TCP ports that indicate the service listens
+	Ports     []int    // TCP ports the service listens on — corroboration only
 }
 
 // MatchesHostOS reports whether this pack's OS allowlist includes the
@@ -81,10 +83,11 @@ type Suggestion struct {
 }
 
 // Match returns the packs worth recommending for this host, in stable id
-// order. A pack qualifies when its OS matches and ANY of its detect
-// signals fires: a service-specific binary is present, a service process
-// is running, or a service port is listening. A pack with no detect
-// signal at all never matches — there's nothing to recommend it on.
+// order. A pack qualifies when its OS matches and at least one
+// identity-bearing detect signal fires: a service-specific binary is
+// present, or a service process is running. A pack whose only declared
+// signal is a port never matches — so does one with no detect signal at
+// all — because there is nothing that identifies the service here.
 func Match(reqs []PackReq, f Facts) []Suggestion {
 	var out []Suggestion
 	for _, r := range reqs {
@@ -100,7 +103,12 @@ func Match(reqs []PackReq, f Facts) []Suggestion {
 }
 
 // evidence collects a short note for each of the pack's detect signals
-// that fires on this host. Empty means nothing matched.
+// that fires on this host. Binaries and processes name the service, so
+// either qualifies the pack; a listening port does not — an unrelated
+// listener (a proxy, a tunnel, another service reusing a common port)
+// would otherwise vouch for every pack declaring that port. Once
+// identity evidence qualifies the pack, matching ports are appended as
+// corroboration. Empty means nothing identified the service.
 func evidence(r PackReq, f Facts) []string {
 	var ev []string
 	for _, b := range r.Binaries {
@@ -112,6 +120,9 @@ func evidence(r PackReq, f Facts) []string {
 		if f.Running[strings.ToLower(p)] {
 			ev = append(ev, p+" (running)")
 		}
+	}
+	if len(ev) == 0 {
+		return nil
 	}
 	for _, port := range r.Ports {
 		if f.Ports[port] {

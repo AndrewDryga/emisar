@@ -7,6 +7,26 @@ import (
 	"testing"
 )
 
+// TestMatch_PortCannotIdentifyAService ensures an unrelated listener cannot
+// impersonate every service that commonly uses the same port. Listening ports
+// carry no process identity, so they may corroborate stronger pack evidence but
+// must never qualify a suggestion by themselves.
+func TestMatch_PortCannotIdentifyAService(t *testing.T) {
+	reqs := []PackReq{
+		{ID: "postgres", Processes: []string{"postgres"}, Ports: []int{5432}},
+		{ID: "prometheus", Processes: []string{"prometheus"}, Ports: []int{9090}},
+		{ID: "kafka", Ports: []int{9092}},
+	}
+	f := facts(nil, "cloud-sql-proxy")
+	f.Ports[5432] = true
+	f.Ports[9090] = true
+	f.Ports[9092] = true
+
+	if got := Match(reqs, f); len(got) != 0 {
+		t.Fatalf("unrelated listeners suggested packs %v", ids(got))
+	}
+}
+
 // TestFirstExecutable_RequiresRegularExecutableFile — a name
 // resolves only to a REGULAR file with an execute bit set. A directory of that
 // name, or a present-but-non-executable file, must not count as the binary.

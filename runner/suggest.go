@@ -51,11 +51,13 @@ func packSuggestCmd() *cobra.Command {
 		Short: "Recommend packs to install based on what's running on this host",
 		Long: `Inspect this host and recommend which action packs to install.
 
-For each pack it checks a detection signal — a service-specific binary
-present (on $PATH, in the standard bin dirs, or running as a process), a
-service process running, or a service port listening — and recommends the
-pack when any of those fire. So a host running Nomad is pointed at the nomad
-pack, one with Grafana on :3000 at grafana, and so on. The read-only core
+For each pack it checks the detection signals that identify a service — a
+service-specific binary present (on $PATH, in the standard bin dirs, or
+running as a process), or a service process running — and recommends the
+pack when one of those fires. So a host running Nomad is pointed at the
+nomad pack. A listening port identifies nobody (any process can bind it),
+so a pack's declared ports only corroborate a pack already recommended;
+a pack declaring ports alone is never auto-suggested. The read-only core
 (linux-core, debugging, and systemd-deep on a systemd host) is always
 recommended.
 

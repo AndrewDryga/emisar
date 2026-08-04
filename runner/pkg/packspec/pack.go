@@ -82,21 +82,23 @@ type Requirements struct {
 // Detect is the service-presence signal for `emisar pack suggest`. It is
 // deliberately separate from Requirements (the tools the pack's actions
 // USE to run): a pack can drive a service over its HTTP API with curl yet
-// only be detectable by the service's own process or a listening port.
-// The three signals are OR'd — any hit means "this service is here" — so a
-// service-API pack like grafana lists its server process / port here while
-// leaving curl in Requires. A pack about a remote service (a cloud API, a
-// hardware BMC, a remote cluster) declares no Detect and requires only
-// off-host client tools (curl, ipmitool, kubectl), so it is never
-// auto-suggested.
+// only be detectable by the service's own binary or process. Binaries and
+// Processes name the service, so either one recommends the pack — a
+// service-API pack like grafana lists its server process here while
+// leaving curl in Requires. Ports only corroborate such a match: they name
+// no owner, so declaring them alone never gets a pack auto-suggested. A
+// pack about a remote service (a cloud API, a hardware BMC, a remote
+// cluster) declares no Detect and requires only off-host client tools
+// (curl, ipmitool, kubectl), so it is never auto-suggested either.
 type Detect struct {
 	// Binaries specific to the service (not generic helpers like curl).
 	Binaries []string `yaml:"binaries,omitempty" json:"binaries,omitempty"`
 	// Processes are executable names that, when running, indicate the
 	// service is present (e.g. "grafana-server").
 	Processes []string `yaml:"processes,omitempty" json:"processes,omitempty"`
-	// Ports are TCP ports that, when listened on, indicate the service
-	// (e.g. 3000 for Grafana, 9090 for Prometheus).
+	// Ports are TCP ports the service listens on (e.g. 3000 for Grafana,
+	// 9090 for Prometheus). Corroboration for a pack a binary or process
+	// already identified — never a match on their own.
 	Ports []int `yaml:"ports,omitempty" json:"ports,omitempty"`
 }
 

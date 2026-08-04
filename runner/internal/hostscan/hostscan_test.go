@@ -27,10 +27,11 @@ func ids(s []Suggestion) []string {
 	return out
 }
 
-// TestMatch_AnyDetectSignalFires — a pack is recommended when ANY of its
-// detect signals hits (binary present, process running, port listening),
-// and never when none do.
-func TestMatch_AnyDetectSignalFires(t *testing.T) {
+// TestMatch_IdentitySignalQualifies — a pack is recommended when a signal
+// that names the service hits (process running, binary present). A
+// listening port names no owner, so it qualifies nothing on its own, and
+// neither does an idle host.
+func TestMatch_IdentitySignalQualifies(t *testing.T) {
 	reqs := []PackReq{
 		{ID: "grafana", OS: []string{runtime.GOOS}, Processes: []string{"grafana-server"}, Ports: []int{3000}},
 		{ID: "consul", OS: []string{runtime.GOOS}, Binaries: []string{"consul"}},
@@ -40,15 +41,15 @@ func TestMatch_AnyDetectSignalFires(t *testing.T) {
 	if got := ids(Match(reqs, facts(nil, "grafana-server"))); !equal(got, []string{"grafana"}) {
 		t.Fatalf("process signal: got %v", got)
 	}
-	// port signal
-	f := facts(nil)
-	f.Ports[3000] = true
-	if got := ids(Match(reqs, f)); !equal(got, []string{"grafana"}) {
-		t.Fatalf("port signal: got %v", got)
-	}
 	// binary signal
 	if got := ids(Match(reqs, facts(map[string]string{"consul": "/usr/bin/consul"}))); !equal(got, []string{"consul"}) {
 		t.Fatalf("binary signal: got %v", got)
+	}
+	// port signal alone
+	f := facts(nil)
+	f.Ports[3000] = true
+	if got := Match(reqs, f); len(got) != 0 {
+		t.Fatalf("a listening port alone must suggest nothing, got %v", ids(got))
 	}
 	// nothing present
 	if got := Match(reqs, facts(nil)); len(got) != 0 {
@@ -56,6 +57,8 @@ func TestMatch_AnyDetectSignalFires(t *testing.T) {
 	}
 }
 
+// TestMatch_EvidenceNamesEachSignal — once a process identifies the
+// service, a matching declared port joins the evidence as corroboration.
 func TestMatch_EvidenceNamesEachSignal(t *testing.T) {
 	r := []PackReq{{ID: "grafana", OS: []string{runtime.GOOS}, Processes: []string{"grafana-server"}, Ports: []int{3000}}}
 	f := facts(nil, "grafana-server")
