@@ -579,6 +579,38 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # Enforcing MFA funnels the actor too, so an unenrolled caller flipping it on
+  # locks themselves out. It is a domain invariant, not a Team-page courtesy: the
+  # check runs inside the locked write on the actor's CURRENT row, so a stale
+  # socket snapshot (or a forged event) cannot carry an unenrolled owner past it.
+  defp ensure_mfa_requirement_has_an_enrolled_actor(
+         %Ecto.Changeset{} = changeset,
+         %Subject{} = subject
+       ) do
+    if Map.get(settings_changes(changeset), :require_mfa) == true do
+      ensure_actor_enrolled_through_commit(subject)
+    else
+      :ok
+    end
+  end
+
+  # The account row is already held here, so account → user is this path's lock
+  # order. Taking the user row (rather than reading it) is what makes the answer
+  # survive to COMMIT: `Auth.disable_mfa/2` clears `mfa_enabled_at` on that same
+  # row, and a fresh-but-unlocked SELECT can still observe an enrollment the
+  # concurrent disable is about to commit — leaving enforcement on with the
+  # actor unable to satisfy it. A tombstoned or missing actor row, and a subject
+  # with no user behind it, answer the same as an unenrolled one rather than
+  # leaking `:not_found`.
+  defp ensure_actor_enrolled_through_commit(%Subject{actor: %Users.User{id: user_id}}) do
+    case Users.fetch_and_lock_user_by_id(user_id, Repo) do
+      {:ok, %Users.User{mfa_enabled_at: %DateTime{}}} -> :ok
+      _ -> {:error, :mfa_enrollment_required}
+    end
+  end
+
+  defp ensure_actor_enrolled_through_commit(%Subject{}), do: {:error, :mfa_enrollment_required}
+
   # Requiring SSO with no enabled connection locks EVERYONE out, owners included.
   # That check lived only in the Team page's click handler, so any other caller
   # could set it, and even through the UI it was a read taken outside the write's
@@ -590,22 +622,6 @@ defmodule Emisar.Accounts do
   # Judged here, on the FRESH changeset under the account row lock, so the
   # invariant holds for every caller and the provider read is serialized against
   # the other half by the same lock the disable path takes.
-  # Enforcing MFA funnels the actor too, so an unenrolled caller flipping it on
-  # locks themselves out. It is a domain invariant, not a Team-page courtesy: the
-  # check runs inside the locked write on the actor's CURRENT row, so a stale
-  # socket snapshot (or a forged event) cannot carry an unenrolled owner past it.
-  defp ensure_mfa_requirement_has_an_enrolled_actor(
-         %Ecto.Changeset{} = changeset,
-         %Subject{} = subject
-       ) do
-    if Map.get(settings_changes(changeset), :require_mfa) == true and
-         not actor_mfa_enrolled?(subject) do
-      {:error, :mfa_enrollment_required}
-    else
-      :ok
-    end
-  end
-
   defp ensure_sso_requirement_has_a_way_in(%Account{} = account, %Ecto.Changeset{} = changeset) do
     if Map.get(settings_changes(changeset), :require_sso) == true and
          SSO.list_enabled_providers_for_account(account.id) == [] do

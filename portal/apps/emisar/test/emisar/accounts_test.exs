@@ -947,6 +947,21 @@ defmodule Emisar.AccountsTest do
                Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject)
     end
 
+    test "an actor whose user row is gone cannot enable MFA enforcement" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(owner, account)
+
+      enroll_mfa(owner)
+      Fixtures.Users.mark_user_as_deleted(owner)
+
+      assert Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject) ==
+               {:error, :mfa_enrollment_required}
+
+      refute Repo.reload!(account).settings.require_mfa
+      assert Repo.all(Audit.Event) == []
+    end
+
     test "disabling MFA enforcement never requires enrollment" do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
