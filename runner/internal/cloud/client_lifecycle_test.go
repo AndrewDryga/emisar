@@ -207,30 +207,39 @@ func TestClient_RetriesTransientFinalizeOnceOnStableSession(t *testing.T) {
 	tests := []struct {
 		name       string
 		code       string
+		correlated bool
 		repeat     bool
 		wantResult int
 	}{
-		{name: "finalize failure", code: "finalize_failed", repeat: false, wantResult: 1},
-		{name: "duplicate finalize failure", code: "finalize_failed", repeat: true, wantResult: 1},
+		{name: "finalize failure", code: "finalize_failed", correlated: true, wantResult: 1},
+		{name: "duplicate finalize failure", code: "finalize_failed", correlated: true, repeat: true, wantResult: 1},
 		{name: "other error", code: "runner_state_failed", repeat: true, wantResult: 0},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}})
-			conn := newFakeConn()
-			requestID := testRequestID("req_finalize_retry_" + tc.name)
-			result := testActionResult(requestID, ActionResultMsg{
-				Status:  "success",
-				EventID: "evt_finalize_retry",
+			logs := &shutdownLogHandler{}
+			cli := buildClient(t, &queuedDialer{conns: []*fakeConn{newFakeConn()}}, func(opts *Options) {
+				opts.Logger = slog.New(logs)
 			})
-			reserveAndComplete(t, cli.dedup, requestID, testDispatchDigest(requestID), result)
+			conn := newFakeConn()
+			requestID := ""
+			if tc.correlated {
+				requestID = testRequestID("req_finalize_retry_" + tc.name)
+				result := testActionResult(requestID, ActionResultMsg{
+					Status:  "success",
+					EventID: "evt_finalize_retry",
+				})
+				reserveAndComplete(t, cli.dedup, requestID, testDispatchDigest(requestID), result)
+			}
+			message := "secret=must-not-enter-host-logs\nportal rejected runner state"
 
 			raw, err := json.Marshal(ErrorMsg{
 				Envelope: Envelope{
 					Type: MsgError, ProtocolVersion: ProtocolVersion, RequestID: requestID,
 				},
-				Code: tc.code,
+				Code:    tc.code,
+				Message: message,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -248,6 +257,29 @@ func TestClient_RetriesTransientFinalizeOnceOnStableSession(t *testing.T) {
 			}
 			if got := countMessagesForRequest(conn, MsgActionResult, requestID); got != tc.wantResult {
 				t.Fatalf("action_result count=%d, want %d", got, tc.wantResult)
+			}
+
+			wantLogs := 1
+			if tc.repeat {
+				wantLogs = 2
+			}
+			var errorLogs int
+			for _, entry := range logs.entriesSnapshot() {
+				if entry.message != "cloud.error_envelope" {
+					continue
+				}
+				errorLogs++
+				if entry.level != slog.LevelWarn || entry.attrs["code"] != tc.code ||
+					entry.attrs["message"] != "details withheld; inspect portal logs" ||
+					entry.attrs["request_id"] != requestID {
+					t.Fatalf("error envelope log = %+v", entry)
+				}
+				if strings.Contains(entry.attrs["message"], "must-not-enter-host-logs") {
+					t.Fatalf("error envelope log leaked portal message: %+v", entry)
+				}
+			}
+			if errorLogs != wantLogs {
+				t.Fatalf("error envelope log count=%d, want %d", errorLogs, wantLogs)
 			}
 		})
 	}

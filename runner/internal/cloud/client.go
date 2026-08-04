@@ -485,6 +485,10 @@ func (c *Client) dispatch(parent context.Context, raw []byte) error {
 			c.opts.Logger.Warn("cloud.bad_error", "error", err)
 			return nil
 		}
+		c.opts.Logger.Warn("cloud.error_envelope",
+			"code", m.Code,
+			"message", "details withheld; inspect portal logs",
+			"request_id", envelope.RequestID)
 		if m.Code == "finalize_failed" {
 			c.retryFinalization(envelope.RequestID)
 		}
