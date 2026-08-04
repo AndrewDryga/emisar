@@ -97,11 +97,11 @@ cases:
         retry_every: 1s
     probes:
       - name: master logged the reconfigure
-        argv: [grep, "signal 1 (SIGHUP) received, reconfiguring", /var/log/nginx/error.log]
+        argv: [/bin/sh, -c, "grep -Eq 'signal 1 \\(SIGHUP\\) received from [0-9]+, reconfiguring' /var/log/nginx/error.log && echo reload-reconfigured"]
         retry_for: 20s
         retry_every: 1s
         expect:
-          stdout_contains: ["signal 1 (SIGHUP) received, reconfiguring"]
+          stdout_contains: [reload-reconfigured]
       - name: workers respawned and still serve
         argv: [curl, -fsS, http://127.0.0.1/]
         retry_for: 20s

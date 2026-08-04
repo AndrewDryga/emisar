@@ -33,11 +33,10 @@ cases:
       stdout_contains: [harness-bucket, object]
     cleanup:
       - argv: [mc, rb, "--force", minio/harness-bucket]
-  # Single-drive SNSD serves heal through the standard erasure-pool path, and
-  # mc only prompts for confirmation when stdout+stderr are TTYs, so the
-  # runner's piped invocation scans to completion without --force. The final
-  # progress UI always prints the "N/M objects; SIZE in TIME" line and the
-  # Green/Yellow/Red/Grey health table.
+  # The four-drive single-node erasure pool exposes the heal API. mc only
+  # prompts for confirmation when stdout+stderr are TTYs, so the runner's
+  # piped invocation scans to completion without --force. The final progress
+  # UI prints the "N/M objects; SIZE in TIME" line and health table.
   - action: minio.heal_summary
     args: {alias: minio}
     arrange:

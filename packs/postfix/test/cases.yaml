@@ -29,7 +29,18 @@ cases:
       - argv: [/bin/sh, -c, "printf 'Subject: packtest postcat\\n\\npacktest postcat body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
     resolve_args:
       queue_id:
-        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+[*!]?( |$)/ {id=$1; sub(/[*!]$/, \"\", id); print id; exit}'"]
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/deferred -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest postcat' && {
+                printf '%s\n' "$id"
+                exit 0
+              }
+            done
+            exit 1
         retry_for: 15s
         retry_every: 500ms
     expect:
@@ -63,7 +74,18 @@ cases:
       - argv: [/bin/sh, -c, "printf 'Subject: packtest delete\\n\\npacktest delete body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
     resolve_args:
       queue_id:
-        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+[*!]?( |$)/ {id=$1; sub(/[*!]$/, \"\", id); print id; exit}'"]
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/deferred -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest delete' && {
+                printf '%s\n' "$id"
+                exit 0
+              }
+            done
+            exit 1
         retry_for: 15s
         retry_every: 500ms
     probes:
@@ -97,12 +119,33 @@ cases:
       - argv: [/bin/sh, -c, "printf 'Subject: packtest hold\\n\\npacktest hold body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
     resolve_args:
       qid:
-        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+[*!]?( |$)/ {id=$1; sub(/[*!]$/, \"\", id); print id; exit}'"]
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/deferred -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest hold' && {
+                printf '%s\n' "$id"
+                exit 0
+              }
+            done
+            exit 1
         retry_for: 15s
         retry_every: 500ms
     probes:
-      # postqueue -p appends ! to a held message's queue ID.
-      - argv: [/bin/sh, -c, "postqueue -p | grep -Eq '^[0-9A-F]+!' && echo hold-marker-present"]
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/hold -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest hold' && {
+                echo hold-marker-present
+                exit 0
+              }
+            done
+            exit 1
         expect:
           stdout_contains: [hold-marker-present]
         retry_for: 10s
@@ -113,23 +156,54 @@ cases:
     arrange:
       - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
       - argv: [/bin/sh, -c, "printf 'Subject: packtest release\\n\\npacktest release body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
-      # postsuper only sees the message once pickup+cleanup land it in the
-      # queue, so retry the hold until the ! marker shows up.
+      # Wait for this case's message to reach a stable queue, then hold its
+      # exact ID. Retrying the whole command covers pickup+cleanup latency.
       - name: hold the enqueued message
-        argv: [/bin/sh, -c, "postsuper -h ALL >/dev/null 2>&1; postqueue -p | grep -Eq '^[0-9A-F]+!' && echo held"]
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/deferred -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest release' || continue
+              postsuper -h "$id" >/dev/null 2>&1 || exit 1
+              postqueue -p | grep -Eq "^${id}!( |$)" && echo held && exit 0
+            done
+            exit 1
         expect:
           stdout_contains: [held]
         retry_for: 15s
         retry_every: 500ms
     resolve_args:
       qid:
-        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+!( |$)/ {id=$1; sub(/!$/, \"\", id); print id; exit}'"]
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/hold -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest release' && {
+                printf '%s\n' "$id"
+                exit 0
+              }
+            done
+            exit 1
         retry_for: 10s
         retry_every: 500ms
     probes:
-      # Released back into the queue: an unheld entry is present and no held
-      # (!) entry remains.
-      - argv: [/bin/sh, -c, "postqueue -p | awk '$1 ~ /^[0-9A-F]+!$/ {held=1} /^[0-9A-F]+[*]?( |$)/ {queued=1} END {if (queued && !held) print \"hold-cleared\"}'"]
+      # Released back into a stable queue: this case's message is unheld.
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/deferred -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest release' && {
+                echo hold-cleared
+                exit 0
+              }
+            done
+            exit 1
         expect:
           stdout_contains: [hold-cleared]
         retry_for: 10s
@@ -140,24 +214,55 @@ cases:
     arrange:
       - argv: [/bin/sh, -c, "postconf -e 'defer_transports = smtp relay' 'enable_long_queue_ids = no' && postfix reload"]
       - argv: [/bin/sh, -c, "printf 'Subject: packtest requeue\\n\\npacktest requeue body marker\\n' | sendmail -f sender@example.test recipient@undeliverable.example"]
-      # postsuper only sees the message once pickup+cleanup land it in the
-      # queue, so retry the hold until the ! marker shows up.
+      # Wait for this case's message to reach a stable queue, then hold its
+      # exact ID. Retrying the whole command covers pickup+cleanup latency.
       - name: hold the enqueued message
-        argv: [/bin/sh, -c, "postsuper -h ALL >/dev/null 2>&1; postqueue -p | grep -Eq '^[0-9A-F]+!' && echo held"]
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/deferred -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest requeue' || continue
+              postsuper -h "$id" >/dev/null 2>&1 || exit 1
+              postqueue -p | grep -Eq "^${id}!( |$)" && echo held && exit 0
+            done
+            exit 1
         expect:
           stdout_contains: [held]
         retry_for: 15s
         retry_every: 500ms
     resolve_args:
       qid:
-        argv: [/bin/sh, -c, "postqueue -p | awk '/^[0-9A-F]+!( |$)/ {id=$1; sub(/!$/, \"\", id); print id; exit}'"]
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/hold -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest requeue' && {
+                printf '%s\n' "$id"
+                exit 0
+              }
+            done
+            exit 1
         retry_for: 10s
         retry_every: 500ms
     probes:
-      # Requeue runs the held message back through cleanup: the hold marker
-      # clears and the message re-enters the queue under a fresh queue ID
-      # (transiently invisible while in maildrop, hence the retry).
-      - argv: [/bin/sh, -c, "postqueue -p | awk '$1 ~ /^[0-9A-F]+!$/ {held=1} /^[0-9A-F]+[*]?( |$)/ {queued=1} END {if (queued && !held) print \"requeued-unheld\"}'"]
+      # Requeue moves the held message into maildrop for cleanup. Pickup may
+      # already have moved it to deferred by the time this probe runs.
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            for path in $(find /var/spool/postfix/maildrop /var/spool/postfix/deferred -type f); do
+              id=${path##*/}
+              postcat -q "$id" 2>/dev/null | grep -Fq 'Subject: packtest requeue' && {
+                echo requeued-unheld
+                exit 0
+              }
+            done
+            exit 1
         expect:
           stdout_contains: [requeued-unheld]
         retry_for: 15s
