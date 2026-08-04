@@ -80,11 +80,6 @@ ENV EMISAR_DEV_ROUTES=${EMISAR_DEV_ROUTES}
 COPY install.sh /install.sh
 COPY install-mcp.sh /install-mcp.sh
 
-# EmisarWeb.PacksRegistry walks packs/ at compile time; its default
-# relative path bottoms out at /packs inside the container. Copy the
-# YAMLs there so the registry can scan them.
-COPY packs /packs
-
 # Application configuration is a compile input, not a dependency input.
 RUN mkdir -p config
 COPY portal/config/config.exs portal/config/${MIX_ENV}.exs config/

@@ -127,9 +127,8 @@ jobs:
 
   packs-approval:
     name: CD - Approve pack registry release
-    # Pack sources are compile-time portal inputs. Wait for the complete
-    # reusable CI call so publication cannot outpace the portal compatibility
-    # and image checks selected for the same commit.
+    # Wait for the complete reusable CI call so publication cannot outpace the
+    # catalog compatibility and portal image checks selected for the same commit.
     if: needs.ci.outputs.packs_release == 'true'
     needs: ci
     runs-on: ubuntu-latest
