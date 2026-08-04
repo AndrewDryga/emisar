@@ -55,6 +55,9 @@ erl_crash.dump
 **/.agent/kb/internal/
 !**/.agent/presets
 !.agent/project.yaml
+!**/.agent/tasks/
+**/.agent/tasks/*
+!**/.agent/tasks/README.md
 !.agent/loop.yaml
 !.agent/Dockerfile
 .expert/*.log
@@ -83,3 +86,11 @@ override.tf.json
 *_override.tf.json
 crash.log
 crash.*.log
+
+# preset native subagents coop generates in the box (coop-<role>) — never committed
+.claude/agents/coop-*.md
+
+# .gemini may be globally ignored (local Gemini state); keep just the skills symlink
+!.gemini/
+.gemini/*
+!.gemini/skills
