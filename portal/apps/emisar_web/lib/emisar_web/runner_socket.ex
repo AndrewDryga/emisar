@@ -313,6 +313,7 @@ defmodule EmisarWeb.RunnerSocket do
         Logger.warning(
           "runner_state ingest failed for #{state.runner_id}: #{failure_diagnostic(reason)}"
         )
+
         {:push, error_frame(nil, "runner_state_failed"), state}
     end
   end
@@ -542,8 +543,7 @@ defmodule EmisarWeb.RunnerSocket do
   @error_messages %{
     "bad_envelope" => "The portal could not read this message.",
     "runner_state_failed" => "The portal could not process the runner state.",
-    "finalize_failed" =>
-      "The portal could not persist this action result. The runner will retry."
+    "finalize_failed" => "The portal could not persist this action result. The runner will retry."
   }
 
   defp error_frame(request_id, code) do
