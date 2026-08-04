@@ -43,12 +43,72 @@ const (
 	checkFail
 )
 
+// String is the machine-readable name of a status — the JSON report's
+// vocabulary, and what the human glyphs stand for.
+func (s checkStatus) String() string {
+	switch s {
+	case checkOK:
+		return "ok"
+	case checkWarn:
+		return "warn"
+	default:
+		return "fail"
+	}
+}
+
 // checkResult is one line of the doctor report: a named check, its outcome,
 // and a human detail explaining what was found (and, on failure, the fix).
 type checkResult struct {
 	name   string
 	status checkStatus
 	detail string
+}
+
+// doctorReport is the --json form of a preflight run: the same results the
+// human report renders, with string statuses and counts so fleet tooling can
+// branch on the verdict instead of parsing glyphs and banners.
+type doctorReport struct {
+	Status   string        `json:"status"`
+	Passed   int           `json:"passed"`
+	Warnings int           `json:"warnings"`
+	Failed   int           `json:"failed"`
+	Checks   []doctorCheck `json:"checks"`
+}
+
+// doctorCheck is one check in the JSON report. Detail carries the same
+// operator-facing explanation (and remedy) the human line shows.
+type doctorCheck struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+}
+
+// newDoctorReport summarizes results. The overall status is the worst check:
+// any failure fails the run, otherwise any warning warns.
+func newDoctorReport(results []checkResult) doctorReport {
+	report := doctorReport{Status: checkOK.String(), Checks: make([]doctorCheck, 0, len(results))}
+	for _, r := range results {
+		switch r.status {
+		case checkFail:
+			report.Failed++
+		case checkWarn:
+			report.Warnings++
+		default:
+			report.Passed++
+		}
+		report.Checks = append(report.Checks, doctorCheck{
+			Name:   r.name,
+			Status: r.status.String(),
+			Detail: r.detail,
+		})
+	}
+	switch {
+	case report.Failed > 0:
+		report.Status = checkFail.String()
+	case report.Warnings > 0:
+		report.Status = checkWarn.String()
+	}
+	return report
 }
 
 func doctorCmd() *cobra.Command {
@@ -63,10 +123,21 @@ is reachable over TLS.
 
 No control-plane session is opened and a failing check never aborts the
 rest, so a single run surfaces every problem at once. Exit status is
-non-zero if any check fails.`,
+non-zero if any check fails. --json reports the same checks as a
+machine-readable object.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			results := runDoctor(cmd.Context())
-			if fails := reportDoctor(os.Stdout, results); fails > 0 {
+			fails := 0
+			if flagJSONOut {
+				report := newDoctorReport(results)
+				if err := printJSON(report); err != nil {
+					return err
+				}
+				fails = report.Failed
+			} else {
+				fails = reportDoctor(os.Stdout, results)
+			}
+			if fails > 0 {
 				return fmt.Errorf("%d preflight check(s) failed", fails)
 			}
 			return nil

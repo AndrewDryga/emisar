@@ -12,14 +12,18 @@ const SchemaVersion = 1
 
 // Pack is the on-disk pack.yaml manifest. It references action and runbook
 // YAML files relative to the pack root.
+//
+// The json tags mirror the on-disk names so `emisar pack list/info --json`
+// emits one snake_case document a fleet script can parse. Root is a
+// loader-stamped host path and stays out of the payload.
 type Pack struct {
-	SchemaVersion int    `yaml:"schema_version"`
-	ID            string `yaml:"id"`
-	Name          string `yaml:"name"`
-	Version       string `yaml:"version"`
-	Description   string `yaml:"description"`
-	Vendor        string `yaml:"vendor,omitempty"`
-	Homepage      string `yaml:"homepage,omitempty"`
+	SchemaVersion int    `yaml:"schema_version" json:"schema_version"`
+	ID            string `yaml:"id" json:"id"`
+	Name          string `yaml:"name" json:"name"`
+	Version       string `yaml:"version" json:"version"`
+	Description   string `yaml:"description" json:"description"`
+	Vendor        string `yaml:"vendor,omitempty" json:"vendor,omitempty"`
+	Homepage      string `yaml:"homepage,omitempty" json:"homepage,omitempty"`
 
 	// RetiredBelow declares that every version of this pack STRICTLY below it
 	// is retired: a runner still advertising such a version is refused at
@@ -28,34 +32,34 @@ type Pack struct {
 	// bump, so the retirement floor lives in the pack's own git history and
 	// ships through the normal publish. Retirement is permanent and monotonic:
 	// the registry build refuses to lower or drop an already-published floor.
-	RetiredBelow string `yaml:"retired_below,omitempty"`
+	RetiredBelow string `yaml:"retired_below,omitempty" json:"retired_below,omitempty"`
 
-	Requires Requirements `yaml:"requires,omitempty"`
+	Requires Requirements `yaml:"requires,omitempty" json:"requires"`
 
 	// Detect describes how `emisar pack suggest` recognizes that this
 	// pack's target service is present on a host. Optional: when omitted,
 	// the pack is not auto-suggested from host discovery. Requirements are
 	// runtime prerequisites, not evidence that the target exists here.
-	Detect Detect `yaml:"detect,omitempty"`
+	Detect Detect `yaml:"detect,omitempty" json:"detect"`
 
 	// Setup documents what an operator must do on the runner host before
 	// this pack's actions can work — chiefly the environment variables its
 	// tools read to authenticate. Surfaced by `emisar pack install` and
 	// `emisar pack info`. Optional: packs that act only on the local host
 	// can omit it or set just a summary.
-	Setup Setup `yaml:"setup,omitempty"`
+	Setup Setup `yaml:"setup,omitempty" json:"setup"`
 
-	Actions []string `yaml:"actions,omitempty"`
+	Actions []string `yaml:"actions,omitempty" json:"actions,omitempty"`
 
 	// AllowSymlinks lets the pack include symlinks for action YAML and
 	// script files. Default false: any symlinked path resolves outside
 	// the pack root and the loader rejects it, even if the lexical path
 	// looked contained. Set to true only for packs you trust to manage
 	// their own symlink hygiene.
-	AllowSymlinks bool `yaml:"allow_symlinks,omitempty"`
+	AllowSymlinks bool `yaml:"allow_symlinks,omitempty" json:"allow_symlinks,omitempty"`
 
 	// Root is the absolute path to the pack directory. Set by the loader.
-	Root string `yaml:"-"`
+	Root string `yaml:"-" json:"-"`
 }
 
 // Requirements describes optional host requirements declared by a pack.
@@ -71,8 +75,8 @@ type Pack struct {
 // MatchesHost is available for callers who want to filter packs by OS
 // (e.g., a future pack catalog UI or a smoke-test command).
 type Requirements struct {
-	OS       []string `yaml:"os,omitempty"`
-	Binaries []string `yaml:"binaries,omitempty"`
+	OS       []string `yaml:"os,omitempty" json:"os,omitempty"`
+	Binaries []string `yaml:"binaries,omitempty" json:"binaries,omitempty"`
 }
 
 // Detect is the service-presence signal for `emisar pack suggest`. It is
@@ -87,13 +91,13 @@ type Requirements struct {
 // auto-suggested.
 type Detect struct {
 	// Binaries specific to the service (not generic helpers like curl).
-	Binaries []string `yaml:"binaries,omitempty"`
+	Binaries []string `yaml:"binaries,omitempty" json:"binaries,omitempty"`
 	// Processes are executable names that, when running, indicate the
 	// service is present (e.g. "grafana-server").
-	Processes []string `yaml:"processes,omitempty"`
+	Processes []string `yaml:"processes,omitempty" json:"processes,omitempty"`
 	// Ports are TCP ports that, when listened on, indicate the service
 	// (e.g. 3000 for Grafana, 9090 for Prometheus).
-	Ports []int `yaml:"ports,omitempty"`
+	Ports []int `yaml:"ports,omitempty" json:"ports,omitempty"`
 }
 
 // validate checks the detect block is well-formed.
@@ -129,27 +133,27 @@ func (r Requirements) MatchesHost() bool {
 type Setup struct {
 	// Summary is one or two sentences on the auth model in prose, e.g.
 	// "Authenticates via PG* environment variables on the runner host."
-	Summary string `yaml:"summary,omitempty"`
+	Summary string `yaml:"summary,omitempty" json:"summary,omitempty"`
 	// Env is the environment variables the pack's tool reads. Each must
 	// also be added to the runner's inherit_env to reach the process.
-	Env []EnvVar `yaml:"env,omitempty"`
+	Env []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
 	// Notes are extra setup caveats (file-based auth alternatives,
 	// required privileges, group membership, …) as scannable bullets.
-	Notes []string `yaml:"notes,omitempty"`
+	Notes []string `yaml:"notes,omitempty" json:"notes,omitempty"`
 	// Verify is the id of a low-risk read action an operator can run to
 	// confirm the pack can reach and authenticate to its target. Checked
 	// at load time to be one of the pack's own actions.
-	Verify string `yaml:"verify,omitempty"`
+	Verify string `yaml:"verify,omitempty" json:"verify,omitempty"`
 }
 
 // EnvVar documents one environment variable a pack's tool reads to find or
 // authenticate to its target.
 type EnvVar struct {
-	Name        string `yaml:"name"`
-	Required    bool   `yaml:"required,omitempty"`
-	Description string `yaml:"description,omitempty"`
-	Default     string `yaml:"default,omitempty"`
-	Example     string `yaml:"example,omitempty"`
+	Name        string `yaml:"name" json:"name"`
+	Required    bool   `yaml:"required,omitempty" json:"required,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Default     string `yaml:"default,omitempty" json:"default,omitempty"`
+	Example     string `yaml:"example,omitempty" json:"example,omitempty"`
 }
 
 // Validate checks the setup block is well-formed. Verify is validated by

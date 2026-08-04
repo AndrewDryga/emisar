@@ -42,9 +42,8 @@ test "$got" = "emisar version ${version}" || fail "'${got}' != 'emisar version $
 # The baked packs load and are exactly the curated set — nothing dropped,
 # nothing smuggled in.
 expected=$(grep -Ev '^[[:space:]]*(#|$)' "${release_dir}/container-packs.txt" | sort | paste -sd, -)
-# Pack currently serializes the exported Go field as ID; accept the intended
-# snake-case form too because this check owns pack contents, not CLI JSON shape.
-actual=$(run "$image" emisar pack list --json | jq -r '.[] | (.id // .ID)' | sort | paste -sd, -)
+# The runner CLI's JSON contract uses snake_case keys.
+actual=$(run "$image" emisar pack list --json | jq -r '.[].id' | sort | paste -sd, -)
 test "$actual" = "$expected" || fail "baked packs '${actual}' != expected '${expected}'"
 
 # doctor proves the default config is usable end to end: config loads and

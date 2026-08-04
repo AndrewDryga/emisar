@@ -523,6 +523,7 @@ func hostOf(rawURL string) string {
 // command; RunE returns nil and reportDoctor prints to os.Stdout.
 func TestDoctorCmd_AllPassExitZero(t *testing.T) {
 	withFlags(t)
+	withJSONOut(t, false)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -558,6 +559,7 @@ func TestDoctorCmd_AllPassExitZero(t *testing.T) {
 // non-nil error so the exit status is non-zero.
 func TestDoctorCmd_ConfigFailShortCircuits(t *testing.T) {
 	withFlags(t)
+	withJSONOut(t, false)
 	bad := filepath.Join(t.TempDir(), "broken.yaml")
 	if err := os.WriteFile(bad, []byte("schema_version: 1\nrunner: : :\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -642,4 +644,163 @@ func TestReportDoctor(t *testing.T) {
 			t.Errorf("report missing %q\n%s", want, out)
 		}
 	}
+}
+
+// newDoctorReport carries every check across with a string status, and the
+// overall verdict is the WORST check — a warning never masks a failure, and a
+// clean run is unambiguously "ok".
+func TestNewDoctorReport(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []checkResult
+		want    doctorReport
+	}{
+		{
+			name:    "all ok",
+			results: []checkResult{{"config", checkOK, "loaded"}, {"packs", checkOK, "1 loaded"}},
+			want:    doctorReport{Status: "ok", Passed: 2},
+		},
+		{
+			name:    "a warning downgrades the verdict",
+			results: []checkResult{{"config", checkOK, "loaded"}, {"action tools", checkWarn, "redis-cli missing"}},
+			want:    doctorReport{Status: "warn", Passed: 1, Warnings: 1},
+		},
+		{
+			name:    "a failure outranks a warning",
+			results: []checkResult{{"credential", checkFail, "no token"}, {"action tools", checkWarn, "missing"}},
+			want:    doctorReport{Status: "fail", Warnings: 1, Failed: 1},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := newDoctorReport(tc.results)
+			if got.Status != tc.want.Status {
+				t.Errorf("status = %q, want %q", got.Status, tc.want.Status)
+			}
+			if got.Passed != tc.want.Passed || got.Warnings != tc.want.Warnings || got.Failed != tc.want.Failed {
+				t.Errorf("counts = %d/%d/%d, want %d/%d/%d (passed/warnings/failed)",
+					got.Passed, got.Warnings, got.Failed, tc.want.Passed, tc.want.Warnings, tc.want.Failed)
+			}
+			if len(got.Checks) != len(tc.results) {
+				t.Fatalf("checks = %d, want one per result (%d)", len(got.Checks), len(tc.results))
+			}
+			for i, check := range got.Checks {
+				if check.Name != tc.results[i].name || check.Detail != tc.results[i].detail {
+					t.Errorf("check %d = %+v, want the %q result verbatim", i, check, tc.results[i].name)
+				}
+				if check.Status != tc.results[i].status.String() {
+					t.Errorf("check %d status = %q, want %q", i, check.Status, tc.results[i].status)
+				}
+			}
+		})
+	}
+}
+
+// `doctor --json` emits a parseable report instead of the human text: no
+// banner, no glyphs, no ANSI — and the failing check's remedy still rides
+// along in its detail so the JSON is diagnostically useful, not just valid.
+// The command still exits non-zero, so a wrapper script can't read a broken
+// runner as healthy.
+func TestDoctorCmd_JSONReportsFailuresAndExitsNonZero(t *testing.T) {
+	withFlags(t)
+	withJSONOut(t, true)
+	dir := t.TempDir()
+	packDir := writeShPack(t, filepath.Join(dir, "packs"), "linux")
+	// A token file others can read: connect refuses to reuse it, so the
+	// credential check fails with a chmod remedy. No server is listening on the
+	// cloud URL either, so that check fails too.
+	tokenPath := writeToken(t, validTokenFile, 0o644)
+	flagConfig = writeDoctorConfig(t, dir, packDir, "ws://127.0.0.1:1", tokenPath)
+
+	var execErr error
+	out := captureStdout(t, func() {
+		cmd := doctorCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		execErr = cmd.Execute()
+	})
+	if execErr == nil {
+		t.Fatalf("doctor must exit non-zero when checks fail:\n%s", out)
+	}
+	if !strings.Contains(execErr.Error(), "preflight check(s) failed") {
+		t.Errorf("error should name the failed preflight, got %v", execErr)
+	}
+
+	var report doctorReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("doctor --json must emit a JSON object: %v\n%s", err, out)
+	}
+	if report.Status != "fail" || report.Failed == 0 {
+		t.Errorf("report = %+v, want a failing verdict", report)
+	}
+	if len(report.Checks) == 0 {
+		t.Fatalf("report carries no checks:\n%s", out)
+	}
+	credential, ok := findDoctorCheck(report, "credential")
+	if !ok {
+		t.Fatalf("report is missing the credential check: %+v", report.Checks)
+	}
+	if credential.Status != "fail" {
+		t.Errorf("credential status = %q, want fail (%s)", credential.Status, credential.Detail)
+	}
+	if !strings.Contains(credential.Detail, "chmod 600") {
+		t.Errorf("the JSON detail must carry the remedy, got %q", credential.Detail)
+	}
+	for _, check := range report.Checks {
+		switch check.Status {
+		case "ok", "warn", "fail":
+		default:
+			t.Errorf("check %q has status %q, want one of ok/warn/fail", check.Name, check.Status)
+		}
+	}
+	// Nothing from the human renderer leaks into the machine payload.
+	for _, forbidden := range []string{"emisar doctor", "✓", "⚠", "✗", "\x1b[", "problem(s)"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("--json output must not contain %q:\n%s", forbidden, out)
+		}
+	}
+}
+
+// `doctor --json` on a healthy runner is an "ok" verdict with every check
+// counted — the shape a fleet script polls.
+func TestDoctorCmd_JSONAllPass(t *testing.T) {
+	withFlags(t)
+	withJSONOut(t, true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	packDir := writeShPack(t, filepath.Join(dir, "packs"), "linux")
+	tokenPath := writeToken(t, validTokenFile, 0o600)
+	flagConfig = writeDoctorConfig(t, dir, packDir, "ws://"+hostOf(srv.URL), tokenPath)
+
+	var execErr error
+	out := captureStdout(t, func() {
+		cmd := doctorCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		execErr = cmd.Execute()
+	})
+	if execErr != nil {
+		t.Fatalf("doctor --json should exit 0 when all checks pass: %v\n%s", execErr, out)
+	}
+	var report doctorReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("doctor --json must emit a JSON object: %v\n%s", err, out)
+	}
+	if report.Status != "ok" || report.Failed != 0 || report.Warnings != 0 {
+		t.Errorf("report = %+v, want an all-clear verdict", report)
+	}
+	if report.Passed != len(report.Checks) {
+		t.Errorf("passed = %d, want one per check (%d)", report.Passed, len(report.Checks))
+	}
+}
+
+func findDoctorCheck(report doctorReport, name string) (doctorCheck, bool) {
+	for _, check := range report.Checks {
+		if check.Name == name {
+			return check, true
+		}
+	}
+	return doctorCheck{}, false
 }

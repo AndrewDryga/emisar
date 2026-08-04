@@ -223,11 +223,11 @@ func TestCLI_EachSubcommandDispatches(t *testing.T) {
 		wantOut  string // a substring proving the right RunE ran
 		onStderr bool   // some commands print their result to stderr
 	}{
-		// action describe prints the actionspec.Action struct, whose fields carry
-		// no json tags → PascalCase keys ("ID", not "id").
+		// action describe prints the actionspec.Action struct as the documented
+		// snake_case document ("id", never the Go field name "ID").
 		{name: "version", args: []string{"version"}, wantOut: "emisar " + Version},
 		{name: "action list", args: []string{"--config", cfg, "action", "list"}, wantOut: "linux.ping"},
-		{name: "action describe", args: []string{"--config", cfg, "action", "describe", "linux.ping"}, wantOut: `"ID": "linux.ping"`},
+		{name: "action describe", args: []string{"--config", cfg, "action", "describe", "linux.ping"}, wantOut: `"id": "linux.ping"`},
 		{name: "pack list", args: []string{"--config", cfg, "pack", "list"}, wantOut: "linux"},
 		{name: "state", args: []string{"--config", cfg, "state"}, wantOut: `"runner_state"`},
 		{name: "events cat", args: []string{"--config", cfg, "events", "cat"}, wantOut: "linux.ping"},
@@ -257,23 +257,33 @@ func TestCLI_EachSubcommandDispatches(t *testing.T) {
 	}
 }
 
-// the global `--json` flag is honored only by commands that
-// branch on it. Driven through main() so the real persistent-flag parsing is
-// exercised: `version --json` ignores it (still the human text line, no JSON),
-// while `action list --json` honors it (a JSON array, not the table header).
-func TestCLI_JSONFlagHonoredOnlyWhereBranched(t *testing.T) {
+// The global `--json` flag reaches every command that has a machine-readable
+// form. Driven through main() so the real persistent-flag parsing is exercised
+// and the payloads are the ones a fleet script actually receives: one
+// snake_case convention, never a Go field name, and never the human rendering
+// alongside it.
+func TestCLI_JSONFlagPayloads(t *testing.T) {
 	cfg := writeRunnableConfig(t, t.TempDir(), false)
 
-	t.Run("version ignores --json", func(t *testing.T) {
+	t.Run("version emits a JSON object", func(t *testing.T) {
 		stdout, stderr, code := runCLI(t, []string{"version", "--json"}, nil)
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0; stderr=%q", code, stderr)
 		}
-		if !strings.Contains(stdout, "emisar "+Version) {
-			t.Errorf("version --json must still print the human line:\n%s", stdout)
+		var info map[string]any
+		if err := json.Unmarshal([]byte(stdout), &info); err != nil {
+			t.Fatalf("version --json must emit a JSON object, got %q: %v", stdout, err)
 		}
-		if strings.Contains(stdout, "{") || strings.Contains(stdout, "[") {
-			t.Errorf("version must not emit JSON; --json is a no-op there:\n%s", stdout)
+		if info["version"] != Version {
+			t.Errorf(`version = %#v, want %q`, info["version"], Version)
+		}
+		for _, want := range []string{"go", "os", "arch"} {
+			if s, ok := info[want].(string); !ok || s == "" {
+				t.Errorf("%s = %#v, want a non-empty string", want, info[want])
+			}
+		}
+		if strings.Contains(stdout, "emisar "+Version) {
+			t.Errorf("--json must replace the human lines, not append to them:\n%s", stdout)
 		}
 	})
 
@@ -282,17 +292,68 @@ func TestCLI_JSONFlagHonoredOnlyWhereBranched(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0; stderr=%q", code, stderr)
 		}
-		// actionspec.Action carries no json tags → PascalCase keys ("ID").
 		var actions []map[string]any
 		if err := json.Unmarshal([]byte(stdout), &actions); err != nil {
 			t.Fatalf("action list --json must emit a JSON array, got %q: %v", stdout, err)
 		}
-		if len(actions) != 1 || actions[0]["ID"] != "linux.ping" {
-			t.Errorf("want one action linux.ping in the JSON, got %v", actions)
+		if len(actions) != 1 || actions[0]["id"] != "linux.ping" || actions[0]["pack_id"] != "linux" {
+			t.Errorf("want one snake_case action linux.ping in the JSON, got %v", actions)
+		}
+		if _, legacy := actions[0]["ID"]; legacy {
+			t.Errorf("the payload must not carry the Go field name %q:\n%s", "ID", stdout)
 		}
 		// The flag is honored: the tabwriter header row must NOT appear.
 		if strings.Contains(stdout, "KIND\tRISK") || strings.Contains(stdout, "ID  PACK") {
 			t.Errorf("--json must replace the table, not append to it:\n%s", stdout)
+		}
+	})
+
+	t.Run("pack list honors --json", func(t *testing.T) {
+		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "pack", "list", "--json"}, nil)
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0; stderr=%q", code, stderr)
+		}
+		var packs []map[string]any
+		if err := json.Unmarshal([]byte(stdout), &packs); err != nil {
+			t.Fatalf("pack list --json must emit a JSON array, got %q: %v", stdout, err)
+		}
+		if len(packs) != 1 || packs[0]["id"] != "linux" || packs[0]["schema_version"] == nil {
+			t.Errorf("want one snake_case pack linux in the JSON, got %v", packs)
+		}
+		for _, legacy := range []string{"ID", "SchemaVersion", "Root"} {
+			if _, found := packs[0][legacy]; found {
+				t.Errorf("the payload must not carry the Go field name %q:\n%s", legacy, stdout)
+			}
+		}
+	})
+
+	t.Run("doctor emits a JSON report and keeps its exit status", func(t *testing.T) {
+		// Nothing is listening on this port, so the cloud check fails and the
+		// command must still exit non-zero — a wrapper reading the JSON can't
+		// mistake a broken runner for a healthy one.
+		dir := t.TempDir()
+		failing := writeRunnableConfig(t, dir, false)
+		if err := appendToFile(t, failing, "cloud:\n  url: ws://127.0.0.1:1\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n"); err != nil {
+			t.Fatalf("append cloud config: %v", err)
+		}
+		stdout, stderr, code := runCLI(t, []string{"--config", failing, "doctor", "--json"}, nil)
+		if code != 1 {
+			t.Fatalf("exit = %d, want 1; stderr=%q", code, stderr)
+		}
+		var report map[string]any
+		if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+			t.Fatalf("doctor --json must emit a JSON object, got %q: %v", stdout, err)
+		}
+		if report["status"] != "fail" {
+			t.Errorf(`status = %#v, want "fail"`, report["status"])
+		}
+		if checks, ok := report["checks"].([]any); !ok || len(checks) == 0 {
+			t.Errorf("report must carry its checks, got %#v", report["checks"])
+		}
+		for _, forbidden := range []string{"emisar doctor", "✓", "✗", "\x1b["} {
+			if strings.Contains(stdout, forbidden) {
+				t.Errorf("--json output must not contain %q:\n%s", forbidden, stdout)
+			}
 		}
 	})
 }

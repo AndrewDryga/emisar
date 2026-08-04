@@ -4,10 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
-
-	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 // `emisar action list` renders the loaded registry as a table by default.
@@ -41,8 +40,9 @@ func TestActionListCmd_Table(t *testing.T) {
 }
 
 // `action list --json` (global flag) prints the full action structs as a JSON
-// array. We decode back into the real actionspec.Action type so the assertion
-// is independent of field-tag naming.
+// array. Decoded as raw maps — not back into actionspec.Action, which would
+// pass whatever the tags say — so the KEYS a fleet script parses are pinned:
+// one snake_case shape all the way down, no exported Go field names.
 func TestActionListCmd_JSON(t *testing.T) {
 	withFlags(t)
 	withJSONOut(t, true)
@@ -59,13 +59,66 @@ func TestActionListCmd_JSON(t *testing.T) {
 	if execErr != nil {
 		t.Fatalf("action list --json: %v", execErr)
 	}
-	var actions []actionspec.Action
+	var actions []map[string]any
 	if err := json.Unmarshal([]byte(out), &actions); err != nil {
 		t.Fatalf("--json output is not a JSON action array: %v\n%s", err, out)
 	}
-	if len(actions) != 1 || actions[0].ID != "linux.ping" {
-		t.Fatalf("want one action linux.ping, got %+v", actions)
+	if len(actions) != 1 {
+		t.Fatalf("want one action, got %d:\n%s", len(actions), out)
 	}
+	assertActionJSONShape(t, actions[0])
+}
+
+// assertActionJSONShape pins the documented action payload: snake_case keys
+// including the loader-stamped pack_id, no PascalCase Go field names, and no
+// loader-only host paths.
+func assertActionJSONShape(t *testing.T, action map[string]any) {
+	t.Helper()
+	if action["id"] != "linux.ping" {
+		t.Errorf(`id = %#v, want "linux.ping"`, action["id"])
+	}
+	if action["pack_id"] != "linux" {
+		t.Errorf(`pack_id = %#v, want "linux"`, action["pack_id"])
+	}
+	for _, want := range []string{"schema_version", "side_effects", "execution", "output"} {
+		if _, ok := action[want]; !ok {
+			t.Errorf("payload missing %q key: %v", want, keysOf(action))
+		}
+	}
+	// The legacy PascalCase spelling (untagged exported fields) must be gone,
+	// and the loader's host paths must never have been in the document.
+	for _, forbidden := range []string{"ID", "PackID", "SchemaVersion", "SideEffects", "PackRoot", "SourcePath", "pack_root", "source_path"} {
+		if _, ok := action[forbidden]; ok {
+			t.Errorf("payload must not carry %q: %v", forbidden, keysOf(action))
+		}
+	}
+	// Nested objects are snake_case too — one document, one convention.
+	execution, ok := action["execution"].(map[string]any)
+	if !ok {
+		t.Fatalf("execution is not an object: %#v", action["execution"])
+	}
+	if _, ok := execution["timeout_min"]; !ok {
+		t.Errorf("execution missing timeout_min: %v", keysOf(execution))
+	}
+	if _, ok := execution["TimeoutMin"]; ok {
+		t.Errorf("execution must not carry TimeoutMin: %v", keysOf(execution))
+	}
+	command, ok := execution["command"].(map[string]any)
+	if !ok {
+		t.Fatalf("execution.command is not an object: %#v", execution["command"])
+	}
+	if command["binary"] != "true" {
+		t.Errorf(`execution.command.binary = %#v, want "true"`, command["binary"])
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Empty registry: with a packs dir that holds no packs, `action list` prints
@@ -106,7 +159,7 @@ func TestActionListCmd_EmptyRegistry(t *testing.T) {
 		if execErr != nil {
 			t.Fatalf("action list --json: %v", execErr)
 		}
-		var actions []actionspec.Action
+		var actions []map[string]any
 		if err := json.Unmarshal([]byte(out), &actions); err != nil {
 			t.Fatalf("--json output is not a JSON array: %v\n%s", err, out)
 		}
@@ -170,13 +223,11 @@ func TestActionDescribeCmd_KnownID(t *testing.T) {
 	if execErr != nil {
 		t.Fatalf("action describe: %v", execErr)
 	}
-	var a actionspec.Action
+	var a map[string]any
 	if err := json.Unmarshal([]byte(out), &a); err != nil {
 		t.Fatalf("describe output is not a JSON action: %v\n%s", err, out)
 	}
-	if a.ID != "linux.ping" {
-		t.Fatalf("described id = %q, want linux.ping", a.ID)
-	}
+	assertActionJSONShape(t, a)
 }
 
 // `action describe <unknown>` errors with the id named, exit non-zero (the

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	goruntime "runtime"
 	"strings"
 	"testing"
@@ -13,6 +15,7 @@ import (
 // here. Driven through the real cobra command; the RunE returns nil and prints
 // to os.Stdout, so we capture the process's stdout.
 func TestVersionCmd_PrintsVersionAndGoLine(t *testing.T) {
+	withJSONOut(t, false)
 	var err error
 	out := captureStdout(t, func() {
 		cmd := versionCmd()
@@ -36,11 +39,10 @@ func TestVersionCmd_PrintsVersionAndGoLine(t *testing.T) {
 	}
 }
 
-// `version` does not branch on --json: the human lines are printed whether or
-// not the global flag is set (it carries no machine-readable mode). This pins
-// the boundary that --json is honored only where a command
-// consumes it.
-func TestVersionCmd_IgnoresJSONFlag(t *testing.T) {
+// `version --json` answers a fleet inventory: one object with the runner
+// version, toolchain, and platform, and no human prose or banner mixed in.
+// Decoded as a raw map so the KEYS are pinned, not just the round-trip.
+func TestVersionCmd_JSON(t *testing.T) {
 	withJSONOut(t, true)
 	var err error
 	out := captureStdout(t, func() {
@@ -51,11 +53,56 @@ func TestVersionCmd_IgnoresJSONFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version --json: %v", err)
 	}
-	// Still the plain text line, not a JSON object.
-	if !strings.Contains(out, "emisar "+Version) {
-		t.Fatalf("version must print the plain line even with --json set:\n%s", out)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("version --json must emit a JSON object: %v\n%s", err, out)
 	}
-	if strings.Contains(out, "{") {
-		t.Fatalf("version must not emit JSON; --json is a no-op here:\n%s", out)
+	want := map[string]any{
+		"version": Version,
+		"go":      goruntime.Version(),
+		"os":      goruntime.GOOS,
+		"arch":    goruntime.GOARCH,
+	}
+	for key, value := range want {
+		if got[key] != value {
+			t.Errorf("%s = %#v, want %#v", key, got[key], value)
+		}
+	}
+	// No human line leaks into the machine payload.
+	if strings.Contains(out, "emisar "+Version) {
+		t.Errorf("--json must replace the human lines, not append to them:\n%s", out)
+	}
+	// A test binary carries no VCS settings, so the optional fields are absent
+	// rather than present-and-empty (the subprocess tests cover a real build).
+	for _, optional := range []string{"commit", "built_at", "dirty"} {
+		if _, ok := got[optional]; ok {
+			t.Errorf("%s must be omitted when the build carries no VCS info: %v", optional, out)
+		}
+	}
+}
+
+// gatherVersionInfo is the single source both renderers read, so the human
+// lines can't drift from the JSON: the VCS lines appear exactly when their
+// fields are set.
+func TestWriteVersion_RendersOptionalVCSLines(t *testing.T) {
+	var buf bytes.Buffer
+	writeVersion(&buf, versionInfo{
+		Version: "1.2.3", Go: "go1.26.5", OS: "linux", Arch: "amd64",
+		Commit: "abc123", BuiltAt: "2026-07-31T10:00:00Z", Dirty: true,
+	})
+	want := "emisar 1.2.3\n" +
+		"  go: go1.26.5 linux/amd64\n" +
+		"  commit: abc123\n" +
+		"  built: 2026-07-31T10:00:00Z\n" +
+		"  vcs: dirty (uncommitted changes)\n"
+	if got := buf.String(); got != want {
+		t.Errorf("human output drifted:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+
+	buf.Reset()
+	writeVersion(&buf, versionInfo{Version: "1.2.3", Go: "go1.26.5", OS: "linux", Arch: "amd64"})
+	want = "emisar 1.2.3\n  go: go1.26.5 linux/amd64\n"
+	if got := buf.String(); got != want {
+		t.Errorf("a build without VCS info must print only the two lines:\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }

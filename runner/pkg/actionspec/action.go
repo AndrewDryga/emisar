@@ -21,25 +21,30 @@ const SchemaVersion = 1
 //
 // Loaders also stamp PackID, PackRoot, and SourcePath at load time; those
 // fields are not part of the on-disk schema.
+//
+// The json tags mirror the on-disk names so `emisar action list/describe`
+// emits one snake_case document a fleet script can parse. PackID rides along
+// as pack_id (identity a consumer needs); PackRoot and SourcePath are
+// loader-only host paths and stay out of every payload.
 type Action struct {
-	SchemaVersion int      `yaml:"schema_version"`
-	ID            string   `yaml:"id"`
-	Title         string   `yaml:"title"`
-	Summary       string   `yaml:"summary,omitempty"`
-	Kind          Kind     `yaml:"kind"`
-	Risk          Risk     `yaml:"risk"`
-	Description   string   `yaml:"description"`
-	SideEffects   []string `yaml:"side_effects"`
-	SearchTerms   []string `yaml:"search_terms,omitempty"`
+	SchemaVersion int      `yaml:"schema_version" json:"schema_version"`
+	ID            string   `yaml:"id" json:"id"`
+	Title         string   `yaml:"title" json:"title"`
+	Summary       string   `yaml:"summary,omitempty" json:"summary,omitempty"`
+	Kind          Kind     `yaml:"kind" json:"kind"`
+	Risk          Risk     `yaml:"risk" json:"risk"`
+	Description   string   `yaml:"description" json:"description"`
+	SideEffects   []string `yaml:"side_effects" json:"side_effects"`
+	SearchTerms   []string `yaml:"search_terms,omitempty" json:"search_terms,omitempty"`
 
-	Args      []Arg     `yaml:"args"`
-	Execution Execution `yaml:"execution"`
-	Output    Output    `yaml:"output"`
-	Examples  []Example `yaml:"examples,omitempty"`
+	Args      []Arg     `yaml:"args" json:"args"`
+	Execution Execution `yaml:"execution" json:"execution"`
+	Output    Output    `yaml:"output" json:"output"`
+	Examples  []Example `yaml:"examples,omitempty" json:"examples,omitempty"`
 
-	PackID     string `yaml:"-"`
-	PackRoot   string `yaml:"-"`
-	SourcePath string `yaml:"-"`
+	PackID     string `yaml:"-" json:"pack_id"`
+	PackRoot   string `yaml:"-" json:"-"`
+	SourcePath string `yaml:"-" json:"-"`
 }
 
 // Execution describes how an action runs.
@@ -47,42 +52,42 @@ type Action struct {
 // For Kind == exec, Command must be set.
 // For Kind == script, Script must be set; Argv passes extra args to the script.
 type Execution struct {
-	Command *Command `yaml:"command,omitempty"`
-	Script  *Script  `yaml:"script,omitempty"`
-	Argv    []string `yaml:"argv,omitempty"`
-	Timeout Duration `yaml:"timeout"`
+	Command *Command `yaml:"command,omitempty" json:"command,omitempty"`
+	Script  *Script  `yaml:"script,omitempty" json:"script,omitempty"`
+	Argv    []string `yaml:"argv,omitempty" json:"argv,omitempty"`
+	Timeout Duration `yaml:"timeout" json:"timeout"`
 	// TimeoutMin and TimeoutMax bound any cloud-supplied opts.timeout
 	// override. If unset, defaults to Timeout (no override allowed).
-	TimeoutMin Duration `yaml:"timeout_min,omitempty"`
-	TimeoutMax Duration `yaml:"timeout_max,omitempty"`
+	TimeoutMin Duration `yaml:"timeout_min,omitempty" json:"timeout_min,omitempty"`
+	TimeoutMax Duration `yaml:"timeout_max,omitempty" json:"timeout_max,omitempty"`
 	// SuccessExitCodes lists non-zero exit codes the executor treats as
 	// success in addition to 0 — for tools that signal a benign state with a
 	// specific code (iscsiadm exits 21 for "no active sessions"; journalctl
 	// --grep exits 1 for "no matches"). Each must be 1..255 (0 is always
 	// success). The allowlist is exact: an unlisted non-zero code still fails,
 	// so it never softens the executor to "any non-zero is success".
-	SuccessExitCodes []int `yaml:"success_exit_codes,omitempty"`
+	SuccessExitCodes []int `yaml:"success_exit_codes,omitempty" json:"success_exit_codes,omitempty"`
 	// CancelGrace overrides the runner-wide cancel_grace for this action.
 	// Used when SIGTERM needs more time than the default (e.g., Cassandra
 	// repair clean-up). Zero means "use the config default."
-	CancelGrace Duration          `yaml:"cancel_grace,omitempty"`
-	CWD         string            `yaml:"cwd,omitempty"`
-	Env         map[string]string `yaml:"env,omitempty"`
-	User        string            `yaml:"user,omitempty"`
+	CancelGrace Duration          `yaml:"cancel_grace,omitempty" json:"cancel_grace,omitempty"`
+	CWD         string            `yaml:"cwd,omitempty" json:"cwd,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+	User        string            `yaml:"user,omitempty" json:"user,omitempty"`
 }
 
 // Command describes an exec invocation. Argv is rendered through the template
 // engine before exec.
 type Command struct {
-	Binary string   `yaml:"binary"`
-	Argv   []string `yaml:"argv"`
+	Binary string   `yaml:"binary" json:"binary"`
+	Argv   []string `yaml:"argv" json:"argv"`
 }
 
 // Script describes a scripted invocation. Path is resolved relative to the
 // owning pack root and must not escape it.
 type Script struct {
-	Path        string `yaml:"path"`
-	Interpreter string `yaml:"interpreter"`
+	Path        string `yaml:"path" json:"path"`
+	Interpreter string `yaml:"interpreter" json:"interpreter"`
 }
 
 // Output configures parsing, size limits, and action-local redaction rules.
@@ -90,16 +95,16 @@ type Script struct {
 // MaxStdoutBytes/MaxStderrBytes are the defaults; *Min/*Max bound any
 // cloud-supplied opts override. If *Min/*Max are unset, no override allowed.
 type Output struct {
-	Parser            Parser          `yaml:"parser,omitempty"`
-	ParserRequired    bool            `yaml:"parser_required,omitempty"`
-	Schema            map[string]any  `yaml:"schema,omitempty"`
-	MaxStdoutBytes    int             `yaml:"max_stdout_bytes,omitempty"`
-	MaxStdoutBytesMin int             `yaml:"max_stdout_bytes_min,omitempty"`
-	MaxStdoutBytesMax int             `yaml:"max_stdout_bytes_max,omitempty"`
-	MaxStderrBytes    int             `yaml:"max_stderr_bytes,omitempty"`
-	MaxStderrBytesMin int             `yaml:"max_stderr_bytes_min,omitempty"`
-	MaxStderrBytesMax int             `yaml:"max_stderr_bytes_max,omitempty"`
-	Redact            []RedactionRule `yaml:"redact,omitempty"`
+	Parser            Parser          `yaml:"parser,omitempty" json:"parser,omitempty"`
+	ParserRequired    bool            `yaml:"parser_required,omitempty" json:"parser_required,omitempty"`
+	Schema            map[string]any  `yaml:"schema,omitempty" json:"schema,omitempty"`
+	MaxStdoutBytes    int             `yaml:"max_stdout_bytes,omitempty" json:"max_stdout_bytes,omitempty"`
+	MaxStdoutBytesMin int             `yaml:"max_stdout_bytes_min,omitempty" json:"max_stdout_bytes_min,omitempty"`
+	MaxStdoutBytesMax int             `yaml:"max_stdout_bytes_max,omitempty" json:"max_stdout_bytes_max,omitempty"`
+	MaxStderrBytes    int             `yaml:"max_stderr_bytes,omitempty" json:"max_stderr_bytes,omitempty"`
+	MaxStderrBytesMin int             `yaml:"max_stderr_bytes_min,omitempty" json:"max_stderr_bytes_min,omitempty"`
+	MaxStderrBytesMax int             `yaml:"max_stderr_bytes_max,omitempty" json:"max_stderr_bytes_max,omitempty"`
+	Redact            []RedactionRule `yaml:"redact,omitempty" json:"redact,omitempty"`
 }
 
 // HasSchema reports whether this action opts into a typed result contract.
@@ -108,11 +113,11 @@ func (o Output) HasSchema() bool { return o.Schema != nil }
 // RedactionRule is a redaction directive (regex or literal) attached to an
 // action or to global config.
 type RedactionRule struct {
-	Name        string `yaml:"name"`
-	Type        string `yaml:"type"`
-	Pattern     string `yaml:"pattern,omitempty"`
-	Literal     string `yaml:"literal,omitempty"`
-	Replacement string `yaml:"replacement,omitempty"`
+	Name        string `yaml:"name" json:"name"`
+	Type        string `yaml:"type" json:"type"`
+	Pattern     string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
+	Literal     string `yaml:"literal,omitempty" json:"literal,omitempty"`
+	Replacement string `yaml:"replacement,omitempty" json:"replacement,omitempty"`
 }
 
 // Example is a documented sample invocation.

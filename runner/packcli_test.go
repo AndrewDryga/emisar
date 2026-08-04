@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
 // withPacksDir points the read-only pack commands at dir via the global
@@ -48,8 +46,9 @@ func TestPackListCmd_Table(t *testing.T) {
 	}
 }
 
-// `pack list --json` prints the full pack structs; we decode back into the
-// real packspec.Pack type so the check is field-tag agnostic.
+// `pack list --json` prints the full pack structs. Decoded as raw maps — not
+// back into packspec.Pack, which would pass whatever the tags say — so the
+// KEYS a fleet script parses are pinned to the documented snake_case shape.
 func TestPackListCmd_JSON(t *testing.T) {
 	root := t.TempDir()
 	writeValidPack(t, root, "redis")
@@ -65,12 +64,37 @@ func TestPackListCmd_JSON(t *testing.T) {
 	if execErr != nil {
 		t.Fatalf("pack list --json: %v", execErr)
 	}
-	var ps []packspec.Pack
+	var ps []map[string]any
 	if err := json.Unmarshal([]byte(out), &ps); err != nil {
 		t.Fatalf("--json output is not a pack array: %v\n%s", err, out)
 	}
-	if len(ps) != 1 || ps[0].ID != "redis" {
-		t.Fatalf("want one pack redis, got %+v", ps)
+	if len(ps) != 1 {
+		t.Fatalf("want one pack, got %d:\n%s", len(ps), out)
+	}
+	assertPackJSONShape(t, ps[0])
+}
+
+// assertPackJSONShape pins the documented pack payload: snake_case keys, no
+// PascalCase Go field names, and no loader-stamped host path.
+func assertPackJSONShape(t *testing.T, pack map[string]any) {
+	t.Helper()
+	if pack["id"] != "redis" {
+		t.Errorf(`id = %#v, want "redis"`, pack["id"])
+	}
+	if pack["version"] != "0.0.1" {
+		t.Errorf(`version = %#v, want "0.0.1"`, pack["version"])
+	}
+	for _, want := range []string{"schema_version", "name", "description", "actions", "requires", "setup"} {
+		if _, ok := pack[want]; !ok {
+			t.Errorf("payload missing %q key: %v", want, keysOf(pack))
+		}
+	}
+	// The legacy PascalCase spelling (untagged exported fields) must be gone,
+	// and the loader's pack Root must never have been in the document.
+	for _, forbidden := range []string{"ID", "SchemaVersion", "RetiredBelow", "AllowSymlinks", "Root", "root"} {
+		if _, ok := pack[forbidden]; ok {
+			t.Errorf("payload must not carry %q: %v", forbidden, keysOf(pack))
+		}
 	}
 }
 
@@ -198,13 +222,11 @@ func TestPackInfoCmd_JSON(t *testing.T) {
 	if execErr != nil {
 		t.Fatalf("pack info --json: %v", execErr)
 	}
-	var p packspec.Pack
+	var p map[string]any
 	if err := json.Unmarshal([]byte(out), &p); err != nil {
 		t.Fatalf("--json output is not a pack struct: %v\n%s", err, out)
 	}
-	if p.ID != "redis" {
-		t.Fatalf("pack id = %q, want redis", p.ID)
-	}
+	assertPackJSONShape(t, p)
 }
 
 // `pack info <unknown>` errors, naming the id and where it looked.
