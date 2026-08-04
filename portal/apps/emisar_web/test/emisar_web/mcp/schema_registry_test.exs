@@ -130,7 +130,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
   end
 
   test "published contracts retain self-contained input and response schemas" do
-    definition = Runbooks.Definition.schema()
+    definition = Runbooks.definition_schema()
 
     registry =
       @schema_path

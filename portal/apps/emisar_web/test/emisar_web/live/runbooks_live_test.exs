@@ -42,7 +42,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
       frozen_plan: %{"schema_version" => 1, "stages" => []},
       inputs_raw: "{}",
       inputs_sha256: String.duplicate("0", 64),
-      definition_sha256: Runbooks.Definition.digest(runbook.definition),
+      definition_sha256: Runbooks.definition_digest(runbook.definition),
       status: :succeeded
     })
     |> Repo.insert!()

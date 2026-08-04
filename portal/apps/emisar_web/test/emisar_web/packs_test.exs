@@ -243,7 +243,7 @@ defmodule EmisarWeb.PacksTest do
     # the published pack schema to the envelope so a schema-legal script can
     # never be rejected by the control plane before dispatch.
     test "the script bound is the largest that always fits the encoded envelope" do
-      envelope = Runbooks.Definition.limit!(:max_action_args_bytes)
+      envelope = Runbooks.definition_limit!(:max_action_args_bytes)
       overhead = byte_size(~s({"script":""}))
 
       assert shell_script_spec()["validation"]["max_length"] == div(envelope - overhead, 6)
@@ -261,7 +261,7 @@ defmodule EmisarWeb.PacksTest do
       assert ActionContract.validate(%{"script" => worst_case}, descriptor) == :ok
 
       assert byte_size(Jason.encode!(%{"script" => worst_case})) <=
-               Runbooks.Definition.limit!(:max_action_args_bytes)
+               Runbooks.definition_limit!(:max_action_args_bytes)
 
       over = String.duplicate(<<1>>, max_length + 1)
 

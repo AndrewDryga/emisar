@@ -21,7 +21,7 @@ defmodule EmisarWeb.RunbookImportLive do
        |> allow_upload(:runbook_json,
          accept: ~w(.json),
          max_entries: 1,
-         max_file_size: Runbooks.Definition.limit!(:max_definition_bytes),
+         max_file_size: Runbooks.definition_limit!(:max_definition_bytes),
          auto_upload: true,
          progress: &handle_upload_progress/3
        )}
@@ -156,7 +156,7 @@ defmodule EmisarWeb.RunbookImportLive do
   end
 
   defp validate_definition(socket, encoded_definition) do
-    case Runbooks.Definition.decode_json(encoded_definition) do
+    case Runbooks.decode_definition_json(encoded_definition) do
       {:ok, _definition} -> socket
       {:error, issues} -> assign(socket, :json_errors, Enum.map(issues, &issue_message/1))
     end
@@ -352,7 +352,7 @@ defmodule EmisarWeb.RunbookImportLive do
             value={@import_form.params["json"]}
             label="Canonical JSON"
             errors={@json_errors}
-            maxlength={Runbooks.Definition.limit!(:max_definition_bytes)}
+            maxlength={Runbooks.definition_limit!(:max_definition_bytes)}
             rows="14"
             spellcheck="false"
             class="min-h-72 font-mono text-xs leading-5"

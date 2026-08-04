@@ -2,9 +2,9 @@ defmodule EmisarWeb.MCP.RunbookContract do
   @moduledoc """
   Bounded, lossless MCP projection of the canonical runbook definition.
 
-  The core Definition module is the only validator. MCP keeps row metadata
-  separate and exposes the same JSON-compatible definition used by persistence
-  and the console editor.
+  The Runbooks context owns validation and definition identity. MCP keeps row
+  metadata separate and exposes the same JSON-compatible definition used by
+  persistence and the console editor.
   """
 
   alias Emisar.Runbooks
@@ -13,11 +13,11 @@ defmodule EmisarWeb.MCP.RunbookContract do
 
   @doc "Returns one complete immutable runbook projection or fails closed."
   def project(runbook) do
-    with {:ok, definition} <- Runbooks.Definition.validate(runbook.definition),
+    with {:ok, definition} <- Runbooks.validate_definition(runbook.definition),
          projection <- %{
            runbook_ref: "#{runbook.slug}@#{runbook.version}",
            status: "published",
-           definition_sha256: Runbooks.Definition.digest(definition),
+           definition_sha256: Runbooks.definition_digest(definition),
            title: runbook.title,
            description: runbook.description,
            definition: definition,
@@ -34,12 +34,12 @@ defmodule EmisarWeb.MCP.RunbookContract do
 
   @doc "Returns one canonical immutable draft projection with its test identity."
   def project_draft(runbook) do
-    with {:ok, definition} <- Runbooks.Definition.validate_draft(runbook.definition),
+    with {:ok, definition} <- Runbooks.validate_draft_definition(runbook.definition),
          projection <- %{
            runbook_ref: "#{runbook.slug}@#{runbook.version}",
            draft_id: runbook.id,
            status: "draft",
-           definition_sha256: Runbooks.Definition.digest(definition),
+           definition_sha256: Runbooks.definition_digest(definition),
            title: runbook.title,
            description: runbook.description,
            definition: definition,

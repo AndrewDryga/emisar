@@ -22,6 +22,12 @@ defmodule Emisar.Runbooks do
   @max_risk_runbook_ids 64
   # The published `<slug>@<version>` identity a model executes by.
   @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
+  # Mirrored at compile time so a schema change reaches every consumer that
+  # embeds it in its own compile-time attributes.
+  @definition_schema Definition.schema()
+
+  @typedoc "One authoring problem with a stable code, JSON Pointer path, and message."
+  @type definition_issue :: %{code: String.t(), path: String.t(), message: String.t()}
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -35,6 +41,42 @@ defmodule Emisar.Runbooks do
   end
 
   defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
+
+  # -- Definition contract ---------------------------------------------
+
+  @doc "The decoded, immutable v1 machine schema every authoring surface publishes."
+  @spec definition_schema() :: map()
+  def definition_schema, do: @definition_schema
+
+  @doc "One trusted first-party definition limit, by its atom name."
+  @spec definition_limit!(atom()) :: pos_integer()
+  def definition_limit!(name) when is_atom(name), do: Definition.limit!(name)
+
+  @doc """
+  Decodes and strictly validates one bounded canonical v1 JSON document.
+  Returns `{:ok, definition} | {:error, [definition_issue()]}`.
+  """
+  @spec decode_definition_json(term()) :: {:ok, map()} | {:error, [definition_issue()]}
+  def decode_definition_json(encoded), do: Definition.decode_json(encoded)
+
+  @doc """
+  Validates one already-decoded definition against the strict publication and
+  execution contract. Returns `{:ok, definition} | {:error, [definition_issue()]}`.
+  """
+  @spec validate_definition(term()) :: {:ok, map()} | {:error, [definition_issue()]}
+  def validate_definition(definition), do: Definition.validate(definition)
+
+  @doc """
+  Validates the safety envelope a persisted draft must satisfy — incomplete but
+  still canonical and bounded. Returns
+  `{:ok, definition} | {:error, [definition_issue()]}`.
+  """
+  @spec validate_draft_definition(term()) :: {:ok, map()} | {:error, [definition_issue()]}
+  def validate_draft_definition(definition), do: Definition.validate_draft(definition)
+
+  @doc "Stable SHA-256 identity for one JSON-compatible definition."
+  @spec definition_digest(map()) :: String.t()
+  def definition_digest(definition), do: Definition.digest(definition)
 
   # -- Reads -----------------------------------------------------------
 
@@ -1364,7 +1406,7 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.view_runbooks_permission()
            ) do
-      Emisar.Runbooks.Definition.validate(definition)
+      validate_definition(definition)
     end
   end
 

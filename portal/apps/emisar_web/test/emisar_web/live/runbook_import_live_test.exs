@@ -1,7 +1,6 @@
 defmodule EmisarWeb.RunbookImportLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Runbooks
-  alias Emisar.Runbooks.Definition
 
   test "imports pasted canonical JSON as a draft and opens the editor", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
@@ -132,7 +131,7 @@ defmodule EmisarWeb.RunbookImportLiveTest do
     {conn, _user, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/import")
 
-    content = String.duplicate("x", Definition.limit!(:max_definition_bytes) + 1)
+    content = String.duplicate("x", Runbooks.definition_limit!(:max_definition_bytes) + 1)
 
     oversized =
       file_input(lv, "#runbook-import-form", :runbook_json, [

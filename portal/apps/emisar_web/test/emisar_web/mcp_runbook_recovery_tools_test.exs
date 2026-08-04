@@ -227,7 +227,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert execution["execution"]["kind"] == "published"
 
     assert execution["execution"]["definition_sha256"] ==
-             Runbooks.Definition.digest(runbook.definition)
+             Runbooks.definition_digest(runbook.definition)
 
     assert [
              %{
@@ -315,7 +315,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runner = setup_runner!(account, subject, "db-primary")
     published = publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
     draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
-    draft_hash = Runbooks.Definition.digest(draft.definition)
+    draft_hash = Runbooks.definition_digest(draft.definition)
     published_ref = "#{published.slug}@#{published.version}"
 
     listed = call(conn, "list_runbooks", %{})
@@ -355,7 +355,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   } do
     runner = setup_runner!(account, subject, "db-primary")
     draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
-    first_hash = Runbooks.Definition.digest(draft.definition)
+    first_hash = Runbooks.definition_digest(draft.definition)
 
     revised_definition =
       subject
@@ -387,7 +387,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert revised["status"] == "draft"
     assert revised["draft_id"] != draft.id
 
-    assert revised["definition_sha256"] == Runbooks.Definition.digest(revised_definition)
+    assert revised["definition_sha256"] == Runbooks.definition_digest(revised_definition)
 
     assert call(conn, "update_runbook_draft", revision_args) == revised
 
@@ -412,7 +412,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runner = setup_runner!(account, subject, "db-primary")
     :ok = Runners.subscribe_runner_transport(runner)
     draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
-    draft_hash = Runbooks.Definition.digest(draft.definition)
+    draft_hash = Runbooks.definition_digest(draft.definition)
 
     args = %{
       "runbook_ref" => "cache-health@1",

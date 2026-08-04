@@ -1334,7 +1334,7 @@ defmodule EmisarWeb.MarketingTest do
         Regex.run(~r/Canonical runbook JSON.*?<pre[^>]*>(.*?)<\/pre>/s, html)
 
       canonical = String.replace(escaped_canonical, "&quot;", "\"")
-      assert {:ok, _definition} = Emisar.Runbooks.Definition.decode_json(canonical)
+      assert {:ok, _definition} = Emisar.Runbooks.decode_definition_json(canonical)
 
       for image <-
             ~w(import inputs stage targets arguments outputs conditions wait start approval result) do
@@ -1408,7 +1408,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "separately for stdout and stderr"
       assert html =~ "each flagged truncated on their own"
 
-      limit = &Emisar.Runbooks.Definition.limit!/1
+      limit = &Emisar.Runbooks.definition_limit!/1
       assert {limit.(:min_wait_interval_seconds), limit.(:max_wait_interval_seconds)} == {5, 3600}
       assert html =~ "every 5 seconds to 1 hour"
       assert {limit.(:min_wait_attempts), limit.(:max_wait_attempts)} == {2, 100}

@@ -1,7 +1,6 @@
 defmodule EmisarWeb.RunbookDraftTest do
   use ExUnit.Case, async: true
   alias Emisar.{Fixtures, Runbooks}
-  alias Emisar.Runbooks.Definition
   alias EmisarWeb.{RunbookDraft, RunbookEditorCatalog}
 
   test "round-trips every strict v1 authoring feature without another representation" do
@@ -100,7 +99,7 @@ defmodule EmisarWeb.RunbookDraftTest do
       ]
     }
 
-    assert {:ok, ^definition} = Definition.validate(definition)
+    assert {:ok, ^definition} = Runbooks.validate_definition(definition)
 
     rebuilt =
       definition

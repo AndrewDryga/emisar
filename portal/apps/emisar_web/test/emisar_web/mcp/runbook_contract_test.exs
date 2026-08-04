@@ -20,7 +20,7 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
       assert projection == %{
                runbook_ref: "inspect-fleet@3",
                status: "published",
-               definition_sha256: Runbooks.Definition.digest(definition),
+               definition_sha256: Runbooks.definition_digest(definition),
                title: "Inspect fleet",
                description: "Confirm the fleet is ready.",
                definition: definition,
@@ -69,7 +69,7 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
       assert projection.draft_id == runbook.id
       assert projection.runbook_ref == "inspect-fleet@4"
       assert projection.status == "draft"
-      assert projection.definition_sha256 == Runbooks.Definition.digest(definition)
+      assert projection.definition_sha256 == Runbooks.definition_digest(definition)
       assert projection.definition == definition
     end
   end

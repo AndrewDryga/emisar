@@ -389,7 +389,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp execution_definition_sha256(_execution, %{definition: definition})
        when is_map(definition),
-       do: Runbooks.Definition.digest(definition)
+       do: Runbooks.definition_digest(definition)
 
   defp execution_definition_sha256(_execution, _runbook), do: nil
 
@@ -621,7 +621,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp validate_draft_envelope(facts) do
     facts
     |> Map.take([:title, :slug, :description, :definition])
-    |> encoded_size(Runbooks.Definition.limit!(:max_definition_bytes) + 8_192)
+    |> encoded_size(Runbooks.definition_limit!(:max_definition_bytes) + 8_192)
   end
 
   defp draft_payload(runbook, operation_id, subject) do
@@ -632,7 +632,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
       runbook_ref: runbook_ref(runbook),
       slug: runbook.slug,
       status: "draft",
-      definition_sha256: Runbooks.Definition.digest(runbook.definition),
+      definition_sha256: Runbooks.definition_digest(runbook.definition),
       review_url:
         "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
     }

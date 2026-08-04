@@ -285,7 +285,7 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
   @schema_path Path.expand("../../../../priv/mcp/api-schemas.json", __DIR__)
   @external_resource @schema_path
   @schema_version @schema_path |> File.read!() |> Jason.decode!() |> Map.fetch!("schema_version")
-  @runbook_definition Runbooks.Definition.schema()
+  @runbook_definition Runbooks.definition_schema()
   @external_schemas %{
     @runbook_definition["$id"] => {"runbook_definition_v1", @runbook_definition}
   }

@@ -89,7 +89,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
            runbook_ref: "#{runbook.slug}@#{runbook.version}",
            slug: runbook.slug,
            status: "draft",
-           definition_sha256: Runbooks.Definition.digest(runbook.definition),
+           definition_sha256: Runbooks.definition_digest(runbook.definition),
            review_url:
              "#{EmisarWeb.Endpoint.url()}/app/#{conn.assigns.current_subject.account.slug}/runbooks/#{runbook.id}/edit"
          }}

@@ -13,6 +13,88 @@ defmodule Emisar.RunbooksTest do
 
   @pack_hash Emisar.Fixtures.Catalog.pack_hash("linux-core-1.4.2")
 
+  describe "definition_schema/0" do
+    test "publishes the immutable v1 authoring schema" do
+      schema = Runbooks.definition_schema()
+
+      assert schema["$id"] == "https://emisar.dev/schemas/runbook-definition-v1.json"
+      assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    end
+  end
+
+  describe "definition_limit!/1" do
+    test "carries the schema's definition byte budget" do
+      assert Runbooks.definition_limit!(:max_definition_bytes) == 65_536
+    end
+  end
+
+  describe "decode_definition_json/1" do
+    test "round-trips one canonical definition" do
+      definition = definition()
+      encoded = Jason.encode!(definition)
+
+      assert Runbooks.decode_definition_json(encoded) == {:ok, definition}
+    end
+
+    test "reports malformed JSON as one stable issue" do
+      assert Runbooks.decode_definition_json("{") ==
+               {:error,
+                [%{code: "invalid_json", path: "", message: "Enter a valid JSON object."}]}
+    end
+
+    test "rejects a document past the definition byte limit" do
+      limit = Runbooks.definition_limit!(:max_definition_bytes)
+      oversized = String.duplicate("x", limit + 1)
+
+      issue = %{
+        code: "invalid_definition",
+        path: "",
+        message: "JSON exceeds the #{limit} byte limit."
+      }
+
+      assert Runbooks.decode_definition_json(oversized) == {:error, [issue]}
+    end
+  end
+
+  describe "validate_definition/1" do
+    test "returns a canonical definition unchanged" do
+      definition = definition()
+
+      assert Runbooks.validate_definition(definition) == {:ok, definition}
+    end
+
+    test "reports a stable code and path for a malformed canonical object" do
+      assert {:error, issues} =
+               Runbooks.validate_definition(%{"schema_version" => 1, "stages" => []})
+
+      assert Enum.any?(issues, &(&1.code == "invalid_definition" and &1.path == "/stages"))
+    end
+  end
+
+  describe "validate_draft_definition/1" do
+    test "accepts an incomplete canonical draft that strict validation refuses" do
+      draft = %{
+        "schema_version" => 1,
+        "context_markdown" => "",
+        "inputs" => [],
+        "stages" => []
+      }
+
+      assert Runbooks.validate_draft_definition(draft) == {:ok, draft}
+      assert {:error, _issues} = Runbooks.validate_definition(draft)
+    end
+  end
+
+  describe "definition_digest/1" do
+    test "is a stable SHA-256 that ignores key order" do
+      assert Runbooks.definition_digest(%{"a" => 1, "b" => "two"}) ==
+               "f15bfc93d70801047473922f67fed863ecc7f82f0677ebb7122923aee81e0f97"
+
+      assert Runbooks.definition_digest(%{"b" => "two", "a" => 1}) ==
+               "f15bfc93d70801047473922f67fed863ecc7f82f0677ebb7122923aee81e0f97"
+    end
+  end
+
   describe "runbook_filters/0" do
     test "carries the Runbooks table's filters" do
       assert Enum.map(Runbooks.runbook_filters(), & &1.name) == [:status]
@@ -2551,6 +2633,13 @@ defmodule Emisar.RunbooksTest do
                Runbooks.validate_definition(%{"schema_version" => 1, "stages" => []}, subject)
 
       assert Enum.any?(issues, &(&1.code == "invalid_definition" and &1.path == "/stages"))
+    end
+
+    test "a subject without view_runbooks is denied" do
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      no_view = Fixtures.Subjects.build_subject(account: account, role: :runner)
+
+      assert Runbooks.validate_definition(definition(), no_view) == {:error, :unauthorized}
     end
   end
 
