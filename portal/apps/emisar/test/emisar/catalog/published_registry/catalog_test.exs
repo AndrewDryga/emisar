@@ -25,15 +25,33 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
       "requires" => %{"os" => ["linux"], "binaries" => ["#{id}ctl"]},
       "detect" => %{"binaries" => ["#{id}ctl"], "processes" => [id], "ports" => [6379]},
       "actions" => [
-        %{
-          "id" => "#{id}.info",
-          "title" => "#{id} info",
-          "kind" => "exec",
-          "risk" => "low",
-          "command" => %{"binary" => id, "argv" => ["info", "{{ args.section }}"]}
-        }
+        action("#{id}.info", %{
+          "command" => %{"binary" => id, "argv" => ["info", "{{ args.section }}"]},
+          "args" => [%{"name" => "section", "type" => "string", "required" => true}]
+        })
       ]
     }
+  end
+
+  # A complete trusted descriptor — the shape `emisar pack catalog build`
+  # publishes. Tests override only the field under test, since anything less
+  # than a full descriptor is now rejected outright.
+  defp action(id, overrides \\ %{}) do
+    Map.merge(
+      %{
+        "id" => id,
+        "title" => "Action #{id}",
+        "summary" => "What #{id} does.",
+        "description" => "What #{id} does, at length.",
+        "kind" => "exec",
+        "risk" => "low",
+        "side_effects" => ["Read-only."],
+        "args" => [],
+        "examples" => [],
+        "search_terms" => []
+      },
+      overrides
+    )
   end
 
   defp put_in_pack(catalog, index, key, value) do
@@ -152,35 +170,55 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
     end
 
     test "a script-kind action carries no command" do
-      catalog =
-        put_in_pack(valid_catalog(), 0, "actions", [
-          %{"id" => "redis.deep", "title" => "Deep", "kind" => "script", "risk" => "low"}
-        ])
+      script = action("redis.deep", %{"kind" => "script"})
+      catalog = put_in_pack(valid_catalog(), 0, "actions", [script])
 
       assert {:ok, packs} = Catalog.parse(catalog)
       redis = Enum.find(packs, &(&1.id == "redis"))
       assert [%{kind: "script", command: nil}] = redis.actions
     end
 
-    test "decodes an action's description; a docless action reads as empty" do
-      documented = %{
-        "id" => "redis.info",
-        "title" => "Info",
-        "kind" => "exec",
-        "risk" => "low",
-        "description" => "Redis INFO snapshot — read-only."
-      }
+    test "decodes an action's description and its declared args" do
+      documented =
+        action("redis.info", %{
+          "description" => "Redis INFO snapshot — read-only.",
+          "args" => [
+            %{"name" => "section", "type" => "string", "default" => "all"},
+            %{"name" => "token", "type" => "string", "sensitive" => true}
+          ]
+        })
 
-      docless = %{"id" => "redis.bare", "title" => "Bare", "kind" => "exec", "risk" => "low"}
-
-      catalog = put_in_pack(valid_catalog(), 0, "actions", [documented, docless])
+      catalog = put_in_pack(valid_catalog(), 0, "actions", [documented])
 
       assert {:ok, packs} = Catalog.parse(catalog)
       redis = Enum.find(packs, &(&1.id == "redis"))
-      [with_docs, without_docs] = redis.actions
+      [info] = redis.actions
 
-      assert with_docs.description == "Redis INFO snapshot — read-only."
-      assert without_docs.description == ""
+      assert info.description == "Redis INFO snapshot — read-only."
+
+      assert info.args == [
+               %{"name" => "section", "type" => "string", "default" => "all"},
+               %{"name" => "token", "type" => "string", "sensitive" => true}
+             ]
+    end
+
+    test "rejects an action that is not a complete trusted descriptor" do
+      # The command preview renders defaults and masks by `sensitive` from
+      # these very args, so a half-described action must reject the catalog
+      # rather than let the portal preview a command it can't stand behind.
+      docless = Map.delete(action("redis.info"), "description")
+      catalog = put_in_pack(valid_catalog(), 0, "actions", [docless])
+
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "complete trusted descriptor"
+    end
+
+    test "rejects a malformed args declaration" do
+      bad = action("redis.info", %{"args" => ["section"]})
+      catalog = put_in_pack(valid_catalog(), 0, "actions", [bad])
+
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "complete trusted descriptor"
     end
 
     test "rejects invalid JSON" do
@@ -204,7 +242,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
     end
 
     test "rejects a duplicate action id across packs" do
-      dup = %{"id" => "redis.info", "title" => "Dup", "kind" => "script", "risk" => "low"}
+      dup = action("redis.info", %{"kind" => "script"})
       catalog = put_in_pack(valid_catalog(), 1, "actions", [dup])
 
       assert {:error, message} = Catalog.parse(catalog)
@@ -236,13 +274,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
     end
 
     test "rejects a command whose argv is not all strings" do
-      bad = %{
-        "id" => "redis.bad",
-        "title" => "Bad",
-        "kind" => "exec",
-        "risk" => "low",
-        "command" => %{"binary" => "redis", "argv" => ["info", 42]}
-      }
+      bad = action("redis.bad", %{"command" => %{"binary" => "redis", "argv" => ["info", 42]}})
 
       catalog = put_in_pack(valid_catalog(), 0, "actions", [bad])
       assert {:error, message} = Catalog.parse(catalog)
@@ -262,7 +294,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
     end
 
     test "rejects an invalid action risk tier" do
-      bad = %{"id" => "redis.x", "title" => "X", "kind" => "exec", "risk" => "spicy"}
+      bad = action("redis.x", %{"risk" => "spicy"})
       catalog = put_in_pack(valid_catalog(), 0, "actions", [bad])
       assert {:error, message} = Catalog.parse(catalog)
       assert message =~ "risk"

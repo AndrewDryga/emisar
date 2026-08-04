@@ -511,6 +511,64 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc """
+  The exact shell command line a run will execute, for the approval page —
+  where an operator decides against *what runs*, not just which arguments were
+  sent.
+
+  Requires `view_runs` and the run's own account. `advertised_action` is the
+  runner's catalog row for this run; its account, runner, and action id must be
+  the run's own, and its pack hash is one half of the proof. The command
+  template and the arg declarations both come from the published catalog entry
+  that hash proves (`Catalog.PublishedRegistry.resolve_action/4`), never from
+  the advertisement itself, so a forged `args_schema` cannot move a default or
+  drop a `sensitive` flag out of the line.
+
+  Returns `{:ok, line}` with every sensitive value masked, or
+  `{:error, :unauthorized}`, `{:error, :not_found}` for a run outside the
+  subject's account, `{:error, :action_mismatch}` when the advertisement is not
+  this run's, `{:error, :invalid_action_args}` when the stored payload doesn't
+  decode, or `{:error, :no_command_preview}` when nothing provable can be
+  rendered — a pack drift, an unknown or script-kind action, or an argument
+  reference the template can't resolve.
+  """
+  def project_action_command(
+        %ActionRun{} = run,
+        %Catalog.RunnerAction{} = advertised_action,
+        %Subject{} = subject
+      ) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, run.account_id),
+         :ok <- ensure_advertisement_matches_run(advertised_action, run),
+         {:ok, args} <- decode_action_args(run.args_raw),
+         {:ok, action} <-
+           Catalog.PublishedRegistry.resolve_action(
+             advertised_action.pack_id,
+             advertised_action.action_id,
+             run.expected_pack_hash,
+             advertised_action.pack_hash
+           ),
+         {:ok, line} <- Catalog.CommandPreview.render(action, args, run.sensitive_arg_names) do
+      {:ok, line}
+    else
+      # The catalog and the renderer both fail closed with a bare `:error`;
+      # neither may say more about the pack or the arguments than "no preview".
+      :error -> {:error, :no_command_preview}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_advertisement_matches_run(%Catalog.RunnerAction{} = action, %ActionRun{} = run) do
+    if action.account_id == run.account_id and action.runner_id == run.runner_id and
+         action.action_id == run.action_id,
+       do: :ok,
+       else: {:error, :action_mismatch}
+  end
+
   # Every parser failure collapses to one reason: malformed or ambiguous stored
   # bytes must never hand a presenter the payload — or the duplicate key — that
   # broke the decode.

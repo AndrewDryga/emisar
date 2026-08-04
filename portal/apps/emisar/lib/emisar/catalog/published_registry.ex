@@ -2,8 +2,9 @@ defmodule Emisar.Catalog.PublishedRegistry do
   @moduledoc """
   The read boundary over the PUBLISHED pack catalog — the library of packs
   we ship to the world. It answers what a pack is, where its immutable
-  bytes live, and which command template an action declares; the rest of
-  `Emisar.Catalog` judges what a runner actually advertises against it.
+  bytes live, and what an action declares (command template and args); the
+  rest of `Emisar.Catalog` judges what a runner actually advertises against
+  it.
 
   Drives the marketing `/packs` registry pages, the machine `/packs.json` /
   `/packs/suggest.json` / `/packs/:id/pack.tar.gz` endpoints, and the
@@ -91,45 +92,42 @@ defmodule Emisar.Catalog.PublishedRegistry do
   def get(id) when is_binary(id), do: Enum.find(list(), &(&1.id == id))
 
   @doc """
-  The exec-kind command template (`%{binary, argv}`, placeholders intact)
-  for an action — but only when we can prove our catalog pack is the one the
-  runner holds, so the template is exactly what will run. Drives the
-  approval-page command preview.
+  One exec-kind action — its command template (`%{binary, argv}`, placeholders
+  intact) together with its declared args — but only when we can prove our
+  catalog pack is byte-for-byte the one the runner holds. Drives the
+  approval-page command preview, which renders template and args as a pair.
 
-  The proof uses the strongest evidence available: a run's pinned
-  `expected_pack_hash` must equal our content hash byte-for-byte; if the run
-  carries no pinned hash, the runner's advertised `pack_version` must equal
-  ours (a contract change always bumps the version, and pack trust couples
-  version to hash, so a version match means the same argv template). A pinned
-  hash that *differs* is a genuine drift and never falls back to the version.
+  The proof is content hashes only. A run's pinned `expected_pack_hash` is
+  authoritative: it AND the runner's `advertised_pack_hash` must equal our
+  content hash. An unpinned run is proven by the advertised hash alone. A
+  version is never evidence — it is a label a pack author chooses, so it can
+  name bytes we don't have.
 
-  `:error` on a drift, an unknown pack/action, a script-kind action (no
-  single-line command to render), or when neither hash nor version matches.
+  `:error` on any mismatch or missing hash, an unknown pack/action, or a
+  script-kind action (no single-line command to render).
   """
-  @spec resolve_command(String.t(), String.t(), String.t() | nil, String.t() | nil) ::
-          {:ok, %{binary: String.t(), argv: [String.t()]}} | :error
-  def resolve_command(pack_id, action_id, expected_pack_hash, pack_version)
+  @spec resolve_action(String.t(), String.t(), String.t() | nil, String.t() | nil) ::
+          {:ok, Action.t()} | :error
+  def resolve_action(pack_id, action_id, expected_pack_hash, advertised_pack_hash)
       when is_binary(pack_id) and is_binary(action_id) do
     with %Pack{} = pack <- get(pack_id),
-         true <- pack_matches?(pack, expected_pack_hash, pack_version),
-         %Action{command: %{} = command} <- Enum.find(pack.actions, &(&1.id == action_id)) do
-      {:ok, command}
+         true <- hashes_prove_pack?(pack, expected_pack_hash, advertised_pack_hash),
+         %Action{command: %{}} = action <- Enum.find(pack.actions, &(&1.id == action_id)) do
+      {:ok, action}
     else
       _ -> :error
     end
   end
 
-  def resolve_command(_pack_id, _action_id, _expected_pack_hash, _pack_version), do: :error
+  def resolve_action(_pack_id, _action_id, _expected_pack_hash, _advertised_pack_hash), do: :error
 
-  # A pinned hash is authoritative — require an exact match, never downgrade to
-  # the version. With no pinned hash, an advertised version match is the proof.
-  defp pack_matches?(%Pack{content_hash: hash}, expected_hash, _version)
+  defp hashes_prove_pack?(%Pack{content_hash: hash}, expected_hash, advertised_hash)
        when is_binary(expected_hash),
-       do: hash == expected_hash
+       do: expected_hash == hash and advertised_hash == hash
 
-  defp pack_matches?(%Pack{version: version}, _expected_hash, pack_version)
-       when is_binary(pack_version),
-       do: version == pack_version
+  defp hashes_prove_pack?(%Pack{content_hash: hash}, nil, advertised_hash)
+       when is_binary(advertised_hash),
+       do: advertised_hash == hash
 
-  defp pack_matches?(_pack, _expected_hash, _version), do: false
+  defp hashes_prove_pack?(_pack, _expected_hash, _advertised_hash), do: false
 end

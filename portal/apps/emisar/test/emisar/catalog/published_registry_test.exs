@@ -2,6 +2,9 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
   use ExUnit.Case, async: true
   alias Emisar.Catalog.PublishedRegistry
 
+  # A well-formed hash that is not any published pack's.
+  defp drifted_hash, do: "sha256:" <> String.duplicate("0", 64)
+
   describe "list/0" do
     test "returns alphabetically sorted packs" do
       ids = PublishedRegistry.list() |> Enum.map(& &1.id)
@@ -156,6 +159,14 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
              }
     end
 
+    test "an exec action carries the declared args its template renders against" do
+      pack = PublishedRegistry.get("cloud-init")
+      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
+
+      assert Enum.map(action.args, & &1["name"]) == ["module", "frequency"]
+      assert Enum.find(action.args, &(&1["name"] == "frequency"))["default"] == "always"
+    end
+
     test "a script-kind action carries no command template" do
       pack = PublishedRegistry.get("cassandra")
       action = Enum.find(pack.actions, &(&1.id == "cassandra.analyze_disk_pressure"))
@@ -165,77 +176,107 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
     end
   end
 
-  describe "resolve_command/4" do
-    test "returns the compiled command when the pinned hash matches" do
+  describe "resolve_action/4" do
+    test "returns the whole action when the pinned and advertised hashes are ours" do
       pack = PublishedRegistry.get("cloud-init")
       action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
 
-      assert PublishedRegistry.resolve_command(
+      assert PublishedRegistry.resolve_action(
+               "cloud-init",
+               "cloud-init.single_module",
+               pack.content_hash,
+               pack.content_hash
+             ) == {:ok, action}
+    end
+
+    test "the advertised hash alone proves an unpinned run" do
+      pack = PublishedRegistry.get("cloud-init")
+      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
+
+      assert PublishedRegistry.resolve_action(
+               "cloud-init",
+               "cloud-init.single_module",
+               nil,
+               pack.content_hash
+             ) == {:ok, action}
+    end
+
+    test "is :error when either side of the proof drifts from our bytes" do
+      pack = PublishedRegistry.get("cloud-init")
+
+      assert PublishedRegistry.resolve_action(
+               "cloud-init",
+               "cloud-init.single_module",
+               drifted_hash(),
+               pack.content_hash
+             ) == :error
+
+      assert PublishedRegistry.resolve_action(
+               "cloud-init",
+               "cloud-init.single_module",
+               pack.content_hash,
+               drifted_hash()
+             ) == :error
+
+      assert PublishedRegistry.resolve_action(
+               "cloud-init",
+               "cloud-init.single_module",
+               nil,
+               drifted_hash()
+             ) == :error
+    end
+
+    test "is :error when the runner advertises no hash at all" do
+      # An advertisement with no hash names no bytes, so a pinned run has
+      # nothing to agree with and an unpinned run has no evidence whatsoever.
+      pack = PublishedRegistry.get("cloud-init")
+
+      assert PublishedRegistry.resolve_action(
                "cloud-init",
                "cloud-init.single_module",
                pack.content_hash,
                nil
-             ) == {:ok, action.command}
-    end
-
-    test "falls back to the advertised version when no hash is pinned" do
-      pack = PublishedRegistry.get("cloud-init")
-      action = Enum.find(pack.actions, &(&1.id == "cloud-init.single_module"))
-
-      assert PublishedRegistry.resolve_command(
-               "cloud-init",
-               "cloud-init.single_module",
-               nil,
-               pack.version
-             ) == {:ok, action.command}
-    end
-
-    test "trusts a pinned hash over the version — a hash drift is :error" do
-      # The pinned hash is authoritative: even a matching advertised version
-      # must not paper over a hash the runner will actually enforce differently.
-      pack = PublishedRegistry.get("cloud-init")
-
-      assert PublishedRegistry.resolve_command(
-               "cloud-init",
-               "cloud-init.single_module",
-               "sha256:#{String.duplicate("0", 64)}",
-               pack.version
-             ) == :error
-    end
-
-    test "is :error when neither hash nor version matches" do
-      assert PublishedRegistry.resolve_command(
-               "cloud-init",
-               "cloud-init.single_module",
-               nil,
-               "9.9.9"
              ) == :error
 
-      assert PublishedRegistry.resolve_command("cloud-init", "cloud-init.single_module", nil, nil) ==
+      assert PublishedRegistry.resolve_action("cloud-init", "cloud-init.single_module", nil, nil) ==
                :error
+    end
+
+    test "a matching version is not evidence — only content hashes are" do
+      # A version is a label the pack author picks; it can name bytes we don't
+      # have, so passing one where a hash belongs proves nothing.
+      pack = PublishedRegistry.get("cloud-init")
+
+      assert PublishedRegistry.resolve_action(
+               "cloud-init",
+               "cloud-init.single_module",
+               nil,
+               pack.version
+             ) == :error
     end
 
     test "is :error for a script-kind action even on a hash match" do
       pack = PublishedRegistry.get("cassandra")
 
-      assert PublishedRegistry.resolve_command(
+      assert PublishedRegistry.resolve_action(
                "cassandra",
                "cassandra.analyze_disk_pressure",
                pack.content_hash,
-               nil
+               pack.content_hash
              ) == :error
     end
 
     test "is :error for an unknown pack or action" do
-      assert PublishedRegistry.resolve_command("nope", "nope.x", "sha256:abc", nil) == :error
+      assert PublishedRegistry.resolve_action("nope", "nope.x", "sha256:abc", "sha256:abc") ==
+               :error
 
       pack = PublishedRegistry.get("cloud-init")
 
-      assert PublishedRegistry.resolve_command(
+      assert PublishedRegistry.resolve_action(
                "cloud-init",
                "cloud-init.nope",
                pack.content_hash,
-               nil
+               pack.content_hash
              ) == :error
     end
   end

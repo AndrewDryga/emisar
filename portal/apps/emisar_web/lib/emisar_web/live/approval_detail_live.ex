@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Catalog, Runners, Runs}
-  alias EmisarWeb.{CommandPreview, Permissions, RunbookWorkflowComponents}
+  alias EmisarWeb.{Permissions, RunbookWorkflowComponents}
 
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
@@ -83,8 +83,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
          |> assign(:action_risk, request_risk(request, subject))
          |> assign(:action_description, action && action.description)
          # The exact command the runner will execute, arguments resolved into
-         # the action's template — shown only when our compiled pack is provably
-         # the runner's (its pinned hash, or advertised version when unpinned).
+         # the action's template — shown only when our published pack is
+         # provably byte-for-byte the runner's.
          |> assign(:executed_command, build_command_preview(action, run, subject))
          |> assign(:runner_connection, runner_connection(run))
          # Approve re-resolves the action's trusted contract and fails closed
@@ -265,30 +265,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp unavailable_action_id(_request, false, _action), do: nil
 
-  # Resolve the run's args into the action's command template for display —
-  # gated on our compiled pack provably being the runner's (its pinned hash, or
-  # the advertised pack version when unpinned), so we only ever render the exact
-  # template the runner holds. Returns nil (no command card) for a drift, a
-  # script-kind action, or a template we can't fully resolve — the raw Arguments
-  # card still carries the detail.
+  # Runs owns the trust proof, the rendering, and the masking; a preview it
+  # can't stand behind renders no command card at all — the raw Arguments card
+  # still carries the detail.
   defp build_command_preview(%Catalog.RunnerAction{} = action, %Runs.ActionRun{} = run, subject) do
-    specs = List.wrap(action.args_schema["args"])
-
-    # The preview renders the SAFE projection, so a sensitive value can never
-    # reach the command line even if the action's spec stopped declaring it;
-    # CommandPreview still masks what the spec does declare.
-    with {:ok, command} <-
-           Catalog.PublishedRegistry.resolve_command(
-             action.pack_id,
-             action.action_id,
-             run.expected_pack_hash,
-             action.pack_version
-           ),
-         {:ok, args} <- Runs.project_action_args(run, subject),
-         {:ok, line} <- CommandPreview.render(command, args, specs) do
-      line
-    else
-      _ -> nil
+    case Runs.project_action_command(run, action, subject) do
+      {:ok, line} -> line
+      {:error, _reason} -> nil
     end
   end
 

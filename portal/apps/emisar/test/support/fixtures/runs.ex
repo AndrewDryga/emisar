@@ -15,8 +15,8 @@ defmodule Emisar.Fixtures.Runs do
   Persists a `:success` action run by default. Caller supplies `:account_id`
   (a runner is created in it) or nothing (a fresh account + runner). Override
   `:status`, `:action_id`, `:source`, `:request_id`, `:args_raw`,
-  `:sensitive_arg_names`, and `:inserted_at` (to land a run in a report window)
-  as needed.
+  `:sensitive_arg_names`, `:expected_pack_hash`, and `:inserted_at` (to land a
+  run in a report window) as needed.
   """
   def create_run(attrs \\ %{}) do
     attrs = Map.new(attrs)
@@ -34,7 +34,8 @@ defmodule Emisar.Fixtures.Runs do
       source: attrs[:source] || :operator,
       status: attrs[:status] || :success,
       args_raw: attrs[:args_raw] || "{}",
-      sensitive_arg_names: attrs[:sensitive_arg_names] || []
+      sensitive_arg_names: attrs[:sensitive_arg_names] || [],
+      expected_pack_hash: attrs[:expected_pack_hash]
     }
 
     {:ok, run} = params |> ActionRun.Changeset.create() |> Repo.insert()

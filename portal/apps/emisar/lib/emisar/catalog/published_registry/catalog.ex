@@ -12,7 +12,11 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   loaded. Validation covers the schema version, required fields, unique
   pack and action ids, the `sha256:…` hash shape, safe HTTPS URLs (a
   cleartext or `javascript:` link would ride into a rendered `href` or
-  the tarball redirect), and the exec-command template shape.
+  the tarball redirect), the exec-command template shape, and — through
+  `Emisar.Catalog.TrustedManifest`, the one owner of that contract — that
+  every action is a complete trusted descriptor, so the declared `args`
+  the command preview renders and masks by are as trustworthy as the
+  template itself.
 
   Pure — no Repo, no HTTP, no side effects. The cache
   (`Emisar.Catalog.PublishedRegistry.Cache`) owns fetching and last-good
@@ -20,6 +24,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   """
 
   alias Emisar.Catalog.PublishedRegistry.{Action, Pack}
+  alias Emisar.Catalog.TrustedManifest
 
   @schema_version 1
   @hash_regex ~r/^sha256:[0-9a-f]{64}$/
@@ -123,13 +128,15 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
          {:ok, title} <- fetch_string(raw, "title"),
          {:ok, kind} <- fetch_enum(raw, "kind", @kinds, pack_id),
          {:ok, risk} <- fetch_enum(raw, "risk", @risks, pack_id),
-         {:ok, command} <- fetch_command(raw, id) do
+         {:ok, command} <- fetch_command(raw, id),
+         {:ok, args} <- fetch_args(raw, id) do
       action = %Action{
         id: id,
         title: title,
         kind: kind,
         risk: risk,
         command: command,
+        args: args,
         description: string_field(raw, "description")
       }
 
@@ -155,6 +162,21 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
     do: {:error, "action #{inspect(action_id)} has a malformed command"}
 
   defp fetch_command(_raw, _action_id), do: {:ok, nil}
+
+  # The declared args are read back out of the trusted descriptor rather than
+  # off the raw entry, so the preview's defaults and `sensitive` flags carry
+  # the same validation the trust flow applies to a runner's manifest. A
+  # descriptor that doesn't hold up rejects the whole catalog — a half-trusted
+  # action would render a command whose masking we can't stand behind.
+  defp fetch_args(raw, action_id) do
+    case TrustedManifest.from_catalog_actions([raw]) do
+      {:ok, %{"actions" => %{^action_id => %{"args_schema" => %{"args" => args}}}}} ->
+        {:ok, args}
+
+      _ ->
+        {:error, "action #{inspect(action_id)} is not a complete trusted descriptor"}
+    end
+  end
 
   # A carried-forward version window is optional; when present each entry
   # must pass the SAME shape checks as the current entry (non-empty version,

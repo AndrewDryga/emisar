@@ -1079,6 +1079,215 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "project_action_command/3" do
+    # `linux.disk_usage` is `df -P -h {{ args.paths }}` with `paths` defaulting
+    # to ["/"], so one published action exercises the default fill AND the
+    # whole-expression array expansion the preview must match the runner on.
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      pack = Catalog.PublishedRegistry.get("linux-core")
+
+      advertised_action =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "linux.disk_usage",
+          pack_id: "linux-core",
+          pack_hash: pack.content_hash
+        )
+
+      %{
+        account: account,
+        subject: subject,
+        runner: runner,
+        pack: pack,
+        advertised_action: advertised_action
+      }
+    end
+
+    test "renders the published template with the pack's declared default filled", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      advertised_action: advertised_action
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          expected_pack_hash: pack.content_hash
+        )
+
+      assert Runs.project_action_command(run, advertised_action, subject) ==
+               {:ok, "df -P -h /"}
+    end
+
+    test "masks every element of a value only the run recorded as sensitive", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      advertised_action: advertised_action
+    } do
+      # The published pack does not declare `paths` sensitive, so the run's own
+      # snapshot is the only thing keeping these out of the command line — and
+      # the array expands into one token per element, each of which must be
+      # masked on its own.
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          args_raw: ~s({"paths":["/srv/alpha","/srv/beta"]}),
+          sensitive_arg_names: ["paths"],
+          expected_pack_hash: pack.content_hash
+        )
+
+      assert Runs.project_action_command(run, advertised_action, subject) ==
+               {:ok, "df -P -h '[REDACTED]' '[REDACTED]'"}
+    end
+
+    test "is unauthorized for a same-account subject without view_runs", %{
+      account: account,
+      runner: runner,
+      pack: pack,
+      advertised_action: advertised_action
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          expected_pack_hash: pack.content_hash
+        )
+
+      assert Runs.project_action_command(run, advertised_action, no_permissions_subject(account)) ==
+               {:error, :unauthorized}
+    end
+
+    test "is not_found for a run in another account", %{
+      account: account,
+      runner: runner,
+      pack: pack,
+      advertised_action: advertised_action
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          expected_pack_hash: pack.content_hash
+        )
+
+      {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runs.project_action_command(run, advertised_action, other_subject) ==
+               {:error, :not_found}
+    end
+
+    test "rejects an advertisement that is not this run's", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack
+    } do
+      other_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      other_runner_action =
+        Fixtures.Catalog.create_action(
+          runner: other_runner,
+          action_id: "linux.disk_usage",
+          pack_id: "linux-core",
+          pack_hash: pack.content_hash
+        )
+
+      other_action =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "linux.uptime",
+          pack_id: "linux-core",
+          pack_hash: pack.content_hash
+        )
+
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          expected_pack_hash: pack.content_hash
+        )
+
+      assert Runs.project_action_command(run, other_runner_action, subject) ==
+               {:error, :action_mismatch}
+
+      assert Runs.project_action_command(run, other_action, subject) ==
+               {:error, :action_mismatch}
+    end
+
+    test "renders nothing when either half of the hash proof drifts", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      advertised_action: advertised_action
+    } do
+      drifted_hash = "sha256:" <> String.duplicate("0", 64)
+
+      drifted_run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          expected_pack_hash: drifted_hash
+        )
+
+      assert Runs.project_action_command(drifted_run, advertised_action, subject) ==
+               {:error, :no_command_preview}
+
+      drifted_advertisement =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "linux.disk_usage",
+          pack_id: "linux-core",
+          pack_hash: drifted_hash
+        )
+
+      pinned_run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          expected_pack_hash: pack.content_hash
+        )
+
+      assert Runs.project_action_command(pinned_run, drifted_advertisement, subject) ==
+               {:error, :no_command_preview}
+    end
+
+    test "collapses malformed stored bytes to one reason that carries no payload", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      advertised_action: advertised_action
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          expected_pack_hash: pack.content_hash
+        )
+
+      malformed = Fixtures.Runs.put_malformed_args_raw(run, ~s({"paths":"secret-value",}))
+
+      assert Runs.project_action_command(malformed, advertised_action, subject) ==
+               {:error, :invalid_action_args}
+    end
+  end
+
   describe "fetch_mcp_run_by_id/2" do
     test "returns the exact fixed-contract run and fails closed outside account or scope" do
       %{

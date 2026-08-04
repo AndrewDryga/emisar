@@ -196,10 +196,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-    args_schema = %{
+    # A runner's advertisement is mutable, so it is deliberately forged here:
+    # a different default and a `sensitive` flag the published pack does not
+    # declare. Neither may reach the preview.
+    forged_args_schema = %{
       "args" => [
         %{"name" => "module", "type" => "string", "required" => true},
-        %{"name" => "frequency", "type" => "string", "default" => "always"}
+        %{"name" => "frequency", "type" => "string", "default" => "forged", "sensitive" => true}
       ]
     }
 
@@ -207,8 +210,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       runner: runner,
       action_id: "cloud-init.single_module",
       pack_id: "cloud-init",
+      pack_hash: PublishedRegistry.get("cloud-init").content_hash,
       kind: "exec",
-      args_schema: args_schema
+      args_schema: forged_args_schema
     )
 
     {:ok, run} =
@@ -226,16 +230,19 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    # The omitted `frequency` falls back to its declared default — exactly what
-    # the runner will do — so the approver sees the full command, not just args.
+    # The omitted `frequency` falls back to the PUBLISHED pack's declared
+    # default — exactly what the runner will do — so the approver sees the full
+    # command, not just args, and not the advertisement's version of either.
     assert html =~ "cloud-init single --name=ssh --frequency=always"
     assert html =~ "what the runner will execute"
+    refute html =~ "forged"
+    refute html =~ "[REDACTED]"
   end
 
-  test "shows the resolved command via the advertised version when no hash is pinned",
+  test "shows the resolved command from the advertised hash when no hash is pinned",
        %{conn: conn} do
     # The seeded/queued case: the run carries no pinned hash, but the runner
-    # advertised the pack at a version that matches our compiled copy.
+    # advertises the exact bytes of our published pack.
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     pack = PublishedRegistry.get("systemd-deep")
@@ -244,7 +251,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       runner: runner,
       action_id: "systemd.unit_restart",
       pack_id: "systemd-deep",
-      pack_version: pack.version,
+      pack_hash: pack.content_hash,
       kind: "exec",
       args_schema: %{"args" => [%{"name" => "unit", "type" => "string"}]}
     )
@@ -268,10 +275,46 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "what the runner will execute"
   end
 
-  test "hides the command when a pinned hash differs, even if the version matches",
+  test "hides the command when the pinned hash differs from our published bytes",
        %{conn: conn} do
-    # A pinned hash is authoritative: a drift must never be papered over by a
-    # coincidentally-matching advertised version. No command; args still show.
+    # The pinned hash is authoritative: a drift must never be papered over by
+    # an advertisement that names our bytes. No command; args still show.
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    pack = PublishedRegistry.get("cloud-init")
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "cloud-init.single_module",
+      pack_id: "cloud-init",
+      pack_hash: pack.content_hash,
+      kind: "exec",
+      args_schema: %{"args" => [%{"name" => "module", "type" => "string"}]}
+    )
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "cloud-init.single_module",
+        source: "operator",
+        reason: "re-run module",
+        args: %{"module" => "ssh"},
+        expected_pack_hash: "sha256:#{String.duplicate("0", 64)}"
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    refute html =~ "what the runner will execute"
+    assert html =~ "ssh"
+  end
+
+  test "hides the command when the runner advertises no pack hash", %{conn: conn} do
+    # An older runner that names no bytes proves nothing, and a matching
+    # version is not a substitute — the preview stays off rather than promise a
+    # command line we cannot tie to the pack on the host.
     {conn, user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     pack = PublishedRegistry.get("cloud-init")
@@ -293,7 +336,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         source: "operator",
         reason: "re-run module",
         args: %{"module" => "ssh"},
-        expected_pack_hash: "sha256:#{String.duplicate("0", 64)}"
+        expected_pack_hash: pack.content_hash
       })
 
     {:ok, request} = Approvals.create_request(run, user.id, "please approve")
@@ -349,6 +392,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       runner: runner,
       action_id: "cloud-init.single_module",
       pack_id: "cloud-init",
+      pack_hash: PublishedRegistry.get("cloud-init").content_hash,
       kind: "exec",
       args_schema: %{
         "args" => [
@@ -388,6 +432,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       runner: runner,
       action_id: "cloud-init.single_module",
       pack_id: "cloud-init",
+      pack_hash: PublishedRegistry.get("cloud-init").content_hash,
       kind: "exec",
       args_schema: %{"args" => [%{"name" => "module", "type" => "string", "required" => true}]}
     )
