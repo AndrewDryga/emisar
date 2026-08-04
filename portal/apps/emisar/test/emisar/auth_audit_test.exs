@@ -112,6 +112,31 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["reason"] == "invalid_recovery_code"
     end
 
+    test "a capped step-up audits neither a miss nor a recovery-code use", %{
+      account: account,
+      secret: secret,
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      {:ok, enabled, codes} =
+        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+
+      for _ <- 1..5 do
+        assert {:error, :invalid} = Auth.verify_mfa_challenge(enabled, {:totp, "000000"})
+      end
+
+      assert length(events_of(account, "user.mfa_failed")) == 5
+
+      # The window is spent, so disable_mfa refuses a genuine recovery code
+      # before verification — it can neither record a miss the operator didn't
+      # make nor spend the code.
+      assert {:error, :rate_limited} = Auth.disable_mfa(hd(codes), subject)
+
+      assert length(events_of(account, "user.mfa_failed")) == 5
+      assert events_of(account, "user.mfa_recovery_code_used") == []
+    end
+
     test "regenerate_mfa_recovery_codes audits", %{
       account: account,
       secret: secret,

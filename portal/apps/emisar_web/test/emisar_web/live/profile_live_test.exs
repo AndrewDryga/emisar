@@ -241,6 +241,39 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).email == "mfa-fresh@example.com"
     end
 
+    test "an exhausted MFA window refuses the confirmation inline, email unchanged", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      secret = Auth.generate_mfa_secret()
+
+      {enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
+      |> render_submit()
+
+      # Spend the shared per-user window elsewhere; the step-up here inherits it.
+      for _ <- 1..5 do
+        assert {:error, :invalid} = Auth.verify_mfa_challenge(enrolled, {:totp, "000000"})
+      end
+
+      render_hook(lv, "confirm_email_change", %{
+        "email_step" => %{"code" => NimbleTOTP.verification_code(secret)}
+      })
+
+      # The refusal renders at the code input and the step stays open to retry.
+      assert lv |> element("#email_step_form") |> render() =~
+               "Too many attempts. Wait a few minutes, then try again."
+
+      assert Emisar.Repo.reload!(user).email == user.email
+    end
+
     test "a malformed email is refused with an inline changeset error", %{
       conn: conn,
       user: user,
@@ -799,6 +832,35 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "That code did not match. Try again."
       refute html =~ "Could not disable 2FA."
+      assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
+    end
+
+    test "an exhausted MFA window refuses the disable inline and leaves 2FA on", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      secret = Auth.generate_mfa_secret()
+
+      {enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      render_click(lv, "start_disable_mfa", %{})
+
+      # Spend the shared per-user window elsewhere; this step-up inherits it.
+      for _ <- 1..5 do
+        assert {:error, :invalid} = Auth.verify_mfa_challenge(enrolled, {:totp, "000000"})
+      end
+
+      otp = NimbleTOTP.verification_code(secret)
+      html = render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => otp}})
+
+      # The refusal renders at the code input and the step stays open to retry.
+      assert html =~ "Too many attempts. Wait a few minutes, then try again."
+      assert html =~ "Enter your authenticator code or one of your recovery codes"
       assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
     end
   end

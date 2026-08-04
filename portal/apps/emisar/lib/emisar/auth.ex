@@ -1055,7 +1055,9 @@ defmodule Emisar.Auth do
   one-time code otherwise), and only on success apply the new email. The commit is
   gated on a domain-verified step-up HERE — `update_user_email` is never reached
   without it, so the web decides nothing. `{:ok, user} | {:error, :invalid |
-  :replay | %Ecto.Changeset{}}`.
+  :replay | :rate_limited | %Ecto.Changeset{}}` — the TOTP branch spends an
+  attempt from the shared per-user MFA window, so it is `:rate_limited` once that
+  window is exhausted (the emailed-code branch has its own single-use token).
   """
   def confirm_email_change(new_email, code, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) and is_binary(code) do
@@ -1200,8 +1202,9 @@ defmodule Emisar.Auth do
   Disable TOTP for the caller after verifying a current TOTP or recovery code.
   The user is re-fetched before the factor check, and both verification paths
   validate against the current row under a lock. Returns {:ok, user} on
-  success, {:error, :invalid_code | :replay} when the factor is rejected, or
-  the underlying update error.
+  success, {:error, :invalid_code | :replay} when the factor is rejected,
+  {:error, :rate_limited} once the shared per-user MFA attempt window is
+  exhausted, or the underlying update error.
   """
   def disable_mfa(code, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(code) do
@@ -1258,18 +1261,19 @@ defmodule Emisar.Auth do
     |> Enum.unzip()
   end
 
-  # The sign-in second-factor brute-force policy: five challenge attempts per
-  # user per five-minute window, shared across TOTP and recovery codes so
-  # switching factors doesn't stretch the guessing budget.
+  # The second-factor brute-force policy: five attempts per user per five-minute
+  # window, shared by every MFA challenge and step-up (sign-in, disable, email
+  # change) and by both factors, so switching surface or factor doesn't stretch
+  # the guessing budget.
   @mfa_challenge_attempt_limit 5
   @mfa_challenge_attempt_window_ms 5 * 60_000
 
   @doc """
   Verifies the sign-in second factor — `{:totp, otp}` or `{:recovery_code,
-  code}` — behind a per-user fixed-window attempt cap, so no challenge caller
-  can be used as an unbounded guessing oracle. The cap is keyed by user id
+  code}` — behind the shared per-user fixed-window attempt cap, so no challenge
+  caller can be used as an unbounded guessing oracle. The cap is keyed by user id
   (server-side), so a page reload or a fresh socket can't reset it, and every
-  attempt counts toward the same window regardless of factor.
+  attempt counts toward the same window regardless of factor or surface.
 
   Pre-Subject — this is the sign-in second factor, so it takes the
   partially-authenticated `%Users.User{}` (no tenant resolved yet). Returns
@@ -1282,16 +1286,14 @@ defmodule Emisar.Auth do
   def verify_mfa_challenge(user, factor, context \\ %RequestContext{})
 
   def verify_mfa_challenge(%Users.User{} = user, {:totp, otp}, context) when is_binary(otp) do
-    with :ok <- throttle_mfa_challenge(user),
-         {:ok, verified} <- verify_mfa(user, otp, context) do
+    with {:ok, verified} <- verify_mfa(user, otp, context) do
       {:ok, mfa_proof(verified)}
     end
   end
 
   def verify_mfa_challenge(%Users.User{} = user, {:recovery_code, code}, context)
       when is_binary(code) do
-    with :ok <- throttle_mfa_challenge(user),
-         {:ok, verified} <- consume_mfa_recovery_code(user, code, context) do
+    with {:ok, verified} <- consume_mfa_recovery_code(user, code, context) do
       {:ok, mfa_proof(verified)}
     end
   end
@@ -1357,66 +1359,73 @@ defmodule Emisar.Auth do
   # accepts the same code repeatedly within its 30-second window, so the
   # consume step stamps `mfa_last_used_at` on the **locked** row and rejects a
   # second claim of the same bucket — two concurrent submissions of one code
-  # can't both pass. Private so the sign-in path can only reach it through
-  # `verify_mfa_challenge/3`'s attempt cap; the post-auth step-ups
-  # (`disable_mfa/2`, `confirm_email_change/3`) compose it directly.
+  # can't both pass. Every caller — sign-in (`verify_mfa_challenge/3`) and the
+  # post-auth step-ups (`disable_mfa/2`, `confirm_email_change/3`) — reaches the
+  # verifier through here, so the attempt cap is spent exactly once per request
+  # and no surface is an unbounded oracle; a capped request never verifies, so it
+  # neither stamps the row nor audits a miss it didn't make.
   defp verify_mfa(%Users.User{} = user, otp, context) when is_binary(otp) do
-    # The OTP is NOT validated against this (possibly stale) struct's secret —
-    # `verify_and_consume_mfa` re-reads the row under a lock and validates +
-    # consumes there, so a secret rotated/disabled mid-verify can't slip an old
-    # code through. We only AUDIT here from the caller's user.
-    case Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now()) do
-      {:ok, %Users.User{} = verified} ->
-        {:ok, verified}
+    with :ok <- throttle_mfa_challenge(user) do
+      # The OTP is NOT validated against this (possibly stale) struct's secret —
+      # `verify_and_consume_mfa` re-reads the row under a lock and validates +
+      # consumes there, so a secret rotated/disabled mid-verify can't slip an old
+      # code through. We only AUDIT here from the caller's user.
+      case Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now()) do
+        {:ok, %Users.User{} = verified} ->
+          {:ok, verified}
 
-      {:error, :replay} ->
-        Audit.log_for_user(user, "user.mfa_failed",
-          context: context,
-          payload: %{reason: "replay"}
-        )
+        {:error, :replay} ->
+          Audit.log_for_user(user, "user.mfa_failed",
+            context: context,
+            payload: %{reason: "replay"}
+          )
 
-        {:error, :replay}
+          {:error, :replay}
 
-      # Wrong code, MFA disabled, or the row vanished — all "this credential
-      # can't complete sign-in" → a single invalid result, audited.
-      {:error, _reason} ->
-        Audit.log_for_user(user, "user.mfa_failed",
-          context: context,
-          payload: %{reason: "invalid_otp"}
-        )
+        # Wrong code, MFA disabled, or the row vanished — all "this credential
+        # can't complete sign-in" → a single invalid result, audited.
+        {:error, _reason} ->
+          Audit.log_for_user(user, "user.mfa_failed",
+            context: context,
+            payload: %{reason: "invalid_otp"}
+          )
 
-        {:error, :invalid}
+          {:error, :invalid}
+      end
     end
   end
 
   # One-shot consume of a recovery code: removes it from the user's stored set
   # under the row lock, so concurrent submissions of the same code serialize
-  # and only one wins. Private for the same reason as `verify_mfa/3` above.
+  # and only one wins. Carries the same shared attempt cap as `verify_mfa/3`
+  # above, so a capped request keeps its code unspent.
   defp consume_mfa_recovery_code(%Users.User{} = user, raw, context) when is_binary(raw) do
-    digest = Crypto.hash(String.downcase(String.trim(raw)))
+    with :ok <- throttle_mfa_challenge(user) do
+      digest = Crypto.hash(String.downcase(String.trim(raw)))
 
-    case Users.consume_user_mfa_recovery_code(user.id, digest,
-           audit: fn updated ->
-             Audit.user_changesets(updated, "user.mfa_recovery_code_used", %{
-               context: context,
-               payload: %{remaining: length(updated.mfa_recovery_codes)}
-             })
-           end
-         ) do
-      {:ok, %Users.User{} = consumed} ->
-        {:ok, consumed}
+      case Users.consume_user_mfa_recovery_code(user.id, digest,
+             audit: fn updated ->
+               Audit.user_changesets(updated, "user.mfa_recovery_code_used", %{
+                 context: context,
+                 payload: %{remaining: length(updated.mfa_recovery_codes)}
+               })
+             end
+           ) do
+        {:ok, %Users.User{} = consumed} ->
+          {:ok, consumed}
 
-      {:error, :invalid} ->
-        # No DB mutation on a wrong code — just an audit row standalone.
-        Audit.log_for_user(user, "user.mfa_failed",
-          context: context,
-          payload: %{reason: "invalid_recovery_code"}
-        )
+        {:error, :invalid} ->
+          # No DB mutation on a wrong code — just an audit row standalone.
+          Audit.log_for_user(user, "user.mfa_failed",
+            context: context,
+            payload: %{reason: "invalid_recovery_code"}
+          )
 
-        {:error, :invalid}
+          {:error, :invalid}
 
-      {:error, _} ->
-        {:error, :invalid}
+        {:error, _} ->
+          {:error, :invalid}
+      end
     end
   end
 end

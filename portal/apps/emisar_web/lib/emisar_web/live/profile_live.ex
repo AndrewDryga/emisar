@@ -4,6 +4,11 @@ defmodule EmisarWeb.ProfileLive do
   alias EmisarWeb.{LiveForm, LiveTable, UserAgent}
   alias Phoenix.LiveView.JS
 
+  # Both step-ups on this page — the email-change authenticator branch and
+  # disabling 2FA — spend the same per-user MFA attempt window, so they report
+  # its exhaustion in the same words.
+  @mfa_rate_limit_error "Too many attempts. Wait a few minutes, then try again."
+
   def mount(_params, session, socket) do
     user = socket.assigns.current_user
 
@@ -341,6 +346,12 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:mfa_disable_error, nil)
          |> assign_mfa_disable_form()}
 
+      {:error, :rate_limited} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_disable_step, :code)
+         |> assign(:mfa_disable_error, @mfa_rate_limit_error)}
+
       {:error, :invalid_code} ->
         {:noreply,
          socket
@@ -399,6 +410,11 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:current_user, updated)
          |> assign_email_form(updated)
          |> reset_email_step()}
+
+      # Capped before the code was even checked — the step-up stays open so the
+      # operator can retry once the window rolls over.
+      {:error, :rate_limited} ->
+        {:noreply, assign(socket, :email_step_error, @mfa_rate_limit_error)}
 
       {:error, :replay} ->
         {:noreply,

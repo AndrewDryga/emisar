@@ -4,7 +4,7 @@ defmodule Emisar.Throttle do
 
   The single place that honors the `:rate_limit_enabled` switch — off in
   the test env so the fast suite never trips shared ETS counters — so the
-  domain's MFA challenge cap (`Emisar.Auth.verify_mfa_challenge/3`), the
+  domain's shared MFA challenge and step-up cap (`Emisar.Auth`), the
   route plug (`EmisarWeb.Plugs.RateLimit`), and the LiveView event handlers
   that can't sit behind a plug (magic-link / password-reset sends arrive
   over the socket) share one on/off semantics.

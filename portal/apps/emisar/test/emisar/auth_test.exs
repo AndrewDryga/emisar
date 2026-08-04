@@ -1217,6 +1217,25 @@ defmodule Emisar.AuthTest do
       assert {:error, :invalid} = Auth.confirm_email_change("new@example.com", "000000", subject)
       assert Repo.reload!(user).email == user.email
     end
+
+    test "shares the MFA attempt cap with the disable step-up", %{subject: subject} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      secret = Auth.generate_mfa_secret()
+      {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      for _ <- 1..5 do
+        assert {:error, :invalid_code} = Auth.disable_mfa("000000", subject)
+      end
+
+      # The disable misses spent the window, so the genuine TOTP is refused
+      # before verification: the email stands and the code was never consumed.
+      otp = NimbleTOTP.verification_code(secret)
+      assert {:error, :rate_limited} = Auth.confirm_email_change("new@example.com", otp, subject)
+
+      reloaded = Repo.reload!(user)
+      assert reloaded.email == user.email
+      assert reloaded.mfa_last_used_at == nil
+    end
   end
 
   describe "issue_confirmation_token!/1" do
@@ -1417,6 +1436,26 @@ defmodule Emisar.AuthTest do
 
       assert {:error, :invalid_code} = Auth.disable_mfa(nil, subject)
       assert %User{mfa_enabled_at: %DateTime{}} = Repo.reload!(subject.actor)
+    end
+
+    test "shares the MFA attempt cap with sign-in without consuming a recovery code", %{
+      secret: secret,
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {user, [code | _]} = Fixtures.Users.enable_mfa!(secret, subject)
+
+      for _ <- 1..5 do
+        assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, "000000"})
+      end
+
+      # The sign-in misses spent the window, so a genuine recovery code is
+      # refused before the consume — MFA stays on and the code stays usable.
+      assert {:error, :rate_limited} = Auth.disable_mfa(code, subject)
+
+      reloaded = Repo.reload!(user)
+      assert %DateTime{} = reloaded.mfa_enabled_at
+      assert reloaded.mfa_recovery_codes == user.mfa_recovery_codes
     end
   end
 
