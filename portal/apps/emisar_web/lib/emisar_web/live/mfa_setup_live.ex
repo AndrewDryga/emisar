@@ -59,6 +59,7 @@ defmodule EmisarWeb.MfaSetupLive do
        |> assign(:mfa_uri, uri)
        |> assign(:mfa_qr_svg, MfaQr.svg(uri))
        |> assign(:mfa_recovery_codes, nil)
+       |> assign(:mfa_error, nil)
        |> assign_mfa_form()}
     else
       {:ok,
@@ -68,6 +69,7 @@ defmodule EmisarWeb.MfaSetupLive do
        |> assign(:mfa_uri, nil)
        |> assign(:mfa_qr_svg, nil)
        |> assign(:mfa_recovery_codes, nil)
+       |> assign(:mfa_error, nil)
        |> assign_mfa_form()}
     end
   end
@@ -118,7 +120,7 @@ defmodule EmisarWeb.MfaSetupLive do
             </.button>
           </div>
         <% @mfa_uri -> %>
-          <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form}>
+          <.mfa_enrollment qr_svg={@mfa_qr_svg} uri={@mfa_uri} form={@mfa_form} error={@mfa_error}>
             <:actions>
               <.button phx-disable-with="Verifying...">Confirm and continue</.button>
             </:actions>
@@ -145,13 +147,14 @@ defmodule EmisarWeb.MfaSetupLive do
            |> assign(:codes_saved?, false)
            |> assign(:mfa_secret, nil)
            |> assign(:mfa_uri, nil)
-           |> assign(:mfa_qr_svg, nil)}
+           |> assign(:mfa_qr_svg, nil)
+           |> assign(:mfa_error, nil)}
 
         {:error, :invalid_otp} ->
-          {:noreply, put_flash(socket, :error, "That code didn't match — try the next one.")}
+          {:noreply, assign(socket, :mfa_error, "That code didn't match — try the next one.")}
 
         {:error, _changeset} ->
-          {:noreply, put_flash(socket, :error, "Could not enable MFA.")}
+          {:noreply, assign(socket, :mfa_error, "Could not enable MFA.")}
       end
     end
   end

@@ -89,12 +89,13 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert_redirect(lv, "/app")
   end
 
-  test "a wrong code stays on the step with a flash", %{conn: conn} do
+  test "a wrong code is rejected inline at the form, not as a flash", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
 
-    html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
+    render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
 
-    assert html =~ "didn&#39;t match"
+    assert has_element?(lv, "#mfa_form", "didn't match")
+    refute has_element?(lv, "#flash-error", "didn't match")
   end
 
   test "an already-compliant member is sent straight to the dashboard", %{
