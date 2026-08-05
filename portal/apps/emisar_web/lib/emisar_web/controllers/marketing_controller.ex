@@ -229,7 +229,7 @@ defmodule EmisarWeb.MarketingController do
       )
 
     render(conn, :home,
-      page_title: "The best way to give your AI agents access to production.",
+      page_title: "Give AI tools approved infrastructure actions, not SSH",
       meta_description:
         "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, and a hash-chained audit trail.",
       canonical_url: @base <> "/",
