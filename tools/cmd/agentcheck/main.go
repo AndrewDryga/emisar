@@ -449,6 +449,63 @@ func isLegacyKnowledgeDirectory(relative string) bool {
 		strings.HasSuffix(relative, "/.agent/reference") || strings.HasSuffix(relative, "/.agent/rules")
 }
 
+// Step 2 of the taste pipeline says a recorded rule gets a one-line entry in the
+// owning AGENTS.md rule index. An unindexed rule file is invisible: nothing in
+// the BOOT protocol reads the rules directory, so an agent following it never
+// loads the rule, and the correction it captured gets made again. This is the
+// mechanical half of that pipeline — the same "graduate it" step the creed asks
+// for on every rule it can check.
+func (c *checker) checkRulesAreIndexed() {
+	manuals := []string{
+		"AGENTS.md", "portal/AGENTS.md", "runner/AGENTS.md",
+		"mcp/AGENTS.md", "packs/AGENTS.md", "infra/AGENTS.md",
+	}
+	// Any manual, not the one whose directory holds the file: a shared rule is
+	// often indexed by the project it governs (packs-* from packs/AGENTS.md,
+	// elixir-model-* from portal/AGENTS.md), and an agent reads the manual for
+	// the area it is working in.
+	var index []byte
+	for _, manual := range manuals {
+		data, err := os.ReadFile(c.path(manual))
+		if err != nil {
+			if !os.IsNotExist(err) {
+				c.fail("reading %s: %v", manual, err)
+			}
+			continue
+		}
+		index = append(index, data...)
+	}
+
+	rulesDirs := []string{
+		".agent/kb/rules", "portal/.agent/kb/rules", "runner/.agent/kb/rules",
+		"mcp/.agent/kb/rules", "packs/.agent/kb/rules", "infra/.agent/kb/rules",
+	}
+	checked := 0
+	for _, rulesDir := range rulesDirs {
+		entries, err := os.ReadDir(c.path(rulesDir))
+		if err != nil {
+			if !os.IsNotExist(err) {
+				c.fail("reading %s: %v", rulesDir, err)
+			}
+			continue
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			checked++
+			if !bytes.Contains(index, []byte(name)) {
+				c.fail("%s/%s is in no AGENTS.md rule index; an agent following BOOT will never load it",
+					rulesDir, name)
+			}
+		}
+	}
+	if checked == 0 {
+		c.fail("no rule files were found to check; the kb layout moved")
+	}
+}
+
 func (c *checker) checkKnowledgeCards() {
 	if _, err := os.Stat(c.path(".agent/kb/README.md")); err != nil {
 		c.fail(".agent/kb/README.md is required as the knowledge index")
@@ -832,6 +889,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("public skill MCP tool names exist in the portal-owned API schema", c.checkPublicSkillMCPTools)
 	c.group("sweep Stop guard is skill-scoped; no retired global guard/sentinel", c.checkSweepGuard)
 	c.group("the commit-msg hook verifies a Coop-Task line parses as a trailer", c.checkCommitMessageHook)
+	c.group("every kb rule is indexed by its owning AGENTS.md", c.checkRulesAreIndexed)
 	if len(c.failures) > 0 {
 		fmt.Fprintf(c.errOut, "\nAgent setup audit failed: %d issue(s)\n", len(c.failures))
 		return 1

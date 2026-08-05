@@ -589,4 +589,6 @@ seen firing is a check that may not work — the old grep battery is
 retired precisely because every one of its rules now has a
 fixture-verified AST check.
 
+Not every rule earns a check. A candidate that fires mostly on correct code trains people to ignore it or sprinkle `# credo:disable`, which is worse than no check — that belongs to `/elixir-iron-review` judgment. The candidates that were spiked, measured, and deliberately **not** wired are recorded with their false-positive evidence in [`.agent/kb/rules/elixir-rejected-credo-checks.md`](.agent/kb/rules/elixir-rejected-credo-checks.md); read it before proposing one of them again.
+
 Then run the [verify loop](#how-we-build-prime-directive) (IL-20).
