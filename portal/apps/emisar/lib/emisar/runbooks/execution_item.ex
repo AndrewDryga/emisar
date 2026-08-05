@@ -46,7 +46,7 @@ defmodule Emisar.Runbooks.ExecutionItem do
     belongs_to :runbook_execution, Emisar.Runbooks.RunbookExecution
     belongs_to :runbook_execution_stage, Emisar.Runbooks.ExecutionStage
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
-    belongs_to :policy, Emisar.Policies.Policy
+    belongs_to :policy, Emisar.Policies.Policy, where: [deleted_at: nil]
 
     has_many :attempts, Emisar.Runs.ActionRun, foreign_key: :runbook_execution_item_id
 
