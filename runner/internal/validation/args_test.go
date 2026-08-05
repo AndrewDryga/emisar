@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -279,5 +280,56 @@ func TestValidate_DefaultsBeforePolicy(t *testing.T) {
 	}
 	if out["port"].(int64) != 7199 {
 		t.Fatalf("expected 7199, got %v", out["port"])
+	}
+}
+
+// A json.Number is kept verbatim so a value round-trips exactly, and that
+// literal is what renders into program text. min/max say nothing about its
+// LENGTH, so "1." + 30,000 zeros + "1" satisfied min:0,max:10 and arrived as
+// 30 KB of digits — inside one of the few argument kinds a pack may render
+// into a command.
+func TestValidate_NumberLiteralIsLengthBounded(t *testing.T) {
+	schema := []actionspec.Arg{{
+		Name: "x", Type: actionspec.ArgNumber,
+		Validation: &actionspec.Validation{Min: ptrFloat(0), Max: ptrFloat(10)},
+	}}
+
+	padded := json.Number("1." + strings.Repeat("0", 30000) + "1")
+	if _, err := Validate(schema, map[string]any{"x": padded}); err == nil {
+		t.Fatal("a 30 KB number literal must be rejected even though it satisfies min/max")
+	}
+
+	if _, err := Validate(schema, map[string]any{"x": json.Number("1.5")}); err != nil {
+		t.Fatalf("an ordinary number must still pass: %v", err)
+	}
+}
+
+// Every array element becomes its own argv token. Without max_items the only
+// ceiling was the 32 KiB envelope — roughly 10,000 tokens.
+func TestValidate_ArrayHasABackstopWithoutMaxItems(t *testing.T) {
+	schema := []actionspec.Arg{{Name: "x", Type: actionspec.ArgStringArray}}
+
+	many := make([]any, defaultMaxItems+1)
+	for i := range many {
+		many[i] = "v"
+	}
+	if _, err := Validate(schema, map[string]any{"x": many}); err == nil {
+		t.Fatalf("an array of %d elements must be rejected without max_items", len(many))
+	}
+
+	ordinary := []any{"a", "b", "c"}
+	if _, err := Validate(schema, map[string]any{"x": ordinary}); err != nil {
+		t.Fatalf("an ordinary array must still pass: %v", err)
+	}
+}
+
+// An author's smaller max_items still wins over the backstop.
+func TestValidate_AuthorMaxItemsStillApplies(t *testing.T) {
+	schema := []actionspec.Arg{{
+		Name: "x", Type: actionspec.ArgStringArray,
+		Validation: &actionspec.Validation{MaxItems: ptrInt(2)},
+	}}
+	if _, err := Validate(schema, map[string]any{"x": []any{"a", "b", "c"}}); err == nil {
+		t.Fatal("three elements must fail a max_items of 2")
 	}
 }

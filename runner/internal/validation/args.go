@@ -20,6 +20,15 @@ const defaultMaxStringBytes = 32 << 10
 // Validate normalizes raw against the arg schema. It returns a new map of
 // validated values (only declared args) or a *Error describing the first
 // failure. raw must not be mutated.
+// A float64 round-trips in at most 24 characters; 64 leaves room for an
+// author's padded literal without leaving the door open to a 30 KB one.
+const maxNumberLiteralBytes = 64
+
+// The backstop element count for an array arg whose pack declares no max_items.
+// Generous next to the largest any shipped pack asks for (32), and far below
+// what the envelope alone allowed.
+const defaultMaxItems = 256
+
 func Validate(schema []actionspec.Arg, raw map[string]any) (map[string]any, error) {
 	if raw == nil {
 		raw = map[string]any{}
@@ -78,6 +87,16 @@ func coerce(a actionspec.Arg, v any) (any, error) {
 		return n, nil
 	case actionspec.ArgNumber:
 		if number, ok := v.(json.Number); ok {
+			// A json.Number is kept VERBATIM so a value round-trips exactly, and
+			// that literal is what renders into program text. min/max say nothing
+			// about its length: "1." plus 30,000 zeros plus "1" satisfies
+			// min:0,max:10 and arrives as 30 KB of digits. A two-sided bounded
+			// number is one of the few things a pack may render into a command,
+			// so its LENGTH has to be bounded too.
+			if len(number) > maxNumberLiteralBytes {
+				return nil, newError(a.Name, "type",
+					"number literal is too long (%d bytes, max %d)", len(number), maxNumberLiteralBytes)
+			}
 			if _, valid := toFloat(number); !valid {
 				return nil, newError(a.Name, "type", "expected number")
 			}
@@ -140,6 +159,11 @@ func applyValidation(a actionspec.Arg, v any) (any, error) {
 	if err := applyStringByteLimit(a, v); err != nil {
 		return nil, err
 	}
+	// Ahead of the nil-Validation return, because an arg with no `validation:`
+	// block is exactly the one that had no element bound at all.
+	if err := applyArrayItemLimit(a, v); err != nil {
+		return nil, err
+	}
 	if a.Validation == nil {
 		return v, nil
 	}
@@ -147,15 +171,6 @@ func applyValidation(a actionspec.Arg, v any) (any, error) {
 
 	// Arrays apply max_items at array scope, scalar validators per-element.
 	if isArrayType(a.Type) {
-		if val.MaxItems != nil {
-			n, ok := arrayLen(v)
-			if !ok {
-				return nil, newError(a.Name, "max_items", "requires array value")
-			}
-			if n > *val.MaxItems {
-				return nil, newError(a.Name, "max_items", "too many items (max %d)", *val.MaxItems)
-			}
-		}
 		elements, err := elementsOf(v)
 		if err != nil {
 			return nil, newError(a.Name, "type", "%s", err.Error())
@@ -769,4 +784,30 @@ func toAnyArray(v any) ([]any, error) {
 		return out, nil
 	}
 	return nil, fmt.Errorf("not an array: %T", v)
+}
+
+// applyArrayItemLimit enforces the author's max_items when they set one and a
+// backstop when they do not. Every array element becomes its own argv token, so
+// an array with no declared ceiling was bounded only by the 32 KiB envelope —
+// roughly 10,000 tokens. The largest max_items any shipped pack asks for is 32.
+func applyArrayItemLimit(a actionspec.Arg, v any) error {
+	if !isArrayType(a.Type) {
+		return nil
+	}
+	limit := defaultMaxItems
+	declared := a.Validation != nil && a.Validation.MaxItems != nil
+	if declared {
+		limit = *a.Validation.MaxItems
+	}
+	n, ok := arrayLen(v)
+	if !ok {
+		if declared {
+			return newError(a.Name, "max_items", "requires array value")
+		}
+		return nil
+	}
+	if n > limit {
+		return newError(a.Name, "max_items", "too many items (max %d)", limit)
+	}
+	return nil
 }
