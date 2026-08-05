@@ -12,7 +12,10 @@ defmodule Emisar.SecretRedactionTest do
   # completeness test below fails if this drifts from what the schemas actually
   # declare — so a new secret field can't be added without a leak guard.
   @redacted [
+    {Emisar.Accounts.Membership, [:invitation_token_digest]},
     {Emisar.ApiKeys.ApiKey, [:key_hash]},
+    {Emisar.ApiKeys.DeviceGrant, [:device_code_digest, :user_code_digest]},
+    {Emisar.Auth.UserToken, [:token]},
     {Emisar.Runners.EnrollmentKey, [:key_hash]},
     {Emisar.Runners.Token, [:token_hash]},
     {Emisar.OAuth.Token, [:access_token_hash, :refresh_token_hash]},

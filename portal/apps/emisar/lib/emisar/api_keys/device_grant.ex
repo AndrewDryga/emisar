@@ -35,8 +35,8 @@ defmodule Emisar.ApiKeys.DeviceGrant do
 
     # Digests only — the raw device code (poll credential) and user code
     # (short human approval code) never persist.
-    field :device_code_digest, :string
-    field :user_code_digest, :string
+    field :device_code_digest, :string, redact: true
+    field :user_code_digest, :string, redact: true
 
     field :requested_clients, {:array, :string}, default: []
     field :requester_ip, :string

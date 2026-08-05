@@ -103,7 +103,12 @@ defmodule EmisarWeb.PostmarkWebhookControllerTest do
         assert json_response(response, 401)
       end)
 
-    assert log == ""
+    # Asserted on THIS webhook's output, not on an empty string: `capture_log`
+    # collects from the whole node, so an unrelated async test logging in the
+    # same window failed this test with a line it never wrote.
+    refute log =~ "postmark"
+    refute log =~ "wrong-secret"
+    refute log =~ "y@example.com"
     refute Mail.suppressed?("y@example.com")
   end
 

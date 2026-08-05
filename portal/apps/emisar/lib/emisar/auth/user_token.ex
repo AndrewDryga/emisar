@@ -10,7 +10,7 @@ defmodule Emisar.Auth.UserToken do
   use Emisar, :schema
 
   schema "auth_user_tokens" do
-    field :token, :binary
+    field :token, :binary, redact: true
     field :context, :string
     field :sent_to, :string
     field :metadata, :map, default: %{}

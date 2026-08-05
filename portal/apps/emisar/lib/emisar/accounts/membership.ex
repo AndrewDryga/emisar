@@ -29,7 +29,7 @@ defmodule Emisar.Accounts.Membership do
     # is the person's own attribute and deliberately cross-account, so a rename
     # from one workspace's IdP must not rewrite how they read in another's.
     field :directory_display_name, :string
-    field :invitation_token_digest, :string
+    field :invitation_token_digest, :string, redact: true
     field :invitation_accepted_at, :utc_datetime_usec
     field :disabled_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
