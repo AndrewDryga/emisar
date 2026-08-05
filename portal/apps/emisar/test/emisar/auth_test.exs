@@ -1062,6 +1062,30 @@ defmodule Emisar.AuthTest do
       # The first code is gone; only the latest issuance verifies.
       assert {:error, :invalid} = Auth.verify_email_change_code(first_code, subject)
     end
+
+    test "direct starts and begin share one issuance budget without replacing on rejection", %{
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      for index <- 1..4 do
+        assert :ok = Auth.issue_email_change_code("direct-#{index}@example.com", subject)
+        assert_received {:email, _}
+      end
+
+      assert {:ok, :code} = Auth.begin_email_change("latest@example.com", subject)
+      assert_received {:email, latest_email}
+      [latest_code] = Regex.run(~r/\d{6}/, latest_email.text_body)
+
+      assert {:error, :rate_limited} =
+               Auth.issue_email_change_code("rejected@example.com", subject)
+
+      refute_received {:email, _}
+
+      # A refused resend never deletes the live token it failed to replace.
+      assert {:ok, "latest@example.com"} =
+               Auth.verify_email_change_code(latest_code, subject)
+    end
   end
 
   describe "verify_email_change_code/2" do
@@ -1092,6 +1116,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "the code locks after the attempt budget is spent", %{subject: subject} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
       :ok = Auth.issue_email_change_code("new@example.com", subject)
       assert_received {:email, email}
       [code] = Regex.run(~r/\d{6}/, email.text_body)
@@ -1099,8 +1124,51 @@ defmodule Emisar.AuthTest do
       for _ <- 1..5,
           do: assert({:error, :invalid} = Auth.verify_email_change_code("000000", subject))
 
-      # Budget spent → even the right code no longer loads a token.
-      assert {:error, :invalid} = Auth.verify_email_change_code(code, subject)
+      # Both the token-local and durable budgets are spent. The durable check
+      # refuses the next attempt before the token is loaded.
+      assert {:error, :rate_limited} = Auth.verify_email_change_code(code, subject)
+    end
+
+    test "replacement tokens cannot reset the durable inbox budget", %{subject: subject} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      :ok = Auth.issue_email_change_code("first@example.com", subject)
+      assert_received {:email, _first_email}
+
+      for _ <- 1..3 do
+        assert {:error, :invalid} = Auth.verify_email_change_code("000000", subject)
+      end
+
+      :ok = Auth.issue_email_change_code("latest@example.com", subject)
+      assert_received {:email, latest_email}
+      [latest_code] = Regex.run(~r/\d{6}/, latest_email.text_body)
+
+      for _ <- 1..2 do
+        assert {:error, :invalid} = Auth.verify_email_change_code("000000", subject)
+      end
+
+      assert {:error, :rate_limited} =
+               Auth.verify_email_change_code(latest_code, subject)
+
+      window =
+        Repo.get_by!(SecurityAttemptWindow,
+          user_id: subject.actor.id,
+          scope: :inbox_step_up
+        )
+
+      expired = ~U[2001-01-01 00:05:00.000000Z]
+
+      window
+      |> Ecto.Changeset.change(
+        window_started_at: DateTime.add(expired, -300, :second),
+        window_expires_at: expired
+      )
+      |> Repo.update!()
+
+      # The rate-limited attempt did not read, decrement, or consume the latest
+      # token; it remains valid when the durable window resets.
+      assert {:ok, "latest@example.com"} =
+               Auth.verify_email_change_code(latest_code, subject)
     end
 
     test "an expired code is rejected", %{user: user, subject: subject} do
@@ -1564,6 +1632,33 @@ defmodule Emisar.AuthTest do
 
       assert [event] = events_of_type("user.mfa_rate_limited")
       assert event.request_id == "req-direct-security-attempt"
+    end
+
+    test "logs each email-change limit only on its first refusal" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      for scope <- [:email_change_issue, :inbox_step_up] do
+        context = %RequestContext{request_id: "req-#{scope}"}
+
+        assert :ok = Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context)
+
+        assert {:error, :rate_limited, :exhausted} =
+                 Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context)
+
+        assert {:error, :rate_limited, :capped} =
+                 Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context)
+      end
+
+      events =
+        "user.email_change_rate_limited"
+        |> events_of_type()
+        |> Enum.sort_by(& &1.payload["scope"])
+
+      assert Enum.map(events, &{&1.payload["scope"], &1.request_id}) == [
+               {"email_change_issue", "req-email_change_issue"},
+               {"inbox_step_up", "req-inbox_step_up"}
+             ]
     end
   end
 

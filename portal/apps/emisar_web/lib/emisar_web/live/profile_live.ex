@@ -8,6 +8,7 @@ defmodule EmisarWeb.ProfileLive do
   # disabling 2FA — spend the same per-user MFA attempt window, so they report
   # its exhaustion in the same words.
   @mfa_rate_limit_error "Too many attempts. Wait a few minutes, then try again."
+  @email_issue_rate_limit_error "Too many code requests. Wait up to 15 minutes, then try again."
 
   def mount(_params, session, socket) do
     user = socket.assigns.current_user
@@ -192,6 +193,9 @@ defmodule EmisarWeb.ProfileLive do
 
         {:error, :not_found} ->
           {:noreply, put_flash(socket, :error, "Couldn't send a new code. Try again.")}
+
+        {:error, :rate_limited} ->
+          {:noreply, assign(socket, :email_step_error, @email_issue_rate_limit_error)}
       end
     else
       {:noreply, put_flash(socket, :error, "Start an email change first.")}
@@ -457,6 +461,16 @@ defmodule EmisarWeb.ProfileLive do
         socket
         |> assign(:email_step, :code)
         |> put_flash(:info, "We emailed a confirmation code to #{user.email}.")
+
+      {:error, :rate_limited} ->
+        socket
+        |> put_flash(:error, @email_issue_rate_limit_error)
+        |> reset_email_step()
+
+      {:error, :not_found} ->
+        socket
+        |> put_flash(:error, "Couldn't start the email change. Try again.")
+        |> reset_email_step()
     end
   end
 

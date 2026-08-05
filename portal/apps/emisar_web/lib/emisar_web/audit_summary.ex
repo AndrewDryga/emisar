@@ -89,6 +89,14 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("user.mfa_rate_limited", p),
     do: pairs(limit: get(p, :attempt_limit), window: format_window(get(p, :window_seconds)))
 
+  defp summarize("user.email_change_rate_limited", p) do
+    pairs(
+      step: email_change_limit_step(get(p, :scope)),
+      limit: get(p, :attempt_limit),
+      window: format_window(get(p, :window_seconds))
+    )
+  end
+
   defp summarize("user.mfa_recovery_code_used", p) do
     case get(p, :remaining) do
       n when is_integer(n) -> [{"codes left", to_string(n)}]
@@ -338,6 +346,10 @@ defmodule EmisarWeb.AuditSummary do
   defp from_to(_, nil), do: []
   defp from_to(from, from), do: []
   defp from_to(from, to), do: [{"change", "#{from} → #{to}"}]
+
+  defp email_change_limit_step("email_change_issue"), do: "code delivery"
+  defp email_change_limit_step("inbox_step_up"), do: "code verification"
+  defp email_change_limit_step(_scope), do: nil
 
   defp access_from_to(payload) do
     before_mode = payload |> map_value(:before) |> get(:mode)

@@ -64,6 +64,7 @@ defmodule Emisar.Audit.Event.Query do
     {"user.invitation_accepted", "User accepted invitation"},
     {"user.email_confirmed", "Email confirmed"},
     {"user.email_change_requested", "Email change requested"},
+    {"user.email_change_rate_limited", "Email change rate limited"},
     {"user.email_changed", "Email changed"},
     {"user.profile_updated", "Profile updated"},
     {"user.updated_by_admin", "Profile edited by admin"},
@@ -234,6 +235,7 @@ defmodule Emisar.Audit.Event.Query do
     {"User security",
      [
        {"user.email_change_requested", "Email change requested"},
+       {"user.email_change_rate_limited", "Email change rate limited"},
        {"user.email_changed", "Email changed"},
        {"user.profile_updated", "Profile updated"},
        {"user.updated_by_admin", "Profile edited by admin"},
@@ -833,6 +835,9 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, false, "A user proved ownership of their email address."},
     "user.email_change_requested" =>
       {true, true, false, "A user asked to change their sign-in email (confirmation pending)."},
+    "user.email_change_rate_limited" =>
+      {true, false, false,
+       "An email-change code delivery or verification attempt was refused after the user reached its limit."},
     "user.email_changed" => {true, false, false, "A user's sign-in email change completed."},
     "user.profile_updated" => {true, true, false, "A user edited their own profile."},
     "user.updated_by_admin" => {true, true, true, "An admin edited a teammate's profile."},

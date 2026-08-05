@@ -944,14 +944,19 @@ defmodule Emisar.Auth do
 
   # Online-guess budget for the 6-digit email-change step-up code.
   @email_change_attempts 5
+  @email_change_issue_limit 5
+  @email_change_issue_window_ms 15 * 60_000
+  @inbox_step_up_limit 5
+  @inbox_step_up_window_ms 5 * 60_000
 
   @doc """
   Mints + emails a 6-digit step-up code to the user's CURRENT address, binding
   it to `new_email`. A self-service email change must re-enter it first, so the
   identity-defining field (it controls every future magic link) gets a
   credential-grade gate a stolen session alone can't pass. Deletes any prior
-  outstanding email-change code (single outstanding). Best-effort delivery;
-  returns `:ok` or `{:error, :not_found}`.
+  outstanding email-change code (single outstanding). Issuance has one durable
+  five-per-15-minute budget across direct starts and resends. Best-effort
+  delivery; returns `:ok` or `{:error, :not_found | :rate_limited}`.
   """
   def issue_email_change_code(new_email, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) do
@@ -965,26 +970,35 @@ defmodule Emisar.Auth do
          %Users.User{} = user,
          %Subject{} = subject
        ) do
-    {code, digest} = Crypto.email_change_code()
+    with :ok <-
+           throttle_security_attempt(
+             user,
+             :email_change_issue,
+             @email_change_issue_limit,
+             @email_change_issue_window_ms,
+             subject.context
+           ) do
+      {code, digest} = Crypto.email_change_code()
 
-    prior =
-      UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_context("email_change")
+      prior =
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("email_change")
 
-    {:ok, _} =
-      Multi.new()
-      |> Multi.delete_all(:prior, prior)
-      |> Multi.insert(
-        :token,
-        UserToken.Changeset.email_change(user, digest, new_email, @email_change_attempts)
-      )
-      |> Audit.Multi.log_for_user(:audit, user, "user.email_change_requested",
-        extra: [context: subject.context]
-      )
-      |> Repo.commit_multi()
+      {:ok, _} =
+        Multi.new()
+        |> Multi.delete_all(:prior, prior)
+        |> Multi.insert(
+          :token,
+          UserToken.Changeset.email_change(user, digest, new_email, @email_change_attempts)
+        )
+        |> Audit.Multi.log_for_user(:audit, user, "user.email_change_requested",
+          extra: [context: subject.context]
+        )
+        |> Repo.commit_multi()
 
-    _ = Mailers.UserNotifier.deliver_email_change_code(user, code)
-    :ok
+      _ = Mailers.UserNotifier.deliver_email_change_code(user, code)
+      :ok
+    end
   end
 
   @doc """
@@ -993,37 +1007,48 @@ defmodule Emisar.Auth do
   caller to pass straight to `Users.update_user_email/2` — on a match
   (single-use: the token is consumed), or `{:error, :invalid}` for a
   wrong/expired/spent code (a wrong code spends one of the #{@email_change_attempts}
-  attempts).
+  attempts). The durable five-per-five-minute inbox budget spans replacement
+  tokens; exhaustion returns `{:error, :rate_limited}` before a token is read or
+  mutated.
   """
-  def verify_email_change_code(code, %Subject{actor: %Users.User{} = user})
+  def verify_email_change_code(code, %Subject{actor: %Users.User{} = user} = subject)
       when is_binary(code) do
-    Multi.new()
-    |> Multi.run(:token, fn repo, _changes ->
-      loaded_token =
-        UserToken.Query.by_user_id(user.id)
-        |> UserToken.Query.by_context("email_change")
-        |> UserToken.Query.not_expired("email_change")
-        |> UserToken.Query.with_attempts_remaining()
-        |> UserToken.Query.lock_for_update()
-        |> repo.one()
+    with :ok <-
+           throttle_security_attempt(
+             user,
+             :inbox_step_up,
+             @inbox_step_up_limit,
+             @inbox_step_up_window_ms,
+             subject.context
+           ) do
+      Multi.new()
+      |> Multi.run(:token, fn repo, _changes ->
+        loaded_token =
+          UserToken.Query.by_user_id(user.id)
+          |> UserToken.Query.by_context("email_change")
+          |> UserToken.Query.not_expired("email_change")
+          |> UserToken.Query.with_attempts_remaining()
+          |> UserToken.Query.lock_for_update()
+          |> repo.one()
 
-      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid}
-    end)
-    |> Multi.run(:outcome, fn repo, %{token: token} ->
-      if Crypto.secure_compare(Crypto.hash(code), token.token) do
-        # Match → single-use: consume the token, hand back the bound email.
-        {:ok, _} = repo.delete(token)
-        {:ok, {:ok, token.sent_to}}
-      else
-        # Wrong code → spend one attempt. `{:ok, …}` so the decrement COMMITS.
-        {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
-        {:ok, {:error, :invalid}}
+        if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid}
+      end)
+      |> Multi.run(:outcome, fn repo, %{token: token} ->
+        if Crypto.secure_compare(Crypto.hash(code), token.token) do
+          # Match → single-use: consume the token, hand back the bound email.
+          {:ok, _} = repo.delete(token)
+          {:ok, {:ok, token.sent_to}}
+        else
+          # Wrong code → spend one attempt. `{:ok, …}` so the decrement COMMITS.
+          {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
+          {:ok, {:error, :invalid}}
+        end
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{outcome: outcome}} -> outcome
+        {:error, _} -> {:error, :invalid}
       end
-    end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{outcome: outcome}} -> outcome
-      {:error, _} -> {:error, :invalid}
     end
   end
 
@@ -1031,9 +1056,10 @@ defmodule Emisar.Auth do
   Begin a self-service email change: the DOMAIN decides the step-up factor from
   the user's CURRENT row — an MFA user re-enters TOTP (`:totp`), otherwise a
   one-time code is emailed to the current address to prove inbox control
-  (`:code`, issued here). Returns `{:ok, :totp | :code}`. The factor is the
-  domain's call so a stale MFA snapshot in the caller can't downgrade the
-  challenge, and `confirm_email_change/3` re-derives it the same way.
+  (`:code`, issued here). Returns `{:ok, :totp | :code}` or
+  `{:error, :not_found | :rate_limited}`. The factor is the domain's call so a
+  stale MFA snapshot in the caller can't downgrade the challenge, and
+  `confirm_email_change/3` re-derives it the same way.
   """
   def begin_email_change(new_email, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) do
@@ -1043,8 +1069,10 @@ defmodule Emisar.Auth do
           {:ok, :totp}
 
         :code ->
-          :ok = do_issue_email_change_code(new_email, user, subject)
-          {:ok, :code}
+          case do_issue_email_change_code(new_email, user, subject) do
+            :ok -> {:ok, :code}
+            {:error, reason} -> {:error, reason}
+          end
       end
     end
   end
@@ -1057,7 +1085,8 @@ defmodule Emisar.Auth do
   without it, so the web decides nothing. `{:ok, user} | {:error, :invalid |
   :replay | :rate_limited | %Ecto.Changeset{}}` — the TOTP branch spends an
   attempt from the shared per-user MFA window, so it is `:rate_limited` once that
-  window is exhausted (the emailed-code branch has its own single-use token).
+  window is exhausted. The emailed-code branch has both its single-use token
+  budget and the durable per-user inbox budget described above.
   """
   def confirm_email_change(new_email, code, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) and is_binary(code) do
@@ -1373,19 +1402,34 @@ defmodule Emisar.Auth do
          window_ms,
          %RequestContext{} = context
        ) do
-    Audit.Multi.log_for_user(multi, :rate_limit_audit, user, "user.mfa_rate_limited",
-      user_fn: fn
-        %{attempt: %{outcome: :exhausted}} -> user
-        _changes -> nil
-      end,
-      payload_fn: fn _changes ->
-        %{
-          scope: "mfa_challenge",
-          attempt_limit: limit,
-          window_seconds: div(window_ms, 1_000)
-        }
-      end,
-      extra: [context: context]
+    log_security_attempt_exhausted(
+      multi,
+      user,
+      "user.mfa_rate_limited",
+      :mfa_challenge,
+      limit,
+      window_ms,
+      context
+    )
+  end
+
+  defp maybe_log_security_attempt_exhausted(
+         multi,
+         %Users.User{} = user,
+         scope,
+         limit,
+         window_ms,
+         %RequestContext{} = context
+       )
+       when scope in [:email_change_issue, :inbox_step_up] do
+    log_security_attempt_exhausted(
+      multi,
+      user,
+      "user.email_change_rate_limited",
+      scope,
+      limit,
+      window_ms,
+      context
     )
   end
 
@@ -1398,6 +1442,31 @@ defmodule Emisar.Auth do
          _context
        ),
        do: multi
+
+  defp log_security_attempt_exhausted(
+         multi,
+         user,
+         event_type,
+         scope,
+         limit,
+         window_ms,
+         context
+       ) do
+    Audit.Multi.log_for_user(multi, :rate_limit_audit, user, event_type,
+      user_fn: fn
+        %{attempt: %{outcome: :exhausted}} -> user
+        _changes -> nil
+      end,
+      payload_fn: fn _changes ->
+        %{
+          scope: Atom.to_string(scope),
+          attempt_limit: limit,
+          window_seconds: div(window_ms, 1_000)
+        }
+      end,
+      extra: [context: context]
+    )
+  end
 
   @doc """
   Verifies the sign-in second factor — `{:totp, otp}` or `{:recovery_code,
@@ -1478,11 +1547,21 @@ defmodule Emisar.Auth do
   defp mfa_proof_secret, do: Application.fetch_env!(:emisar, :email_link_secret)
 
   defp throttle_mfa_challenge(%Users.User{} = user, context) do
+    throttle_security_attempt(
+      user,
+      :mfa_challenge,
+      @mfa_challenge_attempt_limit,
+      @mfa_challenge_attempt_window_ms,
+      context
+    )
+  end
+
+  defp throttle_security_attempt(user, scope, limit, window_ms, context) do
     case check_security_attempt(
            user,
-           :mfa_challenge,
-           @mfa_challenge_attempt_limit,
-           @mfa_challenge_attempt_window_ms,
+           scope,
+           limit,
+           window_ms,
            context
          ) do
       :ok -> :ok

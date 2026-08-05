@@ -169,6 +169,85 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).email == "fresh@example.com"
     end
 
+    test "resends share the issuance budget and keep the latest code usable", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
+      |> render_submit()
+
+      assert_received {:email, _initial_email}
+
+      latest_email =
+        Enum.reduce(1..4, nil, fn _, _previous ->
+          lv |> element("#email_step_form button", "Resend code") |> render_click()
+          assert_received {:email, email}
+          email
+        end)
+
+      [latest_code] = Regex.run(~r/\d{6}/, latest_email.text_body)
+
+      html = lv |> element("#email_step_form button", "Resend code") |> render_click()
+
+      assert html =~ "Too many code requests. Wait up to 15 minutes, then try again."
+      refute_received {:email, _}
+
+      # The refused sixth issuance did not replace the fifth token, and the
+      # pending step remains open instead of stranding the operator.
+      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => latest_code}})
+      assert Emisar.Repo.reload!(user).email == "fresh@example.com"
+    end
+
+    test "an exhausted issuance budget refuses a fresh step without sending mail", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      subject = owner_subject(user, account)
+
+      for index <- 1..5 do
+        assert :ok = Auth.issue_email_change_code("spent-#{index}@example.com", subject)
+        assert_received {:email, _}
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      html =
+        lv
+        |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
+        |> render_submit()
+
+      assert html =~ "Too many code requests. Wait up to 15 minutes, then try again."
+      assert has_element?(lv, "#email_form")
+      refute has_element?(lv, "#email_step_form")
+      refute_received {:email, _}
+      assert Emisar.Repo.reload!(user).email == user.email
+    end
+
+    test "starting after the user is deleted reports failure instead of crashing", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      Fixtures.Users.mark_user_as_deleted(user)
+
+      html =
+        lv
+        |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
+        |> render_submit()
+
+      assert html =~ "Couldn&#39;t start the email change. Try again."
+      assert has_element?(lv, "#email_form")
+      refute_received {:email, _}
+    end
+
     test "starting a fresh step-up clears a stale inline rejection", %{
       conn: conn,
       account: account

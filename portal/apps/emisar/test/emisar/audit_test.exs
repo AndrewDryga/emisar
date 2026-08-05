@@ -1838,7 +1838,7 @@ defmodule Emisar.AuditTest do
             ~w[approval.denied action_run.denied enrollment_key.revoked user.session_revoked
                   runner.disabled runner.deleted runner.version_rejected membership.removed
                   membership.suspended approval.expired action_run.cancelled approval.grant_revoked
-                  user.mfa_rate_limited] do
+                  user.mfa_rate_limited user.email_change_rate_limited] do
         assert Audit.event_outcome(t) == :warn, "expected #{t} to be :warn"
       end
     end
