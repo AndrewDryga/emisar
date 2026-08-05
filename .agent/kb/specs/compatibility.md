@@ -402,7 +402,7 @@ EMISAR_SIGNING_CERT     optional certificate for that key
 
 It reads and writes line-delimited JSON-RPC 2.0 over stdio, and sends the user
 agent `emisar-mcp/<version>`. The attestation identifiers
-`emisar-attestation-v4` and `emisar-cert-v2` are also frozen security formats.
+`emisar-attestation-v5` and `emisar-cert-v2` are also frozen security formats.
 `packctl` is a maintainer-only build tool, not a customer CLI compatibility
 surface.
 

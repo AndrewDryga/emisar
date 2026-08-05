@@ -24,7 +24,7 @@ import (
 
 // Version is the canonical-encoding revision, bound into every signature so a
 // future format change can never be confused with this one.
-const Version = "emisar-attestation-v4"
+const Version = "emisar-attestation-v5"
 
 // Tool is fixed into every claim so a signature authorizing infrastructure
 // execution cannot be replayed as authorization for another mutation type.
@@ -42,11 +42,22 @@ const (
 // action from THIS portal with THESE exact args for THESE runner references at
 // THIS time.
 type Claim struct {
-	ActionID     string
-	PackRef      string
-	ArgsRaw      json.RawMessage
-	RunnerRefs   []string
-	Reason       string
+	ActionID   string
+	PackRef    string
+	ArgsRaw    json.RawMessage
+	RunnerRefs []string
+	Reason     string
+	// Evidence and Expected are the narrative a HUMAN APPROVER reads. They are
+	// bound by digest, not carried: together they run to 6,000 characters
+	// against an 8 KiB envelope budget, and `ArgsRaw` already establishes that
+	// a large field is signed as a hash of its exact bytes.
+	//
+	// Both are optional and both are ALWAYS hashed — an absent one signs as the
+	// digest of the empty string. That is the load-bearing half: it binds "the
+	// bridge sent no evidence", so a control plane cannot invent a
+	// justification for an action the operator never justified.
+	Evidence     string
+	Expected     string
 	OperationID  string
 	PortalOrigin string
 	Nonce        string
@@ -67,11 +78,23 @@ type Envelope struct {
 	ArgsSHA256   string   `json:"args_sha256"`
 	RunnerRefs   []string `json:"runner_refs"`
 	Reason       string   `json:"reason"`
-	OperationID  string   `json:"operation_id"`
-	Signature    string   `json:"sig"`
-	Nonce        string   `json:"nonce"`
-	IssuedAt     string   `json:"issued_at"`
-	Cert         *Cert    `json:"cert,omitempty"`
+	// Digests of the approver-facing narrative. See Claim.Evidence.
+	EvidenceSHA256 string `json:"evidence_sha256"`
+	ExpectedSHA256 string `json:"expected_sha256"`
+	OperationID    string `json:"operation_id"`
+	Signature      string `json:"sig"`
+	Nonce          string `json:"nonce"`
+	IssuedAt       string `json:"issued_at"`
+	Cert           *Cert  `json:"cert,omitempty"`
+}
+
+// TextSHA256 is the lower-hex SHA-256 of a UTF-8 string. Used for the
+// approver-facing narrative fields, which are bound by digest rather than
+// carried: the empty string hashes like any other, so "no evidence" is a signed
+// fact rather than an absent one.
+func TextSHA256(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 // SigningBytes is the exact byte string that is signed and verified. A fixed
@@ -104,6 +127,8 @@ func SigningBytes(c Claim) ([]byte, error) {
 		ArgsSHA256       string `json:"args_sha256"`
 		RunnerRefsSHA256 string `json:"runner_refs_sha256"`
 		Reason           string `json:"reason"`
+		EvidenceSHA256   string `json:"evidence_sha256"`
+		ExpectedSHA256   string `json:"expected_sha256"`
 		OperationID      string `json:"operation_id"`
 		Nonce            string `json:"nonce"`
 		IssuedAt         string `json:"issued_at"`
@@ -116,6 +141,8 @@ func SigningBytes(c Claim) ([]byte, error) {
 		ArgsSHA256:       argsDigest,
 		RunnerRefsSHA256: hex.EncodeToString(runnerRefsDigest[:]),
 		Reason:           c.Reason,
+		EvidenceSHA256:   TextSHA256(c.Evidence),
+		ExpectedSHA256:   TextSHA256(c.Expected),
 		OperationID:      c.OperationID,
 		Nonce:            c.Nonce,
 		IssuedAt:         c.IssuedAt,

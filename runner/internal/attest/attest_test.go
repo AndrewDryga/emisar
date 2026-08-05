@@ -36,21 +36,24 @@ func vectorClaims() []struct {
 				Reason: "Check load.", OperationID: "op_01", Nonce: "00000000000000000000000000000001",
 				IssuedAt: "2026-06-17T12:00:00Z",
 			},
-			bytes: `{"version":"emisar-attestation-v4","tool":"run_action","portal_origin":"https://emisar.dev","action_id":"linux.uptime","pack_ref":"linux@1.0.0/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","args_sha256":"44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a","runner_refs_sha256":"589c61cbb2a6783bdd43f634b32c84a59040eed70a62e4b3cde9034511500c2d","reason":"Check load.","operation_id":"op_01","nonce":"00000000000000000000000000000001","issued_at":"2026-06-17T12:00:00Z"}`,
-			sig:   `d59d6324af07cf974b6058575df38fd09248505714338e7a9c026fbe43d69137ea6a85ba49870d48b50154db62da628b5539b5f55f18f1579f3b1976f9bc8a02`,
+			bytes: `{"version":"emisar-attestation-v5","tool":"run_action","portal_origin":"https://emisar.dev","action_id":"linux.uptime","pack_ref":"linux@1.0.0/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","args_sha256":"44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a","runner_refs_sha256":"589c61cbb2a6783bdd43f634b32c84a59040eed70a62e4b3cde9034511500c2d","reason":"Check load.","evidence_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","expected_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","operation_id":"op_01","nonce":"00000000000000000000000000000001","issued_at":"2026-06-17T12:00:00Z"}`,
+			sig:   `1710cd8576e6ac256043e132e3e36989a94dbcfc3a0581c8aeb349e2108b89670faf288060758d129ea276cd1a0664fa6eddae0402565bf0dd079fc40fc8e907`,
 		},
 		{
 			name: "exact large number and sorted runner refs",
 			claim: Claim{
 				PortalOrigin: "https://ops.example:8443", ActionID: "cockroach.pause_job",
-				PackRef:    "cockroach@1.4.0/sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-				ArgsRaw:    json.RawMessage(`{"job_id":891234567890123456,"force":true}`),
-				RunnerRefs: []string{"db-b~33333333333333333333333333333333", "db-a~22222222222222222222222222222222"},
-				Reason:     "Pause the selected job before maintenance.", OperationID: "op_02",
-				Nonce: "00000000000000000000000000000002", IssuedAt: "2026-06-17T12:05:00Z",
+				PackRef:     "cockroach@1.4.0/sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				ArgsRaw:     json.RawMessage(`{"job_id":891234567890123456,"force":true}`),
+				RunnerRefs:  []string{"db-b~33333333333333333333333333333333", "db-a~22222222222222222222222222222222"},
+				Reason:      "Pause the selected job before maintenance.",
+				Evidence:    "p99 write latency 40s since 12:10Z, job 891234567890123456 holds the lock",
+				Expected:    "writes resume within 60s of the pause",
+				OperationID: "op_02",
+				Nonce:       "00000000000000000000000000000002", IssuedAt: "2026-06-17T12:05:00Z",
 			},
-			bytes: `{"version":"emisar-attestation-v4","tool":"run_action","portal_origin":"https://ops.example:8443","action_id":"cockroach.pause_job","pack_ref":"cockroach@1.4.0/sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","args_sha256":"bfb315278c463b5e42d6ed32b071bf0389d887e2bd2877d08e57a4a36b02403f","runner_refs_sha256":"41bcc8c1820d2787411727666d93e585d4d32c798c6f25e2335130154cc7f079","reason":"Pause the selected job before maintenance.","operation_id":"op_02","nonce":"00000000000000000000000000000002","issued_at":"2026-06-17T12:05:00Z"}`,
-			sig:   `176aae54829edf5624f1e175453597de3bca5332add6ad1acb04c30e305091c774325b4b65512401b738a179256cafb9443ea6f76f9ed07a9ae68a2b3fcb7405`,
+			bytes: `{"version":"emisar-attestation-v5","tool":"run_action","portal_origin":"https://ops.example:8443","action_id":"cockroach.pause_job","pack_ref":"cockroach@1.4.0/sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","args_sha256":"bfb315278c463b5e42d6ed32b071bf0389d887e2bd2877d08e57a4a36b02403f","runner_refs_sha256":"41bcc8c1820d2787411727666d93e585d4d32c798c6f25e2335130154cc7f079","reason":"Pause the selected job before maintenance.","evidence_sha256":"84f42024269cc69ef725a2841c5596edef7ad940d445f68c2e6af576b8877f43","expected_sha256":"1575b4783811db3956097c98d85ed8c5ea5fe283660e86eae46b322c02a34b54","operation_id":"op_02","nonce":"00000000000000000000000000000002","issued_at":"2026-06-17T12:05:00Z"}`,
+			sig:   `1808fd25ea462ed1e0527497baf7c8e8b1f540c2205494c9bdc8522b390b3909b92d75b84c38ed0cd04913795ef5dd78e84f8fc9037b3d50be302a6ef5cd830d`,
 		},
 	}
 }
@@ -224,7 +227,7 @@ const (
 	vectorCAPubHex    = "e7f162a10bec559afea195e4dce84b69568d5d2cb0963eb446c0685e2b17f2f0"
 	certBytes         = `{"version":"emisar-cert-v2","ca_id":"ca-acme","key_id":"op-alice","public_key":"79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664","valid_from":"2026-06-25T00:00:00Z","valid_until":"2026-06-26T00:00:00Z","scope_sha256":"75d22a7b0f024c454095764648cb9e08de2df93cfed413b76fa0aa74d93fddd4","serial":"01J0CERT0000000000000000C"}`
 	certSig           = "604cb20b49086c0018f70137a2a623ae9ea6aec82d3fd877b4719cb2e5e61ac16da7fb243902a22a6bb84d4bb3e16a1b861222ec749fee87f23281d418f2ba0a"
-	envelopeBase64URL = "eyJ2ZXJzaW9uIjoiZW1pc2FyLWF0dGVzdGF0aW9uLXY0IiwidG9vbCI6InJ1bl9hY3Rpb24iLCJwb3J0YWxfb3JpZ2luIjoiaHR0cHM6Ly9vcHMuZXhhbXBsZTo4NDQzIiwiYWN0aW9uX2lkIjoiY29ja3JvYWNoLnBhdXNlX2pvYiIsInBhY2tfcmVmIjoiY29ja3JvYWNoQDEuNC4wL3NoYTI1NjpiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwiYXJnc19zaGEyNTYiOiJiZmIzMTUyNzhjNDYzYjVlNDJkNmVkMzJiMDcxYmYwMzg5ZDg4N2UyYmQyODc3ZDA4ZTU3YTRhMzZiMDI0MDNmIiwicnVubmVyX3JlZnMiOlsiZGItYX4yMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsImRiLWJ-MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMiXSwicmVhc29uIjoiUGF1c2UgdGhlIHNlbGVjdGVkIGpvYiBiZWZvcmUgbWFpbnRlbmFuY2UuIiwib3BlcmF0aW9uX2lkIjoib3BfMDIiLCJzaWciOiIxNzZhYWU1NDgyOWVkZjU2MjRmMWUxNzU0NTM1OTdkZTNiY2E1MzMyYWRkNmFkMWFjYjA0YzMwZTMwNTA5MWM3NzQzMjViNGI2NTUxMjQwMWI3MzhhMTc5MjU2Y2FmYjk0NDNlYTZmNzZmOWVkMDdhOWFlNjhhMmIzZmNiNzQwNSIsIm5vbmNlIjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDIiLCJpc3N1ZWRfYXQiOiIyMDI2LTA2LTE3VDEyOjA1OjAwWiIsImNlcnQiOnsiY2FfaWQiOiJjYS1hY21lIiwia2V5X2lkIjoib3AtYWxpY2UiLCJwdWJsaWNfa2V5IjoiNzliNTU2MmU4ZmU2NTRmOTQwNzhiMTEyZThhOThiYTc5MDFmODUzYWU2OTViZWQ3ZTBlMzkxMGJhZDA0OTY2NCIsInZhbGlkX2Zyb20iOiIyMDI2LTA2LTI1VDAwOjAwOjAwWiIsInZhbGlkX3VudGlsIjoiMjAyNi0wNi0yNlQwMDowMDowMFoiLCJzY29wZSI6eyJncm91cCI6ImVkZ2UiLCJsYWJlbHMiOnsiZW52IjoicHJvZCIsInJlZ2lvbiI6InVzIn19LCJzZXJpYWwiOiIwMUowQ0VSVDAwMDAwMDAwMDAwMDAwMDBDIiwic2lnIjoiNjA0Y2IyMGI0OTA4NmMwMDE4ZjcwMTM3YTJhNjIzYWU5ZWE2YWVjODJkM2ZkODc3YjQ3MTljYjJlNWU2MWFjMTZkYTdmYjI0MzkwMmEyMmE2YmI4NGQ0YmIzZTE2YTFiODYxMjIyZWM3NDlmZWU4N2YyMzI4MWQ0MThmMmJhMGEifX0"
+	envelopeBase64URL = "eyJ2ZXJzaW9uIjoiZW1pc2FyLWF0dGVzdGF0aW9uLXY1IiwidG9vbCI6InJ1bl9hY3Rpb24iLCJwb3J0YWxfb3JpZ2luIjoiaHR0cHM6Ly9vcHMuZXhhbXBsZTo4NDQzIiwiYWN0aW9uX2lkIjoiY29ja3JvYWNoLnBhdXNlX2pvYiIsInBhY2tfcmVmIjoiY29ja3JvYWNoQDEuNC4wL3NoYTI1NjpiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwiYXJnc19zaGEyNTYiOiJiZmIzMTUyNzhjNDYzYjVlNDJkNmVkMzJiMDcxYmYwMzg5ZDg4N2UyYmQyODc3ZDA4ZTU3YTRhMzZiMDI0MDNmIiwicnVubmVyX3JlZnMiOlsiZGItYX4yMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsImRiLWJ-MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMiXSwicmVhc29uIjoiUGF1c2UgdGhlIHNlbGVjdGVkIGpvYiBiZWZvcmUgbWFpbnRlbmFuY2UuIiwiZXZpZGVuY2Vfc2hhMjU2IjoiODRmNDIwMjQyNjljYzY5ZWY3MjVhMjg0MWM1NTk2ZWRlZjdhZDk0MGQ0NDVmNjhjMmU2YWY1NzZiODg3N2Y0MyIsImV4cGVjdGVkX3NoYTI1NiI6IjE1NzViNDc4MzgxMWRiMzk1NjA5N2M5OGQ4NWVkOGM1ZWE1ZmUyODM2NjBlODZlYWU0NmIzMjJjMDJhMzRiNTQiLCJvcGVyYXRpb25faWQiOiJvcF8wMiIsInNpZyI6IjE4MDhmZDI1ZWE0NjJlZDFlMDUyNzQ5N2JhZjdjOGU4YjFmNTQwYzIyMDU0OTRjOWJkYzg1MjJiMzkwYjM5MDliOTJkNzViODRjMzhlZDBjZDA0OTEzNzk1ZWY1ZGQ3OGU4NGY4ZmM5MDM3YjNkNTBiZTMwMmE2ZWY1Y2Q4MzBkIiwibm9uY2UiOiIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMiIsImlzc3VlZF9hdCI6IjIwMjYtMDYtMTdUMTI6MDU6MDBaIiwiY2VydCI6eyJjYV9pZCI6ImNhLWFjbWUiLCJrZXlfaWQiOiJvcC1hbGljZSIsInB1YmxpY19rZXkiOiI3OWI1NTYyZThmZTY1NGY5NDA3OGIxMTJlOGE5OGJhNzkwMWY4NTNhZTY5NWJlZDdlMGUzOTEwYmFkMDQ5NjY0IiwidmFsaWRfZnJvbSI6IjIwMjYtMDYtMjVUMDA6MDA6MDBaIiwidmFsaWRfdW50aWwiOiIyMDI2LTA2LTI2VDAwOjAwOjAwWiIsInNjb3BlIjp7Imdyb3VwIjoiZWRnZSIsImxhYmVscyI6eyJlbnYiOiJwcm9kIiwicmVnaW9uIjoidXMifX0sInNlcmlhbCI6IjAxSjBDRVJUMDAwMDAwMDAwMDAwMDAwMEMiLCJzaWciOiI2MDRjYjIwYjQ5MDg2YzAwMThmNzAxMzdhMmE2MjNhZTllYTZhZWM4MmQzZmQ4NzdiNDcxOWNiMmU1ZTYxYWMxNmRhN2ZiMjQzOTAyYTIyYTZiYjg0ZDRiYjNlMTZhMWI4NjEyMjJlYzc0OWZlZTg3ZjIzMjgxZDQxOGYyYmEwYSJ9fQ"
 )
 
 func vectorCAKey(t *testing.T) (ed25519.PrivateKey, ed25519.PublicKey) {
@@ -266,8 +269,11 @@ func vectorEnvelope(t *testing.T) Envelope {
 		Version: Version, Tool: Tool, PortalOrigin: vector.claim.PortalOrigin,
 		ActionID: vector.claim.ActionID, PackRef: vector.claim.PackRef,
 		ArgsSHA256: argsDigest, RunnerRefs: runnerRefs,
-		Reason: vector.claim.Reason, OperationID: vector.claim.OperationID,
-		Signature: vector.sig, Nonce: vector.claim.Nonce, IssuedAt: vector.claim.IssuedAt,
+		Reason:         vector.claim.Reason,
+		EvidenceSHA256: TextSHA256(vector.claim.Evidence),
+		ExpectedSHA256: TextSHA256(vector.claim.Expected),
+		OperationID:    vector.claim.OperationID,
+		Signature:      vector.sig, Nonce: vector.claim.Nonce, IssuedAt: vector.claim.IssuedAt,
 		Cert: &cert,
 	}
 }
@@ -291,6 +297,20 @@ func TestEnvelopeWireVector(t *testing.T) {
 	}
 	if decoded.Cert == nil || decoded.Cert.Sig != certSig || len(decoded.RunnerRefs) != 2 {
 		t.Fatalf("decoded envelope lost signed fields: %+v", decoded)
+	}
+	// The narrative digests are the v5 addition, and an EMPTY one is not the
+	// same as the digest of an empty string: the portal requires 64 lower-hex,
+	// so a blank here would be an envelope it refuses.
+	for name, digest := range map[string]string{
+		"evidence_sha256": decoded.EvidenceSHA256,
+		"expected_sha256": decoded.ExpectedSHA256,
+	} {
+		if len(digest) != 64 {
+			t.Fatalf("%s is %q, want a 64-character digest", name, digest)
+		}
+	}
+	if decoded.EvidenceSHA256 == decoded.ExpectedSHA256 {
+		t.Fatal("vector should carry DIFFERENT evidence and expected, or a field swap passes")
 	}
 }
 

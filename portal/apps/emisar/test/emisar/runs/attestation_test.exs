@@ -11,7 +11,7 @@ defmodule Emisar.Runs.AttestationTest do
   @args_raw ~s({ "job_id": 9007199254740993, "ratio": 1e3 })
 
   describe "validate/2" do
-    test "accepts a bounded v4 envelope whose every relayed fact matches" do
+    test "accepts a bounded v5 envelope whose every relayed fact matches" do
       envelope = envelope()
 
       assert {:ok, attestation} = Attestation.validate([encode(envelope)], facts())
@@ -30,6 +30,8 @@ defmodule Emisar.Runs.AttestationTest do
             {"args_sha256", String.duplicate("f", 64)},
             {"runner_refs", tl(@runner_refs)},
             {"reason", "something else"},
+            {"evidence_sha256", String.duplicate("e", 64)},
+            {"expected_sha256", String.duplicate("d", 64)},
             {"operation_id", "op_00000000000000000000000000"},
             {"tool", "execute_runbook"},
             {"version", "emisar-attestation-v3"}
@@ -37,6 +39,34 @@ defmodule Emisar.Runs.AttestationTest do
         header = encode(Map.put(envelope(), field, changed))
         assert Attestation.validate([header], facts()) == {:error, :invalid_attestation}
       end
+    end
+
+    # The point of binding the narrative. A control plane cannot change WHAT runs
+    # — that was already signed — but until v5 it could rewrite WHY an action
+    # appears to be running, which is the text a human approver decides on.
+    test "rejects a rewritten approver narrative" do
+      rewritten = %{facts() | evidence: "routine maintenance, nothing unusual"}
+
+      assert Attestation.validate([encode(envelope())], rewritten) ==
+               {:error, :invalid_attestation}
+
+      restated = %{facts() | expected: "no impact at all"}
+
+      assert Attestation.validate([encode(envelope())], restated) ==
+               {:error, :invalid_attestation}
+    end
+
+    # The load-bearing half: an ABSENT field still hashes, so a control plane
+    # cannot invent a justification for an action the caller never justified.
+    test "rejects evidence added to a call that carried none" do
+      unjustified = %{facts() | evidence: nil, expected: nil}
+      {:ok, signed} = Attestation.validate([encode(envelope_without_narrative())], unjustified)
+      assert signed
+
+      invented = %{unjustified | evidence: "the operator asked for this"}
+
+      assert Attestation.validate([encode(envelope_without_narrative())], invented) ==
+               {:error, :invalid_attestation}
     end
 
     test "rejects an args hash taken over anything but the exact argument bytes" do
@@ -52,8 +82,8 @@ defmodule Emisar.Runs.AttestationTest do
       top_level =
         String.replace(
           Jason.encode!(envelope()),
-          ~s("version":"emisar-attestation-v4"),
-          ~s("version":"emisar-attestation-v4","version":"emisar-attestation-v4")
+          ~s("version":"emisar-attestation-v5"),
+          ~s("version":"emisar-attestation-v5","version":"emisar-attestation-v5")
         )
 
       nested =
@@ -115,14 +145,24 @@ defmodule Emisar.Runs.AttestationTest do
       args_raw: @args_raw,
       runner_refs: Enum.reverse(@runner_refs),
       reason: "maintenance",
+      evidence: "grafana shows p99 at 40s since 12:10Z",
+      expected: "writes pause for under a minute",
       operation_id: @operation_id,
       portal_origin: "https://emisar.example"
     }
   end
 
+  defp envelope_without_narrative do
+    %{
+      envelope()
+      | "evidence_sha256" => Crypto.hash_hex(""),
+        "expected_sha256" => Crypto.hash_hex("")
+    }
+  end
+
   defp envelope do
     %{
-      "version" => "emisar-attestation-v4",
+      "version" => "emisar-attestation-v5",
       "tool" => "run_action",
       "portal_origin" => "https://emisar.example",
       "action_id" => "db.pause",
@@ -130,6 +170,8 @@ defmodule Emisar.Runs.AttestationTest do
       "args_sha256" => Crypto.hash_hex(@args_raw),
       "runner_refs" => @runner_refs,
       "reason" => "maintenance",
+      "evidence_sha256" => Crypto.hash_hex("grafana shows p99 at 40s since 12:10Z"),
+      "expected_sha256" => Crypto.hash_hex("writes pause for under a minute"),
       "operation_id" => @operation_id,
       "sig" => String.duplicate("1", 128),
       "nonce" => String.duplicate("2", 32),

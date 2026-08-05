@@ -29,8 +29,14 @@ const (
 
 	// Mirror the run_action tool schema. A bound narrower than the schema turns
 	// a valid call into "invalid input" and forwards it UNSIGNED.
-	maxSignedReasonRunes  = 2000
-	maxSignedPackRefBytes = 256
+	maxSignedReasonRunes = 2000
+	// The portal's ActionRun changeset bounds these at 4,000 and 2,000. Matching
+	// it exactly matters: a NARROWER bound here would forward a schema-valid
+	// call unsigned, which is the same failure the reason bound already carries
+	// a comment about.
+	maxSignedEvidenceRunes = 4000
+	maxSignedExpectedRunes = 2000
+	maxSignedPackRefBytes  = 256
 )
 
 var operationPattern = regexp.MustCompile(`^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$`)
@@ -146,10 +152,15 @@ func (s *signer) signFrame(frame []byte, operationID, portalOrigin string) (stri
 	actionID, actionErr := exactJSONString(arguments, "action_id")
 	packRef, packErr := exactJSONString(arguments, "pack_ref")
 	reason, reasonErr := exactJSONString(arguments, "reason")
+	// Optional, so an absent field is not an error — but a PRESENT one that is
+	// not a string is, because signing over "" would bind the wrong fact.
+	evidence, evidenceOK := optionalJSONString(arguments, "evidence")
+	expected, expectedOK := optionalJSONString(arguments, "expected")
 	var requestedRunnerRefs []string
 	refsErr := json.Unmarshal(arguments["runner_refs"], &requestedRunnerRefs)
 	if actionErr != nil || packErr != nil || reasonErr != nil || refsErr != nil ||
-		!validSignedAction(actionID, packRef, reason) {
+		!evidenceOK || !expectedOK ||
+		!validSignedAction(actionID, packRef, reason, evidence, expected) {
 		return "", nil
 	}
 	runnerRefs, ok := signedRunnerRefs(requestedRunnerRefs)
@@ -168,6 +179,8 @@ func (s *signer) signFrame(frame []byte, operationID, portalOrigin string) (stri
 		ArgsRaw:      parsed.ActionArgs,
 		RunnerRefs:   runnerRefs,
 		Reason:       reason,
+		Evidence:     evidence,
+		Expected:     expected,
 		OperationID:  operationID,
 		PortalOrigin: portalOrigin,
 		Nonce:        nonce,
@@ -183,19 +196,21 @@ func (s *signer) signFrame(frame []byte, operationID, portalOrigin string) (stri
 		return "", fmt.Errorf("digest action arguments: %w", err)
 	}
 	envelope, err := json.Marshal(attest.Envelope{
-		Version:      attest.Version,
-		Tool:         attest.Tool,
-		PortalOrigin: portalOrigin,
-		ActionID:     actionID,
-		PackRef:      packRef,
-		ArgsSHA256:   argsDigest,
-		RunnerRefs:   runnerRefs,
-		Reason:       reason,
-		OperationID:  operationID,
-		Nonce:        nonce,
-		IssuedAt:     issuedAt,
-		Signature:    sig,
-		Cert:         s.cert,
+		Version:        attest.Version,
+		Tool:           attest.Tool,
+		PortalOrigin:   portalOrigin,
+		ActionID:       actionID,
+		PackRef:        packRef,
+		ArgsSHA256:     argsDigest,
+		RunnerRefs:     runnerRefs,
+		Reason:         reason,
+		EvidenceSHA256: attest.TextSHA256(evidence),
+		ExpectedSHA256: attest.TextSHA256(expected),
+		OperationID:    operationID,
+		Nonce:          nonce,
+		IssuedAt:       issuedAt,
+		Signature:      sig,
+		Cert:           s.cert,
 	})
 	if err != nil {
 		return "", fmt.Errorf("encode action attestation: %w", err)
@@ -207,7 +222,22 @@ func (s *signer) signFrame(frame []byte, operationID, portalOrigin string) (stri
 	return header, nil
 }
 
-func validSignedAction(actionID, packRef, reason string) bool {
+// optionalJSONString reads a field that may be absent. Absent is ("", true);
+// present-but-not-a-string is ("", false), which refuses the signature rather
+// than binding the empty string over a value we could not read.
+func optionalJSONString(arguments map[string]json.RawMessage, key string) (string, bool) {
+	raw, present := arguments[key]
+	if !present || string(raw) == "null" {
+		return "", true
+	}
+	value, err := exactJSONString(arguments, key)
+	if err != nil {
+		return "", false
+	}
+	return value, true
+}
+
+func validSignedAction(actionID, packRef, reason, evidence, expected string) bool {
 	// The portal and runner own field syntax and schema validation. The bridge
 	// checks only the presence and wire budgets needed to form an unambiguous,
 	// bounded claim, avoiding a third copy of catalog validation rules.
@@ -221,7 +251,9 @@ func validSignedAction(actionID, packRef, reason string) bool {
 	return actionID != "" && len(actionID) <= 128 &&
 		packRef != "" && len(packRef) <= maxSignedPackRefBytes &&
 		utf8.RuneCountInString(reason) <= maxSignedReasonRunes &&
-		strings.TrimSpace(reason) != ""
+		strings.TrimSpace(reason) != "" &&
+		utf8.RuneCountInString(evidence) <= maxSignedEvidenceRunes &&
+		utf8.RuneCountInString(expected) <= maxSignedExpectedRunes
 }
 
 // signedRunnerRefs copies and sorts the exact public runner generation refs.

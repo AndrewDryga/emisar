@@ -103,7 +103,7 @@
       "reason": "planned maintenance",
       "operation_id": "op_wire_golden_0001",
       "attestation": {
-        "version": "emisar-attestation-v4",
+        "version": "emisar-attestation-v5",
         "tool": "run_action",
         "portal_origin": "https://emisar.example",
         "action_id": "database.pause_job",
@@ -114,6 +114,8 @@
           "runner-db-02~bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         ],
         "reason": "planned maintenance",
+        "evidence_sha256": "3af615b236a307e0e0995e4ec1fa494bd6f1300c83b609177681e7a9959e9cea",
+        "expected_sha256": "f877af9f2212170dbf09ecdf6de0bb97a6467e96b76e78a02ae53a15eec5fb51",
         "operation_id": "op_wire_golden_0001",
         "sig": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "nonce": "nonce_wire_golden_0001",

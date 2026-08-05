@@ -1098,7 +1098,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
   defp attestation_header(conn, pack_ref, runner_ref, operation_id, args_raw, reason) do
     %{
-      "version" => "emisar-attestation-v4",
+      "version" => "emisar-attestation-v5",
       "tool" => "run_action",
       "portal_origin" => request_origin(conn),
       "action_id" => "database.pause_job",
@@ -1106,6 +1106,10 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       "args_sha256" => Crypto.hash_hex(args_raw),
       "runner_refs" => [runner_ref],
       "reason" => reason,
+      # These calls carry no evidence/expected, and the empty string still
+      # hashes — that is what stops a control plane inventing a justification.
+      "evidence_sha256" => Crypto.hash_hex(""),
+      "expected_sha256" => Crypto.hash_hex(""),
       "operation_id" => operation_id,
       "sig" => String.duplicate("1", 128),
       "nonce" => String.duplicate("2", 32),

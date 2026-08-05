@@ -39,10 +39,20 @@ short-lived certificates that vouch for each operator's signing key. So:
 
 ## How it works
 
-1. The MCP bridge signs a fixed v4 JSON claim for `run_action`: canonical portal
+1. The MCP bridge signs a fixed v5 JSON claim for `run_action`: canonical portal
    origin, exact action ID and immutable `pack_ref`, SHA-256 of the exact JSON
    argument bytes, SHA-256 of the complete sorted generation-bound runner refs,
-   exact reason, bridge operation ID, one-time nonce, and timestamp. The
+   exact reason, SHA-256 of the `evidence` and `expected` narrative, bridge
+   operation ID, one-time nonce, and timestamp.
+
+   The narrative is bound by DIGEST rather than carried: together those two
+   fields run to 6,000 characters against an 8 KiB envelope, and the argument
+   bytes already establish that a large field is signed as a hash. Both are
+   optional and both are always hashed — an absent one signs as the digest of
+   the empty string, which is the load-bearing half: it binds *"the caller gave
+   no justification"*, so a control plane cannot invent one for an action nobody
+   justified. v4 signed what runs; v5 also signs what a human approver is told
+   about it. The
    Ed25519 **leaf** private key never leaves the operator's machine. The bridge
    never decodes and re-encodes the action arguments, so values above `2^53`,
    exponent spellings, object order, and escapes remain exactly what was signed.
@@ -62,7 +72,7 @@ short-lived certificates that vouch for each operator's signing key. So:
    certificate vouches for** → the nonce has not been seen. Only then does it run.
    Anything else is refused.
 
-The v4 signature binds the **exact runner set** with refs shaped as
+The v5 signature binds the **exact runner set** with refs shaped as
 `name~first32hex(sha256(external_id))`. The runner independently verifies the
 generation suffix against its local external ID; the name remains portal-owned
 display context. A compromised relay cannot add another runner generation after
@@ -226,7 +236,7 @@ cause. The runner's refusal codes:
 | Code | Meaning | Fix |
 | --- | --- | --- |
 | `signature_required` | The dispatch carried no signature or no certificate (it came from the portal/runbook/API, or the MCP bridge isn't configured to sign). | Run it through an MCP bridge with `EMISAR_SIGNING_KEY` **and** `EMISAR_SIGNING_CERT` set. |
-| `attestation_version` | The envelope is not the supported `emisar-attestation-v4` format. | Upgrade the MCP bridge and submit a fresh call. |
+| `attestation_version` | The envelope is not the supported `emisar-attestation-v5` format. | Upgrade the MCP bridge and submit a fresh call. |
 | `attestation_tool` | The signed claim is not for the literal `run_action` tool. | Upgrade or repair the MCP bridge; do not retry the altered claim. |
 | `portal_mismatch` | The signed portal origin differs from the runner's configured control-plane origin. | Point the client and runner at the same canonical control-plane origin and submit a fresh call. |
 | `intent_mismatch` | The action, pack, exact args, reason, or operation differs from the signed intent. | Refresh the action and runner refs, then submit a fresh call; do not reuse the altered envelope. |

@@ -585,3 +585,81 @@ func TestForwardNeverSignsReadsOrOtherMutations(t *testing.T) {
 		}
 	}
 }
+
+// The approver-facing narrative is bound by digest, so a control plane relaying
+// the call cannot change WHY an action appears to be running — the half of the
+// decision a human actually reads, which v4 left unsigned.
+func TestSignFrameBindsTheApproverNarrative(t *testing.T) {
+	signer, publicKey := testSigner(t)
+	refs, _ := json.Marshal([]string{testRunnerRefA})
+	frame := []byte(fmt.Sprintf(
+		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":%q,"pack_ref":%q,"runner_refs":%s,"args":{},"reason":"planned maintenance","evidence":"p99 write latency 40s since 12:10Z","expected":"writes resume within 60s"}}}`,
+		testActionID, testPackRef, refs,
+	))
+
+	header := mustSignFrame(t, signer, frame, testOperationID, testPortalOrigin)
+	envelope, err := decodeAttestationHeader(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if envelope.EvidenceSHA256 != attest.TextSHA256("p99 write latency 40s since 12:10Z") {
+		t.Fatalf("evidence digest = %q", envelope.EvidenceSHA256)
+	}
+	if envelope.ExpectedSHA256 == envelope.EvidenceSHA256 {
+		t.Fatal("evidence and expected must not share a digest here, or a swap passes")
+	}
+
+	claim := attest.Claim{
+		ActionID:     envelope.ActionID,
+		PackRef:      envelope.PackRef,
+		ArgsRaw:      json.RawMessage(`{}`),
+		RunnerRefs:   envelope.RunnerRefs,
+		Reason:       envelope.Reason,
+		Evidence:     "p99 write latency 40s since 12:10Z",
+		Expected:     "writes resume within 60s",
+		OperationID:  envelope.OperationID,
+		PortalOrigin: envelope.PortalOrigin,
+		Nonce:        envelope.Nonce,
+		IssuedAt:     envelope.IssuedAt,
+	}
+	if valid, err := attest.Verify(publicKey, claim, envelope.Signature); err != nil || !valid {
+		t.Fatalf("the signed narrative did not verify: valid=%v err=%v", valid, err)
+	}
+
+	// A rewritten narrative breaks the signature. This is the whole point.
+	for _, altered := range []attest.Claim{
+		func() attest.Claim { c := claim; c.Evidence = "routine, nothing unusual"; return c }(),
+		func() attest.Claim { c := claim; c.Expected = "no impact at all"; return c }(),
+		func() attest.Claim { c := claim; c.Evidence = ""; return c }(),
+	} {
+		if valid, _ := attest.Verify(publicKey, altered, envelope.Signature); valid {
+			t.Error("a rewritten approver narrative still verified")
+		}
+	}
+}
+
+// An absent narrative is signed as the digest of the empty string, so a control
+// plane cannot ADD a justification to a call that carried none.
+func TestSignFrameBindsAnAbsentNarrative(t *testing.T) {
+	signer, publicKey := testSigner(t)
+	header := mustSignFrame(t, signer, runActionFrame(`{}`, []string{testRunnerRefA}), testOperationID, testPortalOrigin)
+	envelope, err := decodeAttestationHeader(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if envelope.EvidenceSHA256 != attest.TextSHA256("") {
+		t.Fatalf("an absent evidence must still hash, got %q", envelope.EvidenceSHA256)
+	}
+
+	invented := attest.Claim{
+		ActionID: envelope.ActionID, PackRef: envelope.PackRef,
+		ArgsRaw: json.RawMessage(`{}`), RunnerRefs: envelope.RunnerRefs,
+		Reason: envelope.Reason, Evidence: "the operator asked for this",
+		OperationID: envelope.OperationID, PortalOrigin: envelope.PortalOrigin,
+		Nonce: envelope.Nonce, IssuedAt: envelope.IssuedAt,
+	}
+	if valid, _ := attest.Verify(publicKey, invented, envelope.Signature); valid {
+		t.Error("evidence invented for an unjustified call still verified")
+	}
+}

@@ -161,7 +161,7 @@ nanoseconds, matching Go's `time.Duration` wire representation.
   "args": {"host": "127.0.0.1", "port": 7199},
   "reason": "Confirm ring health before rerolling the canary.",
   "attestation": {
-    "version": "emisar-attestation-v4",
+    "version": "emisar-attestation-v5",
     "tool": "run_action",
     "portal_origin": "https://emisar.dev",
     "action_id": "cassandra.nodetool_status",
@@ -169,6 +169,8 @@ nanoseconds, matching Go's `time.Duration` wire representation.
     "args_sha256": "...",
     "runner_refs": ["cassandra-dbcas103~8e9a70d2d45a1f23c8b4ae63da1384f1"],
     "reason": "Confirm ring health before rerolling the canary.",
+    "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "operation_id": "op_724NN9NMDZ1T76NARWCKM5A0D6",
     "nonce": "0123456789abcdef0123456789abcdef",
     "issued_at": "2026-07-14T12:00:00Z",

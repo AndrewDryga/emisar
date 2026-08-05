@@ -14,7 +14,7 @@ defmodule Emisar.Runs.Attestation do
   """
   alias Emisar.Crypto
 
-  @version "emisar-attestation-v4"
+  @version "emisar-attestation-v5"
   @tool "run_action"
   @max_header_bytes 8_192
   @max_runner_refs 16
@@ -30,6 +30,7 @@ defmodule Emisar.Runs.Attestation do
 
   @envelope_fields ~w(
     version tool portal_origin action_id pack_ref args_sha256 runner_refs reason
+    evidence_sha256 expected_sha256
     operation_id sig nonce issued_at cert
   )
   @cert_fields ~w(ca_id key_id public_key valid_from valid_until scope serial sig)
@@ -133,6 +134,8 @@ defmodule Emisar.Runs.Attestation do
          :ok <- bounded_string(envelope["action_id"], 1, 128),
          :ok <- bounded_string(envelope["pack_ref"], 1, 256),
          true <- matches?(envelope["args_sha256"], @lower_hex_64),
+         true <- matches?(envelope["evidence_sha256"], @lower_hex_64),
+         true <- matches?(envelope["expected_sha256"], @lower_hex_64),
          {:ok, runner_refs} <- canonical_runner_refs(envelope["runner_refs"]),
          true <- runner_refs == envelope["runner_refs"],
          :ok <- bounded_chars(envelope["reason"], 1, @max_reason_chars),
@@ -194,12 +197,19 @@ defmodule Emisar.Runs.Attestation do
   defp compare(envelope, facts) do
     expected_refs = Enum.sort(facts.runner_refs)
 
+    # The approver-facing narrative is bound by digest, not carried — it
+    # runs to 6,000 characters against an 8 KiB envelope. Comparing here is
+    # the point of binding it: the text an operator is shown when deciding
+    # is the text the bridge signed, and an absent field hashes too, so the
+    # control plane cannot ADD a justification the caller never gave.
     if envelope["portal_origin"] == facts.portal_origin and
          envelope["action_id"] == facts.action_id and
          envelope["pack_ref"] == facts.pack_ref and
          envelope["args_sha256"] == Crypto.hash_hex(facts.args_raw) and
          envelope["runner_refs"] == expected_refs and
          envelope["reason"] == facts.reason and
+         envelope["evidence_sha256"] == Crypto.hash_hex(facts.evidence || "") and
+         envelope["expected_sha256"] == Crypto.hash_hex(facts.expected || "") and
          envelope["operation_id"] == facts.operation_id do
       :ok
     else

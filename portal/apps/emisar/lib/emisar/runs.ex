@@ -1208,6 +1208,11 @@ defmodule Emisar.Runs do
       args_raw: facts.args_raw,
       runner_refs: Enum.map(runners, & &1.runner_ref),
       reason: facts.reason,
+      # Bound by digest in v5, so the verifier needs the plaintext to compare.
+      # Read strictly, not with Map.get: a call site that forgets these would
+      # otherwise compare against "" and quietly accept a narrative nobody signed.
+      evidence: facts.evidence,
+      expected: facts.expected,
       operation_id: facts.operation_id,
       portal_origin: facts.portal_origin
     }

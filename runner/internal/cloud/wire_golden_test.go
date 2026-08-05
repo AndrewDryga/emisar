@@ -359,10 +359,14 @@ func canonicalAttestation() *Attestation {
 		ArgsSHA256:   repeated("e", 64),
 		RunnerRefs:   []string{"runner-db-01~aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "runner-db-02~bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 		Reason:       "planned maintenance",
-		OperationID:  "op_wire_golden_0001",
-		Signature:    repeated("f", 128),
-		Nonce:        "nonce_wire_golden_0001",
-		IssuedAt:     "2026-07-16T12:34:56Z",
+		// Distinct, non-empty digests: two sha256("") values would let a swap
+		// between the fields pass, and a blank one is not what the portal accepts.
+		EvidenceSHA256: attest.TextSHA256("p99 write latency 40s since 12:10Z"),
+		ExpectedSHA256: attest.TextSHA256("writes resume within 60s"),
+		OperationID:    "op_wire_golden_0001",
+		Signature:      repeated("f", 128),
+		Nonce:          "nonce_wire_golden_0001",
+		IssuedAt:       "2026-07-16T12:34:56Z",
 		Cert: &attest.Cert{
 			CAID:       "ca-production",
 			KeyID:      "key-runner-db",

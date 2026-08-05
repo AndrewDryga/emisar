@@ -143,12 +143,14 @@ defmodule Emisar.Fixtures.Runs do
       args_raw: attrs[:args_raw] || "{}",
       runner_refs: attrs[:runner_refs] || ["runner~" <> String.duplicate("0", 32)],
       reason: attrs[:reason] || "test",
+      evidence: attrs[:evidence],
+      expected: attrs[:expected],
       operation_id: attrs[:operation_id] || @default_operation_id,
       portal_origin: attrs[:portal_origin] || "https://portal.example"
     }
 
     envelope = %{
-      "version" => "emisar-attestation-v4",
+      "version" => "emisar-attestation-v5",
       "tool" => "run_action",
       "portal_origin" => facts.portal_origin,
       "action_id" => facts.action_id,
@@ -156,6 +158,8 @@ defmodule Emisar.Fixtures.Runs do
       "args_sha256" => Crypto.hash_hex(facts.args_raw),
       "runner_refs" => Enum.sort(facts.runner_refs),
       "reason" => facts.reason,
+      "evidence_sha256" => Crypto.hash_hex(facts.evidence || ""),
+      "expected_sha256" => Crypto.hash_hex(facts.expected || ""),
       "operation_id" => facts.operation_id,
       "sig" => String.duplicate("1", 128),
       "nonce" => String.duplicate("2", 32),
