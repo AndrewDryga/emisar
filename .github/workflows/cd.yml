@@ -317,20 +317,33 @@ jobs:
             "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
           cmp dist/packs/v1/catalog.json /tmp/canonical-catalog.json
 
+          # Collected into a variable, not piped through process substitution: a
+          # `done < <(jq ...)` hides jq's exit status, so a manifest this build
+          # could not parse read as "no tarballs to verify". And an EMPTY list
+          # ran the loop zero times and then reported publication verified —
+          # which is the one answer this step must never give for free.
+          tarball_paths=$(jq -er '.objects[] | select(.path | endswith("/pack.tar.gz")) | .path' dist/packs/manifest.json)
+          test -n "$tarball_paths" || {
+            echo "::error::manifest lists no pack tarballs to verify"; exit 1
+          }
           while IFS= read -r path; do
             published=/tmp/"$(basename "$(dirname "$path")")-$(basename "$path")"
             curl -fsS --retry 3 --retry-delay 2 \
               "https://registry.emisar.dev/${path}" -o "$published"
             cmp "dist/packs/${path}" "$published"
-          done < <(jq -r '.objects[] | select(.path | endswith("/pack.tar.gz")) | .path' dist/packs/manifest.json)
+          done <<<"$tarball_paths"
 
+          tarball_urls=$(jq -er '.packs[] | .tarball_url, (.previous_versions[]?.tarball_url)' /tmp/canonical-catalog.json | sort -u)
+          test -n "$tarball_urls" || {
+            echo "::error::published catalog lists no tarball URLs to verify"; exit 1
+          }
           while IFS= read -r url; do
             case "$url" in
               https://registry.emisar.dev/v1/packs/*/pack.tar.gz) ;;
               *) echo "::error::catalog contains a non-canonical tarball URL: ${url}"; exit 1 ;;
             esac
             curl -fsSI --retry 3 --retry-delay 2 "$url" >/dev/null
-          done < <(jq -r '.packs[] | .tarball_url, (.previous_versions[]?.tarball_url)' /tmp/canonical-catalog.json | sort -u)
+          done <<<"$tarball_urls"
 
   deployment-plan:
     name: CD - Plan production

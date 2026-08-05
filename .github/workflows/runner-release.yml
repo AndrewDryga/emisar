@@ -490,8 +490,12 @@ jobs:
           # The digest is the immutable reference to the exact smoke-tested
           # multi-arch image; the notes are where operators pin from.
           append_body: true
+          # The provenance steps skip on a private repo (GitHub's attestation API
+          # rejects user-owned private repos), so this line has to skip with
+          # them. Left unconditional it promised an attestation reviewers were
+          # told to verify with `gh attestation verify` and that did not exist.
           body: |
-            **Container image** (linux/amd64, linux/arm64 — signed provenance + SBOM):
+            **Container image** (linux/amd64, linux/arm64${{ !github.event.repository.private && ' — signed provenance + SBOM' || '' }}):
 
             ```
             ${{ needs.image.outputs.image }}:${{ steps.ver.outputs.version }}@${{ needs.image.outputs.digest }}
