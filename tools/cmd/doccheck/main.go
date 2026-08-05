@@ -230,5 +230,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "doccheck: %d issue(s)\n", len(findings))
 		os.Exit(1)
 	}
+	// "0 Markdown files clean" is not a pass. A sparse checkout, a moved docs
+	// tree, or a glob that stopped matching all produce it, and the exit code
+	// says everything is fine.
+	if markdownFiles == 0 {
+		fmt.Fprintln(os.Stderr, "doccheck: no Markdown files were checked; the repository layout moved or the checkout is incomplete")
+		os.Exit(1)
+	}
 	fmt.Printf("doccheck: %d Markdown files clean\n", markdownFiles)
 }

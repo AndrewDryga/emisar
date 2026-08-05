@@ -381,10 +381,18 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if err := os.WriteFile(probePath, []byte(probe), 0o755); err != nil {
 		return err
 	}
+	// Each extraction is filtered, and an empty result is indistinguishable from
+	// "everything passed" downstream: bash -n and shellcheck over zero files
+	// succeed. A move to runcmd delivery, or a permission change from 0755,
+	// would silently drop every script from validation while every requireText
+	// literal still matched the raw document. Assert there is something to check.
 	portalScripts, err := extractWriteFiles(renderedDocument, temp, false,
 		func(path, _ string) bool { return strings.HasSuffix(path, ".sh") })
 	if err != nil {
 		return err
+	}
+	if len(portalScripts) == 0 {
+		return fmt.Errorf("rendered portal cloud-init delivered no .sh files to validate")
 	}
 	livebookScriptsDir := filepath.Join(temp, "livebook-scripts")
 	notebooksDir := filepath.Join(temp, "livebook-notebooks")
@@ -401,6 +409,9 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if len(livebookScripts) == 0 {
+		return fmt.Errorf("rendered Livebook cloud-init delivered no 0755 scripts to validate")
+	}
 	renderedNotebooks, err := extractWriteFiles(livebookDocument, notebooksDir, true,
 		func(path, _ string) bool { return strings.HasSuffix(path, ".livemd") })
 	if err != nil {
@@ -409,6 +420,11 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	sourceNotebooks, err := filepath.Glob(filepath.Join(a.Infra, "runtime", "livebook", "notebooks", "*.livemd"))
 	if err != nil {
 		return err
+	}
+	// filepath.Glob returns (nil, nil) when nothing matches, so a moved notebook
+	// directory made this 0 == 0 and every per-notebook comparison below a no-op.
+	if len(sourceNotebooks) == 0 {
+		return fmt.Errorf("no source notebooks found under infra/runtime/livebook/notebooks")
 	}
 	if len(sourceNotebooks) != len(renderedNotebooks) {
 		return fmt.Errorf("rendered %d notebooks, expected %d", len(renderedNotebooks), len(sourceNotebooks))

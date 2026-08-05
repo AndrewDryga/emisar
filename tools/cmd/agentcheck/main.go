@@ -26,10 +26,14 @@ import (
 var (
 	staleManualText = regexp.MustCompile(`coop tasks list|xx_done|dev/run\b|\.agent/screenshots\b`)
 	staleSkillText  = regexp.MustCompile("(?i)(/code-review|/security-review)|v0\\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`")
-	publicMCPTool   = regexp.MustCompile("`(list|find|get|run|wait_for|recent|execute|create)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`")
-	cardPolicy      = regexp.MustCompile(`(?i)\bmust\b|\bnever\b|\bdo[[:space:]]+not\b`)
-	inlineCode      = regexp.MustCompile("`[^`]*`")
-	markdownLink    = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
+	// Every verb the portal actually exposes. Hardcoding a narrower set than the
+	// schema means a citation this does not match is never validated at all —
+	// `update` was missing, so every `update_runbook_draft` reference in a public
+	// skill went unchecked by the check whose whole job is checking them.
+	publicMCPTool = regexp.MustCompile("`(list|find|get|run|wait_for|recent|execute|create|update|cancel|approve|deny)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`")
+	cardPolicy    = regexp.MustCompile(`(?i)\bmust\b|\bnever\b|\bdo[[:space:]]+not\b`)
+	inlineCode    = regexp.MustCompile("`[^`]*`")
+	markdownLink  = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
 )
 
 type checker struct {
@@ -613,7 +617,14 @@ func (c *checker) skillFiles(root string) []string {
 
 func (c *checker) checkSkills() {
 	namePrefixes := []string{"content-", "debug-", "design-", "elixir-", "go-", "ops-", "product-", "review-", "security-", "tooling-", "workflow-"}
-	for _, path := range c.skillFiles(".claude/skills") {
+	files := c.skillFiles(".claude/skills")
+	// Its public sibling guards this and this one did not: a casing change or one
+	// more level of nesting drops all 27 contributor skills out of the walk, and
+	// the check still prints `ok:`.
+	if len(files) == 0 {
+		c.fail(".claude/skills contains no contributor SKILL.md files")
+	}
+	for _, path := range files {
 		metadata := c.skillMetadata(path)
 		if metadata == nil {
 			continue
@@ -702,7 +713,11 @@ func (c *checker) checkPublicSkillMCPTools() {
 		c.fail("%s contains no MCP tool names", schemaPath)
 		return
 	}
-	for _, path := range c.skillFiles("skills") {
+	citations := c.skillFiles("skills")
+	if len(citations) == 0 {
+		c.fail("skills/ contains no customer SKILL.md files to check MCP tool names in")
+	}
+	for _, path := range citations {
 		data, err := os.ReadFile(c.path(path))
 		if err != nil {
 			c.fail("reading %s: %v", path, err)
@@ -757,16 +772,23 @@ func (c *checker) checkSweepGuard() {
 			c.fail("retired %s is back; the sweep guard must remain skill-scoped", path)
 		}
 	}
-	settings, err := os.ReadFile(c.path(".claude/settings.json"))
-	if err == nil {
+	// Both files, not just the tracked one: Claude merges settings.local.json
+	// over settings.json, so a Stop hook placed there was project-global in
+	// effect and invisible to a check that read only the committed file.
+	for _, name := range []string{".claude/settings.json", ".claude/settings.local.json"} {
+		settings, err := os.ReadFile(c.path(name))
+		if err != nil {
+			if !os.IsNotExist(err) {
+				c.fail("reading %s: %v", name, err)
+			}
+			continue
+		}
 		var value any
 		if err := json.Unmarshal(settings, &value); err != nil {
-			c.fail("parsing .claude/settings.json: %v", err)
+			c.fail("parsing %s: %v", name, err)
 		} else if hasJSONKey(value, "Stop") {
-			c.fail(".claude/settings.json carries a project-global Stop hook; the sweep guard must remain skill-scoped")
+			c.fail("%s carries a project-global Stop hook; the sweep guard must remain skill-scoped", name)
 		}
-	} else if !os.IsNotExist(err) {
-		c.fail("reading .claude/settings.json: %v", err)
 	}
 }
 
