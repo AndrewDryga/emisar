@@ -1421,7 +1421,14 @@ defmodule Emisar.Approvals do
     broadcast_approval(request)
     count_approval_decision(request)
     notify_requester_of_decision(request)
-    Runs.dispatch_to_runner(run)
+    # `commit_multi` asserts `:ok = callback.(changes)`, and these all return a
+    # tagged tuple on a real failure — an approved run whose runner was since
+    # deleted returns {:error, :not_dispatchable}, which raised a MatchError
+    # AFTER the approval had committed. In the expiry sweep that propagated out
+    # of the Enum, skipping every remaining overdue request in the batch and
+    # retrying the poison row every tick.
+    _ = Runs.dispatch_to_runner(run)
+    :ok
   end
 
   defp after_decision(%{
@@ -1431,14 +1438,16 @@ defmodule Emisar.Approvals do
     broadcast_approval(request)
     count_approval_decision(request)
     notify_requester_of_decision(request)
-    Emisar.Runbooks.approval_settled(request.runbook_execution_id)
+    _ = Emisar.Runbooks.approval_settled(request.runbook_execution_id)
+    :ok
   end
 
   defp after_decision(%{outcome: %{action: :cancelled, request: request}, run_cancel: run_cancel}) do
     broadcast_approval(request)
     count_approval_decision(request)
     notify_requester_of_decision(request)
-    Runs.broadcast_cancelled_run(run_cancel)
+    _ = Runs.broadcast_cancelled_run(run_cancel)
+    :ok
   end
 
   defp after_decision(%{outcome: %{request: request}}) do
@@ -2146,8 +2155,9 @@ defmodule Emisar.Approvals do
         broadcast_approval(changes.reloaded)
         count_approval_decision(changes.reloaded)
         notify_requester_of_decision(changes.reloaded)
-        Runs.broadcast_cancelled_run(Map.get(changes, :run_cancel))
-        maybe_advance_expired_execution(changes.reloaded)
+        _ = Runs.broadcast_cancelled_run(Map.get(changes, :run_cancel))
+        _ = maybe_advance_expired_execution(changes.reloaded)
+        :ok
       end
     )
   end

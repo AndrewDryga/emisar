@@ -190,7 +190,8 @@ defmodule Emisar.Admin do
          {:ok, next_owner} <- fetch_membership(account.id, new_owner),
          {:ok, promoted} <- Accounts.update_membership_role(next_owner, "owner", target_subject),
          :ok <- maybe_demote_previous_owner(account, args["previous_owner"], target_subject) do
-      {:ok, membership_result(promoted)}
+      # Same as mutate_member: the written row carries no :user preload.
+      {:ok, membership_result(%{promoted | user: next_owner.user})}
     end
   end
 
@@ -311,8 +312,11 @@ defmodule Emisar.Admin do
     end
   end
 
-  defp normalize_member_mutation({:ok, %Accounts.Membership{} = membership}, _fallback),
-    do: {:ok, membership_result(membership)}
+  # A mutation returns the row it wrote, which carries no :user preload — the
+  # fallback is the membership `mutate_member` fetched WITH its user, so carry
+  # that across rather than reporting a member with no email.
+  defp normalize_member_mutation({:ok, %Accounts.Membership{} = membership}, fallback),
+    do: {:ok, membership_result(%{membership | user: fallback.user})}
 
   defp normalize_member_mutation({:ok, %Users.User{} = user}, membership),
     do: {:ok, membership_result(%{membership | user: user})}
@@ -366,12 +370,17 @@ defmodule Emisar.Admin do
     %{
       id: membership.id,
       user_id: membership.user_id,
-      email: membership.user && membership.user.email,
+      # `&&` alone does not guard this: an unloaded association is a truthy
+      # %Ecto.Association.NotLoaded{}, so reading .email off it raises.
+      email: member_email(membership.user),
       role: membership.role,
       disabled: not is_nil(membership.disabled_at),
       invitation_pending: is_nil(membership.invitation_accepted_at)
     }
   end
+
+  defp member_email(%Users.User{email: email}), do: email
+  defp member_email(_), do: nil
 
   defp inviter, do: %{full_name: "Emisar Support", email: "support@emisar.dev"}
 

@@ -26,6 +26,36 @@ defmodule Emisar.AdminTest do
       assert {:error, :not_found} = Emisar.Accounts.fetch_account_by_id(account.id)
     end
 
+    # These four run under `support_subject/1`, which has no actor. Every one of
+    # them crashed on a nil dereference in the membership guard — the break-glass
+    # verbs an operator reaches for during an incident, none of them covered.
+    test "runs the member break-glass verbs under an actorless support subject" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "operator"
+        )
+
+      args = ["account=#{account.slug}", "member=#{user.email}"]
+
+      assert {:ok, suspended} = Admin.execute("emisar.admin.member.suspend", args)
+      assert suspended.id == membership.id
+
+      # The written row carries no :user preload, so the email has to come from
+      # the membership the dispatcher already fetched.
+      assert suspended.email == user.email
+
+      assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args)
+      assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args)
+      assert {:ok, _} = Admin.execute("emisar.admin.mfa.reset", args)
+    end
+
     test "rejects malformed, duplicate, excessive, and non-admin arguments" do
       assert {:error, :invalid_admin_arguments} =
                Admin.execute("emisar.admin.account.show", ["account"])

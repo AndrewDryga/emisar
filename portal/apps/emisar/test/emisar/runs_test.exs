@@ -2373,13 +2373,7 @@ defmodule Emisar.RunsTest do
       %{account: account, subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
       facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D7", [runner])
 
-      assert {:ok, _account} =
-               Emisar.Accounts.set_account_disabled_for_support(
-                 account.id,
-                 true,
-                 "Temporary hold",
-                 subject
-               )
+      Fixtures.Accounts.disable_account(account)
 
       assert {:error, :not_found} = Runs.dispatch_mcp_action(facts, subject)
       refute Repo.exists?(ActionRun)

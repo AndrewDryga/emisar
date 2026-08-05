@@ -230,6 +230,11 @@ defmodule Emisar.Accounts do
   Internal support operation. A trusted admin or release-task boundary supplies
   the audit subject; this function is not exposed to ordinary account callers.
   The transition is idempotent and its audit row commits atomically.
+
+  Requires `manage_own_account`. The account id is deliberately NOT scoped to
+  the subject — disabling another tenant is the whole point of a support
+  action — so this permission check is the only thing standing between a future
+  caller and disabling any account by id. It is not decoration.
   """
   def set_account_disabled_for_support(
         account_id,
@@ -238,13 +243,19 @@ defmodule Emisar.Accounts do
         %Subject{} = subject
       )
       when is_boolean(disabled?) and is_binary(reason) and byte_size(reason) in 1..500 do
-    Account.Query.not_deleted()
-    |> Account.Query.by_id(account_id)
-    |> Repo.fetch_and_update(Account.Query,
-      with: &account_lifecycle_changeset(&1, disabled?),
-      audit: &account_lifecycle_audit(&1, &2, subject, reason),
-      after_commit: &after_account_lifecycle_change/2
-    )
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_own_account_permission()
+           ) do
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account_id)
+      |> Repo.fetch_and_update(Account.Query,
+        with: &account_lifecycle_changeset(&1, disabled?),
+        audit: &account_lifecycle_audit(&1, &2, subject, reason),
+        after_commit: &after_account_lifecycle_change/2
+      )
+    end
   end
 
   def set_account_disabled_for_support(_account_id, _disabled?, _reason, %Subject{}),
@@ -864,7 +875,8 @@ defmodule Emisar.Accounts do
       runner_access_editable?: not membership.runner_access_directory_managed,
       role_editable?: not self_owner? and not membership.directory_managed,
       resend_invitation?: pending_invitation? and not disabled?,
-      resend_confirmation?: confirmation_pending? and membership.user_id == subject.actor.id,
+      resend_confirmation?:
+        confirmation_pending? and membership.user_id == Subject.actor_id(subject),
       reset_mfa?: mfa_enrolled?
     }
   end
@@ -2013,7 +2025,7 @@ defmodule Emisar.Accounts do
       # Can't grant a role whose permissions you don't already hold (no
       # escalation by proxy). On your own membership that's self-promotion.
       not Auth.Permissions.covers_role?(subject, new_role) ->
-        if membership.user_id == subject.actor.id,
+        if membership.user_id == Subject.actor_id(subject),
           do: {:error, :cannot_self_promote},
           else: {:error, :insufficient_privileges}
 
@@ -2772,7 +2784,12 @@ defmodule Emisar.Accounts do
   # around a superior).
   defp ensure_can_modify_membership(%Membership{} = membership, %Subject{} = subject) do
     cond do
-      membership.user_id == subject.actor.id ->
+      # `Subject.actor_id/1` rather than `subject.actor.id`: the break-glass
+      # support subject minted by `Emisar.Admin` has no actor, and dereferencing
+      # nil crashed member.suspend, member.reinstate, sessions.revoke, and
+      # mfa.reset — the four verbs an operator reaches for during an incident.
+      # A subject with no actor cannot be modifying itself.
+      membership.user_id == Subject.actor_id(subject) ->
         {:error, :cannot_modify_self}
 
       not Auth.Permissions.covers_role?(subject, membership.role) ->
