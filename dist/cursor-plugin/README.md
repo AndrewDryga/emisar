@@ -6,13 +6,14 @@ Policy decides what runs, what waits for a person, and what is denied; the
 runner checks the exact pack and arguments again on the host.
 
 This package registers the hosted emisar MCP endpoint with Cursor. It contains
-no credential, code hook, rule, skill, subagent, or second backend. Tools,
-runner scope, policy, approval, and audit remain in the operator's emisar
-account.
+no credential, code hook, rule, subagent, executable, or second backend. It also
+bundles three portable customer workflows: install and certify a runner, author
+a custom action pack, and respond to a production incident. Tools, runner scope,
+policy, approval, and audit remain in the operator's emisar account.
 
-**Publication status:** this directory is the ready-to-submit plugin scaffold.
-The Marketplace listing is not public yet. Use the direct MCP configuration
-below today; the plugin will register the same endpoint after publication.
+**Publication status:** local installation is available now. The Cursor
+Marketplace listing is pending. The direct MCP configuration below registers
+the same endpoint without the bundled skills.
 
 ## Connect now
 
@@ -27,6 +28,7 @@ emisar available in every workspace:
 {
   "mcpServers": {
     "emisar": {
+      "type": "http",
       "url": "https://emisar.dev/api/mcp/rpc"
     }
   }
@@ -57,6 +59,19 @@ emisar exposes a fixed MCP tool surface that lets Cursor:
 Packs add infrastructure capabilities behind those tools. Installing a pack
 does not require another Cursor integration.
 
+## Bundled workflows
+
+- **Respond to production incidents** investigates first, tests hypotheses with
+  read-only actions, contains only within explicit authority, turns the root
+  cause into a source-controlled fix, and verifies recovery.
+- **Install Emisar** discovers a host, installs and certifies its runner, checks
+  capability coverage, and recommends a custom pack when the catalog has a gap.
+- **Author a pack** guides restrictive action design, validation, local proof,
+  controlled rollout, trust review, and fleet certification.
+
+These skills guide the agent; they do not grant permissions or bypass Emisar's
+policy, approvals, runner scope, or runner-side validation.
+
 Every call is attributed to the signed-in emisar member. Their runner scope
 limits which hosts are visible. Account policy decides whether the action runs,
 waits for approval, or is denied. Cursor cannot use this connection to bypass
@@ -80,14 +95,14 @@ limits at [emisar.dev/docs/security-model](https://emisar.dev/docs/security-mode
 
 ## Plugin maintainers
 
-Before Marketplace submission, lift this directory to the root of its dedicated
-public repository, then follow [`PUBLISHING.md`](PUBLISHING.md). Validate a clean
-install and the OAuth success, approval, denial, and audit-attribution paths in
-a current Cursor build before publishing.
+This directory is lifted to the root of the dedicated public repository named in
+the plugin manifest. Follow [`PUBLISHING.md`](PUBLISHING.md) before each release.
+Validate a clean install and the OAuth success, approval, denial, and
+audit-attribution paths in a current Cursor build before publishing.
 
-The package must stay credential-free and minimal. If the product needs richer
-agent guidance later, add it only with live evidence that it improves safe tool
-use; do not duplicate server-side policy or tool semantics in Cursor files.
+The package must stay credential-free and focused. Keep bundled skills portable
+and contract-accurate; do not duplicate server-side policy or tool semantics in
+Cursor files.
 
 ## Links
 

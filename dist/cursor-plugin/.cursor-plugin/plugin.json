@@ -1,14 +1,20 @@
 {
   "name": "emisar",
+  "displayName": "Emisar",
   "version": "0.1.0",
-  "description": "One governed MCP endpoint for infrastructure actions — gated by policy, approval, and audit.",
+  "description": "Connect Cursor to infrastructure through Emisar's declared, policy-controlled actions, approvals, and audit.",
   "author": {
-    "name": "emisar",
+    "name": "Emisar",
     "email": "support@emisar.dev"
   },
+  "publisher": "Emisar",
   "homepage": "https://emisar.dev",
-  "repository": "https://github.com/andrewdryga/emisar-cursor-plugin",
+  "repository": "https://github.com/AndrewDryga/emisar-cursor-plugin",
   "license": "Apache-2.0",
-  "keywords": ["devops", "infrastructure", "security", "automation", "mcp", "approvals", "audit"],
-  "logo": "assets/logo.svg"
+  "logo": "assets/logo.svg",
+  "keywords": ["devops", "infrastructure", "incident-response", "mcp", "approvals", "audit"],
+  "category": "devops",
+  "tags": ["infrastructure", "incident-response", "mcp", "security", "automation"],
+  "skills": "./skills/",
+  "mcpServers": "./mcp.json"
 }

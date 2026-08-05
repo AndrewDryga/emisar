@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "emisar": {
+      "type": "http",
       "url": "https://emisar.dev/api/mcp/rpc"
     }
   }
