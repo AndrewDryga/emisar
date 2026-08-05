@@ -284,7 +284,8 @@ defmodule EmisarWeb.MarketingTest do
           ~p"/docs/runner-cli",
           ~p"/docs/audit-and-siem",
           ~p"/docs/security-model",
-          ~p"/docs/security-incidents"
+          ~p"/docs/security-incidents",
+          ~p"/guides/how-emisar-works"
         ] do
       text = conn |> get(route) |> html_response(200) |> squish()
 
@@ -932,6 +933,15 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "2. restart service — run_action input"
       assert html =~ "3. verify service — run_action input"
       assert html =~ "linux.systemctl_status"
+    end
+
+    test "the deployment guide attributes signed dispatch to the bridge key", %{conn: conn} do
+      html = conn |> get(~p"/docs/deployment") |> html_response(200) |> squish()
+
+      assert html =~
+               "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+
+      refute html =~ "a human&#39;s signature"
     end
 
     test "the home hero aligns its peer verdict chips", %{conn: conn} do
@@ -1686,13 +1696,15 @@ defmodule EmisarWeb.MarketingTest do
       assert runs =~ "most recent 500"
       assert runs =~ "SIGTERM"
 
-      keys = conn |> get(~p"/docs/keys") |> html_response(200)
+      keys = conn |> get(~p"/docs/keys") |> html_response(200) |> squish()
       assert keys =~ "emk-"
       assert keys =~ "no scope of its own"
       assert keys =~ "audit-export"
       assert keys =~ "MCP bridge keys are short-lived and rotate themselves"
       assert keys =~ "writable and persistent"
-      assert keys =~ "OAuth and hand-supplied bearer"
+
+      assert keys =~
+               "OAuth tokens, arbitrary Bearer tokens, non-expiring quick-connect keys, and audit-export tokens bypass local rotation state."
 
       cli = conn |> get(~p"/docs/runner-cli") |> html_response(200)
       assert cli =~ "emisar audit verify --all"

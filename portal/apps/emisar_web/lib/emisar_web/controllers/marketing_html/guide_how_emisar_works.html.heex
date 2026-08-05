@@ -220,8 +220,8 @@
   <p>
     The control plane keeps the fleet-wide audit. A runner that receives a dispatch also writes to a
     local hash-chained JSONL journal before starting the process and again when it reaches a terminal
-    outcome. The chain makes edits, deletions, and reordering detectable. An attacker with enough
-    privilege on the host can replace the whole file.
+    outcome. Verification covers the retained journal or retained suffix; it cannot prove that a
+    privileged host operator did not replace or truncate the entire local journal.
   </p>
   <p>
     Redaction removes values that match configured patterns. A secret in an unexpected format can
