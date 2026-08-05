@@ -74,6 +74,12 @@ USAGE
 
 ASSUME_YES="${ASSUME_YES:-0}"
 
+# Config writers stage through mktemp, not a predictable "${file}.emisar-new.$$".
+# A shell > redirect FOLLOWS a destination symlink and chmod follows it too, so
+# under the documented `sudo bash -s -- --uninstall` a local user who pre-created
+# that path (the PID space is small enough to blanket) got an arbitrary
+# root-written 0600 file with content they controlled. mktemp's template creates
+# with O_EXCL and a random suffix, so there is nothing to pre-create.
 require_value() {
   local flag="$1"
   if [ "$#" -lt 2 ] || [ -z "$2" ] || [[ "$2" == -* ]]; then
@@ -601,7 +607,7 @@ PY
   fi
   [ "${shape}" = "std" ] || return 1
   if command -v jq >/dev/null 2>&1; then
-    local tmp_out="${file}.emisar-new.$$"
+    local tmp_out; tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
     jq 'del(.mcpServers.emisar)' "${file}" >"${tmp_out}" 2>/dev/null || status=1
     if [ "${status}" -eq 0 ]; then
       chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}" && return 0
@@ -616,7 +622,7 @@ PY
 # exact header through the next table header or EOF.
 remove_codex_toml_emisar() {
   local file="$1"
-  local tmp_out="${file}.emisar-new.$$"
+  local tmp_out; tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
   awk '
     /^\[mcp_servers\.emisar\]$/ { skip = 1; next }
     /^\[/ { skip = 0 }
@@ -637,7 +643,7 @@ remove_yaml_emisar() {
     goose) top="extensions" ;;
     *) return 1 ;;
   esac
-  tmp_out="${file}.emisar-new.$$"
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
   awk -v top="${top}" '
     {
       if (skip) {
@@ -1141,7 +1147,7 @@ file_has_content() {
 # smoke harness extracts functions by their closing column-0 brace.
 write_fresh_json_config() {
   local file="$1" bin="$2" url="$3" key="$4" client="$5"
-  local tmp_out="${file}.emisar-new.$$"
+  local tmp_out; tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
   {
     printf '{\n'
     printf '  "mcpServers": {\n'
@@ -1413,7 +1419,7 @@ PY
   fi
   [ "${shape}" = "std" ] || return 1
   if command -v jq >/dev/null 2>&1; then
-    local tmp_out="${file}.emisar-new.$$"
+    local tmp_out; tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
     # Key rides the environment, not --arg: argv is world-readable /proc/PID/cmdline.
     MCP_KEY="${key}" jq --arg cmd "${bin}" --arg url "${url}" --arg client "${client}" \
       '.mcpServers.emisar = {command: $cmd, env: {EMISAR_URL: $url, EMISAR_API_KEY: env.MCP_KEY, EMISAR_CLIENT: $client}}' \
@@ -1431,7 +1437,7 @@ PY
 # always valid, and the caller already checked the table doesn't exist.
 append_codex_toml() {
   local file="$1" bin="$2" url="$3" key="$4"
-  local tmp_out="${file}.emisar-new.$$"
+  local tmp_out; tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
   if [ -e "${file}" ]; then
     cp -p "${file}" "${tmp_out}" || return 1
   else
@@ -1464,7 +1470,7 @@ append_yaml_config() {
   if [ -e "${file}" ] && grep -Eq "^${top}:" "${file}" 2>/dev/null; then
     return 1
   fi
-  tmp_out="${file}.emisar-new.$$"
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
   if [ -e "${file}" ]; then
     cp -p "${file}" "${tmp_out}" || return 1
   else

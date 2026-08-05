@@ -126,21 +126,33 @@ normalize_version() {
   esac
 }
 
+# A flag whose value is missing must say so, not die on `set -u` with a raw
+# "$2: unbound variable" and a line number. Ported from install-mcp.sh, which
+# has had this since it shipped; these flags freeze at 1.0.
+require_value() {
+  local flag="$1"
+  if [ "$#" -lt 2 ] || [ -z "$2" ] || [[ "$2" == -* ]]; then
+    printf 'flag %s requires a value\n' "$flag" >&2
+    usage >&2
+    exit 2
+  fi
+}
+
 PURGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --version) VERSION="$(normalize_version "$2")"; shift 2;;
+    --version) require_value "$@"; VERSION="$(normalize_version "$2")"; shift 2;;
     --uninstall) MODE="uninstall"; shift;;
     --purge) PURGE=1; shift;;
     --no-start) NO_START=1; shift;;
     --no-service) NO_SERVICE=1; shift;;
-    --bin-dir) BIN_DIR="$2"; shift 2;;
-    --etc-dir) ETC_DIR="$2"; shift 2;;
-    --data-dir) DATA_DIR="$2"; shift 2;;
-    --log-dir) LOG_DIR="$2"; shift 2;;
-    --user) SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
+    --bin-dir) require_value "$@"; BIN_DIR="$2"; shift 2;;
+    --etc-dir) require_value "$@"; ETC_DIR="$2"; shift 2;;
+    --data-dir) require_value "$@"; DATA_DIR="$2"; shift 2;;
+    --log-dir) require_value "$@"; LOG_DIR="$2"; shift 2;;
+    --user) require_value "$@"; SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
     --yes|-y) ASSUME_YES=1; shift;;
-    --packs) PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
+    --packs) require_value "$@"; PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
     --help|-h) usage; exit 0;;
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
   esac
@@ -301,8 +313,17 @@ detect_target() {
   # the flag is to install on hosts that don't HAVE a real init (cloud
   # shell, containers, CI). detect_init() would die on those before we
   # ever reach do_install.
+  #
+  # Uninstall degrades an undetectable init to "none" instead of dying: there
+  # is nothing to install, and do_uninstall's service teardown is a case that
+  # no-ops on "none". Dying here meant a container install (the documented
+  # --no-service path) could not be removed with the very command this script
+  # prints on success — it failed with an error about INSTALLING. Detection
+  # still RUNS, so a real systemd or launchd host removes its unit as before.
   if [ "${NO_SERVICE}" = "1" ]; then
     INIT="none"
+  elif [ "${MODE}" = "uninstall" ]; then
+    INIT="$(detect_init 2>/dev/null)" || INIT="none"
   else
     INIT="$(detect_init)"
   fi
@@ -536,7 +557,7 @@ paths:
   data_dir: ${DATA_DIR}
   work_dir: ${DATA_DIR}/work
   packs:
-    - /etc/emisar/packs
+    - ${ETC_DIR}/packs
 
 execution:
   # SIGTERM->SIGKILL window when cancelling an action. Per-action
