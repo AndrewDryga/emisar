@@ -1,6 +1,8 @@
 # MTA-STS is intentionally isolated from the portal in its own public-read
 # bucket. Only the standardized policy object is published there.
 resource "google_storage_bucket" "mta_sts" {
+  depends_on = [google_project_service.apis]
+
   project  = var.project_id
   name     = "${var.project_id}-mta-sts"
   location = var.region

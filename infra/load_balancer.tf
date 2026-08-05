@@ -247,6 +247,8 @@ resource "terraform_data" "app_backend_ready" {
 
 # ── TLS policy: modern ciphers, TLS 1.2+ ─────────────────────────────────────
 resource "google_compute_ssl_policy" "restricted" {
+  depends_on = [google_project_service.apis]
+
   name            = "emisar-ssl"
   profile         = "RESTRICTED"
   min_tls_version = "TLS_1_2"
@@ -386,6 +388,8 @@ resource "google_compute_global_forwarding_rule" "https_v6" {
 
 # ── HTTP → HTTPS redirect front end ──────────────────────────────────────────
 resource "google_compute_url_map" "redirect" {
+  depends_on = [google_project_service.apis]
+
   name = "emisar-http-redirect"
   default_url_redirect {
     https_redirect         = true
@@ -411,6 +415,8 @@ resource "google_compute_url_map" "redirect" {
 }
 
 resource "google_compute_target_http_proxy" "redirect" {
+  depends_on = [google_project_service.apis]
+
   name    = "emisar-http-proxy"
   url_map = google_compute_url_map.redirect.id
 }

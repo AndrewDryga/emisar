@@ -1,5 +1,7 @@
 # ── Pack registry: the one deliberate public-read surface ───────────────────
 resource "google_storage_bucket" "pack_registry" {
+  depends_on = [google_project_service.apis]
+
   project  = var.project_id
   name     = var.pack_registry_bucket
   location = var.pack_registry_location
@@ -10,6 +12,20 @@ resource "google_storage_bucket" "pack_registry" {
 
   versioning {
     enabled = true
+  }
+
+  # Versioning exists so the mutable pointers can be rolled back, but nothing
+  # pruned the noncurrent generations they leave behind — every publish added
+  # one, forever. Bound only the two pointers; the immutable content-addressed
+  # prefixes are never overwritten and have no noncurrent versions to collect.
+  lifecycle_rule {
+    condition {
+      matches_prefix     = ["v1/catalog.json", "v1/suggest.json"]
+      num_newer_versions = 10
+    }
+    action {
+      type = "Delete"
+    }
   }
 
   labels = {
@@ -37,6 +53,8 @@ resource "google_storage_bucket_iam_member" "pack_registry_public_read" {
 }
 
 resource "google_service_account" "pack_publisher" {
+  depends_on = [google_project_service.apis]
+
   project      = var.project_id
   account_id   = "emisar-pack-publisher"
   display_name = "Emisar Action Pack Registry Publisher"

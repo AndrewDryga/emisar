@@ -182,6 +182,19 @@ variable "github_repository" {
   default     = "AndrewDryga/emisar"
 }
 
+variable "github_repository_id" {
+  type        = string
+  description = <<-EOT
+    Numeric GitHub repository id, pinned alongside the repository PATH. GitHub
+    does not reserve a path after a rename or transfer, so a path-only condition
+    would let whoever claims the old name mint a pack-publisher token and
+    replace catalog objects that customer runners execute. Empty disables the
+    extra clause (set it before relying on the path pin alone).
+    Read it with: gh api repos/<owner>/<repo> --jq .id
+  EOT
+  default     = ""
+}
+
 variable "mailer_from_email" {
   type        = string
   description = "From address for outbound product mail (MAILER_FROM_EMAIL); unset, the release falls back to no-reply@emisar.dev."

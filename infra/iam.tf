@@ -1,11 +1,15 @@
 # ── Least-privilege service account for the portal instances ────────────────
 resource "google_service_account" "vm" {
+  depends_on = [google_project_service.apis]
+
   project      = var.project_id
   account_id   = "emisar-vm"
   display_name = "Emisar Control Plane Instances"
 }
 
 resource "google_service_account" "livebook" {
+  depends_on = [google_project_service.apis]
+
   count = var.livebook_enabled ? 1 : 0
 
   project      = var.project_id
@@ -47,13 +51,30 @@ resource "google_project_iam_member" "vm_operations_read" {
     "roles/iam.workloadIdentityPoolViewer",
     "roles/monitoring.viewer",
     "roles/serviceusage.serviceUsageConsumer",
-    "roles/storage.bucketViewer",
-    "roles/storage.objectViewer",
   ])
 
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.vm.email}"
+}
+
+# Storage reads are scoped to the two buckets this project actually has, not
+# granted project-wide. The unconditioned grant was bounded only by the current
+# inventory happening to contain nothing private; the next bucket — a database
+# export, a log sink, an audit-export staging area — would have been silently
+# readable by the VM SA, and therefore by every action the colocated admin
+# runner can run, with no plan diff to review.
+resource "google_storage_bucket_iam_member" "vm_bucket_read" {
+  for_each = {
+    for pair in setproduct(
+      [google_storage_bucket.pack_registry.name, google_storage_bucket.mta_sts.name],
+      ["roles/storage.bucketViewer", "roles/storage.objectViewer"]
+    ) : "${pair[0]}:${pair[1]}" => { bucket = pair[0], role = pair[1] }
+  }
+
+  bucket = each.value.bucket
+  role   = each.value.role
+  member = "serviceAccount:${google_service_account.vm.email}"
 }
 
 resource "google_project_iam_custom_role" "vm_storage_policy_reader" {

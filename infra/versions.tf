@@ -22,7 +22,7 @@ terraform {
     }
     betteruptime = {
       source  = "BetterStackHQ/better-uptime"
-      version = "~> 0.21"
+      version = "~> 0.21.0" # 0.x minors are breaking by convention; pin the minor.
     }
   }
 

@@ -30,9 +30,10 @@ locals {
     unhealthy_threshold = 3
   }
   readiness_generation = substr(sha256(jsonencode(local.readiness_contract)), 0, 8)
-  # A five-connection pool per VM leaves ample room on the production shared-core
-  # tier for Cloud SQL internals and for old + new fleets to overlap during a
-  # create-before-destroy MIG replacement or multi-zone surge.
+  # A five-connection pool per VM leaves room on the deployed tier for Cloud SQL
+  # internals and for old + new fleets to overlap during a create-before-destroy
+  # MIG replacement or multi-zone surge. (Sizing is a workspace variable — do
+  # not restate the tier here; this repository is public.)
   portal_database_pool_size = 5
   # Connections the tier must keep for principals other than the portal pool: Cloud
   # SQL's superuser reserve, the pgaudit_owner / operator / livebook admin logins,
@@ -146,7 +147,7 @@ resource "google_compute_reservation" "emisar" {
 
   # Zone + machine shape make every ForceNew successor name unique, so
   # create_before_destroy can actually create it before releasing the old slot.
-  name = "emisar-${each.key}-${replace(var.machine_type, "_", "-")}"
+  name = "emisar-${each.key}-${var.machine_type}"
   zone = each.key
 
   specific_reservation_required = false
