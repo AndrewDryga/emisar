@@ -28,7 +28,7 @@ shift
 
 if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
 	printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |
-		curl -fsS $K -H @- "$@" "$TRAEFIK_URL$path"
+		curl --globoff --proto '=http,https' -fsS $K -H @- "$@" "$TRAEFIK_URL$path"
 else
-	curl -fsS $K "$@" "$TRAEFIK_URL$path"
+	curl --globoff --proto '=http,https' -fsS $K "$@" "$TRAEFIK_URL$path"
 fi

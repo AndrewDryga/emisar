@@ -1,7 +1,7 @@
 schema_version: 1
 id: zookeeper
 name: ZooKeeper operations
-version: 0.1.8
+version: 0.1.9
 description: >
   Cluster + 4lw command + watch + session introspection. Read-only. Set
   ZK_SERVERS env var (host:port,host:port,…). All four-letter words need
@@ -16,6 +16,11 @@ requires:
 # `emisar pack suggest` detection: ZooKeeper runs inside the JVM (process
 # `java`, too generic), so detect by the default client port.
 detect:
+  binaries:
+    - zkServer.sh
+    - zkCli.sh
+  processes:
+    - QuorumPeerMain
   ports:
     - 2181
 

@@ -45,6 +45,7 @@ var pipelineFileReaders = map[string]bool{
 	"grep": true,
 	"head": true,
 	"jq":   true,
+	"ls":   true,
 	"tail": true,
 	"zcat": true,
 }
@@ -57,11 +58,19 @@ var pipelineFileReaders = map[string]bool{
 // discarding it — unlike a file reader, there is no path to test first.
 var pipelineRemoteSources = map[string]bool{
 	"gdb":                          true,
+	"jcmd":                         true,
+	"jinfo":                        true,
 	"jmap":                         true,
+	"jstack":                       true,
 	"kafka-broker-api-versions.sh": true,
+	"kafka-configs.sh":             true,
+	"kafka-consumer-groups.sh":     true,
+	"kafka-topics.sh":              true,
 	"kubectl":                      true,
 	"lsof":                         true,
 	"nomad":                        true,
+	"pm2":                          true,
+	"dig":                          true,
 	"whois":                        true,
 	"conntrack":                    true,
 }

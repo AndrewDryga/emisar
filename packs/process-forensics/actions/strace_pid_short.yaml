@@ -26,7 +26,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "timeout 5 strace -p {{ args.pid }} -y -tt 2>&1 | head -2000 || true"
+      - "out=$(timeout 5 strace -p {{ args.pid }} -y -tt 2>&1); status=$?; printf '%s\\n' \"$out\" | head -2000; case \"$status\" in 0|124) exit 0 ;; *) exit \"$status\" ;; esac"
   timeout: 15s
 output:
   parser: text

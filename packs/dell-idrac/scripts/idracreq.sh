@@ -41,7 +41,7 @@ auth=$(printf '%s:%s' "$IDRAC_USER" "$IDRAC_PASSWORD" | base64 | tr -d '\n')
 
 # Assemble curl's argument list. -H @- reads the auth header from the stdin
 # piped in below, so the credential stays out of argv.
-set -- -sS -X "$method" -H @- "https://$host/redfish/v1$path"
+set -- --globoff --proto '=https' -sS -X "$method" -H @- "https://$host/redfish/v1$path"
 [ "${IDRAC_INSECURE:-}" = "true" ] && set -- -k "$@"
 if [ -n "$body" ]; then
 	set -- "$@" -H "Content-Type: application/json" --data "$body"

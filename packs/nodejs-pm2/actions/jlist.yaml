@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "pm2 jlist | jq 'map({name, pm_id, pid, monit, status: .pm2_env.status, uptime: .pm2_env.pm_uptime, restarts: .pm2_env.restart_time, mode: .pm2_env.exec_mode})'"
+      - "procs=$(pm2 jlist) || exit 1; printf '%s' \"$procs\" | jq 'map({name, pm_id, pid, monit, status: .pm2_env.status, uptime: .pm2_env.pm_uptime, restarts: .pm2_env.restart_time, mode: .pm2_env.exec_mode})'"
   timeout: 30s
 output:
   parser: json

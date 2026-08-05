@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "kafka-topics.sh --bootstrap-server \"$KAFKA_BOOTSTRAP\" --describe | awk '/Leader/ {match($0,/Leader: [0-9]+/); if (RSTART) print substr($0,RSTART+8,RLENGTH-8)}' | sort | uniq -c"
+      - "topics=$(kafka-topics.sh --bootstrap-server \"$KAFKA_BOOTSTRAP\" --describe) || exit 1; printf '%s\\n' \"$topics\" | awk '/Leader/ {match($0,/Leader: [0-9]+/); if (RSTART) print substr($0,RSTART+8,RLENGTH-8)}' | sort | uniq -c"
   timeout: 60s
 output:
   parser: text

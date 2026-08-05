@@ -2,7 +2,7 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.16
+version: 0.2.17
 retired_below: 0.2.14
 description: >
   Operator pack for Docker hosts: read-only inventory and per-container
@@ -17,6 +17,7 @@ requires:
     - linux
   binaries:
     - docker
+    - bash
 
 # `emisar pack suggest` detection — default process names / ports.
 detect:

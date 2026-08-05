@@ -13,7 +13,7 @@ TYPESENSE_URL=${TYPESENSE_URL:-http://127.0.0.1:8108}
 path=$1
 shift
 if [ -n "${TYPESENSE_API_KEY:-}" ]; then
-	printf 'X-TYPESENSE-API-KEY: %s\n' "$TYPESENSE_API_KEY" | curl -fsS -H @- "$@" "$TYPESENSE_URL$path"
+	printf 'X-TYPESENSE-API-KEY: %s\n' "$TYPESENSE_API_KEY" | curl --globoff --proto '=http,https' -fsS -H @- "$@" "$TYPESENSE_URL$path"
 else
-	curl -fsS "$@" "$TYPESENSE_URL$path"
+	curl --globoff --proto '=http,https' -fsS "$@" "$TYPESENSE_URL$path"
 fi

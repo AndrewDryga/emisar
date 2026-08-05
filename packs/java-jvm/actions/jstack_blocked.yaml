@@ -23,7 +23,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "jstack -l {{ args.pid }} | awk '/^\"/ {hdr=$0; next} /java.lang.Thread.State: BLOCKED/ {print hdr; print; flag=1; next} flag && /^$/ {flag=0; next} flag {print}'"
+      - "dump=$(jstack -l {{ args.pid }}) || exit 1; printf '%s' \"$dump\" | awk '/^\"/ {hdr=$0; next} /java.lang.Thread.State: BLOCKED/ {print hdr; print; flag=1; next} flag && /^$/ {flag=0; next} flag {print}'"
   timeout: 30s
 output:
   parser: text

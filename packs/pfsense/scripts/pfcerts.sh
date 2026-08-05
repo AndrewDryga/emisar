@@ -14,5 +14,13 @@
 #
 # Both args are fixed, pack-authored argv values — these actions take no LLM
 # input — so nothing here is cloud-supplied.
+set -eu
+
 dir=$(dirname "$0")
-sh "$dir/pfreq.sh" GET "$1" | jq "$2"
+
+# Capture before filtering. Piped straight into jq, a failed request (401, 403,
+# a 404 path, an unreachable host) sent jq empty stdin — and jq exits 0 on empty
+# input, so the action reported SUCCESS with no findings. "Are any certificates
+# expiring?" answered "no" from an auth failure.
+body=$(sh "$dir/pfreq.sh" GET "$1")
+printf '%s' "$body" | jq "$2"

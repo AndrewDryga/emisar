@@ -30,7 +30,7 @@ shift 2
 
 if [ -n "${PFSENSE_API_KEY:-}" ]; then
 	printf 'X-API-Key: %s\n' "$PFSENSE_API_KEY" |
-		curl -fsS -H @- -X "$method" -H "Content-Type: application/json" "$@" "$PFSENSE_URL$path"
+		curl --globoff --proto '=http,https' -fsS -H @- -X "$method" -H "Content-Type: application/json" "$@" "$PFSENSE_URL$path"
 else
-	curl -fsS -X "$method" -H "Content-Type: application/json" "$@" "$PFSENSE_URL$path"
+	curl --globoff --proto '=http,https' -fsS -X "$method" -H "Content-Type: application/json" "$@" "$PFSENSE_URL$path"
 fi

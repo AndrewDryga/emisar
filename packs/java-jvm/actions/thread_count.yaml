@@ -22,7 +22,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "ls /proc/{{ args.pid }}/task | wc -l"
+      - "tasks=$(ls /proc/{{ args.pid }}/task) || exit 1; printf '%s\\n' \"$tasks\" | wc -l"
   timeout: 5s
 output:
   parser: text

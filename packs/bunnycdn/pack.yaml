@@ -2,7 +2,7 @@ schema_version: 1
 
 id: bunnycdn
 name: bunny.net CDN operations
-version: 0.1.1
+version: 0.1.2
 description: >
   Governed bunny.net Pull Zone lifecycle, cache, hostname, access-control,
   statistics, request-log, origin-error, and billing-usage operations. Auth via
@@ -16,6 +16,7 @@ requires:
   binaries:
     - curl
     - jq
+    - bash
 
 # No detect block: bunny.net is reached remotely, so curl and jq on a runner
 # are not evidence that the host operates a Bunny account.

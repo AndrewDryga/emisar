@@ -2,7 +2,7 @@ schema_version: 1
 
 id: dell-idrac
 name: Dell iDRAC (Redfish)
-version: 0.2.0
+version: 0.2.1
 # 0.1.0 skipped TLS verification by default, sending Basic credentials over an
 # unverified channel — retired as a security fix.
 retired_below: 0.2.0

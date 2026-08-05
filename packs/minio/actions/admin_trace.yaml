@@ -17,7 +17,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "timeout 5 mc admin trace -v \"${1}\" || true"
+      - "out=$(timeout 5 mc admin trace -v \"${1}\" 2>&1); status=$?; printf '%s\\n' \"$out\"; case \"$status\" in 0|124) exit 0 ;; *) exit \"$status\" ;; esac"
       - "emisar"
       - "{{ args.alias }}"
   timeout: 15s
