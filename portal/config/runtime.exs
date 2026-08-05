@@ -169,45 +169,15 @@ if config_env() == :prod do
 
   config :emisar, :public_url, public_url
 
-  # The load balancer reaches this listener. When TLS_CERT_PATH is set the
-  # listener speaks HTTPS, which encrypts the LB-to-VM hop — the one leg of a
-  # request that was still cleartext, on a host that also runs a runner admitted
-  # at max_risk: critical.
-  #
-  # A self-signed certificate is the right shape here and not a shortcut:
-  # Google's external Application Load Balancer encrypts to the backend but does
-  # NOT verify its certificate, so a cert from a CA buys nothing over one the
-  # instance mints for itself at boot — and minting locally means no private key
-  # is ever stored, shipped, or rotated out of band.
-  transport_port = String.to_integer(System.get_env("PORT") || "4000")
-
-  transport_opts =
-    case System.get_env("TLS_CERT_PATH") do
-      nil ->
-        [http: [ip: {0, 0, 0, 0}, port: transport_port]]
-
-      cert_path ->
-        key_path =
-          System.get_env("TLS_KEY_PATH") ||
-            raise "TLS_CERT_PATH is set without TLS_KEY_PATH"
-
-        [
-          https: [
-            ip: {0, 0, 0, 0},
-            port: transport_port,
-            cipher_suite: :strong,
-            certfile: cert_path,
-            keyfile: key_path
-          ]
-        ]
-    end
-
-  endpoint_opts =
-    [
-      url: public_url,
-      secret_key_base: secret_key_base,
-      server: true
-    ] ++ transport_opts
+  endpoint_opts = [
+    url: public_url,
+    http: [
+      ip: {0, 0, 0, 0},
+      port: String.to_integer(System.get_env("PORT") || "4000")
+    ],
+    secret_key_base: secret_key_base,
+    server: true
+  ]
 
   config :emisar_web, EmisarWeb.Endpoint, endpoint_opts
 
