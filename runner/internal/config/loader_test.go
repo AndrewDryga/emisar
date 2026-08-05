@@ -338,3 +338,25 @@ func TestLoad_MalformedAndUnreadable(t *testing.T) {
 		}
 	})
 }
+
+// The config decides paths.packs — what code the runner executes — plus
+// admission and signing.trusted_cas. A group- or world-writable one hands all
+// three to whoever holds that write bit, and $EMISAR_CONFIG is honoured
+// wherever it points, so the file need not be the one an operator installed.
+func TestLoad_RefusesAWritableConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeYAML(t, path, minimalConfig)
+
+	if _, err := Load(path); err != nil {
+		t.Fatalf("a config nobody else can write must load: %v", err)
+	}
+
+	for _, mode := range []os.FileMode{0o664, 0o666, 0o622} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil {
+			t.Fatalf("a config with mode %#o must be refused", mode)
+		}
+	}
+}
