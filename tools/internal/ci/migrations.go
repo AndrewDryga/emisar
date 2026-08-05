@@ -14,7 +14,7 @@ func CheckFrozenMigrations(ctx context.Context, root, event, base string) error 
 	if err != nil {
 		return err
 	}
-	data, err := git(ctx, root, "diff", "--no-renames", "--name-status", "-z", "--diff-filter=MDT", from, "HEAD", "--", ":(glob)portal/apps/*/priv/repo/migrations/*.exs")
+	data, err := git(ctx, root, "diff", "--no-renames", "--name-status", "-z", "--diff-filter=MDRT", from, "HEAD", "--", ":(glob)portal/apps/*/priv/repo/migrations/[0-9]*.exs")
 	if err != nil {
 		return err
 	}

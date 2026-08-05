@@ -24,8 +24,10 @@ import (
 // `execution.command.binary` and never looks at `execution.script.interpreter`.
 // Fixing them was mechanical; this keeps the next one from reopening it.
 var packDeclaredInterpreters = map[string]string{
-	"/bin/bash": "bash",
-	"bash":      "bash",
+	"/bin/bash":         "bash",
+	"/usr/bin/bash":     "bash",
+	"bash":              "bash",
+	"/usr/bin/env bash": "bash",
 }
 
 type packInterpreterManifest struct {

@@ -13,8 +13,16 @@ import (
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
 )
 
+func (a *App) workingTreeFiles(ctx context.Context, filters []string, paths ...string) ([]string, error) {
+	return a.diffFiles(ctx, []string{"diff", "--name-only", "-z"}, filters, paths...)
+}
+
 func (a *App) stagedFiles(ctx context.Context, filters []string, paths ...string) ([]string, error) {
-	args := []string{"diff", "--cached", "--name-only", "-z"}
+	return a.diffFiles(ctx, []string{"diff", "--cached", "--name-only", "-z"}, filters, paths...)
+}
+
+func (a *App) diffFiles(ctx context.Context, base []string, filters []string, paths ...string) ([]string, error) {
+	args := append([]string{}, base...)
 	if len(filters) != 0 {
 		args = append(args, "--diff-filter="+strings.Join(filters, ""))
 	}
@@ -121,8 +129,46 @@ func (a *App) requireCleanPackHashInputs(ctx context.Context) error {
 	return nil
 }
 
+// A committed migration has already run in production; editing it diverges
+// prod's schema. This is the check that stops that, so it looks at the WORKING
+// TREE as well as the index.
+//
+// Two ways the index alone missed it. `git commit -a` stages tracked
+// modifications as part of the commit, after this hook has already run, so the
+// edit was invisible; so was `git commit <path>`. And a migration sitting
+// modified in the working tree is a mistake whether or not this particular
+// commit carries it — saying so now beats saying so after it ships.
+//
+// T (typechange) counts with M/D/R: swapping a migration for a symlink replaces
+// its contents just as thoroughly.
+func (a *App) touchedMigrations(ctx context.Context) ([]string, error) {
+	// Timestamp-prefixed files only: `.formatter.exs` lives in the same directory
+	// and is not a migration.
+	const glob = "*priv/repo/migrations/[0-9]*.exs"
+	filters := []string{"M", "D", "R", "T"}
+
+	staged, err := a.stagedFiles(ctx, filters, glob)
+	if err != nil {
+		return nil, err
+	}
+	unstaged, err := a.workingTreeFiles(ctx, filters, glob)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool, len(staged)+len(unstaged))
+	union := make([]string, 0, len(staged)+len(unstaged))
+	for _, file := range append(staged, unstaged...) {
+		if !seen[file] {
+			seen[file] = true
+			union = append(union, file)
+		}
+	}
+	return union, nil
+}
+
 func (a *App) stagedCheck(ctx context.Context) error {
-	migrations, err := a.stagedFiles(ctx, []string{"M", "D", "R"}, "*priv/repo/migrations/*.exs")
+	migrations, err := a.touchedMigrations(ctx)
 	if err != nil {
 		return err
 	}

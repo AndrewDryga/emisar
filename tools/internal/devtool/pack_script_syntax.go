@@ -21,9 +21,19 @@ import (
 //
 // A blank interpreter defaults to /bin/sh here exactly as it does in
 // runner/internal/executor/script.go, so the lint parses what will actually run.
-var packScriptParsers = map[string]bool{
-	"/bin/sh":   true,
-	"/bin/bash": true,
+// Every spelling of a shell we would actually see, not just the two in use
+// today: an unrecognized interpreter is SKIPPED (another language's parser is
+// another language's job), so writing `/usr/bin/env bash` would have dropped a
+// file out of the lint without a word.
+var packScriptParsers = map[string]string{
+	"/bin/sh":           "/bin/sh",
+	"/usr/bin/sh":       "/bin/sh",
+	"sh":                "/bin/sh",
+	"/bin/bash":         "/bin/bash",
+	"/usr/bin/bash":     "/bin/bash",
+	"bash":              "/bin/bash",
+	"/usr/bin/env bash": "/bin/bash",
+	"/usr/bin/env sh":   "/bin/sh",
 }
 
 type packScriptAction struct {
@@ -70,10 +80,11 @@ func validatePackScriptSyntax(ctx context.Context, packDir string) error {
 		}
 		// Another language's parser is another language's job; this check is
 		// shell syntax only.
-		if !packScriptParsers[interpreter] {
+		parser, ok := packScriptParsers[interpreter]
+		if !ok {
 			continue
 		}
-		ref := packScriptRef{interpreter: interpreter, path: filepath.Clean(script.Path)}
+		ref := packScriptRef{interpreter: parser, path: filepath.Clean(script.Path)}
 		scripts[ref] = append(scripts[ref], action.ID)
 	}
 
