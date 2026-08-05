@@ -1549,6 +1549,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "OIDC SSO"
       assert html =~ "Require MFA"
       assert html =~ "Before emisar reveals an authenticator secret"
+
+      assert html =~ "Regenerating recovery codes requires a current authenticator"
+      assert html =~ "recovery code; the old set stays valid unless that proof succeeds"
+
       assert html =~ "provider that supplies no email"
       assert html =~ "Require SSO"
       assert html =~ "SCIM directory sync"

@@ -1515,7 +1515,7 @@ defmodule Emisar.Auth do
     code = String.trim(code)
 
     with {:ok, user} <- Users.fetch_user_by_id(id),
-         {:ok, _verified} <- verify_disable_mfa_factor(user, code, subject.context) do
+         {:ok, _verified} <- verify_current_mfa_factor(user, code, subject.context) do
       Users.update_user_mfa(id, nil, nil, [],
         audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
       )
@@ -1528,7 +1528,7 @@ defmodule Emisar.Auth do
 
   def disable_mfa(_, %Subject{}), do: {:error, :invalid_code}
 
-  defp verify_disable_mfa_factor(user, code, context) do
+  defp verify_current_mfa_factor(user, code, context) do
     if Regex.match?(~r/\A\d{6}\z/, code) do
       verify_mfa(user, code, context)
     else
@@ -1537,27 +1537,76 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Regenerate the recovery code set (e.g. user lost their printed copy).
-  Invalidates the prior codes; returns the new plaintext set once.
-  Requires MFA to already be enabled — refused on the locked row, not
-  the caller's snapshot. Self-service — the user is the subject's own
-  actor.
+  Regenerate the recovery code set after proving a current TOTP or recovery
+  code. Invalidates the prior codes and returns the new plaintext set once.
+  Verification spends the shared MFA attempt budget; the final replacement
+  also requires MFA to remain enabled on the locked current row.
   """
-  def regenerate_mfa_recovery_codes(%Subject{actor: %Users.User{} = user} = subject) do
-    {plain_codes, digests} = generate_recovery_codes()
+  def regenerate_mfa_recovery_codes(
+        code,
+        %Subject{actor: %Users.User{id: id}} = subject
+      )
+      when is_binary(code) do
+    code = String.trim(code)
 
-    user.id
-    |> Users.put_user_mfa_recovery_codes(digests,
-      audit:
-        &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated",
-          context: subject.context
-        )
-    )
-    |> case do
-      {:ok, updated} -> {:ok, updated, plain_codes}
+    with {:ok, user} <- Users.fetch_user_by_id(id),
+         :ok <- ensure_mfa_enabled(user),
+         :ok <- throttle_mfa_challenge(user, subject.context) do
+      factor = current_mfa_factor(code)
+      {plain_codes, digests} = generate_recovery_codes()
+      at = DateTime.utc_now()
+
+      id
+      |> Users.regenerate_user_mfa_recovery_codes(factor, digests, at,
+        audit:
+          &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated",
+            context: subject.context
+          )
+      )
+      |> case do
+        {:ok, updated} ->
+          {:ok, updated, plain_codes}
+
+        {:error, :invalid} ->
+          Audit.log_for_user(user, "user.mfa_failed",
+            context: subject.context,
+            payload: %{reason: regeneration_failure_reason(factor)}
+          )
+
+          {:error, :invalid_code}
+
+        {:error, :replay} ->
+          Audit.log_for_user(user, "user.mfa_failed",
+            context: subject.context,
+            payload: %{reason: "replay"}
+          )
+
+          {:error, :replay}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:error, :not_found} -> {:error, :invalid_code}
       {:error, reason} -> {:error, reason}
     end
   end
+
+  def regenerate_mfa_recovery_codes(_, %Subject{}), do: {:error, :invalid_code}
+
+  defp ensure_mfa_enabled(%Users.User{mfa_enabled_at: %DateTime{}}), do: :ok
+  defp ensure_mfa_enabled(%Users.User{}), do: {:error, :mfa_not_enabled}
+
+  defp current_mfa_factor(code) do
+    if Regex.match?(~r/\A\d{6}\z/, code) do
+      {:totp, code}
+    else
+      {:recovery_code, Crypto.hash(String.downcase(code))}
+    end
+  end
+
+  defp regeneration_failure_reason({:totp, _code}), do: "invalid_otp"
+  defp regeneration_failure_reason({:recovery_code, _digest}), do: "invalid_recovery_code"
 
   defp generate_recovery_codes do
     1..@recovery_code_count

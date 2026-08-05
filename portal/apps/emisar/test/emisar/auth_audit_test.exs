@@ -199,10 +199,12 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, _} =
         Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
 
-      {:ok, _, _codes} = Auth.regenerate_mfa_recovery_codes(subject)
+      {:ok, _, _codes} =
+        Auth.regenerate_mfa_recovery_codes(NimbleTOTP.verification_code(secret), subject)
 
       assert [event] = events_of(account, "user.mfa_recovery_codes_regenerated")
       assert event.actor_id == enabled.id
+      assert event.payload == %{}
     end
   end
 

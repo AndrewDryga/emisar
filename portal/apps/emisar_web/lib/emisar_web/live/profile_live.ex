@@ -20,6 +20,8 @@ defmodule EmisarWeb.ProfileLive do
      socket
      |> assign(:page_title, "Profile")
      |> assign(:mfa_recovery_codes, nil)
+     |> assign(:mfa_recovery_regeneration_step, :idle)
+     |> assign(:mfa_recovery_regeneration_error, nil)
      |> assign(:mfa_disable_step, :idle)
      |> assign(:mfa_disable_error, nil)
      |> assign(:current_session_token, session["user_token"])
@@ -31,6 +33,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign_profile_form(user)
      |> assign_email_form(user)
      |> reset_mfa_enrollment()
+     |> assign_mfa_recovery_regeneration_form()
      |> assign_mfa_disable_form()
      |> reset_email_step()
      |> stream(:sessions, [])}
@@ -367,22 +370,30 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
+  def handle_event("start_regenerate_recovery_codes", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:mfa_recovery_regeneration_step, :code)
+     |> assign(:mfa_recovery_regeneration_error, nil)
+     |> assign(:mfa_disable_step, :idle)
+     |> assign_mfa_recovery_regeneration_form()
+     |> assign_mfa_disable_form()}
+  end
+
+  def handle_event("cancel_regenerate_recovery_codes", _params, socket) do
+    {:noreply, reset_mfa_recovery_regeneration(socket)}
+  end
+
+  def handle_event(
+        "regenerate_recovery_codes",
+        %{"mfa_recovery_regeneration" => %{"code" => code}},
+        socket
+      ) do
+    submit_recovery_code_regeneration(socket, code)
+  end
+
   def handle_event("regenerate_recovery_codes", _params, socket) do
-    case Auth.regenerate_mfa_recovery_codes(socket.assigns.current_subject) do
-      {:ok, updated, codes} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "New recovery codes generated. Old codes are now invalid.")
-         |> assign(:current_user, updated)
-         |> assign_mfa_facts(updated)
-         |> assign(:mfa_recovery_codes, codes)}
-
-      {:error, :mfa_not_enabled} ->
-        {:noreply, put_flash(socket, :error, "Enable 2FA first.")}
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Could not generate recovery codes.")}
-    end
+    submit_recovery_code_regeneration(socket, nil)
   end
 
   def handle_event("dismiss_recovery_codes", _params, socket) do
@@ -392,6 +403,7 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("start_disable_mfa", _params, socket) do
     {:noreply,
      socket
+     |> reset_mfa_recovery_regeneration()
      |> assign(:mfa_disable_step, :code)
      |> assign(:mfa_disable_error, nil)
      |> assign_mfa_disable_form()}
@@ -449,6 +461,55 @@ defmodule EmisarWeb.ProfileLive do
          socket
          |> assign(:mfa_disable_step, :code)
          |> assign(:mfa_disable_error, "Could not disable 2FA. Try again.")}
+    end
+  end
+
+  defp submit_recovery_code_regeneration(socket, code) do
+    case Auth.regenerate_mfa_recovery_codes(code, socket.assigns.current_subject) do
+      {:ok, updated, codes} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "New recovery codes generated. Old codes are now invalid.")
+         |> assign(:current_user, updated)
+         |> assign_mfa_facts(updated)
+         |> assign(:mfa_recovery_codes, codes)
+         |> reset_mfa_recovery_regeneration()}
+
+      {:error, :rate_limited} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_recovery_regeneration_step, :code)
+         |> assign(:mfa_recovery_regeneration_error, @mfa_rate_limit_error)}
+
+      {:error, :invalid_code} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_recovery_regeneration_step, :code)
+         |> assign(:mfa_recovery_regeneration_error, "That code did not match. Try again.")}
+
+      {:error, :replay} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_recovery_regeneration_step, :code)
+         |> assign(
+           :mfa_recovery_regeneration_error,
+           "That authenticator code was already used. Wait for the next authenticator code."
+         )}
+
+      {:error, :mfa_not_enabled} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Enable 2FA first.")
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/profile")}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_recovery_regeneration_step, :code)
+         |> assign(
+           :mfa_recovery_regeneration_error,
+           "Could not generate recovery codes. Try again."
+         )}
     end
   end
 
@@ -592,6 +653,21 @@ defmodule EmisarWeb.ProfileLive do
 
   defp assign_mfa_disable_form(socket) do
     assign(socket, :mfa_disable_form, to_form(%{"code" => ""}, as: "mfa_disable"))
+  end
+
+  defp assign_mfa_recovery_regeneration_form(socket) do
+    assign(
+      socket,
+      :mfa_recovery_regeneration_form,
+      to_form(%{"code" => ""}, as: "mfa_recovery_regeneration")
+    )
+  end
+
+  defp reset_mfa_recovery_regeneration(socket) do
+    socket
+    |> assign(:mfa_recovery_regeneration_step, :idle)
+    |> assign(:mfa_recovery_regeneration_error, nil)
+    |> assign_mfa_recovery_regeneration_form()
   end
 
   defp session_ip(ip) when is_binary(ip) and ip != "", do: ip
@@ -805,18 +881,15 @@ defmodule EmisarWeb.ProfileLive do
                 </span>
               </p>
               <div class="mt-4 flex flex-wrap items-center gap-3">
-                <.confirm_button
+                <.button
                   id="regen-codes"
-                  title="Generate a new set of recovery codes?"
-                  confirm_label="Regenerate codes"
                   variant={:secondary}
-                  tone={:neutral}
                   size={:md}
-                  on_confirm={JS.push("regenerate_recovery_codes")}
+                  type="button"
+                  phx-click="start_regenerate_recovery_codes"
                 >
-                  <:body>Old codes will stop working.</:body>
                   Regenerate recovery codes
-                </.confirm_button>
+                </.button>
                 <.confirm_button
                   id="disable-2fa"
                   title="Disable 2FA on your account?"
@@ -830,6 +903,38 @@ defmodule EmisarWeb.ProfileLive do
                   Disable 2FA
                 </.confirm_button>
               </div>
+              <.simple_form
+                :if={@mfa_recovery_regeneration_step == :code}
+                for={@mfa_recovery_regeneration_form}
+                id="mfa_recovery_regeneration_form"
+                phx-submit="regenerate_recovery_codes"
+                class="mt-5 max-w-md"
+              >
+                <p class="text-sm text-zinc-300">
+                  Enter your authenticator code or one current recovery code. The old recovery
+                  codes stop working only after this proof succeeds.
+                </p>
+                <.input
+                  field={@mfa_recovery_regeneration_form[:code]}
+                  type="text"
+                  label="Authenticator or recovery code"
+                  autocomplete="one-time-code"
+                  required
+                />
+                <.error :if={@mfa_recovery_regeneration_error}>
+                  {@mfa_recovery_regeneration_error}
+                </.error>
+                <:actions>
+                  <.button phx-disable-with="Regenerating...">Regenerate codes</.button>
+                  <.button
+                    variant={:ghost}
+                    type="button"
+                    phx-click="cancel_regenerate_recovery_codes"
+                  >
+                    Cancel
+                  </.button>
+                </:actions>
+              </.simple_form>
               <.simple_form
                 :if={@mfa_disable_step == :code}
                 for={@mfa_disable_form}

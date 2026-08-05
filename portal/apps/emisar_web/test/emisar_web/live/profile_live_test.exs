@@ -875,14 +875,21 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       secret = Auth.generate_mfa_secret()
 
-      {_user, _codes} =
+      {_user, [proof_code | _]} =
         Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       # Regenerate to reveal a fresh one-shot set, then dismiss it — the reveal
       # is gone and a fresh mount never re-renders the plaintext codes.
-      render_click(lv, "regenerate_recovery_codes", %{})
+      render_click(lv, "start_regenerate_recovery_codes", %{})
+
+      render_submit(lv, "regenerate_recovery_codes", %{
+        "mfa_recovery_regeneration" => %{
+          "code" => proof_code
+        }
+      })
+
       assert has_element?(lv, "#mfa-recovery-codes")
 
       # Codes are lowercase base32 (Crypto.mfa_recovery_code/0) — pull one out of
@@ -945,15 +952,164 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert render_click(lv, "regenerate_recovery_codes", %{}) =~
-               "New recovery codes generated."
+      render_click(lv, "start_regenerate_recovery_codes", %{})
+
+      assert render_submit(lv, "regenerate_recovery_codes", %{
+               "mfa_recovery_regeneration" => %{
+                 "code" => NimbleTOTP.verification_code(secret)
+               }
+             }) =~ "New recovery codes generated."
+
+      shown = lv |> element("#mfa-recovery-codes") |> render()
+      [_, recovery_code | _] = Regex.run(~r/([a-z2-7]{16})/, shown)
 
       render_click(lv, "start_disable_mfa", %{})
-      otp = NimbleTOTP.verification_code(secret)
-      html = render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => otp}})
+
+      html =
+        render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => recovery_code}})
 
       assert html =~ "2FA disabled."
       refute Emisar.Repo.reload!(user).mfa_enabled_at
+    end
+
+    test "recovery-code regeneration refuses missing or wrong proof without replacement", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      secret = Auth.generate_mfa_secret()
+
+      {enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+
+      old_digests = enrolled.mfa_recovery_codes
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      html = render_click(lv, "regenerate_recovery_codes", %{})
+      assert html =~ "That code did not match. Try again."
+      refute has_element?(lv, "#mfa-recovery-codes")
+      assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+
+      render_click(lv, "start_regenerate_recovery_codes", %{})
+
+      html =
+        render_submit(lv, "regenerate_recovery_codes", %{
+          "mfa_recovery_regeneration" => %{"code" => "not-a-code"}
+        })
+
+      assert html =~ "That code did not match. Try again."
+      refute has_element?(lv, "#mfa-recovery-codes")
+      assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+    end
+
+    test "recovery regeneration start, cancel, and disable forms stay mutually exclusive", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      secret = Auth.generate_mfa_secret()
+
+      Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      render_click(lv, "start_regenerate_recovery_codes", %{})
+      assert has_element?(lv, "#mfa_recovery_regeneration_form")
+      refute has_element?(lv, "#mfa_disable_form")
+
+      render_click(lv, "start_disable_mfa", %{})
+      refute has_element?(lv, "#mfa_recovery_regeneration_form")
+      assert has_element?(lv, "#mfa_disable_form")
+
+      render_click(lv, "start_regenerate_recovery_codes", %{})
+      assert has_element?(lv, "#mfa_recovery_regeneration_form")
+      refute has_element?(lv, "#mfa_disable_form")
+
+      render_click(lv, "cancel_regenerate_recovery_codes", %{})
+      refute has_element?(lv, "#mfa_recovery_regeneration_form")
+    end
+
+    test "a replayed authenticator code stays inline and preserves the old set", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      secret = Auth.generate_mfa_secret()
+
+      {enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+
+      old_digests = enrolled.mfa_recovery_codes
+      otp = NimbleTOTP.verification_code(secret)
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(enrolled, {:totp, otp})
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      render_click(lv, "start_regenerate_recovery_codes", %{})
+
+      html =
+        render_submit(lv, "regenerate_recovery_codes", %{
+          "mfa_recovery_regeneration" => %{"code" => otp}
+        })
+
+      assert html =~ "already used. Wait for the next authenticator code."
+      refute has_element?(lv, "#mfa-recovery-codes")
+      assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+    end
+
+    test "a concurrent MFA disable closes stale regeneration controls", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      secret = Auth.generate_mfa_secret()
+
+      Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      render_click(lv, "start_regenerate_recovery_codes", %{})
+
+      assert {:ok, _disabled} =
+               Emisar.Users.update_user_mfa(user.id, nil, nil, [],
+                 audit: &Emisar.Audit.user_changesets(&1, "user.mfa_disabled")
+               )
+
+      render_submit(lv, "regenerate_recovery_codes", %{
+        "mfa_recovery_regeneration" => %{
+          "code" => NimbleTOTP.verification_code(secret)
+        }
+      })
+
+      assert_redirect(lv, ~p"/app/#{account}/settings/profile")
+    end
+
+    test "an exhausted shared MFA window leaves regeneration open and codes unchanged", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      secret = Auth.generate_mfa_secret()
+
+      {enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+
+      old_digests = enrolled.mfa_recovery_codes
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      render_click(lv, "start_regenerate_recovery_codes", %{})
+
+      for _ <- 1..5 do
+        assert {:error, :invalid} = Auth.verify_mfa_challenge(enrolled, {:totp, "000000"})
+      end
+
+      html =
+        render_submit(lv, "regenerate_recovery_codes", %{
+          "mfa_recovery_regeneration" => %{
+            "code" => NimbleTOTP.verification_code(secret)
+          }
+        })
+
+      assert html =~ "Too many attempts. Wait a few minutes, then try again."
+      assert has_element?(lv, "#mfa_recovery_regeneration_form")
+      refute has_element?(lv, "#mfa-recovery-codes")
+      assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
     end
 
     test "a wrong code stays inline and leaves MFA enabled", %{

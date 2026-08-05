@@ -433,13 +433,27 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "put_user_mfa_recovery_codes/3" do
-    test "replaces the stored digests when MFA is enabled" do
+  describe "regenerate_user_mfa_recovery_codes/5" do
+    test "proves a recovery digest and replaces the set in the same locked update" do
       {user, _account, _subject} = enrolled_owner()
+      proof_digest = Crypto.hash("current-proof")
       new_digests = [Crypto.hash("fresh-1"), Crypto.hash("fresh-2"), Crypto.hash("fresh-3")]
 
+      {:ok, user} =
+        Users.update_user_mfa(
+          user.id,
+          user.mfa_secret,
+          user.mfa_enabled_at,
+          [proof_digest],
+          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
+        )
+
       assert {:ok, %User{} = updated} =
-               Users.put_user_mfa_recovery_codes(user.id, new_digests,
+               Users.regenerate_user_mfa_recovery_codes(
+                 user.id,
+                 {:recovery_code, proof_digest},
+                 new_digests,
+                 DateTime.utc_now(),
                  audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
                )
 
@@ -453,7 +467,11 @@ defmodule Emisar.UsersTest do
       user = Fixtures.Users.create_user()
 
       assert {:error, :mfa_not_enabled} =
-               Users.put_user_mfa_recovery_codes(user.id, [Crypto.hash("nope")],
+               Users.regenerate_user_mfa_recovery_codes(
+                 user.id,
+                 {:totp, "000000"},
+                 [Crypto.hash("nope")],
+                 DateTime.utc_now(),
                  audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
                )
 
@@ -468,7 +486,11 @@ defmodule Emisar.UsersTest do
       digest_b = Crypto.hash("recover-b")
 
       {:ok, _} =
-        Users.put_user_mfa_recovery_codes(user.id, [digest_a, digest_b],
+        Users.update_user_mfa(
+          user.id,
+          user.mfa_secret,
+          user.mfa_enabled_at,
+          [digest_a, digest_b],
           audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
         )
 
@@ -722,7 +744,7 @@ defmodule Emisar.UsersTest do
   end
 
   # An owner user with MFA enrolled (secret + enrolled-at), so the locked-row
-  # MFA-enabled guard in put_user_mfa_recovery_codes / consume passes. Returns
+  # MFA-enabled guard in regenerate_user_mfa_recovery_codes / consume passes. Returns
   # the {user, account, subject} tuple owner_subject/0 yields.
   defp enrolled_owner do
     {user, account, subject} = Fixtures.Subjects.owner_subject()

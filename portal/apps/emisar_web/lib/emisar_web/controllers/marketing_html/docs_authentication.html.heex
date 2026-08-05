@@ -88,7 +88,8 @@
             their current email address. A provider that supplies no email leaves enrollment
             closed until an administrator corrects the IdP identity. An SSO connection can satisfy
             the requirement only when you mark that provider as enforcing MFA; otherwise emisar
-            still asks for TOTP.
+            still asks for TOTP. Regenerating recovery codes requires a current authenticator or
+            recovery code; the old set stays valid unless that proof succeeds.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

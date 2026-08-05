@@ -1747,7 +1747,7 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "regenerate_mfa_recovery_codes/1" do
+  describe "regenerate_mfa_recovery_codes/2" do
     setup do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       %{subject: subject, secret: Auth.generate_mfa_secret()}
@@ -1758,9 +1758,10 @@ defmodule Emisar.AuthTest do
       subject: subject
     } do
       {:ok, _user, [old_code | _]} = Fixtures.Users.enroll_mfa(secret, subject)
+      otp = NimbleTOTP.verification_code(secret)
 
       assert {:ok, %User{mfa_enabled_at: %DateTime{}} = user, new_codes} =
-               Auth.regenerate_mfa_recovery_codes(subject)
+               Auth.regenerate_mfa_recovery_codes(otp, subject)
 
       assert length(new_codes) == 10
       # MFA stays enabled; the old plaintext code no longer matches, a new one does.
@@ -1770,10 +1771,128 @@ defmodule Emisar.AuthTest do
                Auth.verify_mfa_challenge(Repo.reload!(user), {:recovery_code, hd(new_codes)})
     end
 
+    test "an existing recovery code can prove a lost-authenticator regeneration", %{
+      secret: secret,
+      subject: subject
+    } do
+      {:ok, _user, [proof_code | old_codes]} = Fixtures.Users.enroll_mfa(secret, subject)
+
+      assert {:ok, updated, new_codes} =
+               Auth.regenerate_mfa_recovery_codes(proof_code, subject)
+
+      assert length(new_codes) == 10
+      refute Enum.any?([proof_code | old_codes], &(Crypto.hash(&1) in updated.mfa_recovery_codes))
+    end
+
+    test "two concurrent recovery proofs produce one authoritative replacement", %{
+      secret: secret,
+      subject: subject
+    } do
+      {:ok, user, [proof_a, proof_b | _]} = Fixtures.Users.enroll_mfa(secret, subject)
+
+      results =
+        [proof_a, proof_b]
+        |> Enum.map(&regenerate_recovery_codes_task(&1, subject))
+        |> Enum.map(&Task.await(&1, 5_000))
+
+      assert [{:ok, _updated, winner_codes}] =
+               Enum.filter(results, &match?({:ok, %User{}, _codes}, &1))
+
+      assert Enum.count(results, &(&1 == {:error, :invalid_code})) == 1
+      assert Repo.reload!(user).mfa_recovery_codes == Enum.map(winner_codes, &Crypto.hash/1)
+    end
+
+    test "two concurrent submissions of one TOTP produce one success and one replay", %{
+      secret: secret,
+      subject: subject
+    } do
+      {:ok, user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
+      otp = NimbleTOTP.verification_code(secret)
+
+      results =
+        otp
+        |> List.duplicate(2)
+        |> Enum.map(&regenerate_recovery_codes_task(&1, subject))
+        |> Enum.map(&Task.await(&1, 5_000))
+
+      assert [{:ok, _updated, winner_codes}] =
+               Enum.filter(results, &match?({:ok, %User{}, _codes}, &1))
+
+      assert Enum.count(results, &(&1 == {:error, :replay})) == 1
+      assert Repo.reload!(user).mfa_recovery_codes == Enum.map(winner_codes, &Crypto.hash/1)
+    end
+
+    test "wrong or missing proof leaves the old code set unchanged", %{
+      secret: secret,
+      subject: subject
+    } do
+      {:ok, user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
+      old_digests = user.mfa_recovery_codes
+
+      assert {:error, :invalid_code} =
+               Auth.regenerate_mfa_recovery_codes("not-a-recovery-code", subject)
+
+      assert {:error, :invalid_code} = Auth.regenerate_mfa_recovery_codes(nil, subject)
+      assert Repo.reload!(user).mfa_recovery_codes == old_digests
+
+      assert [event] = events_of_type("user.mfa_failed")
+      assert event.payload["reason"] == "invalid_recovery_code"
+      assert events_of_type("user.mfa_recovery_codes_regenerated") == []
+    end
+
+    test "the shared attempt cap refuses even a valid proof without replacing codes", %{
+      secret: secret,
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {:ok, user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
+      old_digests = user.mfa_recovery_codes
+      stale_otp = NimbleTOTP.verification_code(secret, time: System.os_time(:second) - 90)
+
+      for _ <- 1..5 do
+        assert {:error, :invalid_code} =
+                 Auth.regenerate_mfa_recovery_codes(stale_otp, subject)
+      end
+
+      assert {:error, :rate_limited} =
+               Auth.regenerate_mfa_recovery_codes(
+                 NimbleTOTP.verification_code(secret),
+                 subject
+               )
+
+      assert Repo.reload!(user).mfa_recovery_codes == old_digests
+      assert [_event] = events_of_type("user.mfa_rate_limited")
+      assert events_of_type("user.mfa_recovery_codes_regenerated") == []
+    end
+
+    test "a stale enabled subject is refused after the locked row is disabled", %{
+      secret: secret,
+      subject: subject
+    } do
+      {:ok, user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
+
+      assert {:ok, _disabled} =
+               Users.update_user_mfa(user.id, nil, nil, [],
+                 audit: &Audit.user_changesets(&1, "user.mfa_disabled")
+               )
+
+      assert {:error, :mfa_not_enabled} =
+               Auth.regenerate_mfa_recovery_codes(
+                 NimbleTOTP.verification_code(secret),
+                 subject
+               )
+
+      assert events_of_type("user.mfa_recovery_codes_regenerated") == []
+    end
+
     test "refuses when MFA is not enabled", %{subject: subject} do
-      assert Auth.regenerate_mfa_recovery_codes(subject) == {:error, :mfa_not_enabled}
+      assert Auth.regenerate_mfa_recovery_codes("000000", subject) ==
+               {:error, :mfa_not_enabled}
     end
   end
+
+  defp regenerate_recovery_codes_task(code, subject),
+    do: Task.async(Auth, :regenerate_mfa_recovery_codes, [code, subject])
 
   describe "check_security_attempt/4" do
     setup do

@@ -261,25 +261,53 @@ defmodule Emisar.Users do
   end
 
   @doc """
-  Internal — Auth: replace the stored MFA recovery-code digests under
-  the row lock. Refuses with `:mfa_not_enabled` when MFA isn't on —
-  judged on the locked row, not the caller's snapshot.
+  Internal — Auth: prove a current MFA factor and replace every recovery-code
+  digest in one locked user-row update. A TOTP proof also stamps its replay
+  bucket; a recovery-code proof is matched against the locked current set.
+  `opts[:audit]` commits only with the successful replacement.
   """
-  def put_user_mfa_recovery_codes(user_id, digests, opts) when is_list(digests) do
+  def regenerate_user_mfa_recovery_codes(user_id, factor, digests, %DateTime{} = at, opts)
+      when is_list(digests) do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
-      with: &mfa_recovery_codes_when_enabled(&1, digests),
+      with: &regenerate_mfa_recovery_codes(&1, factor, digests, at),
       audit: Keyword.fetch!(opts, :audit)
     )
   end
 
-  # Judged on the locked row, not the caller's snapshot.
-  defp mfa_recovery_codes_when_enabled(%User{mfa_enabled_at: nil}, _digests),
+  defp regenerate_mfa_recovery_codes(%User{mfa_enabled_at: nil}, _factor, _digests, _at),
     do: :mfa_not_enabled
 
-  defp mfa_recovery_codes_when_enabled(%User{} = loaded_user, digests),
-    do: User.Changeset.mfa_recovery_codes(loaded_user, digests)
+  defp regenerate_mfa_recovery_codes(
+         %User{mfa_secret: secret} = loaded_user,
+         {:totp, otp},
+         digests,
+         at
+       )
+       when is_binary(secret) and is_binary(otp) do
+    cond do
+      not Crypto.valid_totp?(secret, otp) -> :invalid
+      totp_bucket(loaded_user.mfa_last_used_at) == totp_bucket(at) -> :replay
+      true -> User.Changeset.regenerated_mfa_recovery_codes(loaded_user, digests, at)
+    end
+  end
+
+  defp regenerate_mfa_recovery_codes(
+         %User{} = loaded_user,
+         {:recovery_code, proof_digest},
+         digests,
+         _at
+       )
+       when is_binary(proof_digest) do
+    if Enum.any?(loaded_user.mfa_recovery_codes || [], &Crypto.secure_compare(&1, proof_digest)) do
+      User.Changeset.regenerated_mfa_recovery_codes(loaded_user, digests)
+    else
+      :invalid
+    end
+  end
+
+  defp regenerate_mfa_recovery_codes(%User{}, _factor, _digests, _at), do: :invalid
 
   @doc """
   Internal — Auth: one-shot consume of a recovery-code digest under the

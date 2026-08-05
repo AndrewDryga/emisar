@@ -87,6 +87,15 @@ defmodule Emisar.Users.User.Changeset do
   def mfa_recovery_codes(%User{} = user, codes) when is_list(codes),
     do: change(user, mfa_recovery_codes: codes)
 
+  @doc "Atomically replace recovery digests after a recovery-code proof."
+  def regenerated_mfa_recovery_codes(%User{} = user, codes) when is_list(codes),
+    do: change(user, mfa_recovery_codes: codes)
+
+  @doc "Atomically replace recovery digests and consume the proving TOTP bucket."
+  def regenerated_mfa_recovery_codes(%User{} = user, codes, %DateTime{} = at)
+      when is_list(codes),
+      do: change(user, mfa_recovery_codes: codes, mfa_last_used_at: at)
+
   def delete(%User{} = user), do: change(user, deleted_at: DateTime.utc_now())
 
   # The citext unique index is the uniqueness source of truth (IL-8:
