@@ -71,6 +71,19 @@ locals {
     for id, value in local.optional_secret_values : id if nonsensitive(value != "")
   ]
 
+  # A write-only value never enters state, so the provider cannot see that the
+  # workspace variable changed: secret_data_wo_version is the only signal. With
+  # a hand-maintained counter, rotating a leaked Paddle or Postmark credential
+  # in HCP produced NO plan diff and NO new version while every VM kept
+  # fetching the compromised one — rotation that reported success and did
+  # nothing. Derive the trigger from the payload so the value is its own source
+  # of truth, exactly as the enrollment-key and TFE-token versions already do.
+  # Thirteen hex digits stay exactly representable as a number.
+  secret_payload_generations = {
+    for id, value in local.optional_secret_values :
+    id => nonsensitive(parseint(substr(sha256(value), 0, 13), 16))
+  }
+
   # Intentionally absent optional capabilities never reach cloud-init. Every
   # rendered secret is therefore required: IAM, network, HTTP, and payload
   # failures stop the VM before it can become ready with degraded production
@@ -207,6 +220,17 @@ resource "google_secret_manager_secret_iam_member" "admin_runner_tfe_token_acces
   member    = "serviceAccount:${google_service_account.vm.email}"
 }
 
+# A write-only value never enters state, so the provider cannot notice that the
+# workspace variable changed: `secret_data_wo_version` is the ONLY signal. A
+# hand-maintained counter meant rotating a leaked RELEASE_COOKIE or Paddle key
+# in HCP produced no plan diff and no new version, while every VM kept fetching
+# the compromised one — rotation that reports success and does nothing. Derive
+# the trigger from the payload, as the enrollment-key and TFE-token versions
+# above already do, so the value is its own source of truth.
+# release_cookie_value is `ephemeral = true`, so it cannot be hashed into a
+# normal argument the way the optional secrets below are — this one genuinely
+# needs its hand-maintained counter, and rotating it means bumping
+# local.secret_generations in the same change as the workspace variable.
 resource "google_secret_manager_secret_version" "release_cookie" {
   count                  = var.release_cookie_ready || var.livebook_enabled ? 1 : 0
   secret                 = google_secret_manager_secret.app["emisar-release-cookie"].id
@@ -219,7 +243,7 @@ resource "google_secret_manager_secret_version" "optional" {
   for_each               = toset(local.populated_optional_secrets)
   secret                 = google_secret_manager_secret.app[each.key].id
   secret_data_wo         = local.optional_secret_values[each.key]
-  secret_data_wo_version = local.secret_generations[each.key]
+  secret_data_wo_version = local.secret_payload_generations[each.key]
   deletion_policy        = "ABANDON"
 }
 

@@ -33,6 +33,17 @@ admission:
     - "beam.*"
     - "gcp.*"
     - "tfc.*"
+  # This runner is root and colocated with the portal, so an admitted action
+  # that prints a process environment or a container's env returns THIS host's
+  # secrets: SECRET_KEY_BASE, RELEASE_COOKIE, PADDLE_API_KEY,
+  # POSTMARK_API_TOKEN — and, from the runner's own /proc,
+  # EMISAR_ENROLLMENT_KEY and TFE_TOKEN. The runner deliberately refuses to put
+  # the enrollment key in inherit_env for exactly that reason
+  # (internal/config/config.go), and these read straight around it. The glob
+  # allows above are broad on purpose; this list is the narrow subtraction.
+  deny:
+    - "debugging.pid_environ"
+    - "docker.inspect"
   max_risk: critical
 
 events:

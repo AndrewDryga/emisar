@@ -277,11 +277,20 @@ bucket. Adding a secret requires:
 
 Never place values in git, defaults, command history, or `.tfvars` files.
 
-Changing a workspace value alone is intentionally not a rotation: write-only
-values cannot produce a useful diff at a stable version. Rotate one credential
-by incrementing only its entry in `local.secret_generations`. The resulting
-exact version is part of cloud-init, so the instance template rolls and no VM
-ever follows the mutable `latest` alias.
+Write-only values never enter state, so `secret_data_wo_version` is the only
+signal a payload changed. Externally-issued credentials (Paddle, Postmark,
+Sentry, Mixpanel, X Ads) and the runner enrollment key and TFE token derive
+that trigger from a hash of the payload itself, so changing the workspace value
+IS the rotation — the new version and the instance-template roll follow from
+it.
+
+Two secrets cannot do that and keep a hand-maintained counter, because their
+payloads are ephemeral or Terraform-generated and hashing them would rotate on
+every apply: `emisar-secret-key-base` and `emisar-release-cookie`. Rotate
+either by incrementing only its entry in `local.secret_generations`, in the
+same change as the workspace value. The resulting exact version is part of
+cloud-init, so the instance template rolls and no VM ever follows the mutable
+`latest` alias.
 
 The first cookie cutover is special: leave `release_cookie_ready=false`. First
 prove every serving VM is healthy and uses one instance template, then read the

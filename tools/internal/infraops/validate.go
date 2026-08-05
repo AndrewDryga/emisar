@@ -329,6 +329,10 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"group: emisar-admin", "max_risk: critical",
 		"- /var/lib/emisar-admin-runner/packs", `- "beam.*"`,
 		"/var/lib/emisar-admin-runner/packs/emisar-admin/pack.yaml",
+		// The broad glob allows admit two actions that return this root,
+		// portal-colocated host's own secrets. Pin the subtraction so a later
+		// allow-list edit cannot quietly restore them.
+		"deny:", `- "debugging.pid_environ"`, `- "docker.inspect"`,
 	); err != nil {
 		return err
 	}
