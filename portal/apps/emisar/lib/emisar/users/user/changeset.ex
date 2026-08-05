@@ -14,12 +14,18 @@ defmodule Emisar.Users.User.Changeset do
     |> validate_email_field()
   end
 
+  @doc """
+  Internal — a self-service sign-in-email change. The new address arrives
+  UNCONFIRMED: the step-up authorizing the change proves control of the CURRENT
+  inbox (the emailed code) or of the authenticator (TOTP), never of the address
+  being moved to.
+  """
   def email(user, attrs) do
     user
     |> cast(attrs, [:email])
     |> validate_email_field()
     |> case do
-      %{changes: %{email: _}} = changeset -> changeset
+      %{changes: %{email: _}} = changeset -> put_change(changeset, :confirmed_at, nil)
       %{} = changeset -> add_error(changeset, :email, "did not change")
     end
   end

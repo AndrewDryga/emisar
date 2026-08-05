@@ -1258,6 +1258,30 @@ defmodule Emisar.AuthTest do
                Auth.confirm_email_change("other@example.com", code, subject)
     end
 
+    test "the new address lands UNCONFIRMED and gets its own verification email", %{
+      user: user,
+      subject: subject
+    } do
+      assert user.confirmed_at
+
+      {:ok, :code} = Auth.begin_email_change("moved@example.com", subject)
+      assert_received {:email, step_up}
+      [code] = Regex.run(~r/\d{6}/, step_up.text_body)
+
+      assert {:ok, %User{email: "moved@example.com"} = updated} =
+               Auth.confirm_email_change("moved@example.com", code, subject)
+
+      # The step-up proved control of the OLD inbox, so the new address is not
+      # verified: a typo'd or attacker-supplied address must not inherit the
+      # confirmation, which would suppress the verify banner and make it eligible
+      # as the account's billing contact.
+      refute updated.confirmed_at
+      refute Repo.reload!(user).confirmed_at
+
+      assert_received {:email, confirmation}
+      assert confirmation.to == [{"", "moved@example.com"}]
+    end
+
     test "a wrong code is rejected and the email is unchanged", %{user: user, subject: subject} do
       {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
       assert_received {:email, _email}

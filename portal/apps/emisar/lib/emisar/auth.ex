@@ -1065,8 +1065,13 @@ defmodule Emisar.Auth do
   def confirm_email_change(new_email, code, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) and is_binary(code) do
     with {:ok, user} <- Users.fetch_user_by_id(id),
-         {:ok, email} <- verify_email_change_step_up(user, new_email, code, subject) do
-      Users.update_user_email(email, subject)
+         {:ok, email} <- verify_email_change_step_up(user, new_email, code, subject),
+         {:ok, updated} <- Users.update_user_email(email, subject) do
+      # The new address lands unconfirmed by construction (User.Changeset.email/2),
+      # so send its confirmation link now rather than making the operator hunt for
+      # the banner's Resend button.
+      :ok = deliver_confirmation_instructions(updated)
+      {:ok, updated}
     end
   end
 
