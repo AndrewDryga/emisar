@@ -1,3 +1,10 @@
+# Every mutating action here writes the host's netfilter tables, which needs
+# NET_ADMIN — and the harness runs an unprivileged, disposable SUT on purpose.
+risk_accountability:
+  exceptions:
+    fw.iptables_block_ip: requires_privileged_host
+    fw.iptables_unblock_ip: requires_privileged_host
+    fw.iptables_flush_chain: requires_privileged_host
 services: [firewall]
 versions:
   - version: "13-slim"

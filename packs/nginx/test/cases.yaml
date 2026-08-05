@@ -88,6 +88,39 @@ cases:
   - action: nginx.test_config
     expect:
       stderr_contains: [syntax is ok, test is successful]
+  # Both stop actions ARE coverable — the probe is "is it gone?", the same shape
+  # redis.shutdown_nosave uses. Each case runs in its own disposable Compose
+  # project, so a stopped SUT costs nothing after it.
+  - action: nginx.quit_graceful
+    runner_user: root
+    runner_reason: nginx -s quit signals the root-owned master read from its pid file; the kernel rejects the signal from the non-root runner.
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+    probes:
+      - name: nginx stopped serving
+        argv: [/bin/sh, -c, 'curl -fsS -m 2 http://127.0.0.1/ >/dev/null 2>&1 || echo stopped']
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: [stopped]
+
+  - action: nginx.stop_immediate
+    runner_user: root
+    runner_reason: nginx -s stop signals the root-owned master read from its pid file; the kernel rejects the signal from the non-root runner.
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+    probes:
+      - name: nginx stopped serving
+        argv: [/bin/sh, -c, 'curl -fsS -m 2 http://127.0.0.1/ >/dev/null 2>&1 || echo stopped']
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: [stopped]
+
   - action: nginx.reload
     runner_user: root
     runner_reason: nginx -s reload sends SIGHUP to the root-owned master read from its pid file; the kernel rejects the signal from the non-root runner.

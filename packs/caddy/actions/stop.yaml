@@ -16,8 +16,15 @@ side_effects:
 args: []
 execution:
   command:
-    binary: caddy
-    argv: ["stop"]
+    binary: /bin/sh
+    argv:
+      # The admin API, like every other action in this pack — not `caddy stop`.
+      # The CLI reads CADDY_ADMIN as a host:port while the pack (and its own
+      # manifest) documents it as a full URL, so the CLI built
+      # `http:///127.0.0.1:2019/stop` and failed with "no Host in request URL"
+      # the moment an operator set the variable the pack tells them to set.
+      - "-c"
+      - "curl -fsS -X POST \"${CADDY_ADMIN:-http://127.0.0.1:2019}/stop\""
   timeout: 30s
   cancel_grace: 10s
 output:

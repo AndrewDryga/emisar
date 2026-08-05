@@ -45,6 +45,22 @@ cases:
   - action: caddy.validate_config
     expect:
       stdout_contains: [Valid configuration]
+  # Coverable like any other action — the probe is "is it gone?", the shape
+  # redis.shutdown_nosave uses. Each case gets its own disposable Compose
+  # project, so stopping the SUT costs nothing after it.
+  - action: caddy.stop
+    arrange:
+      - argv: [curl, -fsS, http://127.0.0.1/]
+        retry_for: 20s
+        retry_every: 1s
+    probes:
+      - name: caddy stopped serving
+        argv: [/bin/sh, -c, 'curl -fsS -m 2 http://127.0.0.1/ >/dev/null 2>&1 || echo stopped']
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: [stopped]
+
   - action: caddy.reload_config
     probes:
       - argv: [curl, -fsS, http://127.0.0.1/]
