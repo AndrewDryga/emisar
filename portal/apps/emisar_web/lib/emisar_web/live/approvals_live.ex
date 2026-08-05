@@ -155,7 +155,7 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:decided, decided)
     |> assign(:decided_metadata, decided_meta)
     |> assign(:filter_params, params)
-    |> assign(:runner_labels, runner_labels_for(pending ++ decided))
+    |> assign(:runner_labels, runner_labels_for(subject.account.id, pending ++ decided))
     |> assign(:user_labels, user_labels_for(pending ++ decided, grants, subject))
     # Risk tier per pending request so the queue is triageable at a glance — an
     # approver shouldn't have to open each card to see if it's a scary one.
@@ -173,10 +173,9 @@ defmodule EmisarWeb.ApprovalsLive do
     {:ok, [], %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0}}
   end
 
-  defp runner_labels_for(requests) do
-    requests
-    |> Enum.map(&runner_id_from/1)
-    |> Runners.runner_labels_for_ids()
+  defp runner_labels_for(account_id, requests) do
+    ids = Enum.map(requests, &runner_id_from/1)
+    Runners.runner_labels_for_ids(account_id, ids)
   end
 
   # One account-local label lookup for every human this page names — the

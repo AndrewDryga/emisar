@@ -1098,7 +1098,9 @@ defmodule Emisar.Catalog do
         {:ok, manifest}
 
       {:error, {:descriptor_mismatch, action_id}} ->
-        {:error, {:descriptor_mismatch, action_id, disagreeing_runner_names(actions, action_id)}}
+        {:error,
+         {:descriptor_mismatch, action_id,
+          disagreeing_runner_names(pack_version.account_id, actions, action_id)}}
 
       {:error, :invalid_manifest} ->
         {:error, :invalid_manifest}
@@ -1109,14 +1111,14 @@ defmodule Emisar.Catalog do
   # pending hash: every runner advertising it. With no trusted baseline there
   # is no way to tell the honest advertisement from the hostile one, so the
   # error names them all and the operator investigates.
-  defp disagreeing_runner_names(actions, action_id) do
+  defp disagreeing_runner_names(account_id, actions, action_id) do
     runner_ids =
       actions
       |> Enum.filter(&(&1.action_id == action_id))
       |> Enum.map(& &1.runner_id)
       |> Enum.uniq()
 
-    labels = Runners.runner_labels_for_ids(runner_ids)
+    labels = Runners.runner_labels_for_ids(account_id, runner_ids)
 
     runner_ids
     |> Enum.map(&Map.get(labels, &1))
@@ -2354,9 +2356,16 @@ defmodule Emisar.Catalog do
              Authorizer.view_catalog_permission()
            ),
          true <- Repo.valid_uuid?(runner_id) do
+      # Narrow by the member's runner scope, like risk_by_action_ids/2 above.
+      # Without it, an operator scoped to one host could open
+      # /runs/new/<other-runner>/<action> and read the action's id, title, risk
+      # and full args schema — dispatch was refused, but the existence and shape
+      # of an out-of-scope host's action leaked, against the existence-hiding
+      # promise on /docs/teams-and-access.
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_runner_id(runner_id)
       |> RunnerAction.Query.by_action_id(action_id)
+      |> scope_actions_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(RunnerAction.Query)
     else

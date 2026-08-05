@@ -574,11 +574,13 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # an operator whose membership is scoped
-  # to a DIFFERENT runner group → :runner_out_of_scope flash, no run. The scope
-  # is re-checked at dispatch (`requested_by_membership_id`), so a grant revoked
-  # mid-session still bites.
-  test "a runner outside the operator's scope → :runner_out_of_scope flash, no run", %{conn: conn} do
+  # An operator scoped to a DIFFERENT runner group cannot even open the dispatch
+  # form: the action read is scope-narrowed, so an out-of-scope host's action id,
+  # title, risk, and full args schema stay hidden rather than rendering a page
+  # whose submit is then refused. That is the existence-hiding /docs/teams-and-access
+  # promises. Dispatch is still independently re-checked against the membership's
+  # CURRENT scope, so a grant revoked mid-session bites there too.
+  test "a runner outside the operator's scope cannot open the dispatch form", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
     _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: owner.id)
@@ -596,14 +598,11 @@ defmodule EmisarWeb.RunNewLiveTest do
     {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["locked-out"], [])
     Fixtures.Memberships.force_runner_access(membership, access)
 
-    {:ok, lv, _html} =
-      build_conn()
-      |> log_in_user(operator)
-      |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+    assert {:error, {:live_redirect, %{flash: %{"error" => "Action not found."}}}} =
+             build_conn()
+             |> log_in_user(operator)
+             |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
-    html = submit_dispatch(lv)
-
-    assert html =~ "outside your access scope"
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(owner, account), limit: 50)
   end
 

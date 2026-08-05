@@ -43,21 +43,39 @@ defmodule Emisar.RunnersTest do
     on_exit(fn -> send(pid, :stop) end)
   end
 
-  describe "runner_labels_for_ids/1" do
+  describe "runner_labels_for_ids/2" do
     test "returns a %{id => name} map for the supplied ids" do
-      r1 = Fixtures.Runners.create_runner(name: "alpha", connected?: false)
-      r2 = Fixtures.Runners.create_runner(name: "bravo", connected?: false)
+      account = Fixtures.Accounts.create_account()
 
-      assert Runners.runner_labels_for_ids([r1.id, r2.id]) == %{
+      r1 =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "alpha", connected?: false)
+
+      r2 =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "bravo", connected?: false)
+
+      assert Runners.runner_labels_for_ids(account.id, [r1.id, r2.id]) == %{
                r1.id => "alpha",
                r2.id => "bravo"
              }
     end
 
+    test "another account's runner id resolves to nothing" do
+      account = Fixtures.Accounts.create_account()
+      mine = Fixtures.Runners.create_runner(account_id: account.id, name: "mine")
+      theirs = Fixtures.Runners.create_runner(name: "theirs")
+
+      # The lookup had no tenant filter at all: it resolved ANY account's runner
+      # id to its name, one careless caller away from a cross-tenant leak.
+      assert Runners.runner_labels_for_ids(account.id, [mine.id, theirs.id]) == %{
+               mine.id => "mine"
+             }
+    end
+
     test "an empty id list short-circuits to an empty map (no query)" do
-      assert Runners.runner_labels_for_ids([]) == %{}
+      account = Fixtures.Accounts.create_account()
+      assert Runners.runner_labels_for_ids(account.id, []) == %{}
       # nils are dropped, so an all-nil list is also empty.
-      assert Runners.runner_labels_for_ids([nil, nil]) == %{}
+      assert Runners.runner_labels_for_ids(account.id, [nil, nil]) == %{}
     end
 
     test "still labels a SOFT-DELETED runner — deliberately all(), not not_deleted()" do
@@ -67,7 +85,7 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "ghost")
       {:ok, _} = Runners.delete_runner(runner, subject)
 
-      assert Runners.runner_labels_for_ids([runner.id]) == %{runner.id => "ghost"}
+      assert Runners.runner_labels_for_ids(account.id, [runner.id]) == %{runner.id => "ghost"}
     end
   end
 

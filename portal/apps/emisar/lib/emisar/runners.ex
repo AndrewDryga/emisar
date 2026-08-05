@@ -69,7 +69,7 @@ defmodule Emisar.Runners do
   already authorized a parent listing (with its own Subject) and render
   labels for ids they already trust; no Subject by design.
   """
-  def runner_labels_for_ids(ids) when is_list(ids) do
+  def runner_labels_for_ids(account_id, ids) when is_binary(account_id) and is_list(ids) do
     ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     case ids do
@@ -80,7 +80,15 @@ defmodule Emisar.Runners do
         # Deliberately all(), not not_deleted(): runs and audit rows keep
         # foreign keys to soft-deleted runners, and their labels must
         # still render in history views.
+        #
+        # `account_id` is required, not optional. Callers pass ids from rows
+        # they already authorized, but the lookup itself had no tenant filter
+        # at all — it would resolve ANY account's runner id to its name, which
+        # is one careless caller away from a cross-tenant name leak. Its direct
+        # analogue `Audit.resolve_references/1` scopes the same operation, and
+        # so does the sibling `runner_scope_facts_for_ids/2` below.
         Runner.Query.all()
+        |> Runner.Query.by_account_id(account_id)
         |> Runner.Query.select_labels(ids, :name)
         |> Repo.all()
         |> Map.new()
