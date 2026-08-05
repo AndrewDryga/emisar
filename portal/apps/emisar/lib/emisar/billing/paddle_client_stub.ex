@@ -115,13 +115,19 @@ defmodule Emisar.Billing.PaddleClient.Stub do
 
     {:ok,
      for n <- 1..3 do
+       # Row 3 carries a decimal grand_total. Paddle's contract is minor-unit
+       # digits, so this is the shape we cannot read — and it has to reach the
+       # page as "unknown", not as twenty cents (Integer.parse stops at the dot)
+       # and not as zero.
+       total = if n == 3, do: "20.00", else: "2000"
+
        %{
          "id" => "txn_stub_#{n}",
          "status" => "completed",
          "invoice_number" => "EMISAR-#{String.pad_leading(to_string(4 - n), 4, "0")}",
          "currency_code" => "USD",
          "billed_at" => now |> DateTime.add(-n * 30 * 86_400, :second) |> DateTime.to_iso8601(),
-         "details" => %{"totals" => %{"grand_total" => "2000"}}
+         "details" => %{"totals" => %{"grand_total" => total}}
        }
      end}
   end

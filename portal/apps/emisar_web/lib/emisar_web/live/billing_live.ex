@@ -206,7 +206,11 @@ defmodule EmisarWeb.BillingLive do
   # Formats a total in the currency's minor unit. Paddle bills in the customer's
   # local currency, so both the subscription summary and each invoice carry their
   # own code — hardcoding "$" printed a EUR amount as dollars.
-  defp format_total(nil, _currency), do: "Custom"
+  #
+  # Never called with nil: `period_price_label` answers "Custom" for a plan with
+  # no self-serve price, and the invoice row renders an em-dash for an amount
+  # Paddle sent in a shape we could not read. The two mean different things, so
+  # neither belongs in here.
   defp format_total(0, currency), do: "#{currency_symbol(currency)}0"
 
   defp format_total(cents, currency) when is_integer(cents) do
@@ -481,8 +485,13 @@ defmodule EmisarWeb.BillingLive do
                       value={invoice.billed_at}
                       class="w-36 shrink-0 whitespace-nowrap text-zinc-400"
                     />
+                    <%!-- An amount Paddle sent in a shape we could not read is an
+                         em-dash, not "Custom" (which means a sales-led price on a
+                         plan card) and certainly not "$0.00". --%>
                     <span class="w-16 font-medium tabular-nums text-zinc-200">
-                      {format_total(invoice.amount_cents, invoice.currency)}
+                      {if invoice.amount_cents,
+                        do: format_total(invoice.amount_cents, invoice.currency),
+                        else: "—"}
                     </span>
                     <span :if={invoice.invoice_number} class="font-mono text-xs text-zinc-400">
                       {invoice.invoice_number}

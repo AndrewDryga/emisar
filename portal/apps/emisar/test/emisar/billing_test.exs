@@ -743,6 +743,20 @@ defmodule Emisar.BillingTest do
       assert {:ok, []} = Billing.list_recent_invoices(account, subject)
     end
 
+    test "a grand_total we cannot read is nil, never zero", %{
+      account: account,
+      subject: subject
+    } do
+      account = %{account | paddle_customer_id: "ctm_invoices_02"}
+
+      # Paddle's contract is minor-unit digits. `Integer.parse` stops at the
+      # first non-digit, so "20.00" came back as 20 — twenty CENTS — and
+      # anything unreadable became 0, which the page rendered as "$0.00". That
+      # reads as a fact about the charge rather than a failure to read it.
+      assert {:ok, invoices} = Billing.list_recent_invoices(account, subject)
+      assert [2000, 2000, nil] = Enum.map(invoices, & &1.amount_cents)
+    end
+
     test "maps Paddle transactions to flat invoice rows for a customer", %{
       account: account,
       subject: subject

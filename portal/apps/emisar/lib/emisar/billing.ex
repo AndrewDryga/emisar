@@ -645,14 +645,18 @@ defmodule Emisar.Billing do
 
   defp parse_invoice_amount(v) when is_integer(v), do: v
 
+  # nil, not 0, for anything that isn't a whole minor-unit amount. `Integer.parse`
+  # stops at the first non-digit, so "20.00" came back as 20 (twenty CENTS) and
+  # anything unparseable became 0 — a real invoice rendered as "$0.00", which
+  # reads as a fact about the charge rather than as a failure to read it.
   defp parse_invoice_amount(v) when is_binary(v) do
     case Integer.parse(v) do
-      {n, _} -> n
-      :error -> 0
+      {n, ""} -> n
+      _ -> nil
     end
   end
 
-  defp parse_invoice_amount(_), do: 0
+  defp parse_invoice_amount(_), do: nil
 
   defp parse_invoice_datetime(iso) when is_binary(iso) do
     case DateTime.from_iso8601(iso) do
