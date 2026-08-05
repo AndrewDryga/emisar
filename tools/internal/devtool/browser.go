@@ -54,15 +54,6 @@ func browserCacheRoot(cache, workspace string, port int) string {
 	return filepath.Join(cache, "browser-"+identity+"-"+strconv.Itoa(port))
 }
 
-func (a *App) ensureBrowser() error {
-	chrome, err := devbrowser.ResolveChrome()
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.Out, "browser available at %s\n", chrome)
-	return nil
-}
-
 func (a *App) ensureImageTools() error {
 	if _, err := exec.LookPath("magick"); err == nil {
 		return nil

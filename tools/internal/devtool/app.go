@@ -18,6 +18,7 @@ Usage:
   ./run <command> [arguments]
 
 First run:
+  ./run bootstrap             Print box-first and native prerequisite commands
   ./run setup                 Prepare tools, services, dependencies, and the database
   ./run serve                 Start Phoenix with live reload
 
@@ -95,7 +96,8 @@ type App struct {
 	Out    io.Writer
 	Err    io.Writer
 
-	certsChanged bool
+	certsChanged        bool
+	serviceForwardStops []func()
 }
 
 func New(root string, in io.Reader, out, errOut io.Writer) *App {
@@ -125,6 +127,8 @@ func exact(args []string, count int, text string) error {
 }
 
 func (a *App) Run(ctx context.Context, args []string) error {
+	defer a.stopServiceForwards()
+
 	if len(args) == 0 {
 		a.usage()
 		return nil

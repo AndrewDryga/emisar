@@ -140,15 +140,31 @@ command surface.
 
 ## Develop locally
 
-The fast loop runs Phoenix directly on the host and keeps only PostgreSQL and
-Keycloak in the workspace-isolated Coop dependency stack:
+The recommended path needs only [Coop](https://coop.dryga.com) and Docker on
+the host. It installs every repository pin in the isolated project image:
 
 ```sh
-./run setup       # first run: tools, sidecars, deps, browser, migrations
-./run certs trust # macOS: trust this workspace's Keycloak CA for localhost
+./run bootstrap             # works before Go is installed
+coop build                  # build the pinned project image once
+coop run -- ./run setup     # sidecars, deps, migrations, browser tooling
+coop shell                  # enter the development box
+```
+
+Then, inside the shell:
+
+```sh
 ./run seed        # explicit, idempotent demo data
 ./run serve       # live reload at the URL printed by Coop
 ```
+
+For native development, install the exact versions in `.tool-versions` with
+asdf, plus Git, Coop, Docker, ShellCheck, Chrome/Chromium, and ImageMagick.
+`./run setup` validates all prerequisites before starting services; `./run
+doctor` reports every detected version and an actionable mismatch. On macOS,
+run `./run certs trust` once for this workspace after setup.
+
+The fast loop runs Phoenix in the current environment and keeps only PostgreSQL
+and Keycloak in the workspace-isolated Coop dependency stack.
 
 `./run urls` prints this workspace's distinct Portal, metrics, Postgres, and
 Keycloak URLs. Coop forks inherit the same setup but receive different ports and

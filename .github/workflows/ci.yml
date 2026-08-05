@@ -874,6 +874,12 @@ jobs:
 
       - name: Install TFLint (pinned, checksum-verified)
         run: |
+          ver="$(awk '$1 == "tflint" {print $2}' .tool-versions)"
+          test -n "$ver" || { echo "::error::no TFLint pin in .tool-versions"; exit 1; }
+          test "v${ver}" = "$TFLINT_VERSION" || {
+            echo "::error::TFLint version in .tool-versions must match the workflow checksum pin"
+            exit 1
+          }
           tmp="$(mktemp -d)" && cd "$tmp"
           base="https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}"
           curl -fsSLO "${base}/tflint_linux_amd64.zip"

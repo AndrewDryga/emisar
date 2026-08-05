@@ -25,11 +25,30 @@ isolated from both application environments and other packs.
 Postgres and Keycloak dependencies used by both host-native Phoenix and Coop;
 Phoenix itself runs directly in the active workspace.
 
+Start with the pinned Coop box; the host needs only Coop and Docker:
+
+```sh
+./run bootstrap
+coop build
+coop run -- ./run setup
+coop shell
+```
+
+`./run bootstrap` and `./run help` stay shell-only when Go is absent. Inside the
+box, `.agent/Dockerfile` installs the exact `.tool-versions` pins plus the
+browser, image, and shell tools. Run `./run seed` and `./run serve` from the
+interactive shell.
+
+Native development is also supported. Install `.tool-versions` with asdf plus
+Git, Coop, Docker, ShellCheck, Chrome/Chromium, and ImageMagick, then run
+`./run setup`. It checks all prerequisites before it starts sidecars or changes
+the database. `./run doctor` prints every exact pinned version and continues
+through services, TLS, OIDC, and ignored-key checks.
+
 Run `./run` or `./run help` for the complete map, or
 `./run help <check|test|gate|pack|ops>` for one command family.
-`./run setup` verifies the pinned Go/Elixir toolchain plus Chrome or Chromium
-and ImageMagick. Coop supplies the browser and image tools in its project image;
-host-native development uses the corresponding host installations.
+Coop supplies the browser and image tools in its project image; host-native
+development uses the corresponding host installations.
 
 The repository keeps tooling in three ownership buckets:
 

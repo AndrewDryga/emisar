@@ -19,6 +19,11 @@ distinguishes the active workspace. Automated Chromium does not depend on host
 trust: `./run` derives the current leaf SPKI, and the browser launch permits
 only that exact hash while normal TLS validation remains active.
 
+Coop boxes receive decoys at private-key paths. `./run doctor` therefore checks
+the public CA, hostname, validity window, and leaf signature inside a box, while
+the host additionally proves that both stored private keys match their public
+certificates. Box diagnostics operate without access to signing material.
+
 Keycloak reads its certificate at process start. The Go tooling fingerprints the
 leaf before and after generation and recreates the Coop dependency containers
 only when the material changed. The command surface coordinates renewal or
@@ -28,4 +33,6 @@ running sidecar serving stale material.
 Related rule: [development TLS trust stays workspace-scoped](rules/shared-development-tls-trust-stays-workspace-scoped.md).
 
 ## Changelog
+- 2026-08-04 — split public-chain validation from host-only private-key
+  validation so secret-shadowed Coop boxes can run the complete doctor safely
 - 2026-07-22 — created after verifying macOS trust, exact-fingerprint removal, SPKI-only Chromium access, and sidecar recreation

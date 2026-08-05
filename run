@@ -1,7 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+root=$(cd "$(dirname "$0")" && pwd -P)
+
+bootstrap() {
+  cat <<EOF
+Emisar development bootstrap
+
+Recommended: use the repository's pinned Coop box (host needs only Coop and Docker):
+  coop build
+  coop run -- ./run setup
+  coop shell
+
+Inside the shell, run ./run seed when demo data is needed and ./run serve to start Phoenix.
+
+Native: install the exact tool pins from .tool-versions, then let doctor verify every prerequisite:
+  asdf plugin add erlang || true
+  asdf plugin add elixir || true
+  asdf plugin add golang || true
+  asdf plugin add terraform || true
+  asdf plugin add tflint || true
+  asdf install
+  ./run setup
+  ./run doctor
+
+Native development also needs Git, Coop, Docker, ShellCheck, Chrome/Chromium, and ImageMagick.
+Pinned versions:
+$(awk 'NF && $1 !~ /^#/ {printf "  %-12s %s\n", $1, $2}' "$root/.tool-versions")
+EOF
+}
+
+if [[ ${1:-} == bootstrap ]]; then
+  bootstrap
+  exit 0
+fi
+
+if ! command -v go >/dev/null 2>&1; then
+  case ${1:-} in
+    ""|help|-h|--help)
+      bootstrap
+      exit 0
+      ;;
+    *)
+      printf 'Go is not installed, so ./run cannot start the repository devtool.\n\n' >&2
+      bootstrap >&2
+      exit 1
+      ;;
+  esac
+fi
+
 goos=$(GOTOOLCHAIN=local go env GOOS)
 goarch=$(GOTOOLCHAIN=local go env GOARCH)
 cache=${XDG_CACHE_HOME:-${HOME:?}/.cache}/emisar

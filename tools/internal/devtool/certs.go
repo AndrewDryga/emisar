@@ -154,7 +154,7 @@ func publicKeyID(key *rsa.PublicKey) []byte {
 	return hash[:]
 }
 
-func validLeaf(dir string, ca *x509.Certificate, now time.Time) bool {
+func validLeafCertificate(dir string, ca *x509.Certificate, now time.Time) bool {
 	format, err := os.ReadFile(filepath.Join(dir, "format"))
 	if err != nil || string(format) != certFormat {
 		return false
@@ -163,18 +163,26 @@ func validLeaf(dir string, ca *x509.Certificate, now time.Time) bool {
 	if err != nil || leaf.NotAfter.Before(now.Add(30*24*time.Hour)) {
 		return false
 	}
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	_, err = leaf.Verify(x509.VerifyOptions{Roots: pool, DNSName: "localhost", KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, CurrentTime: now})
+	return err == nil
+}
+
+func validLeaf(dir string, ca *x509.Certificate, now time.Time) bool {
+	if !validLeafCertificate(dir, ca, now) {
+		return false
+	}
+	leaf, err := certificate(filepath.Join(dir, "tls.crt"))
+	if err != nil {
+		return false
+	}
 	key, err := privateKey(filepath.Join(dir, "tls.key"))
 	if err != nil {
 		return false
 	}
 	publicKey, ok := leaf.PublicKey.(*rsa.PublicKey)
-	if !ok || !publicKey.Equal(&key.PublicKey) {
-		return false
-	}
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
-	_, err = leaf.Verify(x509.VerifyOptions{Roots: pool, DNSName: "localhost", KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, CurrentTime: now})
-	return err == nil
+	return ok && publicKey.Equal(&key.PublicKey)
 }
 
 func (a *App) generateCertificates(rotate bool) error {

@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -35,6 +34,9 @@ func (a *App) up(ctx context.Context) (Workspace, map[string]string, error) {
 	}
 	workspace, err := a.loadWorkspace(ctx)
 	if err != nil {
+		return Workspace{}, nil, err
+	}
+	if err := a.ensureBoxServiceForwards(ctx); err != nil {
 		return Workspace{}, nil, err
 	}
 	env := a.workspaceEnv(workspace)
@@ -245,13 +247,8 @@ func (a *App) prepareDatabase(ctx context.Context, env map[string]string) error 
 }
 
 func (a *App) setup(ctx context.Context) error {
-	if _, err := exec.LookPath("mix"); err != nil {
-		return fmt.Errorf("missing mix")
-	}
-	if !a.inBox() {
-		if err := a.run(ctx, a.Root, nil, "coop", "build"); err != nil {
-			return err
-		}
+	if err := a.checkDevelopmentTools(ctx); err != nil {
+		return err
 	}
 	workspace, env, err := a.up(ctx)
 	if err != nil {
@@ -264,12 +261,6 @@ func (a *App) setup(ctx context.Context) error {
 		return err
 	}
 	if err := a.prepareDatabase(ctx, env); err != nil {
-		return err
-	}
-	if err := a.ensureBrowser(); err != nil {
-		return err
-	}
-	if err := a.ensureImageTools(); err != nil {
 		return err
 	}
 	if err := a.configureKeycloak(ctx, workspace); err != nil {
@@ -335,17 +326,8 @@ func (a *App) reset(ctx context.Context, args []string) error {
 }
 
 func (a *App) doctor(ctx context.Context) error {
-	for _, tool := range []string{"git", "mix"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			return fmt.Errorf("missing %s", tool)
-		}
-	}
-	if !a.inBox() {
-		for _, tool := range []string{"coop", "docker"} {
-			if _, err := exec.LookPath(tool); err != nil {
-				return fmt.Errorf("missing %s", tool)
-			}
-		}
+	if err := a.checkDevelopmentTools(ctx); err != nil {
+		return err
 	}
 	workspace, _, err := a.up(ctx)
 	if err != nil {
@@ -354,17 +336,22 @@ func (a *App) doctor(ctx context.Context) error {
 	if err := a.configureKeycloak(ctx, workspace); err != nil {
 		return err
 	}
-	if err := a.ensureBrowser(); err != nil {
-		return err
+	var ca *x509.Certificate
+	if a.inBox() {
+		ca, err = certificate(filepath.Join(a.Certs, "ca.crt"))
+	} else {
+		ca, _, err = loadCA(a.Certs)
 	}
-	if err := a.ensureImageTools(); err != nil {
-		return err
-	}
-	ca, _, err := loadCA(a.Certs)
 	if err != nil {
 		return err
 	}
-	if !validLeaf(a.Certs, ca, time.Now()) {
+	validCertificate := validLeaf(a.Certs, ca, time.Now())
+	if a.inBox() {
+		// Coop deliberately shadows the CA and leaf private keys. A box can and
+		// should prove the public chain without gaining access to signing material.
+		validCertificate = validLeafCertificate(a.Certs, ca, time.Now())
+	}
+	if !validCertificate {
 		return fmt.Errorf("the Keycloak development certificate is invalid")
 	}
 	client, err := a.tlsClient()
@@ -395,7 +382,7 @@ func (a *App) doctor(ctx context.Context) error {
 			return fmt.Errorf("the Keycloak TLS chain is valid, but the host browser does not trust its CA: %w", err)
 		}
 	}
-	fmt.Fprintln(a.Out, "tools, services, TLS, exact OIDC issuer, and key isolation are healthy")
+	fmt.Fprintln(a.Out, "exact tools, services, TLS, OIDC issuer, and key isolation are healthy")
 	a.printURLs(workspace)
 	return nil
 }

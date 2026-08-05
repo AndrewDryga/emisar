@@ -251,10 +251,13 @@ func TestRunStepRetriesAtTheConfiguredDeadline(t *testing.T) {
 	writeExecutable(t, probe, "#!/bin/sh\nif [ ! -e \""+marker+"\" ]; then touch \""+marker+"\"; exit 1; fi\nprintf ready\n")
 
 	err := runStep(Step{
-		Argv:       []string{probe},
-		Expect:     Expectation{StdoutContains: []string{"ready"}},
-		RetryFor:   "500ms",
-		RetryEvery: "500ms",
+		Argv:   []string{probe},
+		Expect: Expectation{StdoutContains: []string{"ready"}},
+		// Race-enabled package tests can take longer than 500 ms to schedule a
+		// child under concurrent gates. Keep the interval equal to the deadline
+		// while leaving enough room to test the boundary rather than host load.
+		RetryFor:   "2s",
+		RetryEvery: "2s",
 	}, os.Environ(), true)
 	if err != nil {
 		t.Fatalf("runStep did not retry at deadline: %v", err)

@@ -65,7 +65,10 @@ confusing, hard-to-attribute failures:
    when an existing host listener means the current box cannot publish them.
 
 Coop's shared base owns asdf, login-shell PATH repair, agent CLIs,
-and the localhost sidecar forwarders. `.agent/Dockerfile` extends it only for Emisar's
+and the localhost sidecar forwarders. Devtool consumes Coop's `COOP_FORWARD` contract
+to restore only an absent listener for the lifetime of a repository command, so a broken
+or older base cannot strand first-day setup and the fallback is inert when Coop is healthy.
+`.agent/Dockerfile` extends the base only for Emisar's
 gate/UI dependencies (`shellcheck`, Chromium, ImageMagick) and platform-specific
 cache locations. Copying the base image setup into this repo would duplicate
 Coop-owned behavior and cache layers.
@@ -73,6 +76,9 @@ Coop-owned behavior and cache layers.
 Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-08-04 — made repository commands restore absent Coop-declared sidecar
+  forwards for their own lifetime, preserving one localhost OIDC issuer even when
+  a box base advertises the contract without opening its listeners.
 - 2026-07-24 — moved box portal deps into the box cache (`MIX_DEPS_PATH`) and made
   the portal gate self-heal an empty cache; a box portal gate now writes zero files
   into the mounted repo (verified by mtime sweep), closing the read-only-review gap.

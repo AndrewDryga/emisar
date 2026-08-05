@@ -78,6 +78,23 @@ func TestWorkspaceEnvUsesDirectDatabaseInBox(t *testing.T) {
 	}
 }
 
+func TestParseServiceForwards(t *testing.T) {
+	forwards, err := parseServiceForwards("31372:db:5432,30344:keycloak:8443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []serviceForward{
+		{listenPort: 31372, target: "db:5432"},
+		{listenPort: 30344, target: "keycloak:8443"},
+	}
+	if !slices.Equal(forwards, want) {
+		t.Fatalf("forwards = %#v, want %#v", forwards, want)
+	}
+	if _, err := parseServiceForwards("31372:db"); err == nil {
+		t.Fatal("malformed forward was accepted")
+	}
+}
+
 func TestChangedPortalFilesIncludesUntrackedSource(t *testing.T) {
 	root := t.TempDir()
 	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}} {
@@ -1166,6 +1183,37 @@ func TestMainHelpListsEveryPublicCommand(t *testing.T) {
 	} {
 		if !strings.Contains(usageText, "\n  "+command+" ") {
 			t.Errorf("main help does not list %q", command)
+		}
+	}
+	if !strings.Contains(usageText, "./run bootstrap") {
+		t.Error("main help does not list the shell bootstrap")
+	}
+}
+
+func TestReadToolVersionsAndVersionParsers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".tool-versions")
+	if err := os.WriteFile(path, []byte("# pins\nerlang 29.0.3\nelixir 1.20.2-otp-29\ngolang 1.26.5\nterraform 1.15.8\ntflint 0.64.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := readToolVersions(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pins["erlang"] != "29.0.3" || pins["tflint"] != "0.64.0" || len(pins) != 5 {
+		t.Fatalf("pins = %#v", pins)
+	}
+	for _, test := range []struct {
+		parse  func(string) string
+		input  string
+		output string
+	}{
+		{regexpVersion(goVersionPattern), "go version go1.26.5 darwin/arm64", "1.26.5"},
+		{parseElixirVersion, "Erlang/OTP 29\nElixir 1.20.2\n", "1.20.2-otp-29"},
+		{regexpVersion(terraformVersionPattern), "Terraform v1.15.8\n", "1.15.8"},
+		{regexpVersion(tflintVersionPattern), "TFLint version 0.64.0\n", "0.64.0"},
+	} {
+		if got := test.parse(test.input); got != test.output {
+			t.Errorf("parsed %q as %q, want %q", test.input, got, test.output)
 		}
 	}
 }

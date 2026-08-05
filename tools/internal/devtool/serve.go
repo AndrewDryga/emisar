@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -68,8 +69,8 @@ func portListening(port int) bool {
 	return true
 }
 
-func proxy(ctx context.Context, port, targetPort int) (func(), error) {
-	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+func proxy(ctx context.Context, listenAddress, targetAddress string) (func(), error) {
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -84,15 +85,15 @@ func proxy(ctx context.Context, port, targetPort int) (func(), error) {
 			if acceptErr != nil {
 				return
 			}
-			go forwardConnection(incoming, targetPort)
+			go forwardConnection(incoming, targetAddress)
 		}
 	}()
 	return func() { cancel(); listener.Close() }, nil
 }
 
-func forwardConnection(incoming net.Conn, targetPort int) {
+func forwardConnection(incoming net.Conn, targetAddress string) {
 	defer incoming.Close()
-	outgoing, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(targetPort)))
+	outgoing, err := net.Dial("tcp", targetAddress)
 	if err != nil {
 		return
 	}
@@ -108,6 +109,69 @@ func forwardConnection(incoming net.Conn, targetPort int) {
 	go copyHalf(outgoing, incoming)
 	go copyHalf(incoming, outgoing)
 	<-done
+}
+
+type serviceForward struct {
+	listenPort int
+	target     string
+}
+
+func parseServiceForwards(value string) ([]serviceForward, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	var forwards []serviceForward
+	for _, entry := range strings.Split(value, ",") {
+		parts := strings.Split(entry, ":")
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid COOP_FORWARD entry %q", entry)
+		}
+		listenPort, listenErr := strconv.Atoi(parts[0])
+		targetPort, targetErr := strconv.Atoi(parts[2])
+		if listenErr != nil || targetErr != nil || listenPort < 1 || listenPort > 65535 || targetPort < 1 || targetPort > 65535 || parts[1] == "" {
+			return nil, fmt.Errorf("invalid COOP_FORWARD entry %q", entry)
+		}
+		forwards = append(forwards, serviceForward{
+			listenPort: listenPort,
+			target:     net.JoinHostPort(parts[1], strconv.Itoa(targetPort)),
+		})
+	}
+	return forwards, nil
+}
+
+// Coop normally owns these loopback forwards. A repository command restores a
+// missing listener from Coop's declared contract so the box retains the same
+// localhost OIDC issuer as the host instead of inventing a second code path.
+func (a *App) ensureBoxServiceForwards(ctx context.Context) error {
+	if !a.inBox() {
+		return nil
+	}
+	forwards, err := parseServiceForwards(os.Getenv("COOP_FORWARD"))
+	if err != nil {
+		return err
+	}
+	for _, forward := range forwards {
+		if portListening(forward.listenPort) {
+			continue
+		}
+		listenAddress := net.JoinHostPort("127.0.0.1", strconv.Itoa(forward.listenPort))
+		stop, proxyErr := proxy(ctx, listenAddress, forward.target)
+		if proxyErr != nil {
+			if portListening(forward.listenPort) {
+				continue
+			}
+			return fmt.Errorf("restoring Coop service forward %s to %s: %w", listenAddress, forward.target, proxyErr)
+		}
+		a.serviceForwardStops = append(a.serviceForwardStops, stop)
+	}
+	return nil
+}
+
+func (a *App) stopServiceForwards() {
+	for _, stop := range a.serviceForwardStops {
+		stop()
+	}
+	a.serviceForwardStops = nil
 }
 
 func (a *App) serve(ctx context.Context) error {
@@ -162,7 +226,10 @@ func (a *App) serve(ctx context.Context) error {
 	}()
 	if a.inBox() {
 		for _, pair := range [][2]int{{portalPublicPort, listenPort}, {metricsPublicPort, metricsPort}} {
-			stop, proxyErr := proxy(ctx, pair[0], pair[1])
+			stop, proxyErr := proxy(ctx,
+				net.JoinHostPort("127.0.0.1", strconv.Itoa(pair[0])),
+				net.JoinHostPort("127.0.0.1", strconv.Itoa(pair[1])),
+			)
 			if proxyErr != nil {
 				return fmt.Errorf("proxying port %d: %w", pair[0], proxyErr)
 			}
