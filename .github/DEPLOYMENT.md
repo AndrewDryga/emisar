@@ -82,8 +82,9 @@ credentials.
 
 Protect `main` with pull requests and the single required check `Required - CI`.
 Require signed commits, linear history, resolved conversations, and include
-administrators. Force pushes and branch deletion stay disabled. This personal
-repository currently has one collaborator, so the PR approval count is zero;
+administrators. Force pushes and branch deletion stay disabled. Set the PR
+approval count to match the number of people who can review — zero while a
+single maintainer owns the repository;
 raise it to one and require approval of the latest push when a second maintainer
 is added. Do not require area-specific jobs: unchanged areas intentionally
 report `skipped`, while `Required - CI` is stable and always reports a

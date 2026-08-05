@@ -171,12 +171,12 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >LLM agents</a>
         and pick your client. Claude.ai and ChatGPT connect over remote MCP with OAuth; local
-        clients — Claude Code, Cursor, Zed, Copilot CLI, and ten more — run a one-line installer that
+        clients — Claude Code, Cursor, Zed, Copilot CLI, and nine more — run a one-line installer that
         opens a browser approval and writes a scoped key into the client's config, so the secret
         never touches your clipboard.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Your model now has thirteen stable tools and sees only the packs, actions, and runners in its
+        Your model now has {mcp_tool_count()} stable tools and sees only the packs, actions, and runners in its
         scope. Ask <em>"what's the load on web-01?"</em>
         and it runs <code class="font-mono">linux.uptime</code>; ask it to restart a service and that
         high-risk action stops for your approval. Full walkthrough: <.link

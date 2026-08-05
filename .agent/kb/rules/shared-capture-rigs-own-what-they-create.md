@@ -107,9 +107,9 @@ mistake: a pattern nobody checked against the actual tenant.
 
 `okta-capture` matched users by `/emisar/` against their email. It created no
 users at all — Okta is the identity provider, it pushes accounts outward — so
-that pattern found no leftover. It found `andrew@emisar.dev`: the tenant's only
-account, and the one the rig signs in WITH. A cleanup run would have deactivated
-and deleted the admin that owns the tenant.
+that pattern found no leftover. It found the tenant's only account — the one
+the rig signs in WITH. A cleanup run would have deactivated and deleted the
+admin that owns the tenant.
 
 So: match what the rig demonstrably creates, never a domain that is also the
 founder's; exclude the identity the rig authenticates as, whatever it is called;

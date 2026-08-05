@@ -224,7 +224,7 @@ jobs:
           chmod +x "dist/${name}/install.sh"
           # Bundle only a SMALL curated default set so install.sh can set
           # up host-appropriate starter packs offline. The full catalog
-          # (~73 packs) is fetched on demand via `emisar pack install
+          # (~93 packs) is fetched on demand via `emisar pack install
           # <name>` from the registry — we do NOT ship all of them.
           mkdir -p "dist/${name}/packs"
           while IFS= read -r pack; do

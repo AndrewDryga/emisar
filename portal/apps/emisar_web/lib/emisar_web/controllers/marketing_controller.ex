@@ -254,7 +254,7 @@ defmodule EmisarWeb.MarketingController do
     {"Can I cancel any time?",
      "Yes. Cancel from billing settings and you drop back to Free at the end of the current billing period. Your audit data is retained per the Free retention window."},
     {"Do you support SSO and SCIM?",
-     "Yes. OIDC single sign-on (Google Workspace, Okta, or Keycloak, or any compliant provider) is on Team and Enterprise. Automatic offboarding needs SCIM 2.0 directory sync, which is Enterprise: deactivate someone in your IdP and emisar ends their sessions and revokes their keys without anyone touching the console. With OIDC alone they can't sign in again, but a live session or an existing API key keeps working until you suspend them here."},
+     "Yes. OIDC single sign-on (Okta, Entra ID, JumpCloud, Google Workspace, Keycloak, or any compliant provider) is on Team and Enterprise. Automatic offboarding needs SCIM 2.0 directory sync, which is Enterprise: deactivate someone in your IdP and emisar ends their sessions and revokes their keys without anyone touching the console. With OIDC alone they can't sign in again, but a live session or an existing API key keeps working until you suspend them here."},
     {"Do you offer startup discounts?",
      "Yes. Email sales@emisar.dev with your YC or pre-seed letter and we'll take it from there."}
   ]

@@ -55,6 +55,14 @@ defmodule EmisarWeb.MarketingHTML do
   # so no-JS visitors and crawlers skip them; their text is the gerund the
   # spinner shows.
   @mcp_tool_count length(EmisarWeb.MCP.SchemaRegistry.tool_names())
+
+  @doc """
+  How many tools the MCP surface exposes, from the compiled schema registry.
+  Prose that states the count calls this rather than spelling a number that
+  goes stale on the next tool.
+  """
+  def mcp_tool_count, do: @mcp_tool_count
+
   @demo_lines [
     # --- Host: a storage node on the fleet, one curl to connect ------
     {1, "server", "srv-comment",

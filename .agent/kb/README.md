@@ -122,4 +122,3 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 
 Normative rules are indexed by the relevant root or project `AGENTS.md` and live
 under that project's `kb/rules/`.
-- [shared-write-control-bytes-with-printf](rules/shared-write-control-bytes-with-printf.md) — produce ESC/NUL via printf and verify with od -c; raw bytes in edits/heredocs fail silently

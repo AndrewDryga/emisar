@@ -100,7 +100,7 @@ runner:
 cloud:
   url: wss://emisar.dev
   enrollment_key_env: EMISAR_ENROLLMENT_KEY
-  token_path: /var/lib/emisar/token.json
+  token_path: /var/lib/emisar/token
 
 paths:
   data_dir: /var/lib/emisar

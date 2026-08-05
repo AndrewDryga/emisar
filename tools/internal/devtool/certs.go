@@ -490,7 +490,7 @@ func (a *App) rotateCertificates(ctx context.Context) error {
 
 func (a *App) certsCommand(ctx context.Context, args []string) error {
 	if len(args) > 1 {
-		return usage("usage: ./run certs [--rotate|trust|untrust|status]")
+		return usage("usage: ./run certs [rotate|trust|untrust|status]")
 	}
 	if len(args) == 0 {
 		if err := a.generateCertificates(false); err != nil {
@@ -499,7 +499,10 @@ func (a *App) certsCommand(ctx context.Context, args []string) error {
 		return a.refreshServicesForCertificate(ctx)
 	}
 	switch args[0] {
-	case "--rotate":
+	// `./run help` documents `rotate`, and every sibling subcommand is a bare
+	// word — `--rotate` was the only flag-shaped one in the whole surface, so
+	// the documented spelling errored out. Keep the flag for saved commands.
+	case "rotate", "--rotate":
 		return a.rotateCertificates(ctx)
 	case "trust":
 		return a.trustCertificate(ctx)
@@ -508,6 +511,6 @@ func (a *App) certsCommand(ctx context.Context, args []string) error {
 	case "status":
 		return a.certificateStatus(ctx)
 	default:
-		return usage("usage: ./run certs [--rotate|trust|untrust|status]")
+		return usage("usage: ./run certs [rotate|trust|untrust|status]")
 	}
 }
