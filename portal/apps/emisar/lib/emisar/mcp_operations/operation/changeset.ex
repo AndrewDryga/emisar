@@ -21,9 +21,9 @@ defmodule Emisar.MCPOperations.Operation.Changeset do
     ])
     |> validate_format(:operation_id, @operation_id)
     |> validate_length(:fingerprint, is: 64)
-    |> validate_length(:action_id, max: 255)
-    |> validate_length(:pack_ref, max: 255)
-    |> validate_length(:resource_ref, max: 255)
+    |> validate_length(:action_id, max: 255, count: :codepoints)
+    |> validate_length(:pack_ref, max: 255, count: :codepoints)
+    |> validate_length(:resource_ref, max: 255, count: :codepoints)
     |> unique_constraint([:account_id, :credential_lineage_id, :operation_id],
       name: :mcp_operations_lineage_operation_index
     )

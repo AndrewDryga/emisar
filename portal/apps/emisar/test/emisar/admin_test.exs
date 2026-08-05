@@ -2,6 +2,21 @@ defmodule Emisar.AdminTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Admin, Billing, Fixtures}
 
+  describe "job_modules/0" do
+    # DataCase shares the sandbox for every async: false test, so a job left
+    # enabled in the test env runs update_all/delete_all INSIDE whichever test
+    # is executing when its interval elapses. Three jobs had leaked that way and
+    # only misfired on wall-clock timing, which reads as a flake.
+    test "every recurrent job is disabled in the test environment" do
+      enabled = Enum.filter(Admin.job_modules(), &job_enabled?/1)
+
+      assert enabled == [],
+             "these jobs tick inside the test sandbox; disable them in config/test.exs: #{inspect(enabled)}"
+    end
+  end
+
+  defp job_enabled?(module), do: Emisar.Config.get_env(:emisar, module, [])[:enabled] != false
+
   describe "execute/2" do
     test "dispatches a private RPC action from ordinary name-value argv" do
       account = Fixtures.Accounts.create_account()

@@ -56,13 +56,14 @@ defmodule EmisarWeb.AuditExportLive do
       socket,
       ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
       fn s ->
-        case ApiKeys.fetch_api_key_by_id(id, s.assigns.current_subject) do
-          {:ok, key} ->
-            {:ok, _} = ApiKeys.revoke_api_key(key, s.assigns.current_subject)
-            {:noreply, s |> put_flash(:info, "Export token revoked.") |> assign_export_keys()}
-
-          {:error, _} ->
-            {:noreply, s}
+        # A denial is a value here, not a crash: a role reduced in another tab
+        # returns {:error, :unauthorized}, which used to kill the socket.
+        with {:ok, key} <- ApiKeys.fetch_api_key_by_id(id, s.assigns.current_subject),
+             {:ok, _revoked} <- ApiKeys.revoke_api_key(key, s.assigns.current_subject) do
+          {:noreply, s |> put_flash(:info, "Export token revoked.") |> assign_export_keys()}
+        else
+          {:error, :not_found} -> {:noreply, s}
+          {:error, _} -> {:noreply, put_flash(s, :error, "Could not revoke the token.")}
         end
       end
     )

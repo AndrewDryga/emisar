@@ -38,8 +38,8 @@ defmodule Emisar.Runners.Runner.Changeset do
       :bootstrap_enrollment_key_id
     ])
     |> validate_required([:account_id, :name, :external_id, :group])
-    |> validate_length(:name, min: 1, max: 80)
-    |> validate_length(:external_id, min: 1, max: @max_external_id_length)
+    |> validate_length(:name, min: 1, max: 80, count: :codepoints)
+    |> validate_length(:external_id, min: 1, max: @max_external_id_length, count: :codepoints)
     |> validate_length(:group, min: 1)
     |> validate_advertised_fields()
     |> unique_constraint([:account_id, :external_id])
@@ -83,9 +83,9 @@ defmodule Emisar.Runners.Runner.Changeset do
   # cast a subset) reuse the same helper.
   defp validate_advertised_fields(changeset) do
     changeset
-    |> validate_length(:group, max: @max_group_length)
-    |> validate_length(:hostname, max: @max_hostname_length)
-    |> validate_length(:runner_version, max: @max_runner_version_length)
+    |> validate_length(:group, max: @max_group_length, count: :codepoints)
+    |> validate_length(:hostname, max: @max_hostname_length, count: :codepoints)
+    |> validate_length(:runner_version, max: @max_runner_version_length, count: :codepoints)
     |> validate_json_size(:labels, @max_json_bytes)
     |> validate_json_size(:packs, @max_json_bytes)
     |> validate_json_size(:degraded_packs, @max_json_bytes)

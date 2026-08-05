@@ -234,13 +234,16 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   defp do_revoke(socket, id) do
-    case ApiKeys.fetch_api_key_by_id(id, socket.assigns.current_subject) do
-      {:error, :not_found} ->
-        {:noreply, socket}
-
-      {:ok, key} ->
-        {:ok, _} = ApiKeys.revoke_api_key(key, socket.assigns.current_subject)
-        {:noreply, socket |> put_flash(:info, "API key revoked.") |> reload()}
+    # `{:ok, _} =` here crashed the socket for an operator whose role was
+    # reduced in another tab: revoke_api_key returns {:error, :unauthorized},
+    # the page blanked to "Reconnecting", remounted, and the key was still
+    # live with nothing said. Same `with`/`else` shape as do_rotate/2 below.
+    with {:ok, key} <- ApiKeys.fetch_api_key_by_id(id, socket.assigns.current_subject),
+         {:ok, _revoked} <- ApiKeys.revoke_api_key(key, socket.assigns.current_subject) do
+      {:noreply, socket |> put_flash(:info, "API key revoked.") |> reload()}
+    else
+      {:error, :not_found} -> {:noreply, socket}
+      {:error, _} -> {:noreply, put_flash(socket, :error, "Could not revoke the key.")}
     end
   end
 

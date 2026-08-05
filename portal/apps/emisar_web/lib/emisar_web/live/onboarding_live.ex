@@ -12,13 +12,26 @@ defmodule EmisarWeb.OnboardingLive do
   alias Emisar.Accounts
   alias EmisarWeb.LiveForm
 
+  # The live_session only mounts the current user; it does not require one. A
+  # signed-out visitor got the full setup form, and submitting it reached
+  # create_account_with_owner_from_name/2 with a nil user — whose only clause
+  # requires a %User{} — so the socket died with a FunctionClauseError and no
+  # explanation. Send them to sign in instead of rendering a form that cannot
+  # succeed.
   def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(:page_title, "Set up your workspace")
-     |> assign(:trigger_submit, false)
-     |> assign(:created_account_id, "")
-     |> assign_form(Accounts.change_account(%Accounts.Account{}, %{"plan" => "free"}))}
+    if socket.assigns[:current_user] do
+      {:ok,
+       socket
+       |> assign(:page_title, "Set up your workspace")
+       |> assign(:trigger_submit, false)
+       |> assign(:created_account_id, "")
+       |> assign_form(Accounts.change_account(%Accounts.Account{}, %{"plan" => "free"}))}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "You must sign in to set up a workspace.")
+       |> redirect(to: ~p"/sign_in")}
+    end
   end
 
   def render(assigns) do

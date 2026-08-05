@@ -23,8 +23,8 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
       :created_by,
       :provisioned_via
     ])
-    |> validate_length(:provider_identifier, max: @identifier_max_length)
-    |> validate_length(:scim_external_id, max: @identifier_max_length)
+    |> validate_length(:provider_identifier, max: @identifier_max_length, count: :codepoints)
+    |> validate_length(:scim_external_id, max: @identifier_max_length, count: :codepoints)
     |> unique_constraint([:account_id, :provider_id, :provider_identifier],
       name: :sso_user_identities_provider_identifier_index
     )
@@ -51,7 +51,7 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   def adopt_scim_external_id(%UserIdentity{} = identity, external_id) do
     identity
     |> change(scim_external_id: external_id)
-    |> validate_length(:scim_external_id, max: @identifier_max_length)
+    |> validate_length(:scim_external_id, max: @identifier_max_length, count: :codepoints)
     |> unique_constraint([:account_id, :provider_id, :scim_external_id],
       name: :sso_user_identities_scim_external_id_index
     )
@@ -71,7 +71,7 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     identity
     |> change(provider_identifier: identifier, claims: claims, last_seen_at: DateTime.utc_now())
     |> validate_required([:provider_identifier])
-    |> validate_length(:provider_identifier, max: @identifier_max_length)
+    |> validate_length(:provider_identifier, max: @identifier_max_length, count: :codepoints)
     |> unique_constraint([:account_id, :provider_id, :provider_identifier],
       name: :sso_user_identities_provider_identifier_index
     )

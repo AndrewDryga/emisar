@@ -51,8 +51,13 @@ defmodule EmisarWeb.RunDetailLive do
         # run the heavy read a second time (same pattern as run_new_live).
         events =
           if connected?(socket) do
-            {:ok, evts} = Runs.list_recent_events_for_run(run.id, event_window(), subject)
-            evts
+            # A transient read failure between the run fetch above and this one
+            # must not raise inside mount — that leaves the run page unable to
+            # render at all. Degrade to an empty window; the live stream fills it.
+            case Runs.list_recent_events_for_run(run.id, event_window(), subject) do
+              {:ok, evts} -> evts
+              {:error, _} -> []
+            end
           else
             []
           end

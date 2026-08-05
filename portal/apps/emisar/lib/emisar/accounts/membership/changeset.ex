@@ -102,7 +102,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
   def sync_display_name(%Membership{} = membership, display_name) do
     membership
     |> change(directory_display_name: display_name)
-    |> validate_length(:directory_display_name, max: 255)
+    |> validate_length(:directory_display_name, max: 255, count: :codepoints)
   end
 
   # Reinstating always clears the IdP-owned mark — a member back in is not

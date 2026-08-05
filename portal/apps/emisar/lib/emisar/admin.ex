@@ -30,6 +30,9 @@ defmodule Emisar.Admin do
     Emisar.SSO.Jobs.AuthorizationReconcile
   ]
 
+  @doc "Every supervised recurrent job, for runtime inspection and test hygiene."
+  def job_modules, do: @job_modules
+
   @doc "Execute one action from the trusted, colocated private admin pack."
   def execute("emisar.admin." <> _ = action_id, encoded_args)
       when is_list(encoded_args) and length(encoded_args) <= 3 do
