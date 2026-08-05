@@ -231,6 +231,9 @@ jobs:
 
       - name: Authenticate and publish
         run: |
+          # Without this, a failed `login` still ran `publish` — which then
+          # reported its own failure, hiding which of the two actually broke.
+          set -euo pipefail
           ./mcp-publisher login http --domain emisar.dev --private-key "$MCP_PRIVATE_KEY_HEX"
           ./mcp-publisher publish /tmp/server.json
 

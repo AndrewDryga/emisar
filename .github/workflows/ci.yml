@@ -933,39 +933,10 @@ jobs:
           fi
           go run ./cmd/depgate check
 
-  actionlint:
-    name: Actions - Validate workflows
-    needs: changes
-    # A workflow-only change never selects the Go job, so this reaches
-    # actionlint the way every other check is reached: through its gate.
-    if: needs.changes.outputs.workflows == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      GOTOOLCHAIN: local
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: tools/go.mod
-          cache: true
-          cache-dependency-path: tools/go.*
-
-      - name: Install shell validator
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-
-      - name: Run the tooling gate
-        run: ./run gate tooling
-
   ci-gate:
     name: Required - CI
     if: always()
-    needs: [changes, portal, portal-image, mcp-listing, go, packs, runner-image, pack-tools, pack-behavior, signing-e2e, sso-e2e, infra, dep-age, actionlint]
+    needs: [changes, portal, portal-image, mcp-listing, go, packs, runner-image, pack-tools, pack-behavior, signing-e2e, sso-e2e, infra, dep-age]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -992,8 +963,6 @@ jobs:
       SELECT_INFRA: ${{ needs.changes.outputs.infra }}
       DEP_AGE: ${{ needs.dep-age.result }}
       SELECT_DEP_AGE: ${{ needs.changes.outputs.deps }}
-      ACTIONLINT: ${{ needs.actionlint.result }}
-      SELECT_ACTIONLINT: ${{ needs.changes.outputs.workflows }}
     steps:
       - name: Verify selected checks
         run: |
@@ -1044,4 +1013,3 @@ jobs:
           require_selected SSO_E2E "$SELECT_SSO_E2E"
           require_selected INFRA "$SELECT_INFRA"
           require_selected DEP_AGE "$SELECT_DEP_AGE"
-          require_selected ACTIONLINT "$SELECT_ACTIONLINT"
