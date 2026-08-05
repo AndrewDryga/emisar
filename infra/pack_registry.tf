@@ -38,12 +38,15 @@ resource "google_storage_bucket" "pack_registry" {
 }
 
 resource "google_project_iam_custom_role" "pack_registry_public_reader" {
+  depends_on = [google_project_service.apis]
+
   project     = var.project_id
   role_id     = "packRegistryPublicReader"
   title       = "Public Object Reader"
   description = "Anonymous GET access to explicitly public objects without bucket listing."
   permissions = ["storage.objects.get"]
   stage       = "GA"
+
 }
 
 resource "google_storage_bucket_iam_member" "pack_registry_public_read" {
@@ -77,6 +80,8 @@ resource "google_storage_bucket_iam_member" "pack_registry_immutable_publisher" 
 }
 
 resource "google_project_iam_custom_role" "pack_registry_pointer_publisher" {
+  depends_on = [google_project_service.apis]
+
   project     = var.project_id
   role_id     = "packRegistryPointerPublisher"
   title       = "Pack Registry Pointer Publisher"
@@ -86,6 +91,7 @@ resource "google_project_iam_custom_role" "pack_registry_pointer_publisher" {
     "storage.objects.delete",
   ]
   stage = "GA"
+
 }
 
 resource "google_storage_bucket_iam_member" "pack_registry_publisher" {

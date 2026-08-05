@@ -78,12 +78,15 @@ resource "google_storage_bucket_iam_member" "vm_bucket_read" {
 }
 
 resource "google_project_iam_custom_role" "vm_storage_policy_reader" {
+  depends_on = [google_project_service.apis]
+
   project     = var.project_id
   role_id     = "emisarStoragePolicyReader"
   title       = "Emisar Storage Policy Reader"
   description = "Read bucket IAM policies for governed storage inventory without storage mutation authority."
   permissions = ["storage.buckets.getIamPolicy"]
   stage       = "GA"
+
 }
 
 resource "google_project_iam_member" "vm_storage_policy_reader" {
@@ -109,12 +112,15 @@ resource "google_project_iam_member" "livebook_monitoring" {
 }
 
 resource "google_project_iam_custom_role" "cluster_discovery" {
+  depends_on = [google_project_service.apis]
+
   project     = var.project_id
   role_id     = "emisarClusterDiscovery"
   title       = "Emisar Cluster Discovery"
   description = "List Compute Engine instances for regional MIG peer discovery."
   permissions = ["compute.instances.list"]
   stage       = "GA"
+
 }
 
 resource "google_project_iam_member" "vm_cluster_discovery" {
@@ -132,6 +138,8 @@ resource "google_project_iam_member" "livebook_cluster_discovery" {
 }
 
 resource "google_project_iam_custom_role" "livebook_backend_reader" {
+  depends_on = [google_project_service.apis]
+
   count = var.livebook_enabled ? 1 : 0
 
   project     = var.project_id
@@ -140,6 +148,7 @@ resource "google_project_iam_custom_role" "livebook_backend_reader" {
   description = "Read the Livebook backend numeric ID used as the signed IAP JWT audience."
   permissions = ["compute.backendServices.get"]
   stage       = "GA"
+
 }
 
 resource "google_project_iam_member" "livebook_backend_reader" {
@@ -187,6 +196,8 @@ resource "google_project_iam_member" "livebook_cloudsql" {
 # a separate permission family. Keep that authority to the two exact methods
 # Terraform needs for the per-backend personal access binding.
 resource "google_project_iam_custom_role" "terraform_iap_policy" {
+  depends_on = [google_project_service.apis]
+
   count = var.livebook_enabled ? 1 : 0
 
   project     = var.project_id
@@ -198,6 +209,7 @@ resource "google_project_iam_custom_role" "terraform_iap_policy" {
     "iap.webServices.setIamPolicy",
   ]
   stage = "GA"
+
 }
 
 resource "google_project_iam_member" "terraform_iap_policy" {
