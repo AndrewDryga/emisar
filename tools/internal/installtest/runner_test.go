@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestRunnerChecksHaveSevenPortableAndThreePrivilegedCases(t *testing.T) {
+func TestRunnerChecksHaveEightPortableAndThreePrivilegedCases(t *testing.T) {
 	var portable []string
 	var privileged []string
 	for _, check := range runnerChecks() {
@@ -14,8 +14,8 @@ func TestRunnerChecksHaveSevenPortableAndThreePrivilegedCases(t *testing.T) {
 		}
 		portable = append(portable, check.name)
 	}
-	if len(portable) != 7 {
-		t.Fatalf("portable checks = %v, want seven", portable)
+	if len(portable) != 8 {
+		t.Fatalf("portable checks = %v, want eight", portable)
 	}
 	wantPrivileged := []string{
 		"enrollment state transitions",

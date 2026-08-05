@@ -59,6 +59,7 @@ func runnerChecks() []runnerCheck {
 		{"launchd environment wrapper", false, runnerLaunchdWrapper},
 		{"root-owned policy state", true, runnerPolicyOwnership},
 		{"latest release resolution", false, runnerLatestRelease},
+		{"fresh-install service rollback", false, runnerFreshServiceRollback},
 	}
 }
 
@@ -552,6 +553,59 @@ resolve_latest_version
 	}
 	if got := strings.TrimSpace(string(output)); got != "runner-v0.10.0" {
 		return fmt.Errorf("resolved latest = %q, want runner-v0.10.0", got)
+	}
+	return nil
+}
+
+// runnerFreshServiceRollback proves a FAILED FRESH install leaves no enabled
+// unit behind.
+//
+// rollback_binary removes the binary, and restore_previous_service only
+// restarts a service that was ALREADY running — so on a fresh install nothing
+// undid the enablement, and the host booted forever retrying a missing
+// ExecStart. The header promises nothing partially applied is left "running but
+// broken".
+//
+// The other half matters just as much: on an UPGRADE the unit predates this run
+// and belongs to the installation being restored, so the same function must do
+// nothing.
+func runnerFreshServiceRollback(h *harness) error {
+	trace := h.path("service-trace")
+	script := `
+systemctl() { printf 'systemctl %s\n' "$*" >>"$TRACE"; }
+launchctl() { printf 'launchctl %s\n' "$*" >>"$TRACE"; }
+rm() { printf 'rm %s\n' "$*" >>"$TRACE"; }
+log() { :; }
+INIT=systemd
+
+printf 'fresh:\n' >>"$TRACE"
+SERVICE_UNIT_CREATED=1
+rollback_service
+
+printf 'upgrade:\n' >>"$TRACE"
+SERVICE_UNIT_CREATED=0
+rollback_service
+`
+	result := h.functions(h.repoPath("install.sh"), []string{"rollback_service"}, script,
+		map[string]string{"TRACE": trace})
+	if _, err := requireOutput(result); err != nil {
+		return err
+	}
+	recorded, err := os.ReadFile(trace)
+	if err != nil {
+		return err
+	}
+	fresh, upgrade, found := strings.Cut(string(recorded), "upgrade:\n")
+	if !found {
+		return fmt.Errorf("rollback_service trace is malformed:\n%s", recorded)
+	}
+	for _, want := range []string{"systemctl disable --now emisar.service", "rm -f /etc/systemd/system/emisar.service"} {
+		if !strings.Contains(fresh, want) {
+			return fmt.Errorf("a failed fresh install did not run %q:\n%s", want, fresh)
+		}
+	}
+	if strings.TrimSpace(upgrade) != "" {
+		return fmt.Errorf("a failed UPGRADE removed the pre-existing unit:\n%s", upgrade)
 	}
 	return nil
 }

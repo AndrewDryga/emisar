@@ -984,6 +984,13 @@ STAGED_BINARY=""
 BACKUP_BINARY=""
 BINARY_ACTIVATED=0
 SERVICE_WAS_RUNNING=0
+# Set when THIS run created the service unit — a fresh install, not an upgrade.
+# `restore_previous_service` only restarts a service that was already running,
+# so on a fresh install that failed, nothing undid the enablement: the binary was
+# removed and the enabled unit stayed, leaving systemd retrying a missing
+# ExecStart on every boot forever. The header promises nothing partially applied
+# is left in a "running but broken" state.
+SERVICE_UNIT_CREATED=0
 INSTALL_TRANSACTION=0
 
 stage_binary() {
@@ -1261,6 +1268,7 @@ secure_pack_tree() {
 
 install_systemd() {
   local unit="/etc/systemd/system/emisar.service"
+  [ -e "${unit}" ] || SERVICE_UNIT_CREATED=1
   log "writing ${unit}"
   systemd_unit > "${unit}"
   chmod 644 "${unit}"
@@ -1271,6 +1279,7 @@ install_systemd() {
 install_launchd() {
   local plist="/Library/LaunchDaemons/com.emisar.runner.plist"
   local runner="${ETC_DIR}/run-launchd.sh"
+  [ -e "${plist}" ] || SERVICE_UNIT_CREATED=1
   log "writing ${runner}"
   launchd_runner_script > "${runner}"
   chown root:wheel "${runner}"
@@ -1356,6 +1365,24 @@ restore_previous_service() {
   esac
 }
 
+# Undo a service unit THIS run created. Only for a fresh install: an upgrade's
+# unit predates us and belongs to the installation we are restoring.
+rollback_service() {
+  [ "${SERVICE_UNIT_CREATED}" = "1" ] || return 0
+  case "${INIT}" in
+    systemd)
+      systemctl disable --now emisar.service >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/emisar.service
+      systemctl daemon-reload >/dev/null 2>&1 || true
+      ;;
+    launchd)
+      launchctl bootout system/com.emisar.runner >/dev/null 2>&1 || true
+      rm -f /Library/LaunchDaemons/com.emisar.runner.plist
+      ;;
+  esac
+  log "removed the service unit this run created"
+}
+
 finish_install() {
   local rc=$1
   trap - EXIT HUP INT TERM
@@ -1363,6 +1390,7 @@ finish_install() {
   if [ "$rc" -ne 0 ] && [ "${INSTALL_TRANSACTION}" = "1" ]; then
     rollback_binary
     restore_enrollment_state
+    rollback_service
     restore_previous_service
     warn "installation failed; restored the previous runner and service state"
   fi
