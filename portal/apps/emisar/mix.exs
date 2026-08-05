@@ -94,10 +94,9 @@ defmodule Emisar.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       "ecto.seed": ["run #{__DIR__}/priv/repo/seeds.exs"],
-      # Architecture budget: the domain currently has exactly ONE compile cycle
-      # (the context SCC the MAJOR-10 refactor unwinds in its later steps). Fail
-      # if a SECOND appears, so the coupling can only shrink, never grow.
-      "xref.cycles": ["xref graph --format cycles --label compile --fail-above 1"],
+      # Architecture budget: compile cycles make unrelated contexts recompile
+      # together. Fail when any cycle appears so context coupling stays acyclic.
+      "xref.cycles": ["xref graph --format cycles --label compile --fail-above 0"],
       "test.ci": ["ecto.create --quiet", "ecto.migrate --quiet", "test", "xref.cycles"]
     ]
   end

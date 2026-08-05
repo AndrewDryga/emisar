@@ -7,7 +7,7 @@ defmodule Emisar.Auth.Permissions do
   Lives OUTSIDE `Emisar.Auth.Authorizer` on purpose: every context
   authorizer compile-depends on that module via `use`, so the core a
   module `use`s should not also hold a registry of its own users — the
-  mutual reference put the auth core and all ten authorizers in one
+  mutual reference put the auth core and all twelve authorizers in one
   xref cycle. (Measured note: Elixir's checksum + exports-aware
   compiler already kept body-edit recompile fanout at 1 file, so the
   split is about ownership, not build time — editing the auth core
@@ -15,28 +15,28 @@ defmodule Emisar.Auth.Permissions do
   """
   alias Emisar.Auth.Subject
 
-  @authorizers [
-    Emisar.Accounts.Authorizer,
-    Emisar.ApiKeys.Authorizer,
-    Emisar.Approvals.Authorizer,
-    Emisar.Audit.Authorizer,
-    Emisar.Billing.Authorizer,
-    Emisar.Catalog.Authorizer,
-    Emisar.MCPOperations.Authorizer,
-    Emisar.Policies.Authorizer,
-    Emisar.Runbooks.Authorizer,
-    Emisar.Runs.Authorizer,
-    Emisar.Runners.Authorizer,
-    Emisar.SSO.Authorizer
-  ]
+  @authorizer_contexts ~w(
+    Accounts
+    ApiKeys
+    Approvals
+    Audit
+    Billing
+    Catalog
+    MCPOperations
+    Policies
+    Runbooks
+    Runs
+    Runners
+    SSO
+  )
 
   @doc """
   Returns the full permission set for a role. Unions every authorizer's
   `list_permissions_for_role/1`; unknown roles get an empty set.
   """
   def for_role(role) when is_atom(role) do
-    @authorizers
-    |> Enum.flat_map(& &1.list_permissions_for_role(role))
+    @authorizer_contexts
+    |> Enum.flat_map(&authorizer_permissions(&1, role))
     |> MapSet.new()
   end
 
@@ -70,4 +70,11 @@ defmodule Emisar.Auth.Permissions do
   """
   def roles_with_permission(permission),
     do: Enum.filter(Emisar.Auth.Role.all(), &MapSet.member?(for_role(&1), permission))
+
+  # Keep the fixed registry as names so Permissions does not compile-depend on
+  # every authorizer and close a cycle through the shared Auth core.
+  defp authorizer_permissions(context, role) do
+    authorizer = Module.safe_concat(["Emisar", context, "Authorizer"])
+    authorizer.list_permissions_for_role(role)
+  end
 end
