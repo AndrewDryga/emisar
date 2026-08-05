@@ -446,3 +446,17 @@ variable "caa_issuers" {
   description = "CAs allowed to issue certs for the apex AND every subdomain (CAA is inherited). The Google-managed LB cert and the BetterUptime status page both use Let's Encrypt / pki.goog — list every CA in use before adding a subdomain on another host."
   default     = ["letsencrypt.org", "pki.goog"]
 }
+
+variable "billing_account_id" {
+  type        = string
+  description = "Billing account the project bills to, for the spend budget (monitoring_spend.tf). SENSITIVE workspace variable: the account id is an identifier for the payment instrument and this repository is public. Empty disables the budget, which is the right default for a fork or a scratch project — a budget against someone else's billing account fails the plan."
+  sensitive   = true
+  default     = ""
+}
+
+variable "monthly_budget_amount" {
+  type        = number
+  description = "Monthly spend threshold for the budget's alert tiers, in the billing account's currency. A workspace variable because the number is a spend-posture tell and this repository is public. Only read when billing_account_id is set."
+  sensitive   = true
+  default     = 0
+}

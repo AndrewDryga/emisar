@@ -145,6 +145,7 @@ resource "google_compute_backend_service" "app" {
   timeout_sec                     = var.backend_timeout_sec
   connection_draining_timeout_sec = 120
   health_checks                   = [google_compute_health_check.readiness.id]
+  security_policy                 = google_compute_security_policy.app.id
 
   # Edge request log — the record of traffic the app never sees (probes, 502
   # windows, blocked paths, the client-IP chain). A cost/forensics dial, NOT a

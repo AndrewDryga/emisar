@@ -129,3 +129,38 @@ resource "google_compute_firewall" "cluster_dist" {
   source_tags = ["emisar", "emisar-livebook"]
   target_tags = ["emisar"]
 }
+
+# Egress, LOGGED, not yet restricted.
+#
+# There are no EGRESS rules on this network, so a compromised portal container
+# or the root-admitted admin runner can reach any host on the internet — and VPC
+# flow logs sample at 1%, so a low-and-slow exfiltration most likely leaves no
+# record at all.
+#
+# The fix is a default deny with explicit allows. What is missing is the ONE
+# thing that makes such a list safe to write: an inventory of where this fleet
+# actually talks. Guessing it takes production down the first time the portal
+# cannot reach Postmark or Paddle, and the deployment's real destinations are
+# not knowable from the repository.
+#
+# So this rule changes nothing about what is permitted and starts producing that
+# inventory. Firewall-rule logging records every connection that matches,
+# unsampled — unlike flow logs at 1%. Read a few weeks of it, enumerate the
+# destinations, then add the allows and lower this to a deny.
+resource "google_compute_firewall" "egress_inventory" {
+  name      = "emisar-egress-inventory"
+  network   = google_compute_network.emisar.id
+  direction = "EGRESS"
+  priority  = 65534
+
+  allow {
+    protocol = "all"
+  }
+
+  destination_ranges = ["0.0.0.0/0"]
+  target_tags        = ["emisar"]
+
+  log_config {
+    metadata = "INCLUDE_ALL_METADATA"
+  }
+}
