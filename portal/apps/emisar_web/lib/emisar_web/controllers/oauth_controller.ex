@@ -217,7 +217,7 @@ defmodule EmisarWeb.OAuthController do
       # The origin codes are delivered to — validated against the client's
       # registration — so the operator authorizes a concrete callback, not just
       # a self-reported (spoofable) client name.
-      callback_origin: form_action_origin(params["redirect_uri"]),
+      callback_origin: callback_label(params["redirect_uri"]),
       account_name: account_label(conn),
       # Which account the grant lands in: a picker when the operator belongs to
       # several (the key used to silently ride the session default — an easy
@@ -296,6 +296,24 @@ defmodule EmisarWeb.OAuthController do
   end
 
   defp form_action_origin(_), do: nil
+
+  defp callback_label(uri) when is_binary(uri) do
+    case URI.parse(uri) do
+      %URI{scheme: scheme} when scheme in ["https", "http"] ->
+        form_action_origin(uri)
+
+      %URI{scheme: scheme} = parsed when is_binary(scheme) ->
+        parsed
+        |> Map.put(:query, nil)
+        |> Map.put(:fragment, nil)
+        |> URI.to_string()
+
+      _ ->
+        nil
+    end
+  end
+
+  defp callback_label(_), do: nil
 
   defp csp_host(host) do
     if String.contains?(host, ":"), do: "[" <> host <> "]", else: host

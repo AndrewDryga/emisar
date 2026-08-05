@@ -55,11 +55,13 @@ defmodule Emisar.OAuth do
 
   # -- Dynamic Client Registration (RFC 7591) -------------------------
 
+  @cursor_redirect_uri "cursor://anysphere.cursor-mcp/oauth/callback"
+
   @doc """
   Internal — the DCR controller's registration endpoint (pre-auth; the
-  request mints a new client, no Subject yet). Validates redirect URIs
-  (https or localhost only), and stores the registration. Returns the
-  client (its id is the OAuth client_id).
+  request mints a new client, no Subject yet). Validates HTTPS, native-app,
+  and loopback redirect URIs, then stores the registration. Returns the client
+  (its id is the OAuth client_id).
   """
   @spec register_client(map()) :: {:ok, Client.t()} | {:error, Ecto.Changeset.t()}
   def register_client(params) do
@@ -84,7 +86,16 @@ defmodule Emisar.OAuth do
        when is_binary(application_type),
        do: %{"application_type" => application_type}
 
-  defp registration_metadata(_params), do: %{}
+  # Cursor 3.x omits application_type from DCR despite registering its native
+  # callback. Record the exact known callback as native; look-alike URIs remain
+  # unclassified and fail redirect validation.
+  defp registration_metadata(params) do
+    if @cursor_redirect_uri in list_param(params, "redirect_uris") do
+      %{"application_type" => "native"}
+    else
+      %{}
+    end
+  end
 
   @doc """
   Internal — the OAuth authorize controller: resolve a client by the

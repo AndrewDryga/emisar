@@ -10,6 +10,7 @@ defmodule Emisar.OAuth.Client.Changeset do
   # rejected rather than silently stored and later refused at authorize/token.
   @supported_grant_types ~w(authorization_code refresh_token)
   @supported_response_types ~w(code)
+  @cursor_redirect_uri "cursor://anysphere.cursor-mcp/oauth/callback"
 
   @doc """
   Register a public OAuth client (RFC 7591 Dynamic Client Registration).
@@ -104,7 +105,11 @@ defmodule Emisar.OAuth.Client.Changeset do
         add_error(changeset, :redirect_uris, ~s(must be https:// for application_type "web"))
 
       true ->
-        add_error(changeset, :redirect_uris, "must be https:// or http://localhost")
+        add_error(
+          changeset,
+          :redirect_uris,
+          "must be https://, a native app URI, or http://localhost"
+        )
     end
   end
 
@@ -133,9 +138,13 @@ defmodule Emisar.OAuth.Client.Changeset do
     end
   end
 
-  # Native (and undeclared) clients: an https origin, or localhost for
-  # native/dev loopback redirects — the only shapes a public client can
-  # safely receive a code at.
+  # Native (and undeclared) clients may also receive a code through an
+  # application-owned URI scheme. RFC 8252 expects the scheme itself to use
+  # reverse-domain notation; Cursor instead namespaces its registered handler
+  # in the authority, so that exact upstream URI is explicit here. PKCE S256
+  # remains mandatory and authorize still requires an exact registered URI.
+  defp valid_redirect_uri?(@cursor_redirect_uri, _application_type), do: true
+
   defp valid_redirect_uri?(uri, _application_type) when is_binary(uri) do
     case URI.parse(uri) do
       %URI{scheme: "https", host: host, fragment: nil}
@@ -145,6 +154,18 @@ defmodule Emisar.OAuth.Client.Changeset do
       %URI{scheme: "http", host: host, fragment: nil}
       when host in ["localhost", "127.0.0.1", "::1"] ->
         true
+
+      %URI{
+        scheme: scheme,
+        authority: nil,
+        host: nil,
+        port: nil,
+        path: "/" <> _path,
+        fragment: nil,
+        userinfo: nil
+      }
+      when is_binary(scheme) and scheme not in ["http", "https"] ->
+        String.contains?(scheme, ".")
 
       _ ->
         false

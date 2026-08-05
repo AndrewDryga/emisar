@@ -236,6 +236,42 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert body["redirect_uris"] == ["http://localhost:8123/callback"]
     end
 
+    test "registers Cursor's native OAuth callbacks", %{conn: conn} do
+      redirect_uris = [
+        "cursor://anysphere.cursor-mcp/oauth/callback",
+        "https://www.cursor.com/agents/mcp/oauth/callback",
+        "http://localhost:8787/callback"
+      ]
+
+      body =
+        conn
+        |> post_json(~p"/oauth/register", %{
+          "client_name" => "Cursor",
+          "redirect_uris" => redirect_uris,
+          "token_endpoint_auth_method" => "none",
+          "grant_types" => ["authorization_code", "refresh_token"],
+          "response_types" => ["code"]
+        })
+        |> json_response(201)
+
+      assert body["redirect_uris"] == redirect_uris
+      assert body["application_type"] == "native"
+    end
+
+    test "rejects Cursor callback look-alikes", %{conn: conn} do
+      for redirect_uri <- [
+            "cursor://anysphere.cursor-mcp/other",
+            "cursor://anysphere.cursor-mcp:443/oauth/callback"
+          ] do
+        response =
+          conn
+          |> post_json(~p"/oauth/register", %{"redirect_uris" => [redirect_uri]})
+          |> json_response(400)
+
+        assert response["error"] == "invalid_client_metadata"
+      end
+    end
+
     test ~s(a declared "web" client cannot register a loopback redirect), %{conn: conn} do
       body =
         conn
@@ -1145,6 +1181,56 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert location =~ "claude.ai"
       assert location =~ "code="
       assert location =~ "state=xyz"
+    end
+
+    test "Cursor consent names and redirects to the exact native callback", %{
+      conn: conn,
+      user: user,
+      challenge: challenge
+    } do
+      redirect_uri = "cursor://anysphere.cursor-mcp/oauth/callback"
+      client = register_client!("Cursor", redirect_uris: [redirect_uri])
+
+      params = %{
+        client_id: client.id,
+        redirect_uri: redirect_uri,
+        response_type: "code",
+        scope: "mcp offline_access",
+        state: "cursor-state",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        resource: @resource
+      }
+
+      html =
+        conn
+        |> log_in_user(user)
+        |> get(~p"/oauth/authorize?#{params}")
+        |> html_response(200)
+
+      assert html =~ "cursor://anysphere.cursor-mcp/oauth/callback"
+
+      location =
+        build_conn()
+        |> log_in_user(user)
+        |> post(
+          ~p"/oauth/authorize",
+          params
+          |> Map.new(fn {key, value} -> {to_string(key), value} end)
+          |> Map.put("decision", "approve")
+        )
+        |> redirected_to(302)
+
+      parsed = URI.parse(location)
+      query = URI.decode_query(parsed.query)
+
+      assert parsed.scheme == "cursor"
+      assert parsed.host == "anysphere.cursor-mcp"
+      assert parsed.port == nil
+      assert parsed.path == "/oauth/callback"
+      assert is_binary(query["code"])
+      assert query["state"] == "cursor-state"
+      assert query["iss"] == EmisarWeb.Endpoint.url()
     end
 
     # RFC 9207: success and error authorization responses both name the
