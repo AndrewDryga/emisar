@@ -10,6 +10,7 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/expressions"
+	"github.com/andrewdryga/emisar/runner/internal/redact"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
@@ -205,7 +206,7 @@ func TestEngine_SensitiveListRedactedPerElement(t *testing.T) {
 		t.Fatalf("RenderArgv: %v", err)
 	}
 
-	_, got := redactedInvocation("wg", argv, args, schema)
+	_, got := redactedInvocation(nil, "wg", argv, args, schema)
 	for _, secret := range []string{"s3cr3t-alpha", "s3cr3t-beta"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("executed_command leaked list secret %q: %s", secret, got)
@@ -223,7 +224,7 @@ func TestEngine_OverlappingSensitiveValuesRedactedLongestFirst(t *testing.T) {
 	}
 	args := map[string]any{"short": "abc", "long": "abc123"}
 
-	_, got := redactedInvocation("tool", []string{"--token=abc123"}, args, schema)
+	_, got := redactedInvocation(nil, "tool", []string{"--token=abc123"}, args, schema)
 	if strings.Contains(got, "abc") || strings.Contains(got, "123") {
 		t.Fatalf("executed_command leaked an overlapping secret: %s", got)
 	}
@@ -344,5 +345,39 @@ output:
 		if strings.Contains(string(events), leak) {
 			t.Fatalf("audit journal leaked sensitive validation value %q:\n%s", leak, events)
 		}
+	}
+}
+
+// A credential passed through an arg the pack author did not flag
+// `sensitive: true` used to reach executed_command verbatim — into the local
+// journal and the permanent cloud run record — while the identical bytes in
+// the command's OUTPUT were masked by the default rule set. Both paths now run
+// the same net.
+func TestEngine_UnflaggedCredentialMaskedInExecutedCommand(t *testing.T) {
+	defaults, err := redact.CompileAll(redact.DefaultRules())
+	if err != nil {
+		t.Fatalf("CompileAll: %v", err)
+	}
+	engine := &Engine{Redactor: redact.New(defaults)}
+	act := &actionspec.Action{
+		ID:   "p.deploy",
+		Args: []actionspec.Arg{{Name: "header", Type: actionspec.ArgString}},
+	}
+	args := map[string]any{"header": "Authorization: Bearer sk-live-abcdefghijklmnopqrst"}
+	redactor := engine.combinedRedactor(act, args)
+
+	argv := []string{"--header", args["header"].(string)}
+	maskedArgv, command := redactedInvocation(redactor, "curl", argv, args, act.Args)
+
+	if strings.Contains(command, "sk-live-abcdefghijklmnopqrst") {
+		t.Fatalf("executed_command leaked an unflagged bearer token: %s", command)
+	}
+	if strings.Contains(strings.Join(maskedArgv, " "), "sk-live-abcdefghijklmnopqrst") {
+		t.Fatalf("argv leaked an unflagged bearer token: %v", maskedArgv)
+	}
+
+	redactedArgs := redactArgs(redactor, args, act.Args)
+	if header, _ := redactedArgs["header"].(string); strings.Contains(header, "sk-live-abcdefghijklmnopqrst") {
+		t.Fatalf("args_redacted leaked an unflagged bearer token: %s", header)
 	}
 }

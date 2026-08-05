@@ -663,27 +663,31 @@ func TestCLI_ActionRunSuccessAndStream(t *testing.T) {
 	})
 }
 
-// `action run` is a LOCAL bypass: validation failures and admission denials come
-// back as engine *results* (the command itself exits 0 — the action failed, the
-// command ran fine), and a `--arg` without `=` is the only CLI-level error
-// (exit 1, parsed before the engine). ,
+// `action run` reports the ACTION's outcome in its exit code, like `doctor`:
+// `emisar pack info` tells operators to run it as the post-install "verify it
+// works" step, so a failed, refused, or timed-out action must be detectable by
+// a script. The engine Result JSON is still written to stdout either way; a
+// `--arg` without `=` remains a CLI-level error parsed before the engine.
 func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
-	t.Run("empty reason → validation_failed result, exit 0", func(t *testing.T) {
+	t.Run("empty reason → validation_failed result, exit 1", func(t *testing.T) {
 		cfg := writeRunnableConfig(t, t.TempDir(), false)
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping"}, nil)
-		if code != 0 {
-			t.Fatalf("a missing reason is an engine result, not a CLI error; exit=%d stderr=%q", code, stderr)
+		if code == 0 {
+			t.Fatalf("a validation failure must not exit 0; stderr=%q", stderr)
 		}
 		if !strings.Contains(stdout, `"status": "validation_failed"`) || !strings.Contains(stdout, "reason required") {
 			t.Errorf("expected a validation_failed result naming the missing reason:\n%s", stdout)
 		}
+		if !strings.Contains(stderr, "validation_failed") {
+			t.Errorf("expected the status on stderr:\n%s", stderr)
+		}
 	})
 
-	t.Run("admission-denied → blocked_by_admission result, exit 0", func(t *testing.T) {
+	t.Run("admission-denied → blocked_by_admission result, exit 1", func(t *testing.T) {
 		cfg := writeRunnableConfig(t, t.TempDir(), true) // deny linux.ping
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping", "--reason", "why"}, nil)
-		if code != 0 {
-			t.Fatalf("an admission denial is an engine result, not a CLI error; exit=%d stderr=%q", code, stderr)
+		if code == 0 {
+			t.Fatalf("an admission denial must not exit 0; stderr=%q", stderr)
 		}
 		if !strings.Contains(stdout, `"status": "blocked_by_admission"`) {
 			t.Errorf("expected a blocked_by_admission result:\n%s", stdout)

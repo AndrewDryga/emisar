@@ -11,6 +11,7 @@ func TestLoad_EnforcesSafeShellArgumentChannels(t *testing.T) {
 		id        string
 		args      string
 		argv      string
+		binary    string
 		env       string
 		critical  bool
 		wantError string
@@ -122,6 +123,45 @@ func TestLoad_EnforcesSafeShellArgumentChannels(t *testing.T) {
 			wantError: "arg script must not be embedded in /bin/sh -c program text",
 		},
 		{
+			// The guard used to key on the literal "/bin/sh", so a bare `bash`
+			// — legal under actionspec's path rule — carried a caller value
+			// straight into `bash -c`.
+			name:   "free string in bash program text",
+			id:     "testpack.bash_string",
+			binary: "bash",
+			args: `args:
+  - name: pattern
+    type: string
+    required: true`,
+			argv:      `argv: ["-c", "grep {{ args.pattern }} /var/log/x"]`,
+			wantError: "arg pattern must not be embedded in bash -c program text",
+		},
+		{
+			name:   "free string in busybox program text",
+			id:     "testpack.busybox_string",
+			binary: "busybox",
+			args: `args:
+  - name: pattern
+    type: string
+    required: true`,
+			argv:      `argv: ["-c", "grep {{ args.pattern }} /var/log/x"]`,
+			wantError: "arg pattern must not be embedded in busybox -c program text",
+		},
+		{
+			// -c on a non-shell is that tool's own flag, not program text a
+			// shell expands; its own arg validation governs.
+			name:   "non-shell binary keeps its -c flag",
+			id:     "testpack.psql_c",
+			binary: "psql",
+			args: `args:
+  - name: mode
+    type: string
+    required: true
+    validation:
+      enum: [fast, thorough]`,
+			argv: `argv: ["-c", "SELECT {{ args.mode }}"]`,
+		},
+		{
 			name: "critical ordinary action",
 			id:   "testpack.critical_string",
 			args: `args:
@@ -138,7 +178,11 @@ func TestLoad_EnforcesSafeShellArgumentChannels(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			action := actionYAML(tc.id)
 			action = strings.Replace(action, "args: []", tc.args, 1)
-			action = strings.Replace(action, "binary: echo", "binary: /bin/sh", 1)
+			binary := tc.binary
+			if binary == "" {
+				binary = "/bin/sh"
+			}
+			action = strings.Replace(action, "binary: echo", "binary: "+binary, 1)
 			action = strings.Replace(action, `argv: ["hi"]`, tc.argv, 1)
 			if tc.env != "" {
 				action = strings.Replace(action, "  timeout: 5s", tc.env+"\n  timeout: 5s", 1)

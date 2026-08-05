@@ -122,7 +122,18 @@ func actionRunCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printJSON(res)
+			if err := printJSON(res); err != nil {
+				return err
+			}
+			// `emisar pack info` tells operators to run this as the "verify it
+			// works" step, so a failed, timed-out, or refused action must not
+			// exit 0 — a script or installer could never detect it. The JSON is
+			// already on stdout; the exit code carries the outcome, as it does
+			// for `doctor`.
+			if res.Status != engine.StatusSuccess {
+				return fmt.Errorf("action %s finished %s", args[0], res.Status)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringArrayVar(&argList, "arg", nil, "argument as key=value (may repeat)")

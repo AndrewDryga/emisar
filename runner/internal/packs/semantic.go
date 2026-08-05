@@ -45,13 +45,29 @@ func validateActionSemantics(action *actionspec.Action) error {
 	return nil
 }
 
+// shellBinaries are the interpreters whose -c argument is program text a shell
+// will expand. Keying the guard below on the literal "/bin/sh" let `binary:
+// bash` — a legal bare name under actionspec's path rule — carry a caller's
+// value straight into `bash -c`, which is arbitrary command execution from an
+// action argument. The check must follow the SHAPE, not one spelling.
+var shellBinaries = map[string]bool{
+	"/bin/sh": true,
+	"sh":      true,
+	"bash":    true,
+	"dash":    true,
+	"ash":     true,
+	"ksh":     true,
+	"zsh":     true,
+	"busybox": true,
+}
+
 // validateShellProgramReferences keeps caller-controlled values out of the
-// program text interpreted by /bin/sh -c. A regex is not proof against every
+// program text a shell interprets after -c. A regex is not proof against every
 // shell expansion; authors must instead pass open-ended text through env or a
 // positional argv element. Finite membership and bounded numeric args remain
 // pack-authored program choices, not caller-authored shell text.
 func validateShellProgramReferences(action *actionspec.Action, argv []string) error {
-	if action.Execution.Command == nil || action.Execution.Command.Binary != "/bin/sh" {
+	if action.Execution.Command == nil || !shellBinaries[action.Execution.Command.Binary] {
 		return nil
 	}
 	program, ok := shellProgram(argv)
@@ -72,9 +88,10 @@ func validateShellProgramReferences(action *actionspec.Action, argv []string) er
 			continue
 		}
 		return fmt.Errorf(
-			"action %s: arg %s must not be embedded in /bin/sh -c program text; pass it through execution.env and reference it as \"$VAR\", or pass it as a whole positional argv element",
+			"action %s: arg %s must not be embedded in %s -c program text; pass it through execution.env and reference it as \"$VAR\", or pass it as a whole positional argv element",
 			action.ID,
 			name,
+			action.Execution.Command.Binary,
 		)
 	}
 	return nil

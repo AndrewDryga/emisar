@@ -467,8 +467,8 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	started.PackID = act.PackID
 	started.ActionID = act.ID
 	started.Metadata = metaFor(act)
-	started.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
-	startArgv, startCommand := redactedInvocation(plan.Binary, plan.Argv, cleanArgs, act.Args)
+	started.Request = e.requestInfo(req, redactArgs(combinedRedactor, cleanArgs, act.Args))
+	startArgv, startCommand := redactedInvocation(combinedRedactor, plan.Binary, plan.Argv, cleanArgs, act.Args)
 	started.Execution = executionStartInfo(plan, scriptSHA, startArgv)
 	started.Execution.ExecutedCommand = startCommand
 	if _, err := e.recordJournal(ctx, started); err != nil {
@@ -575,13 +575,13 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	// The exact command that ran, with sensitive arg values masked for every
 	// durable or remote representation. Raw argv exists only inside the live
 	// executor result and is discarded after this method returns.
-	auditArgv, executedCommand := redactedInvocation(execRes.Binary, execRes.Argv, cleanArgs, act.Args)
+	auditArgv, executedCommand := redactedInvocation(combinedRedactor, execRes.Binary, execRes.Argv, cleanArgs, act.Args)
 
 	ev := e.baseEvent(req, evType, time.Now().UTC())
 	ev.PackID = act.PackID
 	ev.ActionID = act.ID
 	ev.Metadata = metaFor(act)
-	ev.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
+	ev.Request = e.requestInfo(req, redactArgs(combinedRedactor, cleanArgs, act.Args))
 	ev.Execution = e.executionInfo(execRes, redactedStdout, redactedStderr, scriptSHA, plan, auditArgv)
 	ev.Execution.ExecutedCommand = executedCommand
 	ev.Redactions = toAuditRedactions(hits)
@@ -630,12 +630,13 @@ func normalizeUTF8String(value string) string {
 
 func (e *Engine) emitExecError(ctx context.Context, req Request, act *actionspec.Action,
 	cleanArgs map[string]any, err error) (*Result, error) {
-	detail := redactSensitiveValues(err.Error(), cleanArgs, act.Args)
+	combinedRedactor := e.combinedRedactor(act, cleanArgs)
+	detail := redactInvocationValue(combinedRedactor, err.Error(), cleanArgs, act.Args)
 	ev := e.baseEvent(req, audit.EventExecutionFailed, time.Now().UTC())
 	ev.PackID = act.PackID
 	ev.ActionID = act.ID
 	ev.Metadata = metaFor(act)
-	ev.Request = e.requestInfo(req, redactArgs(cleanArgs, act.Args))
+	ev.Request = e.requestInfo(req, redactArgs(combinedRedactor, cleanArgs, act.Args))
 	ev.Error = detail
 	journaled := e.journal(ctx, ev)
 	return &Result{
@@ -673,7 +674,10 @@ func (e *Engine) requestInfo(req Request, redactedArgs map[string]any) *audit.Re
 // The trade-off is that two runs with different secret values but
 // otherwise-identical args share an args_sha256; that's the safe
 // direction for a local audit log.
-func redactArgs(args map[string]any, schema []actionspec.Arg) map[string]any {
+// redactArgs masks the arguments recorded in the journal and shipped to the
+// cloud. Like redactedInvocation, it runs both the schema pass and the default
+// rule net, so a credential in an unflagged string arg is not stored verbatim.
+func redactArgs(redactor *redact.Engine, args map[string]any, schema []actionspec.Arg) map[string]any {
 	if len(args) == 0 {
 		return args
 	}
@@ -685,30 +689,51 @@ func redactArgs(args map[string]any, schema []actionspec.Arg) map[string]any {
 		}
 	}
 
-	if len(sensitive) == 0 {
-		return args
-	}
-
 	out := make(map[string]any, len(args))
 	for k, v := range args {
-		if sensitive[k] {
+		switch {
+		case sensitive[k]:
 			out[k] = "[REDACTED]"
-		} else {
+		case redactor != nil:
+			if text, ok := v.(string); ok {
+				masked, _ := redactor.Apply(text)
+				out[k] = masked
+				continue
+			}
+			out[k] = v
+		default:
 			out[k] = v
 		}
 	}
 	return out
 }
 
-func redactedInvocation(binary string, argv []string, cleanArgs map[string]any, schema []actionspec.Arg) ([]string, string) {
+// redactedInvocation masks the command line for every durable or remote
+// representation. Two passes, because they catch different things: the schema
+// pass replaces the exact values of args declared `sensitive: true`, and the
+// rule pass is the same default net that guards stdout (bearer tokens, AWS and
+// GitHub keys, `password=` assignments). Without the second pass a credential
+// passed through an arg the author forgot to flag was written verbatim into
+// the local journal AND the permanent cloud run record — while the identical
+// bytes in the command's OUTPUT would have been masked.
+func redactedInvocation(redactor *redact.Engine, binary string, argv []string, cleanArgs map[string]any, schema []actionspec.Arg) ([]string, string) {
 	redactedArgv := make([]string, len(argv))
 	parts := make([]string, 0, len(argv)+1)
-	parts = append(parts, shellQuote(redactSensitiveValues(binary, cleanArgs, schema)))
+	parts = append(parts, shellQuote(redactInvocationValue(redactor, binary, cleanArgs, schema)))
 	for i, arg := range argv {
-		redactedArgv[i] = redactSensitiveValues(arg, cleanArgs, schema)
+		redactedArgv[i] = redactInvocationValue(redactor, arg, cleanArgs, schema)
 		parts = append(parts, shellQuote(redactedArgv[i]))
 	}
 	return redactedArgv, strings.Join(parts, " ")
+}
+
+func redactInvocationValue(redactor *redact.Engine, value string, args map[string]any, schema []actionspec.Arg) string {
+	value = redactSensitiveValues(value, args, schema)
+	if redactor == nil {
+		return value
+	}
+	masked, _ := redactor.Apply(value)
+	return masked
 }
 
 func redactSensitiveValues(value string, args map[string]any, schema []actionspec.Arg) string {

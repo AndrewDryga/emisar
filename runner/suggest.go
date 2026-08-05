@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/andrewdryga/emisar/runner/internal/config"
 	"github.com/andrewdryga/emisar/runner/internal/hostscan"
-	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 )
 
@@ -217,13 +217,20 @@ func catalogFromFile(path string) ([]hostscan.PackReq, error) {
 
 func fetchCatalog(ctx context.Context, registry string) ([]hostscan.PackReq, error) {
 	url := strings.TrimRight(registry, "/") + "/packs/suggest.json"
+	// Same transport rule as the two sibling registry fetches: refuse cleartext
+	// to a non-loopback host, and refuse a redirect that downgrades off HTTPS.
+	// This output is printed as `emisar pack install …` lines an operator
+	// pastes, so an on-path answer here is an instruction-forging primitive.
+	if err := config.CheckEndpointScheme(url, false); err != nil {
+		return nil, fmt.Errorf("fetch catalog: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpsecurity.ClientWithTLS12(http.DefaultClient).Do(req)
+	resp, err := packRegistryHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch catalog %s: %w", url, err)
 	}
