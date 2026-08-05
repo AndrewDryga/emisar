@@ -561,7 +561,7 @@ func (b *bridge) handleFrame(
 	cancelResults chan<- struct{},
 ) error {
 	if frame.oversize {
-		fmt.Fprintf(os.Stderr, "emisar-mcp: dropping a request frame over %d bytes\n", maxFrameBytes)
+		b.diagnose("dropping a request frame over %d bytes", maxFrameBytes)
 		return writeFrame(w, rpcErrorFrame(requestMeta{}, -32600, "request frame too large"))
 	}
 	if len(frame.line) == 0 {

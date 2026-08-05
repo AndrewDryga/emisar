@@ -527,7 +527,7 @@ func (b *bridge) rotationProposal() (prefix, hash string) {
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "emisar-mcp: API-key rotation preparation was not persisted: %v\n", err)
+		b.diagnose("API-key rotation preparation was not persisted: %v", err)
 		return "", ""
 	}
 	if activatedDurably {
@@ -567,10 +567,10 @@ func (b *bridge) acknowledgeRotation(ack string) {
 		return b.credentialStore.persist(state)
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "emisar-mcp: API-key rotation acknowledgement was not persisted: %v\n", err)
+		b.diagnose("API-key rotation acknowledgement was not persisted: %v", err)
 		return
 	}
 	b.apiKey = pending
 	b.pendingKey = ""
-	fmt.Fprintf(os.Stderr, "emisar-mcp: rotated API key persisted to %s\n", b.credentialStore.path)
+	b.diagnose("rotated API key persisted to %s", b.credentialStore.path)
 }
