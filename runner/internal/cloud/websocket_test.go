@@ -863,3 +863,107 @@ func TestRegisterURLNormalizesScheme(t *testing.T) {
 		t.Error("expected error for unsupported scheme ftp")
 	}
 }
+
+// maybeRefreshToken is allowed to fail at every step, and every failure must
+// return the caller's existing token. This is the property that lets rotation
+// ship before expiry is enforced: a broken refresh degrades to "keep using the
+// credential that already works", never to a failed connect.
+func TestMaybeRefreshTokenNeverBlocksAConnect(t *testing.T) {
+	current := agentToken{Raw: "rnrtok-current", KeyFP: "fp"}
+
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{"not due", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusConflict)
+		}},
+		{"portal error", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}},
+		{"token rejected", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}},
+		{"malformed body", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"tokn":"typo"}`))
+		}},
+		{"empty token", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"token":"   "}`))
+		}},
+		{"oversized body", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"token":"` + repeated("x", maxRegistrationResponseBytes+64) + `"}`))
+		}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(c.handler)
+			defer srv.Close()
+
+			d := &WebsocketDialer{URL: srv.URL, TokenPath: filepath.Join(t.TempDir(), "token.json")}
+			if got := d.maybeRefreshToken(context.Background(), current); got != current {
+				t.Fatalf("refresh replaced the working token on %q: %+v", c.name, got)
+			}
+		})
+	}
+
+	// The portal is simply gone.
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	unreachable := srv.URL
+	srv.Close()
+	d := &WebsocketDialer{URL: unreachable, TokenPath: filepath.Join(t.TempDir(), "token.json")}
+	if got := d.maybeRefreshToken(context.Background(), current); got != current {
+		t.Fatalf("refresh replaced the working token when the portal was unreachable: %+v", got)
+	}
+}
+
+// A successor that cannot be written to disk must NOT be adopted: the runner
+// would then be using a token it cannot reload after a restart. The outgoing
+// token's grace window exists for exactly this.
+func TestMaybeRefreshTokenKeepsTheOldTokenWhenPersistFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"token":"rnrtok-successor"}`))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	// Same unwritable shape the persistence test above uses.
+	stateDir := filepath.Join(dir, "state")
+	if err := os.Symlink(filepath.Join(dir, "missing"), stateDir); err != nil {
+		t.Fatal(err)
+	}
+
+	current := agentToken{Raw: "rnrtok-current", KeyFP: "fp"}
+	d := &WebsocketDialer{URL: srv.URL, TokenPath: filepath.Join(stateDir, "token.json")}
+
+	if got := d.maybeRefreshToken(context.Background(), current); got != current {
+		t.Fatalf("adopted a successor that was never persisted: %+v", got)
+	}
+}
+
+// The successful path: a durably persisted successor is adopted and reloads.
+func TestMaybeRefreshTokenAdoptsAPersistedSuccessor(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer rnrtok-current" {
+			t.Errorf("refresh authenticated with %q", got)
+		}
+		_, _ = w.Write([]byte(`{"token":"rnrtok-successor"}`))
+	}))
+	defer srv.Close()
+
+	path := filepath.Join(t.TempDir(), "token.json")
+	d := &WebsocketDialer{URL: srv.URL, TokenPath: path}
+
+	got := d.maybeRefreshToken(context.Background(), agentToken{Raw: "rnrtok-current", KeyFP: "fp"})
+	if got.Raw != "rnrtok-successor" || got.KeyFP != "fp" {
+		t.Fatalf("successor not adopted: %+v", got)
+	}
+
+	reloaded, err := d.readToken()
+	if err != nil {
+		t.Fatalf("successor did not persist: %v", err)
+	}
+	if reloaded.Raw != "rnrtok-successor" {
+		t.Fatalf("persisted token = %q, want the successor", reloaded.Raw)
+	}
+}

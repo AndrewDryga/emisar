@@ -6,6 +6,54 @@ defmodule EmisarWeb.RunnerSocketTest do
   alias Emisar.Runs.ActionRun
   alias EmisarWeb.RunnerSocket
 
+  describe "POST /runner/token/refresh (bearer-authed)" do
+    test "answers 409 not_due for a token too young to rotate" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, _token} = Emisar.Runners.mint_runner_token(runner)
+
+      conn =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/runner/token/refresh")
+
+      assert json_response(conn, 409) == %{"error" => "not_due"}
+    end
+
+    test "returns a successor and the next refresh time for a due token" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, token} = Emisar.Runners.mint_runner_token(runner)
+
+      {:ok, _aged} =
+        token
+        |> Ecto.Changeset.change(issued_at: DateTime.add(DateTime.utc_now(), -70 * 86_400))
+        |> Emisar.Repo.update()
+
+      conn =
+        build_conn()
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> post(~p"/runner/token/refresh")
+
+      body = json_response(conn, 200)
+      assert %{"token" => "rnrtok-" <> _, "refresh_after" => refresh_after} = body
+      assert {:ok, _dt, _} = DateTime.from_iso8601(refresh_after)
+      assert body["token"] != raw
+      # Nothing beyond the credential and its schedule: this endpoint is
+      # reachable with a runner token alone.
+      assert Map.keys(body) |> Enum.sort() == ["refresh_after", "token"]
+    end
+
+    test "refuses a bogus token and a missing bearer" do
+      assert build_conn()
+             |> put_req_header("authorization", "Bearer rnrtok-nope")
+             |> post(~p"/runner/token/refresh")
+             |> json_response(401) == %{"error" => "token_invalid"}
+
+      assert build_conn()
+             |> post(~p"/runner/token/refresh")
+             |> json_response(401) == %{"error" => "missing_bearer"}
+    end
+  end
+
   describe "POST /runner/register (bearer-authed)" do
     setup do
       {:ok, user} =
@@ -46,7 +94,10 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       first_body = json_response(first, 201)
       assert %{"token" => "rnrtok-" <> first_token} = first_body
-      assert map_size(first_body) == 1
+      # The registration response says the token and when it may be rotated, and
+      # nothing else — this guards against leaking runner or account facts into
+      # a response an enrollment key alone can obtain.
+      assert Map.keys(first_body) |> Enum.sort() == ["refresh_after", "token"]
 
       retry =
         build_conn()

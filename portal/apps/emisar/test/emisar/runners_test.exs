@@ -3243,6 +3243,75 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "refresh_runner_token/1" do
+    test "a token too young to rotate is answered, not refused" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, _token} = Runners.mint_runner_token(runner)
+
+      # A runner that asks early keeps the token it has. Answering :not_due
+      # rather than erroring is what lets the client treat refresh as optional.
+      assert Runners.refresh_runner_token(raw) == {:error, :not_due}
+      assert {:ok, _token, %Runner{}} = Runners.verify_runner_token(raw)
+    end
+
+    test "a due token yields a successor while the outgoing one still works" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, token} = Runners.mint_runner_token(runner)
+
+      # Age it past the refresh threshold.
+      {:ok, _aged} =
+        token
+        |> Ecto.Changeset.change(issued_at: DateTime.add(DateTime.utc_now(), -70 * 86_400))
+        |> Emisar.Repo.update()
+
+      assert {:ok, successor, %DateTime{}} = Runners.refresh_runner_token(raw)
+      refute successor == raw
+      assert {:ok, _token, %Runner{}} = Runners.verify_runner_token(successor)
+
+      # The grace window is the whole reason this is safe to ship before expiry
+      # is enforced: a runner that never persists the successor still connects.
+      assert {:ok, _token, %Runner{}} = Runners.verify_runner_token(raw)
+    end
+
+    test "a token minted before rotation is never due" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, token} = Runners.mint_runner_token(runner)
+
+      # expires_at nil is how every pre-rotation token looks. Issuing a
+      # successor for one would start a clock on a client that may have no
+      # refresh support at all.
+      {:ok, _legacy} =
+        token
+        |> Ecto.Changeset.change(
+          expires_at: nil,
+          issued_at: DateTime.add(DateTime.utc_now(), -400 * 86_400)
+        )
+        |> Emisar.Repo.update()
+
+      assert Runners.refresh_runner_token(raw) == {:error, :not_due}
+    end
+
+    test "a disabled runner cannot refresh" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, _token} = Runners.mint_runner_token(runner)
+
+      {:ok, _disabled} =
+        runner |> Emisar.Runners.Runner.Changeset.disable() |> Emisar.Repo.update()
+
+      assert Runners.refresh_runner_token(raw) == {:error, :runner_disabled}
+    end
+  end
+
+  describe "token_refresh_after/1" do
+    test "is nil for a token that never rotates and a timestamp otherwise" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {_raw, token} = Runners.mint_runner_token(runner)
+
+      assert %DateTime{} = Runners.token_refresh_after(token)
+      refute Runners.token_refresh_after(%{token | expires_at: nil})
+    end
+  end
+
   describe "mint_runner_token/3" do
     test "mints a prefixed raw token + persists its hash, bound to the runner" do
       runner = Fixtures.Runners.create_runner(connected?: false)

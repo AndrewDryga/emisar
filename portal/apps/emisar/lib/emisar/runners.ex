@@ -41,6 +41,16 @@ defmodule Emisar.Runners do
   @install_eviction_grace_seconds 60
   @connection_lease_seconds 120
 
+  # 90 days of life, refreshed once a token is two thirds through it. That
+  # leaves 30 days and hundreds of reconnects for a refresh to succeed, so a
+  # transient portal outage or a bad release cannot expire a fleet.
+  @token_lifetime_seconds 90 * 24 * 3_600
+  @token_refresh_after_seconds 60 * 24 * 3_600
+  # The outgoing token stays usable this long after its successor is minted. A
+  # runner that receives a successor and dies before persisting it still
+  # reconnects on the old one and refreshes again.
+  @token_retirement_grace_seconds 24 * 3_600
+
   # Matches EmisarWeb.RunnerSocket's heartbeat timeout: past this age the socket
   # is already closing the connection, so a stale reading is an imminent drop,
   # never a re-derived liveness verdict of our own.
@@ -2034,10 +2044,78 @@ defmodule Emisar.Runners do
     {raw, prefix, hash} = Crypto.mint("rnrtok-", @token_prefix_size)
 
     {:ok, token} =
-      Token.Changeset.create(runner.id, issued_via_key_id, prefix, hash)
+      Token.Changeset.create(runner.id, issued_via_key_id, prefix, hash,
+        lifetime_seconds: @token_lifetime_seconds
+      )
       |> repo.insert()
 
     {raw, token}
+  end
+
+  @doc """
+  Internal — the runner transport's `POST /runner/token/refresh`, before any
+  Subject exists: exchange a live runner token for its successor.
+
+  The presented token IS the authorization, exactly as it is for the socket
+  upgrade. Returns `{:ok, raw_token, refresh_after}`, or `{:error, :not_due}`
+  when the token is not old enough to rotate — a runner asking early is
+  answered, not punished.
+
+  The outgoing token is retired on a grace window rather than deleted, so a
+  runner that receives a successor and then fails to persist it still has a
+  working credential and refreshes again on the next connect. That property is
+  what makes rotation safe to enable before expiry is enforced.
+  """
+  def refresh_runner_token(raw) when is_binary(raw) do
+    case verify_runner_token(raw) do
+      {:ok, %Token{} = token, %Runner{} = runner} ->
+        if token_refresh_due?(token) do
+          rotate_runner_token(token, runner)
+        else
+          {:error, :not_due}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp rotate_runner_token(%Token{} = token, %Runner{} = runner) do
+    Multi.new()
+    |> Multi.run(:successor, fn repo, _changes ->
+      {:ok, mint_runner_token(runner, token.issued_via_key_id, repo: repo)}
+    end)
+    |> Multi.update(
+      :retired,
+      Token.Changeset.retire_after(token, @token_retirement_grace_seconds)
+    )
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{successor: {raw, token}}} -> {:ok, raw, token_refresh_after(token)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # A token with no expiry predates rotation. It is never "due": issuing a
+  # successor for it would start a clock on a runner whose client may have no
+  # refresh support, which is the one way this could strand a fleet.
+  @doc """
+  Internal — the runner transport: when this token becomes eligible for
+  rotation, or nil for a token that never rotates.
+
+  The runner persists this and only calls `/runner/token/refresh` once it has
+  passed, so an ordinary reconnect costs no extra round-trip and a token minted
+  before rotation existed is never asked about.
+  """
+  def token_refresh_after(%Token{expires_at: nil}), do: nil
+
+  def token_refresh_after(%Token{issued_at: issued_at}),
+    do: DateTime.add(issued_at, @token_refresh_after_seconds, :second)
+
+  defp token_refresh_due?(%Token{expires_at: nil}), do: false
+
+  defp token_refresh_due?(%Token{issued_at: issued_at}) do
+    DateTime.diff(DateTime.utc_now(), issued_at, :second) >= @token_refresh_after_seconds
   end
 
   @doc """

@@ -45,6 +45,21 @@ per-runner token, which is persisted owner-only. Every websocket upgrade then
 uses that bearer token. Revoking the key or token makes the next registration or
 upgrade fail.
 
+**Token rotation.** A token carries a 90-day life and a `refresh_after` the
+runner persists beside it. Once that passes, the runner exchanges the token for
+a successor over `POST /runner/token/refresh`, authenticated by the token
+itself — no enrollment key, no host access, which is the point: a leaked token
+stops working without anyone touching the machine. The portal answers `409
+not_due` before then, and the outgoing token stays valid for a grace window
+after its successor is minted, so a runner that receives one and fails to
+persist it still reconnects and tries again. Refresh failure of any kind leaves
+the runner on its existing token; it never blocks a connect.
+
+Expiry is **not enforced yet**, deliberately. Every token minted before rotation
+existed has no expiry and no `refresh_after`, so it is never asked to rotate;
+enforcement is a separate change, made once refresh telemetry shows the fleet
+rotating. Turning both on together would expire a fleet on the same day.
+
 The runner uses configured `runner.id`, or its current hostname by default, as
 its `external_id`. `POST /runner/register` requires that nonblank,
 at-most-255-character value and returns

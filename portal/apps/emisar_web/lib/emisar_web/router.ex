@@ -460,6 +460,7 @@ defmodule EmisarWeb.Router do
 
   scope "/runner", EmisarWeb do
     post "/register", RunnerConnectController, :register
+    post "/token/refresh", RunnerConnectController, :refresh_token
     get "/socket/websocket", RunnerConnectController, :websocket
   end
 

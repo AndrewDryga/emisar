@@ -111,6 +111,14 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 		return nil, err
 	}
 
+	// Only when the portal said this token was due, so an ordinary reconnect
+	// costs no extra round-trip. Before the dial, so the connection uses
+	// whichever token we end up with — and never blocking it: maybeRefreshToken
+	// returns the token it was given on every failure path.
+	if token.refreshDue(time.Now()) {
+		token = d.maybeRefreshToken(ctx, token)
+	}
+
 	wsURL, err := d.deriveWSURL()
 	if err != nil {
 		return nil, err
@@ -164,6 +172,25 @@ type agentToken struct {
 	// KeyFP fingerprints the enrollment key that minted this token, so a later
 	// boot can tell when the operator swapped the key under it.
 	KeyFP string
+	// RefreshAfter is when this token becomes eligible for rotation, RFC3339, as
+	// the portal stated it at issue. Empty means never — a token from before
+	// rotation existed, which has no refresh path and must not be asked about.
+	RefreshAfter string
+}
+
+// refreshDue reports whether it is worth asking the portal for a successor.
+// Empty or unparseable means no: the runner asks only when it has been told to,
+// so an ordinary reconnect costs no extra round-trip and a pre-rotation token is
+// left alone entirely.
+func (t agentToken) refreshDue(now time.Time) bool {
+	if t.RefreshAfter == "" {
+		return false
+	}
+	at, err := time.Parse(time.RFC3339, t.RefreshAfter)
+	if err != nil {
+		return false
+	}
+	return !now.Before(at)
 }
 
 func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, error) {
@@ -206,6 +233,74 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 	}
 
 	return token, nil
+}
+
+// maybeRefreshToken exchanges a live token for its successor, and is allowed to
+// fail at every step.
+//
+// The portal answers 409 until a token is old enough to rotate, so the ordinary
+// answer here is "not yet". Every other outcome — the portal is down, the
+// response is junk, the disk is full — returns the CALLER'S EXISTING TOKEN and
+// logs. That is the property the whole design rests on: a broken refresh must
+// degrade to "keep using the credential that already works", never to a failed
+// connect. The outgoing token stays valid for a grace window after its
+// successor is minted, so even a successful refresh that fails to persist
+// leaves a runner that can reconnect and try again.
+func (d *WebsocketDialer) maybeRefreshToken(ctx context.Context, current agentToken) agentToken {
+	refreshURL, err := httpURL(d.URL, "/runner/token/refresh")
+	if err != nil {
+		return current
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, refreshURL, nil)
+	if err != nil {
+		return current
+	}
+	req.Header.Set("Authorization", "Bearer "+current.Raw)
+
+	resp, err := d.portalHTTPClient().Do(req)
+	if err != nil {
+		d.logger().Debug("cloud.token_refresh_skipped", "detail", err.Error())
+		return current
+	}
+	defer resp.Body.Close()
+
+	// Not due yet. The overwhelmingly common answer; not worth a log line.
+	if resp.StatusCode == http.StatusConflict {
+		return current
+	}
+	if resp.StatusCode != http.StatusOK {
+		d.logger().Debug("cloud.token_refresh_skipped", "status", resp.StatusCode)
+		return current
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxRegistrationResponseBytes+1))
+	if err != nil || len(raw) > maxRegistrationResponseBytes {
+		d.logger().Debug("cloud.token_refresh_skipped", "detail", "unreadable refresh response")
+		return current
+	}
+
+	var parsed struct {
+		Token        string `json:"token"`
+		RefreshAfter string `json:"refresh_after"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&parsed); err != nil || strings.TrimSpace(parsed.Token) == "" {
+		d.logger().Debug("cloud.token_refresh_skipped", "detail", "malformed refresh response")
+		return current
+	}
+
+	successor := agentToken{Raw: parsed.Token, KeyFP: current.KeyFP, RefreshAfter: parsed.RefreshAfter}
+	if err := d.writeToken(successor); err != nil {
+		// The successor exists server-side but is not on disk. Keep using the
+		// outgoing token, which the grace window keeps alive precisely for this.
+		d.logger().Warn("cloud.token_refresh_not_persisted", "error", err.Error())
+		return current
+	}
+
+	d.logger().Info("cloud.token_refreshed", "path", d.TokenPath)
+	return successor
 }
 
 // ValidateTokenFile reports whether the cached runner token at path is one
@@ -251,6 +346,10 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 	var stored struct {
 		Token string `json:"token"`
 		KeyFP string `json:"key_fp"`
+		// RFC3339, written by whoever issued the token. Absent on every token
+		// minted before rotation shipped, which is exactly right: those have no
+		// refresh path, so the runner must never ask for one.
+		RefreshAfter string `json:"refresh_after,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(contents))
 	decoder.DisallowUnknownFields()
@@ -263,7 +362,7 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 	if stored.Token == "" {
 		return agentToken{}, errors.New("token file has empty token")
 	}
-	return agentToken{Raw: stored.Token, KeyFP: stored.KeyFP}, nil
+	return agentToken{Raw: stored.Token, KeyFP: stored.KeyFP, RefreshAfter: stored.RefreshAfter}, nil
 }
 
 func (d *WebsocketDialer) writeToken(t agentToken) error {
@@ -277,9 +376,10 @@ func (d *WebsocketDialer) writeToken(t agentToken) error {
 	}
 
 	body, err := json.Marshal(struct {
-		Token string `json:"token"`
-		KeyFP string `json:"key_fp,omitempty"`
-	}{t.Raw, t.KeyFP})
+		Token        string `json:"token"`
+		KeyFP        string `json:"key_fp,omitempty"`
+		RefreshAfter string `json:"refresh_after,omitempty"`
+	}{t.Raw, t.KeyFP, t.RefreshAfter})
 	if err != nil {
 		return err
 	}
@@ -415,6 +515,9 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 
 	var parsed struct {
 		Token string `json:"token"`
+		// Optional so an older portal still registers a newer runner: absent
+		// simply means this token is never due for rotation.
+		RefreshAfter string `json:"refresh_after"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -429,7 +532,7 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 		return agentToken{}, errors.New("cloud: register returned an invalid token")
 	}
 
-	return agentToken{Raw: parsed.Token}, nil
+	return agentToken{Raw: parsed.Token, RefreshAfter: parsed.RefreshAfter}, nil
 }
 
 // -- URL derivation --------------------------------------------------

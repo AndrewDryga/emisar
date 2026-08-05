@@ -22,10 +22,49 @@ defmodule EmisarWeb.RunnerConnectController do
 
   # -- Token exchange -------------------------------------------------
 
+  @doc """
+  Exchange a live runner token for its successor. The presented token IS the
+  authorization, as it is for the socket upgrade — no enrollment key, no host
+  access, which is the whole point: a token can be rotated without anyone
+  touching the machine.
+
+  `409 not_due` when the token is too young to rotate. A runner that asks early
+  gets an answer rather than an error it has to interpret, and it keeps using
+  the token it has.
+  """
+  def refresh_token(conn, _params) do
+    with {:ok, token} <- read_bearer(conn),
+         {:ok, raw_token, refresh_after} <- Runners.refresh_runner_token(token) do
+      json(conn, %{token: raw_token, refresh_after: iso8601(refresh_after)})
+    else
+      :missing_bearer ->
+        unauthorized(conn, "missing_bearer")
+
+      {:error, :not_due} ->
+        conn
+        |> put_status(:conflict)
+        |> json(%{error: "not_due"})
+
+      {:error, :runner_disabled} ->
+        unauthorized(conn, "runner_disabled")
+
+      {:error, :account_disabled} ->
+        unauthorized(conn, "account_disabled")
+
+      {:error, _reason} ->
+        unauthorized(conn, "token_invalid")
+    end
+  end
+
+  # nil for a token that never rotates, so an older runner sees no field and a
+  # newer one reads "never due" — the same answer, spelled once.
+  defp iso8601(nil), do: nil
+  defp iso8601(%DateTime{} = at), do: DateTime.to_iso8601(at)
+
   def register(conn, params) do
     with {:ok, enrollment_key} <- read_bearer(conn),
          {:ok, attrs} <- registration_attrs(params),
-         {:ok, _runner, _token, raw_token} <-
+         {:ok, _runner, token, raw_token} <-
            Runners.register_via_enrollment_key(
              enrollment_key,
              attrs,
@@ -33,7 +72,7 @@ defmodule EmisarWeb.RunnerConnectController do
            ) do
       conn
       |> put_status(:created)
-      |> json(%{token: raw_token})
+      |> json(%{token: raw_token, refresh_after: iso8601(Runners.token_refresh_after(token))})
     else
       :missing_bearer ->
         unauthorized(conn, "missing_bearer")
