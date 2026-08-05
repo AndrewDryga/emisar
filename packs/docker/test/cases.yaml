@@ -1,3 +1,20 @@
+# Every risky action here drives the daemon, and covering one means handing the
+# packtest runner a Docker socket — which is root on the host by another name,
+# in a harness whose whole point is an unprivileged, disposable SUT. The one
+# action that needs no daemon (compose_config parses a file) is the one with a
+# case. Declared rather than left silently uncovered, so the gap is a decision
+# in the plan instead of an absence nobody sees.
+risk_accountability:
+  exceptions:
+    docker.compose_restart: requires_privileged_host
+    docker.image_inspect: requires_privileged_host
+    docker.image_history: requires_privileged_host
+    docker.restart: requires_privileged_host
+    docker.kill: requires_privileged_host
+    docker.system_prune: requires_privileged_host
+    docker.inspect: requires_privileged_host
+    docker.volume_prune: requires_privileged_host
+    docker.stop: requires_privileged_host
 services: [docker-cli]
 versions:
   - version: "29.7.1-cli"
