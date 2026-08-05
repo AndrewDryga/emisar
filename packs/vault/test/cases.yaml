@@ -11,6 +11,33 @@ defaults:
   expect:
     stdout_not_empty: true
 cases:
+  # Both risky actions ARE coverable — each probe asks "did it happen?", the
+  # shape redis.shutdown_nosave uses. Each case gets its own disposable Compose
+  # project, so a sealed Vault costs nothing after it.
+  - action: vault.lease_revoke_prefix
+    args: {prefix: auth/token}
+    arrange:
+      - name: a revocable lease exists under the prefix
+        argv: [/bin/sh, -c, "vault token create -ttl=30m >/dev/null"]
+    probes:
+      - name: the prefix has no leases left
+        argv: [/bin/sh, -c, "vault list sys/leases/lookup/auth/token >/dev/null 2>&1 || echo revoked"]
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: [revoked]
+
+  - action: vault.operator_seal
+    probes:
+      # `vault status` exits 2 when sealed and 0 when unsealed, so the exit code
+      # is the assertion.
+      - name: Vault reports itself sealed
+        argv: [/bin/sh, -c, "vault status >/dev/null 2>&1; test $? -eq 2 && echo sealed"]
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: [sealed]
+
   - action: vault.leases_count
     args: {prefix: auth/token}
     expect:

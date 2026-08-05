@@ -12,6 +12,18 @@ defaults:
   expect:
     stdout_not_empty: true
 cases:
+  # stop_app stops the RabbitMQ application while leaving the node running, so
+  # the probe asks the node itself — the shape redis.shutdown_nosave uses. Its
+  # own disposable Compose project means nothing after it is affected.
+  - action: rmq.stop_app
+    probes:
+      - name: the application is no longer running
+        argv: [/bin/sh, -c, "rabbitmq-diagnostics -q check_running >/dev/null 2>&1 || echo stopped"]
+        retry_for: 30s
+        retry_every: 1s
+        expect:
+          stdout_contains: [stopped]
+
   - action: rmq.cluster_status
     expect:
       stdout_contains: [Cluster status, rabbit@rabbitmq]
