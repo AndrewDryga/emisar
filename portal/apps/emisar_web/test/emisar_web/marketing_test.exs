@@ -1132,6 +1132,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "The foundation"
       assert html =~ "Public beta control plane"
       assert html =~ "Bridge-attested signed dispatch"
+      assert html =~ "requires Claude and Codex to pass the same held-out contract"
+      refute html =~ "requires Claude, Codex, and Gemini"
       assert html =~ "The marketing site, rebuilt"
       assert html =~ "More reliable background work and a cleaner runner setup"
       assert html =~ "Annual billing, Team-owned SSO, and safer input handling"

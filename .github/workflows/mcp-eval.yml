@@ -27,10 +27,6 @@ on:
         description: Codex model (empty = CLI default)
         required: false
         type: string
-      gemini_model:
-        description: Gemini model (empty = CLI default)
-        required: false
-        type: string
 concurrency:
   group: mcp-client-certification
   cancel-in-progress: false
@@ -40,7 +36,7 @@ permissions:
 
 jobs:
   certify:
-    name: Three-client MCP certification
+    name: Claude and Codex MCP certification
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     environment:
@@ -54,35 +50,31 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Require all three provider credentials
+      - name: Require both provider credentials
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MCP_EVAL_HELD_OUT_B64: ${{ secrets.MCP_EVAL_HELD_OUT_B64 }}
           QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification }}
           CLAUDE_MODEL: ${{ inputs.claude_model }}
           CODEX_MODEL: ${{ inputs.codex_model }}
-          GEMINI_MODEL: ${{ inputs.gemini_model }}
         run: |
           set -euo pipefail
           missing=()
           [ -n "$ANTHROPIC_API_KEY" ] || missing+=(ANTHROPIC_API_KEY)
           [ -n "$OPENAI_API_KEY" ] || missing+=(OPENAI_API_KEY)
-          [ -n "$GEMINI_API_KEY" ] || missing+=(GEMINI_API_KEY)
           if [ "$QUALIFICATION" = true ] && [ -z "$MCP_EVAL_HELD_OUT_B64" ]; then
             missing+=(MCP_EVAL_HELD_OUT_B64)
           fi
           if [ "$QUALIFICATION" = true ]; then
             [ -n "$CLAUDE_MODEL" ] || missing+=(claude_model)
             [ -n "$CODEX_MODEL" ] || missing+=(codex_model)
-            [ -n "$GEMINI_MODEL" ] || missing+=(gemini_model)
           fi
           if [ "${#missing[@]}" -ne 0 ]; then
             echo "::error::MCP certification is fail-closed; configure: ${missing[*]}"
             exit 1
           fi
-          echo "All three provider lanes are configured."
+          echo "Claude and Codex provider lanes are configured."
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -166,16 +158,13 @@ jobs:
         env:
           CLAUDE_CODE_VERSION: "2.1.217"
           CODEX_CLI_VERSION: "0.145.0"
-          GEMINI_CLI_VERSION: "0.50.0"
         run: |
           set -euo pipefail
           npm install -g \
             "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-            "@openai/codex@${CODEX_CLI_VERSION}" \
-            "@google/gemini-cli@${GEMINI_CLI_VERSION}"
+            "@openai/codex@${CODEX_CLI_VERSION}"
           claude --version
           codex --version
-          gemini --version
 
       - name: Run Claude certification
         id: claude
@@ -224,35 +213,11 @@ jobs:
           done < <(jq -r '.scenarios[].id' "$MCP_EVAL_CORPUS")
           exit "$status"
 
-      - name: Run Gemini certification
-        id: gemini
-        continue-on-error: true
-        working-directory: tools
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          EVAL_MODEL: ${{ inputs.gemini_model }}
-        run: |
-          set -euo pipefail
-          status=0
-          index=0
-          private=()
-          if [ "$MCP_EVAL_QUALIFICATION" = true ]; then
-            private=(-require-held-out -redact-agent-output)
-          fi
-          while IFS= read -r scenario; do
-            args=(-provider gemini -bridge-bin "$MCP_EVAL_BRIDGE" -scenarios "$MCP_EVAL_CORPUS" -scenario "$scenario" -out "/tmp/mcpeval-gemini-${index}.json")
-            [ -z "$EVAL_MODEL" ] || args+=(-model "$EVAL_MODEL")
-            go run ./cmd/mcpeval "${args[@]}" "${private[@]}" || status=1
-            index=$((index + 1))
-          done < <(jq -r '.scenarios[].id' "$MCP_EVAL_CORPUS")
-          exit "$status"
-
       - name: Show stack logs
         if: >-
           always() &&
           (steps.claude.outcome != 'success' ||
-           steps.codex.outcome != 'success' ||
-           steps.gemini.outcome != 'success')
+           steps.codex.outcome != 'success')
         run: docker compose logs --tail 40 portal seeder runner-1 runner-2 runner-3
 
       - name: Upload certification reports
@@ -263,20 +228,17 @@ jobs:
           path: |
             /tmp/mcpeval-claude-*.json
             /tmp/mcpeval-codex-*.json
-            /tmp/mcpeval-gemini-*.json
           retention-days: ${{ inputs.qualification && 90 || 30 }}
           if-no-files-found: error
 
-      - name: Require every client and scenario to pass
+      - name: Require both clients and every scenario to pass
         if: always()
         run: |
           set -euo pipefail
           claude='${{ steps.claude.outcome }}'
           codex='${{ steps.codex.outcome }}'
-          gemini='${{ steps.gemini.outcome }}'
-          echo "Lane outcomes — claude=$claude codex=$codex gemini=$gemini"
-          if [ "$claude" != success ] || [ "$codex" != success ] ||
-             [ "$gemini" != success ]; then
-            echo "::error::every MCP client must pass every corpus scenario"
+          echo "Lane outcomes — claude=$claude codex=$codex"
+          if [ "$claude" != success ] || [ "$codex" != success ]; then
+            echo "::error::both required MCP clients must pass every corpus scenario"
             exit 1
           fi

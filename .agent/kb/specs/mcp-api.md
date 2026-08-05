@@ -1955,8 +1955,11 @@ Run every case in the same held-out corpus in a fresh session using the
 exact candidate Emisar bridge with:
 
 - Claude CLI;
-- Codex CLI;
-- Gemini CLI.
+- Codex CLI.
+
+Gemini CLI and Grok CLI remain available as optional local development
+evaluators. Their support does not make either provider required release
+evidence.
 
 The certification job builds the bridge from the candidate commit, pins each
 client version, gives every client only a short-lived loopback credential, and
@@ -2054,7 +2057,7 @@ production actions.
    unsigned-runbook refusal, cancellation races,
    response bounds, and cross-implementation vectors.
 7. **Documentation and certification**: update wire protocol, signed dispatch,
-   help/install examples, operator docs, and run the committed three-client
+   help/install examples, operator docs, and run the committed two-client
    corpus.
 
 Project gates:

@@ -33,7 +33,7 @@ defmodule EmisarWeb.Changelog do
         {"MCP",
          [
            "The bridge and portal adopt the 2026-07-28 MCP routing headers and dual-era endpoint, including OAuth Client ID Metadata Documents for clients that use them.",
-           "Release qualification names all three required client models explicitly and requires Claude, Codex, and Gemini to pass the same held-out contract at the exact release commit."
+           "Release qualification names both required client models explicitly and requires Claude and Codex to pass the same held-out contract at the exact release commit; Gemini and Grok remain optional local evaluators."
          ]},
         {"Packs",
          [
