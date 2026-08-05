@@ -46,6 +46,7 @@ resource "google_project_iam_member" "vm_operations_read" {
     "roles/iam.serviceAccountViewer",
     "roles/iam.workloadIdentityPoolViewer",
     "roles/monitoring.viewer",
+    "roles/serviceusage.serviceUsageConsumer",
     "roles/storage.bucketViewer",
     "roles/storage.objectViewer",
   ])
