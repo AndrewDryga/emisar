@@ -163,7 +163,7 @@ Never title a product release with a bare `vX.Y.Z`.
 
 ## Verifying a downloaded binary (the recipe users run)
 
-The `runner-*`/`mcp-*` workflows already publish **SLSA-3 build provenance**
+The `runner-*`/`mcp-*` workflows already publish **SLSA Build Level 2 provenance**
 (`actions/attest-build-provenance@v4`, Sigstore-signed) and a `SHA256SUMS`
 (`SHA256SUMS-MCP` for the bridge) on every release. A `runner-v*` release also
 publishes the official container image

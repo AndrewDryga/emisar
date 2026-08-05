@@ -273,8 +273,51 @@ defmodule EmisarWeb.MarketingTest do
     trust = conn |> get(~p"/trust") |> html_response(200)
     assert trust =~ "Runner journal:"
     assert trust =~ "retained runner journal&#39;s chain"
+    assert trust =~ "privileged host operator"
+    assert trust =~ "replace or truncate the entire local journal"
     assert trust =~ "Portal audit:"
     refute trust =~ "catches any edited or missing line"
+  end
+
+  test "journal verification claims preserve the retained-evidence boundary", %{conn: conn} do
+    for route <- [
+          ~p"/docs/runner-cli",
+          ~p"/docs/audit-and-siem",
+          ~p"/docs/security-model",
+          ~p"/docs/security-incidents"
+        ] do
+      text = conn |> get(route) |> html_response(200) |> squish()
+
+      assert text =~ "retained journal or retained suffix",
+             "#{route} does not scope verification to retained evidence"
+
+      assert text =~ "replace or truncate the entire local journal",
+             "#{route} does not state the whole-journal blind spot"
+
+      refute text =~ "truncate the tail and re-chain"
+      refute text =~ "re-chain a forgery"
+    end
+  end
+
+  test "redaction copy describes pattern processing rather than perfect secret detection", %{
+    conn: conn
+  } do
+    for route <- [
+          ~p"/security",
+          ~p"/trust",
+          ~p"/docs/quickstart",
+          ~p"/guides/give-ai-agents-safe-production-access",
+          ~p"/dpa"
+        ] do
+      text = conn |> get(route) |> html_response(200) |> squish()
+
+      refute text =~ "Secrets redacted before egress"
+      refute text =~ "Secrets are redacted on the host"
+      refute text =~ "redacts secrets before output leaves"
+    end
+
+    security = conn |> get(~p"/security") |> html_response(200) |> squish()
+    assert security =~ "A novel secret shape can still pass a pattern-based filter"
   end
 
   test "pricing page carries a monthly/annual toggle with both Team prices", %{conn: conn} do
@@ -850,6 +893,13 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Audit, redaction, and privileges"
       assert html =~ "The MCP surface"
       assert html =~ "Signed dispatch"
+
+      assert html =~
+               "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+
+      assert html =~
+               "The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection."
+
       assert html =~ "Private packs"
       assert html =~ "not a VM, container, or kernel sandbox"
       assert html =~ "emisar.admin.access.diagnose"
@@ -916,6 +966,19 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "RFC 6238"
       assert html =~ "read-only audit-export token"
 
+      assert html =~
+               "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+
+      assert html =~ "MCP bridge keys are short-lived and rotate themselves"
+
+      assert html =~
+               "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log."
+
+      assert html =~ "Verification covers the retained"
+      assert html =~ "privileged host operator"
+      refute html =~ "action a real person signed"
+      refute html =~ "Recorded byte-for-byte"
+
       # The honest not-affiliated note (this is a security product; the
       # framing is "we implement it", never "they endorse us").
       assert html =~ "Not affiliated with or endorsed by Anthropic"
@@ -941,7 +1004,8 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/trust") |> html_response(200)
 
       assert html =~ "Release integrity"
-      assert html =~ "SLSA-3 build provenance"
+      assert html =~ "SLSA Build Level 2 provenance"
+      refute html =~ "SLSA-3 build provenance"
       assert html =~ "gh attestation verify"
       assert html =~ "--owner andrewdryga"
       assert html =~ "sha256sum -c SHA256SUMS"
@@ -1067,7 +1131,7 @@ defmodule EmisarWeb.MarketingTest do
       # The data-driven release entries (EmisarWeb.Changelog) — assert labels.
       assert html =~ "The foundation"
       assert html =~ "Public beta control plane"
-      assert html =~ "Client-attested signed dispatch"
+      assert html =~ "Bridge-attested signed dispatch"
       assert html =~ "The marketing site, rebuilt"
       assert html =~ "More reliable background work and a cleaner runner setup"
       assert html =~ "Annual billing, Team-owned SSO, and safer input handling"
@@ -1228,6 +1292,8 @@ defmodule EmisarWeb.MarketingTest do
 
       # The honest "what emisar is not" boundary section.
       assert html =~ "What emisar is not"
+      assert html =~ "customer-authorized MCP bridge"
+      refute html =~ "user-signed action"
     end
 
     # The signed-dispatch operator guide: setup + the fleet key lifecycle
@@ -1249,6 +1315,11 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "EMISAR_SIGNING_KEY"
       assert html =~ "EMISAR_SIGNING_CERT"
       assert html =~ "max_attestation_age"
+
+      assert html =~
+               "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+
+      refute html =~ "The MCP client signs"
 
       # A refusal code from the troubleshooting table.
       assert html =~ "cert_untrusted"
@@ -1594,6 +1665,9 @@ defmodule EmisarWeb.MarketingTest do
       assert keys =~ "emk-"
       assert keys =~ "no scope of its own"
       assert keys =~ "audit-export"
+      assert keys =~ "MCP bridge keys are short-lived and rotate themselves"
+      assert keys =~ "writable and persistent"
+      assert keys =~ "OAuth and hand-supplied bearer"
 
       cli = conn |> get(~p"/docs/runner-cli") |> html_response(200)
       assert cli =~ "emisar audit verify --all"
@@ -1827,6 +1901,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "registry.emisar.dev"
       assert html =~ "api.github.com"
       assert html =~ "needs no open port"
+
+      assert html =~
+               "The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection."
     end
 
     test "network requirements claims only the transport behavior the clients implement",
@@ -2513,6 +2590,12 @@ defmodule EmisarWeb.MarketingTest do
       assert text =~ "When you enable signed dispatch"
       assert text =~ "When you configure local admission rules"
       assert text =~ "You are responsible for enabling and configuring these controls"
+
+      assert text =~
+               "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log."
+
+      assert text =~ "privileged host operator"
+      assert text =~ "replace or truncate the entire local journal"
 
       refute text =~
                "Signed dispatch and local admission control — a compromised control plane cannot forge an action"

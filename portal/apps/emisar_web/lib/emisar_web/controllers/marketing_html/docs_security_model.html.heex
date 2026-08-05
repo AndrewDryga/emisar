@@ -114,9 +114,9 @@
           attempt writes a JSONL line to <code>/var/log/emisar/events.jsonl</code>
           with a previous-line hash — that's the host-side
           forensics copy. <code>emisar audit verify</code>
-          flags edits to the local journal, but host root can truncate the tail or re-chain a
-          forgery and still pass it — the off-host cloud audit is the record that can't be tampered
-          with from the host, so cross-reference the two.
+          verifies continuity within the retained journal or retained suffix; it cannot prove that
+          a privileged host operator did not replace or truncate the entire local journal. The
+          off-host cloud audit cannot be changed from the host, so cross-reference the two.
         </li>
         <li>
           <strong>Setuid drop on Linux.</strong>
@@ -143,7 +143,7 @@
           events for SIEM alerting.
         </li>
         <li>
-          <strong>Client-attested dispatch (the strongest cloud-compromise defense).</strong>
+          <strong>Bridge-attested dispatch (the strongest cloud-compromise defense).</strong>
           With <code>signing.enforce_signatures</code>
           on, the runner runs a
           dispatch only if it carries a valid v4 Ed25519 signature over the canonical portal
@@ -151,9 +151,9 @@
           digest, reason, operation id, nonce, and timestamp — from a leaf key vouched for by a
           certificate the host's trusted certificate authority signed, inside the
           cert's validity window and a freshness window, with a nonce it hasn't
-          seen. The leaf private key lives only in the operator's local MCP
-          client and the CA private key stays offline; the control plane holds
-          neither, so it can relay a user-signed action but never originate,
+          seen. The leaf private key lives only in the customer-authorized MCP
+          bridge and the CA private key stays offline; the control plane holds
+          neither, so it can relay a bridge-signed action but never originate,
           forge, or replay one. The runner advertises enforcement, and the cloud
           then disables its own operator/runbook dispatch to that host. Stated
           plainly: a compromised cloud can still <em>withhold</em>
@@ -185,10 +185,9 @@
         </li>
         <li>
           <strong>Not an EDR.</strong> emisar doesn't detect malicious binaries,
-          lateral movement, or host compromise. It flags edits to the local
-          runner journal (host root can still re-chain a forgery — the off-host cloud audit is the
-          tamper-resistant record) and rejects a pack whose on-disk contents no longer match the
-          cloud-pinned trusted hash before execution.
+          lateral movement, or host compromise. The retained-journal continuity check described
+          above does not change that boundary. emisar rejects a pack whose on-disk contents no
+          longer match the cloud-pinned trusted hash before execution.
         </li>
         <li>
           <strong>Not a replacement for OS-level access control.</strong>
@@ -227,9 +226,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The runner, its packs, and its local journal live on your hosts. emisar's control plane —
         the dashboard, the audit log, run history, and the MCP API — is a hosted service on <strong class="text-zinc-200">Google Cloud in the United States</strong>. Data is encrypted
-        at rest with provider-managed keys and in transit with TLS, and the runner only ever dials
-        out, so nothing reaches back into your hosts. Which component owns which decision, and what
-        happens when one of them drops out, is <.link
+        at rest with provider-managed keys and in transit with TLS. The runner opens an outbound
+        TLS WebSocket and exposes no inbound listener; commands return through that established
+        connection. Which component owns which decision, and what happens when one of them drops
+        out, is <.link
           navigate={~p"/docs/architecture"}
           class="text-brand-400 hover:text-brand-300"
         >architecture and failure behavior</.link>; this table is what is kept, where, and for how
@@ -251,7 +251,7 @@
               {"Account, members, policies, trusted pack hashes, runbooks", "Control plane, United States", "Until you change or delete them."},
               {"Bearer credentials we issue", "Control plane, as a hash only", "Until revoked or deleted. A database copy yields nothing replayable."},
               {"Packs and the local event journal", "Your host", "Yours to rotate and retain; --purge deletes them with the runner."},
-              {"Signing keys", "Leaf in the operator's own MCP client, CA offline", "We never hold either. There is no per-certificate revocation list."},
+              {"Signing keys", "Leaf in the customer-authorized MCP bridge, CA offline", "We never hold either. There is no per-certificate revocation list."},
               {"Pack and provider credentials", "Your host's protected runner environment", "Keep them out of call arguments; the runner supplies them from its environment instead of sending them to the control plane."}
             ] do %>
               <tr>

@@ -57,7 +57,7 @@ defmodule Emisar.Runs.ActionRun do
     # for this run. Nil for a pack-less action.
     field :expected_pack_hash, :string
     field :opts, :map, default: %{}
-    # The complete v4 client-attestation envelope relayed from an MCP dispatch:
+    # The complete v4 bridge-attestation envelope relayed from an MCP dispatch:
     # signed execution facts, signature, and CA-issued leaf certificate. Carried
     # unchanged to the runner for verification. Nil for portal-originated runs,
     # which a signature-enforcing runner refuses.

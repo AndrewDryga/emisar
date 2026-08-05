@@ -2596,9 +2596,10 @@ defmodule Emisar.Runs do
     |> maybe_put("expected_pack_hash", run.expected_pack_hash)
   end
 
-  # Relay the client attestation (signed by the MCP, never the cloud) so an
-  # enforcing runner can verify a real user authorized this run. The portal
-  # only carries it through — it neither produces nor checks the signature.
+  # Relay the bridge attestation (signed by the MCP bridge, never the cloud) so
+  # an enforcing runner can verify a customer-authorized bridge authorized this
+  # run. The portal only carries it through — it neither produces nor checks the
+  # signature.
   defp maybe_put_attestation(payload, %ActionRun{attestation: att}) when is_map(att),
     do: Map.put(payload, "attestation", att)
 

@@ -40,7 +40,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
   # Validate a pack before trusting it
   emisar pack validate ./packs/linux-core
 
-  # Set up client-attested (signed) dispatch in one shot
+  # Set up bridge-attested (signed) dispatch in one shot
   emisar signing init`,
 		// SilenceErrors: main prints the error itself (below); without this
 		// cobra prints it too, so a failing command shows the error twice.

@@ -44,12 +44,13 @@ drivers. It is not shipped to customers and is not part of the runtime system.
    positional argv elements; only finite choices and two-sided bounded numbers
    may render into program text. The staging-only `shell` pack is the explicit
    arbitrary-shell break-glass path.
-6. Output is line-buffered, bounded, and redacted before progress leaves the
-   host. The runner writes a hash-chained local JSONL event and sends the final
-   result. The control plane stores the searchable fleet record.
+6. Runner output is redacted before leaving the host; Emisar retains the
+   resulting redacted output in audit log. Output is also line-buffered and
+   bounded. The runner writes a hash-chained local JSONL event and sends the
+   final result.
 
 The runner websocket contract is versioned in
-[`specs/wire-protocol.md`](specs/wire-protocol.md). Client-attested dispatch
+[`specs/wire-protocol.md`](specs/wire-protocol.md). Bridge-attested dispatch
 adds an optional signature gate described in
 [`specs/signed-dispatch.md`](specs/signed-dispatch.md).
 

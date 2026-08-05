@@ -67,8 +67,8 @@ changes.
 
 ## What holds the boundary
 
-- **No inbound runner listener.** The runner dials the control plane over a TLS
-  websocket.
+- **No inbound runner listener.** The runner opens an outbound TLS WebSocket and
+  exposes no inbound listener; commands return through that established connection.
 - **Declared actions only.** Cloud input is limited to typed, schema-bounded
   arguments. The runner rejects unknown actions and arguments.
 - **Content-addressed packs.** The control plane pins the trusted pack hash; the
@@ -77,14 +77,14 @@ changes.
 - **Policy before side effects.** Runner scope, risk policy, action overrides,
   standing grants, and conditional approval are evaluated before dispatch.
 - **Host-side enforcement.** The runner clamps execution options to the pack's
-  limits, runs the declared binary and argv, and redacts output before it leaves
-  the host.
+  limits and runs the declared binary and argv. Runner output is redacted before
+  leaving the host; Emisar retains the resulting redacted output in audit log.
 - **Two records.** The control-plane audit includes denied and pending requests;
   every runner also writes its execution attempts and local refusals to a
   hash-chained JSONL journal.
-- **Optional client-attested dispatch.** A runner can require an Ed25519 intent
-  signed by the MCP client, so the control plane cannot originate or widen a
-  permitted call.
+- **Optional bridge-attested dispatch.** A runner can require an Ed25519 intent
+  signed by the customer-authorized MCP bridge, so the control plane cannot
+  originate or widen a permitted call.
 
 Read the exact guarantees, limitations, and threat model in
 [`.agent/kb/specs/security-model.md`](.agent/kb/specs/security-model.md).

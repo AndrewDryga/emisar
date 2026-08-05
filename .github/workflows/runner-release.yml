@@ -263,7 +263,7 @@ jobs:
           fi
 
       - name: Attest build provenance
-        # Generates a SLSA-3 provenance attestation for the tarball.
+        # Generates a SLSA Build Level 2 provenance attestation for the tarball.
         # The attestation is signed by Sigstore using a workflow-bound
         # ambient OIDC identity (no long-lived keys). Verifiable later
         # with `gh attestation verify <tarball> --owner andrewdryga`.

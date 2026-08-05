@@ -2,8 +2,9 @@
 
 The runner is the local enforcement and execution layer for emisar. It loads
 the action packs installed on a host, dials out to the control plane, and checks
-every dispatched action against the local pack before it starts a process. It
-has no inbound network listener.
+every dispatched action against the local pack before it starts a process. The
+runner opens an outbound TLS WebSocket and exposes no inbound listener; commands
+return through that established connection.
 
 Run one runner on every host that an agent should be able to inspect or change.
 The runner uses the permissions of its service user; emisar does not turn a
@@ -58,7 +59,8 @@ For every action, the runner:
 4. Applies the host-local action allowlist, denylist, and optional risk ceiling.
 5. Clamps timeout and output limits to the pack's declared bounds.
 6. Executes the pack-authored binary and argv with `os/exec`.
-7. Redacts output before it leaves the host.
+7. Runner output is redacted before leaving the host; Emisar retains the
+   resulting redacted output in audit log.
 8. Appends the attempt to a hash-chained local JSONL journal.
 
 Fixed shell programs may be authored inside a pack when pipes or shell features
@@ -258,11 +260,11 @@ identity without any disk-backed identity state.
 ## Signed dispatch (optional)
 
 A runner can require every action to carry an Ed25519 intent signed by the MCP
-client. The control plane can relay that action but cannot originate it, change
+bridge. The control plane can relay that action but cannot originate it, change
 its exact arguments, or widen its runner set.
 
 Run `emisar signing init`, add the generated CA public key under
-`signing.trusted_cas`, and configure the MCP client with the leaf key and
+`signing.trusted_cas`, and configure the MCP bridge with the leaf key and
 certificate. Setup, scope, rotation, replay protection, and refusal codes are in
 [the signed-dispatch specification](../.agent/kb/specs/signed-dispatch.md).
 

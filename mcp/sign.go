@@ -1,6 +1,6 @@
 package main
 
-// Client-attested dispatch is the bridge's one semantic exception. The
+// Bridge-attested dispatch is the bridge's one semantic exception. The
 // operator's Ed25519 key lives only here, so the portal can relay an authorized
 // run_action intent but cannot manufacture one. HTTPS and the API key already
 // authenticate every ordinary bridge request; reads and other mutations are

@@ -80,8 +80,9 @@ type RunActionMsg struct {
 }
 
 // Attestation is the shared signed envelope binding every execution-intent fact
-// to a real user's MCP call. The control plane only relays it; it holds no leaf
-// or CA private key and cannot forge or alter it. See internal/attest.
+// to a customer-authorized MCP bridge's certified key. The control plane only
+// relays it; it holds no leaf or CA private key and cannot forge or alter it. See
+// internal/attest.
 type Attestation = attest.Envelope
 
 const (

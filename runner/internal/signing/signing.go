@@ -1,10 +1,10 @@
-// Package signing verifies client-attested dispatches on the runner. With
+// Package signing verifies bridge-attested dispatches on the runner. With
 // enforcement on (config signing.enforce_signatures), the runner runs a dispatch
 // only if it carries a valid Ed25519 attestation whose leaf key is vouched for by
 // a still-valid, in-scope certificate from a trusted CA, is inside the freshness
 // window, and uses a nonce not seen before. This is the runner's strongest
-// defense: a compromised control plane can relay a real user's MCP-signed action
-// but can neither forge, redirect, nor replay one.
+// defense: a compromised control plane can relay a customer-authorized bridge's
+// signed action but can neither forge, redirect, nor replay one.
 //
 // The v4 claim binds the exact public runner-reference set the operator selected.
 // A cert's CA-authored scope is a second, coarser ceiling: even a correctly

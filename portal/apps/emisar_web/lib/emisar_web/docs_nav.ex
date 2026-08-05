@@ -272,7 +272,8 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/signed-dispatch",
               icon: "hero-finger-print",
               keywords: "certificate ca leaf signing key",
-              desc: "Make a runner run only actions a real person signed in their MCP client."
+              desc:
+                "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
             }
           ]
         }

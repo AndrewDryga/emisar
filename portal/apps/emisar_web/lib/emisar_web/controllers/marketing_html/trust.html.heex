@@ -49,14 +49,16 @@
              "Account-wide MFA enforcement (TOTP + recovery codes)",
              "Owner / admin / operator / viewer roles, least-privilege by default",
              "Per-user runner scopes — members never see out-of-scope hosts",
-             "Scoped, revocable API keys that auto-rotate before expiry; full session management",
+             "MCP bridge keys are short-lived and rotate themselves.",
+             "Automatic rotation requires an expiring portal-issued MCP key and persistent writable bridge credential storage",
+             "Full session management for browser and API-key access",
              "Agent connect by browser approval — the key is installed, never pasted or on a command line"
            ]},
           {"hero-document-check", "Audit & monitoring", "Audit & SIEM", ~p"/docs/audit-and-siem",
            [
              "Every action: actor, arguments, target host, exit code, redactions",
              "Runner journal: SHA-256 hash-chained JSONL retained on each host",
-             "emisar audit verify reports breaks in the retained runner journal's chain",
+             "emisar audit verify reports breaks in the retained runner journal's chain; it cannot prove that a privileged host operator did not replace or truncate the entire local journal",
              "Portal audit: searchable off-host record of actions and policy decisions",
              "Poll NDJSON into your SIEM with a read-only audit-export token"
            ]},
@@ -75,7 +77,7 @@
              "Typed action contract — the agent can't request undeclared commands",
              "Signed dispatch (Ed25519) — the cloud can relay, never forge",
              "Local admission control — the host has the last word",
-             "Secrets redacted before they ever leave the host",
+             "Known secret patterns redacted before output leaves the host",
              "Content-addressed packs — unrecognized drift blocks dispatch pending review"
            ]}
         ] do %>
@@ -261,7 +263,7 @@
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           Every runner and MCP-bridge release is built by a <strong class="text-zinc-200">public
           GitHub Actions workflow</strong>
-          that publishes <strong class="text-zinc-200">SLSA-3 build provenance</strong>, signed by
+          that publishes <strong class="text-zinc-200">SLSA Build Level 2 provenance</strong>, signed by
           Sigstore and bound to the exact tag and workflow that produced it. Before a binary ever
           runs as <code class="font-mono text-zinc-300">sudo</code>
           on your host, you can prove it came from our source — not a tampered mirror — and that

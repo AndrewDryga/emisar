@@ -20,7 +20,7 @@ import (
 
 // A known pack-backed action must carry the hash the portal authorized. Missing
 // the hash is a malformed dispatch and fails closed; PackRef is optional only
-// because unsigned operator dispatches do not have a client attestation.
+// because unsigned operator dispatches do not have a bridge attestation.
 func TestClient_TrustGate_MissingExpectedHashRefuses(t *testing.T) {
 	conn := newFakeConn()
 	cli := buildClient(t, &queuedDialer{conns: []*fakeConn{conn}})

@@ -320,11 +320,10 @@ done</.docs_code>
         — argv hashes, exit codes, redaction counts, output digests — each line chained to the
         previous by SHA-256.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar audit verify --all</code>
-        walks the chain (including rotated files) and flags a break. Treat it as tamper-<em>evident</em>, not
-        tamper-proof: root on the host can truncate the tail or rewrite lines and re-chain them so
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">verify</code>
-        still passes. The record that can't be forged from the host is the
-        <strong>cloud audit</strong>
+        walks the chain (including rotated files) and flags a break. Verification covers the
+        retained journal or retained suffix; it cannot prove that a privileged host operator did
+        not replace or truncate the entire local journal. The record that cannot be changed from
+        the host is the <strong>cloud audit</strong>
         — it's off-host and append-only.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">

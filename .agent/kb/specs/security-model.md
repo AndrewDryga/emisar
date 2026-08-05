@@ -69,11 +69,12 @@
    start rather than erasing evidence that execution began. Pre-execution trust,
    signature, capacity, and reservation refusals record `dispatch_refused`
    without persisting untrusted arguments. Each entry carries
-   `prev_hash = sha256(previous_line)`, so cutting, reordering, or mutating any
-   line is detected by `emisar audit verify`. The runner only appends to the
-   file. It is meant for on-host forensics; a privileged attacker can still
-   delete or rewrite the entire file.
-13. **Client-attested dispatch (optional).** With `signing.enforce_signatures`
+   `prev_hash = sha256(previous_line)`, so reordering, mutation, or interior
+   deletion within the retained journal is detected by `emisar audit verify`.
+   The runner only appends to the file. Verification cannot prove that a
+   privileged host operator did not replace or truncate the entire local
+   journal; that requires an external anchor such as the off-host cloud audit.
+13. **Bridge-attested dispatch (optional).** With `signing.enforce_signatures`
     on, the runner runs a dispatch only if it carries a valid Ed25519 signature
     over the canonical portal origin, action, immutable pack, digest of the
     exact JSON args, digest of the complete generation-bound runner-ref set,
@@ -82,10 +83,10 @@
     authority. The runner requires exactly one ref with its locally derived
     generation suffix in the signed target set; the certificate's CA-asserted
     scope is a second group/label ceiling. The leaf private key lives only in the
-    operator's MCP client and the CA private key stays offline; the control
-    plane holds neither, so it can relay a user-signed action but never forge,
-    alter, widen its signed targets, replay it on a selected runner, or originate
-    one. Replay state is process-owned and durable: every hot-reloaded verifier
+    customer-authorized MCP bridge and the CA private key stays offline; the
+    control plane holds neither, so it can relay a bridge-signed action but never
+    forge, alter, widen its signed targets, replay it on a selected runner, or
+    originate one. Replay state is process-owned and durable: every hot-reloaded verifier
     shares the same nonce store, so a policy swap cannot forget a nonce consumed
     during reload. The runner advertises enforcement and the cloud then disables
     its own (operator/runbook/API) dispatch to that host. See
@@ -173,12 +174,13 @@ its actions from itself:
   storage write controls and the publication workflow authenticate that
   publisher operationally, not cryptographically. Catalog signing would add an
   independent publisher-identity check for first- or third-party catalogs.
-  (Distinct from *dispatch* signing — client-attested dispatch above, which is
+  (Distinct from *dispatch* signing — bridge-attested dispatch above, which is
   shipped.)
 - Cryptographic signing or external anchoring of the local JSONL chain.
-  The hash chain detects mutation within the retained file, but a privileged
-  attacker can replace the entire file. Cloud audit is the durable fleet
-  record; use WORM-capable storage when stronger on-host guarantees matter.
+  Verification covers the retained journal or retained suffix; it cannot prove
+  that a privileged host operator did not replace or truncate the entire local
+  journal. Cloud audit is the durable fleet record; use WORM-capable storage
+  when stronger on-host guarantees matter.
 
 ## Control-plane and runner boundary
 

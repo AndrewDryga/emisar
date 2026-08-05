@@ -108,7 +108,7 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
   `portal/apps/emisar_web/priv/mcp/api-schemas.json`
 - [security model](specs/security-model.md) — guarantees, trust boundaries,
   threats, and limitations
-- [signed dispatch](specs/signed-dispatch.md) — client-attested execution
+- [signed dispatch](specs/signed-dispatch.md) — bridge-attested execution
   contract, operation, and refusal semantics
 - [runner wire protocol](specs/wire-protocol.md) — portal-runner frames,
   lifecycle, replay, and limits

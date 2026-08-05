@@ -276,7 +276,7 @@ rotate the CA to revoke).`,
 func signingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "signing",
-		Short: "Set up client-attested (signed) dispatch",
+		Short: "Set up bridge-attested (signed) dispatch",
 		Long: `Signed dispatch lets an enforcing runner require a CA-signed certificate on
 every action, so a compromised control plane can relay but never mint a
 dispatch. "signing init" is the one-shot on-ramp; "new-ca" and "new-cert" are
@@ -299,7 +299,7 @@ func signingInitCmd() *cobra.Command {
 		Short: "Set up signed dispatch in one shot (CA + cert + config)",
 		Long: `signing init mints a CA, a leaf keypair, and a certificate in one step and
 prints the full runner config block, the offline CA private key to store, and
-the two MCP env vars. The simplest on-ramp to client-attested dispatch — after
+the two MCP env vars. The simplest on-ramp to bridge-attested dispatch — after
 this, mint fresh certs as they expire with "emisar signing new-cert".`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {

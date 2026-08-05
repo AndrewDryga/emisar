@@ -234,7 +234,7 @@ defmodule Emisar.Audit do
               # terminal event logged long after (from the runner socket) still
               # carries it. Empty → dropped by compact, so non-MCP rows stay lean.
               mcp_client_metadata: mcp_client_metadata(run),
-              # Positive per-run signing evidence for a client-attested (signed
+              # Positive per-run signing evidence for a bridge-attested (signed
               # dispatch) run: that it was signed, the CA + leaf key that vouched
               # for it, and the bridge operation id — so a successful run's
               # signature is provable in the audit and cross-referenceable to a
@@ -291,7 +291,7 @@ defmodule Emisar.Audit do
 
   defp mcp_client_metadata(%Runs.ActionRun{}), do: nil
 
-  # Positive signing evidence for a client-attested run's terminal audit event
+  # Positive signing evidence for a bridge-attested run's terminal audit event
   # (see `run_event_changeset/1`). `attestation` carries the relayed v4 envelope;
   # its `cert` names the CA and leaf key that authorized the dispatch.
   defp signed?(%Runs.ActionRun{attestation: %{"cert" => %{}}}), do: true

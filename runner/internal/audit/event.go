@@ -85,9 +85,10 @@ type RedactionSummary struct {
 //
 // PrevHash is the SHA-256 (hex) of the entire previous serialized line
 // — minus the trailing newline. Together with the JSONL sink's restart
-// logic, this makes the file a tamper-evident hash chain: cutting,
-// reordering, or mutating any line invalidates every entry after it,
-// which `emisar audit verify` will surface.
+// logic, this makes the retained file a tamper-evident hash chain: reordering,
+// mutating, or deleting an interior line invalidates every entry after it.
+// Tail truncation and a consistent whole-file replacement need an external
+// anchor to detect.
 type Event struct {
 	PrevHash   string             `json:"prev_hash,omitempty"`
 	EventID    string             `json:"event_id"`

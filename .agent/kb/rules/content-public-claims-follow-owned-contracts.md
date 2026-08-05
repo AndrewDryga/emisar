@@ -13,6 +13,21 @@ controls, name the layer and state only what that layer proves.
 - Portal audit records and the runner's host-local journal are separate
   evidence layers. Hash-chain verification proves continuity of the retained
   journal; it does not prove that host root preserved every original record.
+- Outbound runner connectivity means the runner establishes the TLS WebSocket
+  and exposes no inbound listener. Commands still return through that established
+  connection; never turn connection direction into a claim that no command
+  reaches the host.
+- Signed dispatch attributes a frame to the customer-authorized MCP bridge and
+  its locally held signing key. A person provisions the trust chain but does not
+  personally sign every dispatch frame.
+- Runner output claims name runner-side pattern redaction before egress and do
+  not promise detection of novel secret shapes. Run history retains bounded
+  redacted output; Portal audit events retain decision/execution metadata and
+  redaction counts; the host journal retains bounded previews plus full-stream
+  digests. Never collapse those stores into one evidence layer.
+- Supply-chain levels follow the actual builder isolation. Direct GitHub
+  artifact attestations are SLSA Build Level 2; claim Level 3 only after the
+  release uses a hardened reusable builder that meets that level's contract.
 
 ## Why
 
@@ -50,4 +65,5 @@ Marketing tests pin the pricing row to the billing contract, derive the home
 page count from the MCP schema registry, and require the Trust Center to name
 both audit layers. When one of these contracts changes, sweep public templates,
 structured data, docs, runbooks, and policy pages for the old count,
-entitlement, required certification lane, or unqualified claim.
+entitlement, required certification lane, unqualified connectivity or signing
+claim, raw-output wording, or unsupported supply-chain level.

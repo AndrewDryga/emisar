@@ -39,8 +39,8 @@
           The three pieces.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          The runner only ever connects outward, the way a browser does,
-          so there's no open port and nothing on the internet can reach into your hosts.
+          The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands
+          return through that established connection.
         </p>
       </div>
 

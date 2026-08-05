@@ -296,7 +296,7 @@ defmodule Emisar.AuditTest do
       refute Map.has_key?(payload, :operation_id)
     end
 
-    test "carries positive signing evidence for a client-attested run" do
+    test "carries positive signing evidence for a bridge-attested run" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 

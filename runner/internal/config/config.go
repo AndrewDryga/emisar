@@ -30,11 +30,12 @@ type Config struct {
 	Redaction Redaction `yaml:"redaction"`
 }
 
-// Signing is the client-attested-dispatch gate: the strongest defense against
+// Signing is the bridge-attested-dispatch gate: the strongest defense against
 // a compromised control plane. When enforce_signatures is on, the runner runs a
 // dispatch ONLY if it carries a valid Ed25519 attestation whose leaf key is
 // vouched for by a certificate signed by one of the trusted CAs — so the cloud
-// can relay a real user's MCP-signed action but can never originate one itself.
+// can relay a customer-authorized bridge's signed action but can never originate
+// one itself.
 // The runner ALSO advertises this to the cloud, which then disables its own
 // (operator/runbook) dispatch to this runner.
 //
@@ -247,7 +248,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// validateSigning checks the client-attested-dispatch config. enforce_signatures
+// validateSigning checks the bridge-attested-dispatch config. enforce_signatures
 // with no trusted_cas is a footgun — the runner would refuse EVERY dispatch — so
 // it's rejected. CA ids must be present and unique; the public-key bytes are
 // parsed and length-checked when the verifier is built at connect.

@@ -123,7 +123,7 @@ defmodule Emisar.Fixtures.Runs do
   end
 
   @doc """
-  Builds one client-signed v4 attestation for a dispatch and returns
+  Builds one bridge-signed v4 attestation for a dispatch and returns
   `%{header: encoded, envelope: normalized, attestation: validated}` — the
   `Emisar-Attestation` header a signed MCP call sends, the envelope the portal
   persists and relays, and the validated value dispatch attrs carry.

@@ -1,5 +1,5 @@
 // Package attest defines the canonical encoding of a dispatch attestation —
-// the exact bytes the MCP client signs and the runner verifies. The MCP holds a
+// the exact bytes the MCP bridge signs and the runner verifies. The bridge holds a
 // certified Ed25519 leaf key; the runner trusts the customer's CA public key in
 // local config. The control plane only RELAYS the attestation: it can neither
 // forge a signature nor alter its action, pack, exact args, public runner refs,
@@ -37,9 +37,10 @@ const (
 	MaxRunnerRefBytes = 113
 )
 
-// Claim is the set of dispatch facts an attestation binds. A signature over
-// these proves a real user authorized THIS action from THIS portal with THESE
-// exact args for THESE runner references at THIS time.
+// Claim is the set of dispatch facts an attestation binds. A valid signature
+// proves a customer-authorized MCP bridge used its certified key to bind THIS
+// action from THIS portal with THESE exact args for THESE runner references at
+// THIS time.
 type Claim struct {
 	ActionID     string
 	PackRef      string

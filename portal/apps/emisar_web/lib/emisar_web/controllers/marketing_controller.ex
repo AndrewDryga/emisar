@@ -28,7 +28,7 @@ defmodule EmisarWeb.MarketingController do
     {"/support", :support, :support, "Support",
      "Get help with emisar setup, runners, MCP connections, billing, and account access. Contact support or report a security issue through the right channel."},
     {"/privacy", :privacy, :privacy, "Privacy Policy",
-     "How emisar handles your data: what the control plane stores (account info, runner metadata, redacted audit events), what it never sees (raw secrets, full card numbers), where it lives, retention windows, and your export/delete rights."},
+     "How emisar handles your data: what the control plane stores, how configured patterns redact runner output, what it never sees (full card numbers), where data lives, retention windows, and your export/delete rights."},
     {"/terms", :terms, :terms, "Terms of Service",
      "The terms for using emisar — the control plane that gives AI agents and humans approved infrastructure actions instead of SSH. Plans and billing, acceptable use, confidentiality, disclaimers, and account terms."},
     {"/dpa", :dpa, :dpa, "Data Processing Addendum",
@@ -53,7 +53,7 @@ defmodule EmisarWeb.MarketingController do
      "The emisar trust boundary: pre-approved actions, server-side re-validation, searchable audit, a hash-chained runner journal, and redaction before egress."},
     {"/docs/signed-dispatch", :docs_signed_dispatch, :docs_signed_dispatch,
      "Signed dispatch — a CA for runner actions, set up and rotated",
-     "Make a runner execute only actions a real person signed in their MCP client. An offline Ed25519 CA issues short-lived, scoped certificates; a runner trusts the CA, not every key — so onboarding, rotation, and revocation never touch the control plane."},
+     "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key. An offline Ed25519 CA issues short-lived, scoped certificates; a runner trusts the CA, not every key — so onboarding, rotation, and revocation never touch the control plane."},
     {"/use-cases/csi-data-loss", :usecase_csi_data_loss, :usecase_csi_data_loss,
      "Case study: a CSI driver wiped 33h of metrics — contained via emisar",
      "A real incident: democratic-csi ran mkfs over a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. An agent on emisar investigated through declared actions, stopped the bleed behind one approval, and landed the durable fix as reviewable infra — a guard that refuses to trust the driver, after the obvious one-line setting turned out to be a no-op."},
@@ -180,7 +180,7 @@ defmodule EmisarWeb.MarketingController do
     {"Can I self-host the control plane?",
      "The current product uses the hosted emisar control plane. The repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Contact us if that boundary is a requirement."},
     {"What about secrets?",
-     "The runner runs a redaction pipeline on every stdout/stderr stream before forwarding. Patterns are declared per-action; sane defaults catch AWS keys, JWTs, and bearer tokens. The cloud receives only the redacted output stream — never the raw bytes."}
+     "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log. Patterns are declared per-action; sane defaults catch AWS keys, JWTs, and bearer tokens."}
   ]
 
   # The home page has bespoke JSON-LD; keep it as its own def. Every
@@ -246,7 +246,7 @@ defmodule EmisarWeb.MarketingController do
     {"What counts as a \"runner\"?",
      "One installation of the emisar binary on one host — VM, container, or bare metal. Run as many runners as your plan allows. Human users are unlimited on Team and Enterprise."},
     {"Do you store the output of my commands?",
-     "We store metadata (who, when, which action, exit code) and a configurable slice of stdout/stderr for the audit log. Output is redacted on the runner before anything is forwarded — 20 built-in patterns plus your own per-action rules — so the control plane stores only the redacted stream, never the raw bytes."},
+     "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log. The audit log also stores who, when, which action, and the exit code. Redaction uses 20 built-in patterns plus your own per-action rules."},
     {"How does billing work?",
      "Paid plans are billed per runner through Paddle, our Merchant of Record. You get monthly invoices, and Paddle handles sales tax and VAT. We never see or store full card numbers."},
     {"Can I self-host?",

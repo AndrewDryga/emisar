@@ -1,6 +1,6 @@
 defmodule Emisar.Runs.Attestation do
   @moduledoc """
-  The bounded client-signed `run_action` envelope, bound to one exact dispatch.
+  The bounded bridge-signed `run_action` envelope, bound to one exact dispatch.
 
   A validated value is the only thing that can satisfy signature-required
   dispatch or become signed audit state, so the domain never has to trust that
@@ -83,7 +83,7 @@ defmodule Emisar.Runs.Attestation do
   end
 
   # A duplicate key anywhere makes the signed claim ambiguous — one reader takes
-  # the field the client signed while another takes the one an attacker
+  # the field the bridge signed while another takes the one an attacker
   # appended. The ordered decode keeps every pair, so a key set that shrinks
   # when deduplicated IS the duplicate, at any depth.
   defp decode_unambiguous(raw) do

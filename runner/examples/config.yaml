@@ -59,14 +59,14 @@ execution: {}
 #     - "linux.systemctl_restart"
 #   max_risk: medium         # read-only demo: hide/refuse high + critical
 
-# Signing is the client-attested-dispatch gate — the strongest defense
+# Signing is the bridge-attested-dispatch gate — the strongest defense
 # against a compromised control plane. With enforce_signatures on, the
 # runner runs a dispatch ONLY if it carries a valid Ed25519 attestation whose
 # leaf key is vouched for by a still-valid, in-scope certificate from one of
 # the trusted CAs below, is inside the freshness window, and uses a nonce it
-# hasn't seen. The cloud can RELAY a real user's MCP-signed action but can
-# never originate one. The runner advertises enforcement to the cloud, which
-# then disables its own (operator/runbook) dispatch here.
+# hasn't seen. The cloud can RELAY a customer-authorized bridge's signed action
+# but can never originate one. The runner advertises enforcement to the cloud,
+# which then disables its own (operator/runbook) dispatch here.
 #
 # The trust boundary is the CA: the runner trusts a few offline CA public keys,
 # not every leaf key, so onboarding an operator is one signature and zero
@@ -76,7 +76,7 @@ execution: {}
 #
 # Bootstrap with `emisar signing init` (offline — it mints a CA, a leaf, and a
 # cert, prints this trusted_cas block, the CA PRIVATE key to keep offline, and
-# the MCP client's EMISAR_SIGNING_KEY + EMISAR_SIGNING_CERT). The CA private key
+# the MCP bridge's EMISAR_SIGNING_KEY + EMISAR_SIGNING_CERT). The CA private key
 # stays offline and signs new operator certs as they expire
 # (`emisar signing new-cert`).
 #

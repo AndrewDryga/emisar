@@ -115,9 +115,10 @@
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar/events.jsonl</code>
             and its rotated siblings off the host, and run
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar audit verify --all</code>
-            before you touch anything: it re-derives the hash chain and names the first break. The
-            chain proves the file was not edited in place; it cannot prove a privileged attacker
-            did not replace the whole file, which is exactly why the cloud record matters too.
+            before you touch anything: it re-derives the hash chain and names the first break.
+            Verification covers the retained journal or retained suffix; it cannot prove that a
+            privileged host operator did not replace or truncate the entire local journal, which
+            is exactly why the cloud record matters too.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

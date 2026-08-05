@@ -812,8 +812,8 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 		"action_id", m.ActionID,
 	)
 
-	// Authenticity first (did a real user sign this dispatch?), then pack
-	// integrity (do the on-disk bytes still match what was trusted?).
+	// Authenticity first (did a customer-authorized bridge sign this dispatch?),
+	// then pack integrity (do the on-disk bytes still match what was trusted?).
 	if !c.passesSignatureGate(ctx, s, m) {
 		return
 	}
@@ -930,7 +930,7 @@ func (c *Client) finishRun(s *runState, result ActionResultMsg) {
 	c.signalSend()
 }
 
-// passesSignatureGate verifies the client attestation when the operator turned
+// passesSignatureGate verifies the bridge attestation when the operator turned
 // on enforcement. A nil (or non-enforcing) verifier always passes. On refusal
 // it logs the reason and
 // enqueues a terminal `signature_invalid` result the cloud records as a refused

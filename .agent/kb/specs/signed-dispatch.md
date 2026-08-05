@@ -1,9 +1,9 @@
-# Signed dispatch (client-attested dispatch)
+# Signed dispatch (bridge-attested dispatch)
 
 A runner can be told to **refuse the control plane's authority**: with signing
 enforced, it executes an action only if the dispatch carries a valid Ed25519
-signature produced by an authorized MCP client — and that signature is vouched
-for by a **certificate** issued by a trusted, offline certificate
+signature produced by a customer-authorized MCP bridge — and that signature is
+vouched for by a **certificate** issued by a trusted, offline certificate
 authority. The control plane **relays** the signature and the certificate; it
 holds no private key, so it cannot forge or alter one, widen its signed runner
 set, or replay it on a selected runner. It cannot originate a run at all. The
@@ -32,7 +32,7 @@ short-lived certificates that vouch for each operator's signing key. So:
 
 ## When to use it
 
-- A high-trust host where "this came from a customer-authorized MCP client"
+- A high-trust host where "this came from a customer-authorized MCP bridge"
   must be cryptographically true, not merely asserted by the control plane.
 - **Not** for runners you drive from the portal Run button or from runbooks:
   those stop working against an enforcing runner (by design).
@@ -66,7 +66,7 @@ The v4 signature binds the **exact runner set** with refs shaped as
 `name~first32hex(sha256(external_id))`. The runner independently verifies the
 generation suffix against its local external ID; the name remains portal-owned
 display context. A compromised relay cannot add another runner generation after
-the client signs. The certificate's scope is an independent, coarser ceiling
+the bridge signs. The certificate's scope is an independent, coarser ceiling
 asserted by the offline CA and matched against each runner's local
 `group`/`labels`. A scoped certificate
 (`group=prod`) still cannot run outside that scope; an empty-scope certificate
@@ -103,7 +103,7 @@ the CA **private** key to store offline, and the two MCP env vars.
    a runner and never the control plane. You re-sign certificates with it as they
    expire.
 
-3. **Give the MCP client the two env vars** (see [`mcp/README.md`](../../../mcp/README.md)) — never
+3. **Give the MCP bridge the two env vars** (see [`mcp/README.md`](../../../mcp/README.md)) — never
    on the portal, never in version control:
 
    ```sh
@@ -225,7 +225,7 @@ cause. The runner's refusal codes:
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| `signature_required` | The dispatch carried no signature or no certificate (it came from the portal/runbook/API, or the MCP client isn't configured to sign). | Run it from an MCP client with `EMISAR_SIGNING_KEY` **and** `EMISAR_SIGNING_CERT` set. |
+| `signature_required` | The dispatch carried no signature or no certificate (it came from the portal/runbook/API, or the MCP bridge isn't configured to sign). | Run it through an MCP bridge with `EMISAR_SIGNING_KEY` **and** `EMISAR_SIGNING_CERT` set. |
 | `attestation_version` | The envelope is not the supported `emisar-attestation-v4` format. | Upgrade the MCP bridge and submit a fresh call. |
 | `attestation_tool` | The signed claim is not for the literal `run_action` tool. | Upgrade or repair the MCP bridge; do not retry the altered claim. |
 | `portal_mismatch` | The signed portal origin differs from the runner's configured control-plane origin. | Point the client and runner at the same canonical control-plane origin and submit a fresh call. |

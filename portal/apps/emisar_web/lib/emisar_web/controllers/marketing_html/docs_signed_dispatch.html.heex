@@ -20,17 +20,16 @@
       <.docs_header current="signed-dispatch">
         <:dek>
           By default a runner trusts the control plane to tell it what to run. Signed dispatch
-          removes that trust: with enforcement on, a runner executes an action only when it carries a
-          valid Ed25519 signature produced by a customer-authorized MCP client. The control plane
-          relays that signature — it holds no private key, so it can't forge or alter a signed
-          action, replay it on a selected runner, or originate a run. The signature, not the
-          cloud, is the authority.
+          removes that trust. {"A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."} With enforcement on, the runner validates that signature before execution. The control
+          plane relays it — it holds no private key, so it can't forge or alter a signed action,
+          replay it on a selected runner, or originate a run. The signature, not the cloud, is the
+          authority.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         It's opt-in per runner and a deliberate trade: while it's on, the portal Run button,
         runbooks, and API keys can't dispatch to that host — only a signed MCP call
-        runs. Turn it on where "this came from a customer-authorized MCP client" must be
+        runs. Turn it on where "this came from a customer-authorized MCP bridge" must be
         cryptographically true, not merely asserted by the control plane.
       </p>
 
@@ -40,7 +39,7 @@
       </p>
       <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
         <li>
-          <strong>The MCP client signs and presents its cert.</strong>
+          <strong>The MCP bridge signs and presents its cert.</strong>
           For <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>,
           the bridge builds a fixed v4 claim over the canonical portal origin, action id, immutable
           pack ref, digest of the exact JSON argument bytes, digest of the complete sorted runner
@@ -116,14 +115,14 @@ signing:
       public_key: &lt;CA public key from signing init&gt;</.docs_code>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">3. Give the leaf key + cert to your MCP client</strong>
+        <strong class="text-zinc-200">3. Give the leaf key + cert to your MCP bridge</strong>
         as environment variables — never on the portal, never in version control
         (see <.link
           navigate={~p"/docs/connect-a-cli-client"}
           class="text-brand-400 hover:text-brand-300"
         >connect a CLI agent</.link>). Store the CA private key offline; you re-sign certs with it as they expire.
       </p>
-      <.docs_code phx-no-format label="config"><span class="text-zinc-500"># on the machine running your MCP client — not the portal, not git</span>
+      <.docs_code phx-no-format label="config"><span class="text-zinc-500"># on the machine running your MCP bridge — not the portal, not git</span>
 EMISAR_SIGNING_KEY=&lt;leaf seed from signing init&gt;
 EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
 
@@ -223,7 +222,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           mints a new leaf + cert under the existing CA.
         </li>
         <li>
-          Switch your MCP client to the new <code>EMISAR_SIGNING_KEY</code>
+          Switch your MCP bridge to the new <code>EMISAR_SIGNING_KEY</code>
           and <code>EMISAR_SIGNING_CERT</code>. No runner reload — the CA they already trust vouches
           for the new cert.
         </li>
@@ -366,7 +365,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signature_required</code>
             — the dispatch carried no signed certificate (it came from the portal, a runbook, or an
-            API key, or the MCP client isn't configured to sign). Run it from a client with
+            API key, or the MCP bridge isn't configured to sign). Run it through a bridge with
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
             and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
             set.

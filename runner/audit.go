@@ -18,9 +18,9 @@ func auditCmd() *cobra.Command {
 		Use:   "audit",
 		Short: "Audit trail tools (chain verification, etc.)",
 		Long: `The local JSONL audit trail is a SHA-256-chained sequence: each event
-carries the hash of the previous serialized line. Tampering with any
-line invalidates every subsequent event, which 'emisar audit verify'
-detects.`,
+carries the hash of the previous serialized line. Verification covers the
+retained journal or retained suffix; it cannot prove that a privileged host
+operator did not replace or truncate the entire local journal.`,
 		Args: cobra.NoArgs,
 		RunE: showHelp,
 	}

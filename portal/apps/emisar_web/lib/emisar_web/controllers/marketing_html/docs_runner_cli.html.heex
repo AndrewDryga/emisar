@@ -364,9 +364,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       </p>
       <.docs_callout kind={:note} title="Tamper-evident, not tamper-proof.">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
-        proves the on-host journal hasn't been edited in place, but root on the host can truncate the
-        tail and re-chain it. The record that can't be forged from the host is the off-host cloud
-        audit — carry both into your SIEM and cross-reference them. See <.link
+        verifies continuity only within the retained journal or retained suffix; it cannot prove
+        that a privileged host operator did not replace or truncate the entire local journal. The
+        record that cannot be changed from the host is the off-host cloud audit — carry both into
+        your SIEM and cross-reference them. See <.link
           navigate={~p"/docs/audit-and-siem"}
           class="text-brand-400 hover:text-brand-300"
         >Audit &amp; SIEM</.link>.
@@ -375,7 +376,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <.docs_h2 id="signing">Signed-dispatch keys</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing</code>
-        sets up client-attested dispatch: an enforcing runner then requires a CA-signed certificate
+        sets up bridge-attested dispatch: an enforcing runner then requires a CA-signed certificate
         on every action, so a compromised control plane can relay a dispatch but never mint one.
         Everything here is offline — keys are printed to your terminal and sent nowhere.
       </p>

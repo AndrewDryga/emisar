@@ -322,11 +322,12 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Audit + runner journal</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Every input, output, exit code, and redaction is recorded. On the host it's a
-            hash-chained log — change one line and
+            Portal audit records the actor, decision, targets, exit code, and redaction counts. Run
+            history retains bounded redacted output; the separate host journal keeps bounded
+            previews and complete-stream digests.
             <code class="text-zinc-300">emisar audit verify</code>
-            catches it. It's mirrored to the searchable audit in the portal, which your SIEM can
-            poll.
+            reports breaks in the retained host chain, but cannot prove that a privileged host
+            operator did not replace or truncate the entire local journal.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
             <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-400">
@@ -436,7 +437,7 @@
                 {"Pack drift blocks dispatch", "yes", "no", "no"},
                 {"Risk-tier policy + overrides", "yes", "no", "maybe"},
                 {"Approvals + standing grants", "yes", "no", "no"},
-                {"Signed dispatch (client-attested)", "yes", "yes", "no"},
+                {"Signed dispatch (bridge-attested)", "yes", "yes", "no"},
                 {"Per-user runner scopes", "yes", "no", "maybe"},
                 {"No inbound port on hosts", "yes", "no", "maybe"},
                 {"Audit trail; SIEM export on Team+", "yes", "no", "maybe"},

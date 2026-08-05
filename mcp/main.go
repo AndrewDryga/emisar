@@ -5,10 +5,10 @@
 // The bridge owns transport correctness: bounded newline framing, request-id
 // correlation, Streamable HTTP headers, and validation that stdout contains
 // only valid MCP messages. All tool descriptors, content blocks, and synthetic
-// tools are produced by the portal. The one semantic exception is client-attested
+// tools are produced by the portal. The one semantic exception is bridge-attested
 // dispatch (sign.go): the bridge recognizes only `run_action` and carries its
 // Ed25519 intent signature in a private HTTP header, because the signing key
-// must stay client-side and never reach the control plane.
+// must stay in the bridge and never reach the control plane.
 //
 // Configure your client to launch:
 //
@@ -316,7 +316,7 @@ func main() {
 		fatalln(err)
 	}
 
-	// Optional client-attested dispatch: when a signing key is configured, the
+	// Optional bridge-attested dispatch: when a signing key is configured, the
 	// bridge signs only run_action intent so an enforcing runner will run it. The
 	// private key never leaves this process.
 	sign, err := newSigner(os.Getenv("EMISAR_SIGNING_KEY"), os.Getenv("EMISAR_SIGNING_CERT"))

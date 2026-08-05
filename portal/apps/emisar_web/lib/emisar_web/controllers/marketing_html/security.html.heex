@@ -48,7 +48,7 @@
         </.link>
       </div>
       <div class="mt-3 flex flex-wrap gap-2">
-        <%= for chip <- ["No inbound port on hosts", "Secrets redacted before egress", "No raw shell, ever"] do %>
+        <%= for chip <- ["No inbound port on hosts", "Pattern redaction before egress", "No raw shell, ever"] do %>
           <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-300">
             <.icon name="hero-check" class="h-3.5 w-3.5 text-brand-400" />{chip}
           </span>
@@ -172,8 +172,9 @@
               </span>
             </div>
             <p class="mt-2.5 text-sm leading-relaxed text-zinc-400">
-              Every input, output, exit code, and redaction — a SHA-256-chained JSONL journal on the
-              host, mirrored to the searchable cloud audit your SIEM can pull from.
+              Portal audit records the decision and execution metadata. Run history retains bounded
+              redacted output; the separate host journal keeps bounded previews and complete-stream
+              digests in a SHA-256 chain.
             </p>
           </div>
         </div>
@@ -182,7 +183,7 @@
           The dashed line is optional and per runner: with <.link
             navigate={~p"/docs/signed-dispatch"}
             class="font-medium text-brand-400 hover:text-brand-300"
-          >signed dispatch</.link>, the runner trusts the client's signature on the MCP call, not
+          >signed dispatch</.link>, the runner trusts the bridge's signature on the MCP call, not
           the control plane above it — a compromised cloud can relay it, never forge it.
         </p>
       </div>
@@ -249,7 +250,7 @@
           caption="Only now does the runner execute: exit 0, output scrubbed on the runner before it left the host."
           click="91.4,5.7"
           spot="3.1,82.9,93.8,10.9"
-          note="Recorded byte-for-byte"
+          note="Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log."
         />
         <:frame
           src="/images/screenshots/loop/audit-trail.webp"
@@ -314,8 +315,9 @@
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-chained audit journal</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
             Every action is recorded to an append-only JSONL audit on the host, with each
-            line carrying the SHA-256 of the previous entry. Any edited line or break in the
-            chain is caught by <code class="text-zinc-300">emisar audit verify</code>.
+            line carrying the SHA-256 of the previous entry. Verification covers the retained
+            journal or retained suffix; it cannot prove that a privileged host operator did not
+            replace or truncate the entire local journal.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -334,13 +336,15 @@
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
             <.icon name="hero-eye-slash" class="h-6 w-6" />
           </div>
-          <h3 class="mt-6 text-xl font-semibold text-zinc-50">Secrets redacted before egress</h3>
+          <h3 class="mt-6 text-xl font-semibold text-zinc-50">Pattern redaction before egress</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
             20 built-in patterns — AWS keys, common provider tokens (GitHub, Slack, Stripe,
             OpenAI, …), JWTs, bearer and basic auth, private-key blocks, and secret assignments —
             plus your own per-action rules scrub stdout and stderr on the runner before anything is
             forwarded. The control plane receives only the redacted stream; per-rule hit counts are
-            recorded so you can see what was masked.
+            recorded so you can see what was masked. A novel secret shape can still pass a
+            pattern-based filter, so this is defense in depth rather than a guarantee that every
+            secret is recognized.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -383,9 +387,9 @@
           <.icon name="hero-key" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">Governed LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
-            Runner and MCP keys are
-            short-lived and rotate themselves before they expire, and both belong to a member —
-            revoke the member, revoke their keys.
+            MCP bridge keys are short-lived and rotate themselves. Automatic rotation requires
+            an expiring portal-issued key and persistent writable credential storage. Runner
+            enrollment keys are exchanged for a separately revocable per-runner token.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -446,11 +450,9 @@
           Signed dispatch — the cloud can't act for you
         </h3>
         <p class="mt-2 text-sm leading-6 text-zinc-400">
-          A runner can be set to refuse the control plane's authority entirely: it runs only an
-          action a real person signed in their own MCP client, with an Ed25519 key that never
-          leaves their machine. A fully compromised emisar control plane can relay that signed
-          request — it can never forge, alter, replay, or originate one. The signature, not the
-          cloud, is the authority. Opt-in per runner; a runner can only make itself stricter.
+          A runner can be set to refuse the control plane's authority entirely. {"A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."} A fully compromised emisar control plane can relay that signed request — it can
+          never forge, alter, replay, or originate one. The signature, not the cloud, is the
+          authority. Opt-in per runner; a runner can only make itself stricter.
         </p>
         <p class="mt-3 text-sm">
           <.link

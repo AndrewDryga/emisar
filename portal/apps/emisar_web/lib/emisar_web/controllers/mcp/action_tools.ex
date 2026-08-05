@@ -125,7 +125,7 @@ defmodule EmisarWeb.MCP.ActionTools do
   # Runs owns identity, replay, target resolution, contract validation, and the
   # envelope's binding. The boundary contributes only what it alone knows: the
   # exact request bytes, the raw signature header, and the actual request origin
-  # the client signed over.
+  # the bridge signed over.
   defp action_facts(conn, input, operation_id, attestation_headers) do
     %{
       operation_id: operation_id,

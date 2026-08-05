@@ -390,7 +390,7 @@ defmodule EmisarWeb.Changelog do
       details: [
         {"Runner",
          [
-           "Cancelled process trees are contained, ambiguous paths and inexact numeric limits are rejected, and secrets stay redacted across log rotation."
+           "Cancelled process trees are contained, ambiguous paths and inexact numeric limits are rejected, and pattern-matched values stay redacted across log rotation."
          ]},
         {"MCP",
          [
@@ -636,10 +636,10 @@ defmodule EmisarWeb.Changelog do
     %{
       date: ~D[2026-06-17],
       slug: "signed-dispatch",
-      title: "Client-attested signed dispatch",
+      title: "Bridge-attested signed dispatch",
       tag: "v0.11.0",
       summary:
-        "End-to-end Ed25519 attestation on every dispatch: the MCP client signs each tools/call, the portal relays the signature untouched, and an enforcing runner verifies it before executing — so a compromised control plane can relay a request but never forge one.",
+        "End-to-end Ed25519 attestation on every dispatch: the MCP bridge signs each run_action frame, the portal relays the signature untouched, and an enforcing runner verifies it before executing — so a compromised control plane can relay a request but never forge one.",
       details: [
         {"Runner",
          [

@@ -69,7 +69,7 @@ entry:
 | `EMISAR_CLIENT` | no | Client label recorded with audit attribution |
 | `EMISAR_CLIENT_METADATA` | no | Self-reported JSON metadata for audit/SIEM correlation; at most 10 string keys with string or number values |
 | `EMISAR_ALLOW_INSECURE` | no | Set to `1` only for an intentional non-loopback HTTP development endpoint; loopback HTTP already works |
-| `EMISAR_SIGNING_KEY` | no | Ed25519 leaf private-key seed used for client-attested dispatch |
+| `EMISAR_SIGNING_KEY` | no | Ed25519 leaf private-key seed used for bridge-attested dispatch |
 | `EMISAR_SIGNING_CERT` | no | CA-signed certificate for `EMISAR_SIGNING_KEY`; required with it |
 
 Client metadata is untrusted enrichment. It is never used for authorization,
@@ -166,7 +166,7 @@ but does not offer automatic rotation. Containers should persist `/config`.
 OAuth tokens, arbitrary Bearer tokens, non-expiring quick-connect keys, and
 audit-export tokens bypass local rotation state.
 
-## Client-attested dispatch
+## Bridge-attested dispatch
 
 `EMISAR_SIGNING_KEY` and `EMISAR_SIGNING_CERT` let the bridge sign the exact
 `run_action` intent: control-plane origin, action, immutable pack, arguments,

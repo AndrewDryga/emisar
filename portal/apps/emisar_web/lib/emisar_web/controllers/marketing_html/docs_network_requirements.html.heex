@@ -109,11 +109,11 @@
                "NTP",
                "Certificate validity — and signed-dispatch freshness — is judged against this clock",
                "Continuously"},
-              {"Anything reaching the runner host",
-               "Inbound",
+              {"Inbound runner listener",
+               "None",
                "No listener, no port, no NAT rule",
                "—",
-               "The runner only ever dials out; nothing calls it",
+               "The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection.",
                "Never"}
             ] do %>
               <tr>

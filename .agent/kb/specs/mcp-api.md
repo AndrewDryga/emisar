@@ -54,7 +54,7 @@ trusted actions and execute them through the same governed path every time.
 - Predicting a policy result before the exact action, pack, arguments, targets,
   and reason are known.
 - Listing public-registry packs that no in-scope runner has observed.
-- Client-signed cloud-expanded runbook execution. That needs a separate frozen
+- Bridge-signed cloud-expanded runbook execution. That needs a separate frozen
   plan attestation and is not smuggled into the action attestation.
 
 ## Protocol extensions
@@ -811,7 +811,7 @@ the message boundary. The private `Emisar-Operation-Id` header carries the
 bridge-generated retry identity for mutations. When a native HTTP client omits
 that private header, the portal deterministically derives the identity from the
 exact request body and authenticated credential lineage. For `run_action`, the private
-`Emisar-Attestation` header additionally carries the bounded client-signed
+`Emisar-Attestation` header additionally carries the bounded bridge-signed
 execution claim that the portal relays to the runner. The operation ID is
 authenticated by HTTPS and the API key for ordinary mutations and is also bound
 inside the `run_action` attestation.
@@ -1998,7 +1998,7 @@ production actions.
   delivery retries. The bridge reuses it for retries of one live tool call;
   `get_operation` covers action execution, published or explicitly allowed
   draft execution, and draft authoring without inventing resources.
-- For signed actions, `reason` is part of the client-signed execution intent; it
+- For signed actions, `reason` is part of the bridge-signed execution intent; it
   remains agent-supplied audit context, not proof of human intent.
 - Free-form metadata and output never become policy inputs.
 

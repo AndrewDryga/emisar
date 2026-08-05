@@ -74,7 +74,7 @@ env var can be unset after the first successful connect.`,
 				}
 			}
 
-			// Client-attested dispatch: build the verifier from config. When
+			// Bridge-attested dispatch: build the verifier from config. When
 			// enforcing, the runner advertises it (cloud disables its own
 			// dispatch) and verifies a signature on every run. SIGHUP rebuilds
 			// it so a rotated/revoked key takes effect without a restart.

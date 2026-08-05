@@ -164,7 +164,7 @@ func TestValidate_RejectsNegativeAuditRotationLimits(t *testing.T) {
 	}
 }
 
-// TestValidate_Signing covers the client-attested-dispatch config gate
+// TestValidate_Signing covers the bridge-attested-dispatch config gate
 // (config.go validateSigning):
 //
 //	-: enforce_signatures with no trusted_cas is a footgun (the

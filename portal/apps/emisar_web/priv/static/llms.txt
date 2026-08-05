@@ -25,7 +25,7 @@ Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Lo
 ## Security
 
 - [Security model](https://emisar.dev/docs/security-model): Review the guarantees, trust boundaries, threats, and limitations.
-- [Signed dispatch](https://emisar.dev/docs/signed-dispatch): Require client-signed action intent with scoped Ed25519 certificates.
+- [Signed dispatch](https://emisar.dev/docs/signed-dispatch): Require bridge-signed action intent with scoped Ed25519 certificates.
 - [Trust Center](https://emisar.dev/trust): Review infrastructure, delivery, assurance, privacy, and compliance controls.
 
 ## Optional

@@ -137,8 +137,7 @@
     request is checked again before dispatch.
   </p>
   <p>
-    The runner opens an outbound TLS WebSocket to the control plane and listens on no inbound port.
-    An eligible dispatch arrives over that connection.
+    {"The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection."}
   </p>
   <p>
     The runner does not rely on the control plane's validation. It looks up the action locally,
@@ -260,8 +259,8 @@
     policy, and send eligible work.
   </p>
   <p>
-    Signed dispatch is optional. The operator's MCP bridge signs the exact action, pack, arguments,
-    targets, reason, operation, nonce, and time with a key the cloud does not hold. An enforcing
+    Signed dispatch is optional. {"A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."} The bridge binds the exact action, pack, arguments, targets,
+    reason, operation, nonce, and time with a key the cloud does not hold. An enforcing
     runner verifies that signature before execution.
   </p>
   <p>
