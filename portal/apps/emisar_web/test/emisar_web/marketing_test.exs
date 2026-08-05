@@ -1585,7 +1585,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Last sync"
     end
 
-    test "authentication docs expose review dates and source feedback", %{conn: conn} do
+    test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
       for route <- ~w(
             /docs/authentication
             /docs/teams-and-access
@@ -1595,10 +1595,8 @@ defmodule EmisarWeb.MarketingTest do
         html = conn |> get(route) |> html_response(200)
 
         assert html =~ "Last reviewed July 31, 2026", "missing review date on #{route}"
-        assert html =~ "Suggest a change", "missing feedback link on #{route}"
-
-        assert html =~ "github.com/andrewdryga/emisar/edit/main/",
-               "wrong feedback link on #{route}"
+        refute html =~ "Suggest a change", "dead edit action returned on #{route}"
+        refute html =~ "github.com/andrewdryga/emisar/edit/main/"
       end
     end
 
@@ -1617,10 +1615,7 @@ defmodule EmisarWeb.MarketingTest do
         html = conn |> get(route) |> html_response(200)
 
         assert html =~ sentence, "missing or drifted evidence on #{route}"
-        assert html =~ "Suggest a change", "missing feedback link on #{route}"
-
-        assert html =~ "github.com/andrewdryga/emisar/edit/main/",
-               "wrong feedback link on #{route}"
+        assert html =~ "Last reviewed", "missing review provenance on #{route}"
       end
     end
 

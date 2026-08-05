@@ -423,47 +423,39 @@ defmodule EmisarWeb.MarketingStructuralTest do
       end
     end
 
-    test "every docs page carries a maintenance footer editing its own template", %{conn: conn} do
-      # `updated` + `source_path` are what render the review line and the
-      # "Suggest a change" edit link. The edit URL is only useful if it opens
-      # the template that actually rendered the page, so the path is resolved
-      # on disk and checked for this page's own `current` slug rather than
-      # matched against the GitHub prefix alone.
-      edit_link = ~r{https://github\.com/andrewdryga/emisar/edit/main/([^"]+)"}
-      repo_root = Path.expand("../../../../..", __DIR__)
-
+    test "every docs page carries quiet review provenance without a dead edit action", %{
+      conn: conn
+    } do
+      # Review provenance belongs to the shared docs colophon. Contribution
+      # affordances do not: the public repository cannot accept the commit the
+      # old GitHub edit flow promised.
       for page <- EmisarWeb.DocsNav.flat() do
         html = conn |> get(page.path) |> html_response(200)
 
-        assert html =~ "Suggest a change", "#{page.path}: no edit link"
+        assert html =~ ~s(data-shot="docs-review-metadata"),
+               "#{page.path}: no shared review colophon"
+
+        assert html =~ ~s(aria-label="Document maintenance"),
+               "#{page.path}: review colophon has no accessible label"
+
         assert html =~ "Last reviewed", "#{page.path}: no review date"
+        refute html =~ "Suggest a change", "#{page.path}: dead edit action returned"
 
-        assert [source_path] = Regex.run(edit_link, html, capture: :all_but_first),
-               "#{page.path}: no GitHub edit link"
-
-        template = Path.join(repo_root, source_path)
-
-        assert File.exists?(template),
-               "#{page.path}: source_path #{source_path} is not a file in the repository"
-
-        assert File.read!(template) =~ ~s(current="#{page.slug}"),
-               "#{page.path}: source_path #{source_path} renders a different docs page"
+        refute html =~ "github.com/andrewdryga/emisar/edit/main/",
+               "#{page.path}: dead GitHub edit URL returned"
       end
     end
 
-    test "docs_layout requires the maintenance attrs, so no page can omit them" do
-      # Compilation is the real enforcement — a `<.docs_layout>` missing either
-      # attr fails the build. This pins the declaration so the requirement
-      # can't be relaxed back to a silently-skippable default.
-      required =
+    test "docs_layout requires the review date and carries no dead source-path API" do
+      # Compilation is the real enforcement — a `<.docs_layout>` missing the
+      # date fails the build. The old source path existed only to assemble an
+      # unusable edit link, so pin its removal from the shared component API.
+      attrs =
         EmisarWeb.DocsComponents.__components__()
         |> get_in([:docs_layout, :attrs])
-        |> Enum.filter(& &1.required)
-        |> Enum.map(& &1.name)
-        |> Enum.sort()
 
-      assert :updated in required
-      assert :source_path in required
+      assert Enum.any?(attrs, &(&1.name == :updated and &1.required))
+      refute Enum.any?(attrs, &(&1.name == :source_path))
     end
   end
 

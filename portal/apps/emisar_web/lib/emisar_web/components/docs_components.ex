@@ -23,13 +23,9 @@ defmodule EmisarWeb.DocsComponents do
     required: true,
     doc: "the date this page's claims were last checked against the implementation"
 
-  attr :source_path, :string,
-    required: true,
-    doc: "this template's repository-relative path, which the edit link points at"
-
   attr :evidence, :string,
     default: nil,
-    doc: "provider-specific verification or review evidence for the maintenance footer"
+    doc: "provider-specific verification or review evidence for the document colophon"
 
   slot :inner_block, required: true
 
@@ -68,12 +64,8 @@ defmodule EmisarWeb.DocsComponents do
              one cap on the column keeps every block on the same left edge. --%>
         <div class="min-w-0 max-w-2xl [&_p]:leading-7 [&_li]:leading-7">
           {render_slot(@inner_block)}
-          <.docs_maintenance
-            updated={@updated}
-            evidence={@evidence}
-            source_path={@source_path}
-          />
           <.docs_prev_next current={@current} />
+          <.docs_maintenance updated={@updated} evidence={@evidence} />
         </div>
 
         <nav
@@ -103,26 +95,25 @@ defmodule EmisarWeb.DocsComponents do
 
   attr :updated, :string, required: true
   attr :evidence, :string, default: nil
-  attr :source_path, :string, required: true
 
-  # Provider evidence and editorial review are different promises. Keep both
-  # visible so a live-org certification date never masquerades as page freshness.
+  # This is an editorial colophon, not a second navigation bar. Provider
+  # evidence remains a separate promise so certification never masquerades as
+  # page freshness.
   defp docs_maintenance(assigns) do
     ~H"""
-    <div class="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-5 text-sm text-zinc-400">
-      <div>
-        <p>Last reviewed {@updated}</p>
-        <p :if={@evidence} class="mt-1 text-xs text-zinc-500">{@evidence}</p>
+    <footer
+      aria-label="Document maintenance"
+      data-shot="docs-review-metadata"
+      class="mt-5 flex justify-end"
+    >
+      <div class="flex max-w-full items-start gap-2 text-right text-xs leading-5 text-zinc-400">
+        <span aria-hidden="true" class="mt-2.5 h-px w-4 flex-none bg-zinc-800"></span>
+        <div class="max-w-[17rem]">
+          <p :if={@evidence} class="text-pretty">{@evidence}</p>
+          <p class={@evidence && "mt-0.5"}>Last reviewed {@updated}</p>
+        </div>
       </div>
-      <a
-        href={"https://github.com/andrewdryga/emisar/edit/main/" <> @source_path}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="font-medium text-brand-300 hover:text-brand-200"
-      >
-        Suggest a change
-      </a>
-    </div>
+    </footer>
     """
   end
 
