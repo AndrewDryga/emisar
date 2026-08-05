@@ -24,7 +24,7 @@ Native: install the exact tool pins from .tool-versions, then let doctor verify 
   ./run setup
   ./run doctor
 
-Native development also needs Git, Coop, Docker, ShellCheck, Chrome/Chromium, and ImageMagick.
+Native development also needs Git, Coop, Docker, the PostgreSQL client, ShellCheck, Chrome/Chromium, and ImageMagick.
 Pinned versions:
 $(awk 'NF && $1 !~ /^#/ {printf "  %-12s %s\n", $1, $2}' "$root/.tool-versions")
 EOF

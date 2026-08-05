@@ -174,7 +174,14 @@ func (a *App) stopServiceForwards() {
 	a.serviceForwardStops = nil
 }
 
-func (a *App) serve(ctx context.Context) error {
+func serveInvocation(interactive bool) (string, []string) {
+	if interactive {
+		return "iex", []string{"-S", "mix", "phx.server"}
+	}
+	return "mix", []string{"phx.server"}
+}
+
+func (a *App) serve(ctx context.Context, interactive bool) error {
 	workspace, env, err := a.up(ctx)
 	if err != nil {
 		return err
@@ -238,7 +245,8 @@ func (a *App) serve(ctx context.Context) error {
 	}
 
 	fmt.Fprintf(a.Out, "serving Phoenix at %s\n", workspace.PortalURL)
-	command := exec.Command("mix", "phx.server")
+	name, arguments := serveInvocation(interactive)
+	command := exec.Command(name, arguments...)
 	command.Dir = a.Portal
 	command.Env = mergedEnv(env)
 	command.Env = append(command.Env,

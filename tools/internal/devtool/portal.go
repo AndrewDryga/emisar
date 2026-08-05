@@ -18,30 +18,31 @@ var (
 )
 
 func (a *App) runCaptured(ctx context.Context, label, dir string, env map[string]string, name string, args ...string) error {
-	fmt.Fprintf(a.Out, "==> %s\n", label)
-	command := exec.CommandContext(ctx, name, args...)
-	command.Dir = dir
-	command.Env = mergedEnv(env)
-	command.Stdin = a.In
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
-	err := command.Run()
-	clean := ansiPattern.ReplaceAllString(output.String(), "")
-	if err != nil {
-		copyOutput(a.Out, output.Bytes())
-		return fmt.Errorf("%s failed: %w", label, err)
-	}
-	if matches := pollutionPattern.FindAllString(clean, -1); len(matches) > 0 {
-		for lineNumber, line := range strings.Split(clean, "\n") {
-			if pollutionPattern.MatchString(line) {
-				fmt.Fprintf(a.Err, "%d:%s\n", lineNumber+1, line)
+	return a.gatePhase(label, func() error {
+		command := exec.CommandContext(ctx, name, args...)
+		command.Dir = dir
+		command.Env = mergedEnv(env)
+		command.Stdin = a.In
+		var output bytes.Buffer
+		command.Stdout, command.Stderr = &output, &output
+		err := command.Run()
+		clean := ansiPattern.ReplaceAllString(output.String(), "")
+		if err != nil {
+			copyOutput(a.Out, output.Bytes())
+			return err
+		}
+		if matches := pollutionPattern.FindAllString(clean, -1); len(matches) > 0 {
+			for lineNumber, line := range strings.Split(clean, "\n") {
+				if pollutionPattern.MatchString(line) {
+					fmt.Fprintf(a.Err, "%d:%s\n", lineNumber+1, line)
+				}
 			}
+			copyOutput(a.Out, output.Bytes())
+			return fmt.Errorf("polluted test output; fix the warning/error/log source")
 		}
 		copyOutput(a.Out, output.Bytes())
-		return fmt.Errorf("%s polluted test output; fix the warning/error/log source", label)
-	}
-	copyOutput(a.Out, output.Bytes())
-	return nil
+		return nil
+	})
 }
 
 func (a *App) portalTestOutput(ctx context.Context, env map[string]string) error {
@@ -74,11 +75,12 @@ func (a *App) portalTestOutput(ctx context.Context, env map[string]string) error
 }
 
 func (a *App) warmPortalTestDependencies(ctx context.Context, env map[string]string) error {
-	fmt.Fprintln(a.Out, "==> deps warm-up (unscanned: third-party compile warnings are not ours)")
-	if err := a.run(ctx, a.Portal, env, "mix", "deps.compile"); err != nil {
-		return fmt.Errorf("deps compile failed: %w", err)
-	}
-	return nil
+	return a.gatePhase("deps warm-up (unscanned third-party output)", func() error {
+		if err := a.run(ctx, a.Portal, env, "mix", "deps.compile"); err != nil {
+			return fmt.Errorf("deps compile failed: %w", err)
+		}
+		return nil
+	})
 }
 
 func (a *App) ensurePortalTestDatabase(ctx context.Context, env map[string]string) error {
@@ -229,17 +231,26 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	if err := a.goGate(ctx, "tools", coverage); err != nil {
 		return err
 	}
-	if err := a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", "run", "./cmd/doccheck"); err != nil {
+	if err := a.gatePhase("tooling documentation", func() error {
+		return a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", "run", "./cmd/doccheck")
+	}); err != nil {
 		return err
 	}
 	// The workflows ARE the supply chain's front door — lint them like code:
 	// expression injection, wrong event fields, invalid globs. Pinned so a new
 	// actionlint release cannot fail an unchanged tree; `go run` keeps it off
 	// the contributor's PATH, same as staticcheck.
-	if err := a.run(ctx, a.Root, nil, "go", "run", actionlintVersion, "-color"); err != nil {
-		return fmt.Errorf("workflow lint findings: %w", err)
+	if err := a.gatePhase("tooling workflow lint", func() error {
+		if err := a.run(ctx, a.Root, nil, "go", "run", actionlintVersion, "-color"); err != nil {
+			return fmt.Errorf("workflow lint findings: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
-	if err := a.agentSetupCheck(ctx, false); err != nil {
+	if err := a.gatePhase("tooling agent setup", func() error {
+		return a.agentSetupCheck(ctx, false)
+	}); err != nil {
 		return err
 	}
 	scripts, err := a.trackedShellFiles(ctx)
@@ -247,13 +258,18 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 		return err
 	}
 	if len(scripts) > 0 {
-		if err := a.run(ctx, a.Root, nil, "shellcheck", scripts...); err != nil {
-			return err
-		}
-		for _, script := range scripts {
-			if err := a.run(ctx, a.Root, nil, "bash", "-n", script); err != nil {
+		if err := a.gatePhase("tooling shell scripts", func() error {
+			if err := a.run(ctx, a.Root, nil, "shellcheck", scripts...); err != nil {
 				return err
 			}
+			for _, script := range scripts {
+				if err := a.run(ctx, a.Root, nil, "bash", "-n", script); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 	fmt.Fprintln(a.Out, "development tooling checks passed")

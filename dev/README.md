@@ -36,14 +36,16 @@ coop shell
 
 `./run bootstrap` and `./run help` stay shell-only when Go is absent. Inside the
 box, `.agent/Dockerfile` installs the exact `.tool-versions` pins plus the
-browser, image, and shell tools. Run `./run seed` and `./run serve` from the
-interactive shell.
+database client, browser, image, and shell tools. Run `./run seed` and `./run
+serve` from the interactive shell; use `./run serve --iex` when the loop needs
+an attached IEx session.
 
 Native development is also supported. Install `.tool-versions` with asdf plus
-Git, Coop, Docker, ShellCheck, Chrome/Chromium, and ImageMagick, then run
-`./run setup`. It checks all prerequisites before it starts sidecars or changes
-the database. `./run doctor` prints every exact pinned version and continues
-through services, TLS, OIDC, and ignored-key checks.
+Git, Coop, Docker, the PostgreSQL client, ShellCheck, Chrome/Chromium, and
+ImageMagick, then run `./run setup`. It checks all prerequisites before it
+starts sidecars or changes the database. `./run doctor` prints every exact
+pinned version and continues through services, TLS, OIDC, and ignored-key
+checks.
 
 Run `./run` or `./run help` for the complete map, or
 `./run help <check|test|gate|pack|ops>` for one command family.
@@ -64,11 +66,22 @@ The repository keeps tooling in three ownership buckets:
 ./run setup
 ./run seed
 ./run serve
+./run serve --iex
+./run status
+./run logs db
+./run logs --follow keycloak
+./run psql
 ```
 
 `serve` takes an advisory lock per workspace and exits before running Mix when
 another launcher owns it. An untracked listener on either Phoenix port fails
 immediately instead of leaving later Mix commands waiting on a build lock.
+`status` only reads Coop/Docker and probes the four workspace listeners; it does
+not start services. `logs` resolves the Compose project from this workspace's
+exact `dev/compose.yml`, so a fork cannot leak another workspace's output.
+`psql` uses the active workspace's Postgres host and port and never guesses a
+global container name. Canonical gates stream phase starts, completions, and
+durations, and their errors name the phase that failed.
 
 Common feedback commands:
 

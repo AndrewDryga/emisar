@@ -31,7 +31,10 @@ Local development:
   setup                       Prepare the complete development environment
   up                          Start PostgreSQL and Keycloak
   down [--all]                Stop PostgreSQL and Keycloak, or every started stack
-  serve                       Start Phoenix in the active workspace
+  serve [--iex]               Start Phoenix, optionally with an interactive IEx shell
+  status                      Show workspace listeners and sidecar state without changing it
+  logs [--follow] [service]   Show scoped db/keycloak logs (host only)
+  psql [psql-args...]         Open this workspace's development database
   seed                        Load or refresh the idempotent demo data
   reset [--seed] [--yes]      Recreate the development database
   urls                        Print Portal, PostgreSQL, and Keycloak URLs
@@ -160,10 +163,22 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "down":
 		return a.down(ctx, rest)
 	case "serve":
-		if err := exact(rest, 0, "usage: ./run serve"); err != nil {
+		iex := false
+		if len(rest) == 1 && rest[0] == "--iex" {
+			iex = true
+		} else if len(rest) != 0 {
+			return usage("usage: ./run serve [--iex]")
+		}
+		return a.serve(ctx, iex)
+	case "status":
+		if err := exact(rest, 0, "usage: ./run status"); err != nil {
 			return err
 		}
-		return a.serve(ctx)
+		return a.status(ctx)
+	case "logs":
+		return a.logs(ctx, rest)
+	case "psql":
+		return a.psql(ctx, rest)
 	case "seed":
 		if err := exact(rest, 0, "usage: ./run seed"); err != nil {
 			return err

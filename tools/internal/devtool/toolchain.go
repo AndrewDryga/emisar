@@ -82,6 +82,7 @@ func (a *App) checkDevelopmentTools(ctx context.Context) error {
 	}{
 		{name: "Git", command: "git", args: []string{"--version"}},
 		{name: "Mix", command: "mix", args: []string{"--version"}, parse: regexpVersion(mixVersionPattern)},
+		{name: "PostgreSQL client", command: "psql", args: []string{"--version"}},
 		{name: "ShellCheck", command: "shellcheck", args: []string{"--version"}, parse: regexpVersion(shellcheckVersionPattern)},
 		{name: "Coop", command: "coop", args: []string{"version"}, host: true},
 		{name: "Docker", command: "docker", args: []string{"version", "--format", "{{.Client.Version}}"}, host: true},

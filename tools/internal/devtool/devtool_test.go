@@ -95,6 +95,57 @@ func TestParseServiceForwards(t *testing.T) {
 	}
 }
 
+func TestServeInvocationSelectsIExWithoutChangingPhoenixArguments(t *testing.T) {
+	name, args := serveInvocation(false)
+	if name != "mix" || !slices.Equal(args, []string{"phx.server"}) {
+		t.Fatalf("normal serve = %s %v", name, args)
+	}
+	name, args = serveInvocation(true)
+	if name != "iex" || !slices.Equal(args, []string{"-S", "mix", "phx.server"}) {
+		t.Fatalf("interactive serve = %s %v", name, args)
+	}
+}
+
+func TestSelectComposeProjectUsesTheExactWorkspaceConfig(t *testing.T) {
+	config := filepath.Join(t.TempDir(), "dev", "compose.yml")
+	data, err := json.Marshal([]dependencyComposeProject{
+		{Name: "other", Status: "running(2)", ConfigFiles: "/tmp/other/compose.yml"},
+		{Name: "wanted", Status: "running(2)", ConfigFiles: config + ",/tmp/override.yml"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := selectComposeProject(data, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != "wanted" || project.Status != "running(2)" {
+		t.Fatalf("project = %#v", project)
+	}
+	if _, err := selectComposeProject(data, "/tmp/missing/compose.yml"); !errors.Is(err, errComposeProjectNotFound) {
+		t.Fatalf("missing project error = %v", err)
+	}
+}
+
+func TestGatePhaseReportsDurationAndFailedPhase(t *testing.T) {
+	app := testApp(t)
+	out := app.Out.(*bytes.Buffer)
+	errOut := app.Err.(*bytes.Buffer)
+	if err := app.gatePhase("passing fixture", func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "==> passing fixture") || !strings.Contains(out.String(), "<== PASS passing fixture (") {
+		t.Fatalf("passing phase output = %q", out.String())
+	}
+	err := app.gatePhase("failing fixture", func() error { return errors.New("boom") })
+	if err == nil || !strings.Contains(err.Error(), `phase "failing fixture" failed after`) || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("failing phase error = %v", err)
+	}
+	if !strings.Contains(errOut.String(), "<== FAIL failing fixture (") {
+		t.Fatalf("failing phase stderr = %q", errOut.String())
+	}
+}
+
 func TestChangedPortalFilesIncludesUntrackedSource(t *testing.T) {
 	root := t.TempDir()
 	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}} {
@@ -1177,7 +1228,7 @@ func TestDownRejectsUnknownArgumentsAndBoxes(t *testing.T) {
 
 func TestMainHelpListsEveryPublicCommand(t *testing.T) {
 	for _, command := range []string{
-		"setup", "up", "down", "serve", "seed", "reset", "urls", "doctor", "certs",
+		"setup", "up", "down", "serve", "status", "logs", "psql", "seed", "reset", "urls", "doctor", "certs",
 		"test", "check", "gate", "browser", "shot", "capture", "e2e",
 		"smoke", "pack", "ops", "help",
 	} {

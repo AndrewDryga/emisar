@@ -64,6 +64,13 @@ confusing, hard-to-attribute failures:
    `COOP_SERVE_URL_*` carries the workspace's assigned URLs for configuration even
    when an existing host listener means the current box cannot publish them.
 
+7. **Diagnostics stay workspace-scoped:** `./run status` probes without calling
+   the mutating `up` path, `./run logs` selects the one Compose project whose
+   config contains this workspace's exact `dev/compose.yml`, and `./run psql`
+   uses the workspace-derived Postgres host and port. `serve --iex` changes only
+   the child executable; it retains the same lock, service, proxy, and shutdown
+   lifecycle as ordinary serve.
+
 Coop's shared base owns asdf, login-shell PATH repair, agent CLIs,
 and the localhost sidecar forwarders. Devtool consumes Coop's `COOP_FORWARD` contract
 to restore only an absent listener for the lifetime of a repository command, so a broken
@@ -76,6 +83,8 @@ Coop-owned behavior and cache layers.
 Related rules: [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md) and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-08-04 — added read-only workspace status, exact-project dependency logs,
+  workspace-bound psql, and an IEx serve mode on the existing supervised lifecycle
 - 2026-08-04 — made repository commands restore absent Coop-declared sidecar
   forwards for their own lifetime, preserving one localhost OIDC issuer even when
   a box base advertises the contract without opening its listeners.

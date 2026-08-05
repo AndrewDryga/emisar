@@ -155,10 +155,12 @@ Then, inside the shell:
 ```sh
 ./run seed        # explicit, idempotent demo data
 ./run serve       # live reload at the URL printed by Coop
+# or: ./run serve --iex
 ```
 
 For native development, install the exact versions in `.tool-versions` with
-asdf, plus Git, Coop, Docker, ShellCheck, Chrome/Chromium, and ImageMagick.
+asdf, plus Git, Coop, Docker, the PostgreSQL client, ShellCheck,
+Chrome/Chromium, and ImageMagick.
 `./run setup` validates all prerequisites before starting services; `./run
 doctor` reports every detected version and an actionable mismatch. On macOS,
 run `./run certs trust` once for this workspace after setup.
@@ -170,6 +172,11 @@ and Keycloak in the workspace-isolated Coop dependency stack.
 Keycloak URLs. Coop forks inherit the same setup but receive different ports and
 volumes. Seeds are never applied by setup, serve, or reset unless explicitly
 requested.
+
+Use `./run status` for a read-only view of the current workspace, `./run logs
+[db|keycloak]` for its exact sidecar logs, and `./run psql` for its development
+database. Every canonical gate prints its current phase and elapsed time; a
+failure names the phase that stopped it.
 
 The root `docker-compose.yml` remains the slower packaged topology with the
 release Portal image, seeded demo data, three runners, MCP, and signing. Start it

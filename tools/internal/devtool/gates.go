@@ -8,11 +8,32 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/ci"
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
+
+func elapsedLabel(started time.Time) string {
+	elapsed := time.Since(started).Round(time.Millisecond)
+	if elapsed == 0 {
+		return "<1ms"
+	}
+	return elapsed.String()
+}
+
+func (a *App) gatePhase(label string, action func() error) error {
+	fmt.Fprintf(a.Out, "\n==> %s\n", label)
+	started := time.Now()
+	if err := action(); err != nil {
+		duration := elapsedLabel(started)
+		fmt.Fprintf(a.Err, "<== FAIL %s (%s)\n", label, duration)
+		return fmt.Errorf("phase %q failed after %s: %w", label, duration, err)
+	}
+	fmt.Fprintf(a.Out, "<== PASS %s (%s)\n", label, elapsedLabel(started))
+	return nil
+}
 
 // Keep this in step with the version any workflow installs directly.
 const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
@@ -222,57 +243,79 @@ func (a *App) checkClientModuleBoundaries(module string) error {
 
 func (a *App) goGate(ctx context.Context, module, coverage string) error {
 	dir := filepath.Join(a.Root, module)
-	if err := a.checkClientModuleBoundaries(module); err != nil {
-		return err
-	}
-	unformatted, err := a.output(ctx, dir, nil, "gofmt", "-l", "-s", ".")
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(string(unformatted)) != "" {
-		return fmt.Errorf("%s Go files are not formatted:\n%s", module, unformatted)
-	}
-	for _, arguments := range [][]string{{"mod", "verify"}, {"vet", "./..."}} {
-		if err := a.run(ctx, dir, nil, "go", arguments...); err != nil {
+	if err := a.gatePhase(module+" source layout and format", func() error {
+		if err := a.checkClientModuleBoundaries(module); err != nil {
 			return err
 		}
+		unformatted, err := a.output(ctx, dir, nil, "gofmt", "-l", "-s", ".")
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(unformatted)) != "" {
+			return fmt.Errorf("%s Go files are not formatted:\n%s", module, unformatted)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := a.gatePhase(module+" module verification", func() error {
+		return a.run(ctx, dir, nil, "go", "mod", "verify")
+	}); err != nil {
+		return err
+	}
+	if err := a.gatePhase(module+" go vet", func() error {
+		return a.run(ctx, dir, nil, "go", "vet", "./...")
+	}); err != nil {
+		return err
 	}
 	// staticcheck belongs to the canonical gate, not a CI-only step: as a CI-only
 	// step it let a green local gate ship a red job, which is how forty findings
 	// accumulated unseen. Pinned so a new staticcheck release cannot fail an
 	// unchanged tree; `go run` keeps it off the contributor's PATH.
-	if err := a.run(ctx, dir, nil, "go", "run", staticcheckVersion, "./..."); err != nil {
-		return fmt.Errorf("%s staticcheck findings: %w", module, err)
+	if err := a.gatePhase(module+" staticcheck", func() error {
+		if err := a.run(ctx, dir, nil, "go", "run", staticcheckVersion, "./..."); err != nil {
+			return fmt.Errorf("%s staticcheck findings: %w", module, err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	// -diff prints what tidy would change and exits non-zero instead of writing,
 	// so a gate never mutates the tree it verifies and a read-only review box can
 	// run it. It also judges tidiness directly, rather than inferring it from a
 	// clean `git diff` that a pre-existing edit would have failed anyway.
-	if err := a.run(ctx, dir, nil, "go", "mod", "tidy", "-diff"); err != nil {
-		return fmt.Errorf("%s module files are not tidy: %w", module, err)
-	}
-	// -diff cannot create the file, so this now asserts the invariant itself: a
-	// dependency would surface above as a go.sum the diff wants to add.
-	if module == "mcp" {
-		if _, err := os.Stat(filepath.Join(dir, "go.sum")); err == nil {
-			return fmt.Errorf("mcp must remain stdlib-only; go.sum exists")
-		} else if !os.IsNotExist(err) {
-			return err
+	if err := a.gatePhase(module+" dependency integrity", func() error {
+		if err := a.run(ctx, dir, nil, "go", "mod", "tidy", "-diff"); err != nil {
+			return fmt.Errorf("%s module files are not tidy: %w", module, err)
 		}
-	}
-	// The runner and the bridge each carry their own copy of the attestation
-	// verifier; drift between them is a security defect, so the gate decides it
-	// rather than a CI step nobody sees until a push.
-	if module == "runner" || module == "mcp" {
-		if err := ci.CheckAttestParity(a.Root); err != nil {
-			return fmt.Errorf("%s attestation parity: %w", module, err)
+		// -diff cannot create the file, so this now asserts the invariant itself: a
+		// dependency would surface above as a go.sum the diff wants to add.
+		if module == "mcp" {
+			if _, err := os.Stat(filepath.Join(dir, "go.sum")); err == nil {
+				return fmt.Errorf("mcp must remain stdlib-only; go.sum exists")
+			} else if !os.IsNotExist(err) {
+				return err
+			}
 		}
+		// The runner and the bridge each carry their own copy of the attestation
+		// verifier; drift between them is a security defect, so the gate decides it
+		// rather than a CI step nobody sees until a push.
+		if module == "runner" || module == "mcp" {
+			if err := ci.CheckAttestParity(a.Root); err != nil {
+				return fmt.Errorf("%s attestation parity: %w", module, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	testArgs := []string{"test", "-race", "-count=1"}
 	if coverage != "" {
 		testArgs = append(testArgs, "-coverprofile="+coverage)
 	}
-	return a.run(ctx, dir, nil, "go", append(testArgs, "./...")...)
+	return a.gatePhase(module+" race tests", func() error {
+		return a.run(ctx, dir, nil, "go", append(testArgs, "./...")...)
+	})
 }
 
 func (a *App) portalGate(ctx context.Context) error {
@@ -283,35 +326,54 @@ func (a *App) portalGate(ctx context.Context) error {
 	// Fetching a locked dependency graph and checking source format are the
 	// cheapest deterministic failures. Run them before starting services or
 	// compiling the umbrella so a bad candidate fails in seconds.
-	if err := a.run(ctx, a.Portal, nil, "mix", "deps.get", "--check-locked"); err != nil {
+	if err := a.gatePhase("portal locked dependencies", func() error {
+		return a.run(ctx, a.Portal, nil, "mix", "deps.get", "--check-locked")
+	}); err != nil {
 		return err
 	}
-	if err := a.run(ctx, a.Portal, nil, "mix", "format", "--check-formatted"); err != nil {
+	if err := a.gatePhase("portal format", func() error {
+		return a.run(ctx, a.Portal, nil, "mix", "format", "--check-formatted")
+	}); err != nil {
 		return err
 	}
 	if os.Getenv("CI") == "" {
-		_, workspaceEnv, err := a.up(ctx)
-		if err != nil {
+		if err := a.gatePhase("portal development services", func() error {
+			_, workspaceEnv, upErr := a.up(ctx)
+			env = workspaceEnv
+			return upErr
+		}); err != nil {
 			return err
 		}
-		env = workspaceEnv
 	}
-	for _, arguments := range [][]string{
-		{"compile", "--warnings-as-errors"},
-		{"credo"},
-		{"deps.audit", "--ignore-advisory-ids", ignoredAdvisories},
-		{"sobelow", "--root", "apps/emisar_web", "--config"},
+	for _, check := range []struct {
+		label string
+		args  []string
+	}{
+		{"portal compile", []string{"compile", "--warnings-as-errors"}},
+		{"portal Credo", []string{"credo"}},
+		{"portal dependency audit", []string{"deps.audit", "--ignore-advisory-ids", ignoredAdvisories}},
+		{"portal Sobelow", []string{"sobelow", "--root", "apps/emisar_web", "--config"}},
 	} {
-		if err := a.run(ctx, a.Portal, env, "mix", arguments...); err != nil {
+		if err := a.gatePhase(check.label, func() error {
+			return a.run(ctx, a.Portal, env, "mix", check.args...)
+		}); err != nil {
 			return err
 		}
 	}
 	// Captured rather than streamed: the known cycle's report is noise until the
 	// budget actually breaks.
-	if report, err := a.output(ctx, filepath.Join(a.Portal, "apps", "emisar"), env, "mix", "xref.cycles"); err != nil {
-		return fmt.Errorf("compile-cycle budget: %w\n%s", err, report)
+	if err := a.gatePhase("portal compile-cycle budget", func() error {
+		report, err := a.output(ctx, filepath.Join(a.Portal, "apps", "emisar"), env, "mix", "xref.cycles")
+		if err != nil {
+			return fmt.Errorf("compile-cycle budget: %w\n%s", err, report)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
-	return a.portalTestOutput(ctx, env)
+	return a.gatePhase("portal test suites", func() error {
+		return a.portalTestOutput(ctx, env)
+	})
 }
 
 func (a *App) portalTestEnv(ctx context.Context) (map[string]string, error) {
@@ -385,7 +447,9 @@ func (a *App) validatePacks(ctx context.Context) error {
 }
 
 func (a *App) packsGate(ctx context.Context) error {
-	if err := a.validatePacks(ctx); err != nil {
+	if err := a.gatePhase("pack authoring and hashes", func() error {
+		return a.validatePacks(ctx)
+	}); err != nil {
 		return err
 	}
 	output, err := os.MkdirTemp("", "emisar-pack-gate-*")
@@ -394,37 +458,46 @@ func (a *App) packsGate(ctx context.Context) error {
 	}
 	defer os.RemoveAll(output)
 	committed := filepath.Join(a.Portal, "apps", "emisar", "priv", "packs", "catalog.json")
-	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"),
-		"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", committed); err != nil {
+	if err := a.gatePhase("pack catalog reproduction", func() error {
+		if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"),
+			"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", committed); err != nil {
+			return err
+		}
+		generated, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))
+		if err != nil {
+			return err
+		}
+		current, err := os.ReadFile(committed)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(generated, current) {
+			return fmt.Errorf("bundled pack catalog is stale; run ./run pack sync <changed-pack> --fix")
+		}
+		return nil
+	}); err != nil {
 		return err
-	}
-	generated, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))
-	if err != nil {
-		return err
-	}
-	current, err := os.ReadFile(committed)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(generated, current) {
-		return fmt.Errorf("bundled pack catalog is stale; run ./run pack sync <changed-pack> --fix")
 	}
 
-	env, err := a.portalTestEnv(ctx)
-	if err != nil {
-		return err
-	}
-	// Same self-heal as portalGate: a dependency bump lands in mix.lock before
-	// any host fetches it, and deps.compile cannot fetch — without this the
-	// packs gate dies on the first lock bump when it runs before the portal
-	// gate (exactly how `gate all` orders them).
-	if err := a.run(ctx, a.Portal, env, "mix", "deps.get", "--check-locked"); err != nil {
-		return err
-	}
-	if err := a.warmPortalTestDependencies(ctx, env); err != nil {
-		return err
-	}
-	if err := a.ensurePortalTestDatabase(ctx, env); err != nil {
+	var env map[string]string
+	if err := a.gatePhase("pack Portal test preparation", func() error {
+		var prepareErr error
+		env, prepareErr = a.portalTestEnv(ctx)
+		if prepareErr != nil {
+			return prepareErr
+		}
+		// Same self-heal as portalGate: a dependency bump lands in mix.lock before
+		// any host fetches it, and deps.compile cannot fetch — without this the
+		// packs gate dies on the first lock bump when it runs before the portal
+		// gate (exactly how `gate all` orders them).
+		if err := a.run(ctx, a.Portal, env, "mix", "deps.get", "--check-locked"); err != nil {
+			return err
+		}
+		if err := a.warmPortalTestDependencies(ctx, env); err != nil {
+			return err
+		}
+		return a.ensurePortalTestDatabase(ctx, env)
+	}); err != nil {
 		return err
 	}
 	checks := []struct {
@@ -447,19 +520,24 @@ func (a *App) packsGate(ctx context.Context) error {
 func (a *App) infraGate(ctx context.Context) error {
 	dir := filepath.Join(a.Root, "infra")
 	for _, command := range []struct {
-		name string
-		args []string
+		label string
+		name  string
+		args  []string
 	}{
-		{"terraform", []string{"fmt", "-check", "-recursive"}},
-		{"terraform", []string{"init", "-backend=false", "-input=false"}},
-		{"terraform", []string{"validate"}},
-		{"tflint", nil},
+		{"infra Terraform format", "terraform", []string{"fmt", "-check", "-recursive"}},
+		{"infra Terraform initialization", "terraform", []string{"init", "-backend=false", "-input=false"}},
+		{"infra Terraform validation", "terraform", []string{"validate"}},
+		{"infra TFLint", "tflint", nil},
 	} {
-		if err := a.run(ctx, dir, nil, command.name, command.args...); err != nil {
+		if err := a.gatePhase(command.label, func() error {
+			return a.run(ctx, dir, nil, command.name, command.args...)
+		}); err != nil {
 			return err
 		}
 	}
-	return a.infraOps(ctx, []string{"validate-templates"})
+	return a.gatePhase("infra rendered templates", func() error {
+		return a.infraOps(ctx, []string{"validate-templates"})
+	})
 }
 
 func (a *App) gate(ctx context.Context, args []string) error {
@@ -501,9 +579,10 @@ func (a *App) gate(ctx context.Context, args []string) error {
 			return usage("usage: ./run gate all")
 		}
 		for _, target := range []string{"tooling", "runner", "mcp", "packs", "infra", "portal"} {
-			fmt.Fprintf(a.Out, "\n==> gate %s\n", target)
-			if err := a.gate(ctx, []string{target}); err != nil {
-				return fmt.Errorf("%s gate failed: %w", target, err)
+			if err := a.gatePhase("complete "+target+" gate", func() error {
+				return a.gate(ctx, []string{target})
+			}); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -526,9 +605,10 @@ func (a *App) reviewGate(ctx context.Context) error {
 		return fmt.Errorf("select review gates: %w", err)
 	}
 	for _, target := range reviewGateTargets(selection) {
-		fmt.Fprintf(a.Out, "\n==> review gate %s\n", target)
-		if err := a.gate(ctx, []string{target}); err != nil {
-			return fmt.Errorf("%s review gate failed: %w", target, err)
+		if err := a.gatePhase("review "+target+" gate", func() error {
+			return a.gate(ctx, []string{target})
+		}); err != nil {
+			return err
 		}
 	}
 	return nil
