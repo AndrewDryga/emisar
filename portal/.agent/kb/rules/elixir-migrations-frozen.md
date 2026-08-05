@@ -86,3 +86,52 @@ prior commit (`git diff --cached --diff-filter=MDR`). A brand-new migration is a
 add (`A`) and passes. This is a git-diff property, not an AST one, so it lives in
 the commit-gate, not Credo. If the gate fires, restore the file and add a new
 migration — never `--no-verify` past it.
+
+---
+
+## A migration runs before the app boots — write it to hold no long lock
+
+`/app/bin/migrate` runs to completion **before** an instance starts serving, and
+`cd.yml` runs it on every deploy. Anything that takes a write-blocking lock for
+the duration is a hard outage, not slow startup, and its length is proportional
+to table size — so it passes every review while the table is small and takes the
+product down the quarter it isn't.
+
+Today **no migration in this repo uses `concurrently` or
+`@disable_ddl_transaction`,** and at least one does an unbatched rewrite of the
+largest table (`20260812000000`, `UPDATE action_runs SET args_raw = …` then
+`modify :args_raw, null: false`). Those are committed and frozen. The rule is
+for the next one.
+
+**Index on a table that already holds production rows** — build it
+concurrently, which requires leaving the migration's transaction:
+
+```elixir
+@disable_ddl_transaction true
+@disable_migration_lock true
+
+def change do
+  create index(:action_runs, [:runner_id, :inserted_at], concurrently: true)
+end
+```
+
+Both attributes are required: `concurrently` cannot run inside a transaction,
+and the migration lock holds one open. A concurrent build can leave an
+`INVALID` index behind if it fails — that is recoverable (drop it, re-run), a
+locked-out fleet is not.
+
+**Backfilling an existing column** — batch by primary key with the write outside
+the transaction, and put the `SET NOT NULL` in a *later* migration once the
+backfill has drained. A single `UPDATE` over the whole table holds row locks on
+every row it touches until commit.
+
+**Sweep target.** Any migration touching a table that already has production
+rows — `action_runs`, `audit_events`, `runner_actions`, `memberships` — where
+the body contains `create index`, `create unique_index`, `modify … null: false`,
+or a bare `execute("UPDATE …")`, and the file has no `@disable_ddl_transaction`.
+
+**Not enforced by a check.** Whether a table is big enough to matter is a
+deployment fact, not an AST property, and a blanket "every index is concurrent"
+lint would fire on the initial-schema migrations where it is wrong (an empty
+table wants the transaction). This is a review rule — check it when you write
+the migration, not after prod stalls.
