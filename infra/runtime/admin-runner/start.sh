@@ -137,14 +137,11 @@ fi
 [ "$($runner --version)" = "$expected_version" ]
 test -f /var/lib/emisar-admin-runner/packs/emisar-admin/pack.yaml
 test -r /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh
-for pack in $required_packs; do
-  if [ ! -f "/var/lib/emisar-admin-runner/packs/$pack/pack.yaml" ]; then
-    "$runner" pack install "$pack" \
-      --dest /var/lib/emisar-admin-runner/packs \
-      --force
-  fi
-done
-
+# A missing pack is installed by the pinned loop below, which passes --hash: a
+# pack with no directory validates to an empty hash, which never matches the
+# expected one. The install-by-bare-name that used to sit here added nothing
+# except a window where registry bytes nobody had verified were on the disk of a
+# runner admitted at max_risk: critical.
 while IFS='|' read -r pack_ref expected_hash; do
   pack_id=$${pack_ref%%=*}
   installed_hash=$("$runner" pack validate \

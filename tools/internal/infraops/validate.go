@@ -322,7 +322,6 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"emisar version 0.16.0",
 		"docker exec emisar /app/bin/emisar pid",
 		"test -r /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh",
-		`"$runner" pack install "$pack"`,
 		`"$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs`,
 		`exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml`,
 		"Requires=emisar.service", "PartOf=emisar.service",
@@ -338,6 +337,18 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	}
 	if len(renderedData) > 262144 {
 		return fmt.Errorf("rendered cloud-init exceeds Compute Engine's per-value metadata limit")
+	}
+	// Every pack this runner installs is installed WITH its expected hash. An
+	// install by bare name pulls whatever the registry currently serves onto the
+	// disk of a runner admitted at max_risk: critical, so the pinned form is not
+	// merely preferred here — the unpinned one must not exist.
+	unpinnedPack := regexp.MustCompile(`pack install "\$(pack|bundle_pack)"(?:[^\n]*\\\n)*[^\n]*`)
+	for _, install := range unpinnedPack.FindAllString(string(renderedData), -1) {
+		// The bundle path is the offline copy shipped inside the verified release
+		// tarball, so it carries the runner's own integrity, not the registry's.
+		if !strings.Contains(install, "--hash") && !strings.Contains(install, "bundle_pack") {
+			return fmt.Errorf("the admin runner must install packs with --hash, got: %s", install)
+		}
 	}
 	coupledProxy := regexp.MustCompile(`(?m)^\s+(Requires|BindsTo|PartOf|Requisite|PropagatesStopTo)=.*emisar-cloud-sql-proxy`)
 	if coupledProxy.Match(renderedData) {
