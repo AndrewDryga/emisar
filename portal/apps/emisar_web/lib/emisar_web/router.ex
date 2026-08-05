@@ -439,7 +439,10 @@ defmodule EmisarWeb.Router do
   end
 
   scope "/", EmisarWeb do
-    pipe_through :browser
+    # :noindex like every other auth-bound route — robots.txt blocks crawling
+    # but not URL-only indexing, and the router comment above already promises
+    # this pipeline on every one of them.
+    pipe_through [:browser, :noindex]
 
     live_session :onboarding,
       on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do

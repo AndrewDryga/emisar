@@ -163,15 +163,19 @@ defmodule EmisarWeb.EnrollmentKeysLive do
         |> assign(:metadata, meta)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
+        |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. the subject can't list keys) —
-      # degrade to an empty list rather than recursing forever.
+      # degrade to an empty list rather than recursing forever. Flag it: this is
+      # the page that gates fleet onboarding, and rendering a denied read as
+      # "no enrollment keys yet" tells an operator the opposite of the truth.
       {:error, _} when map_size(params) == 0 ->
         socket
         |> assign(:enrollment_keys, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
+        |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} ->
@@ -461,7 +465,25 @@ defmodule EmisarWeb.EnrollmentKeysLive do
             </.list_row>
           </:item>
           <:empty>
-            <.empty_state icon="hero-key" title="No enrollment keys yet.">
+            <.empty_state
+              :if={@load_error?}
+              icon="hero-exclamation-triangle"
+              title="Could not load enrollment keys."
+            >
+              Your permissions may have changed. Reload, or ask an owner to check your role.
+            </.empty_state>
+            <.empty_state
+              :if={not @load_error? and LiveTable.has_active_filters?(@filter_params, @filters)}
+              icon="hero-funnel"
+              title="No enrollment keys match this filter."
+            >
+              Clear the filter to see the rest.
+            </.empty_state>
+            <.empty_state
+              :if={not @load_error? and not LiveTable.has_active_filters?(@filter_params, @filters)}
+              icon="hero-key"
+              title="No enrollment keys yet."
+            >
               An enrollment key is the bearer secret a fresh host enrolls with — mint a
               reusable one for image bakes and cloud-init fleets. The install
               wizard's one-time keys appear here too, revocable until used.

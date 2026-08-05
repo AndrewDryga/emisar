@@ -106,13 +106,32 @@ defmodule EmisarWeb.AuditExportLive do
   def handle_event("dismiss_export_secret", _params, socket),
     do: {:noreply, assign(socket, :export_secret, nil)}
 
+  # `page_size:` is not an option Repo.list/3 recognises — it was silently
+  # dropped, so the limit stayed the default 35 with no paginator and no cursor,
+  # which left token 36 onward unrevocable from the console. Ask for the
+  # paginator's maximum instead: an account holds a handful of long-lived SIEM
+  # tokens, so one page covers it, and `truncated?` says so rather than hiding
+  # the rest. A failed read is also distinguished from an empty account —
+  # collapsing both to [] told an operator whose permission had just been
+  # tightened that they had no tokens.
+  @export_key_page 100
+
   defp assign_export_keys(socket) do
     case ApiKeys.list_audit_export_keys_for_account(socket.assigns.current_subject,
-           page_size: 50,
+           page: [limit: @export_key_page],
            preload: [:created_by]
          ) do
-      {:ok, keys, _meta} -> assign(socket, :export_keys, keys)
-      _ -> assign(socket, :export_keys, [])
+      {:ok, keys, _meta} ->
+        socket
+        |> assign(:export_keys, keys)
+        |> assign(:export_keys_truncated?, length(keys) >= @export_key_page)
+        |> assign(:load_error?, false)
+
+      _ ->
+        socket
+        |> assign(:export_keys, [])
+        |> assign(:export_keys_truncated?, false)
+        |> assign(:load_error?, true)
     end
   end
 
@@ -184,6 +203,18 @@ defmodule EmisarWeb.AuditExportLive do
 
         <%!-- Existing export tokens — listed with revoke. The agents page
              filters these out so SIEM-export tokens live here exclusively. --%>
+        <.callout :if={@load_error?} tone={:rose} title="Could not load export tokens">
+          Your permissions may have changed. Reload, or ask an owner to check your role.
+        </.callout>
+
+        <.callout
+          :if={@export_keys_truncated?}
+          tone={:amber}
+          title="Showing the first 100 export tokens"
+        >
+          Revoke some to see the rest.
+        </.callout>
+
         <div :if={@export_keys != []} class="mt-2">
           <ul class="divide-y divide-zinc-800/70 border-t border-zinc-800/70">
             <.list_row :for={key <- @export_keys} padding="py-4">
