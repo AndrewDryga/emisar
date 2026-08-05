@@ -29,5 +29,21 @@ defmodule Emisar.Billing.Subscription.Query do
     )
   end
 
+  @doc """
+  Internal — subscriptions whose account is still live. The hourly reconcile
+  starts from `all/0`, so without this it kept pulling a closed account's plan
+  back from Paddle after `close_account/3` cancelled it.
+  """
+  def with_live_account(queryable \\ all()) do
+    join(
+      queryable,
+      :inner,
+      [subscriptions: s],
+      account in ^Emisar.Accounts.Account.Query.not_deleted(),
+      on: s.account_id == account.id,
+      as: :account
+    )
+  end
+
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 end

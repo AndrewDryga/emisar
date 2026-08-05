@@ -133,6 +133,10 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
+  def cancel_subscription(id),
+    do: {:ok, %{"id" => id, "status" => "canceled", "scheduled_change" => nil}}
+
+  @impl true
   def get_transaction_invoice(transaction_id),
     do: {:ok, "https://stub.paddle.test/invoice/#{transaction_id}.pdf"}
 

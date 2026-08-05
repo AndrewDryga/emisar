@@ -104,6 +104,14 @@ defmodule Emisar.Audit.Events do
     account_lifecycle_by_support(subject, account, "account.disabled", reason)
   end
 
+  def account_closed_by_support(
+        %Subject{} = subject,
+        %Accounts.Account{} = account,
+        reason
+      ) do
+    account_lifecycle_by_support(subject, account, "account.closed", reason)
+  end
+
   def account_enabled_by_support(
         %Subject{} = subject,
         %Accounts.Account{} = account,

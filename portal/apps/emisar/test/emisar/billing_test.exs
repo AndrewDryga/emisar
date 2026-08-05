@@ -5,6 +5,10 @@
 defmodule Emisar.BillingTest.ErrorPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
 
+  # Not what any of these stubs exercise; the behaviour requires it.
+  @impl true
+  def cancel_subscription(id), do: {:ok, %{"id" => id, "status" => "canceled"}}
+
   @impl true
   def create_customer(_attrs), do: {:error, :paddle_unavailable}
 
@@ -322,6 +326,38 @@ defmodule Emisar.BillingTest do
 
       assert Billing.sync_subscription_for_support(account) ==
                {:error, :not_paddle_managed}
+    end
+  end
+
+  describe "cancel_subscription_for_close/1" do
+    test "cancels a live Paddle subscription" do
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_close_me"
+      )
+
+      assert Billing.cancel_subscription_for_close(account) == :ok
+    end
+
+    test "an account with nothing to cancel closes cleanly" do
+      # Never subscribed, complimentary, and already canceled are all fine —
+      # closing an account that never paid is not an error.
+      never = Fixtures.Accounts.create_account()
+      assert Billing.cancel_subscription_for_close(never) == :ok
+
+      complimentary = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(complimentary, "team", status: "complimentary")
+      assert Billing.cancel_subscription_for_close(complimentary) == :ok
+
+      canceled = Fixtures.Accounts.create_account()
+
+      Fixtures.Accounts.create_subscription(canceled, "team",
+        paddle_subscription_id: "sub_already_gone",
+        status: "canceled"
+      )
+
+      assert Billing.cancel_subscription_for_close(canceled) == :ok
     end
   end
 
@@ -2396,6 +2432,10 @@ end
 # live HTTP layer.
 defmodule Emisar.BillingTest.CapturingPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
+
+  # Not what any of these stubs exercise; the behaviour requires it.
+  @impl true
+  def cancel_subscription(id), do: {:ok, %{"id" => id, "status" => "canceled"}}
 
   # The capturing pid rides in app env (set per-test) so the client stays
   # stateless — the same pattern BillingSyncTest's fail-id client uses.

@@ -70,6 +70,14 @@ defmodule Emisar.Accounts.Account.Changeset do
 
   def enable(%Account{} = account), do: change(account, disabled_at: nil)
 
+  @doc """
+  Internal — `Accounts.close_account/3`. Tombstones the account; every default
+  scope is `not_deleted`, so this is what makes it disappear rather than a hard
+  delete that would cascade run history and audit rows away.
+  """
+  def delete(%Account{} = account),
+    do: change(account, deleted_at: DateTime.utc_now())
+
   # Settings is non-nil by construction: a brand-new account whose attrs carry
   # no settings still gets the embedded defaults, so `account.settings.<field>`
   # is always safe to read across the app.

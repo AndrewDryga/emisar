@@ -13,7 +13,7 @@ defmodule Emisar.Accounts do
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, InvitationInput, Membership}
   alias Emisar.Accounts.{MembershipRunnerScope, RunnerAccess}
-  alias Emisar.{ApiKeys, Audit, Auth, Crypto, Mail, Repo, Slug, SSO, Users}
+  alias Emisar.{ApiKeys, Audit, Auth, Billing, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
 
   def start_link(opts) do
@@ -260,6 +260,73 @@ defmodule Emisar.Accounts do
 
   def set_account_disabled_for_support(_account_id, _disabled?, _reason, %Subject{}),
     do: {:error, :invalid_reason}
+
+  @doc """
+  Internal support write: close an account for good.
+
+  Cancels the Paddle subscription FIRST, then tombstones the account, both in
+  one transaction — so a Paddle failure leaves the account open rather than
+  producing a closed account that keeps being billed. `SyncSubscriptions` also
+  skips a deleted account's subscription, which is what stops the hourly
+  reconcile pulling the cancelled plan straight back.
+
+  Soft delete, not a hard one: every default scope is `not_deleted`, so the
+  account disappears while its run history and audit rows stay intact.
+
+  No console surface — this is reachable from a remote shell. It takes a
+  `%Subject{}` and gates on the same permission as the other support writes so
+  exposing it later is wiring, not a rewrite.
+
+  `{:ok, account} | {:error, :invalid_reason | :not_found | term()}`.
+  """
+  def close_account(account_id, reason, %Subject{} = subject)
+      when is_binary(reason) and byte_size(reason) in 1..500 do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_own_account_permission()
+           ) do
+      Multi.new()
+      |> Multi.run(:account, fn repo, _changes ->
+        Account.Query.not_deleted()
+        |> Account.Query.by_id(account_id)
+        |> Account.Query.lock_for_update()
+        |> repo.fetch(Account.Query)
+      end)
+      |> Multi.run(:subscription, fn _repo, %{account: account} ->
+        cancel_account_subscription(account)
+      end)
+      |> Multi.update(:closed, fn %{account: account} ->
+        Account.Changeset.delete(account)
+      end)
+      |> Multi.insert(:audit, fn %{closed: account} ->
+        Audit.Events.account_closed_by_support(subject, account, reason)
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{closed: account}} ->
+          :ok = broadcast_account_disabled(account.id)
+          disconnect_account_members(account.id)
+          {:ok, account}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  def close_account(_account_id, _reason, %Subject{}), do: {:error, :invalid_reason}
+
+  # Cancelling before the tombstone means a Paddle outage aborts the close
+  # rather than leaving an account that is gone from the product and still
+  # paying for it. A complimentary or never-subscribed account has nothing to
+  # cancel and closes cleanly.
+  defp cancel_account_subscription(%Account{} = account) do
+    case Billing.cancel_subscription_for_close(account) do
+      :ok -> {:ok, :cancelled}
+      {:error, reason} -> {:error, {:paddle_cancel_failed, reason}}
+    end
+  end
 
   defp account_lifecycle_changeset(%Account{disabled_at: %DateTime{}} = account, true),
     do: Ecto.Changeset.change(account)

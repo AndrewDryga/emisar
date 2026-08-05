@@ -8,6 +8,8 @@ defmodule EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient do
   alias Emisar.Billing.PaddleClient.Stub
 
   @impl true
+  defdelegate cancel_subscription(id), to: Stub
+  @impl true
   defdelegate create_customer(attrs), to: Stub
   @impl true
   defdelegate update_customer(attrs), to: Stub

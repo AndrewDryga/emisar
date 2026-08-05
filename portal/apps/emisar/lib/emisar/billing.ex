@@ -269,6 +269,29 @@ defmodule Emisar.Billing do
     end
   end
 
+  @doc """
+  Internal — `Accounts.close_account/3`: cancel this account's Paddle
+  subscription so a closed account stops being billed.
+
+  `:ok` when there was nothing to cancel (never subscribed, complimentary, or
+  already canceled) — closing an account that never paid is not an error. The
+  subscription row is left in place: the account is tombstoned around it, and
+  the row is the record of what was billed.
+  """
+  def cancel_subscription_for_close(%Accounts.Account{} = account) do
+    case peek_subscription_for_account(account.id) do
+      %Subscription{paddle_subscription_id: id, status: status}
+      when is_binary(id) and status != "canceled" ->
+        case PaddleClient.cancel_subscription(id) do
+          {:ok, _subscription} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
   @doc "Internal support write: grant or replace a non-Paddle complimentary plan."
   def grant_complimentary_plan(%Accounts.Account{} = account, plan)
       when plan in ["team", "enterprise"] do

@@ -4,6 +4,10 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
   alias Emisar.{Billing, Config}
 
+  # Not what any of these stubs exercise; the behaviour requires it.
+  @impl true
+  def cancel_subscription(id), do: {:ok, %{"id" => id, "status" => "canceled"}}
+
   @impl true
   def retrieve_subscription(id) do
     if id == Config.get_env(:emisar, :billing_sync_test_crash_id) do
@@ -261,6 +265,10 @@ end
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
 
+  # Not what any of these stubs exercise; the behaviour requires it.
+  @impl true
+  def cancel_subscription(id), do: {:ok, %{"id" => id, "status" => "canceled"}}
+
   @impl true
   def retrieve_subscription(id),
     do: {:ok, %{"id" => id, "status" => "some_new_paddle_status"}}
@@ -331,6 +339,10 @@ end
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
 
+  # Not what any of these stubs exercise; the behaviour requires it.
+  @impl true
+  def cancel_subscription(id), do: {:ok, %{"id" => id, "status" => "canceled"}}
+
   @impl true
   def retrieve_subscription(id), do: {:ok, %{"id" => id, "status" => "active"}}
   @impl true
@@ -398,6 +410,10 @@ end
 # log can be checked for payload leakage.
 defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClient do
   @behaviour Emisar.Billing.PaddleClient
+
+  # Not what any of these stubs exercise; the behaviour requires it.
+  @impl true
+  def cancel_subscription(id), do: {:ok, %{"id" => id, "status" => "canceled"}}
 
   @impl true
   def retrieve_subscription(_id),

@@ -67,6 +67,20 @@ defmodule Emisar.Billing.PaddleClient.Live do
     end
   end
 
+  # Paddle cancels a subscription by PATCHing scheduled_change, not by DELETE.
+  # `effective_from: "immediately"` because this is called when an account is
+  # being closed — a cancellation that waits for the period end keeps billing an
+  # account that is already gone.
+  @impl true
+  def cancel_subscription(id) do
+    case patch_json("/subscriptions/#{id}", %{
+           scheduled_change: %{action: "cancel", effective_from: "immediately"}
+         }) do
+      {:ok, %{"data" => sub}} -> {:ok, sub}
+      other -> other
+    end
+  end
+
   @impl true
   def list_products do
     # The catalog is a handful of products; per_page=200 is far above any

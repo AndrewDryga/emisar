@@ -23,6 +23,9 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
   defp sweep_page(limit, after_subscription_id) do
     subscriptions =
       Billing.Subscription.Query.all()
+      # A closed account's subscription is cancelled at Paddle by close_account/3;
+      # re-syncing it here would pull the plan straight back.
+      |> Billing.Subscription.Query.with_live_account()
       |> after_subscription(after_subscription_id)
       |> Billing.Subscription.Query.ordered_by_id()
       |> Billing.Subscription.Query.limit_to(limit)

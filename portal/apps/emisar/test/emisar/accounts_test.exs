@@ -513,6 +513,76 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "close_account/3" do
+    test "cancels the subscription, tombstones the account, and audits it" do
+      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_closing"
+      )
+
+      assert {:ok, closed} = Accounts.close_account(account.id, "Customer left", support_subject)
+      assert closed.deleted_at
+
+      # Soft delete: gone from every default scope, history intact.
+      assert Accounts.fetch_account_by_id_or_slug(account.id) == {:error, :not_found}
+
+      assert [%{event_type: "account.closed"}] =
+               Emisar.Repo.all(
+                 Emisar.Audit.Event.Query.all()
+                 |> Emisar.Audit.Event.Query.by_account_id(account.id)
+                 |> Emisar.Audit.Event.Query.by_event_types(["account.closed"])
+               )
+    end
+
+    test "the hourly reconcile leaves a closed account's subscription alone" do
+      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_closed_no_resync"
+      )
+
+      assert {:ok, _closed} = Accounts.close_account(account.id, "Left", support_subject)
+
+      # Without the not-deleted filter this sweep pulls the plan straight back
+      # from Paddle and the closed account bills again.
+      Emisar.Billing.Jobs.SyncSubscriptions.execute([])
+
+      refute Enum.any?(
+               Emisar.Repo.all(Emisar.Billing.Subscription.Query.with_live_account()),
+               &(&1.account_id == account.id)
+             )
+    end
+
+    test "a blank reason is refused, and an unknown account is not found" do
+      {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+
+      assert Accounts.close_account(account.id, "", support_subject) == {:error, :invalid_reason}
+
+      assert Accounts.close_account(Ecto.UUID.generate(), "gone", support_subject) ==
+               {:error, :not_found}
+    end
+
+    test "a member cannot close their own account" do
+      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: :viewer
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:error, :unauthorized} = Accounts.close_account(account.id, "nope", subject)
+    end
+  end
+
   describe "set_account_disabled_for_support/4" do
     test "disables and re-enables an account with atomic audit attribution" do
       {actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
