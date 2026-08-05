@@ -104,6 +104,12 @@ func TestParseTTL(t *testing.T) {
 		{"-1h", 0, true},
 		{"bogus", 0, true},
 		{"0d", 0, true},
+		// time.Duration is int64 nanoseconds, so it tops out near 292 years.
+		// Past that the multiplication wrapped and minted a cert whose not-after
+		// was in the PAST — unusable forever, while reading as long-lived.
+		{"292y", 292 * 365 * 24 * time.Hour, false},
+		{"293y", 0, true},
+		{"100000000y", 0, true},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {

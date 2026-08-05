@@ -39,8 +39,12 @@ type Plan struct {
 
 	// User is the local OS username to drop to before exec. Empty =
 	// inherit the runner's uid/gid. Resolved at start time on Linux
-	// (os/user.Lookup → SysProcAttr.Credential). On non-Linux the field
-	// is logged and ignored.
+	// (os/user.Lookup → SysProcAttr.Credential). On non-Linux it is an
+	// ERROR and the action does not run: this is a privilege boundary, and
+	// running as the runner's own identity because the platform cannot drop
+	// to the requested one is the wrong answer. The comment used to say
+	// "logged and ignored", which invited a maintainer to "restore"
+	// fail-open behaviour that never existed.
 	User string
 
 	// CancelGrace is the time between SIGTERM and SIGKILL when the context

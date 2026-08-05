@@ -83,6 +83,9 @@ func parseScope(s string) (attest.Scope, error) {
 	return scope, nil
 }
 
+// The largest whole years that fit time.Duration's int64 nanoseconds.
+const maxCertTTLYears = 292
+
 // parseTTL accepts Go durations (24h, 90m) plus the long-form Nd / Ny that Go's
 // time.ParseDuration can't express, for solo / break-glass certs. The long TTL
 // trades away revocation granularity — documented in .agent/kb/specs/signed-dispatch.md.
@@ -90,8 +93,12 @@ func parseTTL(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
 	if n, ok := strings.CutSuffix(s, "y"); ok {
 		yrs, err := strconv.Atoi(n)
-		if err != nil || yrs <= 0 {
-			return 0, fmt.Errorf("invalid ttl %q (try e.g. 24h, 30d, 1y)", s)
+		// time.Duration is nanoseconds in an int64, so it tops out around 292
+		// years. Past that the multiplication wrapped and minted a cert whose
+		// not-after was in the PAST — an "unusable forever" cert that reads as a
+		// long-lived one.
+		if err != nil || yrs <= 0 || yrs > maxCertTTLYears {
+			return 0, fmt.Errorf("invalid ttl %q (try e.g. 24h, 30d, 1y; max %dy)", s, maxCertTTLYears)
 		}
 		return time.Duration(yrs) * 365 * 24 * time.Hour, nil
 	}
