@@ -196,6 +196,22 @@ done
 log()   { printf '\033[1;34m[install]\033[0m %s\n' "$*" >&2; }
 warn()  { printf '\033[1;33m[install]\033[0m %s\n' "$*" >&2; }
 die()   { printf '\033[1;31m[install]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# Every value baked into config.yaml goes through here first.
+#
+# These land inside YAML scalars. A value carrying a quote does not corrupt the
+# file — it ADDS to it, and a newline injects whole config KEYS: `cloud.url`,
+# `paths.packs`, `admission`. Cloud-init rendering an instance tag straight into
+# RUNNER_LABEL_* is the realistic source, so this is not a hypothetical hostile
+# operator. Failing here also beats the alternative, which was a runner that
+# installs cleanly and then refuses to parse its own config on first boot.
+safe_config_value() {
+  case "$1" in
+    "") return 1 ;;
+    *[!A-Za-z0-9._:/@+-]*) return 1 ;;
+  esac
+  return 0
+}
 die_systemd_required() {
   local reason="$1"
   die "this installer requires systemd on Linux (${reason}).
@@ -543,6 +559,10 @@ config_skeleton() {
   local default_group
   default_group="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo emisar-runner)"
   local group="${RUNNER_GROUP:-${default_group}}"
+  safe_config_value "${group}" ||
+    die "runner group has characters that cannot be written to config.yaml: ${group}"
+  [ -z "${cloud_url}" ] || safe_config_value "${cloud_url}" ||
+    die "EMISAR_URL has characters that cannot be written to config.yaml: ${EMISAR_URL:-}"
   cat <<EOF
 schema_version: 1
 
@@ -561,6 +581,10 @@ EOF
     [ -n "${!label_var}" ] || continue
     label_key="$(printf '%s' "${label_var#RUNNER_LABEL_}" | tr '[:upper:]' '[:lower:]')"
     [ -n "$label_key" ] || continue
+    safe_config_value "${label_key}" ||
+      die "${label_var}: label name has characters that cannot be written to config.yaml"
+    safe_config_value "${!label_var}" ||
+      die "${label_var}: label value has characters that cannot be written to config.yaml"
     printf '    %s: "%s"\n' "$label_key" "${!label_var}"
     wrote_label=1
   done

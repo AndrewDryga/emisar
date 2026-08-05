@@ -60,6 +60,7 @@ func runnerChecks() []runnerCheck {
 		{"root-owned policy state", true, runnerPolicyOwnership},
 		{"latest release resolution", false, runnerLatestRelease},
 		{"fresh-install service rollback", false, runnerFreshServiceRollback},
+		{"config value validation", false, runnerConfigValueValidation},
 	}
 }
 
@@ -606,6 +607,42 @@ rollback_service
 	}
 	if strings.TrimSpace(upgrade) != "" {
 		return fmt.Errorf("a failed UPGRADE removed the pre-existing unit:\n%s", upgrade)
+	}
+	return nil
+}
+
+// runnerConfigValueValidation proves nothing that could break out of config.yaml
+// gets baked into it.
+//
+// Labels, the runner group and the cloud URL all land inside YAML scalars. A
+// quote does not corrupt the file, it ADDS to it — and a newline injects whole
+// config KEYS: cloud.url, paths.packs, admission. Cloud-init rendering an
+// instance tag into RUNNER_LABEL_* is the realistic source, so this is not a
+// hypothetical hostile operator.
+func runnerConfigValueValidation(h *harness) error {
+	accepted := []string{"web", "us-east-1", "prod_2", "wss://emisar.dev", "host.example.net"}
+	rejected := []string{
+		`web"`,
+		"web\n  cloud:",
+		"web\n    url: wss://evil.example",
+		"web $(id)",
+		"web`id`",
+		"",
+	}
+
+	for _, value := range accepted {
+		result := h.functions(h.repoPath("install.sh"), []string{"safe_config_value"},
+			"safe_config_value \"$CANDIDATE\"\n", map[string]string{"CANDIDATE": value})
+		if result.err != nil {
+			return fmt.Errorf("legitimate value %q was rejected:\n%s", value, result.output)
+		}
+	}
+	for _, value := range rejected {
+		result := h.functions(h.repoPath("install.sh"), []string{"safe_config_value"},
+			"safe_config_value \"$CANDIDATE\"\n", map[string]string{"CANDIDATE": value})
+		if result.err == nil {
+			return fmt.Errorf("value %q would have been baked into config.yaml", value)
+		}
 	}
 	return nil
 }
