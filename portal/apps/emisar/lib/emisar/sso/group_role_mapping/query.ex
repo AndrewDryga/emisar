@@ -25,21 +25,8 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
     |> select([mappings: m], {m.provider_id, count(m.id)})
   end
 
-  # {external_group_id, display} for a provider's mappings — the only place a
-  # directory group's human name is stored, so a SCIM Group read reaches for it
-  # to answer `displayName` (an unmapped group has none and falls back to its id).
-  def select_displays_for_provider(queryable \\ all(), provider_id) do
-    queryable
-    |> where([mappings: m], m.provider_id == ^provider_id)
-    |> where([mappings: m], not is_nil(m.external_group_display))
-    |> select([mappings: m], {m.external_group_id, m.external_group_display})
-  end
-
   def by_external_group_id(queryable, external_group_id),
     do: where(queryable, [mappings: m], m.external_group_id == ^external_group_id)
-
-  def by_external_group_ids(queryable, external_group_ids),
-    do: where(queryable, [mappings: m], m.external_group_id in ^external_group_ids)
 
   @impl Emisar.Repo.Query
   def cursor_fields,

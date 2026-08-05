@@ -1974,11 +1974,9 @@ defmodule Emisar.SSO do
   makes before every group push; without a group read it never matches an
   existing group and re-POSTs the whole directory each cycle.
 
-  `display` is whatever the directory last pushed the group under, held on the
-  group's own membership rows, so mapping a group to a role is not a prerequisite
-  for finding it by name. It falls back to the mapping's copy for groups synced
-  before the name was stored on the rows, and to the `external_group_id` for a
-  group whose directory has never sent a displayName.
+  `display` is whatever the directory last pushed on the group resource. Role
+  mappings and membership rows carry historical copies for their own workflows,
+  but do not redefine the SCIM resource's name.
   """
   def scim_list_groups(%IdentityProvider{} = provider, opts \\ []) do
     {display_name, opts} = Keyword.pop(opts, :display_name)
@@ -2023,28 +2021,12 @@ defmodule Emisar.SSO do
       |> DirectoryGroupMember.Query.by_external_group_ids(external_group_ids)
       |> DirectoryGroupMember.Query.select_member_external_ids(provider.id)
 
-    synced_displays_queryable =
-      DirectoryGroupMember.Query.not_deleted()
-      |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
-      |> DirectoryGroupMember.Query.by_external_group_ids(external_group_ids)
-      |> DirectoryGroupMember.Query.select_displays_for_provider(provider.id)
-
-    mapped_displays_queryable =
-      GroupRoleMapping.Query.not_deleted()
-      |> GroupRoleMapping.Query.by_account_id(provider.account_id)
-      |> GroupRoleMapping.Query.by_external_group_ids(external_group_ids)
-      |> GroupRoleMapping.Query.select_displays_for_provider(provider.id)
-
     members = Enum.group_by(Repo.all(members_queryable), &elem(&1, 0), &elem(&1, 1))
-    synced_displays = Map.new(Repo.all(synced_displays_queryable))
-    mapped_displays = Map.new(Repo.all(mapped_displays_queryable))
 
     Enum.map(groups, fn %DirectoryGroup{external_group_id: id} = group ->
       %{
         external_group_id: id,
-        # The group's own name wins; the membership rows and then the mapping's
-        # copy are fallbacks for groups synced before the row existed.
-        display: group.display || Map.get(synced_displays, id) || Map.get(mapped_displays, id),
+        display: group.display,
         member_external_ids: Map.get(members, id, [])
       }
     end)

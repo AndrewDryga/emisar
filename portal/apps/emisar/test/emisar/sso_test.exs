@@ -3330,6 +3330,17 @@ defmodule Emisar.SSOTest do
           member_external_ids: ["okta|member"]
         })
 
+      {:ok, _mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{
+            external_group_id: "grp-nameless",
+            external_group_display: "Stale mapping name",
+            role: :viewer
+          },
+          subject
+        )
+
       assert {:ok, [%{external_group_id: "grp-ops"}], 1} =
                SSO.scim_list_groups(provider, display_name: "Operations")
 
@@ -3339,6 +3350,11 @@ defmodule Emisar.SSOTest do
       # Only a group whose directory never sent a displayName answers on its id.
       assert {:ok, [%{external_group_id: "grp-nameless"}], 1} =
                SSO.scim_list_groups(provider, display_name: "grp-nameless")
+
+      # A mapping's administrative label does not rename the SCIM resource.
+      # Filtering and serialization therefore use the same display precedence.
+      assert {:ok, [], 0} =
+               SSO.scim_list_groups(provider, display_name: "Stale mapping name")
 
       assert {:ok, [], 0} =
                SSO.scim_list_groups(provider, display_name: "grp-unmapped")

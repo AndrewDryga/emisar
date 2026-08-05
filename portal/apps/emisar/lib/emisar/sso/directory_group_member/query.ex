@@ -62,19 +62,6 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   def by_external_group_ids(queryable \\ all(), external_group_ids),
     do: where(queryable, [group_members: g], g.external_group_id in ^external_group_ids)
 
-  # The display each synced group was last pushed under, as {external_group_id,
-  # display} pairs for a caller to `Map.new`. Aggregated because the display
-  # lives on every member row: a PATCH `add` op carries no displayName, so its
-  # row is inserted blank, and `max/1` (which ignores NULLs) still resolves the
-  # group's name from the siblings a PUT stamped.
-  def select_displays_for_provider(queryable \\ all(), provider_id) do
-    queryable
-    |> where([group_members: g], g.provider_id == ^provider_id)
-    |> where([group_members: g], not is_nil(g.external_group_display))
-    |> group_by([group_members: g], g.external_group_id)
-    |> select([group_members: g], {g.external_group_id, max(g.external_group_display)})
-  end
-
   # Every membership link a provider has, as {external_group_id, member externalId}
   # pairs — what a SCIM `GET /Groups` must echo back as each group's `members`.
   # Joins the identity (its `scim_external_id` is the id the IdP knows a member
