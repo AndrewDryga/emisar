@@ -41,12 +41,6 @@ const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
 // Keep this in step with the version any workflow installs directly.
 const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
 
-// emisar is a security product, so an advisory fails the gate. cowlib 2.18.0 is
-// current with no upstream patch, and its affected response-header encoder is
-// reachable only from the internal Prometheus listener, which emits fixed
-// headers behind the GCP firewall. Keep the exact IDs visible until a fix lands.
-const ignoredAdvisories = "GHSA-g2wm-735q-3f56,EEF-CVE-2026-43966"
-
 const (
 	checkUsage = `usage: ./run check <target>
 
@@ -351,7 +345,7 @@ func (a *App) portalGate(ctx context.Context) error {
 	}{
 		{"portal compile", []string{"compile", "--warnings-as-errors"}},
 		{"portal Credo", []string{"credo"}},
-		{"portal dependency audit", []string{"deps.audit", "--ignore-advisory-ids", ignoredAdvisories}},
+		{"portal dependency audit", []string{"deps.audit"}},
 		{"portal Sobelow", []string{"sobelow", "--root", "apps/emisar_web", "--config"}},
 	} {
 		if err := a.gatePhase(check.label, func() error {
