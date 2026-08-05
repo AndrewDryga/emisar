@@ -36,6 +36,18 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
     }
   end
 
+  defp render_email_verification(assigns) do
+    rendered_to_string(~H"""
+    <CoreComponents.mfa_enrollment_email_verification
+      email={@email}
+      form={@form}
+      error={@error}
+    >
+      <:actions><button>Verify email</button></:actions>
+    </CoreComponents.mfa_enrollment_email_verification>
+    """)
+  end
+
   describe "mfa_enrollment/1" do
     test "stacked: QR svg, caption, URI disclosure with copy, code_input form" do
       html = render_enrollment(base_assigns())
@@ -68,5 +80,21 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
 
       refute html =~ ~s(class="text-sm text-zinc-300")
     end
+  end
+
+  test "email verification precedes the QR with an inline code form" do
+    html =
+      render_email_verification(%{
+        email: "owner@example.com",
+        form: to_form(%{"code" => ""}, as: "mfa_enrollment"),
+        error: "Wrong code"
+      })
+
+    assert html =~ "owner@example.com"
+    assert html =~ ~s(id="mfa_enrollment_email_form")
+    assert html =~ ~s(phx-submit="verify_mfa_enrollment_email")
+    assert html =~ ~s(id="mfa-enrollment-email-code")
+    assert html =~ "Wrong code"
+    assert html =~ "Verify email"
   end
 end

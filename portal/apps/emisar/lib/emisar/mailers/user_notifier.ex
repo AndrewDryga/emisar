@@ -174,6 +174,22 @@ defmodule Emisar.Mailers.UserNotifier do
     """)
   end
 
+  def deliver_mfa_enrollment_code(%Users.User{} = user, code) do
+    deliver(user.email, "Confirm your emisar authenticator setup", """
+    Someone started adding an authenticator to your emisar account.
+
+    To continue, enter this code on the two-factor setup form:
+
+        #{code}
+
+    The code works once and expires in 15 minutes. If you didn't request this,
+    you can safely ignore this email — no authenticator can be added without
+    the code sent here.
+
+    — emisar
+    """)
+  end
+
   @doc """
   Notifies an approver that a run is waiting on their decision. The
   link lands on the approval detail page; the approver must be signed

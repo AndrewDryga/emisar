@@ -106,6 +106,31 @@ defmodule Emisar.Users do
     )
   end
 
+  @doc """
+  Internal — compose a proof-gated MFA enrollment update and its audit rows
+  into Auth's transaction. Auth has already locked the current user row and
+  validated the current-inbox proof; this helper keeps the Users changeset
+  private while the final credential write and audit commit atomically.
+  """
+  def put_mfa_enrollment(
+        %Multi{} = multi,
+        %User{} = user,
+        secret,
+        enabled_at,
+        recovery_code_digests,
+        %RequestContext{} = context
+      ) do
+    multi
+    |> Multi.update(
+      :mfa_enrollment,
+      User.Changeset.mfa(user, secret, enabled_at, recovery_code_digests)
+    )
+    |> Audit.Multi.log_for_user(:mfa_enrollment_audit, nil, "user.mfa_enabled",
+      user_fn: & &1.mfa_enrollment,
+      extra: [context: context]
+    )
+  end
+
   # -- Self-service mutations ---------------------------------------------
 
   @doc """

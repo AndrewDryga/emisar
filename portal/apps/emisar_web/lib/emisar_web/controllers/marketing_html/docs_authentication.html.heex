@@ -83,9 +83,12 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Require MFA</strong>
-            routes members who have not enrolled TOTP to setup before they can use the account. An
-            SSO connection can satisfy the requirement only when you mark that provider as
-            enforcing MFA; otherwise emisar still asks for TOTP.
+            routes members who have not enrolled TOTP to setup before they can use the account.
+            Before emisar reveals an authenticator secret, the member must enter a code sent to
+            their current email address. A provider that supplies no email leaves enrollment
+            closed until an administrator corrects the IdP identity. An SSO connection can satisfy
+            the requirement only when you mark that provider as enforcing MFA; otherwise emisar
+            still asks for TOTP.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

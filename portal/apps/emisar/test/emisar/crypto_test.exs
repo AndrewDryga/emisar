@@ -101,9 +101,9 @@ defmodule Emisar.CryptoTest do
     end
   end
 
-  describe "email_change_code/0" do
+  describe "credential_step_up_code/0" do
     test "returns a six-digit code and its digest" do
-      {code, digest} = Crypto.email_change_code()
+      {code, digest} = Crypto.credential_step_up_code()
 
       assert code =~ ~r/\A\d{6}\z/
       assert digest == Crypto.hash(code)

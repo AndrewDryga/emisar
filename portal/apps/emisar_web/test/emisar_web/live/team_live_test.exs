@@ -1401,12 +1401,8 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       secret = Emisar.Auth.generate_mfa_secret()
 
-      {:ok, _user, _codes} =
-        Emisar.Auth.enable_mfa(
-          secret,
-          NimbleTOTP.verification_code(secret),
-          Fixtures.Subjects.subject_for(owner, account)
-        )
+      {_user, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner, account))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 

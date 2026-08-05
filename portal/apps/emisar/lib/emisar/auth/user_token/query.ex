@@ -9,6 +9,7 @@ defmodule Emisar.Auth.UserToken.Query do
   @confirm_validity_in_days 7
   @magic_link_validity_in_minutes 15
   @email_change_validity_in_minutes 15
+  @mfa_enrollment_validity_in_minutes 15
 
   def all,
     do: from(t in UserToken, as: :tokens)
@@ -37,7 +38,7 @@ defmodule Emisar.Auth.UserToken.Query do
   def not_expired(queryable, context),
     do: where(queryable, [tokens: t], t.inserted_at > ago(^validity_in_days(context), "day"))
 
-  @doc "Split-code magic-link tokens that still have guess attempts left (locked at 0)."
+  @doc "Typable code tokens that still have guess attempts left (locked at 0)."
   def with_attempts_remaining(queryable),
     do: where(queryable, [tokens: t], t.remaining_attempts > 0)
 
@@ -54,6 +55,9 @@ defmodule Emisar.Auth.UserToken.Query do
   defp validity_in_days("confirm"), do: @confirm_validity_in_days
   defp validity_in_days("magic_link"), do: @magic_link_validity_in_minutes / (24 * 60)
   defp validity_in_days("email_change"), do: @email_change_validity_in_minutes / (24 * 60)
+
+  defp validity_in_days("mfa_enrollment"),
+    do: @mfa_enrollment_validity_in_minutes / (24 * 60)
 
   @doc ~S(Preload the token's user, scoped to live users — a soft-deleted user's token preloads no user.)
   def with_preloaded_user(queryable \\ all()) do

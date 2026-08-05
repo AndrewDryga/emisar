@@ -6,7 +6,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   sees the recovery codes once, and continues to the dashboard.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth}
+  alias Emisar.{Accounts, Auth, Mail, Users}
 
   setup %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
@@ -56,7 +56,9 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert html =~ account.name
     assert html =~ "requires two-factor authentication"
 
-    # The provisioning URI is rendered for the can't-scan path — recover
+    html = begin_mfa_enrollment(lv)
+
+    # The provisioning URI is rendered only after current-inbox proof — recover
     # the secret from it to play the authenticator's part.
     assert [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
     secret = Base.decode32!(encoded, padding: false)
@@ -76,6 +78,11 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert has_element?(lv, "button[disabled]", "Continue to dashboard")
     refute has_element?(lv, "input[type=checkbox][checked]")
 
+    # A crafted socket event cannot bypass the disabled button.
+    html = render_click(lv, "continue", %{})
+    assert html =~ "Save your recovery codes before continuing."
+    assert has_element?(lv, "button[disabled]", "Continue to dashboard")
+
     html = render_click(lv, "toggle_codes_saved", %{})
     # The <.checkbox checked={@codes_saved?}> reflects the toggled state, and
     # Continue un-gates.
@@ -92,6 +99,8 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   test "a wrong code is rejected inline at the form, not as a flash", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
 
+    begin_mfa_enrollment(lv)
+
     render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
 
     assert has_element?(lv, "#mfa_form", "didn't match")
@@ -104,8 +113,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   } do
     secret = Auth.generate_mfa_secret()
 
-    {:ok, _user, _codes} =
-      Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+    {:ok, _user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
 
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
   end
@@ -125,14 +133,13 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     end
   end
 
-  test "the secret is minted once on the connected mount and the QR matches it", %{conn: conn} do
-    # the secret MUST be generated on the connected mount
-    # (the static render runs in a separate process, so a QR generated there
-    # would differ from the one the form verifies against). The connected render
-    # carries a provisioning URI whose `secret=` is a real base32 secret, and a
-    # re-render of the same connected view keeps that exact secret — it is not
-    # re-minted on every render.
-    {:ok, lv, html} = live(conn, ~p"/app/mfa_setup")
+  test "the secret is minted only after email proof and the QR keeps it", %{conn: conn} do
+    {:ok, lv, initial} = live(conn, ~p"/app/mfa_setup")
+
+    refute initial =~ "secret="
+    refute_received {:email, _}
+
+    html = begin_mfa_enrollment(lv)
 
     assert [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
     # The encoded secret is a real, decodable base32 TOTP secret (not a placeholder).
@@ -142,18 +149,22 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert [_, ^encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, render(lv))
   end
 
-  test "the disconnected (static) render shows the preparing placeholder, no secret yet", %{
+  test "the disconnected render asks for an explicit email and sends nothing", %{
     conn: conn
   } do
-    # before the LiveSocket connects, the static mount runs
-    # the `connected?(socket)` == false branch: no secret is minted (it can't be,
-    # the dead render is a throwaway process) and the page shows the "preparing"
-    # placeholder rather than a QR a user might scan into a code that can never
-    # confirm. The plain GET is exactly that pre-connect render.
     html = conn |> get(~p"/app/mfa_setup") |> html_response(200)
 
-    assert html =~ "Preparing your setup code"
-    # No provisioning secret is leaked into the dead render.
+    assert html =~ "Email me a verification code"
+    refute html =~ "secret="
+    refute_received {:email, _}
+  end
+
+  test "crafted recovery-code events before enrollment are harmless", %{conn: conn} do
+    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+
+    html = render_click(lv, "toggle_codes_saved", %{})
+
+    assert html =~ "Email me a verification code"
     refute html =~ "secret="
   end
 
@@ -165,13 +176,64 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     # source: assert the page carries that server-built SVG (its distinctive 240px
     # canvas + QR viewBox), not arbitrary markup.
     {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
-    html = render(lv)
+    html = begin_mfa_enrollment(lv)
 
     assert html =~ "<svg"
     # The dimensions MfaQr.svg/1 sets (width: 240) + EQRCode's module grid viewBox —
     # the fingerprint of the server-generated QR rather than a passthrough blob.
     assert html =~ ~s|width="240.0"|
     assert html =~ ~s|viewBox=|
+  end
+
+  test "a no-email member fails closed with actionable IdP guidance", %{account: account} do
+    {:ok, user} = Users.provision_sso_user(%{full_name: "No Email"})
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: "viewer"
+    )
+
+    conn = build_conn() |> log_in_user(user)
+    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+
+    html = render_click(lv, "start_mfa", %{})
+
+    assert html =~ "identity provider did not supply an email address"
+    assert html =~ "Ask your administrator"
+    refute html =~ "secret="
+    refute_received {:email, _}
+  end
+
+  test "a mail-provider failure does not advance enforced enrollment", %{conn: conn} do
+    Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
+    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+
+    html = render_click(lv, "start_mfa", %{})
+
+    assert html =~ "could not deliver the verification code"
+    assert html =~ "contact support"
+    assert html =~ "Email me a verification code"
+    refute html =~ "Email verification code"
+    refute html =~ "secret="
+    refute_received {:email, _}
+  end
+
+  test "a suppressed current address does not claim or advance delivery", %{
+    conn: conn,
+    user: user
+  } do
+    assert {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+
+    html = render_click(lv, "start_mfa", %{})
+
+    assert html =~ "cannot deliver mail to your current address"
+    assert html =~ "Contact support"
+    assert html =~ "Email me a verification code"
+    refute html =~ "Email verification code"
+    refute html =~ "secret="
+    refute_received {:email, _}
   end
 
   test "an account that stops requiring MFA mid-flow sends the member to the dashboard", %{
@@ -235,12 +297,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       # short-circuits them to /app (nothing to enroll) — neither strands them.
       secret = Auth.generate_mfa_secret()
 
-      {:ok, _user, _codes} =
-        Auth.enable_mfa(
-          secret,
-          NimbleTOTP.verification_code(secret),
-          subject
-        )
+      {:ok, _user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
 
       # Gate: a normal page mounts (no redirect to setup).
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account}/runners")
@@ -291,5 +348,15 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/mfa_setup")
       assert to == ~p"/app/#{account}/sso_required"
     end
+  end
+
+  defp begin_mfa_enrollment(lv) do
+    render_click(lv, "start_mfa", %{})
+    assert_received {:email, email}
+    [code] = Regex.run(~r/\d{6}/, email.text_body)
+
+    render_hook(lv, "verify_mfa_enrollment_email", %{
+      "mfa_enrollment" => %{"code" => code}
+    })
   end
 end

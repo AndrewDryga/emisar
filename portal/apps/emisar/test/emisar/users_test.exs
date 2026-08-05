@@ -126,6 +126,34 @@ defmodule Emisar.UsersTest do
     end
   end
 
+  describe "put_mfa_enrollment/6" do
+    test "composes the credential update and audit into the caller's transaction" do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      enabled_at = DateTime.utc_now()
+      recovery_digest = Crypto.hash("recovery-code")
+
+      assert {:ok, %{mfa_enrollment: updated}} =
+               Ecto.Multi.new()
+               |> Users.put_mfa_enrollment(
+                 user,
+                 "mfa-secret",
+                 enabled_at,
+                 [recovery_digest],
+                 %Emisar.RequestContext{}
+               )
+               |> Repo.commit_multi()
+
+      assert updated.mfa_secret == "mfa-secret"
+      assert updated.mfa_enabled_at == enabled_at
+      assert updated.mfa_recovery_codes == [recovery_digest]
+
+      assert {:ok, [event], _} =
+               Audit.list_events(subject, filter: [event_type: ["user.mfa_enabled"]])
+
+      assert event.actor_id == user.id
+    end
+  end
+
   describe "update_user_profile/2 (self-service)" do
     setup do
       %{account: Fixtures.Accounts.create_account()}

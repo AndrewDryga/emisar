@@ -66,9 +66,11 @@ defmodule Emisar.Audit.Event.Query do
     {"user.email_change_requested", "Email change requested"},
     {"user.email_change_rate_limited", "Email change rate limited"},
     {"user.email_changed", "Email changed"},
+    {"user.inbox_step_up_rate_limited", "Inbox step-up rate limited"},
     {"user.profile_updated", "Profile updated"},
     {"user.updated_by_admin", "Profile edited by admin"},
     {"user.magic_link_issued", "Magic link issued"},
+    {"user.mfa_enrollment_requested", "MFA enrollment requested"},
     {"user.mfa_enabled", "MFA enabled"},
     {"user.mfa_disabled", "MFA disabled"},
     {"user.mfa_failed", "MFA failed"},
@@ -237,8 +239,10 @@ defmodule Emisar.Audit.Event.Query do
        {"user.email_change_requested", "Email change requested"},
        {"user.email_change_rate_limited", "Email change rate limited"},
        {"user.email_changed", "Email changed"},
+       {"user.inbox_step_up_rate_limited", "Inbox step-up rate limited"},
        {"user.profile_updated", "Profile updated"},
        {"user.updated_by_admin", "Profile edited by admin"},
+       {"user.mfa_enrollment_requested", "MFA enrollment requested"},
        {"user.mfa_enabled", "MFA enabled"},
        {"user.mfa_disabled", "MFA disabled"},
        {"user.mfa_failed", "MFA failed"},
@@ -837,19 +841,25 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, false, "A user asked to change their sign-in email (confirmation pending)."},
     "user.email_change_rate_limited" =>
       {true, false, false,
-       "An email-change code delivery or verification attempt was refused after the user reached its limit."},
+       "An email-change code delivery was refused after the user reached its limit."},
     "user.email_changed" => {true, false, false, "A user's sign-in email change completed."},
+    "user.inbox_step_up_rate_limited" =>
+      {true, false, false,
+       "A current-inbox credential proof was refused after the user reached its attempt limit."},
     "user.profile_updated" => {true, true, false, "A user edited their own profile."},
     "user.updated_by_admin" => {true, true, true, "An admin edited a teammate's profile."},
     "user.magic_link_issued" =>
       {true, false, false, "A sign-in code/link was requested and emailed (consumed or not)."},
+    "user.mfa_enrollment_requested" =>
+      {true, false, false,
+       "A user requested a current-inbox challenge before enrolling an authenticator."},
     "user.mfa_enabled" => {true, true, false, "A user enrolled a second factor."},
     "user.mfa_disabled" =>
       {true, true, false, "A user (or admin) removed a second-factor enrollment."},
     "user.mfa_failed" => {true, false, false, "A second-factor challenge failed during sign-in."},
     "user.mfa_rate_limited" =>
       {true, false, false,
-       "A user reached the MFA attempt limit and another challenge was refused."},
+       "A user reached an MFA credential limit and another attempt was refused."},
     "user.mfa_recovery_code_used" =>
       {true, false, false, "A one-time recovery code was spent to pass the second factor."},
     "user.mfa_recovery_codes_regenerated" =>

@@ -136,14 +136,14 @@ defmodule Emisar.Crypto do
     do: hash(nonce <> secret)
 
   @doc """
-  Mints an email-change step-up code as `{code, digest}` — a 6-digit code
-  emailed to the user's CURRENT address to re-prove control before the
-  identity-defining email is changed. Only `digest = hash(code)` is stored.
+  Mints a credential step-up code as `{code, digest}` — a 6-digit code emailed
+  to the user's CURRENT address to re-prove control before a credential change.
+  Only `digest = hash(code)` is stored.
   Unlike the magic link there's no browser nonce: the authenticated session
   IS the second factor, so the code stands alone, and a tight attempts budget
   plus a short expiry bound online guessing.
   """
-  def email_change_code do
+  def credential_step_up_code do
     code = numeric_code(@code_length)
     {code, hash(code)}
   end

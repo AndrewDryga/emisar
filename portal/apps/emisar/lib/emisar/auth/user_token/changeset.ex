@@ -64,7 +64,24 @@ defmodule Emisar.Auth.UserToken.Changeset do
     )
   end
 
-  @doc "Spend one attempt on a split-code step-up token (a wrong nonce/secret/code)."
+  @doc "Pending current-inbox code, promoted only after its email is accepted for delivery."
+  def pending_mfa_enrollment(%Users.User{} = user, digest, attempts)
+      when is_binary(digest) and is_integer(attempts) do
+    change(%UserToken{},
+      token: digest,
+      context: "mfa_enrollment_pending",
+      sent_to: user.email,
+      user_id: user.id,
+      remaining_attempts: attempts,
+      metadata: %{"user_updated_at" => DateTime.to_iso8601(user.updated_at)}
+    )
+  end
+
+  @doc "Makes a delivered current-inbox code eligible for MFA-enrollment verification."
+  def activate_mfa_enrollment(%UserToken{} = token),
+    do: change(token, context: "mfa_enrollment")
+
+  @doc "Spend one attempt on a typable magic-link or credential-step-up token."
   def decrement_attempts(%UserToken{remaining_attempts: n} = token) when is_integer(n),
     do: change(token, remaining_attempts: n - 1)
 

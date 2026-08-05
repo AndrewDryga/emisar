@@ -14,7 +14,8 @@ defmodule Emisar.Auth.UserToken do
     field :context, :string
     field :sent_to, :string
     field :metadata, :map, default: %{}
-    # Split-code magic link only — see the migration. nil for every other token.
+    # Online-guess budget for typable magic-link and credential-step-up codes.
+    # nil for opaque email/session tokens.
     field :remaining_attempts, :integer
     # How the session was authenticated — carried onto %Auth.Subject{} and
     # stamped on every audit row (provenance). `auth_method` is the method;

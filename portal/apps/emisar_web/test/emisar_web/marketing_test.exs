@@ -1548,6 +1548,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Magic link"
       assert html =~ "OIDC SSO"
       assert html =~ "Require MFA"
+      assert html =~ "Before emisar reveals an authenticator secret"
+      assert html =~ "provider that supplies no email"
       assert html =~ "Require SSO"
       assert html =~ "SCIM directory sync"
       assert html =~ "Sessions and offboarding"

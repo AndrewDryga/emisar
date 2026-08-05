@@ -1,6 +1,6 @@
 defmodule Emisar.AuthTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Auth, Crypto, Fixtures, Mail, RequestContext}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, Fixtures, Mail, RequestContext, Users}
   alias Emisar.Auth.{SecurityAttemptWindow, UserToken}
   alias Emisar.Users.User
 
@@ -34,6 +34,13 @@ defmodule Emisar.AuthTest do
     Audit.Event.Query.all()
     |> Audit.Event.Query.by_event_type(event_type)
     |> Repo.all()
+  end
+
+  defp issue_mfa_enrollment_code(subject) do
+    assert {:ok, :sent} = Auth.issue_mfa_enrollment_code(subject)
+    assert_received {:email, email}
+    assert [code] = Regex.run(~r/\d{6}/, email.text_body)
+    code
   end
 
   describe "roles/0" do
@@ -1426,7 +1433,219 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "enable_mfa/3" do
+  describe "issue_mfa_enrollment_code/1" do
+    setup do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: user, subject: subject}
+    end
+
+    test "reports sent delivery and records the credential request without sensitive payload", %{
+      subject: subject
+    } do
+      assert {:ok, :sent} = Auth.issue_mfa_enrollment_code(subject)
+      assert_received {:email, _email}
+
+      assert [event] = events_of_type("user.mfa_enrollment_requested")
+      assert event.payload == %{}
+    end
+
+    test "reports a suppressed current address without pretending a code was sent", %{
+      user: user,
+      subject: subject
+    } do
+      assert {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      assert {:ok, :suppressed} = Auth.issue_mfa_enrollment_code(subject)
+      refute_received {:email, _email}
+      refute Repo.one(UserToken.Query.by_context("mfa_enrollment"))
+      refute Repo.one(UserToken.Query.by_context("mfa_enrollment_pending"))
+    end
+
+    test "reports a mail-provider failure without activating an undelivered code", %{
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
+
+      assert {:error, {:failed, :boom}} = Auth.issue_mfa_enrollment_code(subject)
+      refute_received {:email, _email}
+      refute Repo.one(UserToken.Query.by_context("mfa_enrollment"))
+      refute Repo.one(UserToken.Query.by_context("mfa_enrollment_pending"))
+    end
+
+    test "a suppressed resend preserves the code already delivered", %{
+      user: user,
+      subject: subject
+    } do
+      delivered_code = issue_mfa_enrollment_code(subject)
+      assert {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      assert {:ok, :suppressed} = Auth.issue_mfa_enrollment_code(subject)
+      refute_received {:email, _email}
+      assert {:ok, _proof} = Auth.verify_mfa_enrollment_code(delivered_code, subject)
+    end
+
+    test "a failed resend preserves the code already delivered", %{subject: subject} do
+      delivered_code = issue_mfa_enrollment_code(subject)
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
+
+      assert {:error, {:failed, :boom}} = Auth.issue_mfa_enrollment_code(subject)
+      refute_received {:email, _email}
+      assert {:ok, _proof} = Auth.verify_mfa_enrollment_code(delivered_code, subject)
+    end
+  end
+
+  describe "verify_mfa_enrollment_code/2" do
+    setup do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: user, subject: subject, secret: Auth.generate_mfa_secret()}
+    end
+
+    test "the emailed code is single-use and enables only its user", %{
+      user: user,
+      subject: subject,
+      secret: secret
+    } do
+      code = issue_mfa_enrollment_code(subject)
+
+      assert {:error, :invalid} = Auth.verify_mfa_enrollment_code("000000", subject)
+      assert {:ok, proof} = Auth.verify_mfa_enrollment_code(code, subject)
+      assert {:error, :invalid} = Auth.verify_mfa_enrollment_code(code, subject)
+
+      assert {:ok, %User{id: id, mfa_enabled_at: %DateTime{}}, codes} =
+               Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
+
+      assert id == user.id
+      assert length(codes) == 10
+    end
+
+    test "a forged proof cannot enroll or upgrade the email-change factor", %{
+      user: user,
+      subject: subject,
+      secret: secret
+    } do
+      assert {:error, :mfa_enrollment_proof_stale} =
+               Auth.enable_mfa(
+                 secret,
+                 NimbleTOTP.verification_code(secret),
+                 "forged",
+                 subject
+               )
+
+      refute Repo.reload!(user).mfa_enabled_at
+      assert {:ok, :code} = Auth.begin_email_change("attacker@example.com", subject)
+      assert_received {:email, _current_inbox_code}
+    end
+
+    test "a code sent before an email change proves neither the new inbox nor enrollment", %{
+      user: user,
+      subject: subject
+    } do
+      code = issue_mfa_enrollment_code(subject)
+      new_email = Fixtures.Random.unique_email()
+      Fixtures.Users.update_email(user, new_email)
+
+      assert {:error, :invalid} = Auth.verify_mfa_enrollment_code(code, subject)
+
+      refute Repo.one(
+               UserToken.Query.by_user_id(user.id)
+               |> UserToken.Query.by_context("mfa_enrollment")
+             )
+    end
+
+    test "a proof becomes stale after any intervening user-row change", %{
+      subject: subject,
+      secret: secret
+    } do
+      proof = Fixtures.Users.mfa_enrollment_proof(subject)
+      assert {:ok, _updated} = Users.update_user_profile(%{full_name: "Changed"}, subject)
+
+      assert {:error, :mfa_enrollment_proof_stale} =
+               Auth.enable_mfa(
+                 secret,
+                 NimbleTOTP.verification_code(secret),
+                 proof,
+                 subject
+               )
+    end
+
+    test "an expired proof is refused", %{subject: subject, secret: secret} do
+      proof = Fixtures.Users.mfa_enrollment_proof(subject)
+      signing_secret = Application.fetch_env!(:emisar, :email_link_secret)
+
+      assert {:ok, payload} =
+               Phoenix.Token.verify(signing_secret, "mfa enrollment proof", proof, max_age: 300)
+
+      expired =
+        Phoenix.Token.sign(signing_secret, "mfa enrollment proof", payload,
+          signed_at: System.system_time(:second) - 301
+        )
+
+      assert {:error, :mfa_enrollment_proof_stale} =
+               Auth.enable_mfa(
+                 secret,
+                 NimbleTOTP.verification_code(secret),
+                 expired,
+                 subject
+               )
+    end
+
+    test "two concurrent enrollments with one proof produce one winner", %{
+      subject: subject,
+      secret: secret
+    } do
+      proof = Fixtures.Users.mfa_enrollment_proof(subject)
+      otp = NimbleTOTP.verification_code(secret)
+
+      results =
+        1..2
+        |> Enum.map(fn _ ->
+          Task.async(fn -> Auth.enable_mfa(secret, otp, proof, subject) end)
+        end)
+        |> Enum.map(&Task.await(&1, 5_000))
+
+      assert Enum.count(results, &match?({:ok, %User{}, _codes}, &1)) == 1
+      assert Enum.count(results, &(&1 == {:error, :mfa_already_enabled})) == 1
+    end
+
+    test "delivery is bounded and first exhaustion emits one MFA signal", %{subject: subject} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      for _ <- 1..5 do
+        issue_mfa_enrollment_code(subject)
+      end
+
+      assert {:error, :rate_limited} = Auth.issue_mfa_enrollment_code(subject)
+      refute_received {:email, _}
+
+      assert [event] = events_of_type("user.mfa_rate_limited")
+      assert event.payload["scope"] == "mfa_enrollment_issue"
+      assert event.payload["attempt_limit"] == 5
+      assert event.payload["window_seconds"] == 900
+    end
+
+    test "email-change and enrollment verification share the inbox budget", %{subject: subject} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      enrollment_code = issue_mfa_enrollment_code(subject)
+
+      for _ <- 1..3 do
+        assert {:error, :invalid} = Auth.verify_mfa_enrollment_code("000000", subject)
+      end
+
+      assert :ok = Auth.issue_email_change_code("new@example.com", subject)
+      assert_received {:email, _email_change_code}
+
+      for _ <- 1..2 do
+        assert {:error, :invalid} = Auth.verify_email_change_code("000000", subject)
+      end
+
+      assert {:error, :rate_limited} =
+               Auth.verify_mfa_enrollment_code(enrollment_code, subject)
+
+      assert [_event] = events_of_type("user.inbox_step_up_rate_limited")
+    end
+  end
+
+  describe "enable_mfa/4" do
     setup do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       %{subject: subject, secret: Auth.generate_mfa_secret()}
@@ -1453,7 +1672,8 @@ defmodule Emisar.AuthTest do
       secret: secret,
       subject: subject
     } do
-      assert {:error, :invalid_otp} = Auth.enable_mfa(secret, "000000", subject)
+      proof = Fixtures.Users.mfa_enrollment_proof(subject)
+      assert {:error, :invalid_otp} = Auth.enable_mfa(secret, "000000", proof, subject)
     end
 
     # recovery codes are shown once in plaintext, and only their SHA-256
@@ -1537,8 +1757,7 @@ defmodule Emisar.AuthTest do
       secret: secret,
       subject: subject
     } do
-      {:ok, _user, [old_code | _]} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+      {:ok, _user, [old_code | _]} = Fixtures.Users.enroll_mfa(secret, subject)
 
       assert {:ok, %User{mfa_enabled_at: %DateTime{}} = user, new_codes} =
                Auth.regenerate_mfa_recovery_codes(subject)
@@ -1634,7 +1853,7 @@ defmodule Emisar.AuthTest do
       assert event.request_id == "req-direct-security-attempt"
     end
 
-    test "logs each email-change limit only on its first refusal" do
+    test "logs each credential limit under its accurate event type" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
 
@@ -1650,15 +1869,13 @@ defmodule Emisar.AuthTest do
                  Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context)
       end
 
-      events =
-        "user.email_change_rate_limited"
-        |> events_of_type()
-        |> Enum.sort_by(& &1.payload["scope"])
+      assert [issue_event] = events_of_type("user.email_change_rate_limited")
+      assert issue_event.payload["scope"] == "email_change_issue"
+      assert issue_event.request_id == "req-email_change_issue"
 
-      assert Enum.map(events, &{&1.payload["scope"], &1.request_id}) == [
-               {"email_change_issue", "req-email_change_issue"},
-               {"inbox_step_up", "req-inbox_step_up"}
-             ]
+      assert [verify_event] = events_of_type("user.inbox_step_up_rate_limited")
+      assert verify_event.payload["scope"] == "inbox_step_up"
+      assert verify_event.request_id == "req-inbox_step_up"
     end
   end
 

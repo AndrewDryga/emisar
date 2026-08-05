@@ -1838,7 +1838,8 @@ defmodule Emisar.AuditTest do
             ~w[approval.denied action_run.denied enrollment_key.revoked user.session_revoked
                   runner.disabled runner.deleted runner.version_rejected membership.removed
                   membership.suspended approval.expired action_run.cancelled approval.grant_revoked
-                  user.mfa_rate_limited user.email_change_rate_limited] do
+                  user.mfa_rate_limited user.email_change_rate_limited
+                  user.inbox_step_up_rate_limited] do
         assert Audit.event_outcome(t) == :warn, "expected #{t} to be :warn"
       end
     end
@@ -1852,7 +1853,8 @@ defmodule Emisar.AuditTest do
 
     test "lifecycle positives stay :neutral — green marks verdicts, not activity" do
       for t <- ~w[api_key.created runner.connected runner.enabled user.signed_in
-                  user.email_confirmed user.mfa_enabled membership.invitation_accepted
+                  user.email_confirmed user.mfa_enrollment_requested user.mfa_enabled
+                  membership.invitation_accepted
                   membership.reinstated runbook.published session.account_switched] do
         assert Audit.event_outcome(t) == :neutral, "expected #{t} to be :neutral"
       end

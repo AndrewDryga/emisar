@@ -45,7 +45,7 @@ defmodule Emisar.Fixtures.Users do
   end
 
   @doc """
-  Enrolls TOTP MFA for `subject` via `Auth.enable_mfa` and returns its tagged result
+  Enrolls TOTP MFA through the real current-inbox proof and returns its tagged result
   (`{:ok, user, recovery_codes}` / `{:error, reason}`). Generating a code with
   `NimbleTOTP.verification_code/1` and validating it inside `enable_mfa` reads the
   clock twice; if a 30s window boundary falls between the two reads the code is
@@ -55,13 +55,41 @@ defmodule Emisar.Fixtures.Users do
   wraps it for setup sites that just need an MFA-enabled user.
   """
   def enroll_mfa(secret, %Subject{} = subject) when is_binary(secret) do
-    case Emisar.Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject) do
+    proof = mfa_enrollment_proof(subject)
+
+    case Emisar.Auth.enable_mfa(
+           secret,
+           NimbleTOTP.verification_code(secret),
+           proof,
+           subject
+         ) do
       {:error, :invalid_otp} ->
-        Emisar.Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
+        Emisar.Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          subject
+        )
 
       enrolled ->
         enrolled
     end
+  end
+
+  @doc "Issues and verifies the real current-inbox proof used by MFA enrollment tests."
+  def mfa_enrollment_proof(%Subject{} = subject) do
+    {:ok, :sent} = Emisar.Auth.issue_mfa_enrollment_code(subject)
+
+    email =
+      receive do
+        {:email, email} -> email
+      after
+        1_000 -> raise "MFA enrollment code email was not delivered"
+      end
+
+    [code] = Regex.run(~r/\d{6}/, email.text_body)
+    {:ok, proof} = Emisar.Auth.verify_mfa_enrollment_code(code, subject)
+    proof
   end
 
   @doc "Enrolls MFA as test setup, unwrapping `enroll_mfa/2` to `{user, recovery_codes}`."

@@ -86,8 +86,13 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("user.mfa_failed", p),
     do: pairs(reason: get(p, :reason))
 
-  defp summarize("user.mfa_rate_limited", p),
-    do: pairs(limit: get(p, :attempt_limit), window: format_window(get(p, :window_seconds)))
+  defp summarize("user.mfa_rate_limited", p) do
+    pairs(
+      step: mfa_limit_step(get(p, :scope)),
+      limit: get(p, :attempt_limit),
+      window: format_window(get(p, :window_seconds))
+    )
+  end
 
   defp summarize("user.email_change_rate_limited", p) do
     pairs(
@@ -96,6 +101,9 @@ defmodule EmisarWeb.AuditSummary do
       window: format_window(get(p, :window_seconds))
     )
   end
+
+  defp summarize("user.inbox_step_up_rate_limited", p),
+    do: pairs(limit: get(p, :attempt_limit), window: format_window(get(p, :window_seconds)))
 
   defp summarize("user.mfa_recovery_code_used", p) do
     case get(p, :remaining) do
@@ -350,6 +358,10 @@ defmodule EmisarWeb.AuditSummary do
   defp email_change_limit_step("email_change_issue"), do: "code delivery"
   defp email_change_limit_step("inbox_step_up"), do: "code verification"
   defp email_change_limit_step(_scope), do: nil
+
+  defp mfa_limit_step("mfa_challenge"), do: "challenge"
+  defp mfa_limit_step("mfa_enrollment_issue"), do: "enrollment code delivery"
+  defp mfa_limit_step(_scope), do: nil
 
   defp access_from_to(payload) do
     before_mode = payload |> map_value(:before) |> get(:mode)

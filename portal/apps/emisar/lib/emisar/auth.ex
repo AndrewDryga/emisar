@@ -978,7 +978,7 @@ defmodule Emisar.Auth do
              @email_change_issue_window_ms,
              subject.context
            ) do
-      {code, digest} = Crypto.email_change_code()
+      {code, digest} = Crypto.credential_step_up_code()
 
       prior =
         UserToken.Query.by_user_id(user.id)
@@ -1020,35 +1020,9 @@ defmodule Emisar.Auth do
              @inbox_step_up_limit,
              @inbox_step_up_window_ms,
              subject.context
-           ) do
-      Multi.new()
-      |> Multi.run(:token, fn repo, _changes ->
-        loaded_token =
-          UserToken.Query.by_user_id(user.id)
-          |> UserToken.Query.by_context("email_change")
-          |> UserToken.Query.not_expired("email_change")
-          |> UserToken.Query.with_attempts_remaining()
-          |> UserToken.Query.lock_for_update()
-          |> repo.one()
-
-        if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid}
-      end)
-      |> Multi.run(:outcome, fn repo, %{token: token} ->
-        if Crypto.secure_compare(Crypto.hash(code), token.token) do
-          # Match → single-use: consume the token, hand back the bound email.
-          {:ok, _} = repo.delete(token)
-          {:ok, {:ok, token.sent_to}}
-        else
-          # Wrong code → spend one attempt. `{:ok, …}` so the decrement COMMITS.
-          {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
-          {:ok, {:error, :invalid}}
-        end
-      end)
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{outcome: outcome}} -> outcome
-        {:error, _} -> {:error, :invalid}
-      end
+           ),
+         {:ok, token} <- consume_credential_step_up_code(code, user, "email_change") do
+      {:ok, token.sent_to}
     end
   end
 
@@ -1185,10 +1159,256 @@ defmodule Emisar.Auth do
 
   defp recovery_codes_remaining(%Users.User{}), do: 0
 
+  @mfa_enrollment_code_attempts 5
+  @mfa_enrollment_issue_limit 5
+  @mfa_enrollment_issue_window_ms 15 * 60_000
+  @mfa_enrollment_pending_max_age_seconds 60
+  @mfa_enrollment_proof_salt "mfa enrollment proof"
+  @mfa_enrollment_proof_max_age_seconds 5 * 60
+
   @doc """
-  Generates a fresh TOTP secret for the user. Caller is responsible
-  for displaying the QR code; nothing is persisted until
-  `enable_mfa/3` confirms the user has the secret.
+  Emails a current-inbox proof code before a user may enroll a new MFA factor.
+  The dedicated token is single-use, expires after 15 minutes, and has five
+  token-local guesses. Delivery also shares a durable five-per-15-minute budget
+  across Portal nodes and reloads. Returns `{:ok, :sent}`, `{:ok, :suppressed}`
+  when the address cannot receive Emisar mail, or `{:error, reason}` when the
+  mail provider rejects the send.
+  """
+  def issue_mfa_enrollment_code(%Subject{actor: %Users.User{id: id}} = subject) do
+    with {:ok, user} <- Users.fetch_user_by_id(id),
+         :ok <- ensure_mfa_not_enabled(user),
+         :ok <- ensure_mfa_enrollment_email(user),
+         :ok <-
+           throttle_security_attempt(
+             user,
+             :mfa_enrollment_issue,
+             @mfa_enrollment_issue_limit,
+             @mfa_enrollment_issue_window_ms,
+             subject.context
+           ) do
+      {code, digest} = Crypto.credential_step_up_code()
+
+      Multi.new()
+      |> Multi.run(:user, fn repo, _changes ->
+        with {:ok, locked_user} <- Users.fetch_and_lock_user_by_id(user.id, repo),
+             :ok <- ensure_mfa_not_enabled(locked_user),
+             :ok <- ensure_mfa_enrollment_email(locked_user) do
+          {:ok, locked_user}
+        end
+      end)
+      |> Multi.run(:token, fn repo, %{user: locked_user} ->
+        pending_query =
+          UserToken.Query.by_user_id(locked_user.id)
+          |> UserToken.Query.by_context("mfa_enrollment_pending")
+          |> UserToken.Query.lock_for_update()
+
+        pending_tokens = repo.all(pending_query)
+
+        if Enum.any?(pending_tokens, &recent_mfa_enrollment_pending?/1) do
+          {:error, :issuance_in_progress}
+        else
+          # A process can die after recording a request but before finalizing its
+          # delivery. Reclaim that non-verifiable pending row after the mailer's
+          # maximum useful wait while the user lock excludes a competing issue.
+          {_count, nil} =
+            UserToken.Query.by_user_id(locked_user.id)
+            |> UserToken.Query.by_context("mfa_enrollment_pending")
+            |> repo.delete_all()
+
+          UserToken.Changeset.pending_mfa_enrollment(
+            locked_user,
+            digest,
+            @mfa_enrollment_code_attempts
+          )
+          |> repo.insert()
+        end
+      end)
+      |> Audit.Multi.log_for_user(:audit, nil, "user.mfa_enrollment_requested",
+        user_fn: & &1.user,
+        extra: [context: subject.context]
+      )
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{user: locked_user, token: token}} ->
+          delivery =
+            case Mailers.UserNotifier.deliver_mfa_enrollment_code(locked_user, code) do
+              {:ok, %{suppressed: true}} -> {:ok, :suppressed}
+              {:ok, _sent} -> {:ok, :sent}
+              {:error, reason} -> {:error, reason}
+            end
+
+          finalize_mfa_enrollment_delivery(token, locked_user.id, delivery)
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  defp recent_mfa_enrollment_pending?(%UserToken{inserted_at: inserted_at}) do
+    DateTime.diff(DateTime.utc_now(), inserted_at, :second) <
+      @mfa_enrollment_pending_max_age_seconds
+  end
+
+  defp finalize_mfa_enrollment_delivery(
+         %UserToken{} = pending,
+         user_id,
+         {:ok, :sent} = delivery
+       ) do
+    Multi.new()
+    |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(user_id, repo) end)
+    |> Multi.run(:pending, fn repo, _changes ->
+      loaded =
+        UserToken.Query.by_id(pending.id)
+        |> UserToken.Query.by_user_id(user_id)
+        |> UserToken.Query.by_context("mfa_enrollment_pending")
+        |> UserToken.Query.lock_for_update()
+        |> repo.one()
+
+      if loaded, do: {:ok, loaded}, else: {:error, :issuance_expired}
+    end)
+    |> Multi.delete_all(:prior, fn _changes ->
+      UserToken.Query.by_user_id(user_id)
+      |> UserToken.Query.by_context("mfa_enrollment")
+    end)
+    |> Multi.update(:token, fn %{pending: loaded} ->
+      UserToken.Changeset.activate_mfa_enrollment(loaded)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, _changes} -> delivery
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp finalize_mfa_enrollment_delivery(%UserToken{} = pending, user_id, delivery) do
+    UserToken.Query.by_id(pending.id)
+    |> UserToken.Query.by_user_id(user_id)
+    |> UserToken.Query.by_context("mfa_enrollment_pending")
+    |> Repo.delete_all()
+
+    delivery
+  end
+
+  @doc """
+  Consumes the emailed MFA-enrollment code and returns a short-lived opaque
+  proof. Verification spends the shared current-inbox attempt budget, so
+  replacing this token or switching to email-change verification cannot reset
+  the guessing window. `enable_mfa/4` rechecks the proof against the locked
+  current user row before writing the new factor.
+  """
+  def verify_mfa_enrollment_code(
+        code,
+        %Subject{actor: %Users.User{id: id}} = subject
+      )
+      when is_binary(code) do
+    with {:ok, user} <- Users.fetch_user_by_id(id),
+         :ok <- ensure_mfa_not_enabled(user),
+         :ok <- ensure_mfa_enrollment_email(user),
+         :ok <-
+           throttle_security_attempt(
+             user,
+             :inbox_step_up,
+             @inbox_step_up_limit,
+             @inbox_step_up_window_ms,
+             subject.context
+           ),
+         {:ok, verified_user} <- consume_mfa_enrollment_code(code, user.id) do
+      {:ok, mfa_enrollment_proof(verified_user)}
+    end
+  end
+
+  defp ensure_mfa_not_enabled(%Users.User{mfa_enabled_at: nil}), do: :ok
+  defp ensure_mfa_not_enabled(%Users.User{}), do: {:error, :mfa_already_enabled}
+
+  defp ensure_mfa_enrollment_email(%Users.User{email: email})
+       when is_binary(email) and email != "",
+       do: :ok
+
+  defp ensure_mfa_enrollment_email(%Users.User{}), do: {:error, :email_unavailable}
+
+  defp consume_credential_step_up_code(code, %Users.User{} = user, context) do
+    Multi.new()
+    |> Multi.run(:token, fn repo, _changes ->
+      loaded_token =
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context(context)
+        |> UserToken.Query.not_expired(context)
+        |> UserToken.Query.with_attempts_remaining()
+        |> UserToken.Query.lock_for_update()
+        |> repo.one()
+
+      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid}
+    end)
+    |> Multi.run(:outcome, fn repo, %{token: token} ->
+      if Crypto.secure_compare(Crypto.hash(code), token.token) do
+        {:ok, _} = repo.delete(token)
+        {:ok, {:ok, token}}
+      else
+        # Commit the decrement while still returning the domain rejection.
+        {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
+        {:ok, {:error, :invalid}}
+      end
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{outcome: outcome}} -> outcome
+      {:error, _reason} -> {:error, :invalid}
+    end
+  end
+
+  defp consume_mfa_enrollment_code(code, user_id) do
+    Multi.new()
+    |> Multi.run(:user, fn repo, _changes ->
+      with {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+           :ok <- ensure_mfa_not_enabled(user),
+           :ok <- ensure_mfa_enrollment_email(user) do
+        {:ok, user}
+      end
+    end)
+    |> Multi.run(:token, fn repo, %{user: user} ->
+      loaded_token =
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("mfa_enrollment")
+        |> UserToken.Query.not_expired("mfa_enrollment")
+        |> UserToken.Query.with_attempts_remaining()
+        |> UserToken.Query.lock_for_update()
+        |> repo.one()
+
+      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid}
+    end)
+    |> Multi.run(:outcome, fn repo, %{user: user, token: token} ->
+      cond do
+        not mfa_enrollment_token_current?(token, user) ->
+          {:ok, _} = repo.delete(token)
+          {:ok, {:error, :invalid}}
+
+        Crypto.secure_compare(Crypto.hash(code), token.token) ->
+          {:ok, _} = repo.delete(token)
+          {:ok, {:ok, token}}
+
+        true ->
+          {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
+          {:ok, {:error, :invalid}}
+      end
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{user: user, outcome: {:ok, _token}}} -> {:ok, user}
+      {:ok, %{outcome: {:error, :invalid}}} -> {:error, :invalid}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp mfa_enrollment_token_current?(%UserToken{} = token, %Users.User{} = user) do
+    token.sent_to == user.email and
+      token.metadata["user_updated_at"] == DateTime.to_iso8601(user.updated_at)
+  end
+
+  @doc """
+  Generates a fresh TOTP secret for the user. Caller is responsible for
+  displaying the QR code; nothing is persisted until `enable_mfa/4` confirms
+  both the current-inbox proof and the authenticator code.
   """
   def generate_mfa_secret, do: Crypto.totp_secret()
 
@@ -1199,33 +1419,88 @@ defmodule Emisar.Auth do
   @recovery_code_count 10
 
   @doc """
-  Enable TOTP for the caller. Verifies the OTP against the secret
-  before flipping the bit; returns the freshly-generated **recovery
-  codes** (plaintext, 10 single-use base32 strings) along with the
-  user — show these once and never again. The plaintext leaves this
-  function and the DB never sees it.
+  Enable TOTP for the caller after a current-inbox proof from
+  `verify_mfa_enrollment_code/2`. Verifies the proof against the locked current
+  user row and the OTP against the proposed secret before flipping the bit;
+  returns the freshly-generated **recovery codes** (plaintext, 10 single-use
+  base32 strings) along with the user — show these once and never again. The
+  plaintext leaves this function and the DB never sees it.
 
-  Self-service — the user is the subject's own actor; the write happens
-  on the locked re-read of their row (`Users.update_user_mfa/5`), so a
-  stale socket snapshot can't clobber a concurrent credential change.
+  Self-service — the user is the subject's own actor; the write happens on the
+  locked re-read of their row, so a stale proof or socket snapshot can't clobber
+  a concurrent credential change or replace an existing enrollment.
   """
-  def enable_mfa(secret, otp, %Subject{actor: %Users.User{} = user} = subject)
-      when is_binary(secret) and is_binary(otp) do
-    if Crypto.valid_totp?(secret, otp) do
+  def enable_mfa(secret, otp, proof, %Subject{actor: %Users.User{} = user} = subject)
+      when is_binary(secret) and is_binary(otp) and is_binary(proof) do
+    with {:ok, payload} <- verify_mfa_enrollment_proof_for_user(proof, user),
+         true <- Crypto.valid_totp?(secret, otp) do
       {plain_codes, digests} = generate_recovery_codes()
 
-      user.id
-      |> Users.update_user_mfa(secret, DateTime.utc_now(), digests,
-        audit: &Audit.user_changesets(&1, "user.mfa_enabled", context: subject.context)
-      )
+      Multi.new()
+      |> Multi.run(:user, fn repo, _changes ->
+        with {:ok, loaded_user} <- Users.fetch_and_lock_user_by_id(user.id, repo),
+             :ok <- ensure_mfa_enrollment_state_current(loaded_user, payload) do
+          {:ok, loaded_user}
+        end
+      end)
+      |> Multi.merge(fn %{user: loaded_user} ->
+        Users.put_mfa_enrollment(
+          Multi.new(),
+          loaded_user,
+          secret,
+          DateTime.utc_now(),
+          digests,
+          subject.context
+        )
+      end)
+      |> Repo.commit_multi()
       |> case do
-        {:ok, updated} -> {:ok, updated, plain_codes}
+        {:ok, %{mfa_enrollment: updated}} -> {:ok, updated, plain_codes}
         {:error, reason} -> {:error, reason}
       end
     else
-      {:error, :invalid_otp}
+      false -> {:error, :invalid_otp}
+      {:error, reason} -> {:error, reason}
     end
   end
+
+  def enable_mfa(_, _, _, %Subject{}), do: {:error, :mfa_enrollment_proof_stale}
+
+  defp mfa_enrollment_proof(%Users.User{} = user) do
+    Phoenix.Token.sign(
+      mfa_proof_secret(),
+      @mfa_enrollment_proof_salt,
+      mfa_enrollment_proof_payload(user)
+    )
+  end
+
+  defp mfa_enrollment_proof_payload(%Users.User{} = user),
+    do: {:mfa_enrollment, user.id, user.email, user.updated_at}
+
+  defp verify_mfa_enrollment_proof_for_user(proof, %Users.User{id: user_id}) do
+    case Phoenix.Token.verify(mfa_proof_secret(), @mfa_enrollment_proof_salt, proof,
+           max_age: @mfa_enrollment_proof_max_age_seconds
+         ) do
+      {:ok, {:mfa_enrollment, ^user_id, email, %DateTime{}} = payload}
+      when is_binary(email) ->
+        {:ok, payload}
+
+      _other ->
+        {:error, :mfa_enrollment_proof_stale}
+    end
+  end
+
+  defp ensure_mfa_enrollment_state_current(
+         %Users.User{mfa_enabled_at: nil} = user,
+         payload
+       ) do
+    if mfa_enrollment_proof_payload(user) == payload,
+      do: :ok,
+      else: {:error, :mfa_enrollment_proof_stale}
+  end
+
+  defp ensure_mfa_enrollment_state_current(%Users.User{}, _payload),
+    do: {:error, :mfa_already_enabled}
 
   @doc """
   Disable TOTP for the caller after verifying a current TOTP or recovery code.
@@ -1397,16 +1672,17 @@ defmodule Emisar.Auth do
   defp maybe_log_security_attempt_exhausted(
          multi,
          %Users.User{} = user,
-         :mfa_challenge,
+         scope,
          limit,
          window_ms,
          %RequestContext{} = context
-       ) do
+       )
+       when scope in [:mfa_challenge, :mfa_enrollment_issue] do
     log_security_attempt_exhausted(
       multi,
       user,
       "user.mfa_rate_limited",
-      :mfa_challenge,
+      scope,
       limit,
       window_ms,
       context
@@ -1416,17 +1692,35 @@ defmodule Emisar.Auth do
   defp maybe_log_security_attempt_exhausted(
          multi,
          %Users.User{} = user,
-         scope,
+         :email_change_issue,
          limit,
          window_ms,
          %RequestContext{} = context
-       )
-       when scope in [:email_change_issue, :inbox_step_up] do
+       ) do
     log_security_attempt_exhausted(
       multi,
       user,
       "user.email_change_rate_limited",
-      scope,
+      :email_change_issue,
+      limit,
+      window_ms,
+      context
+    )
+  end
+
+  defp maybe_log_security_attempt_exhausted(
+         multi,
+         %Users.User{} = user,
+         :inbox_step_up,
+         limit,
+         window_ms,
+         %RequestContext{} = context
+       ) do
+    log_security_attempt_exhausted(
+      multi,
+      user,
+      "user.inbox_step_up_rate_limited",
+      :inbox_step_up,
       limit,
       window_ms,
       context

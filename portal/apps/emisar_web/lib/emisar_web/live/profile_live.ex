@@ -9,6 +9,9 @@ defmodule EmisarWeb.ProfileLive do
   # its exhaustion in the same words.
   @mfa_rate_limit_error "Too many attempts. Wait a few minutes, then try again."
   @email_issue_rate_limit_error "Too many code requests. Wait up to 15 minutes, then try again."
+  @mfa_enrollment_email_unavailable_error "Your identity provider did not supply an email address. Ask your administrator to update it, then sign in again."
+  @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up 2FA."
+  @mfa_enrollment_email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
   def mount(_params, session, socket) do
     user = socket.assigns.current_user
@@ -16,11 +19,7 @@ defmodule EmisarWeb.ProfileLive do
     {:ok,
      socket
      |> assign(:page_title, "Profile")
-     |> assign(:mfa_secret, nil)
-     |> assign(:mfa_uri, nil)
-     |> assign(:mfa_qr_svg, nil)
      |> assign(:mfa_recovery_codes, nil)
-     |> assign(:mfa_error, nil)
      |> assign(:mfa_disable_step, :idle)
      |> assign(:mfa_disable_error, nil)
      |> assign(:current_session_token, session["user_token"])
@@ -31,7 +30,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign_mfa_facts(user)
      |> assign_profile_form(user)
      |> assign_email_form(user)
-     |> assign_mfa_form()
+     |> reset_mfa_enrollment()
      |> assign_mfa_disable_form()
      |> reset_email_step()
      |> stream(:sessions, [])}
@@ -238,26 +237,94 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("start_mfa", _params, socket) do
-    secret = Auth.generate_mfa_secret()
-    uri = EmisarWeb.MfaQr.provisioning_uri(socket.assigns.current_user.email, secret)
+    case Auth.issue_mfa_enrollment_code(socket.assigns.current_subject) do
+      {:ok, :sent} ->
+        {:noreply,
+         socket
+         |> assign(:mfa_enrollment_step, :email)
+         |> assign(:mfa_enrollment_email_error, nil)
+         |> put_flash(:info, "We emailed a verification code to your current address.")}
 
-    {:noreply,
-     socket
-     |> assign(:mfa_secret, secret)
-     |> assign(:mfa_uri, uri)
-     |> assign(:mfa_qr_svg, EmisarWeb.MfaQr.svg(uri))
-     |> assign(:mfa_error, nil)
-     |> assign_mfa_form()}
+      {:ok, :suppressed} ->
+        {:noreply, put_flash(socket, :error, @mfa_enrollment_email_suppressed_error)}
+
+      {:error, :rate_limited} ->
+        {:noreply, put_flash(socket, :error, @email_issue_rate_limit_error)}
+
+      {:error, :email_unavailable} ->
+        {:noreply, put_flash(socket, :error, @mfa_enrollment_email_unavailable_error)}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, @mfa_enrollment_email_delivery_error)}
+    end
+  end
+
+  def handle_event(
+        "verify_mfa_enrollment_email",
+        %{"mfa_enrollment" => %{"code" => code}},
+        socket
+      ) do
+    if socket.assigns.mfa_enrollment_step == :email do
+      case Auth.verify_mfa_enrollment_code(
+             String.trim(code || ""),
+             socket.assigns.current_subject
+           ) do
+        {:ok, proof} ->
+          {:noreply, prepare_mfa_authenticator(socket, proof)}
+
+        {:error, :invalid} ->
+          {:noreply,
+           assign(
+             socket,
+             :mfa_enrollment_email_error,
+             "That code is wrong or expired. Try again."
+           )}
+
+        {:error, :rate_limited} ->
+          {:noreply, assign(socket, :mfa_enrollment_email_error, @mfa_rate_limit_error)}
+
+        {:error, :email_unavailable} ->
+          {:noreply,
+           socket
+           |> put_flash(:error, @mfa_enrollment_email_unavailable_error)
+           |> reset_mfa_enrollment()}
+
+        {:error, _reason} ->
+          {:noreply,
+           assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
+    end
+  end
+
+  def handle_event("resend_mfa_enrollment_email", _params, socket) do
+    if socket.assigns.mfa_enrollment_step == :email do
+      case Auth.issue_mfa_enrollment_code(socket.assigns.current_subject) do
+        {:ok, :sent} ->
+          {:noreply,
+           socket
+           |> assign(:mfa_enrollment_email_error, nil)
+           |> put_flash(:info, "We sent a new verification code.")}
+
+        {:ok, :suppressed} ->
+          {:noreply,
+           assign(socket, :mfa_enrollment_email_error, @mfa_enrollment_email_suppressed_error)}
+
+        {:error, :rate_limited} ->
+          {:noreply, assign(socket, :mfa_enrollment_email_error, @email_issue_rate_limit_error)}
+
+        {:error, _reason} ->
+          {:noreply,
+           assign(socket, :mfa_enrollment_email_error, @mfa_enrollment_email_delivery_error)}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
+    end
   end
 
   def handle_event("cancel_mfa", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:mfa_secret, nil)
-     |> assign(:mfa_uri, nil)
-     |> assign(:mfa_qr_svg, nil)
-     |> assign(:mfa_error, nil)
-     |> assign_mfa_form()}
+    {:noreply, reset_mfa_enrollment(socket)}
   end
 
   def handle_event("confirm_mfa", %{"mfa" => %{"otp" => otp}}, socket) do
@@ -266,7 +333,12 @@ defmodule EmisarWeb.ProfileLive do
     if is_nil(secret) do
       {:noreply, put_flash(socket, :error, "Start the enable flow first.")}
     else
-      case Auth.enable_mfa(secret, otp, socket.assigns.current_subject) do
+      case Auth.enable_mfa(
+             secret,
+             otp,
+             socket.assigns.mfa_enrollment_proof,
+             socket.assigns.current_subject
+           ) do
         {:ok, updated, recovery_codes} ->
           {:noreply,
            socket
@@ -277,13 +349,17 @@ defmodule EmisarWeb.ProfileLive do
            |> assign(:current_user, updated)
            |> assign_mfa_facts(updated)
            |> assign(:mfa_recovery_codes, recovery_codes)
-           |> assign(:mfa_secret, nil)
-           |> assign(:mfa_uri, nil)
-           |> assign(:mfa_qr_svg, nil)
-           |> assign(:mfa_error, nil)}
+           |> reset_mfa_enrollment()}
 
         {:error, :invalid_otp} ->
           {:noreply, assign(socket, :mfa_error, "Invalid code — try the next one.")}
+
+        {:error, reason}
+        when reason in [:mfa_enrollment_proof_stale, :mfa_already_enabled] ->
+          {:noreply,
+           socket
+           |> put_flash(:error, "Your account changed. Verify your current email again.")
+           |> reset_mfa_enrollment()}
 
         {:error, _changeset} ->
           {:noreply, assign(socket, :mfa_error, "Could not enable 2FA. Try again.")}
@@ -481,6 +557,37 @@ defmodule EmisarWeb.ProfileLive do
 
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))
+  end
+
+  defp assign_mfa_enrollment_email_form(socket) do
+    assign(socket, :mfa_enrollment_email_form, to_form(%{"code" => ""}, as: "mfa_enrollment"))
+  end
+
+  defp prepare_mfa_authenticator(socket, proof) do
+    secret = Auth.generate_mfa_secret()
+    uri = EmisarWeb.MfaQr.provisioning_uri(socket.assigns.current_user.email, secret)
+
+    socket
+    |> assign(:mfa_enrollment_step, :totp)
+    |> assign(:mfa_enrollment_proof, proof)
+    |> assign(:mfa_secret, secret)
+    |> assign(:mfa_uri, uri)
+    |> assign(:mfa_qr_svg, EmisarWeb.MfaQr.svg(uri))
+    |> assign(:mfa_error, nil)
+    |> assign_mfa_form()
+  end
+
+  defp reset_mfa_enrollment(socket) do
+    socket
+    |> assign(:mfa_enrollment_step, :idle)
+    |> assign(:mfa_enrollment_proof, nil)
+    |> assign(:mfa_enrollment_email_error, nil)
+    |> assign(:mfa_secret, nil)
+    |> assign(:mfa_uri, nil)
+    |> assign(:mfa_qr_svg, nil)
+    |> assign(:mfa_error, nil)
+    |> assign_mfa_enrollment_email_form()
+    |> assign_mfa_form()
   end
 
   defp assign_mfa_disable_form(socket) do
@@ -752,6 +859,26 @@ defmodule EmisarWeb.ProfileLive do
                   </.button>
                 </:actions>
               </.simple_form>
+            <% @mfa_enrollment_step == :email -> %>
+              <.mfa_enrollment_email_verification
+                email={@current_user.email}
+                form={@mfa_enrollment_email_form}
+                error={@mfa_enrollment_email_error}
+              >
+                <:actions>
+                  <.button phx-disable-with="Verifying...">Verify email</.button>
+                  <.button
+                    variant={:ghost}
+                    type="button"
+                    phx-click="resend_mfa_enrollment_email"
+                  >
+                    Resend code
+                  </.button>
+                  <.button variant={:ghost} type="button" phx-click="cancel_mfa">
+                    Cancel
+                  </.button>
+                </:actions>
+              </.mfa_enrollment_email_verification>
             <% @mfa_uri -> %>
               <.mfa_enrollment
                 qr_svg={@mfa_qr_svg}
@@ -773,8 +900,8 @@ defmodule EmisarWeb.ProfileLive do
               </.mfa_enrollment>
             <% true -> %>
               <p class="text-sm text-zinc-300">
-                Generate a TOTP secret, scan it with your authenticator app, then confirm with a
-                6-digit code to turn it on.
+                Verify your current email, then scan a TOTP secret with your authenticator app and
+                confirm its 6-digit code.
               </p>
               <%!-- Secondary like every profile island action — this page has
                    no single primary (ONE emerald fill per viewport). --%>

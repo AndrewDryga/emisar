@@ -669,14 +669,14 @@ defmodule EmisarWeb.ProfileLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
-    test "start → confirm with a valid OTP enables MFA and shows recovery codes once", %{
+    test "email proof → authenticator confirm enables MFA and shows recovery codes once", %{
       conn: conn,
       user: user,
       account: account
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      html = render_click(lv, "start_mfa", %{})
+      html = begin_mfa_enrollment(lv)
       assert html =~ "<svg"
 
       # The LV holds the secret server-side; read it back the way the
@@ -705,6 +705,67 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute html =~ "Regenerate for a fresh set"
     end
 
+    test "mount and refresh send no enrollment mail; the explicit start reveals no secret", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      refute html =~ "secret="
+      refute_received {:email, _}
+
+      html = render_click(lv, "start_mfa", %{})
+
+      assert html =~ "Email verification code"
+      refute html =~ "secret="
+      assert_received {:email, _}
+    end
+
+    test "a suppressed current address does not claim or advance delivery", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      assert {:ok, _suppression} =
+               Emisar.Mail.suppress(user.email, :hard_bounce, "bounce")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      html = render_click(lv, "start_mfa", %{})
+
+      assert html =~ "cannot deliver mail to your current address"
+      assert html =~ "Contact support"
+      refute html =~ "Email verification code"
+      refute html =~ "secret="
+      refute_received {:email, _}
+    end
+
+    test "a wrong or out-of-sequence inbox code never reveals the authenticator secret", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      html =
+        render_hook(lv, "verify_mfa_enrollment_email", %{
+          "mfa_enrollment" => %{"code" => "000000"}
+        })
+
+      assert html =~ "Start the enable flow first."
+      refute html =~ "secret="
+
+      render_click(lv, "start_mfa", %{})
+      assert_received {:email, _}
+
+      html =
+        render_hook(lv, "verify_mfa_enrollment_email", %{
+          "mfa_enrollment" => %{"code" => "000000"}
+        })
+
+      assert html =~ "wrong or expired"
+      refute html =~ "secret="
+    end
+
     test "the enrollment QR is a server-rendered inline SVG, not a third-party image", %{
       conn: conn,
       account: account
@@ -716,7 +777,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # external image/script is the QR source.
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      html = render_click(lv, "start_mfa", %{})
+      html = begin_mfa_enrollment(lv)
 
       # The QR is an inlined <svg> (EQRCode), with the manual-entry fallback URI
       # present in the page…
@@ -756,7 +817,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      render_click(lv, "start_mfa", %{})
+      begin_mfa_enrollment(lv)
 
       render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
 
@@ -777,7 +838,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Start the enable flow so a pending secret is stashed, then submit a
       # six-char *non-numeric* code. NimbleTOTP compares it against the
       # secret-derived digits and it can't match, so enrollment is refused.
-      render_click(lv, "start_mfa", %{})
+      begin_mfa_enrollment(lv)
 
       html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "abc123"}})
 
@@ -792,7 +853,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      html = render_click(lv, "start_mfa", %{})
+      html = begin_mfa_enrollment(lv)
       secret = mfa_secret_from(html)
 
       # Crypto.valid_totp? validates only against the CURRENT window with no
@@ -842,7 +903,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "cancel_mfa drops the pending secret so confirm refuses", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      render_click(lv, "start_mfa", %{})
+      begin_mfa_enrollment(lv)
       render_click(lv, "cancel_mfa", %{})
 
       # Cancel removes the form from the DOM; a stale client could still
@@ -962,6 +1023,16 @@ defmodule EmisarWeb.ProfileLiveTest do
     # The setup panel renders the Base32 secret for manual entry.
     [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
     Base.decode32!(encoded, padding: false)
+  end
+
+  defp begin_mfa_enrollment(lv) do
+    render_click(lv, "start_mfa", %{})
+    assert_received {:email, email}
+    [code] = Regex.run(~r/\d{6}/, email.text_body)
+
+    render_hook(lv, "verify_mfa_enrollment_email", %{
+      "mfa_enrollment" => %{"code" => code}
+    })
   end
 
   # Submits the enrollment form, retrying once across a 30s-window straddle (the

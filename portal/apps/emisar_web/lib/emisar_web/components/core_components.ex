@@ -5182,6 +5182,43 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  Current-inbox proof step shared by voluntary and enforced MFA enrollment.
+  It deliberately precedes the authenticator secret: a stolen session cannot
+  add its own factor before proving control of the user's current email.
+  """
+  attr :email, :string, required: true
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :error, :string, default: nil
+  slot :actions, required: true
+
+  def mfa_enrollment_email_verification(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <p class="text-sm text-zinc-300">
+        We sent a 6-digit code to <span class="font-medium text-zinc-100">{@email}</span>.
+        Enter it before adding an authenticator.
+      </p>
+      <.simple_form
+        for={@form}
+        id="mfa_enrollment_email_form"
+        phx-submit="verify_mfa_enrollment_email"
+      >
+        <.code_input
+          id="mfa-enrollment-email-code"
+          name="mfa_enrollment[code]"
+          numeric
+          label="Email verification code"
+          error={@error}
+        />
+        <:actions>
+          {render_slot(@actions)}
+        </:actions>
+      </.simple_form>
+    </div>
+    """
+  end
+
+  @doc """
   TOTP enrollment block — the white QR wrapper, the "Can't scan?" setup-URI
   disclosure, and ONE `code_input` confirm form (`#mfa_form`, submits
   `confirm_mfa` as `mfa[otp]`). Shared by the profile page's voluntary
