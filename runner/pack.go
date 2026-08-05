@@ -192,6 +192,17 @@ func packValidateCmd() *cobra.Command {
 				}
 			}
 
+			// --json is the whole point on this command: CI reads the hash
+			// from it, and the flag was accepted and then ignored, so a
+			// `| jq -r .hash` pipeline silently got human text.
+			if flagJSONOut {
+				return printJSON(map[string]any{
+					"pack_id": pack.ID,
+					"actions": len(reg.Actions()),
+					"hash":    hash,
+				})
+			}
+
 			fmt.Printf("pack %s OK: %d actions\nhash: %s\n",
 				pack.ID, len(reg.Actions()), hash)
 			return nil

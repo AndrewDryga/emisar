@@ -517,6 +517,41 @@ func TestForwardFailsLocallyWhenActionAttestationCannotBeCreated(t *testing.T) {
 	}
 }
 
+// A signing refusal never left this process, so the client frame must not carry
+// an operation id: the MCP server instructions tell the model that a transport
+// error with one means the mutation MAY have reached Emisar and should be
+// recovered. Reporting one sent the model chasing an operation that does not
+// exist, while the real cause appeared nowhere.
+func TestSigningRefusalIsNotReportedAsALostMutation(t *testing.T) {
+	signer, _ := testSigner(t)
+	signer.newNonce = func() (string, error) { return "", errors.New("entropy unavailable") }
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("portal was contacted despite a local signing refusal")
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	b.signer = signer
+	var diagnostics bytes.Buffer
+	b.diagnostics = &diagnostics
+
+	frame := runActionFrame(`{}`, []string{testRunnerRefA})
+	meta := parseRequestMeta(frame)
+
+	var out bytes.Buffer
+	_, forwardErr := b.forward(frame)
+	if err := b.writeForwardResult(&out, meta, "op_334NN9NMDZ1T76NARWCKM5A0D7", nil, forwardErr); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(out.String(), "operation_id") {
+		t.Fatalf("client frame offered an operation to recover: %s", out.String())
+	}
+	if !strings.Contains(diagnostics.String(), "entropy unavailable") {
+		t.Fatalf("the real cause never reached stderr: %q", diagnostics.String())
+	}
+}
+
 func TestForwardNeverSignsReadsOrOtherMutations(t *testing.T) {
 	signer, _ := testSigner(t)
 	var headers []string

@@ -561,12 +561,21 @@ func (d *dedupRing) writeStore() error {
 	if d.storePath == "" {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(d.storePath), 0o750); err != nil {
+	if err := fsutil.SecureMkdirAll(filepath.Dir(d.storePath), 0o750); err != nil {
 		return err
 	}
-	tmp := d.storePath + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	// CreateTemp, not a fixed "<path>.tmp" opened O_CREATE|O_TRUNC: the fixed
+	// name follows a symlink planted at that path, so anything able to write in
+	// data_dir could redirect this truncate. Every other durable writer in the
+	// runner (nonce store, token file, terminal shutdown) already does this.
+	f, err := os.CreateTemp(filepath.Dir(d.storePath), "."+filepath.Base(d.storePath)+".tmp-")
 	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	removeTemp := func() {

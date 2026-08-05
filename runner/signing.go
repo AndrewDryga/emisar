@@ -221,8 +221,19 @@ rotate the CA to revoke).`,
 					return err
 				}
 			} else {
-				if _, err := hex.DecodeString(leafPub); err != nil {
+				decoded, err := hex.DecodeString(leafPub)
+				if err != nil {
 					return fmt.Errorf("--pubkey is not valid hex: %w", err)
+				}
+				// Without the length check the CA happily signed a certificate
+				// over something that is not an Ed25519 key, and the operator
+				// only found out later as an opaque signature refusal at an
+				// enforcing runner. The keyID slice below also panicked on
+				// anything shorter than 8 hex characters.
+				if len(decoded) != ed25519.PublicKeySize {
+					return fmt.Errorf(
+						"--pubkey must be %d hex-encoded bytes (an Ed25519 public key), got %d",
+						ed25519.PublicKeySize, len(decoded))
 				}
 				if keyID == "" {
 					keyID = "op-" + leafPub[:8]

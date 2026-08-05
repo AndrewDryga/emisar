@@ -644,6 +644,16 @@ func (b *bridge) handleCancellation(
 	if request.cancellationForwarded {
 		return
 	}
+	// Cancellation deliberately bypasses admission so a saturated bridge can
+	// still release a wait — but the FORWARD is an outbound POST, and it was
+	// uncapped. A client that opened and cancelled in a loop drove one live
+	// goroutine and socket per cycle, each held for the forward timeout,
+	// bursting the portal's limiter. The local cancel above has already stopped
+	// observation, which is the part that must never be delayed; dropping the
+	// courtesy notification under pressure costs nothing.
+	if state.cancelForwards >= maxConcurrentRequests {
+		return
+	}
 	request.cancellationForwarded = true
 	state.cancelForwards++
 
@@ -727,11 +737,15 @@ func (b *bridge) writeForwardResult(
 		// bare -32603 and nothing anywhere explains it — and a failed
 		// notification produces no frame at all. Only a locally generated
 		// transport error is echoed; a portal response never is.
-		if localTransportError(err) {
+		if localTransportError(err) || bridgeProducedError(err) {
 			b.diagnose("%v", err)
 		}
 		if meta.notification() {
 			return nil
+		}
+		// Nothing was transmitted, so there is no operation to recover.
+		if bridgeProducedError(err) {
+			return writeFrame(w, rpcErrorFrame(meta, -32603, "emisar bridge could not send this request"))
 		}
 		return writeFrame(w, transportErrorFrame(meta, operationID))
 	}
@@ -739,6 +753,24 @@ func (b *bridge) writeForwardResult(
 		return nil
 	}
 	return writeFrame(w, response)
+}
+
+// bridgeLocalError marks a failure this process produced BEFORE anything was
+// sent — a signing refusal, or credential state it could not read or write.
+// It matters because the operation id in a transport error tells the model the
+// mutation may have reached Emisar and should be recovered; for these it
+// provably never left, so reporting one sends the model chasing an operation
+// that does not exist while the real cause is nowhere on stderr.
+type bridgeLocalError struct{ err error }
+
+func (e *bridgeLocalError) Error() string { return e.err.Error() }
+func (e *bridgeLocalError) Unwrap() error { return e.err }
+
+func localBridge(err error) error { return &bridgeLocalError{err: err} }
+
+func bridgeProducedError(err error) bool {
+	var local *bridgeLocalError
+	return errors.As(err, &local)
 }
 
 // localTransportError reports whether err was produced by this process's own
@@ -930,8 +962,19 @@ func rpcErrorFrameWithData(
 }
 
 func writeFrame(w io.Writer, frame []byte) error {
-	line := make([]byte, 0, len(frame)+1)
-	line = append(line, bytes.TrimRight(frame, "\r\n")...)
+	trimmed := bytes.TrimRight(frame, "\r\n")
+	// One frame is one line. The strict parser accepts a newline BETWEEN JSON
+	// tokens, so a pretty-printed portal response validated fine and then
+	// arrived at the client as several malformed lines — the request id never
+	// correlated and the session desynced. Runner output can never do this (a
+	// control character inside a JSON string is rejected, and an escaped \n
+	// stays one line); only the encoder's own whitespace can, which is exactly
+	// what a reformatting proxy in front of the portal produces.
+	if bytes.ContainsAny(trimmed, "\n\r") {
+		return fmt.Errorf("refusing to write a frame containing a newline")
+	}
+	line := make([]byte, 0, len(trimmed)+1)
+	line = append(line, trimmed...)
 	line = append(line, '\n')
 	n, err := w.Write(line)
 	if err != nil {
@@ -1011,7 +1054,7 @@ func (b *bridge) forwardRequestContext(
 	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
 	defer cancel()
 	if err := b.refreshCredentialState(); err != nil {
-		return nil, fmt.Errorf("refresh credential state: %w", err)
+		return nil, localBridge(fmt.Errorf("refresh credential state: %w", err))
 	}
 
 	operationID := headers.operationID
@@ -1023,7 +1066,7 @@ func (b *bridge) forwardRequestContext(
 		var signErr error
 		attestationValue, signErr = b.signer.signFrame(frame, operationID, b.portalOrigin)
 		if signErr != nil {
-			return nil, fmt.Errorf("attest run_action: %w", signErr)
+			return nil, localBridge(fmt.Errorf("attest run_action: %w", signErr))
 		}
 	}
 	rotationPrefix, rotationHash := "", ""
@@ -1083,7 +1126,7 @@ func (b *bridge) forwardRequestContext(
 	if result.status == http.StatusUnauthorized {
 		recoveryKey, recoveryErr := b.credentialRecoveryKey(apiKey)
 		if recoveryErr != nil {
-			return nil, fmt.Errorf("recover credential state: %w", recoveryErr)
+			return nil, localBridge(fmt.Errorf("recover credential state: %w", recoveryErr))
 		}
 		if recoveryKey != "" && recoveryKey != apiKey {
 			retry := cloneRequestWithBody(req, ctx, frame)
@@ -1092,7 +1135,7 @@ func (b *bridge) forwardRequestContext(
 			if err == nil && (result.status >= 200 && result.status < 500) &&
 				result.status != http.StatusUnauthorized {
 				if recoveryErr := b.adoptRecoveryKey(recoveryKey); recoveryErr != nil {
-					return nil, fmt.Errorf("persist recovered credential state: %w", recoveryErr)
+					return nil, localBridge(fmt.Errorf("persist recovered credential state: %w", recoveryErr))
 				}
 			}
 		}
