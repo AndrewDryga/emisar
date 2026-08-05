@@ -22,7 +22,12 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
     secret = Auth.generate_mfa_secret()
     {user, recovery_codes} = Fixtures.Users.enable_mfa!(secret, owner_subject(user, account))
 
-    conn = Plug.Test.init_test_session(conn, %{"mfa_pending_user_id" => user.id})
+    conn =
+      Plug.Test.init_test_session(conn, %{
+        "mfa_pending_user_id" => user.id,
+        "mfa_pending_at" => System.system_time(:second)
+      })
+
     %{conn: conn, user: user, secret: secret, recovery_codes: recovery_codes}
   end
 

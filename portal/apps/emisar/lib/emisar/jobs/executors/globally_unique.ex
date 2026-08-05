@@ -80,9 +80,18 @@ defmodule Emisar.Jobs.Executors.GloballyUnique do
     end
   end
 
+  # Deliberately NO `pid == self()` clause promoting us back to leader.
+  #
+  # :global notifies only the LOSER of a name conflict, and that process may
+  # read its own node's stale table before the delete has been applied — so
+  # whereis_name/1 could answer with the loser's own pid. Treating that as "I am
+  # the leader" made both nodes tick forever, with no path back: nothing
+  # re-verifies leadership once role is :leader. Re-claim through
+  # :global.register_name instead, which takes a global lock and actually
+  # decides.
   defp follow_pid(pid, state) when pid == self() do
-    schedule_tick(Keyword.get(state.config, :initial_delay, 0))
-    %{state | role: :leader}
+    Process.send_after(self(), :claim, 100)
+    %{state | role: :pending}
   end
 
   defp follow_pid(pid, state) do

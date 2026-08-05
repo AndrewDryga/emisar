@@ -8,6 +8,27 @@ defmodule Emisar.Billing.Subscription.Changeset do
     current_period_start current_period_end cancel_at_period_end trial_end paddle_updated_at
   ]a
 
+  @doc """
+  A support/seed write that is NOT a vendor mirror update.
+
+  `upsert/2` drops any event it cannot prove is newer than Paddle's stored
+  `updated_at`, which is right for a webhook and wrong for a human: once an
+  account had ever been mirrored, `mix emisar.set_plan` and the seeds were
+  silently dropped — Ecto returned the unchanged row, so the task printed
+  success and nothing had happened. A manual write is authoritative by
+  definition, so it skips the guard and clears the vendor timestamp, which
+  hands the mirror back to the next real webhook.
+  """
+  def manual(subscription \\ %Subscription{}, attrs) do
+    subscription
+    |> cast(attrs, @fields)
+    |> put_change(:paddle_updated_at, nil)
+    |> validate_required([:account_id, :plan, :status])
+    |> validate_number(:unit_price_amount, greater_than_or_equal_to: 0)
+    |> validate_number(:billing_frequency, greater_than: 0)
+    |> unique_constraint(:account_id)
+  end
+
   def upsert(subscription \\ %Subscription{}, attrs) do
     if stale_update?(subscription, attrs) do
       # Out-of-order Paddle delivery: a late event whose `updated_at` predates

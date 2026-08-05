@@ -329,12 +329,13 @@ defmodule Emisar.Billing do
   # BillingSync (or two webhooks) serialize on the row and the loser recomputes
   # off the committed state, instead of last-write-winning a stale status over a
   # fresh one.
-  def upsert_subscription(account_id, attrs) do
+  def upsert_subscription(account_id, attrs, opts \\ []) do
     existing = peek_subscription_for_account(account_id)
     old_plan = plan_from_subscription(existing)
+    writer = if Keyword.get(opts, :manual, false), do: :manual, else: :upsert
 
     with {:ok, %Subscription{plan: new_plan} = subscription} <-
-           write_subscription(existing, account_id, attrs) do
+           write_subscription(existing, account_id, attrs, writer) do
       # The webhook calls this inside its Multi, so the audit row commits with the
       # subscription change (atomic there); the checkout/BillingSync paths get a
       # best-effort standalone insert.
@@ -343,14 +344,17 @@ defmodule Emisar.Billing do
     end
   end
 
-  defp write_subscription(nil, account_id, attrs) do
-    Subscription.Changeset.upsert(Map.put(attrs, :account_id, account_id)) |> Repo.insert()
+  defp write_subscription(nil, account_id, attrs, writer) do
+    apply(Subscription.Changeset, writer, [Map.put(attrs, :account_id, account_id)])
+    |> Repo.insert()
   end
 
-  defp write_subscription(%Subscription{}, account_id, attrs) do
+  defp write_subscription(%Subscription{}, account_id, attrs, writer) do
     Subscription.Query.all()
     |> Subscription.Query.by_account_id(account_id)
-    |> Repo.fetch_and_update(Subscription.Query, with: &Subscription.Changeset.upsert(&1, attrs))
+    |> Repo.fetch_and_update(Subscription.Query,
+      with: &apply(Subscription.Changeset, writer, [&1, attrs])
+    )
   end
 
   # The in-app AUDIT trail of a plan change (distinct from the Mixpanel
@@ -915,9 +919,19 @@ defmodule Emisar.Billing do
         # concurrent webhook serializes on the row, and carry `updated_at` so a
         # late cancel that predates a fresher event is dropped by the
         # stale-update guard rather than clobbering the row to canceled.
+        # A cancel with no `updated_at` cannot prove it is newer, and the stale
+        # guard drops anything it cannot prove — which for this one event means
+        # the subscription stays ACTIVE forever, silently, with a 200 back to
+        # Paddle so it never retries. Dropping a cancel is the worse error than
+        # applying a late one: entitlements keep flowing, and the periodic sync
+        # corrects an over-eager cancel on its next tick. Stamp receipt time
+        # when Paddle omits the field so the event always lands.
+        paddle_updated_at =
+          extract_paddle_updated_at(subscription_data) || DateTime.utc_now()
+
         upsert_subscription(account_id, %{
           status: "canceled",
-          paddle_updated_at: extract_paddle_updated_at(subscription_data)
+          paddle_updated_at: paddle_updated_at
         })
     end
   end

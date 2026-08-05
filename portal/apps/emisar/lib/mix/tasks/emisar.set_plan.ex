@@ -38,7 +38,9 @@ defmodule Mix.Tasks.Emisar.SetPlan do
     case Emisar.Accounts.fetch_account_by_id_or_slug_including_disabled(id_or_slug) do
       {:ok, account} ->
         {:ok, _sub} =
-          Emisar.Billing.upsert_subscription(account.id, %{plan: plan, status: "active"})
+          Emisar.Billing.upsert_subscription(account.id, %{plan: plan, status: "active"},
+            manual: true
+          )
 
         Mix.shell().info(
           "✓ #{account.name} (#{account.slug}) is now on the #{plan} plan " <>

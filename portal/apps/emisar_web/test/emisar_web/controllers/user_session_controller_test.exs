@@ -528,7 +528,11 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       conn =
         conn
-        |> init_test_session(%{mfa_pending_user_id: user.id, mfa_pending_registered?: false})
+        |> init_test_session(%{
+          mfa_pending_user_id: user.id,
+          mfa_pending_registered?: false,
+          mfa_pending_at: System.system_time(:second)
+        })
         |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
 
       assert token = get_session(conn, :user_token)
@@ -536,6 +540,26 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert signed_in.id == user.id
       # The second factor is stamped onto the token so it reaches every audit row.
       assert session_token.mfa == true
+      refute get_session(conn, :mfa_pending_user_id)
+    end
+
+    test "a stale half-authentication cannot be completed later", %{conn: conn} do
+      %{user: user, secret: secret} = enrolled_mfa_user()
+      handoff = verified_handoff(user, secret)
+
+      # Factor one is already spent when the marker is written, so the marker IS
+      # the record that it was passed. Left unbounded it survived for the whole
+      # browser-session lifetime of the cookie — a shared machine abandoned
+      # mid-challenge stayed one factor away from a full session indefinitely.
+      conn =
+        conn
+        |> init_test_session(%{
+          mfa_pending_user_id: user.id,
+          mfa_pending_at: System.system_time(:second) - 3_600
+        })
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+
+      refute get_session(conn, :user_token)
       refute get_session(conn, :mfa_pending_user_id)
     end
 
@@ -557,6 +581,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
         conn
         |> init_test_session(%{
           mfa_pending_user_id: user.id,
+          mfa_pending_at: System.system_time(:second),
           user_return_to: "/app/#{account.slug}"
         })
         |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
@@ -584,7 +609,10 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       conn =
         conn
-        |> init_test_session(%{mfa_pending_user_id: user.id})
+        |> init_test_session(%{
+          mfa_pending_user_id: user.id,
+          mfa_pending_at: System.system_time(:second)
+        })
         |> get(~p"/sign_in/mfa/complete?#{[handoff: other_handoff]}")
 
       refute get_session(conn, :user_token)
@@ -601,7 +629,10 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       conn =
         conn
-        |> init_test_session(%{mfa_pending_user_id: user.id})
+        |> init_test_session(%{
+          mfa_pending_user_id: user.id,
+          mfa_pending_at: System.system_time(:second)
+        })
         |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
 
       refute get_session(conn, :user_token)
@@ -616,7 +647,10 @@ defmodule EmisarWeb.UserSessionControllerTest do
       for handoff <- ["not-a-real-token", MfaChallengeHandoff.sign(user.id)] do
         conn =
           conn
-          |> init_test_session(%{mfa_pending_user_id: user.id})
+          |> init_test_session(%{
+            mfa_pending_user_id: user.id,
+            mfa_pending_at: System.system_time(:second)
+          })
           |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
 
         refute get_session(conn, :user_token)
@@ -629,7 +663,10 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       conn =
         conn
-        |> init_test_session(%{mfa_pending_user_id: user.id})
+        |> init_test_session(%{
+          mfa_pending_user_id: user.id,
+          mfa_pending_at: System.system_time(:second)
+        })
         |> get(~p"/app/#{account}")
 
       assert redirected_to(conn) =~ "/sign_in"

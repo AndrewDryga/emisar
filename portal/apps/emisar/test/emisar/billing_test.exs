@@ -419,7 +419,7 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "upsert_subscription/2 — unique_constraint backstop" do
+  describe "upsert_subscription/3 — unique_constraint backstop" do
     test "a concurrent first-insert loses on the per-account unique index" do
       # upsert_subscription peeks-then-inserts, so two callers that both peek-miss
       # would both try to INSERT for the same account. unique_index(:subscriptions,
@@ -448,7 +448,7 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "upsert_subscription/2 — partial reconciliation preserves untouched fields" do
+  describe "upsert_subscription/3 — partial reconciliation preserves untouched fields" do
     test "a status+period-only upsert leaves plan + cycle-note columns intact" do
       # The BillingSync worker upserts ONLY %{status, current_period_end} — exactly
       # the partial attr set the peek-then-update path is built for. The existing
@@ -490,6 +490,57 @@ defmodule Emisar.BillingTest do
   end
 
   describe "check_limit/2 — downgrade past current usage is not reconciled" do
+    test "a manual plan write is not dropped by the vendor staleness guard" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_manual_01"})
+
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_manual_01",
+          plan: "team",
+          status: "active",
+          paddle_updated_at: DateTime.utc_now()
+        })
+
+      # Once the mirror carries Paddle's timestamp, an ordinary upsert with none
+      # cannot prove it is newer and is dropped — so `mix emisar.set_plan` wrote
+      # nothing while reporting success.
+      {:ok, unchanged} =
+        Billing.upsert_subscription(account.id, %{plan: "enterprise", status: "active"})
+
+      assert unchanged.plan == "team"
+
+      {:ok, updated} =
+        Billing.upsert_subscription(account.id, %{plan: "enterprise", status: "active"},
+          manual: true
+        )
+
+      assert updated.plan == "enterprise"
+      assert is_nil(updated.paddle_updated_at)
+    end
+
+    test "a cancel with no updated_at still cancels" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_cancel_01"})
+
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_cancel_01",
+          plan: "team",
+          status: "active",
+          paddle_updated_at: DateTime.utc_now()
+        })
+
+      # Paddle does not always send updated_at. The staleness guard drops what it
+      # cannot prove is newer, which for a cancel left the account ACTIVE
+      # forever — with a 200 back, so Paddle never retried.
+      assert {:ok, _} =
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.canceled",
+                 "data" => %{"id" => "sub_cancel_01"}
+               })
+
+      assert Repo.one(Emisar.Billing.Subscription).status == "canceled"
+    end
+
     test "FINDING: existing over-cap runners keep running; only NEW ones are blocked" do
       # Downgrading below current usage (Team→Free here, via cancel) does NOT sweep
       # the excess runners — check_limit only gates the fresh-insert / re-enable
@@ -522,7 +573,10 @@ defmodule Emisar.BillingTest do
       # account_plan is status-agnostic, so "team" still resolves even after cancel;
       # set the plan to free to model the real downgrade and prove the gate then
       # blocks only the NEXT runner while the over-cap five keep running.
-      {:ok, _} = Billing.upsert_subscription(account.id, %{plan: "free", status: "canceled"})
+      # A support plan flip is a manual write: the vendor staleness guard would
+      # otherwise drop it, because a mirrored row now carries paddle_updated_at.
+      {:ok, _} =
+        Billing.upsert_subscription(account.id, %{plan: "free", status: "canceled"}, manual: true)
 
       assert Billing.account_plan(account) == "free"
       assert {:error, :over_limit, "free", 3} = Billing.check_limit(account, :runners)

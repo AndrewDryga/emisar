@@ -70,12 +70,27 @@ defmodule EmisarWeb.MfaChallengeLive do
   defp error_message(:recovery),
     do: "That recovery code didn't match or has already been used."
 
+  # Ten minutes, matching the controller's mfa_complete deadline: a marker left
+  # in a shared browser is not a standing invitation to finish signing in later.
+  @pending_ttl_seconds 600
+
   defp pending_user(session) do
     with id when is_binary(id) <- session["mfa_pending_user_id"],
+         true <- pending_fresh?(session),
          {:ok, %Users.User{mfa_enabled_at: %DateTime{}} = user} <- Users.fetch_user_by_id(id) do
       {:ok, user}
     else
       _ -> :error
+    end
+  end
+
+  defp pending_fresh?(session) do
+    case session["mfa_pending_at"] do
+      started when is_integer(started) ->
+        System.system_time(:second) - started <= @pending_ttl_seconds
+
+      _ ->
+        false
     end
   end
 

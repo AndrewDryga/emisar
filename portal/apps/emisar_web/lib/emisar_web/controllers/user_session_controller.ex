@@ -210,7 +210,8 @@ defmodule EmisarWeb.UserSessionController do
   def mfa_complete(conn, %{"handoff" => handoff}) do
     with {:ok, proof} <- MfaChallengeHandoff.verify(handoff),
          user_id when is_binary(user_id) <- Auth.mfa_proof_user_id(proof),
-         ^user_id <- get_session(conn, :mfa_pending_user_id) do
+         ^user_id <- get_session(conn, :mfa_pending_user_id),
+         true <- mfa_pending_fresh?(conn) do
       registered? = get_session(conn, :mfa_pending_registered?) || false
       context = RequestContext.from_conn(conn)
       conn = clear_mfa_pending(conn)
@@ -389,6 +390,7 @@ defmodule EmisarWeb.UserSessionController do
         conn
         |> put_session(:mfa_pending_user_id, user_id)
         |> put_session(:mfa_pending_registered?, registered?)
+        |> put_session(:mfa_pending_at, System.system_time(:second))
         |> redirect(to: ~p"/sign_in/mfa")
 
       {:error, {:account_disabled, account}} ->
@@ -403,6 +405,25 @@ defmodule EmisarWeb.UserSessionController do
     conn
     |> delete_session(:mfa_pending_user_id)
     |> delete_session(:mfa_pending_registered?)
+    |> delete_session(:mfa_pending_at)
+  end
+
+  # Factor one is spent when this marker is written — the magic-link token is
+  # already consumed — so the marker IS the record that it was passed. Without a
+  # deadline it lived for the whole browser-session lifetime of the encrypted
+  # cookie: someone who walked away from a shared machine mid-challenge left a
+  # standing half-authentication that only needed the second factor, weeks
+  # later. Ten minutes is the window the emailed code itself gets.
+  @mfa_pending_ttl_seconds 600
+
+  defp mfa_pending_fresh?(conn) do
+    case get_session(conn, :mfa_pending_at) do
+      started when is_integer(started) ->
+        System.system_time(:second) - started <= @mfa_pending_ttl_seconds
+
+      _ ->
+        false
+    end
   end
 
   # `log_in` installs the session token `Auth` already minted — the two captures

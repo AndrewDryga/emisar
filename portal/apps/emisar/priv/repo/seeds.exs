@@ -47,7 +47,8 @@ seed_subscription = fn %Account{} = account, plan ->
   if plan == "free" do
     Repo.delete_all(Subscription.Query.by_account_id(Subscription.Query.all(), account.id))
   else
-    {:ok, _} = Billing.upsert_subscription(account.id, %{plan: plan, status: "active"})
+    {:ok, _} =
+      Billing.upsert_subscription(account.id, %{plan: plan, status: "active"}, manual: true)
   end
 
   account

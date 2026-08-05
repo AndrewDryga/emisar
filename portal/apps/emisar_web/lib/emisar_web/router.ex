@@ -100,6 +100,7 @@ defmodule EmisarWeb.Router do
     :magic_link_registered,
     :magic_link_registration_user_id,
     :mfa_pending_user_id,
+    :mfa_pending_at,
     :sso_pending_request
   ]
 
