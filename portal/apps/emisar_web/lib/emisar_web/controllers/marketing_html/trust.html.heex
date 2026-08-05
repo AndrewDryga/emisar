@@ -44,7 +44,7 @@
         <%= for {icon, title, link_label, link_path, items} <- [
           {"hero-identification", "Identity & access", "Teams & access", ~p"/docs/teams-and-access",
            [
-             "OIDC single sign-on — Google Workspace, Okta, Keycloak",
+             "OIDC single sign-on — Okta, Entra ID, JumpCloud, Google Workspace, Keycloak",
              "SCIM 2.0 directory sync — offboarding in your IdP revokes emisar access",
              "Account-wide MFA enforcement (TOTP + recovery codes)",
              "Owner / admin / billing manager / operator / viewer roles, least-privilege by default",
@@ -56,7 +56,7 @@
            ]},
           {"hero-document-check", "Audit & monitoring", "Audit & SIEM", ~p"/docs/audit-and-siem",
            [
-             "Every action: actor, arguments, target host, exit code, redactions",
+             "Every action: actor, redacted arguments, target host, exit code",
              "Runner journal: SHA-256 hash-chained JSONL retained on each host",
              "emisar audit verify reports breaks in the retained runner journal's chain; it cannot prove that a privileged host operator did not replace or truncate the entire local journal",
              "Portal audit: searchable off-host record of actions and policy decisions",

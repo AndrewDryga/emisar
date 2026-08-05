@@ -238,3 +238,7 @@ cause. The runner's refusal codes:
 | `bad_signature` | The signature doesn't verify against the action, exact args, target set, nonce, and time under the certificate's leaf key. | Refresh tools and re-submit with the matching key/certificate pair; re-mint with `emisar signing new-cert` if the pair is wrong. |
 | `replayed` | This nonce was already used. | The client double-sent; re-issue with a fresh dispatch. |
 | `nonce_store_unavailable` | The runner couldn't safely retain the nonce (the replay journal is unavailable, corrupt, or at capacity). | Fix the runner's data-dir permissions/disk or capacity; the runner refuses rather than risk a replay after a restart. |
+| `invalid_args` | The dispatch's argument bytes are not one well-formed JSON object, so no exact-args digest can be formed. | Refresh discovery and submit a fresh call; do not hand-edit the arguments. |
+| `bad_nonce` | The envelope's nonce is not 32 lowercase hex characters. | Upgrade or repair the MCP bridge; do not retry the altered envelope. |
+| `bad_issued_at` | The envelope's `issued_at` is not a parseable RFC3339 timestamp. | Upgrade or repair the MCP bridge; check the client's clock. |
+| `dispatch_invalid` | The dispatch frame itself was malformed before signature checking began. | Upgrade the control plane and the bridge; re-issue the run. |

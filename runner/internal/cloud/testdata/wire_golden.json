@@ -74,7 +74,7 @@
       "type": "error",
       "protocol_version": 1,
       "request_id": "req_wire_error",
-      "code": "dispatch_backlog_full",
+      "code": "concurrency_cap_reached",
       "message": "the runner cannot retain another pending result"
     },
     "heartbeat": {

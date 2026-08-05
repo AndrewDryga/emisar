@@ -246,7 +246,7 @@ func canonicalWireFrames() []wireFrameCase {
 			marshal: func() ([]byte, error) {
 				return json.Marshal(ErrorMsg{
 					Envelope: envelope(MsgError, "req_wire_error"),
-					Code:     "dispatch_backlog_full",
+					Code:     "concurrency_cap_reached",
 					Message:  "the runner cannot retain another pending result",
 				})
 			},

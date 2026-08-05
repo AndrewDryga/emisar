@@ -78,7 +78,9 @@ Sent after every connection and pack reload. The complete encoded frame must not
 exceed 2 MiB (2,097,152 bytes); runners validate that before sending. The
 message contains the runner version, hostname, group, labels, complete
 pack/action advertisement, signature-enforcement state, trusted CA IDs, and
-maximum attestation age.
+maximum attestation age. `enforce_signatures` and `max_attestation_age_seconds`
+are persisted; `signing_ca_ids` currently is not, so an operator confirms which
+CA a runner trusts on the host (`emisar doctor`) rather than in the console.
 
 Every action descriptor includes `primary_executable_available`. A new runner
 sets it to `false` and includes the bounded `missing_executable` name when the
@@ -245,10 +247,18 @@ one fixed, bounded, operator-safe message per `code`, safe to write to a runner
 log. It never echoes the internal failure reason, changeset, arguments,
 attestation, output, or credentials — the `code` and `request_id` are the whole
 correlation contract, and every rejection sharing a code is indistinguishable on
-the wire. The portal finalizes it idempotently. It carries terminal status, exit code,
+the wire.
+
+The runner→portal direction has its own vocabulary, and one code is
+load-bearing: `concurrency_cap_reached` means the runner is already at
+`MaxConcurrentRuns` and did not start the dispatch, so the portal REQUEUES that
+run rather than failing it. Treat it as a contract, not a diagnostic — the wire
+golden pins it. The portal finalizes it idempotently. It carries terminal status, exit code,
 duration, emitted stream hashes/counts, total and dropped progress-chunk counts,
 truncation flags, redaction counts, masked executed command, reason, and the
-local audit event ID. A successful action with an opted-in `output.schema` also
+local audit event ID. The portal does not currently persist `redactions`: those
+per-rule hit counts exist in the runner's local journal only, so "was anything
+masked in this run, and by which rule" is an on-host question today. A successful action with an opted-in `output.schema` also
 carries `structured_output`: one JSON object, validated after runner-side
 redaction and bounded to 8 KiB, 16 nesting levels, and 1,024 values. It is
 omitted for every non-success result and every action without an output schema.
