@@ -43,7 +43,6 @@ VERSION="${VERSION:-}"            # empty = latest stable
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"
 ETC_DIR="${ETC_DIR:-/etc/emisar}"
 DATA_DIR="${DATA_DIR:-/var/lib/emisar}"
-ENROLLMENT_KEY_FILE="${ENROLLMENT_KEY_FILE:-}"
 LOG_DIR="${LOG_DIR:-/var/log/emisar}"
 SERVICE_USER="${SERVICE_USER:-emisar}"
 SERVICE_GROUP="${SERVICE_GROUP:-emisar}"
@@ -75,11 +74,6 @@ Flags:
   --uninstall        Stop the service; remove the binary, service unit,
                      and cached runner token.
                      Keeps config, local evidence, and logs by default.
-  --enrollment-key-file PATH
-                     Read the enrollment key from a 0600 file instead of the
-                     environment. The unattended equivalent of the terminal
-                     prompt: nothing puts the key on sudo's argv, which /proc
-                     makes world-readable.
   --purge            With --uninstall, also delete config + data + logs.
   --no-start         Install + enable the service but don't start it.
   --no-service       Binary-only install: skip system user creation,
@@ -185,7 +179,6 @@ while [ $# -gt 0 ]; do
     --no-service) NO_SERVICE=1; shift;;
     --bin-dir) require_value "$@"; BIN_DIR="$2"; shift 2;;
     --etc-dir) require_value "$@"; require_owned_dir --etc-dir "$2"; ETC_DIR="$2"; shift 2;;
-    --enrollment-key-file) require_value "$@"; ENROLLMENT_KEY_FILE="$2"; shift 2;;
     --data-dir) require_value "$@"; require_owned_dir --data-dir "$2"; DATA_DIR="$2"; shift 2;;
     --log-dir) require_value "$@"; require_owned_dir --log-dir "$2"; LOG_DIR="$2"; shift 2;;
     --user) require_value "$@"; SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
@@ -224,13 +217,9 @@ die_systemd_required() {
   die "this installer requires systemd on Linux (${reason}).
 
 For containers, cloud shells, CI runners, or hosts where you supervise the runner yourself, use --no-service:
-  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_URL=https://emisar.dev bash -s -- --no-service
+  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
 
-The installer asks for the enrollment key on the terminal; a credential on
-sudo's argv is readable by any local user through /proc. Unattended callers
-export EMISAR_ENROLLMENT_KEY themselves.
-
-If you are reusing a portal-generated one-liner, keep its EMISAR_URL value and replace the final 'bash' with:
+If you are reusing a portal-generated one-liner, keep its EMISAR_ENROLLMENT_KEY/EMISAR_URL values and replace the final 'bash' with:
   bash -s -- --no-service"
 }
 # log()/warn()/die() ALL write to stderr. Function return values come
@@ -256,81 +245,6 @@ confirm() {
     return 1
   fi
   case "$reply" in [yY]|[yY][eE][sS]) return 0;; *) return 1;; esac
-}
-
-# Read the enrollment key from the terminal when the caller did not supply one.
-#
-# The key used to ride the documented one-liner as `sudo EMISAR_ENROLLMENT_KEY=…`,
-# which puts a REUSABLE credential in sudo's argv — and /proc/<pid>/cmdline is
-# world-readable, so any local user could read it for the length of the install.
-# install-mcp.sh already refuses to put its token on argv for exactly this
-# reason; this closes the same hole on the path that installs a runner.
-#
-# A prompt rather than `sudo -E`: preserving the environment is refused outright
-# by any sudoers policy with env_reset and no SETENV, which is common on the
-# hardened hosts most likely to care. Reading the key here depends on nothing
-# but a terminal.
-#
-# Unattended callers still export EMISAR_ENROLLMENT_KEY themselves — their
-# environment, their choice — and a host with no terminal and no key simply
-# installs unenrolled, which is the documented --no-service shape.
-# Read the key from a file. The unattended answer to the same problem the prompt
-# solves interactively: cloud-init writes the key to a 0600 file in user-data, so
-# neither sudo's argv nor any process environment ever carries it.
-read_enrollment_key_file() {
-  [ -n "${ENROLLMENT_KEY_FILE}" ] || return 0
-
-  [ -f "${ENROLLMENT_KEY_FILE}" ] || die "--enrollment-key-file not found: ${ENROLLMENT_KEY_FILE}"
-  [ ! -L "${ENROLLMENT_KEY_FILE}" ] || die "--enrollment-key-file must not be a symlink: ${ENROLLMENT_KEY_FILE}"
-
-  # A key file anyone else can read defeats the point of using one.
-  local mode
-  mode=$(stat -f '%Lp' "${ENROLLMENT_KEY_FILE}" 2>/dev/null || stat -c '%a' "${ENROLLMENT_KEY_FILE}" 2>/dev/null || echo "")
-  case "${mode}" in
-    ""|600|400) ;;
-    *) die "--enrollment-key-file ${ENROLLMENT_KEY_FILE} is mode ${mode}; use 600" ;;
-  esac
-
-  local key
-  key=$(tr -d '[:space:]' < "${ENROLLMENT_KEY_FILE}")
-  [ -n "${key}" ] || die "--enrollment-key-file ${ENROLLMENT_KEY_FILE} is empty"
-  EMISAR_ENROLLMENT_KEY="${key}"
-  export EMISAR_ENROLLMENT_KEY
-}
-
-prompt_for_enrollment_key() {
-  [ -z "${EMISAR_ENROLLMENT_KEY:-}" ] || return 0
-  # --yes means "never block on a human". An automated run on a host that HAS a
-  # terminal — a CI runner, Ansible with a pty, Packer — would otherwise sit
-  # here forever waiting for a paste that is never coming. Unattended callers
-  # pass --enrollment-key-file or set EMISAR_ENROLLMENT_KEY.
-  [ "$ASSUME_YES" != "1" ] || return 0
-  tty_available || return 0
-
-  local key=""
-  # Silent: the key is a credential and a terminal echo lands in screen
-  # scrollback, screenshots, and recorded sessions.
-  if [ -t 0 ]; then
-    printf 'Enrollment key (paste from the portal, or press Enter to skip): '
-    stty -echo 2>/dev/null || true
-    read -r key || key=""
-    stty echo 2>/dev/null || true
-    printf '\n'
-  elif { exec 3</dev/tty; } 2>/dev/null; then
-    printf 'Enrollment key (paste from the portal, or press Enter to skip): ' >/dev/tty
-    stty -echo </dev/tty 2>/dev/null || true
-    read -r key <&3 || key=""
-    stty echo </dev/tty 2>/dev/null || true
-    printf '\n' >/dev/tty
-    exec 3<&-
-  else
-    return 0
-  fi
-
-  key=$(printf '%s' "$key" | tr -d '[:space:]')
-  [ -n "$key" ] || return 0
-  EMISAR_ENROLLMENT_KEY="$key"
-  export EMISAR_ENROLLMENT_KEY
 }
 
 tty_available() {
@@ -1518,10 +1432,6 @@ do_install() {
   # not consent to mutate an unattended host.
   require_explicit_unattended_packs
   require_root_and_tools
-  # Before the download, so a host that will not be able to enrol says so while
-  # the operator is still watching rather than after a release lands on disk.
-  read_enrollment_key_file
-  prompt_for_enrollment_key
   log "install target: ${OS}/${ARCH} via ${INIT}"
   if [ -z "${VERSION}" ]; then
     VERSION="$(resolve_latest_version)" || die "could not resolve latest version"

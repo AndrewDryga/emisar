@@ -4814,7 +4814,6 @@ defmodule EmisarWeb.CoreComponents do
       <.install_wizard install_command={@install_command} />
   """
   attr :install_command, :any, required: true
-  attr :install_key, :any, default: nil
   attr :base_url, :string, default: nil
   attr :show_troubleshooting, :boolean, default: false
   attr :keys_path, :string, default: "/app/runners/keys"
@@ -4856,17 +4855,9 @@ defmodule EmisarWeb.CoreComponents do
                     prompt
                     class="mt-3"
                   />
-                </section>
-
-                <section :if={is_binary(@install_key)}>
-                  <.section_header title="Paste this when it asks" />
-                  <.code_line id="runner-install-key" value={@install_key} class="mt-3" />
-                  <%!-- Why this is a second step and not part of the command:
-                       the answer an operator will otherwise guess at. --%>
+                  <%!-- Right where the odd first character raises the question. --%>
                   <p class="mt-2 text-xs text-zinc-400">
-                    The installer asks for the key on the terminal. It stays out of the
-                    command so it never reaches <code class="font-mono text-zinc-300">sudo</code>'s
-                    arguments, which any user on the host can read while the install runs.
+                    The leading space keeps the key out of your shell history.
                   </p>
                   <%!-- The one-liner embeds a single-use enrollment key shown
                        only here. Keeping it out of chat/tickets is an operator
@@ -5650,7 +5641,7 @@ defmodule EmisarWeb.CoreComponents do
         runner under your account.
 
         <:install_command>
-          curl -sSL https://emisar.dev/install.sh | sudo bash
+          curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY={@new_secret} bash
         </:install_command>
       </.secret_reveal>
 

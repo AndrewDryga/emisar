@@ -61,8 +61,6 @@ func runnerChecks() []runnerCheck {
 		{"latest release resolution", false, runnerLatestRelease},
 		{"fresh-install service rollback", false, runnerFreshServiceRollback},
 		{"config value validation", false, runnerConfigValueValidation},
-		{"enrollment key file", false, runnerEnrollmentKeyFile},
-		{"unattended never prompts", false, runnerUnattendedNeverPrompts},
 	}
 }
 
@@ -645,117 +643,6 @@ func runnerConfigValueValidation(h *harness) error {
 		if result.err == nil {
 			return fmt.Errorf("value %q would have been baked into config.yaml", value)
 		}
-	}
-	return nil
-}
-
-// runnerEnrollmentKeyFile proves the unattended path for keeping a REUSABLE
-// enrollment key off sudo's argv, where /proc/<pid>/cmdline exposes it to every
-// local user for the length of the install.
-//
-// A key file only helps if it is actually private, so a loose mode is refused
-// rather than quietly accepted — otherwise the flag reads as a security measure
-// while providing none.
-func runnerEnrollmentKeyFile(h *harness) error {
-	dir := h.path("keys")
-	if err := h.mkdir(dir); err != nil {
-		return err
-	}
-
-	const key = "emkey-enroll-" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	private := filepath.Join(dir, "private")
-	loose := filepath.Join(dir, "loose")
-	if err := writeFile(private, key+"\n", 0o600); err != nil {
-		return err
-	}
-	if err := writeFile(loose, key+"\n", 0o644); err != nil {
-		return err
-	}
-
-	body := `
-die() { printf 'DIE: %s\n' "$1" >&2; exit 1; }
-ENROLLMENT_KEY_FILE="$KEY_FILE"
-read_enrollment_key_file
-printf 'key=%s\n' "${EMISAR_ENROLLMENT_KEY:-NONE}"
-`
-
-	result := h.functions(h.repoPath("install.sh"), []string{"read_enrollment_key_file"}, body,
-		map[string]string{"KEY_FILE": private})
-	output, err := requireOutput(result)
-	if err != nil {
-		return err
-	}
-	// Trailing whitespace is stripped: a key pasted into a file arrives with a
-	// newline, and a newline inside a credential breaks the config it lands in.
-	if got := strings.TrimSpace(string(output)); got != "key="+key {
-		return fmt.Errorf("0600 key file produced %q", got)
-	}
-
-	if err := expectFailure(
-		h.functions(h.repoPath("install.sh"), []string{"read_enrollment_key_file"}, body,
-			map[string]string{"KEY_FILE": loose}),
-		"use 600",
-	); err != nil {
-		return fmt.Errorf("a world-readable key file was accepted: %w", err)
-	}
-	return nil
-}
-
-// runnerUnattendedNeverPrompts proves --yes cannot block on a human.
-//
-// The enrollment-key prompt was added so a reusable credential stops riding
-// sudo's argv. It is gated on ASSUME_YES because a host running unattended can
-// still HAVE a terminal — a CI runner, Ansible with a pty, Packer — and a
-// prompt there waits forever for a paste that is never coming. That is a hang,
-// not an error: no exit code, no log line, just a provisioning run that never
-// finishes.
-//
-// The harness gives the script a terminal-shaped stdin and no key, which is
-// exactly the shape that would hang.
-func runnerUnattendedNeverPrompts(h *harness) error {
-	// Asserted by CALL, not by outcome. The harness runs without a controlling
-	// terminal, so the prompt returns either way here and "it came back" proves
-	// nothing. What matters is that --yes short-circuits BEFORE the terminal is
-	// ever consulted — on a real CI host that terminal exists, and reaching it
-	// is the hang.
-	body := `
-tty_available() { printf 'CONSULTED_TERMINAL\n'; return 0; }
-ASSUME_YES=1
-EMISAR_ENROLLMENT_KEY=""
-prompt_for_enrollment_key
-printf 'returned=%s\n' "${EMISAR_ENROLLMENT_KEY:-NONE}"
-`
-	result := h.functions(h.repoPath("install.sh"), []string{"prompt_for_enrollment_key"}, body, nil)
-	output, err := requireOutput(result)
-	if err != nil {
-		return err
-	}
-	if strings.Contains(string(output), "CONSULTED_TERMINAL") {
-		return fmt.Errorf("--yes reached the terminal; an automated host with a pty would hang here")
-	}
-	if got := strings.TrimSpace(string(output)); got != "returned=NONE" {
-		return fmt.Errorf("unattended prompt path produced %q", got)
-	}
-
-	// And the other half: a key already supplied is never re-asked for, so an
-	// automated run that DOES set one is untouched.
-	supplied := `
-tty_available() { printf 'CONSULTED_TERMINAL\n'; return 0; }
-ASSUME_YES=0
-EMISAR_ENROLLMENT_KEY=emkey-enroll-supplied
-prompt_for_enrollment_key
-printf 'returned=%s\n' "${EMISAR_ENROLLMENT_KEY:-NONE}"
-`
-	result = h.functions(h.repoPath("install.sh"), []string{"prompt_for_enrollment_key"}, supplied, nil)
-	output, err = requireOutput(result)
-	if err != nil {
-		return err
-	}
-	if strings.Contains(string(output), "CONSULTED_TERMINAL") {
-		return fmt.Errorf("a supplied key still reached the terminal")
-	}
-	if got := strings.TrimSpace(string(output)); got != "returned=emkey-enroll-supplied" {
-		return fmt.Errorf("a supplied key was not preserved: %q", got)
 	}
 	return nil
 }

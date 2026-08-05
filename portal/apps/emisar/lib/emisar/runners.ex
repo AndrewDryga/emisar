@@ -1745,16 +1745,10 @@ defmodule Emisar.Runners do
   def enrollment_install_command(raw_secret, base_url) do
     with :ok <- validate_enrollment_secret(raw_secret),
          {:ok, base} <- normalize_base_url(base_url) do
-      # The key is NOT in this command. It used to ride sudo's argv, and
-      # /proc/<pid>/cmdline is world-readable, so any local user could lift a
-      # REUSABLE enrollment key for the length of the install. The installer
-      # asks for it on the terminal instead; unattended hosts use
-      # --enrollment-key-file.
-      #
-      # The secret is still validated above: this function refuses to build a
-      # command for a key that is not exactly what the portal mints, so a
-      # caller cannot smuggle a crafted value into the copy button's text.
-      {:ok, "curl -sSL #{base}/install.sh | sudo EMISAR_URL=#{base} bash"}
+      # Leading space keeps the key out of shell history under
+      # HISTCONTROL=ignorespace / HIST_IGNORE_SPACE.
+      {:ok,
+       " curl -sSL #{base}/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=#{base} bash"}
     end
   end
 

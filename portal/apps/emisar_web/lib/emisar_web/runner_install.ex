@@ -16,23 +16,17 @@ defmodule EmisarWeb.RunnerInstall do
   def troubleshoot_after_ms, do: @troubleshoot_after_ms
 
   @doc """
-  Mints a fresh install key and returns `{command, raw_key, key_id}` —
-  `Runners`' curl one-liner, the key itself, and the key id (so a presence-join
-  handler can tell THIS wizard's runner from any other host coming up).
-  `{:mint_failed, nil, nil}` on error; a nil key id can never match a join.
-
-  The key is returned SEPARATELY because it is no longer inside the command:
-  putting it there meant a reusable credential on sudo's argv, which
-  /proc/<pid>/cmdline exposes to every local user for the length of the install.
-  The installer asks for it on the terminal instead, so the wizard shows it as
-  its own copyable step.
+  Mints a fresh install key and returns `{command, key_id}` — `Runners`' curl
+  one-liner for that key, plus the key id (so a presence-join handler can tell
+  THIS wizard's runner from any other host coming up). `{:mint_failed, nil}` on
+  error; a nil key id can never match a join.
   """
   def mint_command(%Emisar.Auth.Subject{} = subject, base) do
     with {:ok, raw, key} <- Runners.mint_install_key(subject),
          {:ok, command} <- Runners.enrollment_install_command(raw, base) do
-      {command, raw, key.id}
+      {command, key.id}
     else
-      {:error, _reason} -> {:mint_failed, nil, nil}
+      {:error, _reason} -> {:mint_failed, nil}
     end
   end
 end

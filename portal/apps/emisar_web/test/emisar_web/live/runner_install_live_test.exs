@@ -18,7 +18,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       %{conn: conn, account: account}
     end
 
-    test "renders the install one-liner, and it carries no enrollment key", %{
+    test "renders the install one-liner and copies it with its leading space", %{
       conn: conn,
       account: account
     } do
@@ -26,16 +26,13 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{43}/, html)
 
-      # The Copy button copies the literal command via data-copy-text.
+      # The Copy button copies the literal command via data-copy-text — the
+      # domain's one-liner verbatim, including the intentional leading space
+      # (keeps the enrollment key out of shell history under
+      # HISTCONTROL=ignorespace). Regression: copying via the element's
+      # innerText used to strip that leading space.
       assert html =~
-               ~s(data-copy-text="curl -sSL http://www.example.com/install.sh | sudo EMISAR_URL=http://www.example.com bash")
-
-      # The key is shown on the page for the operator to paste at the
-      # installer's prompt, but it is NOT in the command: sudo's argv is
-      # world-readable through /proc for the length of the install, and an
-      # enrollment key is reusable.
-      assert html =~ raw_secret
-      refute html =~ "sudo EMISAR_ENROLLMENT_KEY"
+               ~s(data-copy-text=" curl -sSL http://www.example.com/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://www.example.com bash")
     end
 
     test "puts the live wait status directly after the command, before the script details", %{
@@ -72,7 +69,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/install")
 
       assert html =~ "curl -sSL"
-      assert html =~ ~s(data-copy-text="curl -sSL)
+      assert html =~ ~s(data-copy-text=" curl -sSL)
       refute html =~ "couldn't mint a bootstrap enrollment key"
     end
 

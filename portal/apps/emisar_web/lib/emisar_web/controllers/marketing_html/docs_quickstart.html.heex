@@ -65,9 +65,9 @@
       <.docs_code
         phx-no-format
         label="shell"
-        copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_URL=https://emisar.dev bash"
+        copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash"
       ><span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh \
-    | sudo EMISAR_URL=https://emisar.dev bash</.docs_code>
+    | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</.docs_code>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
       <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
         <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">

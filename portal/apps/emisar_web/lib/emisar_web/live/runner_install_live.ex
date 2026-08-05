@@ -45,17 +45,14 @@ defmodule EmisarWeb.RunnerInstallLive do
         Process.send_after(self(), :reveal_troubleshooting, RunnerInstall.troubleshoot_after_ms())
 
         base = UrlHelpers.derive_base_url(socket)
-
-        {command, raw_key, key_id} =
-          RunnerInstall.mint_command(socket.assigns.current_subject, base)
+        {command, key_id} = RunnerInstall.mint_command(socket.assigns.current_subject, base)
 
         socket
         |> assign(:base_url, base)
         |> assign(:install_command, command)
-        |> assign(:install_key, raw_key)
         |> assign(:install_key_id, key_id)
       else
-        assign(socket, base_url: nil, install_command: nil, install_key: nil, install_key_id: nil)
+        assign(socket, base_url: nil, install_command: nil, install_key_id: nil)
       end
 
     {:ok,
@@ -119,7 +116,6 @@ defmodule EmisarWeb.RunnerInstallLive do
 
       <.install_wizard
         install_command={@install_command}
-        install_key={@install_key}
         base_url={@base_url}
         show_troubleshooting={@show_troubleshooting?}
         keys_path={~p"/app/#{@current_account}/runners/keys"}
