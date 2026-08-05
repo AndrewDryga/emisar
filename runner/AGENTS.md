@@ -12,9 +12,12 @@ A change is done only when this is green from the repository root:
 ./run gate runner
 ```
 
-It checks formatting, module checksums, `go vet`, tidy-as-a-no-op, and race
-tests. Use `./run test runner [go-test-args...]` for focused feedback; direct Go
-commands are diagnostic, not final verification. Run `./run gate mcp` for that
+It checks formatting, module checksums, `go vet`, tidy-as-a-no-op, race tests,
+and the public `install.sh` shell and behavior harness. The harness runs all nine
+checks as root or through passwordless sudo; otherwise it runs six portable
+checks and names the three privileged checks left to CI. Use
+`./run test runner [go-test-args...]` for focused feedback; direct Go commands
+are diagnostic, not final verification. Run `./run gate mcp` for that
 module. Linux-only behavior (Pdeathsig,
 `/var/log` symlinks) verifies in the Coop box from the repo root:
 `coop run -- go -C runner test -race -count=1 ./...`. The box sees the real

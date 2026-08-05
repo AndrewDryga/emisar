@@ -307,8 +307,32 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 	if coverage != "" {
 		testArgs = append(testArgs, "-coverprofile="+coverage)
 	}
-	return a.gatePhase(module+" race tests", func() error {
+	if err := a.gatePhase(module+" race tests", func() error {
 		return a.run(ctx, dir, nil, "go", append(testArgs, "./...")...)
+	}); err != nil {
+		return err
+	}
+	if module == "runner" || module == "mcp" {
+		return a.installerGate(ctx, module)
+	}
+	return nil
+}
+
+func (a *App) installerGate(ctx context.Context, module string) error {
+	script := "install.sh"
+	if module == "mcp" {
+		script = "install-mcp.sh"
+	}
+	if err := a.gatePhase(module+" installer shell", func() error {
+		if err := a.run(ctx, a.Root, nil, "shellcheck", script); err != nil {
+			return err
+		}
+		return a.run(ctx, a.Root, nil, "bash", "-n", script)
+	}); err != nil {
+		return err
+	}
+	return a.gatePhase(module+" installer behavior", func() error {
+		return a.run(ctx, a.Root, nil, "go", "run", "./tools/cmd/installtest", module)
 	})
 }
 
@@ -354,8 +378,8 @@ func (a *App) portalGate(ctx context.Context) error {
 			return err
 		}
 	}
-	// Captured rather than streamed: the known cycle's report is noise until the
-	// budget actually breaks.
+	// Captured rather than streamed: a healthy zero-cycle report is empty, so
+	// surface xref output only when the budget breaks.
 	if err := a.gatePhase("portal compile-cycle budget", func() error {
 		report, err := a.output(ctx, filepath.Join(a.Portal, "apps", "emisar"), env, "mix", "xref.cycles")
 		if err != nil {

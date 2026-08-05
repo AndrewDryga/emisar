@@ -12,9 +12,16 @@ import (
 	"syscall"
 )
 
+type runnerCheck struct {
+	name         string
+	requiresRoot bool
+	run          func(*harness) error
+}
+
 // Runner exercises install.sh, including rollback and root-owned policy state.
 func Runner(root string, out io.Writer) error {
-	if err := ensureRunnerRoot(); err != nil {
+	privileged, err := maybeElevateRunner()
+	if err != nil {
 		return err
 	}
 	h, err := newHarness(root, out)
@@ -23,27 +30,35 @@ func Runner(root string, out io.Writer) error {
 	}
 	defer h.close()
 
-	checks := []struct {
-		name string
-		run  func(*harness) error
-	}{
-		{"unattended pack selection", runnerUnattendedPacks},
-		{"GitHub token argv hygiene", func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
-		{"enrollment state transitions", runnerEnrollmentState},
-		{"binary installation rollback", runnerInstallRollback},
-		{"signal-interrupted rollback", runnerSignalRollback},
-		{"installed pack repair", runnerPackRepair},
-		{"systemd activation", runnerSystemdActive},
-		{"launchd environment wrapper", runnerLaunchdWrapper},
-		{"root-owned policy state", runnerPolicyOwnership},
-	}
-	for _, check := range checks {
+	passed := 0
+	skipped := 0
+	for _, check := range runnerChecks() {
+		if check.requiresRoot && !privileged {
+			fmt.Fprintf(out, "skip: runner installer %s requires root or passwordless sudo\n", check.name)
+			skipped++
+			continue
+		}
 		if err := check.run(h); err != nil {
 			return fmt.Errorf("%s: %w", check.name, err)
 		}
+		passed++
 	}
-	fmt.Fprintln(out, "ok: runner installer smoke test passed")
+	fmt.Fprintf(out, "ok: runner installer smoke test passed (%d passed, %d skipped)\n", passed, skipped)
 	return nil
+}
+
+func runnerChecks() []runnerCheck {
+	return []runnerCheck{
+		{"unattended pack selection", false, runnerUnattendedPacks},
+		{"GitHub token argv hygiene", false, func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
+		{"enrollment state transitions", true, runnerEnrollmentState},
+		{"binary installation rollback", true, runnerInstallRollback},
+		{"signal-interrupted rollback", false, runnerSignalRollback},
+		{"installed pack repair", false, runnerPackRepair},
+		{"systemd activation", false, runnerSystemdActive},
+		{"launchd environment wrapper", false, runnerLaunchdWrapper},
+		{"root-owned policy state", true, runnerPolicyOwnership},
+	}
 }
 
 func runnerUnattendedPacks(h *harness) error {

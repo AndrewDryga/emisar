@@ -1410,7 +1410,7 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 	log := filepath.Join(root, "commands.log")
 	t.Setenv("COMMAND_LOG", log)
 	t.Setenv("PATH", bin)
-	for _, name := range []string{"gofmt", "go", "git"} {
+	for _, name := range []string{"bash", "gofmt", "go", "git", "shellcheck"} {
 		script := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$PWD\" '" + name + "' \"$*\" >> \"$COMMAND_LOG\"\n"
 		path := filepath.Join(bin, name)
 		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
@@ -1437,6 +1437,9 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 		module + "|go|run " + staticcheckVersion + " ./...",
 		module + "|go|mod tidy -diff",
 		module + "|go|test -race -count=1 -coverprofile=coverage.out ./...",
+		filepath.Dir(module) + "|shellcheck|install.sh",
+		filepath.Dir(module) + "|bash|-n install.sh",
+		filepath.Dir(module) + "|go|run ./tools/cmd/installtest runner",
 	}
 	got := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if !slices.Equal(got, want) {

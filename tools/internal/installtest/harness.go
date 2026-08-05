@@ -320,28 +320,33 @@ func currentExecutable() (string, error) {
 	return filepath.EvalSymlinks(path)
 }
 
-func ensureRunnerRoot() error {
+func maybeElevateRunner() (bool, error) {
 	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
-		return nil
+		return true, nil
 	}
 	sudo, err := exec.LookPath("sudo")
 	if err != nil {
-		return fmt.Errorf("runner installer ownership checks require root or sudo")
+		return false, nil
+	}
+	// Never let a canonical gate wait for a password prompt. If sudo is not
+	// already available non-interactively, Runner executes its portable checks
+	// and names the three privileged checks it could not prove.
+	if err := exec.Command(sudo, "-n", "true").Run(); err != nil {
+		return false, nil
 	}
 	executable, err := currentExecutable()
 	if err != nil {
-		return err
+		return false, err
 	}
-	command := exec.Command(sudo, "-E", executable, "runner")
+	command := exec.Command(sudo, "-n", "-E", "--", executable, "runner")
 	command.Dir, _ = os.Getwd()
-	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("re-running runner installer checks with sudo: %w", err)
+		return false, fmt.Errorf("re-running runner installer checks with passwordless sudo: %w", err)
 	}
 	os.Exit(0)
-	return nil
+	return true, nil
 }
 
 var (
