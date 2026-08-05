@@ -28,8 +28,29 @@ defmodule EmisarWeb.RunsLive do
      |> assign(:reload_scheduled?, false)}
   end
 
+  # IL-18: `handle_params` runs on the dead render too, and the template's
+  # disconnected branch renders `<.loading_state />` instead of the feed — so the
+  # runs query was paid for and thrown away on every first paint of the busiest
+  # page, then paid for again on connect.
+  #
+  # The filter bar IS part of that first paint, so its per-account options are
+  # still resolved: a deep-linked `?api_key_id=…` has to show the agent's name,
+  # not a blank combobox that fills in a moment later.
   def handle_params(params, _uri, socket) do
-    {:noreply, load_runs(socket, params)}
+    if connected?(socket) do
+      {:noreply, load_runs(socket, params)}
+    else
+      {:noreply, prepare_disconnected(socket, params)}
+    end
+  end
+
+  defp prepare_disconnected(socket, params) do
+    socket
+    |> assign(:runs, [])
+    |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+    |> assign(:filter_params, params)
+    |> assign(:filters, build_filters(socket.assigns.current_subject, params))
+    |> assign(:load_error?, false)
   end
 
   def handle_event("filter", params, socket) do
@@ -55,12 +76,15 @@ defmodule EmisarWeb.RunsLive do
     # ONE filters list feeds both the rendered bar and params_to_opts: a
     # dispatched-by child that isn't visible isn't in the list, so its param
     # can never narrow the feed from a hidden control.
-    filters =
-      Runs.run_filters()
-      |> put_runner_options(subject)
-      |> resolve_dispatcher_children(params, subject)
+    load_runs(socket, params, build_filters(subject, params))
+  end
 
-    load_runs(socket, params, filters)
+  # The rendered filter bar: the static defs plus the per-account option lists the
+  # Runner and dispatcher-child comboboxes need to label a deep-linked id.
+  defp build_filters(subject, params) do
+    Runs.run_filters()
+    |> put_runner_options(subject)
+    |> resolve_dispatcher_children(params, subject)
   end
 
   # Reuse the mounted filters on a PubSub refresh. Rebuilding them materializes
