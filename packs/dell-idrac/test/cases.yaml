@@ -11,6 +11,45 @@ defaults:
   expect:
     stdout_not_contains: [packtest-canary-idrac-password-9f27]
 cases:
+  # The three mutating actions. Each asserts the exact Redfish endpoint AND the
+  # argument the operator chose — the fixture echoes the body field back, so a
+  # case proves the pack asked correctly rather than merely that it POSTed
+  # something. A mock cannot prove a real BMC obeys; asking correctly is where a
+  # Redfish call actually goes wrong.
+  - action: idrac.clear_sel
+    args: {host: idrac}
+    env:
+      IDRAC_INSECURE: "true"
+    probes:
+      - name: the BMC recorded the SEL clear
+        argv: [/bin/sh, -c, "curl -fsSk https://idrac/packtest/posted"]
+        expect:
+          stdout_contains: ["LogServices/Sel/Actions/LogService.ClearLog"]
+
+  - action: idrac.clear_job_queue
+    args: {host: idrac, scope: JID_CLEARALL_FORCE}
+    env:
+      IDRAC_INSECURE: "true"
+    probes:
+      - name: the BMC recorded the job-queue clear with the chosen scope
+        argv: [/bin/sh, -c, "curl -fsSk https://idrac/packtest/posted"]
+        expect:
+          stdout_contains:
+            - "DellJobService.DeleteJobQueue"
+            - JID_CLEARALL_FORCE
+
+  - action: idrac.power_control
+    args: {host: idrac, reset_type: ForceRestart}
+    env:
+      IDRAC_INSECURE: "true"
+    probes:
+      - name: the BMC recorded the reset with the chosen type
+        argv: [/bin/sh, -c, "curl -fsSk https://idrac/packtest/posted"]
+        expect:
+          stdout_contains:
+            - "ComputerSystem.Reset"
+            - ForceRestart
+
   # The fixture's cert is self-signed, so a verifying curl must refuse it:
   # exit 60 with no IDRAC_INSECURE set proves TLS verification is the default.
   - name: idrac.system-verifies-tls-by-default

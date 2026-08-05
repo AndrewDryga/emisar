@@ -27,6 +27,13 @@ SYSTEM = {
 }
 
 
+# Every accepted POST is recorded and served back at /packtest/posted, so a case
+# can PROBE what the action did rather than only reading the action's own
+# stdout. That is the difference the harness insists on for a mutating action:
+# an observable state change, not a self-report.
+POSTED = []
+
+
 def redfish_error(message):
     return {"error": {"message.extendedInfo": [{"Message": message}]}}
 
@@ -36,6 +43,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self.reply(200, {"status": "ok"})
             return
+        # Fixture introspection, ahead of the auth check like /health: the probe
+        # asks what the BMC recorded, and it is not exercising Redfish auth.
+        if self.path == "/packtest/posted":
+            self.reply(200, {"posted": POSTED})
+            return
         if not self.headers.get("Authorization", "").startswith("Basic "):
             self.reply(401, redfish_error("Login credentials required"))
             return
@@ -43,6 +55,49 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, SYSTEM)
             return
         self.reply(404, redfish_error("Resource not found"))
+
+    # The three risky actions are all POSTs, and the fixture had no do_POST at
+    # all — so nothing had ever exercised the URL, the method, the auth header,
+    # or the JSON body any of them sends. A mock cannot prove a real BMC obeys,
+    # but it proves the pack asks correctly, which is where a Redfish call
+    # actually goes wrong.
+    POST_ACTIONS = {
+        "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Actions/LogService.ClearLog": None,
+        "/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/DellJobService/Actions/DellJobService.DeleteJobQueue": "JobID",
+        "/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset": "ResetType",
+    }
+
+    def do_POST(self):
+        if not self.headers.get("Authorization", "").startswith("Basic "):
+            self.reply(401, redfish_error("Login credentials required"))
+            return
+        if self.path not in self.POST_ACTIONS:
+            self.reply(404, redfish_error("Resource not found"))
+            return
+
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            payload = json.loads(raw or b"{}")
+        except ValueError:
+            self.reply(400, redfish_error("Malformed JSON body"))
+            return
+        if not isinstance(payload, dict):
+            self.reply(400, redfish_error("Body must be a JSON object"))
+            return
+
+        # Echo the field back so a case can assert the action sent the argument
+        # the operator chose, not merely that something was POSTed.
+        required = self.POST_ACTIONS[self.path]
+        if required is not None:
+            if required not in payload:
+                self.reply(400, redfish_error("Missing %s" % required))
+                return
+            POSTED.append({"path": self.path, required: payload[required]})
+            self.reply(200, {"Accepted": self.path, required: payload[required]})
+            return
+        POSTED.append({"path": self.path})
+        self.reply(200, {"Accepted": self.path})
 
     def reply(self, status, document):
         body = json.dumps(document).encode()
