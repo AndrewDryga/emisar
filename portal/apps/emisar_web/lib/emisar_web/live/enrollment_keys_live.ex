@@ -1,7 +1,7 @@
 defmodule EmisarWeb.EnrollmentKeysLive do
   use EmisarWeb, :live_view
   alias Emisar.Runners
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{LiveForm, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
@@ -24,7 +24,6 @@ defmodule EmisarWeb.EnrollmentKeysLive do
        # IL-18: only hit the billing read on the connected mount; the
        # cap-warning banner just stays hidden until it loads.
        |> assign(:billing, connected?(socket) && fetch_billing(socket))
-       |> ConfirmDialog.init()
        |> assign_form(Runners.change_enrollment_key())}
     else
       {:ok,
@@ -86,14 +85,6 @@ defmodule EmisarWeb.EnrollmentKeysLive do
       &do_revoke(&1, id)
     )
   end
-
-  # Typed-confirm state for the "Revoke enrollment key" dialog (UX friction only —
-  # `revoke` above stays the server gate).
-  def handle_event("confirm_typed", params, socket),
-    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
-
-  def handle_event("confirm_reset", _params, socket),
-    do: {:noreply, ConfirmDialog.reset(socket)}
 
   def handle_event("filter", params, socket) do
     {:noreply,
@@ -441,7 +432,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                   tone={:rose}
                   size={:sm}
                   type="button"
-                  phx-click={show_confirm_dialog("revoke-key-#{key.id}")}
+                  phx-click={open_confirm("revoke-key-#{key.id}")}
                 >
                   Revoke
                 </.button>
@@ -452,7 +443,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                   confirm_label="Revoke key"
                   on_confirm={
                     JS.push("revoke", value: %{id: key.id})
-                    |> hide_confirm_dialog("revoke-key-#{key.id}")
+                    |> close_confirm("revoke-key-#{key.id}")
                   }
                 >
                   <:body>
