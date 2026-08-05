@@ -439,6 +439,9 @@ func (a *App) validatePacks(ctx context.Context) error {
 		} else if err := validatePackScriptSyntax(ctx, packDir); err != nil {
 			fmt.Fprintln(a.Err, err)
 			failures = append(failures, filepath.Base(packDir))
+		} else if err := validatePackInterpreterBinaries(packDir); err != nil {
+			fmt.Fprintln(a.Err, err)
+			failures = append(failures, filepath.Base(packDir))
 		}
 	}
 	if len(failures) > 0 {
