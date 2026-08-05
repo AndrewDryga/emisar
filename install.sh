@@ -300,6 +300,11 @@ read_enrollment_key_file() {
 
 prompt_for_enrollment_key() {
   [ -z "${EMISAR_ENROLLMENT_KEY:-}" ] || return 0
+  # --yes means "never block on a human". An automated run on a host that HAS a
+  # terminal — a CI runner, Ansible with a pty, Packer — would otherwise sit
+  # here forever waiting for a paste that is never coming. Unattended callers
+  # pass --enrollment-key-file or set EMISAR_ENROLLMENT_KEY.
+  [ "$ASSUME_YES" != "1" ] || return 0
   tty_available || return 0
 
   local key=""
