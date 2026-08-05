@@ -90,5 +90,15 @@ curl --fail --silent --show-error --retry 30 --retry-delay 2 \
   http://127.0.0.1:9090/readiness >/dev/null
 
 docker rm -f emisar 2>/dev/null || true
+# The internet-facing container was the least confined thing on the host — the
+# Cloud SQL proxy, the gcloud helper and Livebook all drop capabilities and
+# no-new-privileges, and this one dropped nothing. The release binds 4000, which
+# needs no capability, and never escalates; verified by running it under these
+# exact flags.
+#
+# NOT --read-only: the BEAM writes erl_crash.dump and its own tmp, and a crash
+# dump we cannot write is a crash we cannot diagnose. --network host stays —
+# the release clusters over the VPC and talks to the proxy on 127.0.0.1.
 exec docker run --rm --name emisar --network host --env-file "$ENV_FILE" \
+  --cap-drop=ALL --security-opt=no-new-privileges \
   ${container_image}

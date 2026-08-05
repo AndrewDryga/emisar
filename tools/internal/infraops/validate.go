@@ -343,6 +343,21 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if coupledProxy.Match(renderedData) {
 		return fmt.Errorf("the portal service must not restart with the Cloud SQL Auth Proxy")
 	}
+	// The Cloud SQL proxy, the gcloud helper and Livebook were all asserted to be
+	// confined; the internet-facing container was not, and so quietly ran with
+	// every capability. Assert the one that faces the internet too — against ITS
+	// OWN command, continuations and all. Searching the whole document would pass
+	// on the proxy's flags a few lines up and prove nothing.
+	portalRun := regexp.MustCompile(`(?s)docker run --rm --name emisar (?:[^\n]*\\\n)*[^\n]*`)
+	match := portalRun.Find(renderedData)
+	if match == nil {
+		return fmt.Errorf("rendered cloud-init no longer starts the portal container")
+	}
+	for _, flag := range []string{"--cap-drop=ALL", "--security-opt=no-new-privileges"} {
+		if !strings.Contains(string(match), flag) {
+			return fmt.Errorf("the portal container must run with %s", flag)
+		}
+	}
 
 	if err := a.validateAdminCallback(ctx, temp); err != nil {
 		return err
