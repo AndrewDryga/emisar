@@ -272,6 +272,16 @@ resource "google_project_iam_member" "database_operator_studio" {
   project = var.project_id
   role    = "roles/cloudsql.studioUser"
   member  = "user:${var.database_operator_iam_user}"
+
+  # Scoped to the one instance, like every other Cloud SQL grant here. Granted
+  # project-wide it was bounded only by there happening to be a single instance
+  # — and `./run ops drill pitr --apply` creates a second one, so that is a
+  # scheduled break, not a hypothetical.
+  condition {
+    title       = "emisar_database_only"
+    description = "The database operator may open Studio only on the emisar instance."
+    expression  = "resource.name == 'projects/${var.project_id}/instances/emisar' && resource.type == 'sqladmin.googleapis.com/Instance'"
+  }
 }
 
 # ── Cloud Audit Logs ────────────────────────────────────────────────────────────────
