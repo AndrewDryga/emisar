@@ -17,11 +17,39 @@ require_key() {
   [[ -n "${BUNNY_API_KEY:-}" ]] || fail "BUNNY_API_KEY is required"
 }
 
+# The behavior fixture serves a mock inside its Compose network, so the base
+# overrides are pinned to THAT destination rather than left open: an unrestricted
+# override means anyone who can set BUNNY_PACKTEST=1 can also point
+# BUNNY_CORE_API_BASE at a host of their choosing and walk off with
+# BUNNY_API_KEY. "bunny-api" does not resolve outside the test network.
+readonly packtest_base="http://bunny-api:8080"
+
+packtest() {
+  [[ "${BUNNY_PACKTEST:-}" == "1" ]]
+}
+
 validate_bases() {
-  [[ "${BUNNY_PACKTEST:-}" == "1" ]] && return
+  if packtest; then
+    local base
+    for base in "$core_base" "$logging_base" "$origin_errors_base"; do
+      [[ "$base" == "$packtest_base"/* ]] || fail "test API base must be under $packtest_base"
+    done
+    return
+  fi
   [[ "$core_base" == "https://api.bunny.net" ]] || fail "BUNNY_CORE_API_BASE is test-only"
   [[ "$logging_base" == "https://logging.bunnycdn.com/v2" ]] || fail "BUNNY_LOGGING_API_BASE is test-only"
   [[ "$origin_errors_base" == "https://cdn-origin-logging.bunny.net" ]] || fail "BUNNY_ORIGIN_ERRORS_API_BASE is test-only"
+}
+
+# curl's protocol allowlist follows the same switch as the destination pin. In
+# production every base is pinned to an exact https URL, so '=https' simply
+# states what they already are; the fixture's mock speaks plain http.
+curl_protocols() {
+  if packtest; then
+    printf '%s' '=https,http'
+  else
+    printf '%s' '=https'
+  fi
 }
 
 request() {
@@ -29,7 +57,7 @@ request() {
   shift 2
 
   response=$(printf 'AccessKey: %s\n' "$BUNNY_API_KEY" |
-    curl --globoff --proto '=https' -fsS -X "$method" -H @- "$@" "$url") || status=$?
+    curl --globoff --proto "$(curl_protocols)" -fsS -X "$method" -H @- "$@" "$url") || status=$?
   ((status == 0)) || fail "bunny.net API request failed"
   ((${#response} <= max_response_bytes)) || fail "bunny.net API response exceeded 16 MiB"
   printf '%s' "$response"

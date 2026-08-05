@@ -2,7 +2,7 @@ schema_version: 1
 
 id: bunnycdn
 name: bunny.net CDN operations
-version: 0.1.2
+version: 0.1.3
 description: >
   Governed bunny.net Pull Zone lifecycle, cache, hostname, access-control,
   statistics, request-log, origin-error, and billing-usage operations. Auth via

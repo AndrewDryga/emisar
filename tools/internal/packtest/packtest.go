@@ -1185,13 +1185,21 @@ func executeAction(argv, env []string) (actionResult, error) {
 	if err != nil {
 		return actionResult{}, err
 	}
-	if result.exitCode != 0 {
-		return actionResult{}, fmt.Errorf("runner exit=%d\nstdout:\n%s\nstderr:\n%s",
-			result.exitCode, result.stdout, result.stderr)
-	}
+	// `emisar action run` exits non-zero when the ACTION failed — `pack info`
+	// names it the "verify it works" step, so a script has to be able to detect
+	// that — but it prints the result JSON first. A case with
+	// `expect: {status: failure}` is exercising exactly that path, so the exit
+	// code is not the harness's verdict; the parsed result checked against the
+	// case's `expect` is. A run that produced no parseable result IS a harness
+	// error, and a non-zero exit tells us more about it than the decoder does.
 	var action actionResult
-	if err := json.Unmarshal([]byte(result.stdout), &action); err != nil {
-		return actionResult{}, fmt.Errorf("decode action result: %w\nstdout:\n%s", err, result.stdout)
+	if decodeErr := json.Unmarshal([]byte(result.stdout), &action); decodeErr != nil {
+		if result.exitCode != 0 {
+			return actionResult{}, fmt.Errorf("runner exit=%d\nstdout:\n%s\nstderr:\n%s",
+				result.exitCode, result.stdout, result.stderr)
+		}
+		return actionResult{}, fmt.Errorf("decode action result: %w\nstdout:\n%s",
+			decodeErr, result.stdout)
 	}
 	return action, nil
 }
