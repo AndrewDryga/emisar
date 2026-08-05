@@ -19,6 +19,10 @@ defmodule Emisar.Runs.Attestation do
   @max_header_bytes 8_192
   @max_runner_refs 16
   @max_runner_ref_bytes 113
+  # Matches `$defs.reason` in the MCP schema. A narrower bound here rejects an
+  # attestation the bridge legitimately signed over a schema-valid reason; the
+  # 8 KiB header cap above is the real budget.
+  @max_reason_chars 2_000
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
   @lower_hex_32 ~r/\A[0-9a-f]{32}\z/
   @lower_hex_64 ~r/\A[0-9a-f]{64}\z/
@@ -131,7 +135,7 @@ defmodule Emisar.Runs.Attestation do
          true <- matches?(envelope["args_sha256"], @lower_hex_64),
          {:ok, runner_refs} <- canonical_runner_refs(envelope["runner_refs"]),
          true <- runner_refs == envelope["runner_refs"],
-         :ok <- bounded_chars(envelope["reason"], 1, 255),
+         :ok <- bounded_chars(envelope["reason"], 1, @max_reason_chars),
          true <- matches?(envelope["operation_id"], @operation_id),
          true <- matches?(envelope["sig"], @lower_hex_128),
          true <- matches?(envelope["nonce"], @lower_hex_32),

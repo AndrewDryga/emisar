@@ -1,8 +1,8 @@
 # emisar MCP bridge
 
 emisar exposes one MCP surface for discovering runners and packs, inspecting
-declared action schemas, dispatching work, waiting for results, and reading the
-audit trail. New packs add actions behind that same surface; clients do not need
+declared action schemas, dispatching work, waiting for results, and reviewing
+recent run history. New packs add actions behind that same surface; clients do not need
 a new server entry every time the infrastructure catalog changes.
 
 The Go binary in this directory is the bridge for clients that launch MCP

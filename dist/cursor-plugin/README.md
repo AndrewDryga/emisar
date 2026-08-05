@@ -52,7 +52,7 @@ emisar exposes a fixed MCP tool surface that lets Cursor:
 - read the exact schema, risk, limits, and side effects of an action;
 - dispatch an action with typed arguments and a required reason;
 - wait for or recover the result of a run;
-- read permitted audit activity.
+- review recent run history in scope.
 
 Packs add infrastructure capabilities behind those tools. Installing a pack
 does not require another Cursor integration.

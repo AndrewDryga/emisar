@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/andrewdryga/emisar/mcp/internal/attest"
 )
@@ -25,6 +26,11 @@ const (
 	attestationHeader         = "Emisar-Attestation"
 	maxAttestationHeaderBytes = 8 << 10
 	maxSigningCertBytes       = 2 << 10
+
+	// Mirror the run_action tool schema. A bound narrower than the schema turns
+	// a valid call into "invalid input" and forwards it UNSIGNED.
+	maxSignedReasonRunes  = 2000
+	maxSignedPackRefBytes = 256
 )
 
 var operationPattern = regexp.MustCompile(`^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$`)
@@ -205,9 +211,17 @@ func validSignedAction(actionID, packRef, reason string) bool {
 	// The portal and runner own field syntax and schema validation. The bridge
 	// checks only the presence and wire budgets needed to form an unambiguous,
 	// bounded claim, avoiding a third copy of catalog validation rules.
+	//
+	// These bounds must not be NARROWER than the tool schema, or a
+	// schema-valid call reads as invalid input here and is forwarded unsigned.
+	// reason is maxLength 2000 in the registry and bounded in CHARACTERS by the
+	// portal's verifier, so count runes: a byte bound put ~90 CJK characters
+	// over the line. The 8 KiB header check at the end of signFrame is the real
+	// budget, and it fails closed.
 	return actionID != "" && len(actionID) <= 128 &&
-		packRef != "" && len(packRef) <= 256 &&
-		len(reason) <= 255 && strings.TrimSpace(reason) != ""
+		packRef != "" && len(packRef) <= maxSignedPackRefBytes &&
+		utf8.RuneCountInString(reason) <= maxSignedReasonRunes &&
+		strings.TrimSpace(reason) != ""
 }
 
 // signedRunnerRefs copies and sorts the exact public runner generation refs.

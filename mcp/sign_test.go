@@ -314,9 +314,54 @@ func TestSignFrameTargetAndReasonBoundaries(t *testing.T) {
 	if header, err := signer.signFrame(runActionFrame(`{}`, tooMany), testOperationID, testPortalOrigin); err != nil || header != "" {
 		t.Fatal("oversized target set was signed")
 	}
-	overlongReason := strings.Replace(string(runActionFrame(`{}`, []string{testRunnerRefA})), "planned maintenance", strings.Repeat("r", 256), 1)
+	// The schema allows 2000 characters, so a reason of ordinary length must
+	// still be SIGNED. A bound narrower than the schema silently forwarded a
+	// valid run_action unsigned.
+	schemaMaxReason := strings.Replace(string(runActionFrame(`{}`, []string{testRunnerRefA})), "planned maintenance", strings.Repeat("r", maxSignedReasonRunes), 1)
+	if header := mustSignFrame(t, signer, []byte(schemaMaxReason), testOperationID, testPortalOrigin); header == "" {
+		t.Fatal("schema-maximum reason was not signed")
+	}
+
+	// Counted in runes, not bytes: a multi-byte reason well inside the schema
+	// bound must not fall off the signing path.
+	multibyte := strings.Replace(string(runActionFrame(`{}`, []string{testRunnerRefA})), "planned maintenance", strings.Repeat("残", 300), 1)
+	if header := mustSignFrame(t, signer, []byte(multibyte), testOperationID, testPortalOrigin); header == "" {
+		t.Fatal("multi-byte reason inside the schema bound was not signed")
+	}
+
+	// Past the schema bound the portal owns the error, so the frame is
+	// forwarded unsigned rather than signed over input it would reject.
+	overlongReason := strings.Replace(string(runActionFrame(`{}`, []string{testRunnerRefA})), "planned maintenance", strings.Repeat("r", maxSignedReasonRunes+1), 1)
 	if header, err := signer.signFrame([]byte(overlongReason), testOperationID, testPortalOrigin); err != nil || header != "" {
-		t.Fatal("oversized reason was signed")
+		t.Fatal("schema-invalid reason was signed")
+	}
+}
+
+// An envelope that cannot fit the portal's header budget must fail CLOSED —
+// a local error, never a silent unsigned dispatch.
+func TestSignFrameOverBudgetEnvelopeFailsClosed(t *testing.T) {
+	signer, _ := testSigner(t)
+	largeSigner := *signer
+	largeCert := *signer.cert
+	largeCert.Scope.Labels = map[string]string{"scope": strings.Repeat("s", maxSigningCertBytes-700)}
+	largeSigner.cert = &largeCert
+
+	refs := make([]string, attest.MaxRunnerRefs)
+	for i := range refs {
+		name := fmt.Sprintf("runner-%02d-", i) + strings.Repeat("r", 70)
+		refs[i] = name + "~" + fmt.Sprintf("%032x", i+1)
+	}
+	frame := strings.Replace(string(runActionFrame(`{}`, refs)), "planned maintenance", strings.Repeat("r", maxSignedReasonRunes), 1)
+
+	header, err := largeSigner.signFrame([]byte(frame), testOperationID, testPortalOrigin)
+	if err == nil {
+		t.Fatal("over-budget envelope did not fail closed")
+	}
+	if header != "" {
+		t.Fatal("over-budget envelope returned a header")
+	}
+	if !strings.Contains(err.Error(), "limit is") {
+		t.Fatalf("error = %v, want the header budget", err)
 	}
 }
 
@@ -344,7 +389,12 @@ func TestSignFrameMaximumSupportedEnvelopeFitsPortalHeader(t *testing.T) {
 	}
 	frame := string(runActionFrame(`{}`, refs))
 	frame = strings.Replace(frame, testActionID, strings.Repeat("a", 128), 1)
-	frame = strings.Replace(frame, testPackRef, strings.Repeat("p", 256), 1)
+	frame = strings.Replace(frame, testPackRef, strings.Repeat("p", maxSignedPackRefBytes), 1)
+	// A 255-character reason is the largest that still fits alongside a
+	// maximum certificate and a full 16-runner target set. Longer reasons are
+	// legal and signed on ordinary fan-outs; this pins the worst case that must
+	// keep working, and TestSignFrameOverBudgetEnvelopeFailsClosed pins that
+	// exceeding the budget errors instead of dispatching unsigned.
 	frame = strings.Replace(frame, "planned maintenance", strings.Repeat("r", 255), 1)
 	header := mustSignFrame(t, &largeSigner, []byte(frame), testOperationID, testPortalOrigin)
 	if len(header) > maxAttestationHeaderBytes {
