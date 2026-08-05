@@ -90,7 +90,11 @@ jobs:
         # tag.
         run: |
           set -euo pipefail
-          deadline=$((SECONDS + 1500))
+          # Under the job's 20-minute timeout, with room for checkout and setup
+          # first: at 1500s the job was killed before this loop could report WHY
+          # it gave up, so a CI run that never finished looked like an
+          # infrastructure timeout instead of a named wait.
+          deadline=$((SECONDS + 900))
           while true; do
             result=$(gh api \
               -H 'Accept: application/vnd.github+json' \
