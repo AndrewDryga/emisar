@@ -36,22 +36,35 @@ func parseGoldens(data []byte) (map[string]golden, error) {
 	lines := bytes.SplitAfter(data, []byte("\n"))
 	offset := 0
 	pending := ""
+	distance := 0
 	found := make(map[string]golden)
 	for _, line := range lines {
 		text := string(line)
 		for _, pack := range []string{"redis", "cassandra"} {
 			if strings.Contains(text, `get("`+pack+`").content_hash ==`) {
 				pending = pack
+				distance = 0
 			}
 		}
 		if pending != "" {
 			location := hashLine.FindIndex(line)
-			if location != nil {
+			switch {
+			case location != nil:
 				found[pending] = golden{
 					pack: pending, start: offset + location[0], end: offset + location[1],
 					hash: string(line[location[0]:location[1]]),
 				}
 				pending = ""
+				distance = 0
+			case distance >= 2:
+				// The golden sits on the assertion line or the one after it.
+				// Searching further meant that if the assertion's own hash moved
+				// or was deleted, the next `sha256:` anywhere below it was claimed
+				// instead — and `--write` would rewrite those bytes.
+				pending = ""
+				distance = 0
+			default:
+				distance++
 			}
 		}
 		offset += len(line)
