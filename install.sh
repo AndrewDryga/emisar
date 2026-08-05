@@ -766,18 +766,25 @@ resolve_latest_version() {
   out=$(github_api \
     "https://api.github.com/repos/${REPO}/releases?per_page=100") \
     || die "could not query GitHub releases API"
-  # Split the response one release per line, then drop drafts and prereleases
-  # before taking the first runner tag. Without this, a release marked
-  # prerelease — or a draft, once EMISAR_GITHUB_TOKEN makes it visible — became
-  # what every unpinned `curl | sudo bash` installed, and a backport published
-  # after a newer minor resolved "latest" to the older line for everyone.
+  # Split the response one release per line, then drop drafts and prereleases.
+  # Without that, a release marked prerelease — or a draft, once
+  # EMISAR_GITHUB_TOKEN makes it visible — became what every unpinned
+  # `curl | sudo bash` installed.
+  #
+  # Then take the HIGHEST version, not the first. The API orders by creation, so
+  # a backport to an older line published after a newer minor sat at the top and
+  # became "latest" for every fresh install. Sorted numerically field by field —
+  # `sort -V` is not portable to every host this script runs on, and a lexical
+  # sort puts v0.9.0 above v0.10.0.
   printf '%s\n' "$out" \
     | tr '{' '\n' \
     | grep -v '"draft":[[:space:]]*true' \
     | grep -v '"prerelease":[[:space:]]*true' \
     | grep -oE '"tag_name":[[:space:]]*"runner-v[0-9]+\.[0-9]+\.[0-9]+"' \
-    | head -1 \
-    | sed -E 's/.*"(runner-v[^"]+)".*/\1/'
+    | sed -E 's/.*"runner-v([0-9]+\.[0-9]+\.[0-9]+)".*/\1/' \
+    | sort -t. -k1,1n -k2,2n -k3,3n \
+    | tail -1 \
+    | sed -E 's/^/runner-v/'
 }
 
 download_release() {

@@ -58,6 +58,7 @@ func runnerChecks() []runnerCheck {
 		{"systemd activation", false, runnerSystemdActive},
 		{"launchd environment wrapper", false, runnerLaunchdWrapper},
 		{"root-owned policy state", true, runnerPolicyOwnership},
+		{"latest release resolution", false, runnerLatestRelease},
 	}
 }
 
@@ -519,6 +520,38 @@ secure_pack_tree
 		if stat.Uid != 0 {
 			return fmt.Errorf("%s owner uid = %d, expected root", path, stat.Uid)
 		}
+	}
+	return nil
+}
+
+// runnerLatestRelease proves what an unpinned `curl | sudo bash` installs.
+//
+// The GitHub releases API orders by CREATION, so two things could decide
+// "latest" for every fresh install: a prerelease or draft sitting at the top,
+// and a backport to an older line published after a newer minor. The fixture
+// carries both, plus 0.9.9 vs 0.10.0 so a lexical sort cannot pass by accident.
+func runnerLatestRelease(h *harness) error {
+	const releases = `[` +
+		`{"tag_name":"runner-v0.11.0","draft":true,"prerelease":false},` +
+		`{"tag_name":"runner-v0.10.1","draft":false,"prerelease":true},` +
+		`{"tag_name":"runner-v0.2.9","draft":false,"prerelease":false},` +
+		`{"tag_name":"runner-v0.10.0","draft":false,"prerelease":false},` +
+		`{"tag_name":"runner-v0.9.9","draft":false,"prerelease":false},` +
+		`{"tag_name":"mcp-v9.9.9","draft":false,"prerelease":false}]`
+
+	result := h.functions(h.repoPath("install.sh"), []string{"resolve_latest_version"}, `
+github_api() { printf '%s' "$RELEASES"; }
+die() { printf '%s\n' "$1" >&2; exit 1; }
+REPO=example/emisar
+resolve_latest_version
+`, map[string]string{"RELEASES": releases})
+
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if got := strings.TrimSpace(string(output)); got != "runner-v0.10.0" {
+		return fmt.Errorf("resolved latest = %q, want runner-v0.10.0", got)
 	}
 	return nil
 }
