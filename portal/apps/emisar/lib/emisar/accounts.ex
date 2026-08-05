@@ -290,12 +290,22 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # Disconnect the members' live sockets so every mounted LiveView remounts and
+  # re-resolves; do NOT delete their session tokens.
+  #
+  # A session token is per-USER, not per-account — the account is resolved from
+  # the URL on every request — so revoking them signed a member out of every
+  # OTHER account they belong to as well, mid-incident, with no audit event
+  # naming those accounts. Nothing is lost by not revoking: authorization for
+  # the disabled account is enforced at request time
+  # (`Auth.fetch_user_and_token_by_session_token/1` matches
+  # `%Account{disabled_at: nil}`), so a remount cannot get back in.
   defp disconnect_account_members(account_id) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.with_preloaded_user()
     |> Repo.all()
-    |> Enum.each(&Auth.disconnect_and_revoke_all_sessions(&1.user))
+    |> Enum.each(&Auth.broadcast_disconnect_for_user(&1.user))
 
     :ok
   end

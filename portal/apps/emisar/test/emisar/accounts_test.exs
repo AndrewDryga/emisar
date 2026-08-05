@@ -602,13 +602,15 @@ defmodule Emisar.AccountsTest do
              ) == {:error, :not_found}
     end
 
-    test "revokes member sessions without affecting another account's users" do
+    test "locks members out of the disabled account without touching their other accounts" do
       {_actor, _management_account, support_subject} = Fixtures.Subjects.owner_subject()
       account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
       member = Fixtures.Users.create_user()
       outsider = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: member.id)
       member_token = Fixtures.Auth.create_session_token!(member, :magic_link, false)
       outsider_token = Fixtures.Auth.create_session_token!(outsider, :magic_link, false)
 
@@ -620,7 +622,20 @@ defmodule Emisar.AccountsTest do
                  support_subject
                )
 
-      assert Emisar.Auth.fetch_user_and_token_by_session_token(member_token) ==
+      # The member stays signed in, and keeps the account that was NOT disabled —
+      # a session token is per-user, so revoking it here would sign them out of
+      # every tenant they belong to.
+      assert {:ok, %User{id: member_id}, _session} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(member_token)
+
+      assert member_id == member.id
+
+      assert {:ok, %Membership{}} =
+               Accounts.fetch_membership_by_account_id_or_slug(member, other_account.id)
+
+      # ...but the disabled account itself is gone on the next navigation, which
+      # re-resolves the membership from the URL.
+      assert Accounts.fetch_membership_by_account_id_or_slug(member, account.id) ==
                {:error, :not_found}
 
       assert {:ok, %User{id: outsider_id}, _session} =
