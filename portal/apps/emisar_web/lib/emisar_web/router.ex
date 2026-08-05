@@ -597,6 +597,7 @@ defmodule EmisarWeb.Router do
     live_dashboard "/live",
       metrics: EmisarWeb.Telemetry,
       ecto_repos: [Emisar.Repo],
-      live_session_name: :admin_dashboard
+      live_session_name: :admin_dashboard,
+      on_mount: [{EmisarWeb.UserAuth, :ensure_admin}]
   end
 end

@@ -2,7 +2,7 @@ defmodule Emisar.RunnerAccessTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts
   alias Emisar.Accounts.RunnerAccess
-  alias Emisar.{Fixtures, Repo, Runners, Runs}
+  alias Emisar.{Audit, Fixtures, Repo, Runners, Runs}
 
   describe "RunnerAccess" do
     test "normalizes restricted access and rejects ambiguous shapes" do
@@ -728,6 +728,87 @@ defmodule Emisar.RunnerAccessTest do
     end
   end
 
+  describe "audit visibility follows runner scope" do
+    setup do
+      {account, _owner, owner_subject} = account_with_owner()
+
+      db = Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
+      edge = Fixtures.Runners.create_runner(account_id: account.id, name: "edge-1", group: "edge")
+
+      for runner <- [db, edge] do
+        Repo.insert!(
+          Audit.changeset(account.id, "action_run.succeeded", %{
+            target_kind: "runner",
+            target_id: runner.id,
+            target_label: runner.name
+          })
+        )
+      end
+
+      member = create_member(account, "operator")
+      member_subject = Fixtures.Subjects.membership_subject(member)
+
+      %{
+        account: account,
+        owner_subject: owner_subject,
+        member: member,
+        member_subject: member_subject,
+        db: db
+      }
+    end
+
+    test "a restricted member reads only in-scope runner events", %{
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject,
+      db: db
+    } do
+      assert {:ok, all_events, _} = Audit.list_events(member_subject)
+      assert length(runner_targets(all_events)) == 2
+
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+      {:ok, _} = Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      assert {:ok, scoped, _} = Audit.list_events(member_subject)
+      assert runner_targets(scoped) == [db.id]
+
+      # The target picker is a fleet enumeration by another name.
+      assert {:ok, options} = Audit.list_target_options("runner", member_subject)
+      assert Enum.map(options, &elem(&1, 0)) == [db.id]
+    end
+
+    test "a member with no runner access reads no runner events at all", %{
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject
+    } do
+      {:ok, _} =
+        Accounts.update_membership_runner_access(member, RunnerAccess.none(), owner_subject)
+
+      assert {:ok, events, _} = Audit.list_events(member_subject)
+      assert runner_targets(events) == []
+    end
+
+    test "an out-of-scope runner event 404s on direct fetch", %{
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject,
+      db: db
+    } do
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+      {:ok, _} = Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      {:ok, all_events, _} = Audit.list_events(owner_subject)
+      in_scope = Enum.find(all_events, &(&1.target_id == db.id))
+
+      out_of_scope =
+        Enum.find(all_events, &(&1.target_kind == "runner" and &1.target_id != db.id))
+
+      assert {:ok, _} = Audit.fetch_event_by_id(in_scope.id, member_subject)
+      assert {:error, :not_found} = Audit.fetch_event_by_id(out_of_scope.id, member_subject)
+    end
+  end
+
   describe "mixed-revision database guard" do
     test "an old membership insert gets an explicit fail-closed mode" do
       account = Fixtures.Accounts.create_account()
@@ -833,6 +914,13 @@ defmodule Emisar.RunnerAccessTest do
       )
 
     Enum.map(rows, fn [scope_type, scope_value] -> {scope_type, scope_value} end)
+  end
+
+  defp runner_targets(events) do
+    events
+    |> Enum.filter(&(&1.target_kind == "runner"))
+    |> Enum.map(& &1.target_id)
+    |> Enum.sort()
   end
 
   defp create_member(account, role, attrs \\ []) do

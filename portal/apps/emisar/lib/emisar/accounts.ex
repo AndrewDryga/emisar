@@ -1909,27 +1909,37 @@ defmodule Emisar.Accounts do
   end
 
   # after_commit for both role-change paths (operator UI + SCIM sync): refresh
-  # the team list AND, on a privilege REDUCTION, force the member's open sockets
-  # to remount with the new permissions. `changeset.data.role` is the locked
-  # pre-update role.
+  # the team list AND, on a privilege REDUCTION, cut the member's stale
+  # delegations. `changeset.data.role` is the locked pre-update role.
   defp on_membership_role_changed(%Membership{} = membership, %Ecto.Changeset{} = changeset) do
     broadcast_membership_role_changed(membership)
-    maybe_refresh_reduced_member_sessions(changeset.data.role, membership)
+    maybe_revoke_reduced_member_delegations(changeset.data.role, membership)
   end
 
-  # A role change rewrites the user's permission set, but a mounted LiveView
-  # snapshotted the OLD %Subject{} at mount — so a demoted operator/admin keeps
-  # stale powers on every open socket until they happen to navigate. On a
-  # REDUCTION, disconnect the member's live sockets (sockets only — they stay
-  # signed in) so each remounts and rebuilds its subject from the new role.
+  # A role change rewrites the user's permission set, but two things still carry
+  # the OLD one:
+  #
+  #   * a mounted LiveView snapshotted the OLD %Subject{} at mount, so a demoted
+  #     operator/admin keeps stale powers on every open socket until they happen
+  #     to navigate — disconnect the sockets (they stay signed in) so each
+  #     remounts and rebuilds its subject from the new role; and
+  #   * an API key mints a `:api_client` subject that ALWAYS holds
+  #     `dispatch_run`, bound to `created_by_membership_id` — the role is never
+  #     re-read at dispatch. Demoting an operator to viewer would otherwise
+  #     leave their MCP bridge dispatching to the whole fleet. Suspension and
+  #     removal already revoke; a demotion is the same loss of standing.
   #
   # Authz here is permission-based, not rank-based (`Auth.Role` deliberately has
   # no rank), so "reduction" is a permission-subset test — the new role losing a
   # permission the old one held. An elevation or a no-op (a SCIM reconcile
-  # re-applying the same role) keeps the sockets, avoiding needless reconnects.
-  defp maybe_refresh_reduced_member_sessions(old_role, %Membership{role: new_role} = membership) do
+  # re-applying the same role) keeps both, avoiding needless churn.
+  defp maybe_revoke_reduced_member_delegations(
+         old_role,
+         %Membership{role: new_role} = membership
+       ) do
     if reduced_permissions?(old_role, new_role) do
       refresh_member_sessions(membership)
+      revoke_membership_api_keys(membership)
     else
       :ok
     end
@@ -2424,7 +2434,7 @@ defmodule Emisar.Accounts do
     if is_integer(previous_membership.directory_authorization_pending_version) do
       refresh_member_sessions(membership)
     else
-      maybe_refresh_reduced_member_sessions(previous_membership.role, membership)
+      maybe_revoke_reduced_member_delegations(previous_membership.role, membership)
 
       if RunnerAccess.covers?(previous_access, access) and
            not RunnerAccess.covers?(access, previous_access) do

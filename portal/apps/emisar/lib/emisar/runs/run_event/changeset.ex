@@ -8,6 +8,7 @@ defmodule Emisar.Runs.RunEvent.Changeset do
   # persisted event row so a compromised runner cannot insert multi-MB payloads.
   @max_payload_bytes 262_144
   @max_stream_length 32
+  @max_db_integer 2_147_483_647
 
   def create(attrs) do
     %RunEvent{}
@@ -15,7 +16,14 @@ defmodule Emisar.Runs.RunEvent.Changeset do
     |> validate_required([:run_id, :account_id, :seq, :kind])
     # Runner seq is 1-based (first chunk is seq=1); seq <= 0 is malformed.
     # Mirrored by the DB CHECK so a bypassing writer can't persist it either.
-    |> validate_number(:seq, greater_than: 0)
+    # The upper bound is the int4 column's: Elixir integers are arbitrary
+    # precision, so an unbounded seq built a VALID changeset and then raised in
+    # Postgrex — which is not the {:error, changeset} the socket handles, so it
+    # crashed the connection into a reconnect loop.
+    |> validate_number(:seq,
+      greater_than: 0,
+      less_than_or_equal_to: @max_db_integer
+    )
     |> validate_length(:stream, max: @max_stream_length)
     |> RepoChangeset.validate_json_size(:payload, @max_payload_bytes)
     |> unique_constraint([:run_id, :seq])

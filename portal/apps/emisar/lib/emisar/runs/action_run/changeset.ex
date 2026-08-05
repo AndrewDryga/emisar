@@ -72,6 +72,15 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     |> validate_length(:operation_id, max: @max_db_string_length)
     |> validate_length(:pack_ref, max: @max_db_string_length)
     |> validate_length(:runner_ref, max: 113)
+    # Straight off the request headers into varchar(255) columns: an over-long
+    # User-Agent raised a Postgrex 22001 rather than returning a changeset, so
+    # the dispatch 500'd with no run row AND no audit row. Truncate like the
+    # audit sibling — a client's header shape must not fail an authorized
+    # operator's dispatch, and the value is forensic metadata, not a key.
+    |> RepoChangeset.truncate_codepoints(
+      [:ip_address, :user_agent],
+      @max_db_string_length
+    )
     |> validate_action_args_raw()
     |> validate_run_opts()
     |> validate_signed_run_opts()

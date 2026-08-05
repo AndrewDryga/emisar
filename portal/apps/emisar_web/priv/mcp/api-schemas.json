@@ -22,7 +22,7 @@
       "type": "string",
       "maxLength": 255,
       "x-maxUtf8Bytes": 255,
-      "pattern": "^[a-z][a-z0-9_-]*@[0-9]+(?:\\.[0-9]+)*/sha256:[0-9a-f]{64}$"
+      "pattern": "^[a-z][a-z0-9_-]*@[0-9]+(?:\\.[0-9]+)*(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?/sha256:[0-9a-f]{64}$"
     },
     "runner_ref": {
       "type": "string",

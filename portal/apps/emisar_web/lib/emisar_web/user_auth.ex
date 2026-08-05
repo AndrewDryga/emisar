@@ -377,6 +377,27 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
+  # The LiveDashboard's socket gate. The :require_admin PIPELINE only guards the
+  # dead render; a LiveView session stays verifiable for 14 days, so without an
+  # on_mount hook a revoked admin could replay one and reconnect to DB stats and
+  # the process list. Re-reads the user from the session token on every mount.
+  def on_mount(:ensure_admin, _params, session, socket) do
+    socket = mount_current_user(session, socket)
+
+    case socket.assigns.current_user do
+      %{is_admin: true} ->
+        {:cont, socket}
+
+      _ ->
+        socket =
+          socket
+          |> Phoenix.LiveView.put_flash(:error, "Not authorized.")
+          |> Phoenix.LiveView.redirect(to: ~p"/app")
+
+        {:halt, socket}
+    end
+  end
+
   # The slug gate (IL-15): composed AFTER :ensure_authenticated on every tenant
   # route. Re-resolves current_account from the URL ref (id-or-slug) on EVERY
   # mount — the session value is NOT trusted as the tenant key here — and

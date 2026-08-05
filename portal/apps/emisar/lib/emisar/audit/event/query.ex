@@ -1,6 +1,7 @@
 defmodule Emisar.Audit.Event.Query do
   use Emisar, :query
   alias Emisar.Repo.{Filter, Like}
+  alias Emisar.Runners
 
   # What's deliberately NOT audited (so the default listing stays
   # operator-meaningful): run lifecycle states (pending/sent/running) never leave
@@ -447,6 +448,37 @@ defmodule Emisar.Audit.Event.Query do
 
   def by_target_kind(queryable, kind),
     do: where(queryable, [events: e], e.target_kind == ^kind)
+
+  @doc """
+  Drops every runner-targeted event whose runner is outside the member's scope.
+
+  A run's audit event carries `target_kind: "runner"` plus the runner's id and
+  name, and its payload carries `executed_command` — so without this a member
+  scoped to one host (or to none) could read every host's name and command
+  lines from the audit page, and enumerate the fleet through the target picker.
+  Events with any other target are unaffected: scope narrows hosts, not the
+  account's own history.
+  """
+  def by_runner_target_scope_values(queryable, runner_ids, groups) do
+    where(
+      queryable,
+      [events: e],
+      e.target_kind != "runner" or
+        is_nil(e.target_id) or
+        exists(
+          from(runner in Runners.Runner.Query.all(),
+            where:
+              runner.id == parent_as(:events).target_id and
+                (runner.id in ^runner_ids or runner.group in ^groups),
+            select: 1
+          )
+        )
+    )
+  end
+
+  @doc "Drops every runner-targeted event — the `mode: :none` scope."
+  def without_runner_targets(queryable),
+    do: where(queryable, [events: e], e.target_kind != "runner" or is_nil(e.target_id))
 
   @doc """
   Distinct `actor_id`s for actors of `kind` in the scoped events — the id set

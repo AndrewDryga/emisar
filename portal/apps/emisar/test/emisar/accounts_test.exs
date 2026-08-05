@@ -2837,6 +2837,43 @@ defmodule Emisar.AccountsTest do
                Accounts.update_membership_role(owner_membership, "admin", subject)
     end
 
+    test "demoting a member revokes the API keys they minted" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      admin = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: admin.id)
+
+      # Re-applying the same role is a no-op (a SCIM reconcile does this), so
+      # the delegation survives.
+      assert {:ok, unchanged} =
+               Accounts.update_membership_role(admin_membership, "admin", subject)
+
+      assert is_nil(Repo.reload!(key).revoked_at)
+
+      # A demotion is the same loss of standing as suspension. Without this the
+      # key keeps its fixed :api_client role — which always holds dispatch_run —
+      # so a demoted admin's MCP bridge would still reach the whole fleet.
+      assert {:ok, _} = Accounts.update_membership_role(unchanged, "viewer", subject)
+      refute is_nil(Repo.reload!(key).revoked_at)
+    end
+
     test "a member without manage_team permission cannot change a role" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")

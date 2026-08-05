@@ -27,8 +27,8 @@ defmodule Emisar.Audit do
   engine origin) carries no request metadata, by construction.
   """
   use Supervisor
+  alias Emisar.{Accounts, Auth, Billing, Repo, RequestContext, Runs}
   alias Emisar.Audit.{Authorizer, Event, Events}
-  alias Emisar.{Auth, Billing, Repo, RequestContext, Runs}
   alias Emisar.Auth.Subject
 
   def start_link(opts) do
@@ -353,6 +353,7 @@ defmodule Emisar.Audit do
       Event.Query.all()
       |> filter_by_actor_id(actor_id)
       |> filter_by_target_id(target_id)
+      |> scope_events_to_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Event.Query, opts)
     end
@@ -378,6 +379,7 @@ defmodule Emisar.Audit do
       logged_ids =
         Event.Query.all()
         |> Event.Query.distinct_actor_ids_of_kind(actor_kind)
+        |> scope_events_to_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -410,6 +412,7 @@ defmodule Emisar.Audit do
       ids =
         Event.Query.all()
         |> Event.Query.distinct_target_ids_of_kind(target_kind)
+        |> scope_events_to_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -447,6 +450,25 @@ defmodule Emisar.Audit do
   end
 
   defp filter_by_target_id(queryable, _id), do: Event.Query.none(queryable)
+
+  # Per-user runner scope applies to the audit log the same way it applies to
+  # runs, runners, and the catalog. A run's event targets its runner and carries
+  # `executed_command` in the payload, so without this a scoped-down member
+  # reads every host's command lines and can enumerate the fleet through the
+  # target picker — while `/docs/teams` promises out-of-scope runners don't
+  # appear in lists. Non-runner targets are untouched.
+  defp scope_events_to_membership(queryable, %Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :none} ->
+        Event.Query.without_runner_targets(queryable)
+
+      %Accounts.RunnerAccess{mode: :all} ->
+        queryable
+
+      %Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups} ->
+        Event.Query.by_runner_target_scope_values(queryable, runner_ids, groups)
+    end
+  end
 
   @doc """
   SIEM export — cursor-paginated forward sweep of every event the
@@ -493,6 +515,7 @@ defmodule Emisar.Audit do
         |> Event.Query.by_event_types(types)
         |> Event.Query.ordered_for_export()
         |> Event.Query.limit_to(limit)
+        |> scope_events_to_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -564,6 +587,7 @@ defmodule Emisar.Audit do
          true <- Repo.valid_uuid?(id) do
       Event.Query.all()
       |> Event.Query.by_id(id)
+      |> scope_events_to_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Event.Query)
     else

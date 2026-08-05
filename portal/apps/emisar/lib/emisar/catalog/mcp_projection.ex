@@ -11,7 +11,15 @@ defmodule Emisar.Catalog.MCPProjection do
   alias Emisar.Runners
 
   @pack_id_format ~r/\A[a-z][a-z0-9_-]*\z/
-  @pack_version_format ~r/\A[0-9]+(?:\.[0-9]+)*\z/
+  # Dot-numeric with SemVer's optional prerelease/build suffixes. The published
+  # registry validates with `Version.parse/1`, which ACCEPTS `1.4.0-rc1` and
+  # `2.0.0+build` — those ingested, showed on /app/packs, and then vanished from
+  # `list_packs` with no issue code, because this pattern dropped them and
+  # `build/3` swallows an invalid ref as `[]`. Widen to cover them. Deliberately
+  # still accepts a bare `1` / `1.4`: a runner may advertise any dot-numeric
+  # version for a TOFU pack, and narrowing here would silently drop those the
+  # same way. `pack_ref` freezes at 1.0, so it has to be right now.
+  @pack_version_format ~r/\A[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\z/
   @pack_hash_format ~r/\Asha256:[0-9a-f]{64}\z/
   @unsafe_text ~r/[\p{Cc}\p{Cf}\p{Cs}]/u
   @max_labels 32

@@ -217,7 +217,15 @@ defmodule EmisarWeb.RunnersLive do
         # An empty fleet on the live socket IS the wizard — mint the one-liner and
         # render the installer inline, so a first-time operator connects a host
         # without a detour to /runners/install (the LLM-agents page does the same).
-        show_wizard? = runners == [] and meta.count == 0 and connected?(socket)
+        #
+        # `meta.count` is the FILTERED count, so a filter that matches nothing —
+        # `?group=` a retired group — otherwise reads as an empty fleet: a
+        # 500-runner account gets "connect your first runner" AND a freshly
+        # minted root-capable install key on every visit. A filtered miss is an
+        # empty RESULT, never an empty fleet.
+        show_wizard? =
+          runners == [] and meta.count == 0 and connected?(socket) and
+            not LiveTable.has_active_filters?(params, filters)
 
         socket
         |> maybe_mint_install(
@@ -445,6 +453,7 @@ defmodule EmisarWeb.RunnersLive do
                 path={~p"/app/#{@current_account}/runners"}
                 rows={sort_by_group(@runners)}
                 metadata={@metadata}
+                filters={@filters}
                 filter_params={@filter_params}
                 wrapper_class="divide-y divide-zinc-800/70"
                 group_by={fn runner -> runner.group || "(no group)" end}

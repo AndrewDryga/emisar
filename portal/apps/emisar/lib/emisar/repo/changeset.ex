@@ -45,6 +45,27 @@ defmodule Emisar.Repo.Changeset do
   end
 
   @doc """
+  Truncates each field's change to `limit` CODEPOINTS, the unit `varchar(n)`
+  counts — for request metadata (IP, user agent) that arrives straight off a
+  header and must never fail its insert.
+
+  `String.slice/3` counts graphemes, so slicing to 255 there still lets 255
+  combining marks through as 510 codepoints and the insert raises 22001. A
+  non-binary change passes through unchanged.
+  """
+  def truncate_codepoints(%Ecto.Changeset{} = changeset, fields, limit) do
+    Enum.reduce(fields, changeset, fn field, acc ->
+      update_change(acc, field, &take_codepoints(&1, limit))
+    end)
+  end
+
+  defp take_codepoints(value, limit) when is_binary(value) do
+    value |> String.codepoints() |> Enum.take(limit) |> IO.iodata_to_binary()
+  end
+
+  defp take_codepoints(value, _limit), do: value
+
+  @doc """
   Adds an error to `field` when its change serializes to more than `max_bytes`
   of JSON — a DoS guard on `:map`/`:array` columns fed by external input. A field
   left unset, and a value Jason can't encode, both pass through unchanged.

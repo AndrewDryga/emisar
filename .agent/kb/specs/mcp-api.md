@@ -266,11 +266,14 @@ cassandra@1.4.0/sha256:7a65c099fe1d3c8d2b250d211d4792ec1e3919b87f49ffb998ee6e436
 `pack_ref` is SHA-256 over the complete canonical pack tree, whose bytes include
 every action descriptor and schema. The runner already computes this identity
 from local bytes. Reusing a human version with different bytes produces a
-different ref and fails closed. Versions use the repository's dot-numeric
-grammar (`1`, `1.4`, `1.4.0`); pack ingestion rejects any other form.
+different ref and fails closed. Versions are dot-numeric with SemVer's optional
+prerelease and build suffixes (`1.4.0`, `1.4.0-rc1`, `2.0.0+build`). The
+published registry is stricter — it validates with SemVer, so a partial `1.4`
+fails publication — but a runner may advertise any dot-numeric version for a
+TOFU pack, and a ref must be able to name it.
 The canonical ref grammar is
-`^[a-z][a-z0-9_-]*@[0-9]+(?:\.[0-9]+)*/sha256:[0-9a-f]{64}$`, and the ref is at
-most 255 UTF-8 bytes.
+`^[a-z][a-z0-9_-]*@[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/sha256:[0-9a-f]{64}$`,
+and the ref is at most 255 UTF-8 bytes.
 
 An action is identified by `(pack_ref, action_id)`. There is intentionally no
 second `action_ref`: hashing an action contract already contained in the hashed

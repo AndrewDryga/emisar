@@ -20,6 +20,7 @@ defmodule Emisar.Runners.Runner.Changeset do
   @max_group_length 80
   @max_runner_version_length 255
   @max_json_bytes 65_536
+  @max_db_integer 2_147_483_647
 
   # -- Bootstrap paths -------------------------------------------------
 
@@ -88,7 +89,13 @@ defmodule Emisar.Runners.Runner.Changeset do
     |> validate_json_size(:labels, @max_json_bytes)
     |> validate_json_size(:packs, @max_json_bytes)
     |> validate_json_size(:degraded_packs, @max_json_bytes)
-    |> validate_number(:max_attestation_age_seconds, greater_than: 0)
+    # int4 column, and the value is runner-advertised: without the ceiling an
+    # arbitrary-precision Elixir integer builds a valid changeset and then
+    # raises in Postgrex, which the socket does not handle as a changeset error.
+    |> validate_number(:max_attestation_age_seconds,
+      greater_than: 0,
+      less_than_or_equal_to: @max_db_integer
+    )
     |> validate_signing_advertisement()
   end
 
