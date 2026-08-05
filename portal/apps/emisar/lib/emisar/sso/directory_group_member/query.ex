@@ -59,6 +59,9 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   def by_external_group_id(queryable \\ all(), external_group_id),
     do: where(queryable, [group_members: g], g.external_group_id == ^external_group_id)
 
+  def by_external_group_ids(queryable \\ all(), external_group_ids),
+    do: where(queryable, [group_members: g], g.external_group_id in ^external_group_ids)
+
   # The display each synced group was last pushed under, as {external_group_id,
   # display} pairs for a caller to `Map.new`. Aggregated because the display
   # lives on every member row: a PATCH `add` op carries no displayName, so its

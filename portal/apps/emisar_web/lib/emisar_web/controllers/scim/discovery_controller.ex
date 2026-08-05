@@ -127,7 +127,7 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
       "documentationUri" => "#{base_url(conn)}/docs/scim",
       "patch" => %{"supported" => true},
       "bulk" => %{"supported" => false, "maxOperations" => 0, "maxPayloadSize" => 0},
-      "filter" => %{"supported" => true, "maxResults" => 100},
+      "filter" => %{"supported" => true, "maxResults" => Resource.max_page_size()},
       "changePassword" => %{"supported" => false},
       "sort" => %{"supported" => false},
       "etag" => %{"supported" => false},
@@ -148,7 +148,8 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
 
   # GET /scim/v2/ResourceTypes
   def resource_types(conn, _params) do
-    json(conn, Resource.list_response([@user_resource_type, @group_resource_type]))
+    resources = [@user_resource_type, @group_resource_type]
+    json(conn, Resource.list_response(resources, length(resources), 1))
   end
 
   # GET /scim/v2/ResourceTypes/:id — RFC 7643 §6 gives each type its own URL, and
@@ -164,7 +165,8 @@ defmodule EmisarWeb.SCIM.DiscoveryController do
 
   # GET /scim/v2/Schemas
   def schemas(conn, _params) do
-    json(conn, Resource.list_response([@user_schema, @group_schema]))
+    resources = [@user_schema, @group_schema]
+    json(conn, Resource.list_response(resources, length(resources), 1))
   end
 
   # GET /scim/v2/Schemas/:id

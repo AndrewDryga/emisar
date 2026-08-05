@@ -392,7 +392,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
       assert body["id"] == "grp-batch"
 
-      groups = SSO.scim_list_groups(provider)
+      {:ok, groups, _total_results} = SSO.scim_list_groups(provider)
       group = Enum.find(groups, &(&1.external_group_id == "grp-batch"))
       assert group.display == "Platform"
       assert group.member_external_ids == [joiner.scim_external_id]
@@ -419,7 +419,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       })
       |> json_response(400)
 
-      groups = SSO.scim_list_groups(provider)
+      {:ok, groups, _total_results} = SSO.scim_list_groups(provider)
       group = Enum.find(groups, &(&1.external_group_id == "grp-atomic"))
 
       # No group, and certainly no membership: the batch did not half-apply.
@@ -447,7 +447,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       })
       |> json_response(400)
 
-      groups = SSO.scim_list_groups(provider)
+      {:ok, groups, _total_results} = SSO.scim_list_groups(provider)
 
       refute Enum.find(groups, &(&1.external_group_id == "grp-earlier"))
       refute joiner.scim_external_id in Enum.flat_map(groups, & &1.member_external_ids)
@@ -1021,6 +1021,51 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]
       assert body["totalResults"] == 0
+    end
+
+    test "GET /Groups pages deterministically and reports the truthful total", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      for n <- 1..105 do
+        external_group_id = "grp-#{n |> Integer.to_string() |> String.pad_leading(3, "0")}"
+
+        provider.account_id
+        |> SSO.DirectoryGroup.Changeset.create(provider.id, external_group_id, nil)
+        |> Repo.insert!()
+      end
+
+      first = conn |> auth(token) |> get(~p"/scim/v2/Groups") |> json_response(200)
+
+      assert first["totalResults"] == 105
+      assert first["itemsPerPage"] == 100
+      assert first["startIndex"] == 1
+      assert hd(first["Resources"])["id"] == "grp-001"
+      assert List.last(first["Resources"])["id"] == "grp-100"
+
+      second =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Groups?startIndex=101&count=100")
+        |> json_response(200)
+
+      assert second["totalResults"] == 105
+      assert second["itemsPerPage"] == 5
+      assert second["startIndex"] == 101
+
+      assert Enum.map(second["Resources"], & &1["id"]) ==
+               Enum.map(101..105, &"grp-#{&1}")
+    end
+
+    test "GET /Groups rejects malformed pagination", %{conn: conn, token: token} do
+      body =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Groups?count=all")
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
     end
 
     test "POST /Groups with a displayName and no externalId is accepted", %{

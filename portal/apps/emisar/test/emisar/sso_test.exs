@@ -3187,7 +3187,7 @@ defmodule Emisar.SSOTest do
       _ = provision(provider, "okta|l1")
       _ = provision(provider, "okta|l2")
 
-      assert {:ok, scim_users, _meta} = SSO.scim_list_users(provider)
+      assert {:ok, scim_users, 2} = SSO.scim_list_users(provider)
       assert length(scim_users) == 2
       assert Enum.all?(scim_users, &match?(%SCIMUser{}, &1))
     end
@@ -3197,7 +3197,7 @@ defmodule Emisar.SSOTest do
       _ = provision(provider, "okta|gone")
       {:ok, _} = SSO.scim_update_user(provider, "okta|gone", %SCIMUserUpdate{active: false})
 
-      assert {:ok, scim_users, _meta} = SSO.scim_list_users(provider)
+      assert {:ok, scim_users, 2} = SSO.scim_list_users(provider)
 
       assert Map.new(scim_users, &{&1.external_id, &1.active}) ==
                %{"okta|on" => true, "okta|gone" => false}
@@ -3217,7 +3217,7 @@ defmodule Emisar.SSOTest do
 
       Fixtures.Memberships.suspend_membership(other_membership)
 
-      assert {:ok, [scim_user], _meta} = SSO.scim_list_users(provider)
+      assert {:ok, [scim_user], 1} = SSO.scim_list_users(provider)
       assert scim_user.external_id == "okta|two-tenant"
       assert scim_user.active
     end
@@ -3228,7 +3228,7 @@ defmodule Emisar.SSOTest do
       _ = provision(provider, "okta|needle")
       _ = provision(provider, "okta|hay")
 
-      assert {:ok, [scim_user], _meta} =
+      assert {:ok, [scim_user], 1} =
                SSO.scim_list_users(provider, scim_filter: {:external_id, "okta|needle"})
 
       assert scim_user.external_id == "okta|needle"
@@ -3239,7 +3239,23 @@ defmodule Emisar.SSOTest do
       %{provider: provider_b} = scim_provider()
       _ = provision(provider_a, "okta|onlyA")
 
-      assert {:ok, [], _meta} = SSO.scim_list_users(provider_b)
+      assert {:ok, [], 0} = SSO.scim_list_users(provider_b)
+    end
+
+    test "returns a truthful total independently of the requested page", %{provider: provider} do
+      _ = provision(provider, "okta|one")
+      _ = provision(provider, "okta|two")
+      _ = provision(provider, "okta|three")
+
+      assert {:ok, first, 3} = SSO.scim_list_users(provider, offset: 0, limit: 2)
+      assert {:ok, second, 3} = SSO.scim_list_users(provider, offset: 2, limit: 2)
+      assert length(first) == 2
+      assert length(second) == 1
+
+      assert MapSet.disjoint?(
+               MapSet.new(first, & &1.external_id),
+               MapSet.new(second, & &1.external_id)
+             )
     end
   end
 
@@ -3271,13 +3287,14 @@ defmodule Emisar.SSOTest do
           member_external_ids: ["okta|bob", "okta|alice"]
         })
 
-      assert SSO.scim_list_groups(provider) == [
-               %{
-                 external_group_id: "grp-ops",
-                 display: "Operations",
-                 member_external_ids: ["okta|alice", "okta|bob"]
-               }
-             ]
+      assert {:ok,
+              [
+                %{
+                  external_group_id: "grp-ops",
+                  display: "Operations",
+                  member_external_ids: ["okta|alice", "okta|bob"]
+                }
+              ], 1} = SSO.scim_list_groups(provider)
     end
 
     test "filters by the display the directory pushed, mapped or not", %{
@@ -3313,17 +3330,18 @@ defmodule Emisar.SSOTest do
           member_external_ids: ["okta|member"]
         })
 
-      assert [%{external_group_id: "grp-ops"}] =
+      assert {:ok, [%{external_group_id: "grp-ops"}], 1} =
                SSO.scim_list_groups(provider, display_name: "Operations")
 
-      assert [%{external_group_id: "grp-unmapped"}] =
+      assert {:ok, [%{external_group_id: "grp-unmapped"}], 1} =
                SSO.scim_list_groups(provider, display_name: "Security Review")
 
       # Only a group whose directory never sent a displayName answers on its id.
-      assert [%{external_group_id: "grp-nameless"}] =
+      assert {:ok, [%{external_group_id: "grp-nameless"}], 1} =
                SSO.scim_list_groups(provider, display_name: "grp-nameless")
 
-      assert SSO.scim_list_groups(provider, display_name: "grp-unmapped") == []
+      assert {:ok, [], 0} =
+               SSO.scim_list_groups(provider, display_name: "grp-unmapped")
     end
 
     test "an unmapped group keeps the display its directory pushed", %{provider: provider} do
@@ -3336,13 +3354,14 @@ defmodule Emisar.SSOTest do
           member_external_ids: ["okta|member"]
         })
 
-      assert SSO.scim_list_groups(provider) == [
-               %{
-                 external_group_id: "grp-unmapped",
-                 display: "Security Review",
-                 member_external_ids: ["okta|member"]
-               }
-             ]
+      assert {:ok,
+              [
+                %{
+                  external_group_id: "grp-unmapped",
+                  display: "Security Review",
+                  member_external_ids: ["okta|member"]
+                }
+              ], 1} = SSO.scim_list_groups(provider)
     end
 
     test "a rename moves an unmapped group's display", %{provider: provider} do
@@ -3357,7 +3376,7 @@ defmodule Emisar.SSOTest do
 
       {:ok, _group} = SSO.scim_rename_group(provider, "grp-unmapped", "Security Council")
 
-      assert [%{display: "Security Council"}] = SSO.scim_list_groups(provider)
+      assert {:ok, [%{display: "Security Council"}], 1} = SSO.scim_list_groups(provider)
     end
 
     test "a PATCH-added member does not erase the group's display", %{provider: provider} do
@@ -3374,7 +3393,7 @@ defmodule Emisar.SSOTest do
       {:ok, _group} =
         SSO.scim_patch_group_members(provider, "grp-unmapped", ["okta|joiner"], [])
 
-      assert [%{display: "Security Review", member_external_ids: members}] =
+      assert {:ok, [%{display: "Security Review", member_external_ids: members}], 1} =
                SSO.scim_list_groups(provider)
 
       assert members == ["okta|joiner", "okta|member"]
@@ -3390,7 +3409,7 @@ defmodule Emisar.SSOTest do
           member_external_ids: ["okta|only-a"]
         })
 
-      assert SSO.scim_list_groups(provider_b) == []
+      assert {:ok, [], 0} = SSO.scim_list_groups(provider_b)
     end
   end
 

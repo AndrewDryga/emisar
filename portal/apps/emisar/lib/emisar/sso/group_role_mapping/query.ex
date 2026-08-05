@@ -38,6 +38,9 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
   def by_external_group_id(queryable, external_group_id),
     do: where(queryable, [mappings: m], m.external_group_id == ^external_group_id)
 
+  def by_external_group_ids(queryable, external_group_ids),
+    do: where(queryable, [mappings: m], m.external_group_id in ^external_group_ids)
+
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:mappings, :asc, :external_group_id}, {:mappings, :asc, :id}]

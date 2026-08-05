@@ -118,12 +118,24 @@ defmodule EmisarWeb.SCIM.GroupController do
     provider = conn.assigns.scim_provider
     opts = display_name_filter(params)
 
-    groups =
-      provider
-      |> SSO.scim_list_groups(opts)
-      |> Enum.map(&Resource.to_group(&1, &1.member_external_ids))
+    case Resource.parse_pagination(params) do
+      {:ok, page} ->
+        {:ok, groups, total_results} =
+          SSO.scim_list_groups(
+            provider,
+            opts ++ [offset: page.start_index - 1, limit: page.count]
+          )
 
-    json(conn, Resource.list_response(groups))
+        resources = Enum.map(groups, &Resource.to_group(&1, &1.member_external_ids))
+        json(conn, Resource.list_response(resources, total_results, page.start_index))
+
+      {:error, :invalid_pagination} ->
+        bad_request(
+          conn,
+          "invalidValue",
+          "SCIM `startIndex` and `count` must be base-10 integers."
+        )
+    end
   end
 
   # `displayName eq "Platform Engineers"` — the only Group filter IdPs send.

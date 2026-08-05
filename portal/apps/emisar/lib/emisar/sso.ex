@@ -1930,10 +1930,13 @@ defmodule Emisar.SSO do
   query so the IdP's existence probe matches a user *anywhere* in the
   directory, not just the fetched page — without it, a `userName eq` check
   past the page limit would miss the user and the IdP would re-provision a
-  duplicate. `{:ok, [%SCIMUser{}], %Metadata{}}`.
+  duplicate. `:offset` is zero-based internally and `:limit` is bounded by the
+  SCIM controller. Returns `{:ok, [%SCIMUser{}], total_results}`.
   """
   def scim_list_users(%IdentityProvider{} = provider, opts \\ []) do
     {scim_filter, opts} = Keyword.pop(opts, :scim_filter)
+    {offset, opts} = Keyword.pop(opts, :offset, 0)
+    {limit, _opts} = Keyword.pop(opts, :limit, 100)
 
     # `by_provider_id` already implies the account (a provider is account-bound),
     # but this read has no `%Subject{}` — the bearer's provider-scope is the
@@ -1944,15 +1947,24 @@ defmodule Emisar.SSO do
       |> UserIdentity.Query.by_account_id(provider.account_id)
       |> UserIdentity.Query.by_provider_id(provider.id)
       |> apply_scim_filter(scim_filter)
-      # The user carries the email `userName` renders from. Without it a listed
-      # identity fell back to its opaque externalId, so the handle an IdP got back
-      # from `POST /Users` was not the one `GET /Users` showed for the same person.
-      |> UserIdentity.Query.with_preloaded_user()
-      |> UserIdentity.Query.ordered_by_recent()
 
-    with {:ok, identities, metadata} <- Repo.list(queryable, UserIdentity.Query, opts) do
-      {:ok, scim_users(provider, identities), metadata}
-    end
+    total_results = Repo.aggregate(queryable, :count, :id)
+
+    identities =
+      if limit == 0 or offset >= total_results do
+        []
+      else
+        queryable
+        # The user carries the email `userName` renders from. Without it a listed
+        # identity fell back to its opaque externalId, so the handle an IdP got
+        # back from `POST /Users` differed from the next list response.
+        |> UserIdentity.Query.with_preloaded_user()
+        |> UserIdentity.Query.ordered_by_recent()
+        |> UserIdentity.Query.offset_page(offset, limit)
+        |> Repo.all()
+      end
+
+    {:ok, scim_users(provider, identities), total_results}
   end
 
   @doc """
@@ -1969,7 +1981,9 @@ defmodule Emisar.SSO do
   group whose directory has never sent a displayName.
   """
   def scim_list_groups(%IdentityProvider{} = provider, opts \\ []) do
-    display_name = Keyword.get(opts, :display_name)
+    {display_name, opts} = Keyword.pop(opts, :display_name)
+    {offset, opts} = Keyword.pop(opts, :offset, 0)
+    {limit, _opts} = Keyword.pop(opts, :limit, 100)
 
     # No `%Subject{}` here — the bearer's provider-scope IS the authz — so scope
     # by the explicit account too, as the sibling user read does.
@@ -1981,38 +1995,59 @@ defmodule Emisar.SSO do
       DirectoryGroup.Query.not_deleted()
       |> DirectoryGroup.Query.by_account_id(provider.account_id)
       |> DirectoryGroup.Query.by_provider_id(provider.id)
-      |> DirectoryGroup.Query.ordered_by_external_group_id()
+      |> apply_scim_group_filter(display_name)
+
+    total_results = Repo.aggregate(groups_queryable, :count, :id)
+
+    groups =
+      if limit == 0 or offset >= total_results do
+        []
+      else
+        groups_queryable
+        |> DirectoryGroup.Query.ordered_by_external_group_id()
+        |> DirectoryGroup.Query.offset_page(offset, limit)
+        |> Repo.all()
+      end
+
+    {:ok, scim_group_summaries(groups, provider), total_results}
+  end
+
+  defp scim_group_summaries([], _provider), do: []
+
+  defp scim_group_summaries(groups, %IdentityProvider{} = provider) do
+    external_group_ids = Enum.map(groups, & &1.external_group_id)
 
     members_queryable =
       DirectoryGroupMember.Query.not_deleted()
       |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
+      |> DirectoryGroupMember.Query.by_external_group_ids(external_group_ids)
       |> DirectoryGroupMember.Query.select_member_external_ids(provider.id)
 
     synced_displays_queryable =
       DirectoryGroupMember.Query.not_deleted()
       |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
+      |> DirectoryGroupMember.Query.by_external_group_ids(external_group_ids)
       |> DirectoryGroupMember.Query.select_displays_for_provider(provider.id)
 
     mapped_displays_queryable =
       GroupRoleMapping.Query.not_deleted()
+      |> GroupRoleMapping.Query.by_account_id(provider.account_id)
+      |> GroupRoleMapping.Query.by_external_group_ids(external_group_ids)
       |> GroupRoleMapping.Query.select_displays_for_provider(provider.id)
 
     members = Enum.group_by(Repo.all(members_queryable), &elem(&1, 0), &elem(&1, 1))
     synced_displays = Map.new(Repo.all(synced_displays_queryable))
     mapped_displays = Map.new(Repo.all(mapped_displays_queryable))
 
-    groups =
-      Enum.map(Repo.all(groups_queryable), fn %DirectoryGroup{external_group_id: id} = group ->
-        %{
-          external_group_id: id,
-          # The group's own name wins; the membership rows and then the mapping's
-          # copy are fallbacks for groups synced before the row existed.
-          display: group.display || Map.get(synced_displays, id) || Map.get(mapped_displays, id),
-          member_external_ids: Map.get(members, id, [])
-        }
-      end)
-
-    filter_groups_by_display(groups, display_name)
+    Enum.map(groups, fn %DirectoryGroup{external_group_id: id} = group ->
+      %{
+        external_group_id: id,
+        # The group's own name wins; the membership rows and then the mapping's
+        # copy are fallbacks for groups synced before the row existed.
+        display: group.display || Map.get(synced_displays, id) || Map.get(mapped_displays, id),
+        member_external_ids: Map.get(members, id, [])
+      }
+    end)
   end
 
   @doc """
@@ -2027,28 +2062,20 @@ defmodule Emisar.SSO do
       |> DirectoryGroup.Query.by_provider_id(provider.id)
       |> DirectoryGroup.Query.by_external_group_id(external_group_id)
 
-    if Repo.exists?(queryable) do
-      provider
-      |> scim_list_groups()
-      |> Enum.find(&(&1.external_group_id == external_group_id))
-      |> case do
-        nil -> {:error, :not_found}
-        group -> {:ok, group}
-      end
-    else
-      {:error, :not_found}
+    case Repo.peek(queryable) do
+      nil ->
+        {:error, :not_found}
+
+      group ->
+        [summary] = scim_group_summaries([group], provider)
+        {:ok, summary}
     end
   end
 
-  # A group whose display was never pushed answers on its id, which is what an
-  # IdP sees as the group's name when it suppressed displayName.
-  defp filter_groups_by_display(groups, nil), do: groups
+  defp apply_scim_group_filter(queryable, nil), do: queryable
 
-  defp filter_groups_by_display(groups, display_name) do
-    Enum.filter(groups, fn group ->
-      (group.display || group.external_group_id) == display_name
-    end)
-  end
+  defp apply_scim_group_filter(queryable, display_name),
+    do: DirectoryGroup.Query.by_display(queryable, display_name)
 
   defp apply_scim_filter(queryable, {:user_name, value}),
     do: UserIdentity.Query.by_user_name(queryable, value)

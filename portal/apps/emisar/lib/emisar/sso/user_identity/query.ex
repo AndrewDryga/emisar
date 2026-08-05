@@ -249,6 +249,9 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def ordered_by_recent(queryable),
     do: order_by(queryable, [identities: i], desc: i.inserted_at, desc: i.id)
 
+  def offset_page(queryable, offset, limit),
+    do: queryable |> offset(^offset) |> limit(^limit)
+
   # Keyset-pagination cursor for `Repo.list/3` (the SCIM `GET /Users` probe).
   # Matches `ordered_by_recent/1` so the page order and the cursor agree.
   @impl Emisar.Repo.Query

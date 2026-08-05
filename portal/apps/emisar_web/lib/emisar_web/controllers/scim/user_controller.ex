@@ -65,12 +65,24 @@ defmodule EmisarWeb.SCIM.UserController do
         )
 
       scim_filter ->
-        case SSO.scim_list_users(provider, scim_filter: scim_filter, page: [limit: 100]) do
-          {:ok, scim_users, _meta} ->
-            json(conn, Resource.list_response(Enum.map(scim_users, &Resource.to_user/1)))
+        case Resource.parse_pagination(params) do
+          {:ok, page} ->
+            {:ok, scim_users, total_results} =
+              SSO.scim_list_users(provider,
+                scim_filter: scim_filter,
+                offset: page.start_index - 1,
+                limit: page.count
+              )
 
-          {:error, _reason} ->
-            json(conn, Resource.list_response([]))
+            resources = Enum.map(scim_users, &Resource.to_user/1)
+            json(conn, Resource.list_response(resources, total_results, page.start_index))
+
+          {:error, :invalid_pagination} ->
+            bad_request(
+              conn,
+              "invalidValue",
+              "SCIM `startIndex` and `count` must be base-10 integers."
+            )
         end
     end
   end

@@ -280,7 +280,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             Collection filters support <code>userName eq "..."</code>
-            and <code>externalId eq "..."</code>. Unsupported filters return <code>invalidFilter</code>; an unfiltered list returns at most 100 users.
+            and <code>externalId eq "..."</code>. Unsupported filters return <code>invalidFilter</code>.
+            Collections use one-based <code>startIndex</code>/<code>count</code>
+            pagination, return at most 100 resources per page, and report the full matching count
+            in <code>totalResults</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -325,7 +328,9 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Collection filtering supports <code>displayName eq "..."</code>. Deleting a group
+            Collection filtering supports <code>displayName eq "..."</code>
+            and uses the same <code>startIndex</code>/<code>count</code>
+            pagination as Users. Deleting a group
             removes everyone from it, recomputes their mapped authorization, then retires the SCIM
             group resource.
           </span>

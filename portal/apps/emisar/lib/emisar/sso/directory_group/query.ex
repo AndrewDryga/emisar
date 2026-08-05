@@ -28,7 +28,10 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
   end
 
   def ordered_by_external_group_id(queryable),
-    do: order_by(queryable, [groups: g], asc: g.external_group_id)
+    do: order_by(queryable, [groups: g], asc: g.external_group_id, asc: g.id)
+
+  def offset_page(queryable, offset, limit),
+    do: queryable |> offset(^offset) |> limit(^limit)
 
   @impl Emisar.Repo.Query
   def cursor_fields, do: [{:groups, :asc, :external_group_id}, {:groups, :asc, :id}]

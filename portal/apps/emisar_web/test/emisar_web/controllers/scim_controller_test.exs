@@ -1583,24 +1583,69 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert [%{"externalId" => "a@acme.test"}] = body["Resources"]
     end
 
-    test "an UNFILTERED list past the page cap returns a partial (≤100) list", %{
+    test "an unfiltered collection reports its truthful total across stable pages", %{
       conn: conn,
       token: token,
       provider: provider
     } do
-      # One real provisioned identity, then push the directory well past the 100
-      # page cap. An unfiltered list is capped at the page limit (push IdPs
-      # filter, they don't enumerate), so the response is a partial list — never
-      # the whole directory, and never a crash.
+      # One real provisioned identity plus 120 newer rows proves the first page
+      # is bounded without pretending the collection contains only 100 users.
       {:ok, _anchor} = SSO.scim_provision_user(provider, %{external_id: "anchor@acme.test"})
 
       page_off_target(provider, 120)
 
-      body = conn |> auth(token) |> get(~p"/scim/v2/Users") |> json_response(200)
+      first = conn |> auth(token) |> get(~p"/scim/v2/Users") |> json_response(200)
 
-      resources = body["Resources"]
-      assert length(resources) == 100
-      assert body["totalResults"] == 100
+      assert length(first["Resources"]) == 100
+      assert first["totalResults"] == 121
+      assert first["itemsPerPage"] == 100
+      assert first["startIndex"] == 1
+
+      second =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Users?startIndex=101&count=100")
+        |> json_response(200)
+
+      assert length(second["Resources"]) == 21
+      assert second["totalResults"] == 121
+      assert second["itemsPerPage"] == 21
+      assert second["startIndex"] == 101
+
+      first_ids = MapSet.new(first["Resources"], & &1["externalId"])
+      second_ids = MapSet.new(second["Resources"], & &1["externalId"])
+
+      assert MapSet.disjoint?(first_ids, second_ids)
+      assert MapSet.size(MapSet.union(first_ids, second_ids)) == 121
+    end
+
+    test "count zero returns no resources and preserves the collection total", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "one@acme.test"})
+
+      body =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Users?startIndex=0&count=0")
+        |> json_response(200)
+
+      assert body["Resources"] == []
+      assert body["totalResults"] == 1
+      assert body["itemsPerPage"] == 0
+      assert body["startIndex"] == 1
+    end
+
+    test "malformed pagination is a typed SCIM error", %{conn: conn, token: token} do
+      body =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Users?startIndex=first&count=many")
+        |> json_response(400)
+
+      assert body["scimType"] == "invalidValue"
     end
   end
 
@@ -1619,9 +1664,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["patch"]["supported"] == true
       assert body["filter"]["supported"] == true
-      # The declared filter cap mirrors the real list page limit (scim_list_users
-      # `page: [limit: 100]`), so the IdP never expects more than we return — no
-      # drift between the advertised cap and the actual enforced one (SCIM-008).
+      # The discovery document and collection parser share one owned cap.
       assert body["filter"]["maxResults"] == 100
       assert body["bulk"]["supported"] == false
       assert body["sort"]["supported"] == false
@@ -1750,6 +1793,25 @@ defmodule EmisarWeb.SCIMControllerTest do
       # (router :scim pipeline); strict clients expecting `application/scim+json`
       # back would be surprised — documented here so the choice is deliberate.
       assert ["application/json; charset=utf-8"] = get_resp_header(conn, "content-type")
+    end
+  end
+
+  describe "Resource.parse_pagination/1" do
+    test "owns the defaults, normalization, and page cap" do
+      assert {:ok, %{start_index: 1, count: 100}} = Resource.parse_pagination(%{})
+
+      assert {:ok, %{start_index: 1, count: 0}} =
+               Resource.parse_pagination(%{"startIndex" => "-5", "count" => "-1"})
+
+      assert {:ok, %{start_index: 7, count: 100}} =
+               Resource.parse_pagination(%{"startIndex" => "7", "count" => "1000"})
+    end
+
+    test "rejects values that are not whole base-10 integers" do
+      assert {:error, :invalid_pagination} =
+               Resource.parse_pagination(%{"startIndex" => "1.5"})
+
+      assert {:error, :invalid_pagination} = Resource.parse_pagination(%{"count" => "10x"})
     end
   end
 

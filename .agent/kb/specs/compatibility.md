@@ -297,7 +297,10 @@ provisioning (Okta, Entra, JumpCloud, Keycloak, Google).
 and `Schemas` advertising the deliberate subset: `patch` and `filter`
 (`maxResults` 100) on, `bulk`/`sort`/`etag` off. Every SCIM resource `id` IS
 the IdP's `externalId` — internal UUIDs are never exposed — so single-resource
-routes round-trip on the IdP's own identifier. Users support idempotent
+routes round-trip on the IdP's own identifier. User and Group collections
+honor RFC 7644's one-based `startIndex` and `count`, return at most 100 resources
+per page, and report the filtered collection's full count in `totalResults`;
+malformed pagination values fail with 400 `invalidValue`. Users support idempotent
 create/reconcile, `userName eq`/`externalId eq` filters only, PATCH limited to
 `active` and rename attributes, PUT limited to `displayName` plus `active`,
 and DELETE as soft deprovision (suspend), never a hard delete. Groups support

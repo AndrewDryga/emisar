@@ -18,6 +18,7 @@ defmodule EmisarWeb.SCIM.Resource do
   @group_schema "urn:ietf:params:scim:schemas:core:2.0:Group"
   @list_schema "urn:ietf:params:scim:api:messages:2.0:ListResponse"
   @error_schema "urn:ietf:params:scim:api:messages:2.0:Error"
+  @max_page_size 100
 
   @doc "The SCIM core User schema URN."
   def user_schema, do: @user_schema
@@ -246,23 +247,50 @@ defmodule EmisarWeb.SCIM.Resource do
 
   def valid_members?(_members), do: false
 
+  @doc "The maximum number of resources returned by one SCIM collection request."
+  def max_page_size, do: @max_page_size
+
   @doc """
-  Build a SCIM ListResponse from already-serialized resources. `totalResults`
-  is the count of returned resources. A filtered probe (`userName eq …`) is
-  matched in the query, so it returns the full match; an UNfiltered list is
-  capped at the page limit, so a full reconcile over a directory larger than
-  the page sees a partial list (push IdPs filter rather than enumerate — see
-  `EmisarWeb.SCIM.UserController.index/2`).
+  Parse RFC 7644 `startIndex` and `count` collection parameters.
+
+  SCIM indexes are one-based. Missing values default to the first 100 results,
+  a `startIndex` below one is normalized to one, and `count` is clamped to
+  `0..100`. A malformed integer is rejected instead of being silently ignored.
   """
-  def list_response(resources) when is_list(resources) do
+  def parse_pagination(params) when is_map(params) do
+    with {:ok, start_index} <- parse_integer(Map.get(params, "startIndex"), 1),
+         {:ok, count} <- parse_integer(Map.get(params, "count"), @max_page_size) do
+      {:ok,
+       %{
+         start_index: max(start_index, 1),
+         count: count |> max(0) |> min(@max_page_size)
+       }}
+    end
+  end
+
+  @doc "Build a SCIM ListResponse from one serialized page and its truthful total."
+  def list_response(resources, total_results, start_index)
+      when is_list(resources) and is_integer(total_results) and is_integer(start_index) do
     %{
       "schemas" => [@list_schema],
-      "totalResults" => length(resources),
+      "totalResults" => total_results,
       "itemsPerPage" => length(resources),
-      "startIndex" => 1,
+      "startIndex" => start_index,
       "Resources" => resources
     }
   end
+
+  defp parse_integer(nil, default), do: {:ok, default}
+  defp parse_integer(value, _default) when is_integer(value), do: {:ok, value}
+
+  defp parse_integer(value, _default) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} -> {:ok, integer}
+      _ -> {:error, :invalid_pagination}
+    end
+  end
+
+  defp parse_integer(_value, _default), do: {:error, :invalid_pagination}
 
   @doc "A SCIM Error resource. `status` is the HTTP status as an integer."
   def error(status, detail) when is_integer(status) and is_binary(detail) do
