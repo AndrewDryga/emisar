@@ -31,12 +31,24 @@ api_base() {
   printf '%s/api/v2' "${TFE_ADDRESS:-https://app.terraform.io}"
 }
 
+# curl's protocol allowlist follows the scheme the OPERATOR configured. A
+# self-hosted Terraform Enterprise may sit on plain http inside a private
+# network, and that is their call — pinning '=https' unconditionally just made
+# those runners fail. What the pin is actually for is stopping a crafted path
+# from switching the transfer to file:// or ftp://, and it still does.
+api_protocols() {
+  case "${TFE_ADDRESS:-https://app.terraform.io}" in
+  http://*) printf '%s' '=http' ;;
+  *) printf '%s' '=https' ;;
+  esac
+}
+
 # --fail-with-body keeps the JSON:API error document while still exiting
 # non-zero, so a rejected apply reports the reason instead of failing blank.
 # Plain --fail would throw the body away. Needs curl 7.76 or newer.
 api_get() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl --globoff --proto '=https' --fail-with-body -sS -H @- "$(api_base)$1"
+    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -H @- "$(api_base)$1"
 }
 
 # The json-output endpoint answers with a one-minute redirect to blob storage.
@@ -44,12 +56,12 @@ api_get() {
 # is what we want: the redirect target is already presigned.
 api_get_following_redirect() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl --globoff --proto '=https' --fail-with-body -sSL -H @- "$(api_base)$1"
+    curl --globoff --proto "$(api_protocols)" --fail-with-body -sSL -H @- "$(api_base)$1"
 }
 
 api_post() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl --globoff --proto '=https' --fail-with-body -sS -X POST -H @- \
+    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
       -H 'Content-Type: application/vnd.api+json' \
       --data "$2" "$(api_base)$1"
 }
@@ -307,7 +319,7 @@ fetch_log_tail() {
     return
   fi
   tail_text=$(printf 'url = "%s"\n' "$url" |
-    curl --globoff --proto '=https' -q --fail -s --globoff --proto '=http,https' \
+    curl --globoff --proto '=http,https' -q --fail -s \
       --connect-timeout 10 --max-time 90 -K - |
     tail -c "$max_log_fetch_bytes" |
     sanitize_log |
