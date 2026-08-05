@@ -3,7 +3,7 @@ schema_version: 1
 id: redis.config_get
 title: CONFIG GET
 kind: exec
-risk: low
+risk: high
 
 description: >
   Read runtime config by glob pattern. Useful before any tuning
@@ -15,6 +15,9 @@ description: >
 side_effects:
   - Issues one CONFIG GET command.
   - No keys read or written.
+  - Read-only, but the default `*` pattern returns the whole server config,
+    including auth directives. Approval-gated for that reason; the redaction
+    rule is a pattern-bound backstop, not a guarantee.
 
 args:
   - name: pattern
@@ -40,12 +43,16 @@ output:
   max_stderr_bytes: 8192
   redact:
     # CONFIG GET prints alternating key\nvalue lines; the secret config keys
-    # (requirepass, masterauth, any *pass key) would otherwise leak in
-    # cleartext. Mask the value line, keep the key line so the operator still
-    # sees the key is set. Replacement needs a real newline → YAML "\n".
+    # would otherwise leak in cleartext. Mask the value line, keep the key line
+    # so the operator still sees the key is set. Replacement needs a real
+    # newline → YAML "\n".
+    #
+    # Match any key ENDING in a credential word rather than naming the two
+    # Redis spellings: redis-cli drives Valkey unchanged, and Valkey renamed
+    # masterauth to primaryauth — which the old allowlist printed in the clear.
     - name: redis-secret-config-value
       type: regex
-      pattern: "(?im)^([a-z][a-z0-9_-]*pass|masterauth)\\n[^\\n]*"
+      pattern: "(?im)^([a-z][a-z0-9_-]*(pass|auth|secret|key))\\n[^\\n]*"
       replacement: "${1}\n[REDACTED]"
 
 examples:

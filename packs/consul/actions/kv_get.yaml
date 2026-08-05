@@ -2,11 +2,11 @@ schema_version: 1
 id: consul.kv_get
 title: consul kv get <key>
 kind: exec
-risk: low
+risk: high
 description: Get the value at one KV key.
 side_effects:
   - One KV request.
-  - Read-only — value will be returned, may be redacted by audit rules.
+  - Read-only, but returns the stored value, which may be a secret. Approval-gated for that reason; redaction is a pattern-bound backstop, not a guarantee.
 args:
   - name: key
     type: string

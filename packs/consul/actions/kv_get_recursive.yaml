@@ -2,9 +2,9 @@ schema_version: 1
 id: consul.kv_get_recursive
 title: consul kv get -recurse <prefix>
 kind: exec
-risk: low
+risk: high
 description: Get all keys + values under a prefix.
-side_effects: ["One KV request.", "Read-only — values may include secrets; rely on audit redaction."]
+side_effects: ["One KV request.", "Read-only, but returns every value under the prefix, which commonly includes secrets. Approval-gated for that reason; redaction is a pattern-bound backstop, not a guarantee."]
 args:
   - name: prefix
     type: string

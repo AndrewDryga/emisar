@@ -2,7 +2,7 @@ schema_version: 1
 id: podman.inspect
 title: podman inspect <id>
 kind: exec
-risk: medium
+risk: high
 description: >
   Show full container details for one ID/name — state, mounts, network
   config, labels, and the container's env. The env commonly carries

@@ -123,3 +123,20 @@ cases:
       - argv: [consul, operator, raft, list-peers]
         expect:
           stdout_contains: [leader]
+  - action: consul.kv_get
+    args: {key: packtest/config/log_level}
+    arrange:
+      - argv: [consul, kv, put, packtest/config/log_level, debug]
+    expect:
+      stdout_contains: [debug]
+    cleanup:
+      - argv: [consul, kv, delete, packtest/config/log_level]
+  - action: consul.kv_get_recursive
+    args: {prefix: packtest/config/}
+    arrange:
+      - argv: [consul, kv, put, packtest/config/log_level, debug]
+      - argv: [consul, kv, put, packtest/config/region, eu-west-1]
+    expect:
+      stdout_contains: [log_level, region]
+    cleanup:
+      - argv: [consul, kv, delete, -recurse, packtest/config/]
