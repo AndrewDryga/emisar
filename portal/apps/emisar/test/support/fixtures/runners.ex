@@ -6,7 +6,7 @@ defmodule Emisar.Fixtures.Runners do
 
   alias Emisar.Accounts.Account
   alias Emisar.{Fixtures, Repo, Runners, Users}
-  alias Emisar.Runners.Runner
+  alias Emisar.Runners.{Runner, Token}
 
   @doc """
   Persists a runner in `connected` status by default. Caller supplies
@@ -187,6 +187,20 @@ defmodule Emisar.Fixtures.Runners do
   def mark_deleted(%Runner{} = runner) do
     runner
     |> Runner.Changeset.delete()
+    |> Repo.update!()
+  end
+
+  @doc """
+  Rigs a token into its pre-rotation shape — no `expires_at`, issued long enough
+  ago to be past any refresh horizon. This is how every token minted before
+  rotation shipped still looks in the database.
+  """
+  def strip_token_expiry(%Token{} = token) do
+    token
+    |> Ecto.Changeset.change(
+      expires_at: nil,
+      issued_at: DateTime.add(DateTime.utc_now(), -400 * 86_400)
+    )
     |> Repo.update!()
   end
 end

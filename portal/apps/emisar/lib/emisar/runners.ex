@@ -2096,23 +2096,26 @@ defmodule Emisar.Runners do
     end
   end
 
-  # A token with no expiry predates rotation. It is never "due": issuing a
-  # successor for it would start a clock on a runner whose client may have no
-  # refresh support, which is the one way this could strand a fleet.
   @doc """
   Internal — the runner transport: when this token becomes eligible for
-  rotation, or nil for a token that never rotates.
+  rotation, or nil for a token minted before rotation existed.
 
-  The runner persists this and only calls `/runner/token/refresh` once it has
-  passed, so an ordinary reconnect costs no extra round-trip and a token minted
-  before rotation existed is never asked about.
+  The runner persists this and calls `/runner/token/refresh` once it has passed,
+  so an ordinary reconnect costs no extra round-trip. Nil is not "never" — the
+  client reads an absent value as "ask", which is how a pre-rotation token gets
+  its first expiring successor.
   """
   def token_refresh_after(%Token{expires_at: nil}), do: nil
 
   def token_refresh_after(%Token{issued_at: issued_at}),
     do: DateTime.add(issued_at, @token_refresh_after_seconds, :second)
 
-  defp token_refresh_due?(%Token{expires_at: nil}), do: false
+  # A token with no expiry predates rotation, and is exactly the one that has to
+  # migrate onto an expiring credential — so it is due the moment it is asked
+  # about. This is only ever reached because the runner called refresh, so a
+  # client too old to refresh never gets a successor and cannot be stranded by
+  # a clock it does not know how to reset.
+  defp token_refresh_due?(%Token{expires_at: nil}), do: true
 
   defp token_refresh_due?(%Token{issued_at: issued_at}) do
     DateTime.diff(DateTime.utc_now(), issued_at, :second) >= @token_refresh_after_seconds

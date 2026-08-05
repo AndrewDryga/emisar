@@ -730,7 +730,7 @@ func TestWebsocketDialer401OnUpgradeDropsCachedToken(t *testing.T) {
 func TestWebsocketDialer403DisabledRetainsCachedToken(t *testing.T) {
 	dir := t.TempDir()
 	tokenPath := filepath.Join(dir, "token.json")
-	cached, _ := json.Marshal(map[string]string{"token": "valid-disabled-token"})
+	cached, _ := json.Marshal(cachedToken("valid-disabled-token"))
 	if err := os.WriteFile(tokenPath, cached, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -755,7 +755,7 @@ func TestWebsocketDialer403DisabledRetainsCachedToken(t *testing.T) {
 func TestWebsocketDialer403AccountDisabledRetainsCachedToken(t *testing.T) {
 	dir := t.TempDir()
 	tokenPath := filepath.Join(dir, "token.json")
-	cached, _ := json.Marshal(map[string]string{"token": "valid-account-disabled-token"})
+	cached, _ := json.Marshal(cachedToken("valid-account-disabled-token"))
 	if err := os.WriteFile(tokenPath, cached, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -777,10 +777,22 @@ func TestWebsocketDialer403AccountDisabledRetainsCachedToken(t *testing.T) {
 	}
 }
 
+// cachedToken builds the on-disk shape of a token in ordinary operation: one
+// whose refresh horizon is still ahead, so a Dial goes straight to the socket.
+// Without a refresh_after the dialer asks the portal for a successor first —
+// correct for a pre-rotation token, but an extra request these tests are not
+// about.
+func cachedToken(raw string) map[string]string {
+	return map[string]string{
+		"token":         raw,
+		"refresh_after": time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
+	}
+}
+
 func TestWebsocketDialer401SurfacesTokenRemovalFailure(t *testing.T) {
 	dir := t.TempDir()
 	tokenPath := filepath.Join(dir, "token.json")
-	cached, _ := json.Marshal(map[string]string{"token": "stale-token"})
+	cached, _ := json.Marshal(cachedToken("stale-token"))
 	if err := os.WriteFile(tokenPath, cached, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -914,6 +926,42 @@ func TestMaybeRefreshTokenNeverBlocksAConnect(t *testing.T) {
 	d := &WebsocketDialer{URL: unreachable, TokenPath: filepath.Join(t.TempDir(), "token.json")}
 	if got := d.maybeRefreshToken(context.Background(), current); got != current {
 		t.Fatalf("refresh replaced the working token when the portal was unreachable: %+v", got)
+	}
+}
+
+// An empty RefreshAfter must mean ASK, not never.
+//
+// A token minted before rotation existed carries no expiry, and the portal
+// states RefreshAfter only at enrollment and at refresh — it has no way to
+// reach a connected runner and tell it otherwise. Treating empty as "never"
+// deadlocks the two halves: the runner waits to be told, the portal waits to be
+// asked, and those tokens can never migrate onto an expiring credential. That
+// makes enforcing expiry impossible without locking those runners out on one
+// day, which is the whole reason rotation shipped first.
+func TestRefreshDue(t *testing.T) {
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name         string
+		refreshAfter string
+		want         bool
+	}{
+		{"pre-rotation token asks once", "", true},
+		{"horizon passed", now.Add(-time.Minute).Format(time.RFC3339), true},
+		{"horizon exactly now", now.Format(time.RFC3339), true},
+		{"horizon still ahead", now.Add(time.Minute).Format(time.RFC3339), false},
+		// A corrupt store, not a migration — retrying it every connect would be
+		// a hot loop against the portal.
+		{"unparseable", "not-a-timestamp", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			token := agentToken{Raw: "rnrtok-x", RefreshAfter: c.refreshAfter}
+			if got := token.refreshDue(now); got != c.want {
+				t.Errorf("refreshDue(%q) = %v, want %v", c.refreshAfter, got, c.want)
+			}
+		})
 	}
 }
 

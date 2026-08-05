@@ -173,18 +173,26 @@ type agentToken struct {
 	// boot can tell when the operator swapped the key under it.
 	KeyFP string
 	// RefreshAfter is when this token becomes eligible for rotation, RFC3339, as
-	// the portal stated it at issue. Empty means never — a token from before
-	// rotation existed, which has no refresh path and must not be asked about.
+	// the portal stated it at issue. Empty means the portal never stated one —
+	// a token minted before rotation existed.
 	RefreshAfter string
 }
 
 // refreshDue reports whether it is worth asking the portal for a successor.
-// Empty or unparseable means no: the runner asks only when it has been told to,
-// so an ordinary reconnect costs no extra round-trip and a pre-rotation token is
-// left alone entirely.
+//
+// Empty means ASK. A token from before rotation existed carries no expiry, and
+// the portal has no way to reach a connected runner to tell it otherwise — it
+// states RefreshAfter only at enrollment and at refresh. Treating empty as
+// "never" deadlocked the two halves: the runner waited to be told, the portal
+// waited for the runner to ask, and those tokens could never migrate onto an
+// expiring credential. That costs one extra round-trip on the first connect
+// after upgrading, once, and then the token has a real RefreshAfter.
+//
+// An unparseable value still means no — that is a corrupt store, not a
+// migration, and retrying it every connect would be a hot loop.
 func (t agentToken) refreshDue(now time.Time) bool {
 	if t.RefreshAfter == "" {
-		return false
+		return true
 	}
 	at, err := time.Parse(time.RFC3339, t.RefreshAfter)
 	if err != nil {

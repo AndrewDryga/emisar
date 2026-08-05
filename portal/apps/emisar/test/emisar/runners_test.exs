@@ -3273,22 +3273,23 @@ defmodule Emisar.RunnersTest do
       assert {:ok, _token, %Runner{}} = Runners.verify_runner_token(raw)
     end
 
-    test "a token minted before rotation is never due" do
+    test "a token minted before rotation is due immediately" do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {raw, token} = Runners.mint_runner_token(runner)
+      legacy = Fixtures.Runners.strip_token_expiry(token)
 
-      # expires_at nil is how every pre-rotation token looks. Issuing a
-      # successor for one would start a clock on a client that may have no
-      # refresh support at all.
-      {:ok, _legacy} =
-        token
-        |> Ecto.Changeset.change(
-          expires_at: nil,
-          issued_at: DateTime.add(DateTime.utc_now(), -400 * 86_400)
-        )
-        |> Emisar.Repo.update()
+      # expires_at nil is how every pre-rotation token looks, and it is the one
+      # shape that MUST rotate: until it does it never gains an expiry, so
+      # enforcing expiry later would either lock those runners out on a single
+      # day or never happen at all.
+      assert {:ok, successor_raw, %DateTime{}} = Runners.refresh_runner_token(raw)
+      refute successor_raw == raw
 
-      assert Runners.refresh_runner_token(raw) == {:error, :not_due}
+      # The successor carries the expiry the original lacked — this is the step
+      # that drains pre_rotation to zero.
+      assert {:ok, successor, _runner} = Runners.verify_runner_token(successor_raw)
+      assert %DateTime{} = successor.expires_at
+      refute successor.id == legacy.id
     end
 
     test "a disabled runner cannot refresh" do
@@ -3303,11 +3304,14 @@ defmodule Emisar.RunnersTest do
   end
 
   describe "token_refresh_after/1" do
-    test "is nil for a token that never rotates and a timestamp otherwise" do
+    test "is a timestamp for a rotating token and nil for a pre-rotation one" do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {_raw, token} = Runners.mint_runner_token(runner)
 
       assert %DateTime{} = Runners.token_refresh_after(token)
+
+      # Nil states "no scheduled time", not "never" — the client reads an absent
+      # value as "ask", which is what lets a pre-rotation token migrate.
       refute Runners.token_refresh_after(%{token | expires_at: nil})
     end
   end
