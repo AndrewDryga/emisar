@@ -142,7 +142,23 @@ resource "google_monitoring_alert_policy" "cluster_failures" {
 # The portal's cluster-singleton emitter (Emisar.Runs.Jobs.FleetObservability)
 # logs one `fleet.observability` line per minute — connected_runners and
 # pending_dispatch_depth as JSON numbers — and these counter metrics + alerts
-# watch it. Singleton emission means one series, so no per-VM double count.
+# watch both its values and its continued presence. Leadership may move the
+# singleton emitter between VMs, so absence detection reduces all VM series to
+# one fleet signal before evaluating the gap.
+resource "google_logging_metric" "fleet_observability_ticks" {
+  name        = "emisar/fleet_observability_ticks"
+  description = "Every fleet.observability emitter tick, regardless of runner or backlog values."
+  filter      = "resource.type=\"gce_instance\" AND jsonPayload.message=\"fleet.observability\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+
+  depends_on = [google_project_iam_member.terraform_apply_authority]
+}
+
 resource "google_logging_metric" "fleet_no_connected_runners" {
   name        = "emisar/fleet_no_connected_runners"
   description = "Emitter ticks reporting zero connected runners fleet-wide (fleet.observability)."
@@ -171,6 +187,36 @@ resource "google_logging_metric" "dispatch_backlog" {
   }
 
   depends_on = [google_project_iam_member.terraform_apply_authority]
+}
+
+resource "google_monitoring_alert_policy" "fleet_observability_absent" {
+  display_name = "Emisar: Fleet Observability Silent"
+  combiner     = "OR"
+
+  documentation {
+    content   = "The cluster-singleton `fleet.observability` heartbeat has been absent for five minutes. The zero-runner and dispatch-backlog alerts are blind while this emitter is silent, so treat this as loss of fleet-health coverage. Check the FleetObservability recurrent job, cluster leadership and formation, Portal logs, and any recent deploy. The condition reduces every VM series into one fleet signal so a normal leadership move or VM replacement does not page on the old instance."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "runner-fleet"
+    signal    = "telemetry"
+  }
+
+  conditions {
+    display_name = "No fleet observability heartbeat for 5 minutes"
+    condition_absent {
+      filter   = "resource.type = \"gce_instance\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.fleet_observability_ticks.name}\""
+      duration = "300s"
+      aggregations {
+        alignment_period     = "60s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  notification_channels = local.paging_notification_channels
 }
 
 resource "google_monitoring_alert_policy" "fleet_no_connected_runners" {
