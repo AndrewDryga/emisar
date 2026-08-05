@@ -33,6 +33,7 @@ func MCP(root string, out io.Writer) error {
 		{"atomic multi-target activation", mcpActivationTransaction},
 		{"device grant response validation", mcpDeviceGrantValidation},
 		{"client config value validation", mcpConfigValueValidation},
+		{"verification URI confinement", mcpVerificationURIConfinement},
 		{"LLM client configuration", mcpClientConfiguration},
 		{"uninstall", mcpUninstall},
 	}
@@ -432,7 +433,7 @@ var clientFunctions = []string{
 	"write_fresh_json_config", "merge_json_config", "append_codex_toml",
 	"append_yaml_config", "own_config_file", "install_client_config",
 	"json_string_field", "json_client_key", "json_has_client_keys",
-	"safe_config_value",
+	"safe_config_value", "safe_user_code", "safe_verification_uri",
 	"bounded_decimal_field", "request_device_grant",
 	"await_device_approval", "scan_client", "scan_llm_clients", "out", "hdr",
 	"ok", "dim", "client_row", "open_browser", "configure_llm_clients",
@@ -522,7 +523,8 @@ func mcpDeviceGrantValidation(h *harness) error {
 	defer server.Close()
 
 	result := h.functions(h.repoPath("install-mcp.sh"),
-		[]string{"json_string_field", "bounded_decimal_field", "request_device_grant"}, `
+		[]string{"json_string_field", "bounded_decimal_field", "safe_user_code",
+			"safe_verification_uri", "request_device_grant"}, `
 DEVICE_RESP="$CLIENT_HOME/device-authorization.json"
 DEVICE_CODE=""
 DEVICE_USER_CODE=""
@@ -1052,6 +1054,49 @@ func mcpConfigValueValidation(h *harness) error {
 			"safe_config_value \"$CANDIDATE\"\n", map[string]string{"CANDIDATE": value})
 		if result.err == nil {
 			return fmt.Errorf("value %q would have been written to a client config", value)
+		}
+	}
+	return nil
+}
+
+// mcpVerificationURIConfinement proves the portal cannot choose what the
+// installer opens.
+//
+// The verification URI is PRINTED to the operator and handed to
+// `open`/`xdg-open`, which on macOS launches whatever application registered
+// the scheme — so a compromised portal answering with file:/// or a custom
+// scheme would run something on their machine off the back of an install. A raw
+// ESC would separately rewrite what their terminal shows.
+func mcpVerificationURIConfinement(h *harness) error {
+	const portal = "https://portal.example"
+	accepted := []string{
+		portal + "/activate",
+		portal + "/activate?code=HHHH-0000",
+	}
+	rejected := []string{
+		"file:///etc/passwd",
+		"x-evil-app://run?cmd=id",
+		"https://evil.example/activate",
+		portal + ".evil.example/activate",
+		portal + "/activate\x1b[2J",
+		portal + "/activate\" || id\"",
+		"",
+	}
+
+	check := func(value string) error {
+		result := h.functions(h.repoPath("install-mcp.sh"), []string{"safe_verification_uri"},
+			"safe_verification_uri \"$CANDIDATE\"\n",
+			map[string]string{"CANDIDATE": value, "EMISAR_URL": portal})
+		return result.err
+	}
+	for _, value := range accepted {
+		if err := check(value); err != nil {
+			return fmt.Errorf("the portal's own verification URI %q was rejected", value)
+		}
+	}
+	for _, value := range rejected {
+		if err := check(value); err == nil {
+			return fmt.Errorf("URI %q would have been opened", value)
 		}
 	}
 	return nil

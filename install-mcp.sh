@@ -1144,6 +1144,37 @@ client_row() {
   fi
 }
 
+# The portal supplies the verification URI, and we both PRINT it to the operator
+# and hand it to `open`/`xdg-open` — which on macOS launches whatever
+# application has registered the scheme. A compromised portal answering with
+# `file:///…`, or a custom scheme some installed app claims, would run something
+# on the operator's machine off the back of an install. A raw ESC in the string
+# would separately rewrite what their terminal shows them.
+#
+# It has to be an https URL on the portal's own origin, which is what a
+# verification URI is by definition. `?` `=` `&` `%` are in the set because the
+# complete form carries the code as a query parameter.
+safe_verification_uri() {
+  case "$1" in
+    "${EMISAR_URL}"/*) ;;
+    *) return 1 ;;
+  esac
+  case "$1" in
+    *[!A-Za-z0-9._:/?=\&@%+-]*) return 1 ;;
+  esac
+  return 0
+}
+
+# The user code is read aloud and typed by hand, so it is alphanumerics and
+# dashes. Filtered for the same reason: it is printed straight to a terminal.
+safe_user_code() {
+  case "$1" in
+    "") return 1 ;;
+    *[!A-Za-z0-9-]*) return 1 ;;
+  esac
+  return 0
+}
+
 # Best-effort: open the approval URL in the invoking user's browser (never
 # root's). Failure is fine — the link is already printed.
 open_browser() {
@@ -1692,7 +1723,12 @@ request_device_grant() {
   [ "${status}" = "200" ] || return 1
   DEVICE_CODE=$(json_string_field "${DEVICE_RESP}" device_code) || return 1
   DEVICE_USER_CODE=$(json_string_field "${DEVICE_RESP}" user_code) || return 1
+  safe_user_code "${DEVICE_USER_CODE}" || return 1
   DEVICE_VERIFY_URI=$(json_string_field "${DEVICE_RESP}" verification_uri_complete) || return 1
+  # Degrade to the portal's own activation page rather than refusing the
+  # install: the operator can still type the code by hand.
+  safe_verification_uri "${DEVICE_VERIFY_URI}" ||
+    DEVICE_VERIFY_URI="${EMISAR_URL}/activate"
   DEVICE_INTERVAL=$(json_string_field "${DEVICE_RESP}" interval) || DEVICE_INTERVAL=""
   DEVICE_INTERVAL=$(bounded_decimal_field "${DEVICE_INTERVAL}" 1 120 5)
   DEVICE_EXPIRES_IN=$(json_string_field "${DEVICE_RESP}" expires_in) || DEVICE_EXPIRES_IN=""
@@ -1782,8 +1818,19 @@ configure_llm_clients() {
   [ "${ASSUME_YES}" = "1" ] && return 0
   tty_available || return 0
   clients_phase_ran=1
-  DEVICE_RESP="${DEVICE_RESP:-${tmp}/device-authorization.json}"
-  TOKEN_RESP="${TOKEN_RESP:-${tmp}/device-token.json}"
+  # Overridable so the behavior harness can point these at its own sandbox — but
+  # only WITHIN this run's temp dir. Taken from the environment unconditionally,
+  # an inherited DEVICE_RESP redirected a root-run `curl -o` at any path on the
+  # host; sudo's env_reset normally strips it, which is not a guarantee to rest a
+  # root write on.
+  case "${DEVICE_RESP:-}" in
+    "${tmp}"/*) ;;
+    *) DEVICE_RESP="${tmp}/device-authorization.json" ;;
+  esac
+  case "${TOKEN_RESP:-}" in
+    "${tmp}"/*) ;;
+    *) TOKEN_RESP="${tmp}/device-token.json" ;;
+  esac
 
   scan_llm_clients "${user_home}"
 
