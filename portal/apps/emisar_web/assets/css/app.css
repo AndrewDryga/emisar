@@ -212,6 +212,20 @@ pre::-webkit-scrollbar-track,
   text-decoration-line: none;
 }
 
+/* Provider silhouettes on the docs index share the same emerald treatment as
+   first-party icons. The source SVG remains the recognizable shape while the
+   mask keeps mixed vendor palettes and light logo tiles out of the dark chrome. */
+.docs-provider-mark {
+  -webkit-mask-image: var(--provider-mark);
+  mask-image: var(--provider-mark);
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
 /* Honor "reduce motion": neutralize the hover lifts, pings, spins, and long
    transitions for operators who opt out of animation. */
 @media (prefers-reduced-motion: reduce) {

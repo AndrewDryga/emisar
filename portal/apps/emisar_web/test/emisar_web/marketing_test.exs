@@ -815,6 +815,26 @@ defmodule EmisarWeb.MarketingTest do
       end
     end
 
+    test "the docs index renders provider logos as emisar accent marks", %{conn: conn} do
+      html = conn |> get(~p"/docs") |> html_response(200)
+
+      marks =
+        ~r/<span[^>]+data-provider-mark="[^"]+"[^>]*>/
+        |> Regex.scan(html)
+        |> List.flatten()
+
+      assert length(marks) == 5
+
+      for mark <- marks do
+        assert mark =~ "docs-provider-mark"
+        assert mark =~ "bg-brand-400/80"
+        assert mark =~ "--provider-mark:"
+        refute mark =~ "bg-white"
+      end
+
+      refute html =~ ~r/<img[^>]+src="\/images\/logos\//
+    end
+
     test "a subgrouped docs page keeps a three-part breadcrumb and a subgrouped sidebar",
          %{conn: conn} do
       html = conn |> get(~p"/docs/sso") |> html_response(200)

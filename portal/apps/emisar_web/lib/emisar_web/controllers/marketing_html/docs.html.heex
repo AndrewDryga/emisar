@@ -112,19 +112,17 @@
               data-docs-page={docs_search_terms(page, group.label, section.label)}
               class="group -mx-3 flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-zinc-900/50"
             >
-              <%!-- Integration rows carry the provider's own mark instead of an
-                   emisar icon. It sits on a white chip because several of these
-                   marks are dark (JumpCloud is #002B49, Okta's is black) and are
-                   illegible straight on the near-black page — the tile keeps every
-                   vendor's true colours rather than recolouring their trademark to
-                   suit our theme. alt="" because the row's title says the name
-                   already. --%>
+              <%!-- The provider silhouette keeps each integration recognizable;
+                   the shared mask gives it the same accent and hover behavior as
+                   neighboring emisar icons. The row title already supplies the
+                   accessible name, so the mark stays decorative. --%>
               <span
                 :if={page[:logo]}
-                class="mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-md bg-white"
-              >
-                <img src={~p"/images/logos/#{page.logo}"} alt="" class="h-4 w-4" />
-              </span>
+                data-provider-mark={page.slug}
+                aria-hidden="true"
+                class="docs-provider-mark mt-0.5 h-5 w-5 flex-none bg-brand-400/80 transition-colors group-hover:bg-brand-300"
+                style={"--provider-mark: url('#{~p"/images/logos/#{page.logo}"}')"}
+              />
               <.icon
                 :if={!page[:logo]}
                 name={page.icon}
