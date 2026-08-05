@@ -61,6 +61,7 @@ func runnerChecks() []runnerCheck {
 		{"latest release resolution", false, runnerLatestRelease},
 		{"fresh-install service rollback", false, runnerFreshServiceRollback},
 		{"config value validation", false, runnerConfigValueValidation},
+		{"enrollment key file", false, runnerEnrollmentKeyFile},
 	}
 }
 
@@ -643,6 +644,58 @@ func runnerConfigValueValidation(h *harness) error {
 		if result.err == nil {
 			return fmt.Errorf("value %q would have been baked into config.yaml", value)
 		}
+	}
+	return nil
+}
+
+// runnerEnrollmentKeyFile proves the unattended path for keeping a REUSABLE
+// enrollment key off sudo's argv, where /proc/<pid>/cmdline exposes it to every
+// local user for the length of the install.
+//
+// A key file only helps if it is actually private, so a loose mode is refused
+// rather than quietly accepted — otherwise the flag reads as a security measure
+// while providing none.
+func runnerEnrollmentKeyFile(h *harness) error {
+	dir := h.path("keys")
+	if err := h.mkdir(dir); err != nil {
+		return err
+	}
+
+	const key = "emkey-enroll-" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	private := filepath.Join(dir, "private")
+	loose := filepath.Join(dir, "loose")
+	if err := writeFile(private, key+"\n", 0o600); err != nil {
+		return err
+	}
+	if err := writeFile(loose, key+"\n", 0o644); err != nil {
+		return err
+	}
+
+	body := `
+die() { printf 'DIE: %s\n' "$1" >&2; exit 1; }
+ENROLLMENT_KEY_FILE="$KEY_FILE"
+read_enrollment_key_file
+printf 'key=%s\n' "${EMISAR_ENROLLMENT_KEY:-NONE}"
+`
+
+	result := h.functions(h.repoPath("install.sh"), []string{"read_enrollment_key_file"}, body,
+		map[string]string{"KEY_FILE": private})
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	// Trailing whitespace is stripped: a key pasted into a file arrives with a
+	// newline, and a newline inside a credential breaks the config it lands in.
+	if got := strings.TrimSpace(string(output)); got != "key="+key {
+		return fmt.Errorf("0600 key file produced %q", got)
+	}
+
+	if err := expectFailure(
+		h.functions(h.repoPath("install.sh"), []string{"read_enrollment_key_file"}, body,
+			map[string]string{"KEY_FILE": loose}),
+		"use 600",
+	); err != nil {
+		return fmt.Errorf("a world-readable key file was accepted: %w", err)
 	}
 	return nil
 }

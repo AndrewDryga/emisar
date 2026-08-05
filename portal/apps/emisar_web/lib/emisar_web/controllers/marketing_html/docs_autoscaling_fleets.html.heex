@@ -100,13 +100,20 @@
       <.docs_code
         phx-no-format
         label="emisar-boot.sh"
-        copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_URL=https://emisar.dev EMISAR_ENROLLMENT_KEY=emkey-enroll-… RUNNER_GROUP=web bash -s -- --yes --packs linux-core"
+        copy_text={"install -m 600 /dev/null /run/emisar-key\nprintf '%s' \"$ENROLLMENT_KEY\" > /run/emisar-key\ncurl -sSL https://emisar.dev/install.sh | sudo EMISAR_URL=https://emisar.dev RUNNER_GROUP=web bash -s -- --yes --packs linux-core --enrollment-key-file /run/emisar-key\nshred -u /run/emisar-key 2>/dev/null || rm -f /run/emisar-key"}
       ><span class="text-zinc-500">#!/usr/bin/env bash</span>
+<span class="text-zinc-500"># The key reaches the installer through a 0600 file, never sudo's argv —</span>
+<span class="text-zinc-500"># /proc/&lt;pid&gt;/cmdline is world-readable while the install runs.</span>
+install -m 600 /dev/null /run/emisar-key
+printf '%s' "<span class="text-brand-300">$ENROLLMENT_KEY</span>" &gt; /run/emisar-key
+
 curl -sSL https://emisar.dev/install.sh \
   | sudo EMISAR_URL=https://emisar.dev \
-      EMISAR_ENROLLMENT_KEY=<span class="text-brand-300">emkey-enroll-…</span> \
       RUNNER_GROUP=<span class="text-brand-300">web</span> \
-      bash -s -- --yes --packs linux-core</.docs_code>
+      bash -s -- --yes --packs linux-core \
+      --enrollment-key-file /run/emisar-key
+
+shred -u /run/emisar-key 2>/dev/null || rm -f /run/emisar-key</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
         skips the prompts a host install would show;

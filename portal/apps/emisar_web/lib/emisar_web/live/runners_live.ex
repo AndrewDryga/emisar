@@ -17,6 +17,7 @@ defmodule EmisarWeb.RunnersLive do
      socket
      |> assign(:page_title, "Runners")
      |> assign(:install_command, nil)
+     |> assign(:install_key, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
      |> assign(:show_troubleshooting?, false)
      |> assign(:reload_scheduled?, false)
@@ -271,9 +272,11 @@ defmodule EmisarWeb.RunnersLive do
       # Only the command + base are used here — unlike the dedicated page, this
       # wizard needs no key id: any runner joining re-runs load/2 and shows the
       # list, so there's no per-key join to match.
-      {command, _key_id} = RunnerInstall.mint_command(socket.assigns.current_subject, base)
+      {command, raw_key, _key_id} =
+        RunnerInstall.mint_command(socket.assigns.current_subject, base)
+
       Process.send_after(self(), :reveal_troubleshooting, RunnerInstall.troubleshoot_after_ms())
-      assign(socket, base_url: base, install_command: command)
+      assign(socket, base_url: base, install_command: command, install_key: raw_key)
     end
   end
 
@@ -360,6 +363,7 @@ defmodule EmisarWeb.RunnersLive do
                the first. --%>
           <.install_wizard
             install_command={@install_command}
+            install_key={@install_key}
             base_url={@base_url}
             show_troubleshooting={@show_troubleshooting?}
             keys_path={~p"/app/#{@current_account}/runners/keys"}

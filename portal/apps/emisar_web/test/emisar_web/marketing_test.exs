@@ -1287,13 +1287,16 @@ defmodule EmisarWeb.MarketingTest do
 
       # The one-command install — the URL must be the literal TLS endpoint
       # (the same one /install.sh serves), and "read it first" links it.
-      # The command wraps across a `\`-newline with the enrollment key
-      # interpolated, so assert the stable contiguous pieces, not the whole
-      # line as one string.
+      # The command wraps across a `\`-newline, so assert the stable contiguous
+      # pieces, not the whole line as one string.
       assert html =~ "curl -sSL https://emisar.dev/install.sh"
-      assert html =~ "sudo EMISAR_ENROLLMENT_KEY="
       assert html =~ "EMISAR_URL=https://emisar.dev bash"
       assert html =~ ~s(href="/install.sh")
+
+      # And no enrollment key on sudo's argv: the installer asks for it on the
+      # terminal, because /proc exposes argv to every local user while the
+      # install runs and an enrollment key is reusable.
+      refute html =~ "sudo EMISAR_ENROLLMENT_KEY"
     end
 
     test "the action-packs reference renders the YAML sections and registry links",

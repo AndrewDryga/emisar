@@ -187,7 +187,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     refute html =~ "bootstrap for prod image"
   end
 
-  test "the reveal shows the domain-built install command, leading space and all", %{conn: conn} do
+  test "the reveal shows the domain-built install command, and it carries no key", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
@@ -198,12 +198,16 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     [raw_secret] = Regex.run(~r/emkey-enroll-[A-Za-z0-9_-]{43}/, html)
 
-    # The one-liner is Runners.enrollment_install_command/2's output verbatim —
-    # rendered after the panel's `$ ` prompt span, so the assertion also pins the
-    # intentional leading space (HISTCONTROL=ignorespace keeps the key out of
-    # shell history; a trim anywhere in the handoff would leak it).
+    # The one-liner is Runners.enrollment_install_command/2's output verbatim,
+    # rendered after the panel's `$ ` prompt span.
     assert html =~
-             "</span> curl -sSL http://www.example.com/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://www.example.com bash</pre>"
+             "</span>curl -sSL http://www.example.com/install.sh | sudo EMISAR_URL=http://www.example.com bash</pre>"
+
+    # The key is revealed on the page — the operator pastes it at the
+    # installer's prompt — but never inside the command, where sudo's argv would
+    # expose a reusable credential through /proc for the length of the install.
+    assert html =~ raw_secret
+    refute html =~ "sudo EMISAR_ENROLLMENT_KEY"
   end
 
   # one-time-secret hygiene: once the operator dismisses the

@@ -2862,16 +2862,18 @@ defmodule Emisar.RunnersTest do
     # under test is byte-for-byte the one an operator pastes.
     @raw_secret "emkey-enroll-" <> String.duplicate("a", 43)
 
-    test "builds the canonical one-liner, leading space included" do
+    test "builds the canonical one-liner, and it carries no key" do
       assert {:ok, command} =
                Runners.enrollment_install_command(@raw_secret, "https://emisar.dev")
 
       assert command ==
-               " curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+               "curl -sSL https://emisar.dev/install.sh | sudo EMISAR_URL=https://emisar.dev bash"
 
-      # The leading space is load-bearing (HISTCONTROL=ignorespace), so it is
-      # asserted on its own — a trim anywhere upstream leaks the key to history.
-      assert String.starts_with?(command, " curl")
+      # The point of the shape: a REUSABLE enrollment key must never reach
+      # sudo's argv, where /proc makes it world-readable for the length of the
+      # install. The installer prompts for it on the terminal instead.
+      refute command =~ @raw_secret
+      refute command =~ "EMISAR_ENROLLMENT_KEY"
     end
 
     test "normalizes a single trailing slash off the base URL" do
@@ -2879,7 +2881,7 @@ defmodule Emisar.RunnersTest do
                Runners.enrollment_install_command(@raw_secret, "https://emisar.dev/")
 
       assert command ==
-               " curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+               "curl -sSL https://emisar.dev/install.sh | sudo EMISAR_URL=https://emisar.dev bash"
     end
 
     test "a self-hosted http origin keeps its scheme and port" do
@@ -2887,7 +2889,7 @@ defmodule Emisar.RunnersTest do
                Runners.enrollment_install_command(@raw_secret, "http://runners.internal:4000")
 
       assert command ==
-               " curl -sSL http://runners.internal:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=http://runners.internal:4000 bash"
+               "curl -sSL http://runners.internal:4000/install.sh | sudo EMISAR_URL=http://runners.internal:4000 bash"
     end
 
     test "refuses a key that isn't the minted enrollment-key shape" do
