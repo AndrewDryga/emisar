@@ -156,6 +156,32 @@ defmodule Emisar.Billing do
   defp per_runner_cents(%{known_plan: %{monthly_price_cents: cents}}, :month), do: cents
   defp per_runner_cents(_posture, _cycle), do: nil
 
+  # What Paddle actually charges this period, with the currency it charges in.
+  #
+  # A live subscription mirrors its own recurring price, so prefer that: the
+  # compiled catalog is a USD LIST price, and the live runner count is not the
+  # billed quantity (Paddle re-prices on its own cadence). Deriving the total
+  # from those two showed a subscriber billed €60 for 3 seats a summary reading
+  # "$200.00/mo" — wrong number AND wrong currency.
+  #
+  # The catalog stays the fallback for an account that has never subscribed, and
+  # for a legacy row the reconciliation job has not backfilled yet.
+  defp period_total_cents(subscription, posture, cycle, runner_count)
+
+  defp period_total_cents(
+         %Subscription{unit_price_amount: amount, currency_code: code, quantity: quantity},
+         _posture,
+         _cycle,
+         _runner_count
+       )
+       when is_integer(amount) and is_binary(code),
+       do: {amount * (quantity || 1), code}
+
+  defp period_total_cents(_subscription, posture, cycle, runner_count) do
+    cents = per_runner_cents(posture, cycle)
+    {cents && cents * runner_count, "USD"}
+  end
+
   @doc """
   Internal — Audit's per-row retention stamp: the account's audit-retention
   window, in days. An `audit_retention_days` entitlement mirrored from Paddle
@@ -1149,7 +1175,9 @@ defmodule Emisar.Billing do
       # The mirrored cadence prices the period: an annual subscriber's summary
       # must read "$X/yr" at the annual per-runner rate, not the monthly one.
       cycle = subscription_cycle(subscription)
-      period_cents = per_runner_cents(posture, cycle)
+
+      {period_cents, currency_code} =
+        period_total_cents(subscription, posture, cycle, runner_count)
 
       {:ok,
        %{
@@ -1162,7 +1190,8 @@ defmodule Emisar.Billing do
          monthly_per_runner_cents: monthly_cents,
          monthly_total_cents: monthly_cents && monthly_cents * runner_count,
          billing_interval: cycle,
-         period_total_cents: period_cents && period_cents * runner_count,
+         period_total_cents: period_cents,
+         currency_code: currency_code,
          audit_retention_days: entitled_retention_days(posture),
          # Subscription state mirrored from Paddle webhooks. nil when
          # the account is on a free plan and has never subscribed.

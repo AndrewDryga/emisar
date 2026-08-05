@@ -2119,6 +2119,35 @@ defmodule Emisar.BillingTest do
       assert summary.monthly_per_runner_cents == 2000
     end
 
+    test "the mirrored Paddle price wins over the compiled catalog, currency and all" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      # Five live runners, but Paddle bills three seats at €20 — the summary must
+      # read what Paddle charges, not catalog list price × live runner count.
+      for _ <- 1..5, do: Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_eur_three_seats",
+        unit_price_amount: 2000,
+        currency_code: "EUR",
+        quantity: 3
+      )
+
+      assert {:ok, summary} = Billing.billing_summary(account, subject)
+      assert summary.period_total_cents == 6000
+      assert summary.currency_code == "EUR"
+    end
+
+    test "a subscription with no mirrored price falls back to the USD catalog" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
+      # A legacy row the reconciliation job has not backfilled yet.
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      assert {:ok, summary} = Billing.billing_summary(account, subject)
+      assert summary.period_total_cents == 4000
+      assert summary.currency_code == "USD"
+    end
+
     test "entitlement limits surface in the summary instead of the compiled plan defaults" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
 

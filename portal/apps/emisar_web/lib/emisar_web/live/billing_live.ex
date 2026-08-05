@@ -203,27 +203,40 @@ defmodule EmisarWeb.BillingLive do
   # (an unknown/legacy plan ranks last so a card never mislabels it an "upgrade").
   defp plan_rank(key) when is_binary(key), do: Enum.find_index(@plan_order, &(&1 == key)) || -1
 
-  # Formats a monthly total in cents as a clean dollar string. The
-  # inline `:io_lib.format(...) |> IO.iodata_to_binary()` it replaces
-  # buried the actual rendering logic inside a HEEx template.
-  defp format_total(nil), do: "Custom"
-  defp format_total(0), do: "$0"
+  # Formats a total in the currency's minor unit. Paddle bills in the customer's
+  # local currency, so both the subscription summary and each invoice carry their
+  # own code — hardcoding "$" printed a EUR amount as dollars.
+  defp format_total(nil, _currency), do: "Custom"
+  defp format_total(0, currency), do: "#{currency_symbol(currency)}0"
 
-  defp format_total(cents) when is_integer(cents) do
-    dollars = div(cents, 100)
-    pennies = rem(cents, 100)
-    "$#{dollars}.#{String.pad_leading(Integer.to_string(pennies), 2, "0")}"
+  defp format_total(cents, currency) when is_integer(cents) do
+    major = div(cents, 100)
+    minor = rem(cents, 100)
+
+    "#{currency_symbol(currency)}#{major}.#{String.pad_leading(Integer.to_string(minor), 2, "0")}"
   end
+
+  # Symbols for the currencies we sell in; anything else prints its ISO code so
+  # the number is labeled correctly rather than plausibly.
+  defp currency_symbol("EUR"), do: "€"
+  defp currency_symbol("GBP"), do: "£"
+  defp currency_symbol(code) when is_binary(code) and code != "USD", do: code <> " "
+  defp currency_symbol(_), do: "$"
 
   # The current-plan strip price, cadence-aware: the annual subscriber reads
   # "$X/yr" at the annual rate, monthly "$X/mo", and a custom (unknown-price)
   # plan just "Custom" — no bare "Custom/mo" suffix.
   defp period_price_label(%{period_total_cents: nil}), do: "Custom"
 
-  defp period_price_label(%{period_total_cents: cents, billing_interval: :year}),
-    do: "#{format_total(cents)}/yr"
+  defp period_price_label(%{
+         period_total_cents: cents,
+         currency_code: currency,
+         billing_interval: :year
+       }),
+       do: "#{format_total(cents, currency)}/yr"
 
-  defp period_price_label(%{period_total_cents: cents}), do: "#{format_total(cents)}/mo"
+  defp period_price_label(%{period_total_cents: cents, currency_code: currency}),
+    do: "#{format_total(cents, currency)}/mo"
 
   # Only the non-paid statuses earn a label chip (a completed row stays silent).
   defp invoice_status_label("billed"), do: "Billed"
@@ -469,7 +482,7 @@ defmodule EmisarWeb.BillingLive do
                       class="w-36 shrink-0 whitespace-nowrap text-zinc-400"
                     />
                     <span class="w-16 font-medium tabular-nums text-zinc-200">
-                      {format_total(invoice.amount_cents)}
+                      {format_total(invoice.amount_cents, invoice.currency)}
                     </span>
                     <span :if={invoice.invoice_number} class="font-mono text-xs text-zinc-400">
                       {invoice.invoice_number}
