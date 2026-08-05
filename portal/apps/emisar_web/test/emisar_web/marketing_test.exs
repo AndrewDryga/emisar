@@ -809,7 +809,7 @@ defmodule EmisarWeb.MarketingTest do
     test "the docs index renders the display-only subgroup headings", %{conn: conn} do
       html = conn |> get(~p"/docs") |> html_response(200)
 
-      for label <- ["Access", "Identity providers", "Account"] do
+      for label <- ["Access", "Identity concepts", "Provider guides", "Account"] do
         assert html =~ ~r{<h3[^>]*>\s*#{label}\s*</h3>},
                "docs index is missing the #{label} subgroup heading"
       end
@@ -841,7 +841,8 @@ defmodule EmisarWeb.MarketingTest do
 
       # The subgroup is wayfinding in the rail only — the breadcrumb stays
       # Docs → top-level group → page.
-      assert html =~ "Identity providers"
+      assert html =~ "Identity concepts"
+      assert html =~ "Provider guides"
       assert html =~ "Team &amp; account"
 
       crumbs =
@@ -850,7 +851,8 @@ defmodule EmisarWeb.MarketingTest do
         |> hd()
 
       assert crumbs =~ "Team &amp; account"
-      refute crumbs =~ "Identity providers"
+      refute crumbs =~ "Identity concepts"
+      refute crumbs =~ "Provider guides"
     end
 
     test "the docs index filter is labelled, searchable, and has an empty state", %{conn: conn} do
@@ -873,7 +875,7 @@ defmodule EmisarWeb.MarketingTest do
 
       okta = Enum.find(terms, &String.contains?(&1, "okta end to end"))
       assert okta =~ "team &amp; account"
-      assert okta =~ "identity providers"
+      assert okta =~ "provider guides"
       assert okta =~ "scim"
     end
   end

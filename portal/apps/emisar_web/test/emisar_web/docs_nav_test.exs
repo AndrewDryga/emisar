@@ -44,7 +44,29 @@ defmodule EmisarWeb.DocsNavTest do
         |> Enum.map(fn group -> {group.label, Enum.map(group.sections, & &1.label)} end)
         |> Enum.filter(fn {_label, section_labels} -> Enum.any?(section_labels) end)
 
-      assert subgrouped == [{"Team & account", ["Access", "Identity providers", "Account"]}]
+      assert subgrouped == [
+               {"Team & account", ["Access", "Identity concepts", "Provider guides", "Account"]}
+             ]
+    end
+
+    test "identity concepts and provider walkthroughs are separate sibling sections" do
+      sections =
+        DocsNav.groups()
+        |> Enum.find(&(&1.label == "Team & account"))
+        |> Map.fetch!(:sections)
+
+      concepts = Enum.find(sections, &(&1.label == "Identity concepts"))
+      providers = Enum.find(sections, &(&1.label == "Provider guides"))
+
+      assert Enum.map(concepts.pages, & &1.slug) == ["sso", "scim"]
+
+      assert Enum.map(providers.pages, & &1.slug) == [
+               "integrations-okta",
+               "integrations-entra",
+               "integrations-jumpcloud",
+               "integrations-keycloak",
+               "integrations-google-workspace"
+             ]
     end
 
     test "every other group is one unlabelled section, so consumers never special-case a shape" do

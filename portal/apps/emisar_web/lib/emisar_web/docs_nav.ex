@@ -7,7 +7,7 @@ defmodule EmisarWeb.DocsNav do
   Every group has the same shape — `%{label, sections: [%{label, pages}]}` —
   so a consumer never special-cases the groups that show subgroups. A section
   `label` of `nil` means the group renders as one flat list; a non-nil label
-  (Team & account's Access / Identity providers / Account) is display-only in
+  (Team & account's Access / Identity concepts / Provider guides / Account) is display-only in
   the sidebar and index — it is not a route and adds no breadcrumb level.
 
   Each page is `%{slug, title, path, desc, icon}`, where `desc` is one plain
@@ -170,7 +170,7 @@ defmodule EmisarWeb.DocsNav do
           ]
         },
         %{
-          label: "Identity providers",
+          label: "Identity concepts",
           pages: [
             %{
               slug: "sso",
@@ -189,7 +189,12 @@ defmodule EmisarWeb.DocsNav do
               keywords: "provisioning deprovisioning groups directory bearer",
               desc:
                 "SCIM 2.0 provisioning, lifecycle, protocol support, and group-driven authorization."
-            },
+            }
+          ]
+        },
+        %{
+          label: "Provider guides",
+          pages: [
             %{
               slug: "integrations-okta",
               title: "Okta",
