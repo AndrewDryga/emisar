@@ -276,8 +276,23 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	return nil
 }
 
+// trackedShellFiles is the repo's own shell scripts that no other gate covers.
+// It was scoped to `.shell run dev`, which matched three files out of seventy,
+// leaving the release-image verifier, the commit-gate hook, and the sweep queue
+// guard linted nowhere.
+//
+// The exclusions are all "some other gate owns this, and owns it better":
+// the two public installers get their own phase in `./run gate runner|mcp`;
+// infra/runtime scripts are cloud-init TEMPLATES whose Terraform interpolation
+// only becomes valid shell once rendered, so the infra gate shellchecks them
+// after rendering; pack action scripts get a parse check from the packs gate,
+// which knows each one's declared interpreter; and pack test fixtures are
+// deliberately malformed inputs.
 func (a *App) trackedShellFiles(ctx context.Context) ([]string, error) {
-	data, err := a.output(ctx, a.Root, nil, "git", "ls-files", "-z", "--", ".shell", "run", "dev")
+	data, err := a.output(ctx, a.Root, nil, "git", "ls-files", "-z", "--",
+		".shell", "run", "*.sh",
+		":(exclude)install.sh", ":(exclude)install-mcp.sh",
+		":(exclude)infra/runtime/*", ":(exclude)packs/*")
 	if err != nil {
 		return nil, err
 	}

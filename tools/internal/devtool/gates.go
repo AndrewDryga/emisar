@@ -461,38 +461,43 @@ func (a *App) validatePacks(ctx context.Context) error {
 	if err := packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out); err != nil {
 		return err
 	}
-	return nil
+	return a.checkCatalogReproduction(ctx)
 }
 
-func (a *App) packsGate(ctx context.Context) error {
-	if err := a.gatePhase("pack authoring and hashes", func() error {
-		return a.validatePacks(ctx)
-	}); err != nil {
-		return err
-	}
-	output, err := os.MkdirTemp("", "emisar-pack-gate-*")
+// checkCatalogReproduction proves the committed catalog artifact is what a
+// fresh build produces. It lives in validatePacks — not only in the packs gate
+// — because CI reaches packs through `./run check packs`, which needs no
+// database. Left in the gate alone, a stale artifact passed CI green and failed
+// in CD's deployment-plan step, AFTER packs-publish had already mutated the
+// live registry.
+func (a *App) checkCatalogReproduction(ctx context.Context) error {
+	output, err := os.MkdirTemp("", "emisar-pack-catalog-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(output)
 	committed := filepath.Join(a.Portal, "apps", "emisar", "priv", "packs", "catalog.json")
-	if err := a.gatePhase("pack catalog reproduction", func() error {
-		if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"),
-			"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", committed); err != nil {
-			return err
-		}
-		generated, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))
-		if err != nil {
-			return err
-		}
-		current, err := os.ReadFile(committed)
-		if err != nil {
-			return err
-		}
-		if !bytes.Equal(generated, current) {
-			return fmt.Errorf("bundled pack catalog is stale; run ./run pack sync <changed-pack> --fix")
-		}
-		return nil
+	if err := a.run(ctx, a.Root, nil, filepath.Join(a.Root, "bin", "packctl"),
+		"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", committed); err != nil {
+		return err
+	}
+	generated, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))
+	if err != nil {
+		return err
+	}
+	current, err := os.ReadFile(committed)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(generated, current) {
+		return fmt.Errorf("bundled pack catalog is stale; run ./run pack sync <changed-pack> --fix")
+	}
+	return nil
+}
+
+func (a *App) packsGate(ctx context.Context) error {
+	if err := a.gatePhase("pack authoring, hashes, and catalog", func() error {
+		return a.validatePacks(ctx)
 	}); err != nil {
 		return err
 	}

@@ -366,11 +366,57 @@ func readManifest(root, path string) (string, bool) {
 	return string(data), true
 }
 
+// declaresDependencies proves a manifest HAS entries, using a signal
+// independent of the parser under test — a marker sharing the parser's own
+// tokens would vanish in exactly the format change this is meant to catch.
+// mcp/go.mod legitimately declares none (the bridge is stdlib-only by design),
+// so "parsed to zero" is only suspicious when the text says otherwise.
+var lockEntry = regexp.MustCompile(`(?m)^\s*"[^"]+":`)
+
+func declaresDependencies(eco, text string) bool {
+	if eco == "hex" {
+		return lockEntry.MatchString(text)
+	}
+	return strings.Contains(text, "require")
+}
+
+// requireManifests fails when a declared manifest is missing at HEAD, or when
+// one that plainly declares dependencies parses to none. Both silently disabled
+// the gate for that ecosystem: the caller `continue`s past a missing file, and
+// parseHex/parseGo cannot fail — unrecognized text yields an empty map, which
+// reads as "no changes". An umbrella restructure that moved portal/mix.lock, or
+// a Hex lockfile format change, would otherwise let every new dependency land
+// with no cooldown at all, reporting success forever.
+func requireManifests(root string) error {
+	for _, m := range manifests {
+		text, ok := readManifest(root, m.path)
+		if !ok {
+			return fmt.Errorf("manifest %s is missing; update depgate's manifest list", m.path)
+		}
+		if !declaresDependencies(m.eco, text) {
+			continue
+		}
+		parsed, err := parseManifest(m.eco, text)
+		if err != nil {
+			return fmt.Errorf("manifest %s: %w", m.path, err)
+		}
+		if len(parsed) == 0 {
+			return fmt.Errorf("manifest %s declares dependencies but parsed to none; the %s parser no longer understands it", m.path, m.eco)
+		}
+	}
+	return nil
+}
+
 // runCheck is the `check` subcommand body. Exit codes: 0 clean, 1 a too-fresh
 // or unverifiable dependency (or an unvetted non-registry source), 2 internal.
 func runCheck(baseRef string) int {
 	root, err := repo.Root()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "::error::dep-age-gate: %v\n", err)
+		return 2
+	}
+
+	if err := requireManifests(root); err != nil {
 		fmt.Fprintf(os.Stderr, "::error::dep-age-gate: %v\n", err)
 		return 2
 	}

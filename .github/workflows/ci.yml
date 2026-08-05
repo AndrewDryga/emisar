@@ -995,6 +995,16 @@ jobs:
           test "$CHANGES" = success || { echo "::error::Changes ended $CHANGES"; exit 1; }
           require_selected() {
             local gate=$1 selected=$2 result=${!1}
+            # Anything that is not literally true/false means the selection
+            # never reached us — an area added to Selection but forgotten in
+            # WriteSelection's format string yields an empty string here, which
+            # the else-branch below would read as "not selected" and accept a
+            # skipped job. Required - CI is the single required check, so that
+            # silently turns a whole area green.
+            case "$selected" in
+              true|false) ;;
+              *) echo "::error::$gate has no selection value (got '$selected')"; exit 1 ;;
+            esac
             if [ "$selected" = true ]; then
               test "$result" = success || {
                 echo "::error::$gate was selected but ended $result"
