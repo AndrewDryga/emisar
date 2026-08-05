@@ -125,12 +125,12 @@ github_api() {
   if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
     # Header via process substitution, never argv — /proc/PID/cmdline is
     # world-readable while each API call runs.
-    curl -fsSL -H 'Accept: application/vnd.github+json' \
+    curl --proto '=https,http' --proto-redir '=https,http' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' \
       -H @<(printf 'Authorization: Bearer %s\n' "${EMISAR_GITHUB_TOKEN}") "$@"
   else
     # Bash 3.2 (the macOS system Bash) treats an expanded empty local array as
     # unbound under `set -u`, so keep the no-token path array-free.
-    curl -fsSL -H 'Accept: application/vnd.github+json' "$@"
+    curl --proto '=https,http' --proto-redir '=https,http' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' "$@"
   fi
 }
 
@@ -787,6 +787,9 @@ if [ -z "${VERSION}" ]; then
   VERSION=$(
     github_api \
       "https://api.github.com/repos/${REPO}/releases?per_page=100" \
+      | tr '{' '\n' \
+      | grep -v '"draft":[[:space:]]*true' \
+      | grep -v '"prerelease":[[:space:]]*true' \
       | grep -oE '"tag_name":[[:space:]]*"mcp-v[0-9]+\.[0-9]+\.[0-9]+"' \
       | head -1 \
       | sed -E 's/.*"(mcp-v[^"]+)".*/\1/'
@@ -893,11 +896,11 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 log "downloading ${TARBALL}"
-curl -fsSL -o "${tmp}/${TARBALL}" "${BASE_URL}/${TARBALL}" \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -fsSL -o "${tmp}/${TARBALL}" "${BASE_URL}/${TARBALL}" \
   || die "download failed: ${BASE_URL}/${TARBALL}"
 
 log "downloading SHA256SUMS-MCP"
-curl -fsSL -o "${tmp}/SHA256SUMS-MCP" "${BASE_URL}/SHA256SUMS-MCP" \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -fsSL -o "${tmp}/SHA256SUMS-MCP" "${BASE_URL}/SHA256SUMS-MCP" \
   || die "download failed: ${BASE_URL}/SHA256SUMS-MCP"
 
 log "verifying checksum"

@@ -138,6 +138,37 @@ require_value() {
   fi
 }
 
+# --data-dir/--log-dir feed `chown -R`, and under --purge they feed `rm -rf`.
+# Neither was validated, so `--data-dir /var/lib` recursively chowned the host's
+# whole /var/lib to the service user, and `--data-dir / --purge` was `rm -rf /`.
+# Require an absolute path at least two components deep and refuse the obvious
+# system roots — the installer owns directories it creates, not shared ones.
+# `die` is defined further down, after argument parsing, so this reports the
+# same way require_value does.
+reject_dir() {
+  printf '%s\n' "$1" >&2
+  exit 2
+}
+
+require_owned_dir() {
+  local flag="$1" path="$2"
+  case "$path" in
+    /*) ;;
+    *) reject_dir "${flag} must be an absolute path (got ${path})" ;;
+  esac
+  case "${path%/}" in
+    "" | /bin | /boot | /dev | /etc | /home | /lib | /lib64 | /opt | /proc | /root | /run | \
+      /sbin | /srv | /sys | /tmp | /usr | /var | /var/lib | /var/log | /var/run | /Applications | \
+      /Library | /System | /Users | /private)
+      reject_dir "${flag} must not be a system directory (got ${path})"
+      ;;
+  esac
+  case "${path#/}" in
+    */*) ;;
+    *) reject_dir "${flag} must be at least two path components deep (got ${path})" ;;
+  esac
+}
+
 PURGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -147,9 +178,9 @@ while [ $# -gt 0 ]; do
     --no-start) NO_START=1; shift;;
     --no-service) NO_SERVICE=1; shift;;
     --bin-dir) require_value "$@"; BIN_DIR="$2"; shift 2;;
-    --etc-dir) require_value "$@"; ETC_DIR="$2"; shift 2;;
-    --data-dir) require_value "$@"; DATA_DIR="$2"; shift 2;;
-    --log-dir) require_value "$@"; LOG_DIR="$2"; shift 2;;
+    --etc-dir) require_value "$@"; require_owned_dir --etc-dir "$2"; ETC_DIR="$2"; shift 2;;
+    --data-dir) require_value "$@"; require_owned_dir --data-dir "$2"; DATA_DIR="$2"; shift 2;;
+    --log-dir) require_value "$@"; require_owned_dir --log-dir "$2"; LOG_DIR="$2"; shift 2;;
     --user) require_value "$@"; SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
     --yes|-y) ASSUME_YES=1; shift;;
     --packs) require_value "$@"; PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
@@ -622,9 +653,9 @@ EOF
 # comments stay byte-for-byte in place, and the new secret never appears in a
 # process argument.
 write_enrollment_key() {
-  local env="${ETC_DIR}/runner.env" tmp line wrote=0
-  tmp="$(mktemp "${env}.tmp.XXXXXX")" || die "could not stage ${env}"
-  chmod 600 "${tmp}"
+  local env="${ETC_DIR}/runner.env" staged line wrote=0
+  staged="$(mktemp "${env}.tmp.XXXXXX")" || die "could not stage ${env}"
+  chmod 600 "${staged}"
 
   if ! while IFS= read -r line || [ -n "${line}" ]; do
     case "${line}" in
@@ -636,22 +667,22 @@ write_enrollment_key() {
         ;;
       *) printf '%s\n' "${line}";;
     esac
-  done < "${env}" > "${tmp}"; then
-    rm -f "${tmp}"
+  done < "${env}" > "${staged}"; then
+    rm -f "${staged}"
     die "could not update ${env}"
   fi
 
   if [ "${wrote}" = "0" ]; then
-    printf 'EMISAR_ENROLLMENT_KEY=%s\n' "${EMISAR_ENROLLMENT_KEY}" >> "${tmp}" || {
-      rm -f "${tmp}"
+    printf 'EMISAR_ENROLLMENT_KEY=%s\n' "${EMISAR_ENROLLMENT_KEY}" >> "${staged}" || {
+      rm -f "${staged}"
       die "could not update ${env}"
     }
   fi
 
-  chmod 600 "${tmp}"
-  chown "root:${SERVICE_GROUP}" "${tmp}" 2>/dev/null || chown root:root "${tmp}"
-  mv -f "${tmp}" "${env}" || {
-    rm -f "${tmp}"
+  chmod 600 "${staged}"
+  chown "root:${SERVICE_GROUP}" "${staged}" 2>/dev/null || chown root:root "${staged}"
+  mv -f "${staged}" "${env}" || {
+    rm -f "${staged}"
     die "could not activate updated ${env}"
   }
   log "updated enrollment key in ${env}"
@@ -712,12 +743,12 @@ github_api() {
   if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
     # Header via process substitution, never argv — /proc/PID/cmdline is
     # world-readable while each API call runs.
-    curl -fsSL -H 'Accept: application/vnd.github+json' \
+    curl --proto '=https,http' --proto-redir '=https,http' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' \
       -H @<(printf 'Authorization: Bearer %s\n' "${EMISAR_GITHUB_TOKEN}") "$@"
   else
     # Bash 3.2 (the macOS system Bash) treats an expanded empty local array as
     # unbound under `set -u`, so keep the no-token path array-free.
-    curl -fsSL -H 'Accept: application/vnd.github+json' "$@"
+    curl --proto '=https,http' --proto-redir '=https,http' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' "$@"
   fi
 }
 
@@ -735,7 +766,15 @@ resolve_latest_version() {
   out=$(github_api \
     "https://api.github.com/repos/${REPO}/releases?per_page=100") \
     || die "could not query GitHub releases API"
+  # Split the response one release per line, then drop drafts and prereleases
+  # before taking the first runner tag. Without this, a release marked
+  # prerelease — or a draft, once EMISAR_GITHUB_TOKEN makes it visible — became
+  # what every unpinned `curl | sudo bash` installed, and a backport published
+  # after a newer minor resolved "latest" to the older line for everyone.
   printf '%s\n' "$out" \
+    | tr '{' '\n' \
+    | grep -v '"draft":[[:space:]]*true' \
+    | grep -v '"prerelease":[[:space:]]*true' \
     | grep -oE '"tag_name":[[:space:]]*"runner-v[0-9]+\.[0-9]+\.[0-9]+"' \
     | head -1 \
     | sed -E 's/.*"(runner-v[^"]+)".*/\1/'
@@ -752,11 +791,11 @@ download_release() {
   local tarball="${name}.tar.gz"
 
   log "downloading ${tarball}"
-  curl -sSL --fail -o "${tmp}/${tarball}" "${base}/${tarball}" \
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -sSL --fail -o "${tmp}/${tarball}" "${base}/${tarball}" \
     || die "failed to download ${base}/${tarball}"
 
   log "downloading SHA256SUMS"
-  curl -sSL --fail -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS" \
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -sSL --fail -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS" \
     || die "failed to download ${base}/SHA256SUMS"
 
   # Pull the expected hash for our tarball out of SHA256SUMS so we can
@@ -902,6 +941,14 @@ drop_config_skeleton() {
       warn "RUNNER_GROUP='${RUNNER_GROUP}' has unexpected characters; not editing ${cfg}"
     else
       log "config exists at ${cfg}; leaving untouched"
+    fi
+    # An operator re-running the NEW portal's one-liner gets their enrollment
+    # key rotated (below) but not their cloud.url, because this branch leaves the
+    # config alone — so the runner authenticates nowhere and nothing says why.
+    # Name the ignored value rather than silently dropping it.
+    if [ -n "${EMISAR_URL:-}" ] && ! grep -qF "${EMISAR_URL}" "${cfg}" 2>/dev/null; then
+      warn "EMISAR_URL='${EMISAR_URL}' was NOT applied: ${cfg} already exists and keeps its"
+      warn "current cloud.url. Edit it by hand, or move the file aside and re-run."
     fi
     NEEDS_CONFIGURATION=0
   fi
