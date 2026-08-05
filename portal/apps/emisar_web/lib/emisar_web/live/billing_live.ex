@@ -74,6 +74,14 @@ defmodule EmisarWeb.BillingLive do
             {:ok, url} ->
               {:noreply, redirect(socket, external: url)}
 
+            {:error, :subscription_already_active} ->
+              {:noreply,
+               put_flash(
+                 socket,
+                 :error,
+                 "This account already has a subscription. Use Manage billing to change plans."
+               )}
+
             {:error, reason} ->
               {:noreply,
                put_flash(socket, :error, "Could not start checkout: #{humanize_reason(reason)}")}

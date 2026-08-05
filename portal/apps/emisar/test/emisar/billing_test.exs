@@ -619,6 +619,40 @@ defmodule Emisar.BillingTest do
                Billing.start_checkout(account, "platinum", :month, subject)
     end
 
+    test "refuses a second checkout while a Paddle subscription is live", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_already_live"
+      )
+
+      # The console renders "Manage billing" rather than "Upgrade" here, but a
+      # crafted phx-click reaches the context directly — and Paddle would bill
+      # both subscriptions.
+      assert {:error, :subscription_already_active} =
+               Billing.start_checkout(account, "enterprise", :month, subject)
+    end
+
+    test "a canceled subscription can subscribe again", %{account: account, subject: subject} do
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_canceled",
+        status: "canceled"
+      )
+
+      assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
+      assert url =~ "stub.paddle.test/checkout"
+    end
+
+    test "a complimentary (non-Paddle) plan does not block checkout", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.create_subscription(account, "team", status: "complimentary")
+
+      assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
+    end
+
     test "resolves the monthly price from the (stub) catalog and returns the checkout URL", %{
       account: account,
       subject: subject

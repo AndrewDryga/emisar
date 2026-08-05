@@ -412,7 +412,8 @@ defmodule Emisar.Billing do
              subject,
              Authorizer.manage_billing_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         :ok <- ensure_no_live_subscription(account.id) do
       if Map.has_key?(@plans, plan_name) do
         # The returned URL is the account's DEFAULT PAYMENT LINK (our /checkout
         # page running Paddle.js) + ?_ptxn=<transaction> — Paddle has no hosted
@@ -436,6 +437,27 @@ defmodule Emisar.Billing do
       else
         {:error, :unknown_plan}
       end
+    end
+  end
+
+  # Paddle enforces no one-subscription-per-customer rule, so a second checkout
+  # mints a second transaction and bills BOTH — and the second
+  # `subscription.created` overwrites `paddle_subscription_id`, losing the first
+  # subscription's id, so we can no longer even see what to cancel. The console
+  # only renders "Upgrade" when there is no live subscription, but that is a
+  # RENDERING choice: a crafted `phx-click="upgrade"` reaches this function
+  # directly. An existing subscriber changes plans in the Paddle customer portal
+  # ("Manage billing"), which is also what the downgrade branch already does.
+  #
+  # A canceled subscription is not live — the operator must be able to come back.
+  defp ensure_no_live_subscription(account_id) do
+    case peek_subscription_for_account(account_id) do
+      %Subscription{paddle_subscription_id: id, status: status}
+      when is_binary(id) and status != "canceled" ->
+        {:error, :subscription_already_active}
+
+      _ ->
+        :ok
     end
   end
 
