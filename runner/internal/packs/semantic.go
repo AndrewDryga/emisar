@@ -141,14 +141,30 @@ func shellProgramArgIsBounded(arg actionspec.Arg) bool {
 		return true
 	}
 	switch arg.Type {
-	case actionspec.ArgString, actionspec.ArgPath, actionspec.ArgStringArray:
+	case actionspec.ArgString, actionspec.ArgPath,
+		actionspec.ArgStringArray, actionspec.ArgIntegerArray:
+		// An array renders one token per element into the program text, so it is
+		// no more bounded than its element type is — and integer_array was
+		// treated as bounded only because it fell through to the old default.
 		return false
 	case actionspec.ArgInteger, actionspec.ArgNumber:
 		return arg.Validation != nil &&
 			arg.Validation.Min != nil &&
 			arg.Validation.Max != nil
-	default:
+	case actionspec.ArgBoolean:
+		// Two values, neither able to carry a shell metacharacter.
 		return true
+	case actionspec.ArgDuration:
+		// Parsed through time.ParseDuration before it renders, so the literal is
+		// a duration or the dispatch never happens.
+		return true
+	default:
+		// An arg kind this lint has not been taught about is NOT bounded. The
+		// old `default: true` said the opposite, so the next ArgType added would
+		// have been waved straight into shell program text with nothing to
+		// notice — a fail-OPEN default on the check that keeps cloud-supplied
+		// values out of a command string.
+		return false
 	}
 }
 
