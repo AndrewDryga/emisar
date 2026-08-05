@@ -84,3 +84,41 @@ cases:
     cleanup:
       - argv: [aws, iam, delete-policy, --policy-arn, "arn:aws:iam::000000000000:policy/HarnessPolicy"]
       - argv: [aws, iam, delete-user, --user-name, harness-user]
+
+  # The two critical actions. Both take an access key ID that only exists once
+  # the key is created, so each resolves it from the live account rather than
+  # hardcoding one.
+  - action: iam.deactivate_access_key
+    args:
+      user_name: harness-key-user
+    arrange:
+      - argv: [aws, iam, create-user, --user-name, harness-key-user]
+      - argv: [aws, iam, create-access-key, --user-name, harness-key-user]
+    resolve_args:
+      access_key_id:
+        argv: [aws, iam, list-access-keys, --user-name, harness-key-user, --query, "AccessKeyMetadata[0].AccessKeyId", --output, text]
+    probes:
+      - name: the key is inactive, not gone
+        argv: [aws, iam, list-access-keys, --user-name, harness-key-user, --query, "AccessKeyMetadata[0].Status", --output, text]
+        expect:
+          stdout_contains: [Inactive]
+    cleanup:
+      - argv: [/bin/sh, -c, 'aws iam delete-access-key --user-name harness-key-user --access-key-id "$(aws iam list-access-keys --user-name harness-key-user --query "AccessKeyMetadata[0].AccessKeyId" --output text)"']
+      - argv: [aws, iam, delete-user, --user-name, harness-key-user]
+
+  - action: iam.delete_access_key
+    args:
+      user_name: harness-del-user
+    arrange:
+      - argv: [aws, iam, create-user, --user-name, harness-del-user]
+      - argv: [aws, iam, create-access-key, --user-name, harness-del-user]
+    resolve_args:
+      access_key_id:
+        argv: [aws, iam, list-access-keys, --user-name, harness-del-user, --query, "AccessKeyMetadata[0].AccessKeyId", --output, text]
+    probes:
+      - name: the key is gone
+        argv: [aws, iam, list-access-keys, --user-name, harness-del-user]
+        expect:
+          stdout_contains: ['"AccessKeyMetadata": []']
+    cleanup:
+      - argv: [aws, iam, delete-user, --user-name, harness-del-user]
