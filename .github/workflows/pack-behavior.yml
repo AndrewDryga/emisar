@@ -17,6 +17,10 @@ jobs:
     name: Discover plans
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      # This job runs `go run` and `go build`; without it, the weekly sweep is the
+      # one Go job in the repository that would fetch a remote toolchain.
+      GOTOOLCHAIN: local
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
       mirror_registry: ${{ steps.mirrors.outputs.registry }}
@@ -46,7 +50,11 @@ jobs:
 
       - id: discover
         name: Discover committed compatibility rows
-        run: echo "matrix=$(go run ./tools/cmd/packtest --matrix --packs ./packs)" >> "$GITHUB_OUTPUT"
+        run: |
+          # Assign first: `echo "x=$(cmd)"` succeeds whether or not cmd did, so a
+          # failure here published an empty value instead of failing the job.
+          matrix=$(go run ./tools/cmd/packtest --matrix --packs ./packs)
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
       - name: Warm the behavior build objects
         env:
@@ -58,7 +66,11 @@ jobs:
 
       - id: tools
         name: Resolve the shared client image
-        run: echo "image=$(./run pack tools-image)" >> "$GITHUB_OUTPUT"
+        run: |
+          # Empty output is a MEANINGFUL answer here (no tools image needed), so a
+          # swallowed failure was indistinguishable from a legitimate skip.
+          image=$(./run pack tools-image)
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -145,7 +157,9 @@ jobs:
       # neither the builder nor the restore.
       - id: tools
         name: Resolve the shared client image
-        run: echo "image=$(./run pack tools-image "$PACK")" >> "$GITHUB_OUTPUT"
+        run: |
+          image=$(./run pack tools-image "$PACK")
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         if: steps.tools.outputs.image != ''
