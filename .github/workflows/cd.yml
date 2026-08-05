@@ -171,6 +171,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      # "Get an environment" is documented as needing actions:read.
+      actions: read
     env:
       GOTOOLCHAIN: local
       REGISTRY_BASE: https://storage.googleapis.com/emisar-pack-registry
@@ -186,6 +188,17 @@ jobs:
           go-version-file: runner/go.mod
           cache: true
           cache-dependency-path: runner/go.sum
+
+      # Before any credential is minted. This environment is what binds the
+      # short-lived GCP WIF credentials to protected main with no admin bypass —
+      # a policy asserted only in the comment above until now, because the check
+      # that verifies it ran in no gate and no workflow. If someone loosens the
+      # environment in repo settings, publication stops here rather than
+      # authenticating under a weaker binding than the comment claims.
+      - name: Verify the publishing environment's protection rules
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./run check pack-environment "$GITHUB_REPOSITORY" pack-registry-production
 
       - name: Build pack publisher
         run: cd runner && go build -trimpath -o /tmp/packctl ./cmd/packctl
