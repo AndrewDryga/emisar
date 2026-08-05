@@ -3347,7 +3347,7 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "list_stale_dispatches/1" do
+  describe "list_stale_dispatches/2" do
     setup do
       account = Fixtures.Accounts.create_account()
       _ = Fixtures.Policies.create_policy(account_id: account.id)
@@ -3663,7 +3663,21 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "list_running_runs/0" do
+  describe "list_running_runs/1" do
+    test "bounds the batch so one tick cannot load the whole fleet" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      for _ <- 1..3 do
+        Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, status: :running)
+      end
+
+      # DispatchTimeout loads this every 60s, fleet-wide: a wide outage parking
+      # tens of thousands of runs made the tick outlast its own interval, so
+      # timeouts stopped being enforced during the incident they exist for.
+      assert length(Runs.list_running_runs(2)) == 2
+    end
+
     test "returns only in-flight rows" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)

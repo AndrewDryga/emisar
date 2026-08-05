@@ -25,6 +25,12 @@ defmodule Emisar.Runs do
   require Logger
 
   @sent_dispatch_deadline_secs 600
+  # DispatchTimeout loads both sweeps into memory every 60 seconds, fleet-wide
+  # and unbounded. A wide runner outage parks tens of thousands of runs, the
+  # tick then takes longer than its own interval, and dispatch timeouts stop
+  # being enforced during exactly the incident they exist for. Bound the batch;
+  # a backlog drains over consecutive ticks instead of stalling the job.
+  @sweep_batch 2_000
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -2353,11 +2359,13 @@ defmodule Emisar.Runs do
   iterates and decides per-run whether to time it out based on the
   runner's current state.
   """
-  def list_stale_dispatches(cutoff) when is_struct(cutoff, DateTime) do
+  def list_stale_dispatches(cutoff, limit \\ @sweep_batch)
+      when is_struct(cutoff, DateTime) do
     ActionRun.Query.all()
     |> ActionRun.Query.status_in([:pending, :sent])
     |> ActionRun.Query.queued_before(cutoff)
     |> ActionRun.Query.ordered_by_oldest()
+    |> ActionRun.Query.limit_to(limit)
     |> Repo.all()
   end
 
@@ -2456,9 +2464,11 @@ defmodule Emisar.Runs do
   runs in flight); the worker decides per-run from the runner's presence and
   disconnect history.
   """
-  def list_running_runs do
+  def list_running_runs(limit \\ @sweep_batch) do
     ActionRun.Query.all()
     |> ActionRun.Query.status_in([:running, :cancelling])
+    |> ActionRun.Query.ordered_by_oldest()
+    |> ActionRun.Query.limit_to(limit)
     |> Repo.all()
   end
 

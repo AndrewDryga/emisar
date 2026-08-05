@@ -4,12 +4,18 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
   alias Ecto.Multi
   alias Emisar.{Accounts, Repo, Runs}
   alias Emisar.Runbooks.{ExecutionItem, RunbookExecution, Scheduler}
+  require Logger
 
   @batch_size 50
 
   def recover_due do
     callbacks = Runs.list_terminal_runbook_callbacks(@batch_size)
-    Enum.each(callbacks, &Scheduler.action_run_settled/1)
+
+    Enum.each(callbacks, fn callback ->
+      isolated(callback, "runbook_recovery.callback_crashed", fn ->
+        Scheduler.action_run_settled(callback)
+      end)
+    end)
 
     execution_ids =
       RunbookExecution.Query.active()
@@ -18,14 +24,22 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
       |> Repo.all()
       |> Enum.map(& &1.id)
 
-    Enum.each(execution_ids, &Scheduler.advance_execution/1)
+    Enum.each(execution_ids, fn id ->
+      isolated(id, "runbook_recovery.advance_crashed", fn ->
+        Scheduler.advance_execution(id)
+      end)
+    end)
 
     scrubbed =
       RunbookExecution.Query.terminal_with_raw_inputs()
       |> RunbookExecution.Query.ordered_by_oldest()
       |> RunbookExecution.Query.limit_to(@batch_size)
       |> Repo.all()
-      |> Enum.count(&(scrub_terminal_execution(&1.id) == :scrubbed))
+      |> Enum.count(fn execution ->
+        isolated(execution.id, "runbook_recovery.scrub_crashed", fn ->
+          scrub_terminal_execution(execution.id)
+        end) == :scrubbed
+      end)
 
     Emisar.Telemetry.runbook_recovery(
       recovery_stats(),
@@ -134,4 +148,18 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
   end
 
   defp scrub_terminal_payloads(_repo, _changes), do: {:ok, :not_terminal}
+
+  # Per-row isolation, like sync_subscriptions and monthly_reports. The callback
+  # batch is ordered oldest-first, so a row that raises during settlement sat at
+  # the head of EVERY batch: recover_due aborted before it reached the active
+  # executions, the job restarted every 5s, and the runbook engine stopped
+  # advancing for every tenant until someone noticed. One bad row now costs one
+  # row.
+  defp isolated(subject, event, fun) do
+    fun.()
+  rescue
+    error ->
+      Logger.warning("#{event} subject=#{inspect(subject)} error=#{inspect(error.__struct__)}")
+      :error
+  end
 end
