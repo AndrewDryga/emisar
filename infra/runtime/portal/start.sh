@@ -66,7 +66,25 @@ NODE_IP=$(curl --fail --silent --show-error --retry 5 --retry-delay 2 \
   http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
 [ -n "$NODE_IP" ] || { echo "no instance internal IP" >&2; exit 1; }
 
+# A self-signed certificate, minted here and never stored anywhere: the load
+# balancer's hop to this VM was the one leg of a request still in cleartext, on
+# a host that also runs a runner admitted at max_risk: critical.
+#
+# Self-signed is the correct shape, not a shortcut. Google's external
+# Application Load Balancer ENCRYPTS to a backend but does not verify its
+# certificate, so a CA-issued one buys nothing here — while minting locally
+# means no private key is ever shipped, stored, or rotated out of band. It lives
+# on the boot-recreatable tmpfs under /run, so every boot gets a fresh one.
+TLS_DIR=/run/emisar/tls
+install -d -m 700 "$TLS_DIR"
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+  -subj "/CN=${domain}" \
+  -keyout "$TLS_DIR/key.pem" -out "$TLS_DIR/cert.pem" >/dev/null 2>&1
+chmod 600 "$TLS_DIR/key.pem" "$TLS_DIR/cert.pem"
+
 {
+  printf 'TLS_CERT_PATH=%s\n' "$TLS_DIR/cert.pem"
+  printf 'TLS_KEY_PATH=%s\n' "$TLS_DIR/key.pem"
   printf 'PHX_HOST=%s\n' "${domain}"
   printf 'MAILER_FROM_EMAIL=%s\n' "${mailer_from_email}"
   printf 'PORT=%s\n' "${app_port}"
@@ -101,4 +119,5 @@ docker rm -f emisar 2>/dev/null || true
 # the release clusters over the VPC and talks to the proxy on 127.0.0.1.
 exec docker run --rm --name emisar --network host --env-file "$ENV_FILE" \
   --cap-drop=ALL --security-opt=no-new-privileges \
+  --mount type=bind,source="$TLS_DIR",target="$TLS_DIR",readonly \
   ${container_image}

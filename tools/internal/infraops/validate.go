@@ -369,6 +369,18 @@ func (a *App) validateTemplates(ctx context.Context) error {
 			return fmt.Errorf("the portal container must run with %s", flag)
 		}
 	}
+	// The LB-to-VM hop is encrypted, which needs three things that are easy to
+	// break one at a time: a certificate minted at boot, the release told where
+	// it is, and the container able to read it. Losing any one of them silently
+	// returns that leg to cleartext, so assert all three.
+	if !strings.Contains(string(match), "--mount type=bind,source=\"$TLS_DIR\"") {
+		return fmt.Errorf("the portal container cannot read its TLS material; the LB hop would be cleartext")
+	}
+	for _, required := range []string{"TLS_CERT_PATH=", "TLS_KEY_PATH=", "openssl req -x509"} {
+		if !strings.Contains(rendered, required) {
+			return fmt.Errorf("rendered portal cloud-init is missing %q, so the LB hop would be cleartext", required)
+		}
+	}
 
 	if err := a.validateAdminCallback(ctx, temp); err != nil {
 		return err

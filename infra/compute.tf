@@ -22,8 +22,13 @@ locals {
   # it is not a routine workspace input.
   portal_port = 4000
   readiness_contract = {
-    request_path        = "/readyz"
-    port                = local.portal_port
+    request_path = "/readyz"
+    port         = local.portal_port
+    # In the contract on purpose: changing it changes readiness_generation,
+    # which mints a successor health check and backend and makes the URL map
+    # switch only after the new pair passes the barrier. A scheme flip is
+    # exactly the kind of change rule 9 forbids doing in place.
+    scheme              = "HTTPS"
     check_interval_sec  = 10
     timeout_sec         = 5
     healthy_threshold   = 2
@@ -125,7 +130,9 @@ resource "google_compute_health_check" "readiness" {
   healthy_threshold   = local.readiness_contract.healthy_threshold
   unhealthy_threshold = local.readiness_contract.unhealthy_threshold
 
-  http_health_check {
+  # The VM presents a self-signed certificate minted at boot; Google's health
+  # checker encrypts to it without verifying, same as the load balancer does.
+  https_health_check {
     request_path = local.readiness_contract.request_path
     port         = local.readiness_contract.port
   }

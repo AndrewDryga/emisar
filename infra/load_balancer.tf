@@ -138,9 +138,14 @@ resource "terraform_data" "livebook_backend_ready" {
 resource "google_compute_backend_service" "app" {
   # A readiness-contract change gets a complete successor backend. The URL map
   # switches only after that backend passes the barrier below.
-  name                            = "${google_compute_region_instance_group_manager.emisar.name}-${local.readiness_generation}-backend"
-  load_balancing_scheme           = "EXTERNAL_MANAGED"
-  protocol                        = "HTTP"
+  name                  = "${google_compute_region_instance_group_manager.emisar.name}-${local.readiness_generation}-backend"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  # Encrypts the last leg. The LB terminates the client's TLS and used to reach
+  # the VM in cleartext — on a host that also runs a runner admitted at
+  # max_risk: critical, so "inside the VPC" is a weaker boundary here than on a
+  # plain web tier. Google does not verify the backend certificate, which is why
+  # a self-signed one minted at boot is sufficient and why no key ships.
+  protocol                        = "HTTPS"
   port_name                       = "http"
   timeout_sec                     = var.backend_timeout_sec
   connection_draining_timeout_sec = 120
