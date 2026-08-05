@@ -22,6 +22,17 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
     * the response must be JSON, arrives under a hard byte cap enforced while
       streaming, and is bounded by a short timeout.
 
+  The address check filters the ANSWER; it does not pin the CONNECTION. Finch
+  resolves the host again when it opens the socket, so a record with a zero TTL
+  that flips between those two resolutions still reaches its target. Pinning
+  would mean connecting to a validated address while carrying the hostname in
+  SNI, which Finch exposes no per-request hook for. What survives that gap is
+  narrow: no redirect is followed, the response must be JSON under 64 KiB with a
+  200, and it must parse as a metadata document carrying `client_id`,
+  `client_name` and `redirect_uris` before any caller reads it — and the GCP
+  metadata server, the usual target, answers 403 without a `Metadata-Flavor`
+  header this module never sends.
+
   The document is re-fetched on each authorization rather than cached. The spec
   only asks that caching respect HTTP cache headers; always reading the live
   document means a client that rotates or revokes a redirect URI takes effect
