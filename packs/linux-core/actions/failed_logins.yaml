@@ -6,7 +6,7 @@ kind: exec
 risk: medium
 
 description: >
-  Recent failed authentication attempts from the systemd journal — sshd's
+  List recent failed authentication attempts from the systemd journal — sshd's
   "Failed password" / "Invalid user" plus pam_unix "authentication failure"
   from su/sudo/login. High-signal for "is this host being brute-forced?"
   Read-only, but flagged medium-risk: the source IPs and usernames are

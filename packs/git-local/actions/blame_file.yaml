@@ -15,7 +15,13 @@ args:
     required: true
     description: Path relative to repo root.
     validation:
-      pattern: "^[a-zA-Z0-9_./\\-]{1,512}$"
+      # Every segment must carry a non-dot character, so no component can be
+      # "." or "..". The old charset made both literal members: it read as
+      # containment and was not. git refuses a path outside the repository
+      # anyway, but the pack should not be declaring a boundary it does not
+      # hold.
+      max_length: 512
+      pattern: "^[A-Za-z0-9_.-]*[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_.-]*[A-Za-z0-9_-][A-Za-z0-9_.-]*)*$"
 execution:
   command:
     binary: /bin/sh

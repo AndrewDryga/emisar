@@ -86,6 +86,13 @@ execution:
         case "$MODE" in
           preview) flags="--preview" ;;
           full) flags="-full" ;;
+          # Incremental is nodetool's own default on 4.x and 5.x and has no flag
+          # of its own (-inc went away after 3.x). Named anyway: falling through
+          # meant the operator asked for incremental and silently got whatever
+          # this node's version defaults to, and the next enum value added here
+          # would have inherited the same silence.
+          incremental) flags="" ;;
+          *) printf 'unsupported repair mode: %s\n' "$MODE" >&2; exit 2 ;;
         esac
         [ "$PR" = "true" ] && flags="$flags -pr"
         case "$PAR" in
