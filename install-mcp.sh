@@ -38,6 +38,21 @@ REPO="${EMISAR_REPO:-andrewdryga/emisar}"
 # command overrides it (the client configs written below carry it).
 EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
 EMISAR_URL="${EMISAR_URL%/}"
+# Validated where it is READ, not where it is written: this value and the keys
+# the portal delivers both land inside JSON, TOML and YAML string literals. A
+# value carrying a quote or a newline does not corrupt those files — it ADDS to
+# them, and every one of those formats can express a second MCP server with its
+# own `command`, which the client runs on next start. So a hostile EMISAR_URL,
+# or a compromised portal's response, would reach arbitrary code on the
+# operator's workstation through a config file. One charset check beats three
+# per-format escapers.
+safe_config_value() {
+  case "$1" in
+    "") return 1 ;;
+    *[!A-Za-z0-9._:/@+-]*) return 1 ;;
+  esac
+  return 0
+}
 INSTALL_DIR="${INSTALL_DIR:-}"
 INSTALL_DIR_EXPLICIT=0
 [ -n "${INSTALL_DIR}" ] && INSTALL_DIR_EXPLICIT=1
@@ -120,6 +135,10 @@ done
 log()  { printf '\033[1;34m[install-mcp]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[install-mcp]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[install-mcp]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# Checked here rather than beside the assignment: `die` has to exist first.
+safe_config_value "${EMISAR_URL}" ||
+  die "EMISAR_URL contains characters that cannot be written to a client config: ${EMISAR_URL}"
 
 github_api() {
   if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
@@ -1819,6 +1838,10 @@ configure_llm_clients() {
     [ -n "${client_id}" ] || continue
     if ! key=$(json_client_key "${TOKEN_RESP}" "${client_id}"); then
       warn "${label}: no key was delivered — use its snippet at ${EMISAR_URL}/app/agents/connect"
+      continue
+    fi
+    if ! safe_config_value "${key}"; then
+      warn "${label}: the delivered key is not a value we will write to a config file"
       continue
     fi
     if install_client_config "${kind}" "${config_file}" "${key}" "${client_id}"; then

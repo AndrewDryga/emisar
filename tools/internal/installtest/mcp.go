@@ -32,6 +32,7 @@ func MCP(root string, out io.Writer) error {
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
 		{"device grant response validation", mcpDeviceGrantValidation},
+		{"client config value validation", mcpConfigValueValidation},
 		{"LLM client configuration", mcpClientConfiguration},
 		{"uninstall", mcpUninstall},
 	}
@@ -431,6 +432,7 @@ var clientFunctions = []string{
 	"write_fresh_json_config", "merge_json_config", "append_codex_toml",
 	"append_yaml_config", "own_config_file", "install_client_config",
 	"json_string_field", "json_client_key", "json_has_client_keys",
+	"safe_config_value",
 	"bounded_decimal_field", "request_device_grant",
 	"await_device_approval", "scan_client", "scan_llm_clients", "out", "hdr",
 	"ok", "dim", "client_row", "open_browser", "configure_llm_clients",
@@ -1009,6 +1011,47 @@ func inspectClientConfigs(home, portal string) error {
 	} {
 		if err := containsFile(codex, text); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// mcpConfigValueValidation proves nothing that could break out of a config file
+// gets written into one.
+//
+// EMISAR_URL and the keys the portal delivers both land inside JSON, TOML and
+// YAML string literals. A value carrying a quote or a newline does not corrupt
+// those files — it ADDS to them, and each format can express a second MCP
+// server with its own `command`, which the client executes on next start. So a
+// hostile EMISAR_URL or a compromised portal response would reach arbitrary
+// code on the operator's workstation through a config file.
+func mcpConfigValueValidation(h *harness) error {
+	accepted := []string{
+		"https://emisar.dev",
+		"https://portal.internal.example:4010/base",
+		"emk-AbC123_no", // key shape: alphanumerics and dashes
+	}
+	rejected := []string{
+		`https://x.dev", "command": "sh`,
+		"https://x.dev\n  command: sh",
+		"https://x.dev' }, 'evil': {",
+		"https://x.dev$(id)",
+		"https://x.dev`id`",
+		"",
+	}
+
+	for _, value := range accepted {
+		result := h.functions(h.repoPath("install-mcp.sh"), []string{"safe_config_value"},
+			"safe_config_value \"$CANDIDATE\"\n", map[string]string{"CANDIDATE": value})
+		if result.err != nil {
+			return fmt.Errorf("legitimate value %q was rejected:\n%s", value, result.output)
+		}
+	}
+	for _, value := range rejected {
+		result := h.functions(h.repoPath("install-mcp.sh"), []string{"safe_config_value"},
+			"safe_config_value \"$CANDIDATE\"\n", map[string]string{"CANDIDATE": value})
+		if result.err == nil {
+			return fmt.Errorf("value %q would have been written to a client config", value)
 		}
 	}
 	return nil
