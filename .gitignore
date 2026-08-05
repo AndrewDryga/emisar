@@ -2,6 +2,7 @@
 /bin/
 /dist/*
 !/dist/cursor-plugin/
+!/dist/chatgpt-plugin/
 **/_build*/
 *.out
 /test-results/

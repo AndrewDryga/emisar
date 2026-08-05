@@ -1,0 +1,236 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "Emisar",
+    "subtitle": "Inspect and operate production",
+    "description": "Emisar connects ChatGPT to infrastructure through a controlled MCP gateway. It can list runners and action packs, inspect exact action contracts, execute permitted diagnostics and operational actions, review run history, and work with runbooks. Runner scope, pack trust, policy, approvals, and audit controls constrain access.",
+    "category": "DEVELOPER_TOOLS"
+  },
+  "tools": {
+    "list_packs": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Reads operator-trusted pack deployments and their action catalogs without installing, changing, or executing anything.",
+        "open_world_justification": "Queries only the authenticated account's private Emisar catalog and does not contact or modify public or third-party systems.",
+        "destructive_justification": "Cannot delete, overwrite, revoke, dispatch, or otherwise change state."
+      }
+    },
+    "list_runners": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves account-scoped runner identity, connectivity, compatibility, and readiness without changing any runner or host.",
+        "open_world_justification": "Reads only runners enrolled in the authenticated Emisar account and does not contact arbitrary external systems.",
+        "destructive_justification": "Cannot register, enable, disable, update, delete, or dispatch work to a runner."
+      }
+    },
+    "find_actions": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Searches runnable actions in the authenticated account's trusted catalog without executing or modifying them.",
+        "open_world_justification": "Searches only Emisar's private catalog and does not browse the web or contact an action's target system.",
+        "destructive_justification": "Performs discovery only and cannot dispatch, delete, overwrite, or otherwise change state."
+      }
+    },
+    "get_action": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves one immutable action contract, including arguments, risk, side effects, and compatible runners, without executing it.",
+        "open_world_justification": "Reads the contract from Emisar's private catalog and does not contact the action's target service.",
+        "destructive_justification": "Cannot mutate or dispatch anything; described side effects apply only to a later run_action call."
+      }
+    },
+    "run_action": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Creates operation and run records and dispatches the selected action to explicit runners, changing Emisar and potentially target-system state.",
+        "open_world_justification": "Selected pack actions can call external service APIs or alter internet-facing infrastructure within the caller's authorized scope.",
+        "destructive_justification": "Some selectable actions can irreversibly delete, overwrite, purge, or revoke data or access after Emisar policy and approval checks."
+      }
+    },
+    "get_operation": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves the durable record and continuation for a prior mutation without repeating, resuming, or changing it.",
+        "open_world_justification": "Reads only credential-scoped operation state stored in Emisar and does not contact the target system.",
+        "destructive_justification": "Cannot mutate, retry, or dispatch the operation or change its target."
+      }
+    },
+    "wait_for_run": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Waits for and reads one visible run or runbook execution without starting, cancelling, retrying, or modifying it.",
+        "open_world_justification": "Observes private Emisar run state and does not contact arbitrary external systems.",
+        "destructive_justification": "Ending or timing out the wait cannot alter the underlying work or its target."
+      }
+    },
+    "recent_runs": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves and paginates scoped run history without creating, updating, or repeating runs.",
+        "open_world_justification": "Reads only the authenticated account's private Emisar run history and does not call external services.",
+        "destructive_justification": "Cannot alter historical records, dispatch actions, or change production state."
+      }
+    },
+    "list_runbooks": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Lists immutable published runbook summaries without creating, publishing, editing, or executing runbooks.",
+        "open_world_justification": "Reads runbooks stored in the authenticated Emisar account and does not contact their target systems.",
+        "destructive_justification": "Performs discovery only and cannot change a runbook or infrastructure."
+      }
+    },
+    "get_runbook": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Retrieves one immutable published runbook and its ordered steps without executing or modifying them.",
+        "open_world_justification": "Reads the runbook from private Emisar state and makes no request to its target systems.",
+        "destructive_justification": "Cannot mutate or dispatch anything; possible step effects apply only to a later execute_runbook call."
+      }
+    },
+    "execute_runbook": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Creates a runbook execution and action-run records and dispatches eligible steps, changing Emisar and potentially target systems.",
+        "open_world_justification": "Runbook steps can call external service APIs or alter internet-facing infrastructure within the caller's authorized scope.",
+        "destructive_justification": "A runbook can include irreversible deletion, overwrite, purge, or revocation steps after Emisar policy and approval checks."
+      }
+    },
+    "create_runbook_draft": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates a new private runbook draft and durable operation record, so it changes Emisar portal state.",
+        "open_world_justification": "Writes only a private proposal inside the authenticated Emisar account and neither publishes it nor contacts external systems.",
+        "destructive_justification": "Adds a reviewable draft without overwriting a published runbook or executing infrastructure actions."
+      }
+    },
+    "update_runbook_draft": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Writes a new immutable revision of an existing private runbook draft, so it changes Emisar portal state.",
+        "open_world_justification": "Revises a proposal inside the authenticated Emisar account and neither publishes it nor contacts external systems.",
+        "destructive_justification": "Each revision is a new version within the same runbook family; it overwrites no published runbook and executes no infrastructure action."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "List connected infrastructure and deployed capabilities.",
+      "user_prompt": "Using Emisar, list every visible runner with its connection state and the pack IDs included in the runner response. Do not expand pack details or execute actions.",
+      "file_attachment_urls": null,
+      "tools_triggered": "list_runners",
+      "expected_output": "Reports one connected runner named bmorin-dev with pack IDs debian, debugging, docker, firewall, linux-core, network-tls, nic, and systemd-deep. No action or run is created.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Inspect an exact diagnostic action before execution.",
+      "user_prompt": "Using Emisar, find and inspect linux.disk_usage on bmorin-dev. Report its risk, side effects, path argument default and restrictions, and compatible runners. Do not execute it.",
+      "file_attachment_urls": null,
+      "tools_triggered": "find_actions, get_action",
+      "expected_output": "Reports low risk, read-only df metadata access, an optional paths string array defaulting to [\"/\"], maximum 8, the returned allowed prefixes, and bmorin-dev as compatible. No run is created.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Check root filesystem capacity with a read-only action.",
+      "user_prompt": "Using Emisar, run linux.disk_usage with default arguments on bmorin-dev and set wait to 60s. Report root filesystem usage and whether it exceeds 85%. Reason: OpenAI review disk health check.",
+      "file_attachment_urls": null,
+      "tools_triggered": "find_actions, get_action, run_action",
+      "expected_output": "After any ChatGPT confirmation, linux.disk_usage succeeds on bmorin-dev, reports df output for /, states whether usage exceeds 85%, and performs no cleanup or filesystem modification.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Review account-visible filesystem check history.",
+      "user_prompt": "Using Emisar, call recent_runs with action_id linux.disk_usage, scope account, and limit 5. Summarize each returned run's status, runner, and timestamp. Do not execute anything.",
+      "file_attachment_urls": null,
+      "tools_triggered": "recent_runs",
+      "expected_output": "Returns up to five account-visible linux.disk_usage runs with status, runner, and timestamp for each returned row. It creates no operation or run.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Check current host load, memory, and uptime.",
+      "user_prompt": "Using Emisar, run debugging.loadavg with no arguments on bmorin-dev and set wait to 60s. Summarize the returned load averages, memory fields, and uptime. Reason: OpenAI review host health check.",
+      "file_attachment_urls": null,
+      "tools_triggered": "find_actions, get_action, run_action",
+      "expected_output": "After any ChatGPT confirmation, debugging.loadavg succeeds on bmorin-dev and returns nonempty load averages, memory fields, and uptime without modifying the host.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not invoke Emisar to explain a standard Linux command.",
+      "user_prompt": "Explain what the columns in df -hT mean. Do not inspect any live system or use external tools.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Emisar is not invoked because ChatGPT can explain the command without accessing live infrastructure.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not invoke Emisar to summarize user-provided text.",
+      "user_prompt": "Summarize this pasted log using only its text: ERROR database connection timeout after 5s. Do not inspect any live system or use external tools.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Emisar is not invoked because the request is limited to text already provided by the user.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not invoke Emisar to write unapplied infrastructure code.",
+      "user_prompt": "Write a minimal example Terraform module that creates an AWS S3 bucket. Do not apply it, inspect infrastructure, or use external tools.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Emisar is not invoked because the request only asks ChatGPT to draft code and explicitly excludes infrastructure access.",
+      "expected_output_url": null
+    }
+  ]
+}
