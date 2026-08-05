@@ -1,0 +1,93 @@
+name: Pack SUT mirrors
+
+# Copy only committed compatibility digests. Pull requests never receive a
+# package credential; main and the scheduled repair run are the only writers.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/pack-sut-mirrors.yml
+      - dev/test-packs/mirrors.yaml
+      - packs/cassandra/test/cases.yaml
+      - packs/elasticsearch/test/cases.yaml
+      - packs/kubernetes/test/cases.yaml
+  schedule:
+    - cron: "41 4 * * 6"
+  workflow_dispatch:
+
+concurrency:
+  group: pack-sut-mirrors
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Publish immutable mirrors
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GOTOOLCHAIN: local
+      REGISTRY: ghcr.io/andrewdryga/emisar-packtest-suts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy exact source manifests
+        run: |
+          set -euo pipefail
+          rows="${RUNNER_TEMP}/pack-sut-mirrors.json"
+          ./run pack mirrors --registry "$REGISTRY" > "$rows"
+          while IFS=$'\t' read -r source target digest; do
+            existing=$(docker buildx imagetools inspect "$target" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+            if [ -n "$existing" ] && [ "$existing" != "${digest#@}" ]; then
+              echo "::error::${target} already points at ${existing}; refusing to move an immutable tag to ${digest#@}"
+              exit 1
+            fi
+            if [ -z "$existing" ]; then
+              # With one source and --prefer-index=false, Buildx carbon-copies
+              # the manifest list instead of synthesizing a new index.
+              docker buildx imagetools create --prefer-index=false --tag "$target" "$source"
+            fi
+            actual=$(docker buildx imagetools inspect "$target" --format '{{.Manifest.Digest}}')
+            if [ "$actual" != "${digest#@}" ]; then
+              echo "::error::${target} resolved to ${actual}, expected ${digest#@}"
+              exit 1
+            fi
+          done < <(jq -r '.[] | [.source_ref, .target_tag, .digest] | @tsv' "$rows")
+
+      - name: Verify anonymous exact-digest access
+        run: |
+          set -euo pipefail
+          rows="${RUNNER_TEMP}/pack-sut-mirrors.json"
+          docker logout ghcr.io
+          while IFS=$'\t' read -r ref digest; do
+            actual=$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')
+            if [ "$actual" != "${digest#@}" ]; then
+              echo "::error::public mirror ${ref} resolved to ${actual}, expected ${digest#@}"
+              exit 1
+            fi
+          done < <(jq -r '.[] | [.mirror_ref, .digest] | @tsv' "$rows")

@@ -554,6 +554,11 @@ func TestValidatePackTestVersionInput(t *testing.T) {
 				"        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}\n",
 		},
 		{
+			name: "mirrorable image build arg",
+			compose: "services:\n  fixture:\n    build:\n      context: .\n" +
+				"      args:\n        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-caddy:${PACKTEST_VERSION:-2.11.4}${PACKTEST_DIGEST-}}\n",
+		},
+		{
 			name:    "hardcoded",
 			compose: "services:\n  fixture:\n    image: caddy:2.11.4\n",
 			wantErr: "must default PACKTEST_VERSION",

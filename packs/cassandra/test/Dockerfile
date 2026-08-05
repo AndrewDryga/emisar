@@ -1,6 +1,5 @@
-ARG PACKTEST_VERSION=5.0.8
-ARG PACKTEST_DIGEST
-FROM cassandra:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
+ARG PACKTEST_IMAGE
+FROM ${PACKTEST_IMAGE} AS client
 
 RUN mkdir -p /tmp/packtest/.cassandra \
     && printf '[authentication]\ncredentials = /tmp/packtest/.cassandra/credentials\n' \
@@ -10,7 +9,7 @@ RUN mkdir -p /tmp/packtest/.cassandra \
     && chmod 600 /tmp/packtest/.cassandra/credentials \
     && chown -R 65532:65532 /tmp/packtest
 
-FROM cassandra:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS sut
+FROM ${PACKTEST_IMAGE} AS sut
 
 RUN sed -i \
         -e 's/^authenticator:.*/authenticator: PasswordAuthenticator/' \

@@ -69,6 +69,7 @@ const (
 
   check <name>               validate one pack without changing artifacts
   hashes [--write]           verify or refresh cross-language pack hash goldens
+  mirrors --registry <repo>  print exact source-to-CI-mirror rows as JSON
   sync <name> --fix          rebuild the catalog from the live registry history
   tools-image [<name>]       print the shared behavior client image tag, or
                              nothing when the named pack ships its own client
@@ -369,6 +370,13 @@ func (a *App) validatePacks(ctx context.Context) error {
 	}
 	if err := packtest.Validate(plans); err != nil {
 		return fmt.Errorf("pack behavior authoring: %w", err)
+	}
+	if _, err := packtest.Mirrors(
+		filepath.Join(a.Root, "packs"),
+		filepath.Join(a.Root, "dev", "test-packs", "mirrors.yaml"),
+		"ghcr.io/emisar-dev/emisar-packtest-suts",
+	); err != nil {
+		return fmt.Errorf("pack behavior mirrors: %w", err)
 	}
 	if err := packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out); err != nil {
 		return err

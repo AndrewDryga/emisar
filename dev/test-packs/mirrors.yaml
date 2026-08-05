@@ -1,0 +1,10 @@
+# CI-only copies of the five slowest immutable SUT refs in the behavior matrix.
+# cases.yaml remains the source of truth for versions and digests; this file
+# only selects image repositories whose repeated cold pulls dominate the sweep.
+mirrors:
+  - pack: kubernetes
+    source: rancher/k3s
+  - pack: cassandra
+    source: cassandra
+  - pack: elasticsearch
+    source: docker.elastic.co/elasticsearch/elasticsearch

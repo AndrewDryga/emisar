@@ -47,11 +47,14 @@ fixture without affecting any later case.
 Cleanup commands are optional hygiene within a case. The outer devtool always
 destroys the case project and its volumes, including after failure.
 
-The first service in `cases.yaml` is the primary SUT. Its Compose image or
-pack-local Dockerfile must consume `PACKTEST_VERSION` and `PACKTEST_DIGEST`.
-Each supported version row has an exact digest, and exactly one row is the
-default matching Compose. Relevant pull requests run every declared row for the
-changed pack; the weekly workflow runs the full compatibility matrix.
+The first service in `cases.yaml` is the primary SUT. Its Compose image must
+consume `PACKTEST_VERSION` and `PACKTEST_DIGEST`, either directly or inside the
+default for `PACKTEST_IMAGE` when that exact ref can be mirrored. A pack-local
+Dockerfile receives the resolved `PACKTEST_IMAGE`; it never reconstructs or
+weakens the ref. Each supported version row has an exact digest, and exactly one
+row is the default matching Compose. Relevant pull requests run every declared
+row for the changed pack; the weekly workflow runs the full compatibility
+matrix.
 
 Version rows are support promises, not a release archive. Declare the newest
 supported release and the oldest supported family for high-use databases and
@@ -227,3 +230,20 @@ one CPU, 1536 MiB of memory, and 512 PIDs. CI uses it to make startup races and
 expensive readiness probes visible on every behavior row. It does not emulate
 Linux ownership or AppArmor on Docker Desktop, so a local pass remains feedback,
 not the verdict for those boundaries.
+
+## CI SUT mirrors
+
+The matrix copies its five slowest immutable SUT refs to the public, dev-only
+`ghcr.io/andrewdryga/emisar-packtest-suts` package. `mirrors.yaml` selects the
+repositories; each pack's `cases.yaml` still owns the version and digest. Print
+the exact source, target tag, and digest-locked mirror refs with:
+
+```sh
+./run pack mirrors --registry ghcr.io/andrewdryga/emisar-packtest-suts
+```
+
+Only the main/scheduled mirror workflow can write the package. Behavior jobs
+use a mirror only when its pack, version, and digest all match the generated
+map. They verify all five mirrors anonymously before widening from eight to
+twelve rows; bootstrap or a registry outage falls back to the source refs and
+the last known-safe width of eight.

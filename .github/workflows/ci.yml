@@ -614,6 +614,9 @@ jobs:
     if: needs.changes.outputs.pack_behavior != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      mirror_registry: ${{ steps.mirrors.outputs.registry }}
+      max_parallel: ${{ steps.mirrors.outputs.max_parallel }}
     env:
       GOTOOLCHAIN: local
     steps:
@@ -654,6 +657,32 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
+      - id: mirrors
+        name: Resolve public SUT mirrors
+        env:
+          REGISTRY: ghcr.io/andrewdryga/emisar-packtest-suts
+        run: |
+          set -euo pipefail
+          rows="${RUNNER_TEMP}/pack-sut-mirrors.json"
+          ./run pack mirrors --registry "$REGISTRY" > "$rows"
+          ready=true
+          while IFS=$'\t' read -r ref digest; do
+            actual=$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+            if [ "$actual" != "${digest#@}" ]; then
+              echo "::warning::SUT mirror unavailable or changed: ${ref} (got ${actual:-unavailable})"
+              ready=false
+            fi
+          done < <(jq -r '.[] | [.mirror_ref, .digest] | @tsv' "$rows")
+          if $ready; then
+            echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+            echo "max_parallel=12" >> "$GITHUB_OUTPUT"
+            echo "All five immutable SUT mirrors are public; behavior width is 12."
+          else
+            echo "registry=" >> "$GITHUB_OUTPUT"
+            echo "max_parallel=8" >> "$GITHUB_OUTPUT"
+            echo "Mirror bootstrap/fallback is active; source pulls stay capped at 8."
+          fi
+
       # One writer for the whole matrix. Every behavior row restores this entry
       # instead of pulling eight servers to extract one binary from each, and
       # letting the rows write it back would mean dozens of concurrent uploads
@@ -675,11 +704,10 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      # Rows are mostly idle Docker waits, so the cap is about Docker Hub, not
-      # CPU: a row pulls the shared client image from cache plus its own SUT.
-      # Twelve was too wide — anonymous pulls came back "unauthorized" and timed
-      # out. Eight held. Raise this in steps and read several runs, not one.
-      max-parallel: 8
+      # Twelve is safe once the repeated heavyweight pulls resolve through the
+      # public GHCR mirror. Bootstrap or a mirror outage falls back to the
+      # source registry at the last known-safe width of eight.
+      max-parallel: ${{ fromJSON(needs.pack-tools.outputs.max_parallel) }}
       matrix:
         include: ${{ fromJSON(needs.changes.outputs.pack_behavior) }}
     env:
@@ -687,6 +715,7 @@ jobs:
       PACK: ${{ matrix.pack }}
       PACKTEST_VERSION: ${{ matrix.version }}
       PACKTEST_DIGEST: ${{ matrix.digest }}
+      PACKTEST_MIRROR_REGISTRY: ${{ needs.pack-tools.outputs.mirror_registry }}
       SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
     steps:
       - name: Check out repository

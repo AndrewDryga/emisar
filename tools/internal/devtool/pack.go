@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -149,8 +150,26 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 	versionEnvs := make(map[string]map[string]string, len(plans))
 	images := make(map[string]string, len(plans))
 	overrides := make(map[string]string, len(plans))
+	var mirrors []packtest.MirrorRow
+	mirrorRegistry := strings.TrimSpace(os.Getenv("PACKTEST_MIRROR_REGISTRY"))
+	if mirrorRegistry != "" {
+		mirrors, err = packtest.Mirrors(
+			filepath.Join(a.Root, "packs"),
+			filepath.Join(a.Root, "dev", "test-packs", "mirrors.yaml"),
+			mirrorRegistry,
+		)
+		if err != nil {
+			return err
+		}
+	}
 	for _, plan := range plans {
 		versionEnv := resolvedPackTestVersionEnv(plan, requestedVersionEnv)
+		if mirror, ok := packtest.ResolveMirror(
+			mirrors, plan.Name, versionEnv["PACKTEST_VERSION"], versionEnv["PACKTEST_DIGEST"],
+		); ok {
+			versionEnv["PACKTEST_IMAGE"] = mirror.MirrorRef
+			fmt.Fprintf(a.Out, "SUT mirror: %s -> %s\n", mirror.SourceRef, mirror.MirrorRef)
+		}
 		versionEnvs[plan.Name] = versionEnv
 		if hostile {
 			override, err := writePackTestHostileOverride(reports, plan)
@@ -740,7 +759,10 @@ func validatePackTestVersionInput(path, primaryService, defaultVersion string) e
 	}
 	versionInput := service.Image
 	digestInput := service.Image
-	if service.Build.Args["PACKTEST_VERSION"] != "" {
+	if service.Build.Args["PACKTEST_IMAGE"] != "" {
+		versionInput = service.Build.Args["PACKTEST_IMAGE"]
+		digestInput = service.Build.Args["PACKTEST_IMAGE"]
+	} else if service.Build.Args["PACKTEST_VERSION"] != "" {
 		versionInput = service.Build.Args["PACKTEST_VERSION"]
 		digestInput = service.Build.Args["PACKTEST_DIGEST"]
 	}
@@ -854,6 +876,22 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		return usage("%s", packUsage)
 	}
 	action := args[0]
+	if action == "mirrors" {
+		if len(args) != 3 || args[1] != "--registry" || args[2] == "" {
+			return usage("usage: ./run pack mirrors --registry <image-repository>")
+		}
+		rows, err := packtest.Mirrors(
+			filepath.Join(a.Root, "packs"),
+			filepath.Join(a.Root, "dev", "test-packs", "mirrors.yaml"),
+			args[2],
+		)
+		if err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(a.Out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(rows)
+	}
 	if action == "tools-image" {
 		if len(args) > 2 {
 			return usage("usage: ./run pack tools-image [<pack-name>]")
