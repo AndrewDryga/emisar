@@ -266,6 +266,8 @@ defmodule EmisarWeb.AuditSummaryTest do
         {"user.invited", %{"role" => "operator"}, [{"role", "operator"}]},
         {"user.sign_in_failed", %{"reason" => "bad_password"}, [{"reason", "bad_password"}]},
         {"user.mfa_failed", %{"reason" => "invalid_otp"}, [{"reason", "invalid_otp"}]},
+        {"user.mfa_rate_limited", %{"attempt_limit" => 5, "window_seconds" => 300},
+         [{"limit", "5"}, {"window", "5 minutes"}]},
         {"user.mfa_recovery_code_used", %{"remaining" => 7}, [{"codes left", "7"}]},
         {"user.session_revoked", %{"anything" => "x"}, []},
         {"user.profile_updated", %{"full_name" => "Ada"}, [{"full name", "Ada"}]},

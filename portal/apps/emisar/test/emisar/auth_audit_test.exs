@@ -10,6 +10,7 @@ defmodule Emisar.AuthAuditTest do
   """
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Auth, Crypto, RequestContext, Users}
+  alias Emisar.Auth.SecurityAttemptWindow
   alias Emisar.Fixtures
 
   defp events_of(account, event_type) do
@@ -118,6 +119,7 @@ defmodule Emisar.AuthAuditTest do
       subject: subject
     } do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      subject = %{subject | context: %RequestContext{request_id: "req-mfa-rate-limit"}}
 
       {:ok, enabled, codes} =
         Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), subject)
@@ -127,14 +129,38 @@ defmodule Emisar.AuthAuditTest do
       end
 
       assert length(events_of(account, "user.mfa_failed")) == 5
+      assert events_of(account, "user.mfa_rate_limited") == []
 
       # The window is spent, so disable_mfa refuses a genuine recovery code
       # before verification — it can neither record a miss the operator didn't
-      # make nor spend the code.
+      # make nor spend the code. Its first rejection emits one durable signal.
       assert {:error, :rate_limited} = Auth.disable_mfa(hd(codes), subject)
 
       assert length(events_of(account, "user.mfa_failed")) == 5
       assert events_of(account, "user.mfa_recovery_code_used") == []
+
+      assert [event] = events_of(account, "user.mfa_rate_limited")
+      assert event.actor_id == enabled.id
+      assert event.target_id == enabled.id
+      assert event.request_id == "req-mfa-rate-limit"
+      assert event.payload["scope"] == "mfa_challenge"
+      assert event.payload["attempt_limit"] == 5
+      assert event.payload["window_seconds"] == 300
+
+      window =
+        Repo.get_by!(SecurityAttemptWindow,
+          user_id: enabled.id,
+          scope: :mfa_challenge
+        )
+
+      assert window.attempt_count == 6
+
+      # Sustained traffic after exhaustion is a pure rejection: no limiter
+      # update and no extra audit row.
+      assert {:error, :rate_limited} = Auth.disable_mfa(hd(codes), subject)
+      assert Repo.reload!(window).updated_at == window.updated_at
+      assert [same_event] = events_of(account, "user.mfa_rate_limited")
+      assert same_event.id == event.id
     end
 
     test "regenerate_mfa_recovery_codes audits", %{

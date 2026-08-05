@@ -1538,6 +1538,35 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "check_security_attempt/5" do
+    test "carries request provenance onto the first over-limit audit signal" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      context = %RequestContext{request_id: "req-direct-security-attempt"}
+
+      assert :ok =
+               Auth.check_security_attempt(
+                 subject.actor,
+                 :mfa_challenge,
+                 1,
+                 300_000,
+                 context
+               )
+
+      assert {:error, :rate_limited, :exhausted} =
+               Auth.check_security_attempt(
+                 subject.actor,
+                 :mfa_challenge,
+                 1,
+                 300_000,
+                 context
+               )
+
+      assert [event] = events_of_type("user.mfa_rate_limited")
+      assert event.request_id == "req-direct-security-attempt"
+    end
+  end
+
   describe "verify_mfa_challenge/3" do
     setup do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()

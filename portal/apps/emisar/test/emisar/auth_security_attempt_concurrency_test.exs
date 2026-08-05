@@ -2,7 +2,8 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
   use ExUnit.Case, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Auth, Fixtures, Repo}
+  alias Emisar.{Accounts, Audit, Auth, Fixtures, Repo}
+  alias Emisar.Accounts.Account
   alias Emisar.Auth.SecurityAttemptWindow
   alias Emisar.Users.User
 
@@ -193,6 +194,74 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
     end)
   end
 
+  test "concurrent over-limit MFA attempts emit one bounded audit signal" do
+    unboxed_owner(fn user, account ->
+      for _ <- 1..5 do
+        assert :ok = Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+      end
+
+      parent = self()
+
+      locker =
+        unboxed_task(fn ->
+          Repo.transaction(fn ->
+            SecurityAttemptWindow.Query.by_user_and_scope(user.id, :mfa_challenge)
+            |> SecurityAttemptWindow.Query.lock_for_update()
+            |> Repo.one!()
+
+            send(parent, {:locker_ready, backend_pid()})
+
+            receive do
+              :release -> :released
+            end
+          end)
+        end)
+
+      assert_receive {:locker_ready, locker_backend}, 5_000
+
+      contenders =
+        Enum.map(1..2, fn _index ->
+          unboxed_task(fn ->
+            send(parent, {:contender_ready, self(), backend_pid()})
+            Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+          end)
+        end)
+
+      try do
+        contender_backends =
+          Enum.map(1..2, fn _index ->
+            assert_receive {:contender_ready, contender_pid, contender_backend}, 5_000
+            {contender_pid, contender_backend}
+          end)
+
+        contender_backends
+        |> Enum.map(&elem(&1, 1))
+        |> await_any_blocked_by(locker_backend)
+
+        send(locker.pid, :release)
+        assert {:ok, :released} = Task.await(locker, 30_000)
+
+        results = Enum.map(contenders, &Task.await(&1, 30_000))
+
+        assert Enum.sort(results) == [
+                 {:error, :rate_limited, :capped},
+                 {:error, :rate_limited, :exhausted}
+               ]
+
+        events =
+          Audit.Event.Query.all()
+          |> Audit.Event.Query.by_account_id(account.id)
+          |> Audit.Event.Query.by_event_type("user.mfa_rate_limited")
+          |> Repo.all()
+
+        assert [_only] = events
+      after
+        send(locker.pid, :release)
+        stop_tasks([locker | contenders])
+      end
+    end)
+  end
+
   defp unboxed_user(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
@@ -207,6 +276,30 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
       try do
         fun.(user)
       after
+        Repo.delete_all(from(user in User, where: user.id == ^user.id))
+      end
+    end)
+  end
+
+  defp unboxed_owner(fun) do
+    Sandbox.unboxed_run(Repo, fn ->
+      suffix = Ecto.UUID.generate()
+
+      user =
+        Fixtures.Users.create_user(%{email: "auth-signal-concurrency-#{suffix}@example.test"})
+
+      {:ok, account} =
+        Accounts.create_account_with_owner(
+          %{name: "Auth signal concurrency #{suffix}", slug: "auth-signal-concurrency-#{suffix}"},
+          user
+        )
+
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      try do
+        fun.(user, account)
+      after
+        Repo.delete_all(from(account in Account, where: account.id == ^account.id))
         Repo.delete_all(from(user in User, where: user.id == ^user.id))
       end
     end)

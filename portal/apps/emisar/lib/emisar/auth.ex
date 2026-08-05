@@ -1285,27 +1285,30 @@ defmodule Emisar.Auth do
   The test-only rate-limit switch still bypasses it so unrelated async tests do
   not share credential budgets.
   """
-  def check_security_attempt(%Users.User{id: user_id}, scope, limit, window_ms)
+  def check_security_attempt(user, scope, limit, window_ms, context \\ %RequestContext{})
+
+  def check_security_attempt(%Users.User{id: user_id} = user, scope, limit, window_ms, context)
       when scope in [:mfa_challenge, :inbox_step_up, :email_change_issue, :mfa_enrollment_issue] and
-             is_integer(limit) and limit > 0 and is_integer(window_ms) and window_ms > 0 do
+             is_integer(limit) and limit > 0 and is_integer(window_ms) and window_ms > 0 and
+             is_struct(context, RequestContext) do
     if Emisar.Config.get_env(:emisar, :rate_limit_enabled, true) do
-      do_check_security_attempt(user_id, scope, limit, window_ms)
+      do_check_security_attempt(user, user_id, scope, limit, window_ms, context)
     else
       :ok
     end
   end
 
-  def check_security_attempt(_, _, _, _),
+  def check_security_attempt(_, _, _, _, _),
     do: {:error, :rate_limited, :store_unavailable}
 
-  defp do_check_security_attempt(user_id, scope, limit, window_ms) do
-    commit_security_attempt(user_id, scope, limit, window_ms)
+  defp do_check_security_attempt(user, user_id, scope, limit, window_ms, context) do
+    commit_security_attempt(user, user_id, scope, limit, window_ms, context)
   rescue
     _error in [DBConnection.ConnectionError, Postgrex.Error] ->
       {:error, :rate_limited, :store_unavailable}
   end
 
-  defp commit_security_attempt(user_id, scope, limit, window_ms) do
+  defp commit_security_attempt(user, user_id, scope, limit, window_ms, context) do
     Multi.new()
     |> Multi.run(:ensure_window, fn repo, _changes ->
       attrs = %{
@@ -1352,6 +1355,7 @@ defmodule Emisar.Auth do
         {:error, reason} -> {:error, reason}
       end
     end)
+    |> maybe_log_security_attempt_exhausted(user, scope, limit, window_ms, context)
     |> Repo.commit_multi()
     |> case do
       {:ok, %{attempt: %{outcome: :allowed}}} -> :ok
@@ -1360,6 +1364,40 @@ defmodule Emisar.Auth do
       {:error, _reason} -> {:error, :rate_limited, :store_unavailable}
     end
   end
+
+  defp maybe_log_security_attempt_exhausted(
+         multi,
+         %Users.User{} = user,
+         :mfa_challenge,
+         limit,
+         window_ms,
+         %RequestContext{} = context
+       ) do
+    Audit.Multi.log_for_user(multi, :rate_limit_audit, user, "user.mfa_rate_limited",
+      user_fn: fn
+        %{attempt: %{outcome: :exhausted}} -> user
+        _changes -> nil
+      end,
+      payload_fn: fn _changes ->
+        %{
+          scope: "mfa_challenge",
+          attempt_limit: limit,
+          window_seconds: div(window_ms, 1_000)
+        }
+      end,
+      extra: [context: context]
+    )
+  end
+
+  defp maybe_log_security_attempt_exhausted(
+         multi,
+         _user,
+         _scope,
+         _limit,
+         _window_ms,
+         _context
+       ),
+       do: multi
 
   @doc """
   Verifies the sign-in second factor — `{:totp, otp}` or `{:recovery_code,
@@ -1439,12 +1477,13 @@ defmodule Emisar.Auth do
   # MFA proofs independent from the emailed-link signatures sharing the key.
   defp mfa_proof_secret, do: Application.fetch_env!(:emisar, :email_link_secret)
 
-  defp throttle_mfa_challenge(%Users.User{id: user_id}) do
+  defp throttle_mfa_challenge(%Users.User{} = user, context) do
     case check_security_attempt(
-           %Users.User{id: user_id},
+           user,
            :mfa_challenge,
            @mfa_challenge_attempt_limit,
-           @mfa_challenge_attempt_window_ms
+           @mfa_challenge_attempt_window_ms,
+           context
          ) do
       :ok -> :ok
       {:error, :rate_limited, _reason} -> {:error, :rate_limited}
@@ -1461,7 +1500,7 @@ defmodule Emisar.Auth do
   # and no surface is an unbounded oracle; a capped request never verifies, so it
   # neither stamps the row nor audits a miss it didn't make.
   defp verify_mfa(%Users.User{} = user, otp, context) when is_binary(otp) do
-    with :ok <- throttle_mfa_challenge(user) do
+    with :ok <- throttle_mfa_challenge(user, context) do
       # The OTP is NOT validated against this (possibly stale) struct's secret —
       # `verify_and_consume_mfa` re-reads the row under a lock and validates +
       # consumes there, so a secret rotated/disabled mid-verify can't slip an old
@@ -1496,7 +1535,7 @@ defmodule Emisar.Auth do
   # and only one wins. Carries the same shared attempt cap as `verify_mfa/3`
   # above, so a capped request keeps its code unspent.
   defp consume_mfa_recovery_code(%Users.User{} = user, raw, context) when is_binary(raw) do
-    with :ok <- throttle_mfa_challenge(user) do
+    with :ok <- throttle_mfa_challenge(user, context) do
       digest = Crypto.hash(String.downcase(String.trim(raw)))
 
       case Users.consume_user_mfa_recovery_code(user.id, digest,

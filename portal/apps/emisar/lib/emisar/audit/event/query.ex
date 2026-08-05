@@ -71,6 +71,7 @@ defmodule Emisar.Audit.Event.Query do
     {"user.mfa_enabled", "MFA enabled"},
     {"user.mfa_disabled", "MFA disabled"},
     {"user.mfa_failed", "MFA failed"},
+    {"user.mfa_rate_limited", "MFA rate limited"},
     {"user.mfa_recovery_code_used", "MFA recovery code used"},
     {"user.mfa_recovery_codes_regenerated", "MFA recovery codes regenerated"},
     {"user.session_revoked", "Session revoked"},
@@ -147,7 +148,7 @@ defmodule Emisar.Audit.Event.Query do
   # positives (connected, enabled, accepted, confirmed) stay :neutral on
   # purpose: green marks verdicts, not activity, or it becomes wallpaper.
   @danger_suffixes ~w[_failed .failed .error .timed_out _halted]
-  @warn_suffixes ~w[.denied .refused .revoked _revoked .rejected _rejected .disabled .deleted _deleted .removed .suspended .expired .cancelled]
+  @warn_suffixes ~w[.denied .refused .revoked _revoked .rejected _rejected _rate_limited .disabled .deleted _deleted .removed .suspended .expired .cancelled]
   @pass_suffixes ~w[.success .succeeded .approved _approved .grant_used .consent_granted]
 
   def outcome(event_type) when is_binary(event_type) do
@@ -239,6 +240,7 @@ defmodule Emisar.Audit.Event.Query do
        {"user.mfa_enabled", "MFA enabled"},
        {"user.mfa_disabled", "MFA disabled"},
        {"user.mfa_failed", "MFA failed"},
+       {"user.mfa_rate_limited", "MFA rate limited"},
        {"user.mfa_recovery_code_used", "MFA recovery code used"},
        {"user.mfa_recovery_codes_regenerated", "MFA recovery codes regenerated"},
        {"user.session_revoked", "Session revoked"},
@@ -840,6 +842,9 @@ defmodule Emisar.Audit.Event.Query do
     "user.mfa_disabled" =>
       {true, true, false, "A user (or admin) removed a second-factor enrollment."},
     "user.mfa_failed" => {true, false, false, "A second-factor challenge failed during sign-in."},
+    "user.mfa_rate_limited" =>
+      {true, false, false,
+       "A user reached the MFA attempt limit and another challenge was refused."},
     "user.mfa_recovery_code_used" =>
       {true, false, false, "A one-time recovery code was spent to pass the second factor."},
     "user.mfa_recovery_codes_regenerated" =>

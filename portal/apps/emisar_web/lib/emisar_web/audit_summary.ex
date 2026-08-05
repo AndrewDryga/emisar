@@ -86,6 +86,9 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("user.mfa_failed", p),
     do: pairs(reason: get(p, :reason))
 
+  defp summarize("user.mfa_rate_limited", p),
+    do: pairs(limit: get(p, :attempt_limit), window: format_window(get(p, :window_seconds)))
+
   defp summarize("user.mfa_recovery_code_used", p) do
     case get(p, :remaining) do
       n when is_integer(n) -> [{"codes left", to_string(n)}]
@@ -382,6 +385,17 @@ defmodule EmisarWeb.AuditSummary do
   end
 
   defp format_duration(_), do: nil
+
+  defp format_window(seconds) when is_integer(seconds) and seconds > 0 do
+    if rem(seconds, 60) == 0 do
+      minutes = div(seconds, 60)
+      "#{minutes} #{if minutes == 1, do: "minute", else: "minutes"}"
+    else
+      "#{seconds} #{if seconds == 1, do: "second", else: "seconds"}"
+    end
+  end
+
+  defp format_window(_), do: nil
 
   # Payload values come from `jsonb` — keys are always strings on read.
   # But the test fixtures (and Audit.Multi) stamp atom keys before
