@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andrewdryga/emisar/runner/internal/audit"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
@@ -338,5 +339,36 @@ func TestValidateCloudTransportSecurityRejectsQuery(t *testing.T) {
 	cfg := &Config{Cloud: Cloud{URL: "https://cloud.emisar.dev?token=secret"}}
 	if err := cfg.validateCloudTransportSecurity(); err == nil || strings.Contains(err.Error(), "secret") {
 		t.Fatalf("query-bearing cloud URL error = %v, want sanitized rejection", err)
+	}
+}
+
+func TestValidate_MaxPreviewBytesCeiling(t *testing.T) {
+	base := validConfig
+
+	// A megabyte preview writes journal lines past audit.MaxLineBytes, and both
+	// the tail reader and the hash-chain verifier scan with that ceiling — so
+	// the line is not slow to parse, it is unreadable, and chain verification
+	// breaks for everything after it. Refused at load rather than clamped.
+	cfg := base()
+	cfg.Events.MaxPreviewBytes = 1 << 20
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("max_preview_bytes above the ceiling must be rejected")
+	}
+
+	cfg = base()
+	cfg.Events.MaxPreviewBytes = MaxPreviewBytesLimit
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("max_preview_bytes at the ceiling should validate, got %v", err)
+	}
+}
+
+// The ceiling is only meaningful if a worst-case line still fits what the
+// reader can scan: two previews at the limit, every byte escaping to six
+// characters, plus room for the envelope.
+func TestMaxPreviewBytesLimitFitsAReadableLine(t *testing.T) {
+	worstCase := 2 * MaxPreviewBytesLimit * 6
+	if worstCase >= audit.MaxLineBytes {
+		t.Fatalf("worst-case previews (%d bytes) do not fit audit.MaxLineBytes (%d)",
+			worstCase, audit.MaxLineBytes)
 	}
 }

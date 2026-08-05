@@ -309,16 +309,23 @@ func validNonce(nonce string) bool {
 }
 
 // scopeSatisfied reports whether this runner's local identity satisfies the
-// cert's scope. Group: "" = any group; else an exact match. Labels: every k,v in
-// the scope must equal this runner's label for k (a subset constraint). Matched
-// ONLY against the runner's own group/labels — never any value the control plane
-// supplies — so the offline CA, not the portal, decides where a cert is valid.
+// cert's scope. Group: "" = any group; else an exact match. Labels: the runner
+// must CARRY each scope key and its value must match (a subset constraint).
+// Matched ONLY against the runner's own group/labels — never any value the
+// control plane supplies — so the offline CA, not the portal, decides where a
+// cert is valid.
+//
+// The presence check is load-bearing: a bare map read returns "" for a key the
+// runner does not have, so a scope of {"region": ""} was satisfied by every
+// runner in the fleet — a constraint that read as a restriction and was not
+// one. Absent label, no match.
 func scopeSatisfied(s attest.Scope, group string, labels map[string]string) bool {
 	if s.Group != "" && s.Group != group {
 		return false
 	}
 	for k, v := range s.Labels {
-		if labels[k] != v {
+		got, ok := labels[k]
+		if !ok || got != v {
 			return false
 		}
 	}

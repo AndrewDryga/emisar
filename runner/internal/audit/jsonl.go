@@ -122,7 +122,7 @@ func (s *JSONLSink) seedLastHashLocked() error {
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 1<<20)
+	scanner.Buffer(make([]byte, 64*1024), MaxLineBytes)
 	var lastLine []byte
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -342,10 +342,18 @@ func VerifyChain(path string) error {
 	return VerifyReader(f)
 }
 
+// MaxLineBytes is the largest journal line this package can read back. Both the
+// tail reader and the hash-chain verifier scan with this ceiling, so a line
+// written above it is not merely slow to parse — it is unreadable, and an
+// unreadable line breaks chain verification for everything after it. Anything
+// that sizes a field written into a line must fit its worst case under this
+// (see config.MaxPreviewBytesLimit).
+const MaxLineBytes = 1 << 20
+
 // VerifyReader is the io.Reader form of VerifyChain. Skips empty lines.
 func VerifyReader(r io.Reader) error {
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), 1<<20)
+	scanner.Buffer(make([]byte, 64*1024), MaxLineBytes)
 
 	var expected string
 	lineNo := 0

@@ -421,6 +421,10 @@ func TestCheckCertRefusals(t *testing.T) {
 		{"scope group mismatch", signedAtt(mkCert(caPriv, testCAID, attest.Scope{Group: "other-grp"}, wf, wu)), "cert_scope"},
 		{"scope label mismatch", signedAtt(mkCert(caPriv, testCAID, attest.Scope{Labels: map[string]string{"env": "prod"}}, wf, wu)), "cert_scope"},
 		{"scope label missing on runner", signedAtt(mkCert(caPriv, testCAID, attest.Scope{Labels: map[string]string{"region": "us"}}, wf, wu)), "cert_scope"},
+		// An empty scope value is a real constraint: the runner must carry the key.
+		// A bare map read returns "" for an absent key, which made this scope match
+		// every runner in the fleet.
+		{"empty scope value still requires the label", signedAtt(mkCert(caPriv, testCAID, attest.Scope{Labels: map[string]string{"region": ""}}, wf, wu)), "cert_scope"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

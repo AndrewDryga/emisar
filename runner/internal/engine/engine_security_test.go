@@ -381,3 +381,32 @@ func TestEngine_UnflaggedCredentialMaskedInExecutedCommand(t *testing.T) {
 		t.Fatalf("args_redacted leaked an unflagged bearer token: %s", header)
 	}
 }
+
+// A pack may legally name a redaction rule "sensitive-arg-1". Compiled in one
+// batch with the synthesized per-argument rules, CompileAll's first-wins
+// dedupe silently dropped the pack's rule — and with it whatever else that rule
+// masked, which then reached the journal and the portal in the clear.
+func TestEngine_PackRuleNamedLikeASynthesizedOneStillApplies(t *testing.T) {
+	act := &actionspec.Action{
+		ID:   "test.collide",
+		Args: []actionspec.Arg{{Name: "token", Sensitive: true}},
+		Output: actionspec.Output{
+			Redact: []actionspec.RedactionRule{{
+				Name:        "sensitive-arg-1",
+				Type:        "literal",
+				Literal:     "unrelated-secret",
+				Replacement: "[REDACTED]",
+			}},
+		},
+	}
+
+	e := &Engine{}
+	redactor := e.combinedRedactor(act, map[string]any{"token": "arg-secret"})
+	got, _ := redactor.Apply("saw arg-secret and unrelated-secret")
+
+	for _, secret := range []string{"arg-secret", "unrelated-secret"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("redactor leaked %q: %s", secret, got)
+		}
+	}
+}

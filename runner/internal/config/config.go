@@ -11,6 +11,19 @@ import (
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
+// MaxPreviewBytesLimit caps events.max_preview_bytes.
+//
+// One event line carries a stdout AND a stderr preview, and JSON escaping can
+// expand a byte up to sixfold (a control byte becomes \u00XX). At 64 KiB each
+// the worst case is ~768 KiB plus the envelope, which stays under
+// audit.MaxLineBytes (1 MiB) — the ceiling both the tail reader and the
+// hash-chain verifier scan with.
+//
+// Refused rather than clamped: an operator who asked for megabyte previews is
+// asking for something that silently makes the journal unverifiable, and this
+// is the audit trail of a security product. Fail at load, say why.
+const MaxPreviewBytesLimit = 64 * 1024
+
 // SchemaVersion is the currently supported config schema version.
 const SchemaVersion = 1
 
@@ -218,6 +231,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Events.MaxPreviewBytes <= 0 {
 		c.Events.MaxPreviewBytes = 4096
+	}
+	if c.Events.MaxPreviewBytes > MaxPreviewBytesLimit {
+		return fmt.Errorf(
+			"config: events.max_preview_bytes must not exceed %d (a larger preview writes journal lines the chain verifier cannot read back)",
+			MaxPreviewBytesLimit,
+		)
 	}
 	if c.Events.MaxSizeBytes < 0 {
 		return fmt.Errorf("config: events.max_size_bytes must not be negative")

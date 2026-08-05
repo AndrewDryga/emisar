@@ -846,24 +846,41 @@ func verifyScriptSHA(si packs.ScriptInfo) error {
 // the action and global rules. Sensitive values may be echoed by a child
 // process, so argv masking alone is not a complete confidentiality boundary.
 func (e *Engine) combinedRedactor(act *actionspec.Action, cleanArgs map[string]any) *redact.Engine {
-	localRules := make([]actionspec.RedactionRule, 0, len(act.Output.Redact)+len(act.Args))
+	sensitive := make([]actionspec.RedactionRule, 0, len(act.Args))
 	for index, value := range sensitiveValues(cleanArgs, act.Args) {
-		localRules = append(localRules, actionspec.RedactionRule{
+		sensitive = append(sensitive, actionspec.RedactionRule{
 			Name:        fmt.Sprintf("sensitive-arg-%d", index+1),
 			Type:        "literal",
 			Literal:     value,
 			Replacement: "[REDACTED]",
 		})
 	}
-	localRules = append(localRules, act.Output.Redact...)
-	if len(localRules) == 0 {
+	if len(sensitive) == 0 && len(act.Output.Redact) == 0 {
 		if e.Redactor == nil {
 			return redact.Empty()
 		}
 		return e.Redactor
 	}
-	rules, err := redact.CompileAll(localRules)
+	// Compiled as two independent sets. CompileAll drops later duplicates by
+	// name — which is how an author overrides a rule deliberately — so merging
+	// these first meant a pack rule named "sensitive-arg-1" was silently
+	// discarded whenever the action also had a sensitive argument, taking
+	// whatever else that rule masked down with it. The two sets have no override
+	// relationship; both must apply.
+	rules, err := redact.CompileAll(sensitive)
+	if err == nil {
+		var authored []redact.Rule
+		authored, err = redact.CompileAll(act.Output.Redact)
+		rules = append(rules, authored...)
+	}
 	if err != nil {
+		// Falling back to the globals silently would quietly widen what reaches
+		// the journal and the portal. Unreachable today (both sets are validated
+		// at pack load), so this is about the next caller, not this one.
+		e.Logger.Warn("redact.compile_failed",
+			"action", act.ID,
+			"error", err,
+			"fallback", "global rules only")
 		if e.Redactor == nil {
 			return redact.Empty()
 		}
