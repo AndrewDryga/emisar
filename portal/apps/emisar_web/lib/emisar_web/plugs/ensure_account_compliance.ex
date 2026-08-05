@@ -4,8 +4,13 @@ defmodule EmisarWeb.Plugs.EnsureAccountCompliance do
   routes — which `live_session` `on_mount` hooks do NOT cover. A `get`/`post`
   controller action lexically nested in a `live_session` block still runs
   WITHOUT those hooks, so a magic-link session in an enforcing account could
-  reach controller surfaces the LiveViews gate: the audit CSV download and the
-  OAuth consent screen (which mints a persistent MCP bearer).
+  reach controller surfaces the LiveViews gate.
+
+  Wired into the audit CSV download ONLY. The OAuth consent screen enforces the
+  same policy inside `Emisar.OAuth.issue_code/3`'s locked transaction instead,
+  because session-account gating would be wrong there (the consent screen has no
+  single current account). Do not read this plug as covering OAuth and delete
+  that check.
 
   Composed after `:require_authenticated_user` (which resolves
   `current_account` + the subject carrying the session's auth provenance into

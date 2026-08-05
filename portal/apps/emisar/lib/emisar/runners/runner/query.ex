@@ -219,6 +219,24 @@ defmodule Emisar.Runners.Runner.Query do
     )
   end
 
+  @doc """
+  Connected, OR deliberately parked with `disable`.
+
+  Pack retention uses this rather than `connected/1`: a disabled runner is
+  offline by definition, so the connected set excluded it and the sweep deleted
+  its trust pins — including trusted ones — which re-enable could not recover.
+  A merely DISCONNECTED runner is not shielded; that ages out normally.
+  """
+  def connected_or_disabled(queryable \\ all()) do
+    where(
+      queryable,
+      [runners: r],
+      not is_nil(r.disabled_at) or
+        (not is_nil(r.last_connected_at) and
+           (is_nil(r.last_disconnected_at) or r.last_connected_at > r.last_disconnected_at))
+    )
+  end
+
   def disconnected(queryable \\ all()) do
     where(
       queryable,

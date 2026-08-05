@@ -870,9 +870,11 @@ defmodule Emisar.SSO do
       LinkRequest.Query.all()
       |> LinkRequest.Query.by_provider_id(provider.id)
 
-    requests = Repo.all(queryable)
-    Repo.delete_all(queryable)
-    Enum.each(requests, &broadcast_link_request_dismissed/1)
+    # RETURNING, not read-then-delete: a request created between the two
+    # statements was deleted WITHOUT a broadcast, leaving exactly the waiting
+    # browser on a never-resolving page that this function exists to prevent.
+    {_count, dismissed} = queryable |> LinkRequest.Query.select_all() |> Repo.delete_all()
+    Enum.each(dismissed, &broadcast_link_request_dismissed/1)
   end
 
   defp end_sessions_signed_in_through(%IdentityProvider{} = provider) do

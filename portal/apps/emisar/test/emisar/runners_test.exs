@@ -1456,6 +1456,36 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "list_pack_referencing_runners_for_account/2" do
+    setup do
+      {account, _user, _subject} = account_with_owner_subject()
+      %{account: account}
+    end
+
+    test "adds the deliberately parked runners the connected set excludes", %{account: account} do
+      connected_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      _pending_runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      _offline_runner = offline_runner(account, 1)
+      _other_account_runner = Fixtures.Runners.create_runner()
+
+      disabled_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.disable_runner(disabled_runner)
+      deleted_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.mark_deleted(deleted_runner)
+
+      # Disabled IS included — pack retention must not delete a parked runner's
+      # trust pins, because re-enabling cannot recover them. Merely disconnected
+      # and deleted are still excluded, so those age out as before.
+      ids =
+        account.id
+        |> Runners.list_pack_referencing_runners_for_account()
+        |> Enum.map(& &1.id)
+        |> Enum.sort()
+
+      assert ids == Enum.sort([connected_runner.id, disabled_runner.id])
+    end
+  end
+
   describe "apply_state/2" do
     setup do
       account = Fixtures.Accounts.create_account()

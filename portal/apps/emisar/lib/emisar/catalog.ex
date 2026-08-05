@@ -1051,7 +1051,7 @@ defmodule Emisar.Catalog do
   # protection matches pin creation.
   defp live_advertised_versions(repo, account_id) do
     for %Runners.Runner{} = runner <-
-          Runners.list_connected_runners_for_account(account_id, repo: repo),
+          Runners.list_pack_referencing_runners_for_account(account_id, repo: repo),
         {pack_id, info} <- runner.packs,
         is_map(info),
         into: MapSet.new() do

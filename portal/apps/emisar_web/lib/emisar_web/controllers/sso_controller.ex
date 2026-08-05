@@ -1,8 +1,9 @@
 defmodule EmisarWeb.SSOController do
   @moduledoc """
   The OIDC relying-party login endpoints. `begin/2` redirects to the IdP
-  (stashing the one-time-use, UA-bound state/nonce/PKCE-verifier in the
-  session); `callback/2` validates the response, resolves/JIT-provisions the
+  (stashing the one-time-use, session-bound state/nonce/PKCE-verifier in the
+  session — there is no user-agent binding; do not add one to this docstring
+  without adding it to `begin/2` and `callback/2`); `callback/2` validates the response, resolves/JIT-provisions the
   identity via `Emisar.SSO`, and logs the user in with `:sso` provenance.
 
   The `redirect_uri` is the fixed registered callback (never attacker-supplied),

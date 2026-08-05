@@ -122,23 +122,25 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def ordered_by_action(queryable),
     do: order_by(queryable, [runner_actions: a], asc: a.action_id)
 
+  # Ordered by (action_id, id), NOT last_seen_at: that column is in the observe
+  # upsert's replace set, so it moves every time a runner re-advertises. A
+  # keyset cursor over a moving column re-serves the boundary row on the next
+  # page when a runner reconnects mid-list — and, for the account-wide grouped
+  # view where it actually tie-breaks, can skip rows too. `id` is stable and
+  # unique, so the order is fully determined either way.
   def ordered_by_action_seen(queryable),
-    do: order_by(queryable, [runner_actions: a], asc: a.action_id, asc: a.last_seen_at)
+    do: order_by(queryable, [runner_actions: a], asc: a.action_id, asc: a.id)
 
   def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
   # -- Pagination ------------------------------------------------------
 
-  # Ordered (action_id, last_seen_at, id) so the account catalog's grouped view
-  # is keyset-stable. `(runner_id, action_id)` is unique, so for the by-runner
-  # list `last_seen_at` never tie-breaks — the order is identical to action_id
-  # alone there. The trailing `id` makes the tuple unique account-wide (an
-  # action_id is advertised by many runners).
+  # Matches ordered_by_action_seen/1. Both columns are immutable for a given
+  # row, which is what makes the cursor stable across a re-advertisement.
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [
       {:runner_actions, :asc, :action_id},
-      {:runner_actions, :asc, :last_seen_at},
       {:runner_actions, :asc, :id}
     ]
 

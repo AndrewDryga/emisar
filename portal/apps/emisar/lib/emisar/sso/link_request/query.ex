@@ -14,6 +14,14 @@ defmodule Emisar.SSO.LinkRequest.Query do
   def by_provider_id(queryable, provider_id),
     do: where(queryable, [requests: r], r.provider_id == ^provider_id)
 
+  @doc """
+  Selects the whole row so `Repo.delete_all/1` can RETURN what it removed —
+  the alternative is a read followed by a delete, which loses any row created
+  between the two.
+  """
+  def select_all(queryable),
+    do: select(queryable, [requests: r], r)
+
   def ordered_by_recent(queryable),
     do: order_by(queryable, [requests: r], desc: r.inserted_at, desc: r.id)
 

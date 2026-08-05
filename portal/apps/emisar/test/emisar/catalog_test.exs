@@ -2340,6 +2340,36 @@ defmodule Emisar.CatalogTest do
       assert audit.payload["count"] == 1
     end
 
+    test "keeps a version a DISABLED runner advertises — disable is reversible", %{
+      account: account,
+      subject: subject,
+      stale: stale
+    } do
+      parked = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Catalog.observe_state(
+          parked,
+          state_payload(packs: %{"live" => %{"version" => "3.0", "hash" => "sha256:LIVE"}})
+        )
+
+      {:ok, versions, _} = Catalog.list_pack_versions(subject)
+      live = Enum.find(versions, &(&1.pack_id == "live"))
+
+      {:ok, _} = Runners.disable_runner(parked, subject)
+
+      forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
+      Fixtures.Catalog.backdate_pack_version_last_seen(live, forty_days_ago)
+
+      # A disabled runner is offline by definition, so the connected set excluded
+      # it and the sweep deleted its trust pins — including trusted ones — which
+      # re-enabling could not recover.
+      assert {:ok, 1} = Catalog.delete_unseen_pack_versions(account.id, 30)
+
+      assert Repo.reload(live)
+      refute Repo.reload(stale)
+    end
+
     test "keeps a version a connected runner still advertises, however stale its last_seen_at",
          %{account: account, subject: subject, stale: stale} do
       live_runner = Fixtures.Runners.create_runner(account_id: account.id)

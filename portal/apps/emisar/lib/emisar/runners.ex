@@ -935,6 +935,31 @@ defmodule Emisar.Runners do
     |> repo.all()
   end
 
+  @doc """
+  Internal — every runner whose advertised packs still matter, for pack
+  retention.
+
+  Deliberately NOT the connected set. Disable is a reversible park (see
+  `shared-runner-lifecycle-states`), and a disconnected runner reconnects — but
+  the retention sweep read `list_connected_runners_for_account/2`, so parking a
+  runner for maintenance eventually hard-deleted its `catalog_pack_versions`
+  rows INCLUDING the trusted ones. Re-enabling then left every pack `:pending`
+  and dispatch failing closed until an admin re-reviewed each hash, with nothing
+  having warned that a reversible action cost that.
+
+  A merely DISCONNECTED runner is not shielded — that case ages out exactly as
+  before — and neither is a deleted one.
+  """
+  def list_pack_referencing_runners_for_account(account_id, opts \\ [])
+      when is_binary(account_id) do
+    repo = Keyword.get(opts, :repo, Repo)
+
+    Runner.Query.not_deleted()
+    |> Runner.Query.connected_or_disabled()
+    |> Runner.Query.by_account_id(account_id)
+    |> repo.all()
+  end
+
   # -- Runner socket-driven connection state ---------------------------
   #
   # These run inside the runner WebSocket process — the auth gate is the
