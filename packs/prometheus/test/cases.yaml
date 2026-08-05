@@ -9,6 +9,22 @@ versions:
 env:
   PROM_URL: "http://prometheus:9090"
 cases:
+  # clean_tombstones needs a tombstone to clean, so the case makes one with
+  # delete_series first and then probes that the TSDB accepted the cleanup —
+  # the admin API answers 204 with an empty body, so `status` is the evidence.
+  - action: prom.clean_tombstones
+    args: {target: "http://prometheus:9090"}
+    arrange:
+      - name: a deletion leaves a tombstone behind
+        argv: [/bin/sh, -c, "curl -sSf -X POST 'http://prometheus:9090/api/v1/admin/tsdb/delete_series?match[]=up'"]
+        retry_for: 30s
+        retry_every: 2s
+    probes:
+      - name: the admin API reports the tombstones gone
+        argv: [/bin/sh, -c, "curl -s -o /dev/null -w %{http_code} -X POST http://prometheus:9090/api/v1/admin/tsdb/clean_tombstones"]
+        expect:
+          stdout_contains: ["204"]
+
   - action: prom.alertmanagers
     expect:
       stdout_contains: ['"status":"success"', '"activeAlertmanagers"']

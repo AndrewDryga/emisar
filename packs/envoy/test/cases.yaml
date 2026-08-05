@@ -12,6 +12,18 @@ defaults:
   expect:
     stdout_not_empty: true
 cases:
+  # healthcheck_fail flips the admin's health flag, which /ready then reports —
+  # so the probe reads the state the action changed, not the action's own reply.
+  - action: envoy.healthcheck_fail
+    args: {admin: "http://envoy:9901"}
+    probes:
+      - name: envoy now reports itself draining
+        argv: [/bin/sh, -c, "curl -s -o /dev/null -w %{http_code} http://envoy:9901/ready"]
+        retry_for: 20s
+        retry_every: 1s
+        expect:
+          stdout_contains: ["503"]
+
   - action: envoy.certs
     expect:
       stdout_contains: [certificates]
