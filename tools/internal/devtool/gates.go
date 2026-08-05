@@ -11,6 +11,7 @@ import (
 
 	"github.com/andrewdryga/emisar/tools/internal/ci"
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
+	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
 
 // Keep this in step with the version any workflow installs directly.
@@ -47,6 +48,7 @@ const (
   packs <name> --case <id>   run one isolated behavior case
   packs <name> --shard <i>/<n>
                              run one declared shard of a slow pack's cases
+  packs [name] --hostile    add one-CPU, 1536-MiB, and PID limits per SUT
   packs --names a,b          run an exact set of pack behavior plans
   install <runner|mcp>       exercise a public installer in an isolated harness
 `
@@ -123,6 +125,11 @@ func (a *App) test(ctx context.Context, args []string) error {
 		}
 		return a.run(ctx, filepath.Join(a.Root, target), nil, "go", arguments...)
 	case "packs":
+		clean, hostile, err := packTestMode(rest)
+		if err != nil {
+			return err
+		}
+		rest = clean
 		if len(rest) == 2 && rest[0] == "--names" {
 			names := strings.Split(rest[1], ",")
 			for _, name := range names {
@@ -130,13 +137,13 @@ func (a *App) test(ctx context.Context, args []string) error {
 					return usage("usage: ./run test packs --names pack-a,pack-b")
 				}
 			}
-			return a.packTest(ctx, "", names, "", "")
+			return a.packTest(ctx, "", names, "", "", hostile)
 		}
 		if len(rest) == 3 && rest[1] == "--case" && rest[0] != "" && rest[2] != "" {
-			return a.packTest(ctx, rest[0], nil, rest[2], "")
+			return a.packTest(ctx, rest[0], nil, rest[2], "", hostile)
 		}
 		if len(rest) == 3 && rest[1] == "--shard" && rest[0] != "" && rest[2] != "" {
-			return a.packTest(ctx, rest[0], nil, "", rest[2])
+			return a.packTest(ctx, rest[0], nil, "", rest[2], hostile)
 		}
 		if len(rest) > 1 {
 			return usage("usage: ./run test packs [name-pattern] | ./run test packs <name> --case <id> | ./run test packs <name> --shard <i>/<n> | ./run test packs --names pack-a,pack-b")
@@ -145,7 +152,7 @@ func (a *App) test(ctx context.Context, args []string) error {
 		if len(rest) == 1 {
 			pattern = rest[0]
 		}
-		return a.packTest(ctx, pattern, nil, "", "")
+		return a.packTest(ctx, pattern, nil, "", "", hostile)
 	case "install":
 		if len(rest) != 1 || rest[0] != "runner" && rest[0] != "mcp" {
 			return usage("usage: ./run test install <runner|mcp>")
@@ -154,6 +161,22 @@ func (a *App) test(ctx context.Context, args []string) error {
 	default:
 		return usage("%s", testUsage)
 	}
+}
+
+func packTestMode(args []string) ([]string, bool, error) {
+	clean := make([]string, 0, len(args))
+	hostile := false
+	for _, argument := range args {
+		if argument != "--hostile" {
+			clean = append(clean, argument)
+			continue
+		}
+		if hostile {
+			return nil, false, usage("--hostile may be passed only once")
+		}
+		hostile = true
+	}
+	return clean, hostile, nil
 }
 
 func parseCoverage(args []string) (string, error) {
@@ -339,6 +362,13 @@ func (a *App) validatePacks(ctx context.Context) error {
 	}
 	if len(failures) > 0 {
 		return fmt.Errorf("pack validation failed: %s", strings.Join(failures, ", "))
+	}
+	plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), "")
+	if err != nil {
+		return err
+	}
+	if err := packtest.Validate(plans); err != nil {
+		return fmt.Errorf("pack behavior authoring: %w", err)
 	}
 	if err := packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out); err != nil {
 		return err

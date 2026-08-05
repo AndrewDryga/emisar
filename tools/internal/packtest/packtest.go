@@ -402,6 +402,14 @@ func Validate(plans []PlanRef) error {
 		if err := validatePlan(ref.Name, plan, actions); err != nil {
 			return fmt.Errorf("%s: %w", ref.Name, err)
 		}
+		composePath := filepath.Join(filepath.Dir(ref.Path), "compose.yaml")
+		compose, err := os.ReadFile(composePath)
+		if err != nil {
+			return fmt.Errorf("%s: read compose.yaml: %w", ref.Name, err)
+		}
+		if err := validateFixturePlan(ref.Name, plan, compose); err != nil {
+			return fmt.Errorf("%s: %w", ref.Name, err)
+		}
 	}
 	return nil
 }
@@ -626,8 +634,114 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 				return fmt.Errorf("%s mutating action %q needs an observable state probe", location, test.Action)
 			}
 		}
+		if expect.Status == "success" && actionNeedsArrangedState(test.Action) && len(test.Arrange) == 0 {
+			return fmt.Errorf("%s cumulative action %q needs arrange state in its isolated case", location, test.Action)
+		}
 	}
 	return validateRiskAccountability(plan.RiskAccountability, actions, successfulActions)
+}
+
+func actionNeedsArrangedState(action string) bool {
+	leaf := action
+	if index := strings.LastIndexByte(leaf, '.'); index >= 0 {
+		leaf = leaf[index+1:]
+	}
+	if leaf == "top" || strings.HasPrefix(leaf, "top_") || strings.Contains(leaf, "_top_") || strings.HasSuffix(leaf, "_top") {
+		return true
+	}
+	switch leaf {
+	case "get_metric_statistics", "runtime_metrics", "statement_stats", "stats_sizes":
+		return true
+	default:
+		return false
+	}
+}
+
+type fixtureCompose struct {
+	Services map[string]fixtureService `yaml:"services"`
+}
+
+type fixtureService struct {
+	Image       string             `yaml:"image"`
+	Volumes     []string           `yaml:"volumes"`
+	Healthcheck fixtureHealthcheck `yaml:"healthcheck"`
+}
+
+type fixtureHealthcheck struct {
+	Test          []string `yaml:"test"`
+	Interval      string   `yaml:"interval"`
+	StartInterval string   `yaml:"start_interval"`
+}
+
+func validateFixturePlan(pack string, plan Plan, data []byte) error {
+	var compose fixtureCompose
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		return fmt.Errorf("parse compose.yaml: %w", err)
+	}
+	if len(plan.Services) == 0 {
+		return nil
+	}
+	primaryName := plan.Services[0]
+	primary, exists := compose.Services[primaryName]
+	if !exists {
+		return fmt.Errorf("primary SUT service %q is missing from compose.yaml", primaryName)
+	}
+	command := strings.ToLower(strings.Join(primary.Healthcheck.Test, " "))
+	if seedsThroughEntrypoint(primary.Volumes) && usesLoopback(command) && !strings.Contains(command, "hostname -i") {
+		return fmt.Errorf("primary SUT healthcheck dials loopback while docker-entrypoint-initdb.d can expose its temporary seed daemon; dial hostname -i")
+	}
+	if pack == "zookeeper" && usesLoopback(command) {
+		return fmt.Errorf("zookeeper healthcheck must dial hostname -i, the same bridge address its cases use")
+	}
+	if primary.Healthcheck.StartInterval != "" && heavyweightHealthcheck(command) {
+		interval, err := time.ParseDuration(primary.Healthcheck.StartInterval)
+		if err != nil {
+			return fmt.Errorf("primary SUT healthcheck has invalid start_interval %q", primary.Healthcheck.StartInterval)
+		}
+		if strings.Contains(command, "rabbitmq") || strings.Contains(command, "erl ") {
+			return fmt.Errorf("RabbitMQ/Erlang healthcheck must not use start_interval before the entrypoint owns its cookie")
+		}
+		if interval < 5*time.Second {
+			return fmt.Errorf("heavyweight primary SUT healthcheck start_interval %s is below 5s", primary.Healthcheck.StartInterval)
+		}
+	}
+	for index, test := range plan.Cases {
+		if !strings.Contains(strings.ToLower(test.Action), "getendpoints") {
+			continue
+		}
+		for _, value := range test.Expect.StdoutContains {
+			for _, address := range ipv4Pattern.FindAllString(value, -1) {
+				if !bytes.Contains(data, []byte(address)) {
+					return fmt.Errorf("cases[%d] action %q expects environment-assigned address %s without pinning it in compose.yaml", index, test.Action, address)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func seedsThroughEntrypoint(volumes []string) bool {
+	for _, volume := range volumes {
+		if strings.Contains(volume, "/docker-entrypoint-initdb.d/") {
+			return true
+		}
+	}
+	return false
+}
+
+func usesLoopback(command string) bool {
+	return strings.Contains(command, "127.0.0.1") || strings.Contains(command, "localhost")
+}
+
+func heavyweightHealthcheck(command string) bool {
+	for _, marker := range []string{
+		"cqlsh", "kafka-", "kubectl", "mongo", "mysql ", "nodetool", "rabbitmq", " zookeeper", "java ", "erl ",
+	} {
+		if strings.Contains(command, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -635,6 +749,7 @@ var (
 	digestPattern  = regexp.MustCompile(`^@sha256:[a-f0-9]{64}$`)
 	caseIDPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
 	canaryPattern  = regexp.MustCompile(`packtest-canary-[A-Za-z0-9._-]+`)
+	ipv4Pattern    = regexp.MustCompile(`(?:[0-9]{1,3}\.){3}[0-9]{1,3}`)
 )
 
 var riskExceptionReasons = map[string]bool{

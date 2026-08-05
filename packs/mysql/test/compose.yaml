@@ -7,7 +7,9 @@ services:
     volumes:
       - ${EMISAR_ROOT}/packs/mysql/test/fixtures/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -uroot -ppacktest-canary-mysql-root-b813 -Nse 'SELECT COUNT(*) FROM testdb.orders' >/dev/null"]
+      # The entrypoint seeds through a temporary loopback daemon. Dial the
+      # routable address so health means a case on the bridge can connect.
+      test: ["CMD-SHELL", "mysql -h \"$$(hostname -i)\" -uroot -ppacktest-canary-mysql-root-b813 -Nse 'SELECT COUNT(*) FROM testdb.orders' >/dev/null"]
       interval: 2s
       start_period: 30s
       # Poll cost scales with probe cost: this check spawns a heavyweight

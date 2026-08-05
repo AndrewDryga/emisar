@@ -141,7 +141,9 @@ jobs:
         run: docker buildx use default
 
       - name: Exercise pack behavior
-        run: ./run test packs "$PACK" --shard "$SHARD"
+        # Resource pressure reproduces runner-shaped starvation; the Linux host
+        # still remains the authority for uid ownership and AppArmor.
+        run: ./run test packs "$PACK" --shard "$SHARD" --hostile
 
       - name: Upload failed pack report
         if: failure()

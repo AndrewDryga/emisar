@@ -10,6 +10,12 @@ A behavior case must prove something observable. Stable output assertions prove
 read actions; state probes prove mutations. Exit code alone and
 `stdout_not_empty` are smoke checks, not semantic coverage.
 
+The static check also rejects fixture shapes that CI has already proved unsafe:
+unpinned endpoint-address assertions, cumulative cases with no arranged state,
+temporary seed-daemon readiness on loopback, too-fast heavyweight probes, and
+root identities with no reason. These are authoring errors; Linux still decides
+uid ownership, AppArmor, and real startup behavior.
+
 ## Ownership and isolation
 
 ```text
@@ -204,6 +210,7 @@ the complete reports directory for a failed matrix row.
 ```sh
 ./run test packs postgres
 ./run test packs postgres --case postgres.uptime
+./run test packs postgres --hostile
 ./run test packs
 
 # A declared alternate version resolves its committed digest.
@@ -214,3 +221,9 @@ PACKTEST_VERSION=17.6 \
   PACKTEST_DIGEST=@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
   ./run test packs postgres
 ```
+
+`--hostile` writes a case-local Compose override that limits each SUT service to
+one CPU, 1536 MiB of memory, and 512 PIDs. CI uses it to make startup races and
+expensive readiness probes visible on every behavior row. It does not emulate
+Linux ownership or AppArmor on Docker Desktop, so a local pass remains feedback,
+not the verdict for those boundaries.

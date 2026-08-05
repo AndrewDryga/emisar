@@ -88,7 +88,7 @@ func (a *App) packSync(ctx context.Context, name string) error {
 	return a.run(ctx, filepath.Join(a.Portal, "apps", "emisar_web"), env, "mix", "test", "test/emisar_web/packs_test.exs")
 }
 
-func (a *App) packTest(ctx context.Context, pattern string, names []string, caseID, shard string) error {
+func (a *App) packTest(ctx context.Context, pattern string, names []string, caseID, shard string, hostile bool) error {
 	harness := filepath.Join(a.Root, "dev", "test-packs")
 	plans, err := packtest.Discover(filepath.Join(a.Root, "packs"), pattern, names...)
 	if err != nil {
@@ -148,10 +148,19 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 
 	versionEnvs := make(map[string]map[string]string, len(plans))
 	images := make(map[string]string, len(plans))
+	overrides := make(map[string]string, len(plans))
 	for _, plan := range plans {
 		versionEnv := resolvedPackTestVersionEnv(plan, requestedVersionEnv)
 		versionEnvs[plan.Name] = versionEnv
-		resolved, err := a.preparePackTestPlan(ctx, baseCompose, invocationID, runnerImage, plan, versionEnv)
+		if hostile {
+			override, err := writePackTestHostileOverride(reports, plan)
+			if err != nil {
+				return err
+			}
+			overrides[plan.Name] = override
+			fmt.Fprintf(a.Out, "Hostile limits: %s (1 CPU, 1536 MiB, 512 PIDs per SUT)\n", plan.Name)
+		}
+		resolved, err := a.preparePackTestPlan(ctx, baseCompose, overrides[plan.Name], invocationID, runnerImage, plan, versionEnv)
 		if err != nil {
 			return errors.Join(err, writePackTestFailureReports(reports, []packtest.PlanRef{plan}, requestedVersionEnv, err))
 		}
@@ -167,6 +176,7 @@ func (a *App) packTest(ctx context.Context, pattern string, names []string, case
 				Case:         test,
 				VersionEnv:   versionEnvs[plan.Name],
 				Images:       images[plan.Name],
+				ComposeExtra: overrides[plan.Name],
 			})
 		}
 	}
@@ -395,6 +405,7 @@ type packTestJob struct {
 	Case         packtest.CaseRef
 	VersionEnv   map[string]string
 	Images       string
+	ComposeExtra string
 }
 
 type packTestCaseResult struct {
@@ -408,6 +419,7 @@ type packTestCaseResult struct {
 func (a *App) preparePackTestPlan(
 	ctx context.Context,
 	baseCompose string,
+	composeExtra string,
 	invocationID string,
 	runnerImage string,
 	plan packtest.PlanRef,
@@ -424,7 +436,7 @@ func (a *App) preparePackTestPlan(
 	if err := validatePackTestVersionInput(packCompose, plan.Services[0], defaultVersion.Version); err != nil {
 		return "", err
 	}
-	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
+	compose := packTestComposeArgs(baseCompose, packCompose, composeExtra)
 	env := packTestComposeEnv(a.Root, invocationID, runnerImage, plan, "build", versionEnv, plan.Runner.User)
 
 	output, err := a.output(ctx, a.Root, env, "docker", append(compose, "config", "--services")...)
@@ -509,7 +521,7 @@ func retryPackTestPull(ctx context.Context, backoff time.Duration, log io.Writer
 
 func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage string, job packTestJob) (err error) {
 	packCompose := filepath.Join(filepath.Dir(job.Plan.Path), "compose.yaml")
-	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
+	compose := packTestComposeArgs(baseCompose, packCompose, job.ComposeExtra)
 	env := packTestComposeEnv(
 		a.Root,
 		job.InvocationID,
@@ -551,6 +563,40 @@ func (a *App) runPackTestCase(ctx context.Context, baseCompose, runnerImage stri
 		a.capturePackTestEvidence(ctx, compose, env, job.Plan.Services)
 	}
 	return runErr
+}
+
+func packTestComposeArgs(baseCompose, packCompose, extra string) []string {
+	compose := []string{"compose", "-f", baseCompose, "-f", packCompose}
+	if extra != "" {
+		compose = append(compose, "-f", extra)
+	}
+	return compose
+}
+
+type hostilePackTestCompose struct {
+	Services map[string]hostilePackTestService `yaml:"services"`
+}
+
+type hostilePackTestService struct {
+	CPUs      string `yaml:"cpus"`
+	MemLimit  string `yaml:"mem_limit"`
+	PidsLimit int    `yaml:"pids_limit"`
+}
+
+func writePackTestHostileOverride(reports string, plan packtest.PlanRef) (string, error) {
+	services := make(map[string]hostilePackTestService, len(plan.Services))
+	for _, service := range plan.Services {
+		services[service] = hostilePackTestService{CPUs: "1.0", MemLimit: "1536m", PidsLimit: 512}
+	}
+	data, err := yaml.Marshal(hostilePackTestCompose{Services: services})
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(reports, plan.Name+"-hostile.compose.yaml")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 type packTestComposeFile struct {

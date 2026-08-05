@@ -1195,6 +1195,46 @@ func TestReviewGateTargetsUseCanonicalOrderAndFallback(t *testing.T) {
 	}
 }
 
+func TestPackTestModeExtractsOneHostileFlag(t *testing.T) {
+	args, hostile, err := packTestMode([]string{"postgres", "--shard", "1/2", "--hostile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hostile || !slices.Equal(args, []string{"postgres", "--shard", "1/2"}) {
+		t.Fatalf("mode = (%v, %t)", args, hostile)
+	}
+	if _, _, err := packTestMode([]string{"--hostile", "--hostile"}); !IsUsage(err) {
+		t.Fatalf("duplicate hostile error = %v", err)
+	}
+}
+
+func TestHostilePackTestOverrideLimitsOnlySUTServices(t *testing.T) {
+	reports := t.TempDir()
+	path, err := writePackTestHostileOverride(reports, packtest.PlanRef{
+		Name: "example", Services: []string{"database", "helper"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, expected := range []string{"database:", "helper:", "cpus: \"1.0\"", "mem_limit: 1536m", "pids_limit: 512"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("hostile override lacks %q:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "runner-tools") {
+		t.Fatalf("hostile override constrained the action client:\n%s", text)
+	}
+	args := packTestComposeArgs("base.yaml", "pack.yaml", path)
+	if !slices.Equal(args, []string{"compose", "-f", "base.yaml", "-f", "pack.yaml", "-f", path}) {
+		t.Fatalf("compose args = %v", args)
+	}
+}
+
 // The Go gate decides the client-module boundary, so a synthetic root has to
 // carry the layout it judges: runner/cmd holding exactly packctl, and no
 // mcp/cmd at all.

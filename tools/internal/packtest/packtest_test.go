@@ -340,6 +340,100 @@ func TestPlanValidationRejectsFalseCoverage(t *testing.T) {
 	}
 }
 
+func TestCumulativeCasesArrangeTheirOwnState(t *testing.T) {
+	for _, action := range []string{
+		"mongo.top", "httpd.access_top_clients", "vm.top_queries",
+		"cockroach.statement_stats", "mc.stats_sizes", "cw.get_metric_statistics", "caddy.runtime_metrics",
+	} {
+		if !actionNeedsArrangedState(action) {
+			t.Errorf("%s did not require arrangement", action)
+		}
+	}
+	for _, action := range []string{"mc.stats", "mongo.profiler_status", "postgres.database_stats"} {
+		if actionNeedsArrangedState(action) {
+			t.Errorf("%s was treated as requiring synthetic activity", action)
+		}
+	}
+}
+
+func TestFixtureValidationReplaysLinuxMatrixFailureShapes(t *testing.T) {
+	tests := []struct {
+		name    string
+		pack    string
+		plan    Plan
+		compose string
+		want    string
+	}{
+		{
+			name: "assigned endpoint address is not pinned",
+			pack: "cassandra",
+			plan: Plan{Services: []string{"cassandra"}, Cases: []Case{{
+				Action: "cassandra.nodetool_getendpoints",
+				Expect: Expectation{StdoutContains: []string{"127.0.0.1"}},
+			}}},
+			compose: "services:\n  cassandra:\n    image: cassandra:5\n",
+			want:    "without pinning it",
+		},
+		{
+			name: "temporary seed daemon is checked on loopback",
+			pack: "mysql",
+			plan: Plan{Services: []string{"mysql"}},
+			compose: "services:\n  mysql:\n    image: mysql:9\n    volumes: [/fixture.sql:/docker-entrypoint-initdb.d/init.sql:ro]\n" +
+				"    healthcheck:\n      test: [CMD-SHELL, mysql -h 127.0.0.1]\n",
+			want: "temporary seed daemon",
+		},
+		{
+			name:    "zookeeper loopback does not prove bridge readiness",
+			pack:    "zookeeper",
+			plan:    Plan{Services: []string{"zookeeper"}},
+			compose: "services:\n  zookeeper:\n    image: zookeeper:3\n    healthcheck:\n      test: [CMD-SHELL, echo ruok | nc 127.0.0.1 2181]\n",
+			want:    "same bridge address",
+		},
+		{
+			name: "RabbitMQ probe can steal entrypoint cookie ownership",
+			pack: "rabbitmq",
+			plan: Plan{Services: []string{"rabbitmq"}},
+			compose: "services:\n  rabbitmq:\n    image: rabbitmq:4\n    healthcheck:\n" +
+				"      test: [CMD-SHELL, rabbitmq-diagnostics check_running]\n      interval: 5s\n      start_interval: 1s\n",
+			want: "must not use start_interval",
+		},
+		{
+			name: "JVM probe cadence starves its own broker",
+			pack: "kafka",
+			plan: Plan{Services: []string{"kafka"}},
+			compose: "services:\n  kafka:\n    image: apache/kafka:4\n    healthcheck:\n" +
+				"      test: [CMD-SHELL, kafka-topics.sh --list]\n      interval: 5s\n      start_interval: 2s\n",
+			want: "below 5s",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateFixturePlan(test.pack, test.plan, []byte(test.compose))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validateFixturePlan error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestPinnedEndpointAndRoutableSeedReadinessPass(t *testing.T) {
+	plan := Plan{Services: []string{"cassandra"}, Cases: []Case{{
+		Action: "cassandra.nodetool_getendpoints",
+		Expect: Expectation{StdoutContains: []string{"127.0.0.1"}},
+	}}}
+	compose := "services:\n  cassandra:\n    image: cassandra:5\n    environment:\n      CASSANDRA_LISTEN_ADDRESS: 127.0.0.1\n"
+	if err := validateFixturePlan("cassandra", plan, []byte(compose)); err != nil {
+		t.Fatal(err)
+	}
+
+	seeded := Plan{Services: []string{"mysql"}}
+	compose = "services:\n  mysql:\n    image: mysql:9\n    volumes: [/fixture.sql:/docker-entrypoint-initdb.d/init.sql:ro]\n" +
+		"    healthcheck:\n      test: [CMD-SHELL, mysql -h \"$$(hostname -i)\"]\n      start_interval: 5s\n"
+	if err := validateFixturePlan("mysql", seeded, []byte(compose)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPlanValidationAcceptsSensitiveReadAndJustifiedMutation(t *testing.T) {
 	actions := map[string]actionDefinition{
 		"example.read": {
