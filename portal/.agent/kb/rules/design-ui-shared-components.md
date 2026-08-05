@@ -35,9 +35,6 @@ Pick by *where it lives*:
 
 - **`<.stat label= value= hint=>`** — a dashboard **KPI tile**: a big `text-3xl`
   number in its own `<.card>`. For the dashboard's top metrics grid only.
-- **`<.summary_band>` + `<.summary_stat tone= value= label=>`** — the quiet
-  horizontal **count strip at the top of a LIST page** (runners fleet online/offline,
-  the agents page). A dot + count + label per stat, one bordered flex row.
 - **`<.meta_strip cols=>` + `<.meta_field label=>`** — the bordered horizontal
   **key-value strip under a DETAIL page title** (a run's runner / risk / pack / time).
   Uppercase label over value, not a count.

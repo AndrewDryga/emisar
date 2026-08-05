@@ -346,7 +346,7 @@ genuinely missing (then it's shared, not one-off).
 - `chip`, `risk_pill`, `status_badge` — semantic status (see §3.1; success
   variants currently `emerald-*` → migrate to `brand-*`).
 - `input`, error/notice/`alert`/flash — forms + feedback (rose error tier).
-- `stat` (tile) · `summary_band` (strip) · `meta_strip` — the stat trio; pick by
+- `stat` (tile) · `meta_strip` (strip) — the stat pair; pick by
   shape (see design-ui-shared-components rule). `summary_dot` (emerald/amber/rose).
 - `subscription_banner`, `modal`, typed-confirm dialogs.
 - **`EmisarWeb.LiveTable`** — every list/table (stateless, URL-driven). Never
@@ -497,7 +497,7 @@ site — emerald, type, semantics, crafted detail — while staying a calm tool.
 Run the `design-interface-polish` micro-craft on the console shells: concentric
 radii, tabular-nums on every live count (runs, runners, audit), real hit areas
 (≥40px), specific transitions (not `transition-all`), calm row hover, handled
-empty/loading/error/offline states. Reuse the shared `stat`/`summary_band`/
+empty/loading/error/offline states. Reuse the shared `stat`/
 `status_badge`/`chip`/`button`/`LiveTable` everywhere — replace any hand-rolled
 card/chip/stat with the shared primitive.
 

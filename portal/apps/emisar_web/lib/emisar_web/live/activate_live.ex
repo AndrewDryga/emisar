@@ -10,7 +10,7 @@ defmodule EmisarWeb.ActivateLive do
   secret.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, ApiKeys}
+  alias Emisar.{Accounts, ApiKeys, Throttle}
   alias EmisarWeb.Permissions
 
   def mount(_params, _session, socket) do
@@ -52,10 +52,23 @@ defmodule EmisarWeb.ActivateLive do
   def handle_event("lookup", %{"lookup" => %{"code" => code}}, socket) do
     code = String.trim(code)
 
-    if code == "" do
-      {:noreply, assign(socket, lookup_error: "Enter the code shown in your terminal.")}
-    else
-      {:noreply, socket |> assign(:code, code) |> lookup(code)}
+    cond do
+      code == "" ->
+        {:noreply, assign(socket, lookup_error: "Enter the code shown in your terminal.")}
+
+      # The device-code space is large and short-lived, so guessing is not
+      # practical — but this is the one credential-shaped lookup in the product
+      # with no cap at all, and it is deliberately not account-scoped. Bucket by
+      # the signed-in user so an automated sweep costs something.
+      Throttle.check("device_code_lookup", lookup_key(socket), 20, 900_000) !=
+          :ok ->
+        {:noreply,
+         assign(socket,
+           lookup_error: "Too many attempts. Wait a few minutes and try again."
+         )}
+
+      true ->
+        {:noreply, socket |> assign(:code, code) |> lookup(code)}
     end
   end
 
@@ -125,6 +138,13 @@ defmodule EmisarWeb.ActivateLive do
     case Accounts.list_accounts_for_user(subject) do
       {:ok, accounts, _metadata} -> accounts
       {:error, _reason} -> []
+    end
+  end
+
+  defp lookup_key(socket) do
+    case socket.assigns[:current_user] do
+      %{id: id} -> id
+      _ -> "anonymous"
     end
   end
 
