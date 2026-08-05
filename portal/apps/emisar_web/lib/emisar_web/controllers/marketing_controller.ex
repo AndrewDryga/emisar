@@ -854,6 +854,10 @@ defmodule EmisarWeb.MarketingController do
     path <> "#updates"
   end
 
+  # A protocol-relative path ("//evil.example") is not an open redirect here —
+  # Phoenix refuses it — but it refuses by RAISING, so a crafted Referer turned
+  # a newsletter signup into a 500. Rejected explicitly instead.
+  defp local_path(%URI{path: "//" <> _}), do: "/"
   defp local_path(%URI{path: "/" <> _ = path}), do: path
   defp local_path(_), do: "/"
 end

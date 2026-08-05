@@ -170,14 +170,13 @@
           <.link
             navigate={~p"/docs/sso"}
             class="text-brand-400 hover:text-brand-300"
-          >SSO</.link>
-          so people sign in through your IdP; on Enterprise, add
+          >SSO</.link> <.plan_note tier={:team} /> so people sign in through your IdP; then add
           <.link
             navigate={~p"/docs/scim"}
             class="text-brand-400 hover:text-brand-300"
-          >SCIM</.link>
+          >SCIM</.link> <.plan_note tier={:enterprise} />
           so offboarding someone in the directory suspends them here —
-          sessions killed, keys revoked — with no checklist. <.plan_note tier={:team} />
+          sessions killed, keys revoked — with no checklist.
         </li>
         <li>
           <strong class="text-zinc-200">Ingest the audit into your SIEM.</strong>
