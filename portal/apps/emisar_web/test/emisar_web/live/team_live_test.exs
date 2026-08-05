@@ -718,6 +718,51 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Choose at least one runner group or runner for selected access."
     end
 
+    test "a runner past the first page can still be granted", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopePaged"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      email = "scoped-paged-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: membership}} =
+        Emisar.Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
+          subject
+        )
+
+      # One past the 35-row default page. The scope editor validates a selection
+      # against the runner list the page loaded, so a paged load made this runner
+      # ungrantable — the selection came back `:invalid_runner_access` and the
+      # picker silently dropped it.
+      runners =
+        for n <- 1..36 do
+          Fixtures.Runners.create_runner(
+            account_id: account.id,
+            name: "paged-#{String.pad_leading(Integer.to_string(n), 2, "0")}",
+            group: "paged"
+          )
+        end
+
+      last = List.last(runners)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      render_click(lv, "start_scope_edit", %{"membership_id" => membership.id})
+
+      render_change(lv, "scope_changed", %{
+        "runner_access_mode" => "restricted",
+        "scope" => ["runner:#{last.id}"]
+      })
+
+      assert has_element?(
+               lv,
+               "form[phx-submit='save_scopes'] input[value='runner:#{last.id}']:checked"
+             )
+    end
+
     test "the scope picker pre-selects the member's existing scopes", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg2"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)

@@ -692,11 +692,17 @@ defmodule EmisarWeb.TeamLive do
             {:error, _} -> %{}
           end
 
+        # The COMPLETE scoped fleet, not a page: this list is the allowlist the
+        # runner-scope editor validates a selection against (`build_runner_access/3`),
+        # so a paged one made every runner past the first page ungrantable — the
+        # member picker and the approval-request approver both silently refused
+        # them. The pagination metadata was discarded here anyway.
+        #
         # A role without view_runners (billing_manager) gets no runners rather
         # than a MatchError crash — mirror the directory load above.
         runners =
-          case Emisar.Runners.list_runners_for_account(socket.assigns.current_subject) do
-            {:ok, runners, _} -> runners
+          case Emisar.Runners.list_all_runners_for_account(socket.assigns.current_subject) do
+            {:ok, runners} -> runners
             {:error, _} -> []
           end
 
