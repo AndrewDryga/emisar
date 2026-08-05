@@ -720,6 +720,30 @@ func (c *checker) checkPublicSkillMCPTools() {
 	}
 }
 
+// The Definition of Done binds each commit to its task with a Coop-Task
+// trailer, and `coop` reconciles the queue from it after an interruption. A
+// line git does not PARSE as a trailer is worse than none — it reads as bound
+// and is not — so the commit-msg hook has to exist and stay executable.
+func (c *checker) checkCommitMessageHook() {
+	hook := c.path(".githooks/commit-msg")
+	info, err := os.Stat(hook)
+	if err != nil {
+		c.fail(".githooks/commit-msg is missing; nothing checks that a Coop-Task line parses as a trailer")
+		return
+	}
+	if info.Mode()&0o111 == 0 {
+		c.fail(".githooks/commit-msg is not executable, so git silently skips it")
+	}
+	body, err := os.ReadFile(hook)
+	if err != nil {
+		c.fail(".githooks/commit-msg is unreadable: %v", err)
+		return
+	}
+	if !bytes.Contains(body, []byte("interpret-trailers")) {
+		c.fail(".githooks/commit-msg no longer asks git whether the line is a trailer")
+	}
+}
+
 func (c *checker) checkSweepGuard() {
 	if _, err := os.Stat(c.path(".claude/skills/workflow-sweep/queue-guard.sh")); err != nil {
 		c.fail("the scoped sweep queue-guard.sh is missing")
@@ -785,6 +809,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("public skills have portable metadata and remain separate from contributor skills", c.checkPublicSkills)
 	c.group("public skill MCP tool names exist in the portal-owned API schema", c.checkPublicSkillMCPTools)
 	c.group("sweep Stop guard is skill-scoped; no retired global guard/sentinel", c.checkSweepGuard)
+	c.group("the commit-msg hook verifies a Coop-Task line parses as a trailer", c.checkCommitMessageHook)
 	if len(c.failures) > 0 {
 		fmt.Fprintf(c.errOut, "\nAgent setup audit failed: %d issue(s)\n", len(c.failures))
 		return 1

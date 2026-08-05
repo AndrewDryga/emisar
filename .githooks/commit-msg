@@ -1,0 +1,20 @@
+#!/bin/sh
+# A Coop-Task line that git does not PARSE as a trailer is worse than no line at
+# all: the author believes the commit is bound to its task, `coop` cannot
+# reconcile the queue from it after an interruption, and nothing says so. The
+# usual cause is a blank line inside the trailer block — one before
+# Co-Authored-By ends the block, and everything above it becomes body text.
+#
+# Deliberately narrow. A commit with NO Coop-Task line passes: merges and the
+# squash-merge GitHub writes never carry one, and 29% of recent history has none
+# for ordinary reasons. This checks only that a line meant as a trailer IS one.
+message="$1"
+[ -f "$message" ] || exit 0
+
+grep -qi '^Coop-Task:' "$message" || exit 0
+git interpret-trailers --parse <"$message" | grep -qi '^Coop-Task:' && exit 0
+
+printf 'commit-msg: this message has a Coop-Task line that git does not read as a trailer.\n' >&2
+printf 'Trailers are the LAST block of the message, with no blank line inside it.\n' >&2
+printf 'Verify with: git interpret-trailers --parse <your-message>\n' >&2
+exit 1
