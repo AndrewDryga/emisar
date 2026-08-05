@@ -84,9 +84,21 @@ defmodule EmisarWeb.RunnerSocket do
       seen_request_ids: :queue.new(),
       seen_request_set: MapSet.new(),
       seen_request_count: 0,
+      error_frames: 0,
       heartbeat_ref: schedule_heartbeat_timeout()
     }
   end
+
+  # Every `error` frame writes a durable audit row stamped with the plan's
+  # retention horizon. A runner is authenticated but treated as hostile (the
+  # host is the trust anchor), and nothing bounded this: a loop of error frames
+  # buried the account's own action_run.* rows, drowned the SIEM export, and
+  # grew the audit table without limit. The adjacent progress path has had a
+  # durable budget for exactly this reason. Beyond the cap the connection is
+  # dropped rather than silently ignored — a runner emitting this many distinct
+  # errors on one connection is broken either way, and a reconnect gets a fresh
+  # budget so an honest flapping host still reports.
+  @max_error_frames_per_connection 100
 
   @impl true
   def handle_in(_frame, %{rejected?: true} = state), do: {:stop, :normal, state}
@@ -430,7 +442,15 @@ defmodule EmisarWeb.RunnerSocket do
     end
   end
 
+  defp handle_envelope("error", _msg, %{error_frames: seen} = state)
+       when seen >= @max_error_frames_per_connection do
+    Logger.warning("runner #{state.runner_id} exceeded the per-connection error-frame budget")
+    {:stop, :normal, {1008, "Too many error frames on one connection."}, state}
+  end
+
   defp handle_envelope("error", msg, state) do
+    state = %{state | error_frames: state.error_frames + 1}
+
     runner_error =
       Runs.build_runner_error(
         state.account_id,

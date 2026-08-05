@@ -895,7 +895,8 @@ defmodule EmisarWeb.RunnerSocketTest do
           "request_id" => request_id
         })
 
-      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
     end
   end
 
@@ -910,7 +911,8 @@ defmodule EmisarWeb.RunnerSocketTest do
           "request_id" => run.request_id
         })
 
-      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
 
       assert %ActionRun{
                status: :pending,
@@ -932,8 +934,10 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       uncorrelated = runner_frame(%{"type" => "error", "code" => "concurrency_cap_reached"})
 
-      assert {:ok, ^state} = RunnerSocket.handle_in({unknown, text()}, state)
-      assert {:ok, ^state} = RunnerSocket.handle_in({uncorrelated, text()}, state)
+      assert {:ok, next} = RunnerSocket.handle_in({unknown, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
+      assert {:ok, next} = RunnerSocket.handle_in({uncorrelated, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
 
       assert Repo.get!(ActionRun, run.id).status == :sent
     end
@@ -946,10 +950,12 @@ defmodule EmisarWeb.RunnerSocketTest do
           "request_id" => run.request_id
         })
 
-      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
       requeued = Repo.get!(ActionRun, run.id)
 
-      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
 
       duplicate = Repo.get!(ActionRun, run.id)
       assert duplicate.status == :pending
@@ -966,7 +972,8 @@ defmodule EmisarWeb.RunnerSocketTest do
     } do
       raw = runner_frame(%{"type" => "action_started", "request_id" => run.request_id})
 
-      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
 
       started = Repo.get!(ActionRun, run.id)
       assert started.status == :running
@@ -1365,6 +1372,33 @@ defmodule EmisarWeb.RunnerSocketTest do
     # runner.error audit row AND that row carries the runner's CONNECT
     # request_context (the IP/UA captured at socket init), which is the only
     # place that connect metadata is allowed to surface.
+    test "a flood of error envelopes is cut off before it can bury the audit log", %{
+      account: account,
+      state: state
+    } do
+      raw = Jason.encode!(%{"type" => "error", "protocol_version" => 1, "code" => "x"})
+
+      # Each frame writes a durable audit row stamped with the plan's retention
+      # horizon, so an unbounded loop buries the account's own action_run.* rows
+      # and grows the table without limit. The runner is authenticated but the
+      # host is the trust anchor, so it gets a budget like the progress path.
+      final =
+        Enum.reduce(1..100, state, fn _, acc ->
+          assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, acc)
+          next
+        end)
+
+      assert {:stop, :normal, {1008, _}, _} = RunnerSocket.handle_in({raw, text()}, final)
+
+      rows =
+        Emisar.Audit.Event.Query.all()
+        |> Emisar.Audit.Event.Query.by_account_id(account.id)
+        |> Emisar.Audit.Event.Query.by_event_type("runner.error")
+        |> Repo.aggregate(:count, :id)
+
+      assert rows == 100
+    end
+
     test "an error envelope records a runner.error audit row stamped with the connect IP/UA",
          %{account: account, state: state, user: user} do
       # Avoid re-running the socket connect path in this already-connected test
@@ -1384,7 +1418,8 @@ defmodule EmisarWeb.RunnerSocketTest do
           "request_id" => request_id
         })
 
-      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, events, _meta} = Emisar.Audit.list_events(subject, target_id: state.runner_id)
@@ -1410,7 +1445,8 @@ defmodule EmisarWeb.RunnerSocketTest do
     } do
       request_id = Emisar.Crypto.run_request_id()
       raw = runner_frame(%{"type" => "error", "request_id" => request_id})
-      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+      assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
+      assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
 
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, events, _meta} = Emisar.Audit.list_events(subject, target_id: runner.id)
