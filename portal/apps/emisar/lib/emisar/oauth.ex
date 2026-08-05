@@ -36,6 +36,10 @@ defmodule Emisar.OAuth do
   # one orphan row per drive-by registration.
   @unused_client_ttl_s 30 * 24 * 3_600
 
+  # Matches the audit and run retention jobs. Sized so one statement's row locks
+  # stay short on a table the authorization path reads.
+  @sweep_batch 5_000
+
   # A consent-minted backing key with no token is only swept once it's older than
   # this. Comfortably exceeds the 60s code TTL so an in-flight consent (exchange
   # still pending) is never reclaimed; past it, an expired code can no longer be
@@ -553,12 +557,11 @@ defmodule Emisar.OAuth do
   deleted.
   """
   def delete_expired_authorization_codes(now \\ DateTime.utc_now()) do
-    {count, _} =
-      AuthorizationCode.Query.all()
-      |> AuthorizationCode.Query.expired_before(now)
-      |> Repo.delete_all()
-
-    count
+    sweep_in_batches(fn ->
+      ids = AuthorizationCode.Query.prunable_ids(now, @sweep_batch) |> Repo.all()
+      {count, _} = ids |> AuthorizationCode.Query.by_ids() |> Repo.delete_all()
+      {count, length(ids)}
+    end)
   end
 
   @doc """
@@ -567,12 +570,25 @@ defmodule Emisar.OAuth do
   eligible after `access_expires_at`. Returns the count deleted.
   """
   def delete_expired_tokens(now \\ DateTime.utc_now()) do
-    {count, _} =
-      Token.Query.all()
-      |> Token.Query.expired_before(now)
-      |> Repo.delete_all()
+    sweep_in_batches(fn ->
+      ids = Token.Query.prunable_ids(now, @sweep_batch) |> Repo.all()
+      {count, _} = ids |> Token.Query.by_ids() |> Repo.delete_all()
+      {count, length(ids)}
+    end)
+  end
 
-    count
+  # Both sweeps page like the audit and run retention jobs. An unbounded
+  # `delete_all` takes row locks on everything it matches in ONE statement, so a
+  # backlog — an outage, a disabled job, a burst of drive-by registrations —
+  # turns the cleanup into a long lock on a table the authorization path reads.
+  defp sweep_in_batches(delete_page) do
+    {deleted, page} = delete_page.()
+
+    if page == @sweep_batch do
+      deleted + sweep_in_batches(delete_page)
+    else
+      deleted
+    end
   end
 
   @doc """

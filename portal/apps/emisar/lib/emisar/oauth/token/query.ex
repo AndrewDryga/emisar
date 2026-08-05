@@ -34,6 +34,22 @@ defmodule Emisar.OAuth.Token.Query do
   end
 
   @doc """
+  Internal — the id page the expiry sweep deletes next. Bounded because
+  `delete_all` over an unbounded match takes row locks on everything it touches
+  in one statement; the audit and run sweeps page the same way.
+  """
+  def prunable_ids(now, limit) do
+    all()
+    |> expired_before(now)
+    |> order_by([tokens: t], asc: t.id)
+    |> limit(^limit)
+    |> select([tokens: t], t.id)
+  end
+
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [tokens: t], t.id in ^ids)
+
+  @doc """
   Row lock for the refresh-rotation re-read (`FOR NO KEY UPDATE`) so two
   concurrent refreshes of the same token serialize — the loser sees the
   winner's revocation instead of both rotating and minting two pairs.
