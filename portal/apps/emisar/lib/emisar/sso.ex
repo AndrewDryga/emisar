@@ -1794,15 +1794,10 @@ defmodule Emisar.SSO do
   end
 
   defp lock_scim_identity(%IdentityProvider{} = provider, external_id, repo) do
-    queryable =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
-      |> UserIdentity.Query.lock_for_update()
-
-    case repo.one(queryable) do
-      nil -> {:error, :not_found}
-      %UserIdentity{} = identity -> {:ok, identity}
-    end
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
+    |> UserIdentity.Query.lock_for_update()
+    |> repo.fetch(UserIdentity.Query)
   end
 
   defp apply_scim_rename(_provider, _identity, :keep), do: {:ok, :unchanged}

@@ -26,15 +26,10 @@ defmodule Emisar.Users do
   transaction's repo. No `%Subject{}` — the caller has already authorized.
   """
   def fetch_and_lock_user_by_id(id, repo) do
-    queryable =
-      User.Query.not_deleted()
-      |> User.Query.by_id(id)
-      |> User.Query.lock_for_update()
-
-    case repo.one(queryable) do
-      %User{} = user -> {:ok, user}
-      nil -> {:error, :not_found}
-    end
+    User.Query.not_deleted()
+    |> User.Query.by_id(id)
+    |> User.Query.lock_for_update()
+    |> repo.fetch(User.Query)
   end
 
   @doc "Internal — identity lookup composed by Auth/Accounts internals and the auth boundary; cross-account, no subject."
