@@ -940,9 +940,26 @@ defmodule Emisar.SSO do
   def reconcile_pending_authorizations(limit \\ @authorization_reconcile_batch_size) do
     limit
     |> Accounts.list_pending_directory_authorizations()
-    |> Enum.each(&reconcile_pending_authorization/1)
+    |> Enum.each(&isolated_reconcile/1)
 
     :ok
+  end
+
+  # Per-row isolation, like Runbooks.Scheduler.Recovery. A raise took down the
+  # whole batch, and the batch is a bounded, ordered window over the SAME
+  # fail-closed set on every run — so one bad row at the head stopped every
+  # other member behind it from ever reconciling, and this path is fail-closed
+  # by design: they stay locked out. One bad row now costs one row.
+  defp isolated_reconcile(%Accounts.Membership{} = membership) do
+    reconcile_pending_authorization(membership)
+  rescue
+    error ->
+      Logger.warning(
+        "sso.authorization_reconcile_crashed membership=#{membership.id} " <>
+          "error=#{inspect(error.__struct__)}"
+      )
+
+      :error
   end
 
   defp reconcile_pending_authorization(%Accounts.Membership{} = membership) do

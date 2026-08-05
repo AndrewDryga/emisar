@@ -2677,6 +2677,7 @@ defmodule Emisar.Accounts do
   def list_pending_directory_authorizations(limit) when is_integer(limit) and limit > 0 do
     Membership.Query.not_deleted()
     |> Membership.Query.authorization_sync_pending()
+    |> Membership.Query.ordered_by_least_recently_updated()
     |> Membership.Query.limit_to(limit)
     |> Repo.all()
   end

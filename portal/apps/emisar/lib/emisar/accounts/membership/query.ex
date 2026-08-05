@@ -67,6 +67,13 @@ defmodule Emisar.Accounts.Membership.Query do
     )
   end
 
+  # Oldest-touched first, so a bounded batch over the fail-closed set is
+  # deterministic rather than whatever the planner hands back. A successful
+  # reconcile clears the pending version and leaves the set entirely, so the
+  # queue drains instead of re-serving the same arbitrary rows.
+  def ordered_by_least_recently_updated(queryable),
+    do: order_by(queryable, [memberships: m], asc: m.updated_at, asc: m.id)
+
   def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
   def by_invitation_token_digest(queryable, digest),

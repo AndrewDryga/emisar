@@ -600,8 +600,12 @@ defmodule Emisar.RunnerAccessTest do
           )
         end
 
+      # Least-recently-updated first, so a bounded batch is deterministic — an
+      # unordered LIMIT let the planner re-serve whatever it liked, and a row at
+      # the head of every batch starves everything behind it on a path that is
+      # fail-closed by design.
       assert [pending] = Accounts.list_pending_directory_authorizations(1)
-      assert pending.id in Enum.map(memberships, & &1.id)
+      assert pending.id == hd(memberships).id
     end
   end
 
