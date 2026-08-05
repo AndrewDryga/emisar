@@ -38,6 +38,15 @@ defmodule Emisar.Policies do
 
   # Conservative default for a fresh account: low+medium auto-run,
   # high needs approval, critical is blocked outright.
+  #
+  # Medium auto-running is a deliberate founder call, raised in two reviews
+  # (2026-07-31, 2026-08-04) and affirmed 2026-08-05. Gating medium would put an
+  # approval in front of ordinary diagnosis, which is the work operators hand to
+  # an agent in the first place — a product that interrupts for every routine
+  # read teaches people to approve without reading. The line is drawn at "reads
+  # that dump arbitrary secret-bearing state", and that is enforced by TIERING
+  # such actions `high` (see packs/AGENTS.md), not by moving this default. An
+  # action that leaks secrets at medium is a mis-tiered action; fix its risk.
   @default_rules %{
     "schema_version" => 2,
     "defaults" => %{
