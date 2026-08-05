@@ -2726,3 +2726,43 @@ func elevenKeyObject() string {
 	}
 	return "{" + strings.Join(pairs, ",") + "}"
 }
+
+// `initialize` is an AUTHENTICATED call: the portal gates every RPC, including
+// this one, so the bridge must carry the Bearer on it exactly like any other
+// method. Every other initialize test asserts protocol-version behavior and
+// would still pass if the header vanished — this one pins the header itself,
+// on the handshake and on a subsequent call.
+func TestInitializeCarriesTheBearerLikeAnyOtherMethod(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("Authorization"))
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		result := `{}`
+		if request.Method == "initialize" {
+			result = `{"protocolVersion":"2025-06-18"}`
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":` + result + `}`))
+	}))
+	defer srv.Close()
+
+	b := newTestBridge(srv)
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if _, err := b.forward([]byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)); err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+
+	if len(seen) != 2 {
+		t.Fatalf("requests = %d, want 2", len(seen))
+	}
+	for i, got := range seen {
+		if got != "Bearer k" {
+			t.Fatalf("request %d Authorization = %q, want %q", i, got, "Bearer k")
+		}
+	}
+}

@@ -263,6 +263,14 @@ KEY ROTATION
   OAuth and arbitrary Bearer tokens bypass this state. Without durable storage,
   automatic rotation is off.
 
+  Once a successor is promoted the bridge uses it and does NOT fall back to
+  the EMISAR_API_KEY in your config — falling back would resurrect a key the
+  control plane may have revoked. If the control plane loses its side of that
+  promotion (a rollback, a restore from backup), every request answers 401 and
+  restarting does not help, because the stored state is still what it loads.
+  Delete this endpoint's file under <user-config-dir>/emisar/credentials/ and
+  start again from the key in your config.
+
 FLAGS
   -h, --help
     Print this help and exit.
