@@ -10,6 +10,7 @@ defmodule Emisar.Auth do
   alias Emisar.{Accounts, Audit, Mailers}
   alias Emisar.Auth.MfaFacts
   alias Emisar.Auth.Role
+  alias Emisar.Auth.SecurityAttemptWindow
   alias Emisar.Auth.SessionFacts
   alias Emisar.Auth.Subject
   alias Emisar.Auth.UserToken
@@ -18,7 +19,6 @@ defmodule Emisar.Auth do
   alias Emisar.RequestContext
   alias Emisar.SSO
   alias Emisar.Telemetry
-  alias Emisar.Throttle
   alias Emisar.Users
   require Logger
 
@@ -1268,6 +1268,99 @@ defmodule Emisar.Auth do
   @mfa_challenge_attempt_limit 5
   @mfa_challenge_attempt_window_ms 5 * 60_000
 
+  # A newly inserted row is deliberately born expired. The first locked read
+  # resets it from the database's clock, avoiding any dependency on an app
+  # node's wall clock while still using a normal schema insert.
+  @expired_security_window ~U[2000-01-01 00:00:00.000000Z]
+
+  @doc """
+  Internal — spend one attempt from a durable per-user security window.
+
+  Returns `:ok` through the configured limit. The first rejected attempt is
+  `{:error, :rate_limited, :exhausted}` and advances the stored count to
+  `limit + 1`; later rejects saturate there as `:capped`. Any persistence error
+  is `:store_unavailable`, which callers reject exactly like exhaustion.
+
+  The row lock and database clock make the budget atomic across Portal nodes.
+  The test-only rate-limit switch still bypasses it so unrelated async tests do
+  not share credential budgets.
+  """
+  def check_security_attempt(%Users.User{id: user_id}, scope, limit, window_ms)
+      when scope in [:mfa_challenge, :inbox_step_up, :email_change_issue, :mfa_enrollment_issue] and
+             is_integer(limit) and limit > 0 and is_integer(window_ms) and window_ms > 0 do
+    if Emisar.Config.get_env(:emisar, :rate_limit_enabled, true) do
+      do_check_security_attempt(user_id, scope, limit, window_ms)
+    else
+      :ok
+    end
+  end
+
+  def check_security_attempt(_, _, _, _),
+    do: {:error, :rate_limited, :store_unavailable}
+
+  defp do_check_security_attempt(user_id, scope, limit, window_ms) do
+    commit_security_attempt(user_id, scope, limit, window_ms)
+  rescue
+    _error in [DBConnection.ConnectionError, Postgrex.Error] ->
+      {:error, :rate_limited, :store_unavailable}
+  end
+
+  defp commit_security_attempt(user_id, scope, limit, window_ms) do
+    Multi.new()
+    |> Multi.run(:ensure_window, fn repo, _changes ->
+      attrs = %{
+        id: Repo.generate_id(),
+        user_id: user_id,
+        scope: scope,
+        attempt_count: 0,
+        window_started_at: @expired_security_window,
+        window_expires_at: @expired_security_window,
+        inserted_at: @expired_security_window,
+        updated_at: @expired_security_window
+      }
+
+      case repo.insert_all(SecurityAttemptWindow, [attrs],
+             on_conflict: :nothing,
+             conflict_target: [:user_id, :scope]
+           ) do
+        {_count, nil} -> {:ok, :ready}
+      end
+    end)
+    |> Multi.run(:window, fn repo, _changes ->
+      window =
+        SecurityAttemptWindow.Query.by_user_and_scope(user_id, scope)
+        |> SecurityAttemptWindow.Query.lock_for_update()
+        |> repo.one()
+
+      if window do
+        database_now =
+          SecurityAttemptWindow.Query.by_user_and_scope(user_id, scope)
+          |> SecurityAttemptWindow.Query.select_database_time()
+          |> repo.one!()
+
+        {:ok, {window, database_now}}
+      else
+        {:error, :store_unavailable}
+      end
+    end)
+    |> Multi.run(:attempt, fn repo, %{window: {window, database_now}} ->
+      {changeset, outcome} =
+        SecurityAttemptWindow.Changeset.advance(window, database_now, limit, window_ms)
+
+      case repo.update(changeset) do
+        {:ok, updated} -> {:ok, %{window: updated, outcome: outcome}}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{attempt: %{outcome: :allowed}}} -> :ok
+      {:ok, %{attempt: %{outcome: :exhausted}}} -> {:error, :rate_limited, :exhausted}
+      {:ok, %{attempt: %{outcome: :capped}}} -> {:error, :rate_limited, :capped}
+      {:error, _reason} -> {:error, :rate_limited, :store_unavailable}
+    end
+  end
+
   @doc """
   Verifies the sign-in second factor — `{:totp, otp}` or `{:recovery_code,
   code}` — behind the shared per-user fixed-window attempt cap, so no challenge
@@ -1347,12 +1440,15 @@ defmodule Emisar.Auth do
   defp mfa_proof_secret, do: Application.fetch_env!(:emisar, :email_link_secret)
 
   defp throttle_mfa_challenge(%Users.User{id: user_id}) do
-    Throttle.check(
-      :mfa_challenge,
-      user_id,
-      @mfa_challenge_attempt_limit,
-      @mfa_challenge_attempt_window_ms
-    )
+    case check_security_attempt(
+           %Users.User{id: user_id},
+           :mfa_challenge,
+           @mfa_challenge_attempt_limit,
+           @mfa_challenge_attempt_window_ms
+         ) do
+      :ok -> :ok
+      {:error, :rate_limited, _reason} -> {:error, :rate_limited}
+    end
   end
 
   # Verifies a TOTP code with replay protection. A bare `Crypto.valid_totp?/2`

@@ -1,7 +1,7 @@
 defmodule Emisar.AuthTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Auth, Crypto, Fixtures, Mail, RequestContext}
-  alias Emisar.Auth.UserToken
+  alias Emisar.Auth.{SecurityAttemptWindow, UserToken}
   alias Emisar.Users.User
 
   # Backdate every user_token row so its `inserted_at` lands `minutes` in
@@ -1485,6 +1485,56 @@ defmodule Emisar.AuthTest do
 
     test "refuses when MFA is not enabled", %{subject: subject} do
       assert Auth.regenerate_mfa_recovery_codes(subject) == {:error, :mfa_not_enabled}
+    end
+  end
+
+  describe "check_security_attempt/4" do
+    setup do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      %{subject: subject}
+    end
+
+    test "resets from database time and saturates after the first rejection", %{
+      subject: subject
+    } do
+      user = subject.actor
+
+      for _ <- 1..5 do
+        assert :ok = Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+      end
+
+      assert {:error, :rate_limited, :exhausted} =
+               Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+
+      assert {:error, :rate_limited, :capped} =
+               Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+
+      window = Repo.get_by!(SecurityAttemptWindow, user_id: user.id, scope: :mfa_challenge)
+      assert window.attempt_count == 6
+
+      expired = ~U[2001-01-01 00:05:00.000000Z]
+
+      window
+      |> Ecto.Changeset.change(
+        window_started_at: DateTime.add(expired, -300, :second),
+        window_expires_at: expired
+      )
+      |> Repo.update!()
+
+      assert :ok = Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+
+      reset = Repo.reload!(window)
+      assert reset.attempt_count == 1
+      assert DateTime.compare(reset.window_started_at, expired) == :gt
+      assert DateTime.compare(reset.window_expires_at, reset.window_started_at) == :gt
+    end
+
+    test "a persistence failure rejects the credential attempt", %{subject: subject} do
+      missing_user = %{subject.actor | id: Repo.generate_id()}
+
+      assert {:error, :rate_limited, :store_unavailable} =
+               Auth.check_security_attempt(missing_user, :mfa_challenge, 5, 300_000)
     end
   end
 
