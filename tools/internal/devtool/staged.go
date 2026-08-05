@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
@@ -47,6 +49,53 @@ func formatInput(ctx context.Context, name string, args []string, source []byte)
 	return stdout.Bytes(), nil
 }
 
+func (a *App) checkStagedPortalFormat(ctx context.Context) error {
+	files, err := a.stagedFiles(ctx, []string{"A", "C", "M", "R"}, "portal")
+	if err != nil {
+		return err
+	}
+	var formatFiles []string
+	for _, file := range files {
+		switch filepath.Ext(file) {
+		case ".ex", ".exs", ".heex":
+			formatFiles = append(formatFiles, file)
+		}
+	}
+	if len(formatFiles) == 0 {
+		return nil
+	}
+	if _, err := exec.LookPath("mix"); err != nil {
+		return fmt.Errorf("staged Portal files require mix: %w", err)
+	}
+
+	var unformatted []string
+	for _, file := range formatFiles {
+		source, err := a.stagedBlob(ctx, file)
+		if err != nil {
+			return err
+		}
+		relative := strings.TrimPrefix(filepath.ToSlash(file), "portal/")
+		command := exec.CommandContext(ctx, "mix", "format", "--check-formatted", "--stdin-filename", relative, "-")
+		command.Dir = a.Portal
+		command.Env = os.Environ()
+		command.Stdin = bytes.NewReader(source)
+		var output bytes.Buffer
+		command.Stdout, command.Stderr = &output, &output
+		if err := command.Run(); err != nil {
+			if strings.Contains(output.String(), "not formatted") {
+				unformatted = append(unformatted, file)
+				continue
+			}
+			return fmt.Errorf("formatting staged Portal %s: %w: %s", file, err, strings.TrimSpace(output.String()))
+		}
+	}
+	if len(unformatted) != 0 {
+		return fmt.Errorf("staged Portal files are not formatted:\n%s\nrun: cd portal && mix format",
+			strings.Join(unformatted, "\n"))
+	}
+	return nil
+}
+
 func (a *App) requireCleanPackHashInputs(ctx context.Context) error {
 	paths := []string{
 		"packs/redis", "packs/cassandra",
@@ -80,6 +129,9 @@ func (a *App) stagedCheck(ctx context.Context) error {
 	if len(migrations) != 0 {
 		return fmt.Errorf("editing or deleting a committed migration is forbidden:\n  %s\nadd a new forward migration instead",
 			strings.Join(migrations, "\n  "))
+	}
+	if err := a.checkStagedPortalFormat(ctx); err != nil {
+		return err
 	}
 
 	packFiles, err := a.stagedFiles(ctx, []string{"A", "C", "M", "R"}, "packs/redis", "packs/cassandra")

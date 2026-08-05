@@ -1,41 +1,5 @@
-#!/bin/bash
-# coop pre-commit gate — runs for every committer (agent or human) via
-# core.hooksPath=.githooks, so Codex/Gemini and a plain git commit can't bypass the format
-# check the way they bypass Claude-only hooks. Fast by design. Skip once: git commit --no-verify.
-set -f          # the file lists below are word-split on purpose; don't also glob-expand a name
-IFS=$'\n'       # …and split only on newlines, so a staged filename with a space stays one path
-staged=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null) || exit 0
-
-# Go: block the commit if any staged .go file isn't gofmt-clean.
-go_files=$(echo "$staged" | grep '\.go$' || true)
-if [ -n "$go_files" ] && command -v gofmt >/dev/null 2>&1; then
-  # shellcheck disable=SC2086  # intentional: split the file list into separate gofmt args
-  bad=$(gofmt -l $go_files 2>/dev/null || true)
-  if [ -n "$bad" ]; then
-    echo "pre-commit blocked — these need gofmt:" >&2; echo "  ${bad//$'\n'/$'\n'  }" >&2
-    echo "fix: gofmt -w <files>   (skip once: git commit --no-verify)" >&2; exit 1
-  fi
-fi
-
-# Terraform: block the commit if any staged .tf file isn't terraform-fmt clean.
-tf_files=$(echo "$staged" | grep '\.tf$' || true)
-if [ -n "$tf_files" ] && command -v terraform >/dev/null 2>&1; then
-  bad=""
-  for f in $tf_files; do [ -n "$(terraform fmt -check -list=true "$f" 2>/dev/null)" ] && bad="$bad $f"; done
-  if [ -n "$bad" ]; then
-    echo "pre-commit blocked — these need terraform fmt:$bad" >&2
-    echo "fix: terraform fmt <files>   (skip once: git commit --no-verify)" >&2; exit 1
-  fi
-fi
-
-# Elixir: block the commit if any staged .ex/.exs file isn't mix-format clean.
-ex_files=$(echo "$staged" | grep -E '\.exs?$' || true)
-if [ -n "$ex_files" ] && command -v mix >/dev/null 2>&1; then
-  # shellcheck disable=SC2086  # intentional: split the file list into separate mix-format args
-  if ! mix format --check-formatted $ex_files >/dev/null 2>&1; then
-    echo "pre-commit blocked — these need mix format:" >&2; echo "  ${ex_files//$'\n'/$'\n'  }" >&2
-    echo "fix: mix format   (skip once: git commit --no-verify)" >&2; exit 1
-  fi
-fi
-
-exit 0
+#!/bin/sh
+# Every committer enters the same staged-index check. Keep format semantics in
+# tools/internal/devtool, where filenames and staged blobs are handled safely.
+root=$(git rev-parse --show-toplevel) || exit 1
+exec "$root/run" check staged

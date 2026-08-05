@@ -189,6 +189,34 @@ func (c *checker) checkCoop() {
 	}
 }
 
+func (c *checker) checkReviewGate() {
+	data, err := os.ReadFile(c.path(".agent/project.yaml"))
+	if err != nil {
+		c.fail("reading .agent/project.yaml: %v", err)
+		return
+	}
+	var project struct {
+		Gate   string `yaml:"gate"`
+		Review struct {
+			Compose string            `yaml:"compose"`
+			Env     map[string]string `yaml:"env"`
+		} `yaml:"review"`
+	}
+	if err := yaml.Unmarshal(data, &project); err != nil {
+		c.fail("parsing .agent/project.yaml: %v", err)
+		return
+	}
+	if project.Gate != "./run gate review" {
+		c.fail(".agent/project.yaml gate is %q, expected ./run gate review", project.Gate)
+	}
+	if project.Review.Compose == "" {
+		c.fail(".agent/project.yaml review.compose is required for exact-candidate gating")
+	}
+	if project.Review.Env["CI"] != "1" || project.Review.Env["DATABASE_URL"] == "" {
+		c.fail(".agent/project.yaml review.env must provide CI=1 and DATABASE_URL")
+	}
+}
+
 func (c *checker) command(name string, args ...string) ([]byte, error) {
 	command := exec.Command(name, args...)
 	command.Dir = c.root
@@ -748,6 +776,7 @@ func (c *checker) run(requireCoop bool) int {
 		fmt.Fprintln(c.out, "skip: Coop live command contract (coop is not installed)")
 	}
 	c.group("task queues use expected state names", c.checkTaskDirs)
+	c.group("Coop review gates the exact rebased candidate through ./run gate review", c.checkReviewGate)
 	c.group("rule filenames use domain prefixes", c.checkRuleNames)
 	c.group("repository knowledge uses the KB layout and descriptive cards carry metadata", c.checkKnowledgeCards)
 	c.group("tracked dist packages stay separate from generated output", c.checkDistributionLayout)

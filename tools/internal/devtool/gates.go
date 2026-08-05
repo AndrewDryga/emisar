@@ -253,25 +253,27 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 
 func (a *App) portalGate(ctx context.Context) error {
 	var env map[string]string
+	if os.Getenv("CI") != "" && os.Getenv("DATABASE_URL") == "" {
+		return fmt.Errorf("CI portal gate requires DATABASE_URL")
+	}
+	// Fetching a locked dependency graph and checking source format are the
+	// cheapest deterministic failures. Run them before starting services or
+	// compiling the umbrella so a bad candidate fails in seconds.
+	if err := a.run(ctx, a.Portal, nil, "mix", "deps.get", "--check-locked"); err != nil {
+		return err
+	}
+	if err := a.run(ctx, a.Portal, nil, "mix", "format", "--check-formatted"); err != nil {
+		return err
+	}
 	if os.Getenv("CI") == "" {
 		_, workspaceEnv, err := a.up(ctx)
 		if err != nil {
 			return err
 		}
 		env = workspaceEnv
-	} else if os.Getenv("DATABASE_URL") == "" {
-		return fmt.Errorf("CI portal gate requires DATABASE_URL")
-	}
-	// A box keeps deps outside the repo mount (MIX_DEPS_PATH), so a fresh cache
-	// must self-heal before the first compile; --check-locked refuses to rewrite
-	// mix.lock, keeping the gate read-only toward the tree it verifies. Warm,
-	// this is a sub-second no-op.
-	if err := a.run(ctx, a.Portal, env, "mix", "deps.get", "--check-locked"); err != nil {
-		return err
 	}
 	for _, arguments := range [][]string{
 		{"compile", "--warnings-as-errors"},
-		{"format", "--check-formatted"},
 		{"credo"},
 		{"deps.audit", "--ignore-advisory-ids", ignoredAdvisories},
 		{"sobelow", "--root", "apps/emisar_web", "--config"},

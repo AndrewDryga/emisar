@@ -132,10 +132,11 @@ func forbiddenVersionedPath(file string) bool {
 		subpath := strings.Join(parts[index+1:], "/")
 		rootConfig := index == 0 &&
 			(subpath == "project.yaml" || subpath == "loop.yaml" || subpath == "Dockerfile")
+		taskManual := subpath == "tasks/README.md"
 		sharedDirectory :=
 			strings.HasPrefix(subpath, "kb/") || strings.HasPrefix(subpath, "scripts/") ||
 				strings.HasPrefix(subpath, "presets/")
-		if rootConfig || sharedDirectory {
+		if rootConfig || taskManual || sharedDirectory {
 			return false
 		}
 		return true

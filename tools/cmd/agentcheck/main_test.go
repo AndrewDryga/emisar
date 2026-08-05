@@ -77,6 +77,17 @@ func TestCheckTaskDirsAcceptsLifecycleAndBacklogStates(t *testing.T) {
 	}
 }
 
+func TestCheckReviewGateRequiresCanonicalCandidateGate(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, ".agent/project.yaml", "gate: ./run gate portal\nreview:\n  compose: dev/review-compose.yml\n  env:\n    CI: '1'\n    DATABASE_URL: postgres://db\n")
+
+	check.checkReviewGate()
+
+	if !hasFailure(check, "expected ./run gate review") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
 func TestCheckPublicSkillMCPToolsUsesParsedSchema(t *testing.T) {
 	check := testChecker(t)
 	writeTestFile(t, check.root, "portal/apps/emisar_web/priv/mcp/api-schemas.json", `{"tools":{"list_runners":{}}}`)

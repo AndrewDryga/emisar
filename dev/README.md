@@ -93,6 +93,13 @@ quick static and complete pre-commit surfaces, respectively. `test` is focused
 feedback, `check` is quick or specialized validation, and `gate` is the complete
 Definition of Done for its target.
 
+Commits run `./run check staged` through the tracked pre-commit hook. The check
+reads the Git index rather than the working tree, so an unstaged formatter fix
+cannot hide an unformatted staged blob. Landing still uses the stronger
+candidate boundary: Coop rebases the fork, starts `dev/review-compose.yml`, and
+runs the repository-configured `./run gate review` against those exact bytes
+before Responder opens or updates the draft pull request.
+
 Production workstation helpers use the same entrypoint. Their implementation
 lives in `tools/internal/infraops`; `infra/` contains the Terraform project and
 the artifacts Terraform deploys, not a second command directory:

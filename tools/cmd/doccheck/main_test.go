@@ -81,6 +81,7 @@ func TestForbiddenVersionedPath(t *testing.T) {
 		"portal/.agent/loop.yaml":                             true,
 		"portal/.agent/project.yaml":                          true,
 		"portal/.agent/secrets/reviewer.env":                  true,
+		"portal/.agent/tasks/README.md":                       false,
 		"portal/.agent/tasks/00_todo/example/task.md":         true,
 		"portal/apps/emisar_web/priv/observability/README.md": false,
 	}
