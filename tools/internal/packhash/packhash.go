@@ -71,15 +71,16 @@ func validator(root, configured string) (string, error) {
 		}
 		return "", fmt.Errorf("%w: %s", ErrUnavailable, configured)
 	}
+	// This checkout's binary or nothing. The golden exists to prove that the Go
+	// runner and the Elixir PublishedRegistry in THIS tree hash a pack
+	// identically, so an `emisar` picked up from PATH — a developer's installed
+	// product runner, some other version entirely — cannot answer that question,
+	// and `--write` would record its answer as ours.
 	local := filepath.Join(root, "bin", "emisar")
 	if info, err := os.Stat(local); err == nil && !info.IsDir() {
 		return local, nil
 	}
-	path, err := exec.LookPath("emisar")
-	if err != nil {
-		return "", fmt.Errorf("%w: run go -C runner build -o ../bin/emisar . to build bin/emisar", ErrUnavailable)
-	}
-	return path, nil
+	return "", fmt.Errorf("%w: run go -C runner build -o ../bin/emisar . to build bin/emisar", ErrUnavailable)
 }
 
 func currentHash(root, binary, pack string) (string, error) {
