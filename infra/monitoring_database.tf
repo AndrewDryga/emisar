@@ -118,3 +118,59 @@ resource "google_monitoring_alert_policy" "db_txid" {
   notification_channels = local.paging_notification_channels
 }
 
+
+# Backups and PITR are the WHOLE recovery posture here: availability_type is
+# ZONAL, so there is no failover and restore IS the recovery. Nothing alerted on
+# a backup failing, so quota exhaustion, a maintenance regression, or a flag
+# change would stop backups silently and the first anyone knew of it would be a
+# restore attempted under incident pressure, against whatever the last good
+# backup happened to be.
+resource "google_logging_metric" "cloudsql_backup_failed" {
+  project = var.project_id
+  name    = "emisar_cloudsql_backup_failed"
+
+  filter = join(" AND ", [
+    "resource.type=\"cloudsql_database\"",
+    "resource.labels.database_id=\"${var.project_id}:${google_sql_database_instance.emisar.name}\"",
+    "protoPayload.methodName=\"cloudsql.instances.backup\"",
+    "severity>=ERROR",
+  ])
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_monitoring_alert_policy" "db_backup_failed" {
+  display_name = "Emisar: Cloud SQL Backup Failed"
+  combiner     = "OR"
+
+  documentation {
+    content   = "A Cloud SQL backup operation failed. Restore is the recovery plan for this ZONAL instance, so treat a lapse as an availability incident: check Cloud SQL operations, quota, and the backup configuration, then confirm the most recent successful backup and PITR window."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "cloud-sql"
+    signal    = "durability"
+  }
+
+  conditions {
+    display_name = "Backup Operation Error In The Last Hour"
+    condition_threshold {
+      filter          = "resource.type = \"cloudsql_database\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.cloudsql_backup_failed.name}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "3600s"
+        per_series_aligner = "ALIGN_DELTA"
+      }
+    }
+  }
+
+  notification_channels = local.paging_notification_channels
+}
