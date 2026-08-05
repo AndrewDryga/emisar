@@ -22,16 +22,16 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
     * the response must be JSON, arrives under a hard byte cap enforced while
       streaming, and is bounded by a short timeout.
 
-  The address check filters the ANSWER; it does not pin the CONNECTION. Finch
-  resolves the host again when it opens the socket, so a record with a zero TTL
-  that flips between those two resolutions still reaches its target. Pinning
-  would mean connecting to a validated address while carrying the hostname in
-  SNI, which Finch exposes no per-request hook for. What survives that gap is
-  narrow: no redirect is followed, the response must be JSON under 64 KiB with a
-  200, and it must parse as a metadata document carrying `client_id`,
-  `client_name` and `redirect_uris` before any caller reads it — and the GCP
-  metadata server, the usual target, answers 403 without a `Metadata-Flavor`
-  header this module never sends.
+  The address check PINS the connection: `validate_destination/1` returns the one
+  address it approved, and the fetch dials exactly that. It used to return `:ok`
+  and let the HTTP client resolve again, which is a rebinding window — a record
+  with a zero TTL could point somewhere else between the two lookups.
+
+  That is why this calls Mint directly rather than going through Finch: Mint
+  takes both an address to dial and a `:hostname` to present for SNI and to
+  verify the certificate against, and Finch has no per-request hook for it.
+  Nothing about TLS is relaxed — the hostname check still runs, against the name
+  in the URL, and a certificate that does not verify fails the fetch.
 
   The document is re-fetched on each authorization rather than cached. The spec
   only asks that caching respect HTTP cache headers; always reading the live
@@ -56,8 +56,8 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
   @spec fetch(String.t()) :: {:ok, map()} | {:error, atom()}
   def fetch(url) when is_binary(url) do
     with :ok <- validate_url(url),
-         :ok <- validate_destination(url),
-         {:ok, body} <- get(url),
+         {:ok, address} <- validate_destination(url),
+         {:ok, body} <- get(url, address),
          {:ok, document} <- decode(body) do
       validate(document, url)
     end
@@ -93,19 +93,30 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
 
   # Resolve the host ourselves and judge every answer before the request goes
   # out. A hostname that resolves to any non-public address is refused outright.
+  # Returns the ONE address the fetch will connect to, not just `:ok`.
+  #
+  # That is the whole fix: the check used to filter the answer and then let the
+  # HTTP client resolve again, so a record with a zero TTL could point somewhere
+  # else between the two lookups. Handing the approved address to the fetch
+  # closes the window — the connection goes exactly where the check looked.
+  #
+  # `nil` means "resolve normally", which is the dev/test loopback path below.
   defp validate_destination(url) do
     host = URI.parse(url).host
 
     if allow_private_hosts?() do
-      :ok
+      {:ok, nil}
     else
       case resolve(host) do
-        {:ok, addresses} ->
+        {:ok, [_ | _] = addresses} ->
+          # Every answer must be public — a split A/AAAA reply cannot smuggle an
+          # internal target past a public one — and then the first is the one we
+          # commit to.
           if Enum.all?(addresses, &public_address?/1),
-            do: :ok,
+            do: {:ok, hd(addresses)},
             else: {:error, :blocked_destination}
 
-        {:error, _reason} ->
+        _ ->
           {:error, :unresolvable_host}
       end
     end
@@ -178,27 +189,81 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
 
   # -- Fetch ----------------------------------------------------------
 
-  defp get(url) do
-    request = Finch.build(:get, url, [{"accept", "application/json"}])
+  # Connects to the address `validate_destination/1` approved, carrying the URL's
+  # hostname for SNI and certificate verification. Mint takes both — an address
+  # to dial and a `:hostname` to present and verify against — which is why this
+  # calls Mint directly rather than through Finch, whose per-request API has no
+  # hook for it. Nothing about TLS verification is relaxed: the hostname check
+  # still runs, against the name in the URL.
+  #
+  # Streamed, so an oversized body is abandoned mid-flight rather than read into
+  # memory first, and a redirect is refused outright: only this URL's address was
+  # validated, so following a hop would leave the boundary.
+  defp get(url, address) do
+    uri = URI.parse(url)
+    port = uri.port || 443
 
-    # Stream so an oversized body is abandoned mid-flight instead of being read
-    # into memory first, and refuse a redirect outright: only this URL's
-    # addresses were validated, so following a hop would leave the boundary.
-    try do
-      Finch.stream(request, Emisar.Finch, {nil, ""}, &collect/2,
-        receive_timeout: @timeout_ms,
-        pool_timeout: @timeout_ms
-      )
-    catch
-      {:document, reason} -> {:error, reason}
-    else
-      # Finch reports a stream failure as {:error, reason, acc} — a three-tuple,
-      # not the usual pair.
-      {:ok, {200, body}} -> {:ok, body}
-      {:ok, {_status, _body}} -> {:error, :document_unavailable}
-      {:error, _reason, _acc} -> {:error, :document_unavailable}
+    connect_opts = [
+      transport_opts: [timeout: @timeout_ms],
+      mode: :passive
+    ]
+
+    # nil address is the dev/test loopback path, where the host is dialled by
+    # name because there is nothing to pin it against.
+    {target, opts} =
+      case address do
+        nil -> {uri.host, connect_opts}
+        address -> {address, Keyword.put(connect_opts, :hostname, uri.host)}
+      end
+
+    case Mint.HTTP.connect(:https, target, port, opts) do
+      {:ok, conn} -> stream_document(conn, uri)
+      {:error, _reason} -> {:error, :document_unavailable}
     end
   end
+
+  defp stream_document(conn, uri) do
+    path = (uri.path || "/") <> if(uri.query, do: "?" <> uri.query, else: "")
+    headers = [{"accept", "application/json"}, {"host", uri.host}]
+
+    try do
+      with {:ok, conn, ref} <- Mint.HTTP.request(conn, "GET", path, headers, nil),
+           {:ok, conn, {status, body}} <- receive_document(conn, ref, {nil, ""}) do
+        Mint.HTTP.close(conn)
+        if status == 200, do: {:ok, body}, else: {:error, :document_unavailable}
+      else
+        {:error, _conn, _reason} -> {:error, :document_unavailable}
+        {:error, _reason} -> {:error, :document_unavailable}
+      end
+    catch
+      {:document, reason} -> {:error, reason}
+    end
+  end
+
+  defp receive_document(conn, ref, acc) do
+    case Mint.HTTP.recv(conn, 0, @timeout_ms) do
+      {:ok, conn, responses} ->
+        case Enum.reduce(responses, {:cont, acc}, &collect_response(&1, &2, ref)) do
+          {:done, acc} -> {:ok, conn, acc}
+          {:cont, acc} -> receive_document(conn, ref, acc)
+        end
+
+      {:error, _conn, reason, _responses} ->
+        {:error, reason}
+    end
+  end
+
+  defp collect_response({:status, ref, status}, {:cont, acc}, ref),
+    do: {:cont, collect({:status, status}, acc)}
+
+  defp collect_response({:headers, ref, headers}, {:cont, acc}, ref),
+    do: {:cont, collect({:headers, headers}, acc)}
+
+  defp collect_response({:data, ref, chunk}, {:cont, acc}, ref),
+    do: {:cont, collect({:data, chunk}, acc)}
+
+  defp collect_response({:done, ref}, {:cont, acc}, ref), do: {:done, acc}
+  defp collect_response(_response, state, _ref), do: state
 
   defp collect({:status, status}, {_status, body}), do: {status, body}
 

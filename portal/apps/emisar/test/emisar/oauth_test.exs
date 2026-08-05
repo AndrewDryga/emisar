@@ -165,6 +165,30 @@ defmodule Emisar.OAuthTest do
       assert {:error, :not_found} = OAuth.fetch_client(nil)
     end
 
+    test "the pinned fetch still verifies TLS — an untrusted certificate is refused" do
+      # The fetch was rewritten from Finch to Mint so it can connect to the exact
+      # address `validate_destination/1` approved while carrying the URL's
+      # hostname for SNI and certificate verification. Hand-rolling a connection
+      # is how people accidentally turn verification off, so this drives the real
+      # path — real listener, real handshake — against a certificate nothing
+      # trusts, and requires it to fail.
+      #
+      # It also proves the rewrite reaches the handshake at all: a broken
+      # connect would fail here for the wrong reason and this test could not
+      # tell the difference, which is why the listener records the attempt.
+      {:ok, listener} = start_metadata_listener()
+      on_exit(fn -> :ssl.close(listener.socket) end)
+
+      Emisar.Config.put_override(:emisar, Emisar.OAuth.ClientMetadataDocument,
+        allow_private_hosts: true
+      )
+
+      url = "https://localhost:#{listener.port}/client-metadata.json"
+      assert {:error, :not_found} = OAuth.fetch_client(url)
+      assert_receive {:tls_attempted, _outcome}, 5_000
+      refute Repo.one(Client)
+    end
+
     test "a metadata-document URL whose document cannot be retrieved is :not_found" do
       Emisar.Config.put_override(:emisar, Emisar.OAuth.ClientMetadataDocument,
         allow_private_hosts: false
@@ -1389,5 +1413,58 @@ defmodule Emisar.OAuthTest do
       assert is_list(scopes)
       assert "mcp" in scopes
     end
+  end
+
+  # A one-shot TLS listener serving a valid client-metadata document. Uses the
+  # repository's existing self-signed pair; the fetch reaches it through the
+  # dev/test loopback path, which is the only way a private address is allowed.
+  defp start_metadata_listener do
+    # Path, not Application.app_dir: emisar_web is not loaded in this app's test
+    # run, and the pair is a repository fixture rather than a runtime asset.
+    cert_dir = Path.join(__DIR__, "../../../emisar_web/priv/cert")
+    certfile = Path.expand(Path.join(cert_dir, "selfsigned.pem"))
+    keyfile = Path.expand(Path.join(cert_dir, "selfsigned_key.pem"))
+
+    {:ok, socket} =
+      :ssl.listen(0, [
+        :binary,
+        certfile: String.to_charlist(certfile),
+        keyfile: String.to_charlist(keyfile),
+        active: false,
+        reuseaddr: true,
+        packet: :raw
+      ])
+
+    {:ok, {_address, port}} = :ssl.sockname(socket)
+
+    document =
+      Jason.encode!(%{
+        "client_id" => "https://localhost:#{port}/client-metadata.json",
+        "client_name" => "Pinned Fetch Probe",
+        "redirect_uris" => ["https://localhost/callback"]
+      })
+
+    parent = self()
+
+    spawn_link(fn ->
+      with {:ok, transport} <- :ssl.transport_accept(socket, 5_000),
+           {:ok, connection} <- :ssl.handshake(transport, 5_000) do
+        send(parent, {:tls_attempted, :handshake_completed})
+        _ = :ssl.recv(connection, 0, 5_000)
+
+        response =
+          "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " <>
+            Integer.to_string(byte_size(document)) <> "\r\nConnection: close\r\n\r\n" <> document
+
+        _ = :ssl.send(connection, response)
+        :ssl.close(connection)
+      else
+        # The expected outcome: the client refused our certificate. Reporting it
+        # is what proves the fetch actually reached the handshake.
+        _refused -> send(parent, {:tls_attempted, :rejected_by_client})
+      end
+    end)
+
+    {:ok, %{socket: socket, port: port}}
   end
 end

@@ -70,6 +70,11 @@ defmodule Emisar.MixProject do
       # Outbound email + HTTP
       {:swoosh, "~> 1.26"},
       {:finch, "~> 0.22"},
+      # Direct, not leaned on through Finch: the CIMD fetch calls Mint itself to
+      # connect to a VALIDATED address while carrying the original hostname for
+      # SNI and certificate verification. Finch exposes no per-request hook for
+      # that, and a fetch that resolves twice is a rebinding window.
+      {:mint, "~> 1.9"},
       {:gen_smtp, "~> 1.3"},
       # OAuth 1.0a request signing for the X Ads Conversion API.
       {:oauther, "~> 1.3"},
