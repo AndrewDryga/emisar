@@ -194,9 +194,16 @@ sudo emisar pack install ./my-pack</.docs_code>
           <p class="mt-5 text-base leading-7 text-zinc-400">
             Because your pack isn't in the catalog your portal reads, there's no published hash for
             it to match — so it lands in
-            the dashboard's <strong class="text-zinc-200">Packs</strong>
+            the dashboard's
+            <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>
             page as <strong class="text-zinc-200">pending</strong>, with dispatch held until you
-            approve it. Open <strong class="text-zinc-200">Packs</strong>, review the content hash,
+            approve it. Open <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>, review the content hash,
             and click <strong class="text-zinc-200">Trust</strong>. Its actions are then callable,
             gated by your policy. From then on, that exact
             byte-for-byte version is the only one authorized: edit the pack and its hash changes,
@@ -204,7 +211,10 @@ sudo emisar pack install ./my-pack</.docs_code>
             you reviewed, not a publisher you hope is honest.
           </p>
           <p class="mt-4 text-base text-zinc-400">
-            Confirm it end-to-end: open the runner in the dashboard, check your actions under <strong class="text-zinc-200">Advertised actions</strong>, and
+            Confirm it end-to-end: open the runner from <a
+              href={~p"/app/runners"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Runners</a>, check your actions under <strong class="text-zinc-200">Advertised actions</strong>, and
             <strong class="text-zinc-200">Run</strong>
             one.
           </p>
@@ -231,7 +241,12 @@ sudo emisar pack install ./my-pack</.docs_code>
             When you change the pack, bump its <code>version</code>, re-validate, re-install (add
             <code>--force</code>
             — an already-installed pack isn't replaced without it), and
-            re-trust the new hash once in the dashboard — the same review you'd give any production
+            re-trust the new hash once in
+            <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>
+            — the same review you'd give any production
             change. The pack is yours: its lifecycle, its hosts, its risk tiers, on your schedule.
           </p>
           <p class="mt-5 text-base leading-7 text-zinc-400">

@@ -143,7 +143,10 @@
           trusted but unavailable packs and actions together with deployment issues such as no
           connected runner, a missing executable, or descriptor mismatch. Pending, rejected,
           revoked, and retirement-blocked pack refs are operator-only facts; MCP discovery omits
-          them. When an expected ref is absent, review it on the portal's Packs page.
+          them. When an expected ref is absent, review it in <a
+            href={~p"/app/packs"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Packs</a>.
         </p>
         <p>
           A <code>pack_ref</code>
@@ -240,7 +243,10 @@
           with <code>allow_draft: true</code>. A draft test uses the same target, trust, policy,
           approval, scheduler, runner, and audit path as published execution. It can cause the
           actions' real effects, but it does not publish the draft; publication remains a human
-          action in the console.
+          action in <a
+            href={~p"/app/runbooks"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runbooks</a>.
         </p>
         <p>
           A definition may contain 32 inputs, 16 stages, 32 steps in total, 16 target refs per

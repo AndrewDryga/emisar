@@ -305,6 +305,105 @@ defmodule EmisarWeb.MarketingStructuralTest do
   end
 
   describe "docs page shell" do
+    test "actionable console destinations are direct links", %{conn: conn} do
+      links_by_page = [
+        {"/docs/quickstart",
+         [
+           {"/app/runners/install", "Connect a runner"},
+           {"/app/runners", "Runners"},
+           {"/app/packs", "Packs"},
+           {"/app/agents", "LLM agents"}
+         ]},
+        {"/docs/host-install", [{"/app/runners/install", "Runners → Connect a runner"}]},
+        {"/docs/runners",
+         [
+           {"/app/runners/install", "Runners → Connect a runner"},
+           {"/app/runners/keys", "Runners → Enrollment keys"},
+           {"/app/runners", "Runners"},
+           {"/app/packs", "Packs"}
+         ]},
+        {"/docs/runner-cli", [{"/app/runners", "Runners"}, {"/app/packs", "Packs"}]},
+        {"/docs/autoscaling-fleets",
+         [
+           {"/app/runners/keys/new", "Runners → Enrollment keys → New key"},
+           {"/app/runners", "Runners"}
+         ]},
+        {"/docs/credentials",
+         [
+           {"/app/runners/keys", "Runners → Enrollment keys"},
+           {"/app/runners", "Runners"},
+           {"/app/agents", "Agents"},
+           {"/app/audit/export", "Audit export"}
+         ]},
+        {"/docs/containers",
+         [
+           {"/app/runners/install", "Connect a runner"},
+           {"/app/runners/keys/new", "reusable enrollment key"},
+           {"/app/packs", "Packs"}
+         ]},
+        {"/docs/publishing-packs", [{"/app/packs", "Packs"}, {"/app/runners", "Runners"}]},
+        {"/docs/pack-registry", [{"/app/packs", "Packs"}]},
+        {"/docs/pack-updates", [{"/app/packs", "Packs"}]},
+        {"/docs/mcp-reference", [{"/app/packs", "Packs"}, {"/app/runbooks", "Runbooks"}]},
+        {"/docs/keys", [{"/app/agents", "LLM agents"}, {"/app/audit/export", "Audit export"}]},
+        {"/docs/billing", [{"/app/billing", "Billing"}, {"/app/billing", "Settings → Billing"}]},
+        {"/docs/teams-and-access",
+         [
+           {"/app/team/invite", "Team → Invite"},
+           {"/app/team", "Team"},
+           {"/app/agents", "LLM agents"}
+         ]},
+        {"/docs/policies-and-approvals",
+         [{"/app/policies", "Policies"}, {"/app/approvals", "Approvals"}]},
+        {"/docs/audit-and-siem",
+         [{"/app/audit", "Audit"}, {"/app/audit/export", "Audit export"}]},
+        {"/docs/runbooks",
+         [
+           {"/app/runbooks", "Runbooks"},
+           {"/app/runbooks/new", "New runbook"},
+           {"/app/runbooks/import", "Import runbook"}
+         ]},
+        {"/docs/troubleshooting",
+         [{"/app/runners", "Runners"}, {"/app/packs", "Packs"}, {"/app/agents", "LLM agents"}]},
+        {"/docs/runs", [{"/app/runs", "Runs"}]},
+        {"/docs/deployment",
+         [{"/app/audit", "Audit"}, {"/app/audit/export", "audit-export token"}]},
+        {"/docs/signed-dispatch", [{"/app/runners", "Runners"}]},
+        {"/docs/upgrades",
+         [
+           {"/app/runs", "Runs"},
+           {"/app/runners", "Runners"},
+           {"/app/audit", "Audit"},
+           {"/app/packs", "Packs"}
+         ]},
+        {"/docs/scim", [{"/app/sso", "Team → Single sign-on"}]},
+        {"/docs/integrations/keycloak", [{"/app/team", "Team"}]},
+        {"/docs/integrations/google-workspace", [{"/app/team", "Team"}]},
+        {"/docs/integrations/jumpcloud",
+         [{"/app/team", "Team"}, {"/app/sso", "Team → Single sign-on"}]},
+        {"/docs/security-model", [{"/app/audit/export", "Audit export"}]},
+        {"/docs/security-incidents",
+         [
+           {"/app/agents", "LLM agents"},
+           {"/app/audit", "Audit"},
+           {"/app/audit/export", "Audit export"},
+           {"/app/runners/keys", "Runners → Enrollment keys"},
+           {"/app/runners", "Runners"},
+           {"/app/runs", "Runs"},
+           {"/app/packs", "Packs"},
+           {"/app/sso", "Team → Single sign-on"}
+         ]}
+      ]
+
+      for {page, expected_links} <- links_by_page do
+        html = conn |> recycle() |> get(page) |> html_response(200)
+
+        for {href, label} <- expected_links do
+          assert_link(html, page, href, label)
+        end
+      end
+    end
+
     test "every docs TOC anchor resolves to a section id on its own page", %{conn: conn} do
       # `docs_layout` renders the "On this page" rail from the page's `toc`
       # list; an entry whose id has no matching heading scrolls nowhere. The
@@ -377,6 +476,21 @@ defmodule EmisarWeb.MarketingStructuralTest do
       [title] -> title |> String.split() |> Enum.join(" ")
       nil -> nil
     end
+  end
+
+  defp assert_link(html, page, href, label) do
+    labels =
+      ~r{<a\b[^>]*href="#{Regex.escape(href)}"[^>]*>(.*?)</a>}s
+      |> Regex.scan(html, capture: :all_but_first)
+      |> Enum.map(fn [contents] ->
+        contents
+        |> String.replace(~r/<[^>]+>/, "")
+        |> String.split()
+        |> Enum.join(" ")
+      end)
+
+    assert Enum.any?(labels, &String.contains?(&1, label)),
+           "#{page}: expected #{inspect(label)} to link directly to #{href}; found #{inspect(labels)}"
   end
 
   # Parse every application/ld+json block and return the first node whose

@@ -87,9 +87,11 @@ defmodule Emisar.Accounts.Account.Changeset do
       message: "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars"
     )
     # The router serves literal /app/<segment> paths at these names (the
-    # slugless agents shorthands + checkout/accounts), so an account carrying
+    # slugless console shorthands + checkout/accounts), so an account carrying
     # one could never reach its own pages.
-    |> validate_exclusion(:slug, ~w[accounts agents checkout runbooks sso team],
+    |> validate_exclusion(
+      :slug,
+      ~w[accounts agents approvals audit billing checkout packs policies runbooks runners runs sso team],
       message: "is reserved"
     )
     |> unique_constraint(:slug)

@@ -32,7 +32,8 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
     end
 
     test "rejects slugs the router serves as literal /app/<segment> paths" do
-      for reserved <- ~w(accounts agents checkout runbooks sso team) do
+      for reserved <-
+            ~w[accounts agents approvals audit billing checkout packs policies runbooks runners runs sso team] do
         assert "is reserved" in errors_on(changeset(slug: reserved)).slug
       end
     end

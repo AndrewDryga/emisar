@@ -321,13 +321,26 @@ defmodule EmisarWeb.Router do
     # Slugless deep-link shorthands — URLs the MCP installer, `emisar-mcp
     # --help`, and docs print without knowing the account. Literal segments
     # here shadow account slugs, so each is reserved in Account.Changeset.
-    get "/agents", AccountRedirectController, :agents
-    get "/agents/connect", AccountRedirectController, :connect_agent
+    get "/runners", AccountRedirectController, :runners
+    get "/runners/install", AccountRedirectController, :connect_runner
+    get "/runners/keys", AccountRedirectController, :enrollment_keys
+    get "/runners/keys/new", AccountRedirectController, :new_enrollment_key
+    get "/runs", AccountRedirectController, :runs
+    get "/approvals", AccountRedirectController, :approvals
     get "/runbooks", AccountRedirectController, :runbooks
     get "/runbooks/new", AccountRedirectController, :new_runbook
     get "/runbooks/import", AccountRedirectController, :import_runbook
-    get "/sso/new", AccountRedirectController, :add_sso_provider
+    get "/policies", AccountRedirectController, :policies
+    get "/packs", AccountRedirectController, :packs
+    get "/audit", AccountRedirectController, :audit
+    get "/audit/export", AccountRedirectController, :audit_export
+    get "/agents", AccountRedirectController, :agents
+    get "/agents/connect", AccountRedirectController, :connect_agent
     get "/team", AccountRedirectController, :team
+    get "/team/invite", AccountRedirectController, :invite_team_member
+    get "/sso", AccountRedirectController, :sso
+    get "/sso/new", AccountRedirectController, :add_sso_provider
+    get "/billing", AccountRedirectController, :billing
 
     # Paddle's post-payment redirect. The checkout page can't know the account
     # slug at render time, so this resolves the session's current account and

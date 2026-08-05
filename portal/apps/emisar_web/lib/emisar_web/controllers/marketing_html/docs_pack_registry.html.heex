@@ -179,7 +179,10 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
   --hash sha256:&lt;reviewed&gt;</.docs_code>
           <p class="mt-5 text-base leading-7 text-zinc-400">
             Then trust the pack once on the dashboard's
-            <strong class="text-zinc-200">Packs</strong>
+            <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>
             page — actions gate on that per-account trust, not on where the bytes came from. Edit
             the pack and its hash changes, which re-marks it pending until you re-trust.
           </p>
@@ -202,8 +205,12 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
             already-published <code>id@version</code>
             <strong class="text-zinc-200">fails the build</strong>
             — bump the version instead. On a critical fix, republish and then
-            <strong class="text-zinc-200">revoke trust on the old version</strong>
-            in each account's Packs page — that's what makes a runner refuse it at dispatch.
+            revoke trust on the old version in each account's
+            <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>
+            page — that's what makes a runner refuse it at dispatch.
           </p>
           <.docs_code phx-no-format label="shell">curl -fsS https://packs.acme.internal/v1/catalog.json -o current.json
 packctl catalog build --packs ./packs --out ./dist \

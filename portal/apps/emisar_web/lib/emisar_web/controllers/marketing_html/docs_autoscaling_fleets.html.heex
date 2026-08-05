@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="autoscaling-fleets"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_autoscaling_fleets.html.heex"
       toc={[
         {"model", "How it works"},
@@ -49,8 +49,10 @@
 
       <.docs_h2 id="key">Create a reusable enrollment key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the console, open <strong>Runners → Enrollment keys → New key</strong>. Turn on
-        <strong>Reusable</strong>
+        In the console, open <a
+          href={~p"/app/runners/keys/new"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners → Enrollment keys → New key</a>. Turn on <strong>Reusable</strong>
         so every instance can enroll with the same one. Two optional limits keep a shared key honest:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
@@ -206,8 +208,11 @@ curl -sSL https://emisar.dev/install.sh \
         each one counts against your plan's runner limit until it's gone.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To solve this turn on retention. On the <strong>Runners</strong>
-        page, an owner or admin sets <strong>Remove runners inactive for</strong>
+        To solve this turn on retention. On <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>,
+        an owner or admin sets <strong>Remove runners inactive for</strong>
         to a window; an hourly sweep then deletes any runner disconnected longer than that. Connected
         and disabled runners are never touched, and a host that comes back re-enrolls as a fresh
         runner. It's off by default — pick a window comfortably longer than your longest expected

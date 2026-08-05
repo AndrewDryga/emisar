@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="host-install"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_host_install.html.heex"
       toc={[
         {"install", "The install command"},
@@ -59,7 +59,10 @@
       <.docs_h2 id="install">The install command</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         One command, run as root, on a Linux host with systemd. The
-        <strong class="text-zinc-200">Runners → Connect a runner</strong>
+        <a
+          href={~p"/app/runners/install"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners → Connect a runner</a>
         button generates this exact line with a fresh single-use key baked in.
       </p>
       <.docs_code

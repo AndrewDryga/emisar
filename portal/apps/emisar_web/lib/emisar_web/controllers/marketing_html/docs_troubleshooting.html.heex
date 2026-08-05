@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="troubleshooting"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_troubleshooting.html.heex"
       toc={[
         {"runner", "The runner will not connect"},
@@ -203,8 +203,12 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The pack is installed but pending.</strong>
-            Installing bytes is not trusting them. Review the exact version and content hash on the
-            Packs page and trust it deliberately;
+            Installing bytes is not trusting them. Review the exact version and content hash in
+            <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>
+            and trust it deliberately;
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar pack list</code>
             shows what the host will advertise.
           </span>
@@ -248,7 +252,12 @@
 
       <.docs_h2 id="dispatch">An action will not dispatch</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Dispatch from the console first, even if the agent is what failed. The run row tells you
+        Dispatch from
+        <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>
+        first, even if the agent is what failed. The run row tells you
         which gate stopped it, and that is faster than reading an error twice removed.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
@@ -373,8 +382,12 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Every call returns 401.</strong>
-            The key was revoked, or a rotation successor retired it. Mint or rotate one on the
-            Agents page and put the new secret in the client config —
+            The key was revoked, or a rotation successor retired it. Mint or rotate one in
+            <a
+              href={~p"/app/agents"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >LLM agents</a>
+            and put the new secret in the client config —
             <.link navigate={~p"/docs/keys"} class="text-brand-300 hover:text-brand-200">API keys</.link>
             owns scope and expiry,
             <.link navigate={~p"/docs/credentials"} class="text-brand-300 hover:text-brand-200">Rotate and revoke credentials</.link>

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="keys"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_keys.html.heex"
       toc={[
         {"what-is-a-key", "What an MCP key is"},
@@ -113,8 +113,12 @@
 
       <.docs_h2 id="minting">Minting a key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Keys are minted from the <strong>LLM agents</strong>
-        page in the console — the same place you
+        Keys are minted from
+        <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >LLM agents</a>
+        in the console — the same place you
         connect and revoke agents. Pick the client you're connecting and emisar mints a key for it
         on the spot; the secret drops into a pre-filled config snippet you copy into that client.
         Cloud clients like Claude.ai and ChatGPT get no pasted key at all — they connect over OAuth
@@ -191,7 +195,10 @@
         because it can't be undone.
       </p>
       <.docs_callout kind={:note} title="A key that suddenly returns 401.">
-        Start on the Agents page. If it <em>expired</em>, the bridge may have already rotated it —
+        Start in <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >LLM agents</a>. If it <em>expired</em>, the bridge may have already rotated it —
         look for a live successor. If it was <em>revoked</em>, that's terminal: reconnect the client
         to mint a new key. If the whole <em>bridge</em>
         is below the supported version, it fails at
@@ -202,8 +209,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Not every token emisar issues is an MCP key. An <strong>audit-export</strong>
         token is a
-        separate kind, minted from the <strong>Audit</strong>
-        page, that does one thing: read your
+        separate kind, minted from <a
+          href={~p"/app/audit/export"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Audit export</a>, that does one thing: read your
         account's events from the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/audit</code>
         export API. It can't list runners, discover the catalog, or run an action — present it to the

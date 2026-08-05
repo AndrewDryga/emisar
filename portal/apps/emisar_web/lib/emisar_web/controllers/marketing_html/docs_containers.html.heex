@@ -17,7 +17,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="containers"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_containers.html.heex"
       toc={[
         {"what-it-sees", "What a containerized runner sees"},
@@ -135,13 +135,24 @@
   <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
   <span class="text-sky-300">token_path</span>: <span class="text-brand-300">"/var/lib/emisar/token.json"</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        One more thing before a fleet: the dashboard's Connect-a-runner key is single-use —
+        One more thing before a fleet: the key from
+        <a
+          href={~p"/app/runners/install"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Connect a runner</a>
+        is single-use —
         right for one host, wrong for a template that scales. For DaemonSets and system jobs,
-        mint a <strong class="text-zinc-200">reusable enrollment key</strong>
-        (optionally capped at a number of uses) and hand that to the template — see <.link
+        mint a
+        <a
+          href={~p"/app/runners/keys/new"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >reusable enrollment key</a>
+        (optionally capped at a number of uses) and hand that to the template. See
+        <.link
           navigate={~p"/docs/runners" <> "#enrollment-keys"}
           class="text-brand-400 hover:text-brand-300"
-        >enrollment keys</.link>.
+        >enrollment keys</.link>
+        for the lifecycle details.
       </p>
 
       <.docs_h2 id="extending">Extend it for your packs</.docs_h2>
@@ -161,7 +172,12 @@ RUN apt-get update \
     && emisar pack install postgres=X.Y.Z --hash sha256:…
 USER 65532</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Pin the pack version and content hash — the pack's page in the console shows both — so the
+        Pin the pack version and content hash —
+        <a
+          href={~p"/app/packs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Packs</a>
+        shows both — so the
         image build is reproducible and a tampered registry copy is rejected. Keep the additions
         as narrow as the workload allows. Building your own image from scratch instead — a
         different distro, a hardened golden base? Install the release binary with <code class="font-mono text-brand-300">--no-service</code>: it skips init detection, the

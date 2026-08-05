@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runners"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_runners.html.heex"
       toc={[
         {"groups-labels", "Groups and labels"},
@@ -77,10 +77,17 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Mint at install time.</strong>
-            <strong>Runners → Connect a runner</strong>
+            <a
+              href={~p"/app/runners/install"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Runners → Connect a runner</a>
             generates the install one-liner with a
             fresh single-use key baked in. For fleet provisioning (cloud-init, Packer, Ansible),
-            mint one reusable key under <strong>Runners → Enrollment keys</strong>
+            mint one reusable key under
+            <a
+              href={~p"/app/runners/keys"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Runners → Enrollment keys</a>
             and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>.
           </span>
         </li>
@@ -211,7 +218,12 @@ execution:
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Action won't dispatch:</strong> check the Packs page
+            <strong class="text-zinc-200">Action won't dispatch:</strong>
+            check
+            <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>
             first — a pending (untrusted) or drifted pack hash blocks dispatch by design. Then
             check the member's or key's runner scope.
           </span>
@@ -238,8 +250,10 @@ execution:
 <span class="text-zinc-500"># …or purge everything, including the local journal</span>
 <span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Then delete the
-        runner in the dashboard. Its run history and audit events stay.
+        Then delete the runner from <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>. Its run history and audit events stay.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
         deletes the local
         journal, configuration, and

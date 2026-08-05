@@ -48,7 +48,12 @@
             <strong class="text-zinc-200">Installing is not trusting.</strong>
             The runner command puts bytes on a host. Whether those bytes may be dispatched is a
             separate account-level decision — settled by the published catalog when it carries
-            that exact hash, and yours to make in the console otherwise.
+            that exact hash, and yours to make in
+            <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>
+            otherwise.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -206,7 +211,11 @@
       <.docs_h2 id="trust">Trust the exact hash</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The canary now advertises new bytes. When that hash is one the published catalog carries,
-        the Packs page already shows the version as trusted and there is nothing to click — skip
+        <a
+          href={~p"/app/packs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Packs</a>
+        already shows the version as trusted and there is nothing to click — skip
         to the proof below. Anything else shows as <strong class="text-zinc-200">pending</strong>
         with the exact hash it is advertising, and dispatch for it is refused. Check that hash
         against the one
@@ -276,7 +285,10 @@
         When a published pack ships a security or critical-correctness fix, it declares a
         retirement floor and every version below it is retired. A runner still advertising a
         retired version fails closed at dispatch with a message telling the operator to update the
-        pack. An admin can deliberately re-trust a retired version on the Packs page; that override
+        pack. An admin can deliberately re-trust a retired version in <a
+          href={~p"/app/packs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Packs</a>; that override
         is audited, and revoking trust clears it so a later re-trust has to decide again.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">

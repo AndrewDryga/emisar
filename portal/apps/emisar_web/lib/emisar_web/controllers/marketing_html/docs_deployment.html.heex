@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="deployment"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_deployment.html.heex"
       toc={[
         {"fleet-shape", "The shape of a production fleet"},
@@ -127,7 +127,10 @@
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           <strong class="text-zinc-200">Pilot on one non-prod host.</strong>
-          Install, watch it connect, run a read, open the audit row it wrote. Prove the loop end to
+          Install, watch it connect, run a read, then open the row from <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>. Prove the loop end to
           end before it touches anything that matters.
         </li>
         <li>
@@ -179,8 +182,12 @@
         </li>
         <li>
           <strong class="text-zinc-200">Ingest the audit into your SIEM.</strong>
-          Mint an <code class="font-mono">audit-export</code>
-          token and point a collector at the NDJSON export API — emisar doesn't push, so something
+          Mint an
+          <a
+            href={~p"/app/audit/export"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >audit-export token</a>
+          and point a collector at the NDJSON export API — emisar doesn't push, so something
           on your side polls it — then alert on the handful of events that actually mean something
           (below) — see <.link
             navigate={~p"/docs/audit-and-siem"}

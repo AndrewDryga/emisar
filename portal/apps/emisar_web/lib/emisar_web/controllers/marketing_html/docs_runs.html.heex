@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runs"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_runs.html.heex"
       toc={[
         {"the-list", "The Runs list"},
@@ -127,7 +127,12 @@
 
       <.docs_h2 id="run-detail">A single run</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Open a row for the full record of that one invocation. A fact strip leads with the outcome
+        Open a row from
+        <a
+          href={~p"/app/runs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runs</a>
+        for the full record of that one invocation. A fact strip leads with the outcome
         and the essentials: <strong>Status</strong>, the <strong>Runner</strong>
         it targeted (a link to that host), <strong>Dispatched by</strong>, <strong>Duration</strong>,
         the process <strong>Exit code</strong>, and the <strong>Started</strong>
@@ -214,7 +219,13 @@
 
       <.docs_h2 id="cancelling">Cancelling a run</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        You can stop a run that hasn't finished. Open it and use <strong>Cancel run</strong> —
+        You can stop a run that hasn't finished. Open it from
+        <a
+          href={~p"/app/runs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runs</a>
+        and use <strong>Cancel run</strong>
+        —
         available while the run is pending, sent, or running, to operators and above. What happens
         depends on where the run is:
       </p>

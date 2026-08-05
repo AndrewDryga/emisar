@@ -1,73 +1,51 @@
 defmodule EmisarWeb.AccountRedirectControllerTest do
   @moduledoc """
-  Slugless `/app` URLs forward to the current account's canonical slugged
-  pages — including the `/app/agents` deep-link shorthands the MCP installer
-  and `emisar-mcp --help` print without knowing the account.
+  Slugless `/app` URLs forward to the current account's canonical slugged pages,
+  so installers, CLIs, and public docs can deep-link without knowing the account.
   """
   use EmisarWeb.ConnCase, async: true
 
-  describe "GET /app" do
-    test "forwards to the current account, slugged", %{conn: conn} do
+  @current_account_redirects [
+    {"/app", ""},
+    {"/app/runners", "/runners"},
+    {"/app/runners/install", "/runners/install"},
+    {"/app/runners/keys", "/runners/keys"},
+    {"/app/runners/keys/new", "/runners/keys/new"},
+    {"/app/runs", "/runs"},
+    {"/app/approvals", "/approvals"},
+    {"/app/runbooks", "/runbooks"},
+    {"/app/runbooks/new", "/runbooks/new"},
+    {"/app/runbooks/import", "/runbooks/import"},
+    {"/app/policies", "/policies"},
+    {"/app/packs", "/packs"},
+    {"/app/audit", "/audit"},
+    {"/app/audit/export", "/audit/export"},
+    {"/app/agents", "/agents"},
+    {"/app/agents/connect", "/agents/connect"},
+    {"/app/team", "/settings/team"},
+    {"/app/team/invite", "/settings/team/invite"},
+    {"/app/sso", "/settings/sso"},
+    {"/app/sso/new", "/settings/sso/new"},
+    {"/app/billing", "/settings/billing"}
+  ]
+
+  describe "current-account redirects" do
+    test "each shorthand forwards to the current account's canonical page", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
-      conn = get(conn, ~p"/app")
-      assert redirected_to(conn) == "/app/#{account.slug}"
+      Enum.reduce(@current_account_redirects, conn, fn {source, destination}, request_conn ->
+        redirected_conn = get(request_conn, source)
+        assert redirected_to(redirected_conn) == "/app/#{account.slug}#{destination}"
+        recycle(redirected_conn)
+      end)
     end
 
-    test "an unauthenticated visitor is sent to sign-in", %{conn: conn} do
-      conn = get(conn, ~p"/app")
-      assert redirected_to(conn) == ~p"/sign_in"
-    end
-  end
-
-  describe "GET /app/agents" do
-    test "forwards to the current account's agents page", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      conn = get(conn, ~p"/app/agents")
-      assert redirected_to(conn) == "/app/#{account.slug}/agents"
-    end
-
-    test "an unauthenticated visitor is sent to sign-in", %{conn: conn} do
-      conn = get(conn, ~p"/app/agents")
-      assert redirected_to(conn) == ~p"/sign_in"
-    end
-  end
-
-  describe "GET /app/agents/connect" do
-    test "forwards to the current account's connect flow", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      conn = get(conn, ~p"/app/agents/connect")
-      assert redirected_to(conn) == "/app/#{account.slug}/agents/connect"
-    end
-  end
-
-  describe "GET /app/runbooks" do
-    test "forwards list and new links to the current account", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      list_conn = get(conn, ~p"/app/runbooks")
-      assert redirected_to(list_conn) == "/app/#{account.slug}/runbooks"
-
-      assert list_conn
-             |> recycle()
-             |> get(~p"/app/runbooks/new")
-             |> redirected_to() == "/app/#{account.slug}/runbooks/new"
-
-      assert list_conn
-             |> recycle()
-             |> get(~p"/app/runbooks/import")
-             |> redirected_to() == "/app/#{account.slug}/runbooks/import"
-    end
-  end
-
-  describe "GET /app/team" do
-    test "forwards to the current account's team settings", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      conn = get(conn, ~p"/app/team")
-      assert redirected_to(conn) == "/app/#{account.slug}/settings/team"
+    test "each shorthand sends an unauthenticated visitor to sign-in", %{conn: conn} do
+      Enum.reduce(@current_account_redirects, conn, fn {source, _destination}, request_conn ->
+        redirected_conn = get(request_conn, source)
+        assert redirected_to(redirected_conn) == ~p"/sign_in"
+        recycle(redirected_conn)
+      end)
     end
   end
 end

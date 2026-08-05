@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="security-incidents"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_security_incidents.html.heex"
       toc={[
         {"sequence", "The sequence, every time"},
@@ -73,7 +73,10 @@
           The new path works, and the old one fails. One without the other is not containment.
         </li>
         <li>
-          <strong class="text-zinc-200">Review the audit trail.</strong>
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Review the audit trail.</a>
           Read the window around the exposure for what the credential actually did, not only for
           what it could have done.
         </li>
@@ -102,7 +105,12 @@
           <span>
             <strong class="text-zinc-200">The cloud audit trail for the window.</strong>
             It lives off the affected hosts, so it survives anything you do to them. Export the
-            window and keep it with the incident —
+            window from
+            <a
+              href={~p"/app/audit/export"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Audit export</a>
+            and keep it with the incident —
             <.link navigate={~p"/docs/audit-and-siem"} class="text-brand-300 hover:text-brand-200">Audit &amp; SIEM</.link>
             owns the export.
           </span>
@@ -157,17 +165,31 @@
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
           <strong class="text-zinc-200">Revoke it — do not rotate it.</strong>
+          Do that from <a
+            href={~p"/app/agents"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >LLM agents</a>.
           Revocation is terminal and it reaches further than the one secret: every successor in
           that key's rotation chain goes with it, and any OAuth access and refresh token backed by
           it stops working. A rotation would leave the leaked predecessor usable until its
           successor's first call.
         </li>
         <li>
-          Read the audit trail for the window: what that key discovered, dispatched, and had
+          Read
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>
+          for the window: what that key discovered, dispatched, and had
           approved. A key acting outside its owner's normal hours or runners is the signal.
         </li>
         <li>
-          Mint a replacement for the legitimate holder, and put it in the client config. A cloud
+          Mint a replacement from
+          <a
+            href={~p"/app/agents"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >LLM agents</a>
+          for the legitimate holder, and put it in the client config. A cloud
           client connected over OAuth reconnects instead — there is no secret to hand it.
         </li>
         <li>
@@ -186,14 +208,22 @@
         disclosure — who did what, when, on which hosts — not execution.
       </p>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
-        <li>Revoke the token.</li>
+        <li>
+          Revoke the token from <a
+            href={~p"/app/audit/export"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit export</a>.
+        </li>
         <li>
           Read the export events for the window. A poll that returns events is itself recorded — a
           caught-up, empty one is not — so an unfamiliar pattern of pulls shows up in the same
           trail the token was reading.
         </li>
         <li>
-          Mint a replacement, give it to the collector, and let it complete one poll that persists
+          Mint a replacement from <a
+            href={~p"/app/audit/export"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit export</a>, give it to the collector, and let it complete one poll that persists
           its cursor before you consider the cutover done.
         </li>
         <li>
@@ -211,7 +241,10 @@
       </p>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
-          Revoke every affected key. If one reusable key was installed on several hosts, treat
+          Revoke every affected key from <a
+            href={~p"/app/runners/keys"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runners → Enrollment keys</a>. If one reusable key was installed on several hosts, treat
           every host that used it as affected rather than waiting for per-host attribution.
         </li>
         <li>
@@ -221,7 +254,10 @@
           control.
         </li>
         <li>
-          Review the registration events and the fleet inventory. Disable and delete any runner
+          Review the registration events and the fleet inventory in <a
+            href={~p"/app/runners"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runners</a>. Disable and delete any runner
           identity you did not expect — deletion preserves its history while making its tokens
           fail.
         </li>
@@ -245,7 +281,10 @@
       </p>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
-          <strong class="text-zinc-200">Disable the runner to stop dispatch now.</strong>
+          <a
+            href={~p"/app/runners"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Disable the runner to stop dispatch now.</a>
           That is containment, not the fix — it refuses the connection while keeping the identity
           retryable.
         </li>
@@ -254,7 +293,10 @@
           output, and the hashes it was advertising.
         </li>
         <li>
-          <strong class="text-zinc-200">Delete the runner identity.</strong>
+          <a
+            href={~p"/app/runners"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Delete the runner identity.</a>
           That is terminal: the token stops authenticating, the next connect gets <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>, and the process exits
           rather than retrying. Run and audit history for that runner is preserved.
         </li>
@@ -265,7 +307,12 @@
         </li>
         <li>
           Rebuild the host rather than cleaning it, then enroll it as a new runner under a fresh
-          key. Read the runs that host executed in the window before you close the incident.
+          key. Read the runs that host executed from
+          <a
+            href={~p"/app/runs"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runs</a>
+          before you close the incident.
         </li>
       </ol>
 
@@ -279,16 +326,27 @@
       </p>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
-          Record the exact hashes first — what each host advertises, and what the account trusted.
+          Record the exact hashes first from
+          <a
+            href={~p"/app/packs"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Packs</a>
+          — what each host advertises, and what the account trusted.
           These are your before-and-after, and they are immutable facts you can compare later.
         </li>
         <li>
-          Find every run that executed under the suspect hash. The audit trail carries the pack
+          Find every run that executed under the suspect hash in <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>. The audit trail carries the pack
           reference with the run, so the question "what did this actually do" has an answer.
         </li>
         <li>
-          Stop new dispatch of the suspect version through the trust and retirement controls that
-          own it. Retirement and revocation stop new dispatch; they do not erase an immutable
+          Stop new dispatch of the suspect version through the trust and retirement controls in <a
+            href={~p"/app/packs"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Packs</a>.
+          Retirement and revocation stop new dispatch; they do not erase an immutable
           published artifact, and they do not rewrite the history of what already ran.
         </li>
         <li>
@@ -336,7 +394,12 @@
           takes a single certificate out of service.
         </li>
         <li>
-          Read the audit trail for signed dispatches in the window, and check the runs against what
+          Read
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>
+          for signed dispatches in the window, and check the runs against what
           the legitimate operator says they ran.
         </li>
       </ol>
@@ -380,7 +443,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">OIDC client secret.</strong>
-            Replace it at your identity provider and save the new value on the connection, then
+            Replace it at your identity provider and save the new value on the connection under <a
+              href={~p"/app/sso"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Team → Single sign-on</a>, then
             complete a real sign-in before removing the old one at the provider. Replacing the
             secret does not sign anybody out — if you need existing sessions gone, disabling or
             deleting the connection revokes the sessions authenticated through it, which is a much
@@ -392,7 +458,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">SCIM bearer.</strong>
-            Rotating replaces it immediately, with no overlap: the leaked value stops
+            Rotate it from the connection under <a
+              href={~p"/app/sso"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Team → Single sign-on</a>. Rotating replaces it immediately, with no overlap: the leaked value stops
             authenticating the moment you rotate, and provisioning fails until your connector holds
             the new one. That gap is the containment working. Then read the directory events for
             the window — role and runner-access changes pushed by a directory you did not

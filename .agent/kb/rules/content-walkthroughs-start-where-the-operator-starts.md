@@ -59,7 +59,9 @@ rule is about paths the reader is being told to go to.
 
 ## How it's enforced
 
-Review. The five provider guides
+`EmisarWeb.MarketingStructuralTest` renders every swept docs page and asserts the
+actionable console label is an anchor to its slugless `/app/*` destination. The
+five provider guides
 (`docs_sso_{okta,entra,jumpcloud,keycloak,google_workspace}.html.heex`) are the
 worked examples; they each open with an `IN EMISAR` step 1 linking
 `~p"/app/sso/new"`.

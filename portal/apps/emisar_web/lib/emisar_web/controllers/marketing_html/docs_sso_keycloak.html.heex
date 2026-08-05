@@ -237,7 +237,11 @@
         removed from emisar when they leave Keycloak. Offboarding is therefore two steps, and the
         second is the one that ends access: disabling the Keycloak user stops them starting a NEW
         sign-in, but it does not touch the session they already hold or any API key they minted.
-        Suspend or remove them in <strong class="text-zinc-200">Team</strong>
+        Suspend or remove them in
+        <a
+          href={~p"/app/team"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Team</a>
         — that is what ends live sessions and revokes their keys.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">

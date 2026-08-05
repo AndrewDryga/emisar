@@ -36,7 +36,11 @@
 
       <.docs_h2 id="enable">Enabling directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        On a configured connection, enable <strong class="text-zinc-200">directory sync</strong>
+        Open the configured connection from <a
+          href={~p"/app/sso"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Team → Single sign-on</a>, then enable
+        <strong class="text-zinc-200">directory sync</strong>
         to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
         and JumpCloud all speak as a provisioning client. The directory-sync panel lives on each
         connection's page, right under its settings. <.plan_note tier={:enterprise} />
@@ -56,7 +60,10 @@
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <p class="font-semibold text-zinc-100">
-              Click <span class="text-zinc-300">Enable directory sync</span> on the connection.
+              From <a
+                href={~p"/app/sso"}
+                class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+              >Team → Single sign-on</a>, open the connection and click <span class="text-zinc-300">Enable directory sync</span>.
             </p>
             <p class="mt-1.5">
               emisar shows you two things to wire into your provider's SCIM connector — both visible
@@ -530,7 +537,12 @@
             The
             <strong class="text-zinc-200">SCIM bearer token is an admin-grade credential</strong>
             — it can provision and deprovision across the account. Treat it like a password, and
-            rotate it from the connection's panel if it's ever exposed (your IdP loses access until
+            rotate it from the connection under
+            <a
+              href={~p"/app/sso"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Team → Single sign-on</a>
+            if it's ever exposed (your IdP loses access until
             you paste the new one).
           </span>
         </li>

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="billing"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_billing.html.heex"
       toc={[
         {"plans", "Plans and limits"},
@@ -20,8 +20,12 @@
         <:dek>
           Your plan sets this account's hard limits — how many runners connect, how many people you
           can invite, how long the audit log is kept, and which features are on. Billing runs on
-          Paddle; you manage it from the <strong class="text-zinc-200">Billing</strong>
-          page under Settings.
+          Paddle; you manage it from
+          <a
+            href={~p"/app/billing"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Billing</a>
+          under Settings.
         </:dek>
       </.docs_header>
 
@@ -183,7 +187,12 @@
 
       <.docs_h2 id="changing-plan">Upgrading and downgrading</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Anyone in the account can open the Billing page and read the plan, usage, and invoices.
+        Anyone in the account can open
+        <a
+          href={~p"/app/billing"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Billing</a>
+        and read the plan, usage, and invoices.
         Changing the plan, updating the card, or cancelling needs the account owner or a member with
         the billing-manager role.
         Admins and operators see billing but can't change it. More on <.link
@@ -192,15 +201,19 @@
         >roles</.link>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To upgrade, open <strong class="text-zinc-200">Settings → Billing</strong>, pick
-        <strong class="text-zinc-200">Monthly</strong>
+        To upgrade, open <a
+          href={~p"/app/billing"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Settings → Billing</a>, pick <strong class="text-zinc-200">Monthly</strong>
         or <strong class="text-zinc-200">Annual</strong>, and choose a plan. Checkout opens in a
         Paddle overlay on the page; once payment clears you land back on Billing and the new plan —
         and its higher limits — take effect within a moment, as soon as Paddle confirms the charge.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Downgrading or cancelling isn't a checkout — that would open a second subscription. Use
-        <strong class="text-zinc-200">Manage billing</strong>
+        Downgrading or cancelling isn't a checkout — that would open a second subscription. From <a
+          href={~p"/app/billing"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Settings → Billing</a>, use <strong class="text-zinc-200">Manage billing</strong>
         to open the Paddle customer portal, where you can switch to a lower plan or cancel. Cancel,
         and the Billing page shows a "Cancels on …" note: you keep the plan through the end of the
         period you've already paid for.
@@ -219,7 +232,12 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For everything else — your full invoice history, the payment method on file, your billing
-        address and tax details — open <strong class="text-zinc-200">Manage billing</strong>. That's
+        address and tax details — open
+        <a
+          href={~p"/app/billing"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Settings → Billing</a>
+        and choose <strong class="text-zinc-200">Manage billing</strong>. That's
         the Paddle customer portal; Paddle is emisar's merchant of record, and it owns the complete
         ledger and your card.
       </p>
@@ -237,7 +255,10 @@
         declined card.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To fix it, open <strong class="text-zinc-200">Manage billing</strong>
+        To fix it, open <a
+          href={~p"/app/billing"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Settings → Billing</a>, choose <strong class="text-zinc-200">Manage billing</strong>,
         and update the payment method; the next retry settles the balance. If you actually mean to
         stop paying, cancel in the portal rather than letting a card lapse — cancelling ends the plan
         cleanly at the period you've paid through, instead of leaving it stuck in retry. Every plan

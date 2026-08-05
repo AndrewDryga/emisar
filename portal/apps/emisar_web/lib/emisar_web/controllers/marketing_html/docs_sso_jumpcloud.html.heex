@@ -321,7 +321,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         You do not have to make them match. A sign-in the directory has not claimed lands in
         <strong class="text-zinc-200">Pending access requests</strong>
-        on the Team page, with the identifier it presented. Approving it once binds that sign-in to
+        under <a
+          href={~p"/app/team"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Team</a>, with the identifier it presented. Approving it once binds that sign-in to
         the member the directory already synced — one person, one member, both identifiers on the
         same record — and every later sign-in and directory push finds them. That is one approval
         per person, the first time they sign in.
@@ -329,7 +332,12 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Watch the first one to be sure it is the same person: the request shows the email JumpCloud
         asserted, and <strong class="text-zinc-200">Synced users</strong>
-        on the connection shows who the directory sent. If those disagree, do not approve — that is
+        on the connection under
+        <a
+          href={~p"/app/sso"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Team → Single sign-on</a>
+        shows who the directory sent. If those disagree, do not approve — that is
         a misconfigured connector, not a mismatched identifier.
       </p>
 

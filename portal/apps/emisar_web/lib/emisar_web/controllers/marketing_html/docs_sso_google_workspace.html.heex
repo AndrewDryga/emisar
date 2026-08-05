@@ -251,7 +251,10 @@
         automatically. Offboarding is therefore two steps, and the second is the one that ends
         access: suspending the Google account stops them starting a NEW sign-in, but it does not
         touch the session they already hold or any API key they minted. Suspend or remove them in
-        <strong class="text-zinc-200">Team</strong>
+        <a
+          href={~p"/app/team"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Team</a>
         — that is what ends live sessions and revokes their keys. emisar's connection page hides the sync panel for this
         provider rather than offer a feature that could never connect.
       </p>

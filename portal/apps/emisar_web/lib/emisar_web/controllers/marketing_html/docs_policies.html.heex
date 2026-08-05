@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="policies-and-approvals"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_policies.html.heex"
       toc={[
         {"how-decisions", "How a decision is made"},
@@ -70,7 +70,11 @@
 
       <.docs_h2 id="editing">Editing the policy</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong>Policies</strong>
+        Open
+        <a
+          href={~p"/app/policies"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Policies</a>
         in the dashboard sidebar. Owners and admins edit; operators and
         viewers see the current rules read-only. The editor mirrors the two layers: four tier
         dropdowns up top, the ordered override list below. Tier defaults are
@@ -103,7 +107,10 @@
         Your default policy governs the whole fleet. When a single runner or a group of
         runners needs different rules — a locked-down database box, a more permissive staging
         group — add a <strong class="text-zinc-200">targeted ruleset</strong>
-        for that runner or group, right on the Policy page.
+        for that runner or group in <a
+          href={~p"/app/policies"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Policies</a>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Resolution is <strong class="text-zinc-200">most-specific-wins</strong>: a dispatch to a
@@ -201,7 +208,11 @@
           <span>
             <strong class="text-zinc-200">Capped and revocable.</strong>
             Grants can carry a
-            maximum use count, expire on schedule, and are listed under <strong>Approvals</strong>
+            maximum use count, expire on schedule, and are listed under
+            <a
+              href={~p"/app/approvals"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Approvals</a>
             where one click revokes them early. Every use is still a
             fully audited run.
           </span>
@@ -232,7 +243,12 @@
       </p>
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
-          Run a week with the defaults. Watch the <strong>Approvals</strong> queue — the requests
+          Run a week with the defaults. Watch the
+          <a
+            href={~p"/app/approvals"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Approvals</a>
+          queue — the requests
           that keep showing up are your override candidates.
         </li>
         <li>

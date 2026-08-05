@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="quickstart"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_quickstart.html.heex"
       toc={[
         {"create-account", "Create your account"},
@@ -55,7 +55,10 @@
 
       <.docs_h2 id="install-runner">2. Install the runner</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the dashboard, click <strong>Connect a runner</strong>. emisar shows a one-line command
+        In the dashboard, click <a
+          href={~p"/app/runners/install"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Connect a runner</a>. emisar shows a one-line command
         carrying a single-use enrollment key
         (<code class="font-mono text-brand-300">emkey-enroll-…</code>, shown <em>once</em>
         — copy it now). Run it on your host:
@@ -121,7 +124,10 @@
 
       <.docs_h2 id="watch-connect">3. Watch it connect</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The moment the runner connects, the dashboard follows on its own — your host appears under <strong>Runners</strong>, online, advertising its action catalog. On the host you can watch
+        The moment the runner connects, the dashboard follows on its own — your host appears under <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>, online, advertising its action catalog. On the host you can watch
         the same thing:
       </p>
       <.docs_code phx-no-format label="shell" copy_text="journalctl -u emisar -f"><span class="text-zinc-500">$</span> journalctl -u emisar -f
@@ -131,13 +137,20 @@
         pack is trusted automatically — its bytes match the catalog emisar publishes, so the hash
         auto-pins as trusted. (A <em>custom or edited</em>
         pack lands as <strong class="text-zinc-300">pending</strong>
-        instead and waits for one click on the <strong>Packs</strong>
+        instead and waits for one click on the
+        <a
+          href={~p"/app/packs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Packs</a>
         page before anything can dispatch it. That's the drift guard.)
       </p>
 
       <.docs_h2 id="first-action">4. Run your first action</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Open the runner, pick <code class="font-mono text-brand-300">linux.uptime</code>, add the
+        Open the runner from <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>, pick <code class="font-mono text-brand-300">linux.uptime</code>, add the
         required <strong>reason</strong>
         (one line — it's logged), and <strong>Dispatch</strong>. The output streams back live:
       </p>
@@ -153,7 +166,11 @@
 
       <.docs_h2 id="connect-llm">5. Point your LLM at it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the dashboard, open <strong>LLM agents</strong>
+        In the dashboard, open
+        <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >LLM agents</a>
         and pick your client. Claude.ai and ChatGPT connect over remote MCP with OAuth; local
         clients — Claude Code, Cursor, Zed, Copilot CLI, and ten more — run a one-line installer that
         opens a browser approval and writes a scoped key into the client's config, so the secret

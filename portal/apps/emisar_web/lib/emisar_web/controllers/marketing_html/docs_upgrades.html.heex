@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="upgrades"
-      updated="August 3, 2026"
+      updated="August 4, 2026"
       source_path="portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs_upgrades.html.heex"
       toc={[
         {"what-moves", "What upgrades on its own"},
@@ -169,7 +169,12 @@
           remembers it for you.
         </li>
         <li>
-          Check the Runs list for work in flight on the hosts you are about to touch. Filter to
+          Check
+          <a
+            href={~p"/app/runs"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runs</a>
+          for work in flight on the hosts you are about to touch. Filter to
           running and sent, and let anything long-lived finish first.
         </li>
         <li>
@@ -229,9 +234,15 @@
 <span class="text-zinc-500"># 4. the packs and hashes this host will advertise</span>
 <span class="text-zinc-500">$</span> sudo emisar pack list</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Then, in the console: the runner shows online with the new version and its expected
-        actions (5), and one low-risk read-only action against it succeeds and lands in the
-        <.link navigate={~p"/docs/audit-and-siem"} class="text-brand-300 hover:text-brand-200">audit trail</.link>
+        Then verify in the console: the runner shows online with the new version and its expected
+        actions (5) in <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>, and one low-risk read-only action against it succeeds and lands in
+        <a
+          href={~p"/app/audit"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Audit</a>
         (6). A run you can find in the audit trail is the completion condition — a green
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
         alone only proves the host is ready, not that dispatch works end to end.
@@ -262,7 +273,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             The advertised action set changed in a way the release notes did not describe, or a
-            pack lands as pending trust on the Packs page.
+            pack lands as pending trust in <a
+              href={~p"/app/packs"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Packs</a>.
           </span>
         </li>
       </ul>
