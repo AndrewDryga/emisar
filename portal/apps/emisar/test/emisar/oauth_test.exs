@@ -165,7 +165,9 @@ defmodule Emisar.OAuthTest do
       assert {:error, :not_found} = OAuth.fetch_client(nil)
     end
 
-    test "the pinned fetch still verifies TLS — an untrusted certificate is refused" do
+    @tag :tmp_dir
+    test "the pinned fetch still verifies TLS — an untrusted certificate is refused",
+         %{tmp_dir: tmp_dir} do
       # The fetch was rewritten from Finch to Mint so it can connect to the exact
       # address `validate_destination/1` approved while carrying the URL's
       # hostname for SNI and certificate verification. Hand-rolling a connection
@@ -176,7 +178,7 @@ defmodule Emisar.OAuthTest do
       # It also proves the rewrite reaches the handshake at all: a broken
       # connect would fail here for the wrong reason and this test could not
       # tell the difference, which is why the listener records the attempt.
-      {:ok, listener} = start_metadata_listener()
+      {:ok, listener} = start_metadata_listener(tmp_dir)
       on_exit(fn -> :ssl.close(listener.socket) end)
 
       Emisar.Config.put_override(:emisar, Emisar.OAuth.ClientMetadataDocument,
@@ -1415,15 +1417,25 @@ defmodule Emisar.OAuthTest do
     end
   end
 
-  # A one-shot TLS listener serving a valid client-metadata document. Uses the
-  # repository's existing self-signed pair; the fetch reaches it through the
-  # dev/test loopback path, which is the only way a private address is allowed.
-  defp start_metadata_listener do
-    # Path, not Application.app_dir: emisar_web is not loaded in this app's test
-    # run, and the pair is a repository fixture rather than a runtime asset.
-    cert_dir = Path.join(__DIR__, "../../../emisar_web/priv/cert")
-    certfile = Path.expand(Path.join(cert_dir, "selfsigned.pem"))
-    keyfile = Path.expand(Path.join(cert_dir, "selfsigned_key.pem"))
+  # A one-shot TLS listener serving a valid client-metadata document. The fetch
+  # reaches it through the dev/test loopback path, which is the only way a
+  # private address is allowed.
+  defp start_metadata_listener(tmp_dir) do
+    # Generated per run, not read from emisar_web/priv/cert: that pair is
+    # gitignored dev output nothing in the repository creates, so it existed
+    # only on machines that had once run phx.gen.cert and CI failed on :enoent.
+    # Any self-signed pair does the job here — the assertion is that the fetch
+    # refuses a certificate nothing trusts.
+    certfile = Path.join(tmp_dir, "untrusted.pem")
+    keyfile = Path.join(tmp_dir, "untrusted_key.pem")
+
+    {_output, 0} =
+      System.cmd(
+        "openssl",
+        ["req", "-x509", "-newkey", "rsa:2048", "-noenc", "-days", "1"] ++
+          ["-subj", "/CN=localhost", "-keyout", keyfile, "-out", certfile],
+        stderr_to_stdout: true
+      )
 
     {:ok, socket} =
       :ssl.listen(0, [
