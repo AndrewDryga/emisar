@@ -31,7 +31,7 @@ defmodule EmisarWeb.Components.StepsTest do
       refute html =~ "divide-y"
     end
 
-    test "plan: divide-y rows with the larger circles" do
+    test "plan: divide-y rows with circled position marks" do
       assigns = %{steps: ["restart nginx", "flush the cache"]}
 
       html =
@@ -42,11 +42,29 @@ defmodule EmisarWeb.Components.StepsTest do
         """)
 
       assert html =~ "divide-y divide-zinc-800/70"
-      assert html =~ "h-6 w-6"
+      # A position mark that stays under the cap height of a 14px row title.
+      assert html =~ "h-5 w-5"
       # No horizontal padding — the plan list sits on the canvas, not in a panel.
       assert html =~ "gap-3 py-3"
       assert html =~ "restart nginx"
       assert html =~ ~r{>\s*2\s*</span>}
+    end
+
+    test "plan: a boxed row is the panel, so it drops the rail" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.steps variant={:plan}>
+          <:step>reads as a list row</:step>
+          <:step boxed>opens into a form</:step>
+        </CoreComponents.steps>
+        """)
+
+      assert html =~ "border border-dashed border-zinc-800"
+      assert html =~ "opens into a form"
+      # One marker, for the unboxed row only.
+      assert length(String.split(html, "data-steps-marker")) == 2
     end
 
     test "plan: parallel work replaces sequence numbers with one shared icon" do

@@ -3069,11 +3069,7 @@ defmodule EmisarWeb.CoreComponents do
           class={steps_marker_class(@variant)}
           data-steps-marker={@marker}
         >
-          <.icon
-            :if={@marker == :parallel}
-            name="hero-arrows-right-left"
-            class="h-3.5 w-3.5"
-          />
+          <.icon :if={@marker == :parallel} name="hero-arrows-right-left" class="h-3 w-3" />
           <span :if={@marker == :number}>{steps_marker(@variant, idx)}</span>
         </span>
         <div class={steps_content_class(@variant)}>
@@ -3105,8 +3101,10 @@ defmodule EmisarWeb.CoreComponents do
     "w-4 shrink-0 text-right text-xs font-medium tabular-nums text-zinc-400"
   end
 
+  # A position mark, not a badge: it sits beside a 14px row title, so it stays
+  # under that title's cap height rather than outweighing it.
   defp steps_marker_class(:plan) do
-    "grid h-6 w-6 shrink-0 place-items-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300"
+    "grid h-5 w-5 shrink-0 place-items-center rounded-full bg-zinc-800 text-[10px] font-semibold text-zinc-300"
   end
 
   # The plan variant keeps its circled step marker — a run sequence in a dense
