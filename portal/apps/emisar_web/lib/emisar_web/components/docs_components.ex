@@ -370,8 +370,13 @@ defmodule EmisarWeb.DocsComponents do
       "cap the inline preview height (a Tailwind max-h class) for very tall shots; the lightbox still shows it whole"
 
   def docs_screenshot(assigns) do
+    {width, height} = EmisarWeb.StaticImage.dimensions(assigns.src) || {nil, nil}
+
     assigns =
-      assign(assigns, :lb_id, "lb-" <> (assigns.src |> Path.basename() |> Path.rootname()))
+      assigns
+      |> assign(:lb_id, "lb-" <> (assigns.src |> Path.basename() |> Path.rootname()))
+      |> assign(:intrinsic_w, width)
+      |> assign(:intrinsic_h, height)
 
     ~H"""
     <figure class="mt-8">
@@ -386,10 +391,16 @@ defmodule EmisarWeb.DocsComponents do
           aria-controls={@lb_id}
           class="group relative block w-full cursor-zoom-in"
         >
+          <%!-- Intrinsic size read from the file itself (EmisarWeb.StaticImage), so
+               the browser reserves the right box before the bytes decode instead of
+               reflowing the page as each shot arrives. Thirteen docs pages carry up
+               to eleven of these at ratios from 1680x328 to 1680x2142. --%>
           <img
             src={@src}
             alt={@alt}
             loading="lazy"
+            width={@intrinsic_w}
+            height={@intrinsic_h}
             class={["w-full", @preview_h && "#{@preview_h} object-cover object-top"]}
           />
           <%!-- Bottom fade only when the preview is height-cropped, so it reads as
@@ -430,6 +441,8 @@ defmodule EmisarWeb.DocsComponents do
             src={@src}
             alt={@alt}
             loading="lazy"
+            width={@intrinsic_w}
+            height={@intrinsic_h}
             class="max-h-full max-w-full rounded-lg shadow-2xl"
           />
         </div>
