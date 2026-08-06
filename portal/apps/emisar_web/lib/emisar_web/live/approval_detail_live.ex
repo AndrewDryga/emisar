@@ -437,6 +437,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
     |> assign(:grant_scope, params["scope"] || "exact_args")
     |> assign(:grant_max_uses, params["max_uses"] || "")
     |> assign(:grant_input_error, nil)
+    |> assign(:decision_reason_error, nil)
   end
 
   # The grant choices didn't validate, so nothing was decided and the request is
@@ -469,6 +470,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
      socket
      |> assign_decision_fields(params)
      |> put_flash(:error, "You can't approve your own request.")}
+  end
+
+  # The note is too long to store. Nothing was decided and the request is
+  # untouched, and it is the one refusal here the operator fixes by editing what
+  # they just typed — so it belongs inline at the textarea, not in a flash on a
+  # re-fetched page. Their note comes back with it.
+  defp decision_failed(socket, :decision_reason_too_long, params) do
+    {:noreply,
+     socket
+     |> assign_decision_fields(params)
+     |> assign(
+       :decision_reason_error,
+       "Shorten the note to #{Approvals.max_decision_reason_length()} characters or fewer."
+     )}
   end
 
   # The approve gate re-resolved the action's trusted contract and refused. The
@@ -990,6 +1005,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               grant_scope={@grant_scope}
               grant_max_uses={@grant_max_uses}
               grant_input_error={@grant_input_error}
+              decision_reason_error={@decision_reason_error}
               grant_duration_options={@grant_duration_options}
               runner_state={@runner_connection}
               unavailable_action_id={@unavailable_action_id}
@@ -1020,6 +1036,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Set when the context rejected the grant choices — nothing was decided, so
   # the form stays live and carries the message for the control to fix.
   attr :grant_input_error, :string, default: nil
+  attr :decision_reason_error, :string, default: nil
   # Drives the reuse-window UI: the Match / Limit-to fields only show
   # once a real grant is being minted (duration != "once"). Defaulted so
   # a caller that forgets to thread it through can't crash the panel.
@@ -1163,10 +1180,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
               name="reason"
               value={@decision_reason}
               rows="2"
+              maxlength={Approvals.max_decision_reason_length()}
               aria-label="Decision note"
               placeholder="Note — logged with your decision (optional)"
               class="min-h-0 resize-none"
             />
+            <.error :if={@decision_reason_error}>{@decision_reason_error}</.error>
 
             <%!-- Standing grants disabled (account cap 0) → the reuse menu
                  would be a dead one-option select; a quiet line says why the

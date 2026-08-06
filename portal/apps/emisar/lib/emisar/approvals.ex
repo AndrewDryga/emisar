@@ -32,6 +32,15 @@ defmodule Emisar.Approvals do
   # room for a fuller page without letting a caller ask for an unbounded batch.
   @max_risk_request_ids 64
 
+  # The approver's decision note is free text typed into a textarea. Nothing
+  # bounded it: decide_pending/5 writes through a bare update_all, so there is no
+  # changeset in the path, and the column was varchar(255) — a note past that
+  # raised Postgres 22001 INSIDE the decision transaction, which killed the
+  # LiveView, left the request pending and its gated run parked, and wrote no
+  # audit row. The column is :text now; this is the product bound, matching the
+  # dispatch reason's cap so both justification surfaces accept the same length.
+  @max_decision_reason 2000
+
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
   end
@@ -900,6 +909,9 @@ defmodule Emisar.Approvals do
     |> Ecto.Changeset.apply_action(:insert)
   end
 
+  @doc "The maximum length of an approver's decision note, in characters."
+  def max_decision_reason_length, do: @max_decision_reason
+
   @doc """
   Record an approver's vote and, when the threshold is met, dispatch the
   gated run. Requires `decide` on approvals; scoped to the subject's account.
@@ -920,6 +932,7 @@ defmodule Emisar.Approvals do
   `{:ok, {request, :pending}}` when recorded but below the distinct-approver
   threshold, or `{:error, %Ecto.Changeset{} | :self_approval_forbidden |
   :already_decided | :expired | :unauthorized | :not_found |
+  :decision_reason_too_long |
   {:grant_failed, changeset}}`. Rejected input records nothing.
   """
   def approve_request(%Request{} = request, %Subject{} = subject, reason \\ nil, attrs \\ []) do
@@ -937,7 +950,7 @@ defmodule Emisar.Approvals do
   Deny a pending request — one deny finalizes DENIED, cancels the run, and no
   later approve can out-vote it. Requires `decide`; scoped to the account.
   Returns `{:ok, {request, run}}` or `{:error, :already_decided | :expired |
-  :unauthorized | :not_found}`.
+  :unauthorized | :not_found | :decision_reason_too_long}`.
   """
   def deny_request(%Request{} = request, %Subject{} = subject, reason \\ nil) do
     with :ok <-
@@ -952,6 +965,14 @@ defmodule Emisar.Approvals do
   end
 
   # The single decision path — both entry points run the decide permission gate
+  defp ensure_decision_reason_within_limit(nil), do: :ok
+
+  defp ensure_decision_reason_within_limit(reason) when is_binary(reason) do
+    if String.length(reason) <= @max_decision_reason,
+      do: :ok,
+      else: {:error, :decision_reason_too_long}
+  end
+
   # and hand it a validated input first. Fetch the request through the subject
   # scope before evaluating any request-derived guard: callers can hold a stale
   # struct, and must not be able to pair another account's id with their own
@@ -965,7 +986,8 @@ defmodule Emisar.Approvals do
          reason,
          %DecisionInput{} = input
        ) do
-    with {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
+    with :ok <- ensure_decision_reason_within_limit(reason),
+         {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
          :ok <- ensure_request_pending(request),
          :ok <- check_self_approval(decision, request, subject),
          :ok <- recheck_trust(decision, request),

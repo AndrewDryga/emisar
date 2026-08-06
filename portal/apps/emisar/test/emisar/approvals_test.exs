@@ -1559,6 +1559,43 @@ defmodule Emisar.ApprovalsTest do
              )
     end
 
+    # decision_reason was varchar(255) written through a bare update_all, so a
+    # note of about two sentences raised Postgres 22001 INSIDE the decision
+    # transaction. A raise, not an {:error, _}: the LiveView died, the request
+    # stayed pending, the gated run stayed parked in :pending_approval, and no
+    # approval audit row was written at all. Reject it as a value instead, and
+    # leave every one of those intact.
+    test "rejects an over-long decision note without touching the request or the run", %{
+      run: run,
+      subject: subject
+    } do
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      too_long = String.duplicate("a", Approvals.max_decision_reason_length() + 1)
+
+      assert Approvals.approve_request(request, subject, too_long) ==
+               {:error, :decision_reason_too_long}
+
+      assert {:ok, %Request{status: :pending}} =
+               Approvals.fetch_approval_request_by_id(request.id, subject)
+
+      assert {:ok, %ActionRun{status: :pending_approval}} =
+               Runs.fetch_run_by_id(run.id, subject)
+
+      refute Audit.list_events(subject, page: [limit: 50])
+             |> elem(1)
+             |> Enum.any?(&(&1.event_type == "approval.approved"))
+    end
+
+    test "stores a decision note at the maximum length", %{run: run, subject: subject} do
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      at_limit = String.duplicate("a", Approvals.max_decision_reason_length())
+
+      assert {:ok, {%Request{status: :approved} = decided, _run}} =
+               Approvals.approve_request(request, subject, at_limit)
+
+      assert decided.decision_reason == at_limit
+    end
+
     test "emails the requester the outcome, without argument values", %{
       run: run,
       subject: subject
@@ -3648,6 +3685,12 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, %Grant{}} =
                Approvals.create_grant(request, run, operator.id, %{duration: :once})
+    end
+  end
+
+  describe "max_decision_reason_length/0" do
+    test "is the bound the decision path and the textarea both use" do
+      assert Approvals.max_decision_reason_length() == 2000
     end
   end
 
