@@ -1019,14 +1019,13 @@ defmodule EmisarWeb.TeamLive do
   # Each dimension states itself ONCE: as a phrase when there is nothing to
   # enumerate, and as its own tags when there is. "Selected runners" standing in
   # front of the tags that name those runners was the same fact twice.
-  defp runner_reach_phrase(%Accounts.RunnerAccess{mode: :none}), do: "No runners"
-  defp runner_reach_phrase(%Accounts.RunnerAccess{mode: :all}), do: "All runners"
+  defp runner_reach_phrase(%Accounts.RunnerAccess{mode: :none}), do: "None"
+  defp runner_reach_phrase(%Accounts.RunnerAccess{mode: :all}), do: "All"
   defp runner_reach_phrase(%Accounts.RunnerAccess{mode: :restricted}), do: nil
 
-  # No reach at all has no pack half to state — "No runners all packs" claimed a
-  # breadth that grant does not have.
-  defp pack_reach_phrase(%Accounts.RunnerAccess{mode: :none}), do: nil
-  defp pack_reach_phrase(%Accounts.RunnerAccess{pack_mode: :all}), do: "all packs"
+  # No reach at all has no pack half at all: the row itself is suppressed, which
+  # is why this needs no `mode: :none` clause.
+  defp pack_reach_phrase(%Accounts.RunnerAccess{pack_mode: :all}), do: "All"
   defp pack_reach_phrase(%Accounts.RunnerAccess{}), do: nil
 
   defp current_role(member_facts, user_id) do
@@ -1486,49 +1485,59 @@ defmodule EmisarWeb.TeamLive do
                           /> ·{" "}<.sign_in_status user={membership.user} />
                         </div>
                         <% access = member.runner_access %>
-                        <div class="mt-1 flex flex-wrap items-center gap-1">
-                          <span class="text-[10px] uppercase tracking-wider text-zinc-400">
-                            access:
-                          </span>
-                          <span :if={runner_reach_phrase(access)} class="text-xs text-zinc-400">
-                            {runner_reach_phrase(access)}
-                          </span>
-                          <.identity_tag
-                            :for={group <- access.groups}
-                            category="group"
-                            value={group}
-                          />
-                          <%!-- The full runner id rides the tag's title; the value half
-                           names the live runner, and falls back to the shared
-                           removed-runner label when the id no longer resolves. --%>
-                          <.identity_tag
-                            :for={runner_id <- access.runner_ids}
-                            category="runner"
-                            title={runner_id}
+                        <%!-- One labelled row per dimension, on a shared label
+                         track. A middot could not survive the wrap: once a long
+                         run of tags breaks, nothing on the second line says
+                         which dimension it belongs to. The label does, and it
+                         also lets each tag drop the half the row already
+                         states — a pack row saying "pack" on every pill is the
+                         same word twice. --%>
+                        <dl class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1">
+                          <dt class="text-[10px] uppercase tracking-wider text-zinc-400">
+                            runners:
+                          </dt>
+                          <dd class="flex flex-wrap items-center gap-1">
+                            <span :if={runner_reach_phrase(access)} class="text-xs text-zinc-400">
+                              {runner_reach_phrase(access)}
+                            </span>
+                            <.identity_tag
+                              :for={group <- access.groups}
+                              category="group"
+                              value={group}
+                            />
+                            <%!-- The full runner id rides the tag's title; the value half
+                             names the live runner, and falls back to the shared
+                             removed-runner label when the id no longer resolves. --%>
+                            <.identity_tag
+                              :for={runner_id <- access.runner_ids}
+                              category="runner"
+                              title={runner_id}
+                            >
+                              <% runner = Map.get(@runners_by_id, runner_id) %>
+                              <span :if={runner}>{runner.name}</span>
+                              <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
+                            </.identity_tag>
+                          </dd>
+
+                          <%!-- No reach means no pack half to state at all. --%>
+                          <dt
+                            :if={access.mode != :none}
+                            class="text-[10px] uppercase tracking-wider text-zinc-400"
                           >
-                            <% runner = Map.get(@runners_by_id, runner_id) %>
-                            <span :if={runner}>{runner.name}</span>
-                            <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
-                          </.identity_tag>
-                          <%!-- The one separator on the row: it divides the two
-                           dimensions, so a long runner run and a long pack run
-                           cannot read as one undifferentiated string of tags.
-                           No reach means no pack half to divide from. --%>
-                          <span :if={access.mode != :none} class="text-xs text-zinc-500">·</span>
-                          <span :if={pack_reach_phrase(access)} class="text-xs text-zinc-400">
-                            {pack_reach_phrase(access)}
-                          </span>
-                          <.identity_tag
-                            :for={pack_id <- access.pack_ids}
-                            category="pack"
-                            value={pack_id}
-                          />
-                          <%!-- No "managed by identity provider" note here: the sync badge
-                           by the name already says the member is IdP-provisioned, and the
-                           role lock says its settings are IdP-owned. Runner access has no
-                           inline control in the roster to lock, so an FYI is pure repetition.
-                           The edit flow still guards + explains the directory lock. --%>
-                        </div>
+                            packs:
+                          </dt>
+                          <dd :if={access.mode != :none} class="flex flex-wrap items-center gap-1">
+                            <span :if={pack_reach_phrase(access)} class="text-xs text-zinc-400">
+                              {pack_reach_phrase(access)}
+                            </span>
+                            <.chip :for={pack_id <- access.pack_ids} mono>{pack_id}</.chip>
+                          </dd>
+                        </dl>
+                        <%!-- No "managed by identity provider" note here: the sync badge
+                         by the name already says the member is IdP-provisioned, and the
+                         role lock says its settings are IdP-owned. Access has no inline
+                         control in the roster to lock, so an FYI is pure repetition.
+                         The edit flow still guards + explains the directory lock. --%>
                       </div>
                     </div>
 

@@ -622,7 +622,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "All runners"
+      assert html =~ "runners:"
 
       # Open the inline editor for the invited admin.
       render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
@@ -709,12 +709,13 @@ defmodule EmisarWeb.TeamLiveTest do
                  pack_ids: ["postgres"]
                }
 
-      # The unrestricted half states its mode; the restricted half is named by its
-      # own tag. Neither fact is stated twice.
-      html = render(lv)
-      assert html =~ "All runners"
-      refute html =~ "selected packs"
+      # One labelled row per dimension: the unrestricted half states its mode,
+      # the restricted half is named by its own pill, and neither says the word
+      # its row label already carries.
+      assert has_element?(lv, "dt", "runners:")
+      assert has_element?(lv, "dt", "packs:")
       assert has_element?(lv, "span", "postgres")
+      refute render(lv) =~ "selected packs"
     end
 
     test "picking a group disables its runners live, so they can't be double-scoped", %{
