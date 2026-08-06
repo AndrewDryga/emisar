@@ -1325,7 +1325,12 @@ func TestHostilePackTestOverrideLimitsOnlySUTServices(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, expected := range []string{"database:", "helper:", "cpus: \"1.0\"", "mem_limit: 1536m", "pids_limit: 512"} {
+	// The pid ceiling is a runaway-fork backstop, not part of the starvation
+	// this mode applies — CPU and memory are. Do not lower it back toward a
+	// server's thread-pool size: at 512 a stock ClickHouse could not finish
+	// booting, and every case failed at setup on a container that never
+	// became healthy.
+	for _, expected := range []string{"database:", "helper:", "cpus: \"1.0\"", "mem_limit: 1536m", "pids_limit: 4096"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("hostile override lacks %q:\n%s", expected, text)
 		}

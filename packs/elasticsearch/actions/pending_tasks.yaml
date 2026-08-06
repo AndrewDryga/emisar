@@ -13,11 +13,18 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -fsS -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cluster/pending_tasks?pretty\""
+      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -fsS -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cluster/pending_tasks\""
   timeout: 15s
 output:
   parser: json
-  max_stdout_bytes: 32768
+  # No ?pretty and a wide ceiling because a DEEP queue is this action's whole
+  # point — "the master can't keep up" is when an operator reaches for it. The
+  # response grows with queue depth and Elasticsearch offers no page or limit
+  # for it, so the two levers are wire size and headroom. Pretty-printing spent
+  # roughly a third of the old 32 KiB on indentation; 136 queued tasks reached
+  # that ceiling on a busy single-node cluster and the parser got a truncated
+  # document, reported as invalid JSON rather than as the backlog it was.
+  max_stdout_bytes: 131072
   max_stderr_bytes: 8192
 examples:
   - title: Pending master tasks

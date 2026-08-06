@@ -602,10 +602,24 @@ type hostilePackTestService struct {
 	PidsLimit int    `yaml:"pids_limit"`
 }
 
+// Hostile mode starves a SUT the way a busy runner host does, so a case that
+// only passes on an idle workstation fails here instead of in production.
+//
+// CPU and memory are the pressure worth applying. The pid ceiling is only a
+// runaway-fork backstop and must stay well clear of what a real server thread
+// pool needs: at 512 a stock ClickHouse cannot even finish booting — its
+// entrypoint dies with "fork: retry: Resource temporarily unavailable", it
+// never binds 9000, and every case fails at setup on an unhealthy container.
+// The same ceiling degrades any thread-hungry SUT, a JVM included. Under the
+// same 1 CPU and 1536 MiB, that ClickHouse is healthy in six seconds.
+//
+// Tuning each heavyweight SUT's thread pools down to fit instead would be
+// fighting this tool: it changes what the fixture exercises to protect a
+// number that was never the point.
 func writePackTestHostileOverride(reports string, plan packtest.PlanRef) (string, error) {
 	services := make(map[string]hostilePackTestService, len(plan.Services))
 	for _, service := range plan.Services {
-		services[service] = hostilePackTestService{CPUs: "1.0", MemLimit: "1536m", PidsLimit: 512}
+		services[service] = hostilePackTestService{CPUs: "1.0", MemLimit: "1536m", PidsLimit: 4096}
 	}
 	data, err := yaml.Marshal(hostilePackTestCompose{Services: services})
 	if err != nil {

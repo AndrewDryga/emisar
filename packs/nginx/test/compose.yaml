@@ -29,7 +29,15 @@ services:
       # when the master truncates it in place, so the non-root runner's
       # `nginx -t`/`-T` (which open the configured pid file read-write) keep
       # working now that /run is shared.
-      - rm -f /var/log/nginx/access.log /var/log/nginx/error.log && touch /var/log/nginx/access.log /var/log/nginx/error.log /var/run/nginx.pid && chmod 0666 /var/log/nginx/access.log /var/log/nginx/error.log /var/run/nginx.pid && chmod 0777 /var/run && exec /docker-entrypoint.sh nginx -g 'daemon off;'
+      # NOT `exec`: runner-tools shares this pid namespace, so whatever is PID 1
+      # here is PID 1 for the runner too. exec'ing nginx made the master PID 1,
+      # and the stop/quit actions kill it by design — the kernel then SIGKILLs
+      # every remaining process in the namespace, including the packtest process
+      # still reading the result, which surfaced as an exit-137 harness error
+      # rather than the action's own outcome. Keeping the shell as PID 1 and
+      # idling after nginx exits lets the case finish; compose tears the whole
+      # project down straight after it either way.
+      - rm -f /var/log/nginx/access.log /var/log/nginx/error.log && touch /var/log/nginx/access.log /var/log/nginx/error.log /var/run/nginx.pid && chmod 0666 /var/log/nginx/access.log /var/log/nginx/error.log /var/run/nginx.pid && chmod 0777 /var/run && { /docker-entrypoint.sh nginx -g 'daemon off;'; exec sleep infinity; }
     volumes:
       - nginx_logs:/var/log/nginx
       - nginx_run:/run
