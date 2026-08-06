@@ -1084,14 +1084,28 @@ defmodule EmisarWeb.CoreComponents do
     do: "block text-[10px] font-semibold uppercase tracking-wider text-zinc-400"
 
   @doc """
-  Generates a generic error message.
+  The inline field error — the message sits at the form's own type scale,
+  directly under the input it is about.
+
+  `compact` drops it to a dense control's scale and hands the spacing back to
+  the caller: inside a picker whose own rows are `text-xs`, the default `text-sm`
+  reads a step LOUDER than the thing it is correcting, and a baked-in `mt-2`
+  fights the panel's padding.
   """
+  attr :compact, :boolean, default: false
+
   slot :inner_block, required: true
 
   def error(assigns) do
     ~H"""
-    <p class="mt-2 flex items-center gap-1.5 text-sm text-rose-400">
-      <.icon name="hero-exclamation-circle-mini" class="h-4 w-4 flex-none" />
+    <p class={[
+      "flex items-center gap-1.5 text-rose-400",
+      if(@compact, do: "text-xs", else: "mt-2 text-sm")
+    ]}>
+      <.icon
+        name="hero-exclamation-circle-mini"
+        class={"flex-none " <> if(@compact, do: "h-3.5 w-3.5", else: "h-4 w-4")}
+      />
       {render_slot(@inner_block)}
     </p>
     """

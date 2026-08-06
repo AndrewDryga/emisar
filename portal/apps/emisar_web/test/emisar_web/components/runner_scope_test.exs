@@ -343,6 +343,26 @@ defmodule EmisarWeb.RunnerScopeTest do
       refute html =~ ">Selected runners<"
     end
 
+    test "a validation error reads at the panel's own scale, not the form's" do
+      html =
+        render_component(&RunnerScope.runner_scope_select/1,
+          name: "scope[]",
+          runners: @runners,
+          selected: [],
+          variant: :attached,
+          validation_error: "Choose at least one runner group or runner."
+        )
+
+      assert html =~ "Choose at least one runner group or runner."
+      # The rows it corrects are text-xs; a text-sm message reads a step louder
+      # than the thing it is about.
+      assert html =~ ~s|class="flex items-center gap-1.5 text-rose-400 text-xs"|
+      refute html =~ "mt-2 text-sm"
+      # Padded on both sides and closed off from the first option row, so it is
+      # part of the panel rather than wedged under its head.
+      assert html =~ "border-b border-zinc-800/70 px-3 py-2"
+    end
+
     test "a dependency error stays quiet during change and appears after submit" do
       validating_form = runner_access_form(:validate)
 

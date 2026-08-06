@@ -62,7 +62,7 @@ defmodule EmisarWeb.RunnerScope do
       <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
 
       <div :if={@visible_error} class={scope_feedback_class(@variant)}>
-        <.error>{@visible_error}</.error>
+        <.error compact>{@visible_error}</.error>
       </div>
       <div :if={@loading?} class={scope_feedback_class(@variant)}>
         <.loading_state />
@@ -323,7 +323,7 @@ defmodule EmisarWeb.RunnerScope do
       <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
 
       <div :if={@visible_error} class={scope_feedback_class(@variant)}>
-        <.error>{@visible_error}</.error>
+        <.error compact>{@visible_error}</.error>
       </div>
       <div :if={@loading?} class={scope_feedback_class(@variant)}>
         <.loading_state />
@@ -521,8 +521,10 @@ defmodule EmisarWeb.RunnerScope do
     "max-h-72 divide-y divide-zinc-800/70 overflow-y-auto overscroll-contain rounded-lg bg-zinc-950/40 ring-1 ring-white/[0.08]"
   end
 
-  defp scope_feedback_class(:attached), do: "px-3 pb-3"
-  defp scope_feedback_class(:standalone), do: nil
+  # The feedback shares the option rows' horizontal inset and pads both sides,
+  # so it reads as part of the panel rather than something wedged under its head.
+  defp scope_feedback_class(:attached), do: "border-b border-zinc-800/70 px-3 py-2"
+  defp scope_feedback_class(:standalone), do: "mb-2"
 
   defp scope_empty_class(:attached), do: "px-3 py-4 text-xs text-zinc-400"
 
