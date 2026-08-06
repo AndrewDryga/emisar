@@ -226,7 +226,7 @@ PACKTEST_VERSION=17.6 \
 ```
 
 `--hostile` writes a case-local Compose override that limits each SUT service to
-one CPU, 1536 MiB of memory, and 512 PIDs. CI uses it to make startup races and
+one CPU, 1536 MiB of memory, and 4096 PIDs. CI uses it to make startup races and
 expensive readiness probes visible on every behavior row. It does not emulate
 Linux ownership or AppArmor on Docker Desktop, so a local pass remains feedback,
 not the verdict for those boundaries.
