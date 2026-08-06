@@ -709,7 +709,12 @@ defmodule EmisarWeb.TeamLiveTest do
                  pack_ids: ["postgres"]
                }
 
-      assert render(lv) =~ "All runners · selected packs"
+      # The unrestricted half states its mode; the restricted half is named by its
+      # own tag. Neither fact is stated twice.
+      html = render(lv)
+      assert html =~ "All runners"
+      refute html =~ "selected packs"
+      assert has_element?(lv, "span", "postgres")
     end
 
     test "picking a group disables its runners live, so they can't be double-scoped", %{

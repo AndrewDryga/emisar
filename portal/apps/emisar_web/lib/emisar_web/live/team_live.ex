@@ -1016,20 +1016,18 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  # No reach at all needs no pack qualifier; every other grant states both
-  # dimensions, because "All runners" alone reads as more than it grants.
-  defp runner_access_label(%Accounts.RunnerAccess{mode: :none}), do: "No runners"
+  # Each dimension states itself ONCE: as a phrase when there is nothing to
+  # enumerate, and as its own tags when there is. "Selected runners" standing in
+  # front of the tags that name those runners was the same fact twice.
+  defp runner_reach_phrase(%Accounts.RunnerAccess{mode: :none}), do: "No runners"
+  defp runner_reach_phrase(%Accounts.RunnerAccess{mode: :all}), do: "All runners"
+  defp runner_reach_phrase(%Accounts.RunnerAccess{mode: :restricted}), do: nil
 
-  defp runner_access_label(%Accounts.RunnerAccess{} = access),
-    do: runner_reach_label(access) <> " · " <> pack_reach_label(access)
-
-  defp runner_reach_label(%Accounts.RunnerAccess{mode: :all}), do: "All runners"
-  defp runner_reach_label(%Accounts.RunnerAccess{mode: :restricted}), do: "Selected runners"
-
-  # The MODE, never a count: the selected packs are named by their own tags on
-  # the same row, so a count here would be a second label for one fact.
-  defp pack_reach_label(%Accounts.RunnerAccess{pack_mode: :all}), do: "all packs"
-  defp pack_reach_label(%Accounts.RunnerAccess{}), do: "selected packs"
+  # No reach at all has no pack half to state — "No runners all packs" claimed a
+  # breadth that grant does not have.
+  defp pack_reach_phrase(%Accounts.RunnerAccess{mode: :none}), do: nil
+  defp pack_reach_phrase(%Accounts.RunnerAccess{pack_mode: :all}), do: "all packs"
+  defp pack_reach_phrase(%Accounts.RunnerAccess{}), do: nil
 
   defp current_role(member_facts, user_id) do
     case Enum.find(member_facts, &(&1.membership.user_id == user_id)) do
@@ -1492,7 +1490,9 @@ defmodule EmisarWeb.TeamLive do
                           <span class="text-[10px] uppercase tracking-wider text-zinc-400">
                             access:
                           </span>
-                          <span class="text-xs text-zinc-400">{runner_access_label(access)}</span>
+                          <span :if={runner_reach_phrase(access)} class="text-xs text-zinc-400">
+                            {runner_reach_phrase(access)}
+                          </span>
                           <.identity_tag
                             :for={group <- access.groups}
                             category="group"
@@ -1510,6 +1510,14 @@ defmodule EmisarWeb.TeamLive do
                             <span :if={runner}>{runner.name}</span>
                             <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
                           </.identity_tag>
+                          <%!-- The one separator on the row: it divides the two
+                           dimensions, so a long runner run and a long pack run
+                           cannot read as one undifferentiated string of tags.
+                           No reach means no pack half to divide from. --%>
+                          <span :if={access.mode != :none} class="text-xs text-zinc-500">·</span>
+                          <span :if={pack_reach_phrase(access)} class="text-xs text-zinc-400">
+                            {pack_reach_phrase(access)}
+                          </span>
                           <.identity_tag
                             :for={pack_id <- access.pack_ids}
                             category="pack"
