@@ -132,7 +132,13 @@ resource "google_logging_metric" "cloudsql_backup_failed" {
   filter = join(" AND ", [
     "resource.type=\"cloudsql_database\"",
     "resource.labels.database_id=\"${var.project_id}:${google_sql_database_instance.emisar.name}\"",
-    "protoPayload.methodName=\"cloudsql.instances.backup\"",
+    # cloudsql.instances.automatedBackup, NOT cloudsql.instances.backup. The
+    # latter is the on-demand verb and never appears for the nightly run, so this
+    # metric matched nothing: verified against the live project, where 30 days
+    # held 27 automatedBackup entries and ZERO of the name this used to filter,
+    # while `gcloud sql backups list` showed 24 unbroken AUTOMATED/SUCCESSFUL
+    # runs. The alert could not fire, on the only recovery a ZONAL instance has.
+    "protoPayload.methodName=\"cloudsql.instances.automatedBackup\"",
     "severity>=ERROR",
   ])
 
@@ -142,6 +148,59 @@ resource "google_logging_metric" "cloudsql_backup_failed" {
   }
 
   depends_on = [google_project_service.apis]
+}
+
+# A failure alert only fires when a failure is LOGGED. Quota exhaustion, a
+# disabled backup configuration, or a deleted schedule stop the nightly run
+# without logging an error at all — so the failure metric above stays silent
+# exactly when the posture is worst. This counts SUCCESSES so the policy below
+# can alert on their ABSENCE, which is the condition that actually matters.
+resource "google_logging_metric" "cloudsql_backup_succeeded" {
+  project = var.project_id
+  name    = "emisar_cloudsql_backup_succeeded"
+
+  filter = join(" AND ", [
+    "resource.type=\"cloudsql_database\"",
+    "resource.labels.database_id=\"${var.project_id}:${google_sql_database_instance.emisar.name}\"",
+    "protoPayload.methodName=\"cloudsql.instances.automatedBackup\"",
+    "protoPayload.status.message=\"OK\"",
+  ])
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_monitoring_alert_policy" "db_backup_absent" {
+  display_name = "Emisar: Cloud SQL Backup Has Not Run"
+  combiner     = "OR"
+
+  documentation {
+    content   = "No successful automated Cloud SQL backup has been recorded in 36 hours. Backups run daily at 03:00 UTC, so this means the schedule stopped rather than one run failing — check the instance's backup configuration, quota, and recent maintenance. Restore is the recovery plan for this ZONAL instance."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "cloud-sql"
+    signal    = "durability"
+  }
+
+  conditions {
+    display_name = "No Successful Automated Backup In 36 Hours"
+    condition_absent {
+      filter   = "resource.type = \"cloudsql_database\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.cloudsql_backup_succeeded.name}\""
+      duration = "129600s"
+      aggregations {
+        alignment_period   = "3600s"
+        per_series_aligner = "ALIGN_DELTA"
+      }
+    }
+  }
+
+  notification_channels = local.paging_notification_channels
 }
 
 resource "google_monitoring_alert_policy" "db_backup_failed" {
