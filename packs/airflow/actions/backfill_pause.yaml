@@ -1,0 +1,36 @@
+schema_version: 1
+id: airflow.backfill_pause
+title: Pause a backfill (PUT /api/v2/backfills/{backfill_id}/pause)
+kind: script
+risk: medium
+description: >
+  Pause a running backfill so it stops creating further runs. Runs already in
+  flight finish. This is how to give scheduled work its pool slots back without
+  losing the backfill's progress — resume it in the Airflow UI, or cancel it
+  with airflow.backfill_cancel.
+side_effects:
+  - Stops the backfill creating new DAG runs.
+  - Backfill runs already in flight continue to completion.
+  - Reversible — the backfill keeps its progress and can be resumed.
+search_terms:
+  - pause backfill
+  - stop backfill temporarily
+  - free up slots
+args:
+  - name: backfill_id
+    type: integer
+    required: true
+    description: Backfill id, as reported by airflow.backfills.
+    validation: {min: 1, max: 9007199254740991}
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [pause-backfill, "{{ args.backfill_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Pause a backfill that is starving scheduled runs
+    args: {backfill_id: 7}

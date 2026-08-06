@@ -1,0 +1,58 @@
+schema_version: 1
+id: spark.executors
+title: List an application's executors (GET .../executors)
+kind: script
+risk: low
+description: >
+  List an application's executors with cores, active and completed tasks,
+  failed tasks, GC time, storage memory used against total, disk used, and
+  their host and log URLs. Read it when an application is slow or losing work:
+  a single executor with most of the failed tasks names the bad host.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - spark executors
+  - executor memory
+  - lost executor
+  - gc time
+  - executor failures
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+  - name: include_removed
+    type: string
+    required: false
+    default: "false"
+    description: >
+      Include executors that have already been removed (the allexecutors
+      endpoint). That is what shows an executor lost mid-run, which the active
+      list no longer mentions.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [executors, "{{ args.source }}", "{{ args.app_id }}", "{{ args.include_removed }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Active executors
+    args: {app_id: app-20260805120000-0001}
+  - title: Including executors that were lost
+    args: {app_id: app-20260805120000-0001, include_removed: "true"}

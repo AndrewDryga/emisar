@@ -1,0 +1,86 @@
+schema_version: 1
+id: airflow.event_logs
+title: List Airflow event log entries (GET /api/v2/eventLogs)
+kind: script
+risk: low
+description: >
+  List Airflow's own audit trail — who paused a DAG, triggered a run, cleared a
+  task, or edited a variable, with the owner and timestamp. Read it to answer
+  "who changed this and when" after an unexplained state change.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/eventLogs endpoint.
+  - Read-only — never writes or mutates data.
+  - Discloses which users acted on which DAGs.
+search_terms:
+  - who paused the dag
+  - who triggered this
+  - airflow audit log
+  - who cleared the task
+args:
+  - name: dag_id
+    type: string
+    required: false
+    default: ""
+    description: Restrict to events for one DAG. Empty lists every DAG.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,250}$"
+      max_length: 250
+  - name: task_id
+    type: string
+    required: false
+    default: ""
+    description: Restrict to events for one task.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,250}$"
+      max_length: 250
+  - name: event
+    type: string
+    required: false
+    default: ""
+    description: Restrict to one event name, e.g. trigger, clear, paused.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,64}$"
+      max_length: 64
+  - name: after
+    type: string
+    required: false
+    default: ""
+    description: Only events at or after this ISO 8601 timestamp, e.g. 2026-08-05T00:00:00Z.
+    validation:
+      pattern: '^([0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})?)?)?$'
+      max_length: 40
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Events returned in this page.
+    validation: {min: 1, max: 200}
+  - name: order_by
+    type: string
+    required: false
+    default: "-when"
+    description: Sort field, prefixed with - for descending.
+    validation:
+      pattern: "^-?[a-z_]{1,64}$"
+      max_length: 65
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv:
+    - event-logs
+    - "{{ args.dag_id }}"
+    - "{{ args.task_id }}"
+    - "{{ args.event }}"
+    - "{{ args.after }}"
+    - "{{ args.limit }}"
+    - "{{ args.order_by }}"
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent activity across the deployment
+    args: {}
+  - title: Who paused this DAG
+    args: {dag_id: daily_sales_etl, event: paused}

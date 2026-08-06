@@ -1,0 +1,60 @@
+schema_version: 1
+id: airflow.assets
+title: List assets (GET /api/v2/assets)
+kind: script
+risk: low
+description: >
+  List the assets Airflow schedules on, with the tasks that produce them, the
+  DAGs that consume them, and each asset's last event. In an asset-driven
+  deployment a consumer DAG that never runs is usually waiting on a producer
+  that stopped emitting — this read shows which one.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/assets endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - asset scheduling
+  - data-aware scheduling
+  - dataset
+  - consumer dag not running
+args:
+  - name: name_pattern
+    type: string
+    required: false
+    default: ""
+    description: Substring the asset name must contain. Empty lists every asset.
+    validation:
+      pattern: "^[A-Za-z0-9._:/-]{0,250}$"
+      max_length: 250
+  - name: dag_ids
+    type: string
+    required: false
+    default: ""
+    description: Comma-separated dag_ids; restricts to assets those DAGs produce or consume.
+    validation:
+      pattern: "^[A-Za-z0-9._,-]{0,1000}$"
+      max_length: 1000
+  - name: only_active
+    type: string
+    required: false
+    default: "true"
+    description: Hide assets whose definition is gone (true, the default) or include them.
+    validation:
+      enum: ["true", "false"]
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Assets returned in this page.
+    validation: {min: 1, max: 200}
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [assets, "{{ args.name_pattern }}", "{{ args.dag_ids }}", "{{ args.only_active }}", "{{ args.limit }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Every asset and its producers
+    args: {}

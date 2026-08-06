@@ -1,0 +1,48 @@
+schema_version: 1
+id: spark.job
+title: GET /api/v1/applications/{app_id}/jobs/{job_id}
+kind: script
+risk: low
+description: >
+  Show one Spark job — status, timing, the stage ids it owns, and its task
+  counts including failed and killed. Read it after spark.jobs narrows to the
+  job you care about, then follow its stage ids into spark.stage.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - spark job detail
+  - job stages
+  - job failure reason
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: job_id
+    type: integer
+    required: true
+    description: Job id, from spark.jobs.
+    validation: {min: 0, max: 1000000}
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [job, "{{ args.source }}", "{{ args.app_id }}", "{{ args.job_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: One job
+    args: {app_id: app-20260805120000-0001, job_id: 3}

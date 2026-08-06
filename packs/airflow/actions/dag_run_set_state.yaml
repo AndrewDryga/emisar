@@ -1,0 +1,56 @@
+schema_version: 1
+id: airflow.dag_run_set_state
+title: Set a DAG run's state (PATCH .../dagRuns/{dag_run_id})
+kind: script
+risk: high
+description: >
+  Set one DAG run to queued, success, or failed. Marking a run failed stops the
+  scheduler from starting further tasks in it; marking it success closes it out
+  without running the remaining tasks, which is how a stuck run is retired —
+  and also how work gets silently skipped, so state the reason in the note.
+  Setting it queued makes the scheduler re-examine the run.
+side_effects:
+  - Changes the run's state in the metadata database.
+  - success or failed ends the run; remaining tasks are not executed.
+  - queued causes the scheduler to re-evaluate and can start tasks again.
+  - Downstream DAGs scheduled on this run's assets react to the new state.
+search_terms:
+  - mark run failed
+  - mark run success
+  - stuck dag run
+  - force run to finish
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: dag_run_id
+    type: string
+    required: true
+    description: Run id.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{1,250}$"
+      max_length: 250
+  - name: state
+    type: string
+    required: true
+    description: New run state.
+    validation:
+      enum: ["queued", "success", "failed"]
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [set-dag-run-state, "{{ args.dag_id }}", "{{ args.dag_run_id }}", "{{ args.state }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Retire a run that will never finish
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00", state: failed}
+  - title: Send a run back to the scheduler
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00", state: queued}

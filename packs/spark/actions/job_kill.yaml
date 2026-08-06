@@ -1,0 +1,40 @@
+schema_version: 1
+id: spark.job_kill
+title: Kill a running Spark job (POST /jobs/job/kill on the driver UI)
+kind: script
+risk: high
+description: >
+  Kill one running job in the application on the live driver UI. Every task in
+  the job is cancelled and the job is marked failed; whatever the job had
+  already written stays written, so a partially completed output is the normal
+  outcome. The action reads the job back afterwards and returns its state, so
+  a request against an already-finished job is visible rather than assumed.
+  Needs spark.ui.killEnabled, which is on by default.
+side_effects:
+  - Cancels every running task in the job; the job ends as failed.
+  - Partial output the job already wrote is left in place.
+  - The application keeps running; only this job is cancelled.
+  - Whether the job was running is reported by reading it back, not assumed.
+search_terms:
+  - kill spark job
+  - cancel job
+  - stop runaway job
+  - runaway query
+args:
+  - name: job_id
+    type: integer
+    required: true
+    description: Job id to kill, from spark.jobs with source driver.
+    validation: {min: 0, max: 1000000}
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [job-kill, "{{ args.job_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Kill a job that will never finish
+    args: {job_id: 12}

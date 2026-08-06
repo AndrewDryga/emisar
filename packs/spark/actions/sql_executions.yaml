@@ -1,0 +1,73 @@
+schema_version: 1
+id: spark.sql_executions
+title: List SQL executions (GET .../sql)
+kind: script
+risk: low
+description: >
+  List an application's Spark SQL executions with their description, submission
+  time, duration, and the jobs each one spawned. For a SQL or DataFrame
+  workload this is the layer that maps a slow query to the jobs and stages
+  underneath it.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+  - Execution descriptions come from the submitted query and can include table and column names.
+search_terms:
+  - spark sql
+  - slow query
+  - dataframe execution
+  - query duration
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+  - name: offset
+    type: integer
+    required: false
+    default: 0
+    description: Page offset within the application's executions.
+    validation: {min: 0, max: 1000000}
+  - name: length
+    type: integer
+    required: false
+    default: 25
+    description: Executions returned in this page.
+    validation: {min: 1, max: 100}
+  - name: plan_description
+    type: string
+    required: false
+    default: "false"
+    description: >
+      Include the physical plan text for every execution. Off by default — a
+      plan is large, and spark.sql_execution returns one on demand.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv:
+    - sql-list
+    - "{{ args.source }}"
+    - "{{ args.app_id }}"
+    - "{{ args.offset }}"
+    - "{{ args.length }}"
+    - "{{ args.plan_description }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: SQL executions in an application
+    args: {app_id: app-20260805120000-0001}

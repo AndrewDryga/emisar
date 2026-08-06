@@ -1,0 +1,38 @@
+schema_version: 1
+id: airflow.dag_tasks
+title: List a DAG's tasks (GET /api/v2/dags/{dag_id}/tasks)
+kind: script
+risk: low
+description: >
+  List the tasks a DAG defines, with operator class, pool, queue, retries,
+  trigger rule, and upstream/downstream ids. Read it to learn a DAG's shape
+  before clearing a task or reasoning about which downstream work a failure
+  blocks.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/dags/{dag_id}/tasks endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - dag tasks
+  - task dependencies
+  - which operator
+  - task pool
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [dag-tasks, "{{ args.dag_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Tasks in one DAG
+    args: {dag_id: daily_sales_etl}

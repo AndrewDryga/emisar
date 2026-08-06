@@ -1,0 +1,58 @@
+schema_version: 1
+id: airflow.asset_events
+title: List asset events (GET /api/v2/assets/events)
+kind: script
+risk: low
+description: >
+  List asset update events with their timestamp and the DAG, task, and run that
+  emitted each one. Pair with airflow.assets to answer "when did this asset
+  last update, and what produced it" — the timeline behind a consumer DAG that
+  has not triggered.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/assets/events endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - asset event
+  - when did the asset update
+  - dataset event
+args:
+  - name: asset_id
+    type: integer
+    required: false
+    default: 0
+    description: Restrict to one asset by its numeric id, as reported by airflow.assets. 0 lists every asset.
+    validation: {min: 0, max: 9007199254740991}
+  - name: source_dag_id
+    type: string
+    required: false
+    default: ""
+    description: Restrict to events emitted by one DAG.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,250}$"
+      max_length: 250
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Events returned in this page.
+    validation: {min: 1, max: 200}
+  - name: order_by
+    type: string
+    required: false
+    default: "-timestamp"
+    description: Sort field, prefixed with - for descending.
+    validation:
+      pattern: "^-?[a-z_]{1,64}$"
+      max_length: 65
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [asset-events, "{{ args.asset_id }}", "{{ args.source_dag_id }}", "{{ args.limit }}", "{{ args.order_by }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Most recent asset events
+    args: {}

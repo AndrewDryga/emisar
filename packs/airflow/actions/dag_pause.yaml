@@ -1,0 +1,38 @@
+schema_version: 1
+id: airflow.dag_pause
+title: Pause a DAG (PATCH /api/v2/dags/{dag_id})
+kind: script
+risk: medium
+description: >
+  Pause one DAG so the scheduler stops creating new runs for it. Runs already
+  in flight keep going. This is the standard containment step for a DAG that is
+  failing in a loop or hammering a downstream system, and airflow.dag_unpause
+  reverses it exactly.
+side_effects:
+  - Sets is_paused true for the DAG; the scheduler creates no further runs.
+  - Runs and task instances already in flight continue to completion.
+  - Fully reversible with airflow.dag_unpause.
+search_terms:
+  - pause dag
+  - stop scheduling
+  - stop the dag
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id to pause.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [set-paused, "{{ args.dag_id }}", "true"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Pause a DAG that keeps failing
+    args: {dag_id: daily_sales_etl}

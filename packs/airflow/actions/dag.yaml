@@ -1,0 +1,36 @@
+schema_version: 1
+id: airflow.dag
+title: GET /api/v2/dags/{dag_id}
+kind: script
+risk: low
+description: >
+  Show one DAG's summary — paused state, schedule, owners, tags, next run,
+  concurrency limits, and last parse time. Use when you already know the
+  dag_id; airflow.dag_details adds the parsed DAG-level parameters.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/dags/{dag_id} endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - dag schedule
+  - is the dag paused
+  - next dag run
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [dag, "{{ args.dag_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Summary for one DAG
+    args: {dag_id: daily_sales_etl}

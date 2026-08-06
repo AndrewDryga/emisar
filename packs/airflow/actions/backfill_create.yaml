@@ -1,0 +1,85 @@
+schema_version: 1
+id: airflow.backfill_create
+title: Start a backfill (POST /api/v2/backfills)
+kind: script
+risk: high
+description: >
+  Start a backfill of one DAG over a date range. Airflow creates one run per
+  interval in the range and executes them for real, so a wide range is a large,
+  sustained production load: every task writes what it normally writes and
+  competes for the same pools as scheduled work. Bound it with max_active_runs
+  and check airflow.backfills first.
+side_effects:
+  - Creates one DAG run per interval in the range and executes every task in them.
+  - Sustained consumption of pool, queue, and executor capacity shared with scheduled work.
+  - reprocess_behavior decides whether existing runs in the range are re-run.
+  - Pause or stop it with airflow.backfill_pause or airflow.backfill_cancel.
+search_terms:
+  - backfill
+  - rerun a date range
+  - reprocess history
+  - catch up missed runs
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id to backfill.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: from_date
+    type: string
+    required: true
+    description: First logical date in the range, ISO 8601, e.g. 2026-08-01T00:00:00Z.
+    validation:
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})?)?$'
+      max_length: 40
+  - name: to_date
+    type: string
+    required: true
+    description: Last logical date in the range, ISO 8601.
+    validation:
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})?)?$'
+      max_length: 40
+  - name: reprocess_behavior
+    type: string
+    required: false
+    default: "none"
+    description: >
+      What to do about intervals that already have a run — none (the default)
+      skips them, failed re-runs the failed ones, completed re-runs every
+      finished one.
+    validation:
+      enum: ["none", "failed", "completed"]
+  - name: max_active_runs
+    type: integer
+    required: false
+    default: 3
+    description: How many backfill runs may be in flight at once. Keep it small so scheduled work still gets slots.
+    validation: {min: 1, max: 100}
+  - name: run_backwards
+    type: string
+    required: false
+    default: "false"
+    description: Process the range newest interval first.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv:
+    - create-backfill
+    - "{{ args.dag_id }}"
+    - "{{ args.from_date }}"
+    - "{{ args.to_date }}"
+    - "{{ args.reprocess_behavior }}"
+    - "{{ args.max_active_runs }}"
+    - "{{ args.run_backwards }}"
+  timeout: 120s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Reprocess one week of failed runs, three at a time
+    args: {dag_id: daily_sales_etl, from_date: "2026-07-29T00:00:00Z", to_date: "2026-08-05T00:00:00Z", reprocess_behavior: failed}

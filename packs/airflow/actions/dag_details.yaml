@@ -1,0 +1,39 @@
+schema_version: 1
+id: airflow.dag_details
+title: GET /api/v2/dags/{dag_id}/details
+kind: script
+risk: low
+description: >
+  Show one DAG's full parsed definition — the summary fields plus timetable,
+  catchup, start and end dates, default arguments, doc_md, params, dataset or
+  asset schedule, and the file it was parsed from. This is what to read before
+  unpausing a DAG, because it says whether catchup will backfill.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/dags/{dag_id}/details endpoint.
+  - Read-only — never writes or mutates data.
+  - Includes DAG-level default_args and params as the DAG author wrote them.
+search_terms:
+  - dag catchup
+  - dag timetable
+  - dag default args
+  - dag params
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [dag-details, "{{ args.dag_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Full definition, including catchup
+    args: {dag_id: daily_sales_etl}

@@ -1,0 +1,37 @@
+schema_version: 1
+id: spark.version
+title: GET /api/v1/version
+kind: script
+risk: low
+description: >
+  Show the Spark version a UI is running. Use it to confirm a driver or history
+  server is reachable and which release it is on before reading a
+  version-specific field.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - spark version
+  - which release
+args:
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [version, "{{ args.source }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: History server version
+    args: {}
+  - title: Live driver version
+    args: {source: driver}

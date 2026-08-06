@@ -1,0 +1,51 @@
+schema_version: 1
+id: spark.environment
+title: Dump an application's Spark configuration (GET .../environment)
+kind: script
+risk: high
+description: >
+  Dump the Spark configuration an application is running with, plus its runtime
+  versions and resource profiles. Answers "what settings did this job actually
+  get" when a tuning change did not take effect. High risk because it is a
+  configuration dump: Spark's own spark.redaction.regex masks the property
+  values it recognizes, and the JVM system properties and classpath are dropped
+  on the runner host, but an object-store key or keystore password stored under
+  a property name that pattern does not match is returned as configured.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+  - Returns Spark configuration properties, which can carry credentials the redaction pattern does not match.
+  - JVM system properties and the classpath are removed on the runner host.
+search_terms:
+  - spark config
+  - which settings
+  - spark.sql.shuffle.partitions
+  - executor memory setting
+  - runtime versions
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [environment, "{{ args.source }}", "{{ args.app_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: The configuration one application ran with
+    args: {app_id: app-20260805120000-0001}

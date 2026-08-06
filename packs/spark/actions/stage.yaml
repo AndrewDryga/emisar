@@ -1,0 +1,72 @@
+schema_version: 1
+id: spark.stage
+title: GET /api/v1/applications/{app_id}/stages/{stage_id}
+kind: script
+risk: low
+description: >
+  Show every attempt of one stage with its status, task counts, timing, shuffle
+  and spill metrics, and — with with_summaries — the task metric quantiles. A
+  stage with more than one attempt has been retried, which usually means lost
+  executors or a fetch failure.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - stage detail
+  - stage retry
+  - stage attempts
+  - fetch failure
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: stage_id
+    type: integer
+    required: true
+    description: Stage id, from spark.stages or a job's stageIds.
+    validation: {min: 0, max: 1000000}
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+  - name: details
+    type: string
+    required: false
+    default: "false"
+    description: Include the per-task detail. Off by default — a wide stage has thousands of tasks.
+    validation:
+      enum: ["true", "false"]
+  - name: with_summaries
+    type: string
+    required: false
+    default: "false"
+    description: Include task and executor metric quantile summaries for the stage.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv:
+    - stage
+    - "{{ args.source }}"
+    - "{{ args.app_id }}"
+    - "{{ args.stage_id }}"
+    - "{{ args.details }}"
+    - "{{ args.with_summaries }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: One stage
+    args: {app_id: app-20260805120000-0001, stage_id: 4}
+  - title: One stage with its metric quantiles
+    args: {app_id: app-20260805120000-0001, stage_id: 4, with_summaries: "true"}

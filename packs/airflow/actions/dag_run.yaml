@@ -1,0 +1,44 @@
+schema_version: 1
+id: airflow.dag_run
+title: GET /api/v2/dags/{dag_id}/dagRuns/{dag_run_id}
+kind: script
+risk: low
+description: >
+  Show one DAG run — state, run type, logical date, queued/start/end times,
+  duration, the conf it was triggered with, and its note. Use after
+  airflow.dag_runs narrows to the run you care about.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/dags/{dag_id}/dagRuns/{dag_run_id} endpoint.
+  - Read-only — never writes or mutates data.
+  - Returns the run conf exactly as the trigger supplied it.
+search_terms:
+  - dag run detail
+  - run conf
+  - why is this run queued
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: dag_run_id
+    type: string
+    required: true
+    description: Run id, e.g. scheduled__2026-08-05T00:00:00+00:00 or manual__2026-08-05T09:14:22.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{1,250}$"
+      max_length: 250
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [dag-run, "{{ args.dag_id }}", "{{ args.dag_run_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: One scheduled run
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00"}

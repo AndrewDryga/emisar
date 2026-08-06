@@ -1,0 +1,50 @@
+schema_version: 1
+id: airflow.dag_run_clear_preview
+title: Preview clearing a DAG run (POST .../dagRuns/{dag_run_id}/clear, dry run)
+kind: script
+risk: low
+description: >
+  Show which task instances airflow.dag_run_clear would reset, without changing
+  anything. Airflow's clear is a dry run by default, and this action fixes it
+  that way: read the list, confirm the blast radius, then run the real clear.
+side_effects:
+  - One HTTP POST with dry_run fixed true; Airflow computes the affected task instances and changes nothing.
+  - Read-only in effect — no task instance or run state is modified.
+search_terms:
+  - what would clearing do
+  - preview retry
+  - dry run clear
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: dag_run_id
+    type: string
+    required: true
+    description: Run id.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{1,250}$"
+      max_length: 250
+  - name: only_failed
+    type: string
+    required: false
+    default: "true"
+    description: Consider only failed task instances (true, the default) or every task instance in the run.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [clear-dag-run, "{{ args.dag_id }}", "{{ args.dag_run_id }}", "true", "{{ args.only_failed }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: What a retry of the failed tasks would touch
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00"}

@@ -1,0 +1,80 @@
+schema_version: 1
+id: airflow.task_instance_set_state
+title: Set a task instance's state (PATCH .../taskInstances/{task_id})
+kind: script
+risk: high
+description: >
+  Set one task instance to success, failed, or skipped without running it.
+  Marking a stuck task success unblocks its downstream work — and asserts that
+  the work happened when it did not, so use it only when you have confirmed the
+  effect by other means. failed stops the branch; skipped passes it over.
+side_effects:
+  - Changes the task instance's state in the metadata database without executing the task.
+  - Downstream tasks proceed or stop according to the new state and their trigger rules.
+  - With include_downstream, applies the same state to every downstream task.
+  - Does not perform the work the task would have done.
+search_terms:
+  - mark task success
+  - mark task failed
+  - skip a task
+  - unblock downstream tasks
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: dag_run_id
+    type: string
+    required: true
+    description: Run id.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{1,250}$"
+      max_length: 250
+  - name: task_id
+    type: string
+    required: true
+    description: Task id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: state
+    type: string
+    required: true
+    description: New task-instance state.
+    validation:
+      enum: ["success", "failed", "skipped"]
+  - name: map_index
+    type: integer
+    required: false
+    default: -1
+    description: Map index for a dynamically mapped task. Leave at -1 for an ordinary task.
+    validation: {min: -1, max: 100000}
+  - name: include_downstream
+    type: string
+    required: false
+    default: "false"
+    description: Apply the same state to every task downstream of this one.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv:
+    - set-task-instance-state
+    - "{{ args.dag_id }}"
+    - "{{ args.dag_run_id }}"
+    - "{{ args.task_id }}"
+    - "{{ args.map_index }}"
+    - "{{ args.state }}"
+    - "{{ args.include_downstream }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Mark a task that was fixed by hand as done
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00", task_id: load_warehouse, state: success}

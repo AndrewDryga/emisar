@@ -1,0 +1,121 @@
+schema_version: 1
+
+id: airflow
+name: Apache Airflow
+version: 0.1.0
+description: >
+  Governed Apache Airflow 3 operations over the stable REST API (/api/v2):
+  scheduler/triggerer/dag-processor health and job heartbeats, DAG inventory
+  and per-DAG detail, run and task-instance search across every DAG, task
+  logs, import errors and DAG warnings, pools, asset events, connection and
+  variable inventory (names and routing only — never values), and the
+  incident controls an operator actually reaches for: pause and unpause a
+  DAG, trigger a run, mark a run or task succeeded/failed, preview then
+  perform a clear, retune a pool, and start, pause, or cancel a backfill.
+  Authenticates with AIRFLOW_API_TOKEN, or mints a JWT from
+  AIRFLOW_USERNAME/AIRFLOW_PASSWORD, on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+    - jq
+    - bash
+
+# `emisar pack suggest`: the airflow console script identifies a host that runs
+# Airflow. The API server's port only corroborates it — 8080 names no owner.
+detect:
+  binaries:
+    - airflow
+  ports:
+    - 8080
+
+setup:
+  summary: >
+    Every action is one HTTPS/HTTP call to the Airflow API server at
+    $AIRFLOW_URL over curl on the runner host. The bearer token is sent as an
+    Authorization header over curl stdin, and the credentials that mint one are
+    read from the environment by jq, so neither reaches the process arguments
+    or the audit log.
+  env:
+    - name: AIRFLOW_URL
+      default: http://127.0.0.1:8080
+      description: >
+        Base URL of the Airflow API server — scheme, host, and port. Each
+        action appends its own path (e.g. /api/v2/dags).
+      example: https://airflow.internal
+    - name: AIRFLOW_API_TOKEN
+      required: false
+      description: >
+        Airflow API JWT, sent as the Authorization header over curl stdin.
+        Takes precedence over AIRFLOW_USERNAME/AIRFLOW_PASSWORD. Airflow JWTs
+        expire ([api_auth] jwt_expiration_time, 24h by default), so a static
+        token suits a short-lived runner; a long-lived one should carry
+        credentials instead and let each action mint its own.
+    - name: AIRFLOW_USERNAME
+      required: false
+      description: >
+        Airflow user whose credentials mint a JWT through POST /auth/token when
+        AIRFLOW_API_TOKEN is unset. The user's own permissions gate which
+        actions succeed — give it the least privilege the fleet needs.
+      example: emisar
+    - name: AIRFLOW_PASSWORD
+      required: false
+      description: >
+        Password for AIRFLOW_USERNAME. Read from the environment by jq and
+        posted over curl stdin; never placed in argv.
+  notes:
+    - "Any of AIRFLOW_URL / AIRFLOW_API_TOKEN / AIRFLOW_USERNAME / AIRFLOW_PASSWORD you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "This pack targets the Airflow 3 API at /api/v2. Airflow 2's /api/v1 is a different surface with different auth and response shapes; point this pack at an Airflow 2 deployment and every action returns 404."
+    - "POST /auth/token is served by the simple auth manager and by the FAB provider's auth manager. A deployment behind an external identity provider that does not expose it needs AIRFLOW_API_TOKEN instead."
+    - "airflow.connections and airflow.variables deliberately return inventory only — connection extra fields and variable values routinely hold credentials, and no redaction pattern can be trusted to catch every shape. Read a specific value on the host with the operator's own secrets tooling."
+    - "airflow.task_log returns whatever the task wrote. Airflow's secrets masker hides known connection and variable values; anything else a task prints reaches the result."
+    - "dag_id and dag_run_id accept ~ on the search actions (airflow.dag_runs, airflow.task_instances) to search across every DAG or run — that is how you find every failed task in the fleet in one call."
+  verify: airflow.health
+
+actions:
+  # Control-plane health
+  - actions/health.yaml
+  - actions/version.yaml
+  - actions/jobs.yaml
+  # DAG inventory
+  - actions/dags.yaml
+  - actions/dag.yaml
+  - actions/dag_details.yaml
+  - actions/dag_stats.yaml
+  - actions/dag_tasks.yaml
+  - actions/import_errors.yaml
+  - actions/dag_warnings.yaml
+  - actions/providers.yaml
+  # Runs and task instances
+  - actions/dag_runs.yaml
+  - actions/dag_run.yaml
+  - actions/task_instances.yaml
+  - actions/task_instance.yaml
+  - actions/task_log.yaml
+  - actions/event_logs.yaml
+  # Scheduling resources
+  - actions/pools.yaml
+  - actions/connections.yaml
+  - actions/variables.yaml
+  - actions/assets.yaml
+  - actions/asset_events.yaml
+  - actions/backfills.yaml
+  # Controls
+  - actions/dag_pause.yaml
+  - actions/dag_unpause.yaml
+  - actions/dag_run_trigger.yaml
+  - actions/dag_run_set_state.yaml
+  - actions/dag_run_clear_preview.yaml
+  - actions/dag_run_clear.yaml
+  - actions/task_instances_clear_preview.yaml
+  - actions/task_instances_clear.yaml
+  - actions/task_instance_set_state.yaml
+  - actions/dag_run_delete.yaml
+  - actions/pool_set_slots.yaml
+  - actions/backfill_create.yaml
+  - actions/backfill_pause.yaml
+  - actions/backfill_cancel.yaml

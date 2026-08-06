@@ -1,0 +1,40 @@
+schema_version: 1
+id: spark.master_driver_kill
+title: Kill a cluster-mode driver from the standalone master (POST /driver/kill)
+kind: script
+risk: high
+description: >
+  Kill one cluster-mode driver on a Spark standalone master. The driver process
+  and the application it runs are terminated. Use it for a submitted job whose
+  client is long gone — a driver stuck in a retry loop, or one submitted by
+  mistake. The action reads the master's state back and reports whether the
+  driver is still active.
+side_effects:
+  - Terminates the driver process and the application it is running.
+  - In-flight work is lost; whatever was already written stays written.
+  - A driver submitted with supervise is not restarted after an explicit kill.
+  - Whether the driver ended is reported by reading the master back, not assumed.
+search_terms:
+  - kill spark driver
+  - stop cluster mode job
+  - driver retry loop
+args:
+  - name: driver_id
+    type: string
+    required: true
+    description: Driver id to kill, e.g. driver-20260805120000-0003, from spark.master_state.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [master-driver-kill, "{{ args.driver_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Kill a driver stuck restarting
+    args: {driver_id: driver-20260805120000-0003}

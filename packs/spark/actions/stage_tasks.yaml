@@ -1,0 +1,94 @@
+schema_version: 1
+id: spark.stage_tasks
+title: List tasks in a stage attempt (GET .../taskList)
+kind: script
+risk: low
+description: >
+  List individual tasks in one stage attempt with their executor, host,
+  duration, status, and — for a failed task — the error message. Sort by
+  `-runtime` to put the slowest first, or filter `status: failed` to read why
+  the stage broke.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+  - A failed task's error message is returned as Spark recorded it.
+search_terms:
+  - failed tasks
+  - slowest task
+  - task error message
+  - which executor
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: stage_id
+    type: integer
+    required: true
+    description: Stage id, from spark.stages.
+    validation: {min: 0, max: 1000000}
+  - name: attempt_id
+    type: integer
+    required: false
+    default: 0
+    description: Stage attempt. 0 is the first attempt.
+    validation: {min: 0, max: 1000}
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+  - name: status
+    type: string
+    required: false
+    default: ""
+    description: Restrict to tasks in this state. Empty returns every task in the page.
+    validation:
+      enum: ["", "running", "success", "killed", "failed", "pending"]
+  - name: sort_by
+    type: string
+    required: false
+    default: "-runtime"
+    description: Sort order for the page. Slowest first by default.
+    validation:
+      enum: ["-runtime", "runtime", "-executorRunTime", "executorRunTime", "-launchTime", "launchTime"]
+  - name: offset
+    type: integer
+    required: false
+    default: 0
+    description: Page offset within the stage's tasks.
+    validation: {min: 0, max: 1000000}
+  - name: length
+    type: integer
+    required: false
+    default: 25
+    description: Tasks returned in this page.
+    validation: {min: 1, max: 200}
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv:
+    - stage-tasks
+    - "{{ args.source }}"
+    - "{{ args.app_id }}"
+    - "{{ args.stage_id }}"
+    - "{{ args.attempt_id }}"
+    - "{{ args.offset }}"
+    - "{{ args.length }}"
+    - "{{ args.status }}"
+    - "{{ args.sort_by }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: The slowest tasks in a stage
+    args: {app_id: app-20260805120000-0001, stage_id: 4}
+  - title: Only the failures
+    args: {app_id: app-20260805120000-0001, stage_id: 4, status: failed}

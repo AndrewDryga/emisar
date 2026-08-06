@@ -1,0 +1,44 @@
+schema_version: 1
+id: airflow.pools
+title: List pools (GET /api/v2/pools)
+kind: script
+risk: low
+description: >
+  List Airflow pools with total slots and how many are occupied, running,
+  queued, scheduled, deferred, and open. A pool with zero open slots is the
+  usual reason tasks sit queued while the scheduler looks healthy.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/pools endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - pool slots
+  - tasks stuck queued
+  - pool full
+  - concurrency limit
+args:
+  - name: pool_name_pattern
+    type: string
+    required: false
+    default: ""
+    description: Substring the pool name must contain. Empty lists every pool.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,256}$"
+      max_length: 256
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Pools returned in this page.
+    validation: {min: 1, max: 300}
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [pools, "{{ args.pool_name_pattern }}", "{{ args.limit }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Every pool and its free slots
+    args: {}

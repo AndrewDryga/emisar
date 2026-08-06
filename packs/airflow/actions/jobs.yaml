@@ -1,0 +1,70 @@
+schema_version: 1
+id: airflow.jobs
+title: List Airflow jobs (GET /api/v2/jobs)
+kind: script
+risk: low
+description: >
+  List Airflow's own scheduler, triggerer, and DAG-processor jobs with their
+  state, hostname, executor class, and last heartbeat. Where airflow.health
+  answers "is the scheduler healthy", this answers "which hosts are running one
+  and which one went quiet" — the read for a multi-scheduler deployment.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/jobs endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - scheduler hosts
+  - triggerer job
+  - stale heartbeat
+  - which scheduler is alive
+args:
+  - name: job_type
+    type: string
+    required: false
+    default: ""
+    description: Restrict to one job type, e.g. SchedulerJob, TriggererJob, DagProcessorJob. Empty lists every type.
+    validation:
+      pattern: "^[A-Za-z]{0,64}$"
+      max_length: 64
+  - name: is_alive
+    type: string
+    required: false
+    default: ""
+    description: Restrict to jobs whose heartbeat is current (true) or stale (false). Empty lists both.
+    validation:
+      enum: ["", "true", "false"]
+  - name: hostname
+    type: string
+    required: false
+    default: ""
+    description: Restrict to jobs running on one host.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,253}$"
+      max_length: 253
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Jobs returned in this page.
+    validation: {min: 1, max: 500}
+  - name: order_by
+    type: string
+    required: false
+    default: "-latest_heartbeat"
+    description: Sort field, prefixed with - for descending.
+    validation:
+      pattern: "^-?[a-z_]{1,64}$"
+      max_length: 65
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [jobs, "{{ args.job_type }}", "{{ args.is_alive }}", "{{ args.hostname }}", "{{ args.limit }}", "{{ args.order_by }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Every job, newest heartbeat first
+    args: {}
+  - title: Schedulers that stopped heartbeating
+    args: {job_type: SchedulerJob, is_alive: "false"}

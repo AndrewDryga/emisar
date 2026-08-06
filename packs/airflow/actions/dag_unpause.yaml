@@ -1,0 +1,40 @@
+schema_version: 1
+id: airflow.dag_unpause
+title: Unpause a DAG (PATCH /api/v2/dags/{dag_id})
+kind: script
+risk: high
+description: >
+  Unpause one DAG so the scheduler resumes creating runs. Higher risk than the
+  pause it reverses: a DAG with catchup enabled and an old start date creates
+  one run per missed interval the moment it is unpaused, which can be hundreds
+  of runs and can saturate every pool. Read airflow.dag_details first and check
+  catchup and max_active_runs.
+side_effects:
+  - Sets is_paused false for the DAG; the scheduler resumes creating runs.
+  - With catchup enabled, immediately schedules every interval missed while paused.
+  - Consumes pool and executor slots shared with every other DAG.
+search_terms:
+  - unpause dag
+  - resume dag
+  - enable dag
+  - turn the dag back on
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id to unpause.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [set-paused, "{{ args.dag_id }}", "false"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Resume a DAG after the fix is deployed
+    args: {dag_id: daily_sales_etl}

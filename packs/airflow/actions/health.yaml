@@ -1,0 +1,31 @@
+schema_version: 1
+id: airflow.health
+title: GET /api/v2/monitor/health
+kind: script
+risk: low
+description: >
+  Check Airflow control-plane health — whether the metadata database is
+  reachable and when the scheduler, triggerer, and DAG processor last sent a
+  heartbeat. Start here when DAGs stopped running: a scheduler reporting
+  "unhealthy" explains an entire fleet of queued-but-never-started runs. Needs
+  no credentials.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/monitor/health endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - scheduler down
+  - dags not running
+  - triggerer heartbeat
+  - airflow unhealthy
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [health]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Check scheduler and triggerer health
+    args: {}

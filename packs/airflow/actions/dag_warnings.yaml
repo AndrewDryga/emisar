@@ -1,0 +1,44 @@
+schema_version: 1
+id: airflow.dag_warnings
+title: List DAG warnings (GET /api/v2/dagWarnings)
+kind: script
+risk: low
+description: >
+  List non-fatal DAG warnings the scheduler recorded — a task referencing a
+  pool that does not exist, an asset conflict, a value that varies between
+  parses. These do not break parsing, so they are invisible until a task
+  queues forever against a missing pool.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/dagWarnings endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - non-existent pool
+  - dag warning
+  - asset conflict
+args:
+  - name: dag_id
+    type: string
+    required: false
+    default: ""
+    description: Restrict to one DAG. Empty lists warnings for every DAG.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,250}$"
+      max_length: 250
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Warnings returned in this page.
+    validation: {min: 1, max: 200}
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [dag-warnings, "{{ args.dag_id }}", "{{ args.limit }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Every recorded DAG warning
+    args: {}

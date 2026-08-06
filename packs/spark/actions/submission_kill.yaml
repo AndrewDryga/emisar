@@ -1,0 +1,40 @@
+schema_version: 1
+id: spark.submission_kill
+title: Kill a REST submission (POST /v1/submissions/kill/{id})
+kind: script
+risk: high
+description: >
+  Kill one cluster-mode submission through the standalone REST submission
+  server. The driver and its application are terminated, and the server answers
+  with whether it found and killed the submission. This is the path for a job
+  submitted with `spark-submit --deploy-mode cluster` when you have the
+  submission id but not the master UI. Needs spark.master.rest.enabled, which
+  is off by default.
+side_effects:
+  - Terminates the submitted driver and the application it is running.
+  - In-flight work is lost; whatever was already written stays written.
+  - The server reports whether the submission was found and killed.
+search_terms:
+  - kill submission
+  - cancel spark-submit
+  - stop cluster mode driver
+args:
+  - name: submission_id
+    type: string
+    required: true
+    description: Submission id to kill, e.g. driver-20260805120000-0003.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [submission-kill, "{{ args.submission_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Kill a submitted job by id
+    args: {submission_id: driver-20260805120000-0003}

@@ -1,0 +1,54 @@
+schema_version: 1
+id: spark.jobs
+title: List an application's jobs (GET /api/v1/applications/{app_id}/jobs)
+kind: script
+risk: low
+description: >
+  List a Spark application's jobs with their status, submission time, duration,
+  and task counts — completed, active, skipped, and failed. Filter by
+  `status: failed` to find the job that broke, or `status: running` to see what
+  a stuck application is still working on.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - spark jobs
+  - failed job
+  - running job
+  - what is the app doing
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+  - name: status
+    type: string
+    required: false
+    default: ""
+    description: Restrict to jobs in this state. Empty returns every job.
+    validation:
+      enum: ["", "running", "succeeded", "failed", "unknown"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [jobs, "{{ args.source }}", "{{ args.app_id }}", "{{ args.status }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Every job in an application
+    args: {app_id: app-20260805120000-0001}
+  - title: The failed jobs of a live application
+    args: {app_id: app-20260805120000-0001, source: driver, status: failed}

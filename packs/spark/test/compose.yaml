@@ -1,0 +1,139 @@
+x-spark: &spark
+  image: apache/spark:${PACKTEST_VERSION:-4.0.4}${PACKTEST_DIGEST-}
+  volumes:
+    - ${EMISAR_ROOT}/packs/spark/test/fixtures/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+    - ${EMISAR_ROOT}/packs/spark/test/fixtures/live_app.py:/opt/packtest/live_app.py:ro
+    - ${EMISAR_ROOT}/packs/spark/test/fixtures/seed_app.py:/opt/packtest/seed_app.py:ro
+
+services:
+  spark-master:
+    <<: *spark
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.master.Master
+      - --host
+      - spark-master
+      - --port
+      - "7077"
+      - --webui-port
+      - "8080"
+    # A master with no registered worker cannot run anything, so readiness is
+    # the worker being there rather than the port being open.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import json,urllib.request as u,sys;
+          d=json.load(u.urlopen('http://localhost:8080/json/'));
+          sys.exit(0 if d.get('aliveworkers', 0) >= 1 else 1)"
+      interval: 5s
+      start_period: 90s
+      start_interval: 2s
+      retries: 20
+
+  spark-worker:
+    <<: *spark
+    depends_on: [spark-master]
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
+      - --host
+      - spark-worker
+      - --webui-port
+      - "8081"
+      - --cores
+      - "4"
+      - --memory
+      - 4G
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:8081/json/ >/dev/null"]
+      interval: 5s
+      start_period: 90s
+      start_interval: 2s
+      retries: 20
+
+  # Runs a short application to completion so the history server has a finished
+  # one to serve, submits the long-running cluster-mode driver the submission
+  # and driver-kill cases act on, and only then becomes the history server.
+  spark-history:
+    <<: *spark
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        mkdir -p /tmp/spark-events
+        /opt/spark/bin/spark-submit \
+          --master spark://spark-master:7077 \
+          --conf spark.driver.host=spark-history \
+          --conf spark.driver.bindAddress=0.0.0.0 \
+          --conf spark.cores.max=1 \
+          --conf spark.executor.memory=512m \
+          /opt/packtest/seed_app.py
+        /opt/spark/bin/spark-submit \
+          --master spark://spark-master:6066 \
+          --deploy-mode cluster \
+          --name packtest-cluster-driver \
+          --class org.apache.spark.examples.DriverSubmissionTest \
+          --conf spark.eventLog.enabled=false \
+          /opt/spark/examples/jars/spark-examples.jar 3600
+        exec /opt/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import json,urllib.request as u,sys;
+          a=json.load(u.urlopen('http://localhost:18080/api/v1/applications'));
+          m=json.load(u.urlopen('http://spark-master:8080/json/'));
+          sys.exit(0 if any(x['name'] == 'packtest-seed' for x in a) and m.get('activedrivers') else 1)"
+      interval: 5s
+      start_period: 180s
+      start_interval: 2s
+      retries: 20
+
+  # The live driver: a SQL execution, a cached RDD, registered executors, and a
+  # job that runs until something kills it.
+  spark-app:
+    <<: *spark
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    command:
+      - /opt/spark/bin/spark-submit
+      - --master
+      - spark://spark-master:7077
+      - --deploy-mode
+      - client
+      - --name
+      - packtest-live
+      - --conf
+      - spark.driver.host=spark-app
+      - --conf
+      - spark.driver.bindAddress=0.0.0.0
+      - --conf
+      - spark.ui.port=4040
+      # The live driver is read through its own UI, so it needs no event log —
+      # and writing one would need a directory this container does not own.
+      - --conf
+      - spark.eventLog.enabled=false
+      - --conf
+      - spark.cores.max=1
+      - --conf
+      - spark.executor.memory=512m
+      - /opt/packtest/live_app.py
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import json,urllib.request as u,sys;
+          a=json.load(u.urlopen('http://localhost:4040/api/v1/applications'))[0]['id'];
+          j=json.load(u.urlopen('http://localhost:4040/api/v1/applications/'+a+'/jobs'));
+          r=json.load(u.urlopen('http://localhost:4040/api/v1/applications/'+a+'/storage/rdd'));
+          sys.exit(0 if r and any(x['status']=='RUNNING' for x in j) else 1)"
+      interval: 5s
+      start_period: 180s
+      start_interval: 2s
+      retries: 20

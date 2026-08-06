@@ -1,0 +1,49 @@
+schema_version: 1
+id: spark.storage_rdds
+title: List cached RDDs (GET .../storage/rdd)
+kind: script
+risk: low
+description: >
+  List the RDDs and DataFrames an application has cached, with their storage
+  level, partition count, and how many bytes sit in memory versus spilled to
+  disk. Read it when executors are short on memory: a large cache that is
+  mostly on disk is paying the cost of caching without the benefit.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - cached rdd
+  - persist
+  - memory used
+  - spilled to disk
+  - storage level
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: source
+    type: string
+    required: false
+    default: driver
+    description: >
+      Which UI to ask. Storage is live state, so a driver ($SPARK_UI_URL) is
+      the default; the history server reports what was cached when the event
+      log was written.
+    validation:
+      enum: ["history", "driver"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [storage-rdds, "{{ args.source }}", "{{ args.app_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: What this application has cached
+    args: {app_id: app-20260805120000-0001}

@@ -1,0 +1,121 @@
+schema_version: 1
+
+id: spark
+name: Apache Spark
+version: 0.1.0
+description: >
+  Governed Apache Spark operations over the HTTP surfaces a cluster already
+  exposes: the monitoring REST API (/api/v1) on a live driver UI and on the
+  history server — applications, jobs, stages with task-quantile summaries and
+  task lists, executors with memory and GC, SQL executions, cached RDDs, and
+  live executor thread dumps — plus the standalone master's cluster state and
+  the standalone REST submission server. The controls are the ones an operator
+  reaches for during an incident: kill a runaway job or stage on the driver,
+  kill an application or driver from the master, decommission a worker, and
+  kill a REST submission. Reads name their source (driver or history) because
+  only a live driver knows a running application and only the history server
+  keeps a finished one.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+    - jq
+    - bash
+
+# `emisar pack suggest`: spark-submit and spark-class identify a host with a
+# Spark installation. The driver UI, master, worker, and history-server ports
+# only corroborate that — each is a common port that names no owner.
+detect:
+  binaries:
+    - spark-submit
+    - spark-class
+  ports:
+    - 4040
+    - 7077
+    - 8080
+    - 18080
+
+setup:
+  summary: >
+    Every action is one HTTP call to a Spark web endpoint over curl on the
+    runner host. Point each URL at the surface this host can reach; an action
+    only needs the ones it uses. SPARK_API_TOKEN, when a reverse proxy in front
+    of the UI requires one, is sent as an Authorization header over curl stdin
+    and never reaches the process arguments.
+  env:
+    - name: SPARK_HISTORY_URL
+      default: http://127.0.0.1:18080
+      description: >
+        Base URL of the Spark history server. Serves /api/v1 for applications
+        that have finished (and, with status=running, for ones still in
+        flight that have written an event log).
+      example: http://spark-history.internal:18080
+    - name: SPARK_UI_URL
+      default: http://127.0.0.1:4040
+      description: >
+        Base URL of a live driver's web UI. Serves /api/v1 for the one
+        application that driver is running, and is the only surface with
+        executor thread dumps and the job and stage kill endpoints.
+      example: http://10.0.4.21:4040
+    - name: SPARK_MASTER_URL
+      default: http://127.0.0.1:8080
+      description: >
+        Base URL of the standalone master's web UI, for cluster state and for
+        killing an application, a driver, or a worker.
+      example: http://spark-master.internal:8080
+    - name: SPARK_REST_URL
+      default: http://127.0.0.1:6066
+      description: >
+        Base URL of the standalone REST submission server, for submission
+        status and kill. Disabled by default; the cluster must set
+        spark.master.rest.enabled true.
+      example: http://spark-master.internal:6066
+    - name: SPARK_API_TOKEN
+      required: false
+      description: >
+        Bearer token for a Spark UI published behind an authenticating proxy.
+        Sent as the Authorization header over curl stdin. Leave unset for a
+        cluster reached directly.
+  notes:
+    - "Any SPARK_* variable you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and the action falls back to its local default."
+    - "A driver UI serves exactly one application and stops existing when that application ends, so its port is reused by whatever runs next. Confirm the application id from spark.applications with source driver before acting on a job or stage."
+    - "The job and stage kill endpoints need spark.ui.killEnabled (true by default) and, where ACLs are on, a modify-permitted user. The master's kill endpoints need spark.ui.killEnabled on the master; worker decommissioning additionally needs spark.decommission.enabled."
+    - "spark.environment returns the Spark configuration and runtime, with JVM system properties and the classpath dropped on the host. Spark's own spark.redaction.regex masks the property values it recognizes — a credential stored under a key that pattern does not match is still returned, which is why the action is high risk."
+    - "Spark on YARN or Kubernetes: point SPARK_UI_URL at the driver's UI (through the YARN proxy or a port-forward) and SPARK_HISTORY_URL at the history server. The master and submission actions are standalone-only."
+  verify: spark.master_state
+
+actions:
+  # Applications
+  - actions/version.yaml
+  - actions/applications.yaml
+  - actions/application.yaml
+  # Jobs and stages
+  - actions/jobs.yaml
+  - actions/job.yaml
+  - actions/stages.yaml
+  - actions/stage.yaml
+  - actions/stage_task_summary.yaml
+  - actions/stage_tasks.yaml
+  # Executors and memory
+  - actions/executors.yaml
+  - actions/executor_threads.yaml
+  - actions/storage_rdds.yaml
+  # SQL
+  - actions/sql_executions.yaml
+  - actions/sql_execution.yaml
+  # Configuration
+  - actions/environment.yaml
+  # Standalone cluster
+  - actions/master_state.yaml
+  - actions/submission_status.yaml
+  # Controls
+  - actions/job_kill.yaml
+  - actions/stage_kill.yaml
+  - actions/master_app_kill.yaml
+  - actions/master_driver_kill.yaml
+  - actions/master_worker_decommission.yaml
+  - actions/submission_kill.yaml

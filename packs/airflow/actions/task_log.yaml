@@ -1,0 +1,78 @@
+schema_version: 1
+id: airflow.task_log
+title: Get a task instance log (GET .../logs/{try_number})
+kind: script
+risk: low
+description: >
+  Get the log for one attempt of one task instance, as plain text. This is the
+  read that explains a failure: pick the try number from the task instance's
+  try_number and read the traceback. Airflow's secrets masker hides connection
+  and variable values it knows about; anything else the task printed is
+  returned as written.
+side_effects:
+  - One read-only HTTP GET to the Airflow task-log endpoint.
+  - Read-only — never writes or mutates data.
+  - Returns whatever the task wrote to its log, subject to Airflow's own secrets masking.
+search_terms:
+  - task log
+  - traceback
+  - why did the task fail
+  - stack trace
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: dag_run_id
+    type: string
+    required: true
+    description: Run id.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{1,250}$"
+      max_length: 250
+  - name: task_id
+    type: string
+    required: true
+    description: Task id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: try_number
+    type: integer
+    required: true
+    description: Attempt to read, starting at 1. The task instance's try_number is the latest.
+    validation: {min: 1, max: 1000}
+  - name: map_index
+    type: integer
+    required: false
+    default: -1
+    description: Map index for a dynamically mapped task. Leave at -1 for an ordinary task.
+    validation: {min: -1, max: 100000}
+  - name: full_content
+    type: string
+    required: false
+    default: "true"
+    description: Return the whole log (true, the default) or only the metadata Airflow streams to the UI.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv:
+    - task-log
+    - "{{ args.dag_id }}"
+    - "{{ args.dag_run_id }}"
+    - "{{ args.task_id }}"
+    - "{{ args.try_number }}"
+    - "{{ args.map_index }}"
+    - "{{ args.full_content }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Log for the latest attempt
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00", task_id: load_warehouse, try_number: 1}

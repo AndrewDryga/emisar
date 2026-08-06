@@ -1,0 +1,66 @@
+services:
+  airflow:
+    image: apache/airflow:${PACKTEST_VERSION:-3.3.0}${PACKTEST_DIGEST-}
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    environment:
+      # No real Airflow runs on SQLite, and a fixture that does invents a
+      # failure the product does not have: the api-server and the scheduler
+      # write concurrently, and "database is locked" then fails whichever case
+      # happened to be creating rows.
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:packtest-airflow-db-6c1e@airflow-db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      # Triggered runs have to actually execute, so the fixture DAGs must not
+      # arrive paused.
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/state/passwords.json
+      AIRFLOW__API__HOST: "0.0.0.0"
+      AIRFLOW__API__PORT: "8080"
+      PACKTEST_ADMIN_PASSWORD: packtest-canary-airflow-admin-5b7d
+      PACKTEST_VARIABLE_VALUE: packtest-canary-airflow-variable-4f1c
+      PACKTEST_CONN_PASSWORD: packtest-canary-airflow-conn-9a3e
+      PACKTEST_CONN_EXTRA_TOKEN: packtest-canary-airflow-extra-77b2
+    volumes:
+      - ${EMISAR_ROOT}/packs/airflow/test/fixtures/dags:/opt/airflow/dags:ro
+      - ${EMISAR_ROOT}/packs/airflow/test/fixtures/seed.sh:/opt/airflow/seed.sh:ro
+    # The seed runs beside standalone and only then marks the container healthy,
+    # so every case starts from the same parsed DAGs, finished runs, and
+    # scheduling resources without arranging them itself.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        mkdir -p /opt/airflow/state
+        printf '{"admin": "%s"}\n' "$${PACKTEST_ADMIN_PASSWORD}" > /opt/airflow/state/passwords.json
+        airflow standalone &
+        standalone=$$!
+        bash /opt/airflow/seed.sh &
+        wait "$$standalone"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test -f /opt/airflow/state/seeded &&
+          python3 -c "import json,urllib.request,sys;
+          sys.exit(0 if json.load(urllib.request.urlopen('http://localhost:8080/api/v2/monitor/health'))['scheduler']['status'] == 'healthy' else 1)"
+      interval: 5s
+      start_period: 240s
+      start_interval: 2s
+      retries: 20
+
+  # The metadata database is a helper, not the product under test, so its
+  # version is pinned independently of PACKTEST_VERSION.
+  airflow-db:
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: packtest-airflow-db-6c1e
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h \"$$(hostname -i)\" -U airflow"]
+      interval: 5s
+      start_period: 60s
+      start_interval: 1s
+      retries: 20

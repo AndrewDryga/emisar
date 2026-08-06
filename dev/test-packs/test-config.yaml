@@ -27,6 +27,10 @@ execution:
   # every credential/endpoint var supplied by a pack's cases.yaml must be
   # allowlisted here or the action gets a silent "auth missing".
   inherit_env:
+    - AIRFLOW_API_TOKEN
+    - AIRFLOW_PASSWORD
+    - AIRFLOW_URL
+    - AIRFLOW_USERNAME
     - AWS_ACCESS_KEY_ID
     - AWS_DEFAULT_REGION
     - AWS_ENDPOINT_URL
@@ -95,6 +99,11 @@ execution:
     - REDISCLI_AUTH
     - SNMP_COMMUNITY
     - SNMP_VERSION
+    - SPARK_API_TOKEN
+    - SPARK_HISTORY_URL
+    - SPARK_MASTER_URL
+    - SPARK_REST_URL
+    - SPARK_UI_URL
     - TYPESENSE_API_KEY
     - TYPESENSE_URL
     - TFE_ADDRESS

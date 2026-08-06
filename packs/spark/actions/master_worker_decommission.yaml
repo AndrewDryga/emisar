@@ -1,0 +1,44 @@
+schema_version: 1
+id: spark.master_worker_decommission
+title: Decommission a standalone worker host (POST /workers/kill on the master)
+kind: script
+risk: high
+description: >
+  Decommission every standalone worker on one host. Spark stops scheduling new
+  tasks there and migrates shuffle and cached blocks off before the executors
+  go away, which is the graceful way to take a node out for maintenance or a
+  scale-down. Still a capacity change: the cluster loses that host's cores, and
+  running tasks on it are rescheduled elsewhere. Needs
+  spark.decommission.enabled and an allowed value of
+  spark.master.ui.decommission.allow.mode; both are off or restrictive by
+  default.
+side_effects:
+  - Stops scheduling new tasks on every worker on the host.
+  - Migrates shuffle and cached blocks off the host, then removes its executors.
+  - Tasks running on the host are rescheduled onto the remaining workers.
+  - The cluster permanently loses that host's capacity until the worker is restarted.
+search_terms:
+  - decommission worker
+  - drain spark node
+  - scale down cluster
+  - node maintenance
+args:
+  - name: host
+    type: string
+    required: true
+    description: Hostname or address of the worker host, as reported by spark.master_state.
+    validation:
+      pattern: "^[A-Za-z0-9._:-]{1,253}$"
+      max_length: 253
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [master-worker-decommission, "{{ args.host }}"]
+  timeout: 120s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain a node before maintenance
+    args: {host: spark-worker-3.internal}

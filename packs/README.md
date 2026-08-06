@@ -7,9 +7,9 @@ will enforce.
 
 Packs are how emisar adds capabilities without giving an agent a shell or
 adding another MCP server. The catalog in this repository currently contains
-**93 packs and 1,438 actions** across Linux, databases, containers,
-orchestrators, cloud providers, networking, storage, runtimes, and
-observability.
+**95 packs and 1,498 actions** across Linux, databases, containers,
+orchestrators, cloud providers, networking, storage, runtimes, data
+orchestration, and observability.
 
 Browse the current catalog and every action at
 [emisar.dev/packs](https://emisar.dev/packs).

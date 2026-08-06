@@ -1,0 +1,39 @@
+schema_version: 1
+id: airflow.dag_stats
+title: Count DAG runs by state (GET /api/v2/dagStats)
+kind: script
+risk: low
+description: >
+  Count each DAG's runs by state — queued, running, success, failed — in one
+  call. The cheap triage read: it turns "is anything wrong" into a number per
+  DAG without walking run lists.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/dagStats endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - how many failed runs
+  - queued runs count
+  - dag run summary
+args:
+  - name: dag_ids
+    type: string
+    required: false
+    default: ""
+    description: Comma-separated dag_ids to count. Empty counts every DAG.
+    validation:
+      pattern: "^[A-Za-z0-9._,-]{0,1000}$"
+      max_length: 1000
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [dag-stats, "{{ args.dag_ids }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Run counts for every DAG
+    args: {}
+  - title: Run counts for two DAGs
+    args: {dag_ids: "daily_sales_etl,hourly_ingest"}

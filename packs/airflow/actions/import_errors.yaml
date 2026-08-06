@@ -1,0 +1,54 @@
+schema_version: 1
+id: airflow.import_errors
+title: List DAG import errors (GET /api/v2/importErrors)
+kind: script
+risk: low
+description: >
+  List DAG files that failed to parse, with the filename, the timestamp, and
+  the Python traceback. This is the answer to "my DAG disappeared from the UI"
+  and to a deploy that silently stopped scheduling: a file with an import error
+  contributes no DAGs at all.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/importErrors endpoint.
+  - Read-only — never writes or mutates data.
+  - Returns the Python traceback recorded for each failing DAG file.
+search_terms:
+  - dag not showing up
+  - broken dag
+  - import error
+  - dag parse failure
+args:
+  - name: filename_pattern
+    type: string
+    required: false
+    default: ""
+    description: Substring the DAG file path must contain. Empty lists every import error.
+    validation:
+      pattern: "^[A-Za-z0-9._/-]{0,512}$"
+      max_length: 512
+  - name: limit
+    type: integer
+    required: false
+    default: 25
+    description: Import errors returned in this page.
+    validation: {min: 1, max: 100}
+  - name: order_by
+    type: string
+    required: false
+    default: "-timestamp"
+    description: Sort field, prefixed with - for descending.
+    validation:
+      pattern: "^-?[a-z_]{1,64}$"
+      max_length: 65
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [import-errors, "{{ args.filename_pattern }}", "{{ args.limit }}", "{{ args.order_by }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Every DAG file that fails to parse
+    args: {}

@@ -1,0 +1,45 @@
+schema_version: 1
+id: airflow.pool_set_slots
+title: Set a pool's slot count (PATCH /api/v2/pools/{pool_name})
+kind: script
+risk: medium
+description: >
+  Set how many slots a pool has. This is the throttle: lower it to shed load
+  from a database that is struggling, raise it when the bottleneck is gone.
+  Bounded and reversible — the change applies to scheduling decisions from now
+  on and never touches tasks already running.
+side_effects:
+  - Changes the pool's total slots, so the scheduler admits more or fewer tasks.
+  - Lowering slots leaves already-running tasks alone; they finish normally.
+  - Lowering slots below current occupancy queues subsequent tasks until slots free up.
+  - Reversible by setting the previous value again.
+search_terms:
+  - pool slots
+  - throttle airflow
+  - reduce concurrency
+  - increase parallelism
+args:
+  - name: pool_name
+    type: string
+    required: true
+    description: Pool to change, as listed by airflow.pools.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,256}$"
+      max_length: 256
+  - name: slots
+    type: integer
+    required: true
+    description: New slot count. 0 stops the pool admitting any task; -1 makes it unlimited.
+    validation: {min: -1, max: 100000}
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [set-pool-slots, "{{ args.pool_name }}", "{{ args.slots }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Halve a pool while the warehouse recovers
+    args: {pool_name: warehouse, slots: 4}

@@ -1,0 +1,81 @@
+schema_version: 1
+id: airflow.dag_run_trigger
+title: Trigger a DAG run (POST /api/v2/dags/{dag_id}/dagRuns)
+kind: script
+risk: high
+description: >
+  Trigger a new run of one DAG. Every task in the DAG executes for real —
+  writes to warehouses, calls to third parties, notifications — so this is a
+  production change, not a test. Supply conf as a JSON object when the DAG
+  reads dag_run.conf.
+side_effects:
+  - Creates a DAG run and executes the DAG's tasks with their real side effects.
+  - Consumes pool, queue, and executor capacity shared with every other DAG.
+  - Runs even when the DAG is paused.
+search_terms:
+  - trigger dag
+  - run the dag now
+  - manual dag run
+  - rerun the pipeline
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id to trigger.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: logical_date
+    type: string
+    required: false
+    default: ""
+    description: >
+      Logical date for the run as an ISO 8601 timestamp, e.g.
+      2026-08-05T00:00:00Z. Empty lets Airflow assign one, which is what an
+      ad-hoc run wants.
+    validation:
+      pattern: '^([0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})?)?)?$'
+      max_length: 40
+  - name: dag_run_id
+    type: string
+    required: false
+    default: ""
+    description: Explicit run id. Empty lets Airflow generate a manual__ id.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{0,250}$"
+      max_length: 250
+  - name: conf
+    type: string
+    required: false
+    default: ""
+    description: >
+      Run configuration as a JSON object, e.g. {"region":"eu"}. Must parse as
+      JSON; anything else fails before the request is sent.
+    validation:
+      max_length: 4096
+  - name: note
+    type: string
+    required: false
+    default: ""
+    description: Free-text note recorded on the run, e.g. the incident it belongs to.
+    validation:
+      max_length: 1000
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [trigger, "{{ args.dag_id }}"]
+  env:
+    AF_LOGICAL_DATE: "{{ args.logical_date }}"
+    AF_DAG_RUN_ID: "{{ args.dag_run_id }}"
+    AF_CONF: "{{ args.conf }}"
+    AF_NOTE: "{{ args.note }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Run a DAG now
+    args: {dag_id: daily_sales_etl}
+  - title: Run with configuration and a note
+    args: {dag_id: daily_sales_etl, conf: '{"region":"eu"}', note: "INC-4821 replay"}

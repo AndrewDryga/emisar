@@ -1,0 +1,36 @@
+schema_version: 1
+id: airflow.providers
+title: List installed providers (GET /api/v2/providers)
+kind: script
+risk: low
+description: >
+  List the Airflow provider packages installed on the API server with their
+  versions and descriptions. Read it when an operator or a hook behaves
+  differently than the docs say — a provider version mismatch across a fleet is
+  a common cause.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/providers endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - provider version
+  - installed providers
+  - apache-airflow-providers
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Providers returned in this page.
+    validation: {min: 1, max: 300}
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [providers, "{{ args.limit }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Installed providers and versions
+    args: {}

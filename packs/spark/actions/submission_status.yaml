@@ -1,0 +1,39 @@
+schema_version: 1
+id: spark.submission_status
+title: Get a REST submission's status (GET /v1/submissions/status/{id})
+kind: script
+risk: low
+description: >
+  Get the state of one cluster-mode submission from the standalone REST
+  submission server — whether the driver is queued, running, finished, or
+  failed, and the worker it landed on. Use it to follow a `spark-submit
+  --deploy-mode cluster` job whose client already exited. Needs
+  spark.master.rest.enabled, which is off by default.
+side_effects:
+  - One read-only HTTP GET to the standalone REST submission server.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - submission status
+  - driver state
+  - cluster deploy mode
+  - spark-submit status
+args:
+  - name: submission_id
+    type: string
+    required: true
+    description: Submission id, e.g. driver-20260805120000-0003, as returned when the job was submitted.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [submission-status, "{{ args.submission_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Where a cluster-mode driver got to
+    args: {submission_id: driver-20260805120000-0003}

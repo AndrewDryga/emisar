@@ -1,0 +1,42 @@
+schema_version: 1
+id: spark.master_app_kill
+title: Kill an application from the standalone master (POST /app/kill)
+kind: script
+risk: high
+description: >
+  Kill one whole application on a Spark standalone master. Its driver and every
+  executor are terminated and its cores and memory return to the cluster —
+  which is the point when one application is starving everything else — but the
+  application's work stops wherever it was, so partial output stays partial.
+  The action reads the master's state back and reports whether the application
+  is still active.
+side_effects:
+  - Terminates the application's driver and every one of its executors.
+  - In-flight work is lost; whatever was already written stays written.
+  - Frees the application's cores and memory for other applications.
+  - Whether the application ended is reported by reading the master back, not assumed.
+search_terms:
+  - kill spark application
+  - free up cores
+  - stop the app
+  - application starving the cluster
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id to kill, e.g. app-20260805120000-0001, from spark.master_state.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [master-app-kill, "{{ args.app_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Kill the application that is holding every core
+    args: {app_id: app-20260805120000-0001}

@@ -1,0 +1,294 @@
+services: [spark-master, spark-worker, spark-history, spark-app]
+versions:
+  - version: "4.0.4"
+    digest: "@sha256:94ad730f7510002d8a1615de269f27cdeca4d4eef51657384db3fa9246b5a4d8"
+    default: true
+risk_accountability:
+  mode: complete
+# Each case boots a master, a worker, a history server, and a live driver — five
+# JVMs once the driver has an executor. Four of those at once is more than a
+# CI runner has, and a cluster that never finishes starting fails every case in
+# the batch rather than the one that was actually wrong.
+workers: 2
+secret_env: [SPARK_API_TOKEN]
+env:
+  SPARK_MASTER_URL: "http://spark-master:8080"
+  SPARK_REST_URL: "http://spark-master:6066"
+  SPARK_HISTORY_URL: "http://spark-history:18080"
+  SPARK_UI_URL: "http://spark-app:4040"
+  # The fixture cluster has no proxy in front of it and ignores the header, so
+  # this proves the token never reaches a result rather than that it authenticates.
+  SPARK_API_TOKEN: packtest-canary-spark-token-3d7f
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+      - packtest-canary-spark-token-3d7f
+cases:
+  # ------------------------------------------------------- history server
+  - action: spark.version
+    expect:
+      stdout_contains: [spark]
+
+  - action: spark.applications
+    expect:
+      stdout_contains: [attempts]
+      json:
+        /0/name: packtest-seed
+
+  - action: spark.applications
+    name: spark.applications-on-the-live-driver
+    args: {source: driver}
+    expect:
+      stdout_contains: [packtest-live]
+
+  - action: spark.application
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [packtest-seed]
+
+  - action: spark.jobs
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [SUCCEEDED, stageIds]
+
+  - action: spark.job
+    args: {job_id: 0}
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      json:
+        /jobId: 0
+        /status: SUCCEEDED
+
+  - action: spark.stages
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [COMPLETE, shuffleWriteBytes, seed_app.py]
+
+  - action: spark.stage
+    args: {stage_id: 0, with_summaries: "true"}
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      json:
+        /0/stageId: 0
+        /0/status: COMPLETE
+
+  - action: spark.stage_task_summary
+    args: {stage_id: 0}
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [quantiles, executorRunTime, shuffleWriteMetrics]
+
+  - action: spark.stage_tasks
+    args: {stage_id: 0}
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [SUCCESS, taskId, executorId]
+
+  - action: spark.executors
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [driver, totalGCTime, maxMemory]
+
+  - action: spark.executors
+    name: spark.executors-including-removed
+    args: {source: driver, include_removed: "true"}
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_UI_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      json:
+        /0/isActive: true
+
+  - action: spark.sql_executions
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [COMPLETED]
+      json:
+        /0/id: 0
+
+  - action: spark.sql_execution
+    args: {execution_id: 0}
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [planDescription]
+      json:
+        /id: 0
+        /status: COMPLETED
+
+  # The projection drops the JVM system properties and the classpath on the
+  # host; java.class.path is the marker that proves it.
+  - action: spark.environment
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_HISTORY_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [sparkProperties, runtime, spark.app.name]
+      stdout_not_contains: [java.class.path, systemProperties]
+
+  # -------------------------------------------------------- live driver
+  - action: spark.storage_rdds
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_UI_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [packtest_n, numPartitions, memoryUsed]
+
+  - action: spark.executor_threads
+    args: {executor_id: driver}
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_UI_URL/api/v1/applications" | jq -r ".[0].id"']
+    expect:
+      stdout_contains: [stackTrace, threadName, threadId]
+
+  # --------------------------------------------------- standalone cluster
+  - action: spark.master_state
+    expect:
+      stdout_contains: [aliveworkers, activeapps, packtest-live, spark-worker]
+
+  - action: spark.submission_status
+    resolve_args:
+      submission_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_MASTER_URL/json/" | jq -r ".activedrivers[0].id"']
+    expect:
+      stdout_contains: [RUNNING, '"success" : true']
+
+  # -------------------------------------------------------------- controls
+  - action: spark.job_kill
+    resolve_args:
+      job_id:
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            app=$(curl -fsS "$SPARK_UI_URL/api/v1/applications" | jq -r '.[0].id')
+            curl -fsS "$SPARK_UI_URL/api/v1/applications/$app/jobs?status=running" | jq -r '.[0].jobId'
+    expect:
+      stdout_contains: ['"status":"FAILED"']
+    probes:
+      - name: the job reads back failed on the driver
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            app=$(curl -fsS "$SPARK_UI_URL/api/v1/applications" | jq -r '.[0].id')
+            curl -fsS "$SPARK_UI_URL/api/v1/applications/$app/jobs" |
+              jq -c '[.[] | select(.status == "FAILED")] | length'
+        expect:
+          stdout_contains: ["1"]
+
+  - action: spark.stage_kill
+    resolve_args:
+      stage_id:
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            app=$(curl -fsS "$SPARK_UI_URL/api/v1/applications" | jq -r '.[0].id')
+            curl -fsS "$SPARK_UI_URL/api/v1/applications/$app/stages?status=active" | jq -r '.[0].stageId'
+    expect:
+      stdout_contains: ['"status":"FAILED"']
+    probes:
+      - name: the stage reads back failed on the driver
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            app=$(curl -fsS "$SPARK_UI_URL/api/v1/applications" | jq -r '.[0].id')
+            curl -fsS "$SPARK_UI_URL/api/v1/applications/$app/stages?status=failed" |
+              jq -c '[.[]] | length > 0'
+        expect:
+          stdout_contains: ["true"]
+
+  - action: spark.master_app_kill
+    resolve_args:
+      app_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_MASTER_URL/json/" | jq -r ".activeapps[0].id"']
+    expect:
+      stdout_contains: ['"still_active":false', '"state":"KILLED"']
+    probes:
+      - name: the master has no active application and one killed
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            curl -fsS "$SPARK_MASTER_URL/json/" |
+              jq -c '{active: (.activeapps | length),
+                      killed: ([.completedapps[] | select(.state == "KILLED")] | length)}'
+        expect:
+          stdout_contains: ['{"active":0,"killed":1}']
+
+  - action: spark.master_driver_kill
+    resolve_args:
+      driver_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_MASTER_URL/json/" | jq -r ".activedrivers[0].id"']
+    expect:
+      stdout_contains: ['"still_active":false', '"state":"KILLED"']
+    probes:
+      - name: the master has no active driver and one killed
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            curl -fsS "$SPARK_MASTER_URL/json/" |
+              jq -c '{active: (.activedrivers | length),
+                      killed: ([.completeddrivers[] | select(.state == "KILLED")] | length)}'
+        expect:
+          stdout_contains: ['{"active":0,"killed":1}']
+
+  - action: spark.submission_kill
+    resolve_args:
+      submission_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_MASTER_URL/json/" | jq -r ".activedrivers[0].id"']
+    expect:
+      stdout_contains: ['"success" : true', KillSubmissionResponse]
+    probes:
+      - name: the driver leaves the master's active list
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            for _ in $(seq 1 20); do
+              count=$(curl -fsS "$SPARK_MASTER_URL/json/" | jq -r '.activedrivers | length')
+              [ "$count" = "0" ] && break
+              sleep 1
+            done
+            printf 'activedrivers=%s\n' "$count"
+        expect:
+          stdout_contains: ["activedrivers=0"]
+
+  - action: spark.master_worker_decommission
+    resolve_args:
+      host:
+        argv: [/bin/sh, -c, 'curl -fsS "$SPARK_MASTER_URL/json/" | jq -r ".workers[0].host"']
+    expect:
+      stdout_contains: [DECOMMISSIONED, spark-worker]
+    probes:
+      - name: the master has no alive worker left
+        argv:
+          - /bin/sh
+          - -c
+          - 'curl -fsS "$SPARK_MASTER_URL/json/" | jq -c "{alive: .aliveworkers}"'
+        expect:
+          stdout_contains: ['{"alive":0}']

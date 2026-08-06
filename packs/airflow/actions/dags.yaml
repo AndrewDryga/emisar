@@ -1,0 +1,101 @@
+schema_version: 1
+id: airflow.dags
+title: List DAGs (GET /api/v2/dags)
+kind: script
+risk: low
+description: >
+  List DAGs with their paused state, schedule, owners, tags, last parse time,
+  and whether they currently have import errors. Filter by name pattern, tag,
+  paused state, or the state of the most recent run — `last_dag_run_state:
+  failed` is the fastest way to see everything that is broken right now.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/dags endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - list dags
+  - paused dags
+  - failing dags
+  - dags by tag
+args:
+  - name: dag_id_pattern
+    type: string
+    required: false
+    default: ""
+    description: Substring the dag_id must contain. Empty lists every DAG.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,250}$"
+      max_length: 250
+  - name: tags
+    type: string
+    required: false
+    default: ""
+    description: Comma-separated DAG tags; a DAG matching any of them is included.
+    validation:
+      pattern: "^[A-Za-z0-9._,-]{0,250}$"
+      max_length: 250
+  - name: paused
+    type: string
+    required: false
+    default: ""
+    description: Restrict to paused (true) or unpaused (false) DAGs. Empty lists both.
+    validation:
+      enum: ["", "true", "false"]
+  - name: last_dag_run_state
+    type: string
+    required: false
+    default: ""
+    description: Restrict to DAGs whose most recent run is in this state.
+    validation:
+      enum: ["", "queued", "running", "success", "failed"]
+  - name: exclude_stale
+    type: string
+    required: false
+    default: "true"
+    description: Hide DAGs whose file is no longer present (true, the default) or include them.
+    validation:
+      enum: ["true", "false"]
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: DAGs returned in this page.
+    validation: {min: 1, max: 200}
+  - name: offset
+    type: integer
+    required: false
+    default: 0
+    description: Page offset, for walking past the first page.
+    validation: {min: 0, max: 100000}
+  - name: order_by
+    type: string
+    required: false
+    default: "dag_id"
+    description: Sort field, prefixed with - for descending.
+    validation:
+      pattern: "^-?[a-z_]{1,64}$"
+      max_length: 65
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv:
+    - dags
+    - "{{ args.dag_id_pattern }}"
+    - "{{ args.tags }}"
+    - "{{ args.paused }}"
+    - "{{ args.last_dag_run_state }}"
+    - "{{ args.exclude_stale }}"
+    - "{{ args.limit }}"
+    - "{{ args.offset }}"
+    - "{{ args.order_by }}"
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Every DAG
+    args: {}
+  - title: DAGs whose last run failed
+    args: {last_dag_run_state: failed}
+  - title: One team's DAGs
+    args: {tags: "platform,ingest"}

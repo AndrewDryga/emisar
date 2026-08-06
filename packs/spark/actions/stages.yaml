@@ -1,0 +1,64 @@
+schema_version: 1
+id: spark.stages
+title: List an application's stages (GET /api/v1/applications/{app_id}/stages)
+kind: script
+risk: low
+description: >
+  List a Spark application's stages with status, task counts, duration, shuffle
+  read and write bytes, spill, and input and output sizes. This is where a slow
+  job is diagnosed: the stage with the outsized shuffle read or spill is
+  usually the one to look at.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - spark stages
+  - shuffle read
+  - spill to disk
+  - slow stage
+  - failed stage
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+  - name: status
+    type: string
+    required: false
+    default: ""
+    description: Restrict to stages in this state. Empty returns every stage.
+    validation:
+      enum: ["", "active", "complete", "pending", "failed", "skipped"]
+  - name: details
+    type: string
+    required: false
+    default: "false"
+    description: >
+      Include the per-task detail for every stage. Off by default — on a large
+      application it turns a summary into megabytes.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [stages, "{{ args.source }}", "{{ args.app_id }}", "{{ args.status }}", "{{ args.details }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Every stage in an application
+    args: {app_id: app-20260805120000-0001}
+  - title: The stages still running on a live driver
+    args: {app_id: app-20260805120000-0001, source: driver, status: active}

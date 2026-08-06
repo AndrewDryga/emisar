@@ -1,0 +1,44 @@
+schema_version: 1
+id: spark.application
+title: GET /api/v1/applications/{app_id}
+kind: script
+risk: low
+description: >
+  Show one Spark application — its name, user, and every attempt with start
+  time, end time, duration, and whether it completed. Read it to confirm an
+  application id and see whether the run you care about finished or is still
+  going.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - spark application detail
+  - app duration
+  - did the app finish
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, e.g. app-20260805120000-0001 or application_1754_0007.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [application, "{{ args.source }}", "{{ args.app_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: One application from the history server
+    args: {app_id: app-20260805120000-0001}

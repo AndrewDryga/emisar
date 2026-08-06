@@ -1,0 +1,51 @@
+schema_version: 1
+id: airflow.backfills
+title: List backfills (GET /api/v2/backfills)
+kind: script
+risk: low
+description: >
+  List backfills for one DAG with their date range, reprocess behavior,
+  max_active_runs, and whether each is running, paused, or completed. Read it
+  before starting another backfill — an already-running one is a common source
+  of a saturated pool.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/backfills endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - list backfills
+  - is a backfill running
+  - backfill status
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id whose backfills to list.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: limit
+    type: integer
+    required: false
+    default: 25
+    description: Backfills returned in this page.
+    validation: {min: 1, max: 100}
+  - name: order_by
+    type: string
+    required: false
+    default: "-id"
+    description: Sort field, prefixed with - for descending.
+    validation:
+      pattern: "^-?[a-z_]{1,64}$"
+      max_length: 65
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [backfills, "{{ args.dag_id }}", "{{ args.limit }}", "{{ args.order_by }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Backfills for one DAG
+    args: {dag_id: daily_sales_etl}

@@ -1,0 +1,50 @@
+schema_version: 1
+id: airflow.connections
+title: List connection inventory (GET /api/v2/connections)
+kind: script
+risk: low
+description: >
+  List Airflow connections by id, type, host, port, schema, and login, plus
+  whether each one carries a password and an extra document. Secrets never
+  leave the runner: the password and the whole extra field — where service
+  account JSON, tokens, and TLS keys live — are dropped before the result is
+  returned, so this answers "does this connection exist and where does it
+  point", never "what is the credential".
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/connections endpoint.
+  - Read-only — never writes or mutates data.
+  - Returns connection metadata only; passwords and extra fields are removed on the host.
+search_terms:
+  - list connections
+  - which connection
+  - connection host
+  - conn_id
+args:
+  - name: connection_id_pattern
+    type: string
+    required: false
+    default: ""
+    description: Substring the connection id must contain. Empty lists every connection.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{0,250}$"
+      max_length: 250
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Connections returned in this page.
+    validation: {min: 1, max: 300}
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [connections, "{{ args.connection_id_pattern }}", "{{ args.limit }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Every connection and where it points
+    args: {}
+  - title: Warehouse connections
+    args: {connection_id_pattern: warehouse}

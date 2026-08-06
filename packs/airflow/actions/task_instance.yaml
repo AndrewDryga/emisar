@@ -1,0 +1,59 @@
+schema_version: 1
+id: airflow.task_instance
+title: GET .../taskInstances/{task_id}
+kind: script
+risk: low
+description: >
+  Show one task instance — state, try number against max_tries, start and end
+  times, duration, hostname, pool, queue, executor, and the trigger it is
+  deferred on. Read it before clearing a task, to see whether retries are
+  already exhausted.
+side_effects:
+  - One read-only HTTP GET to the Airflow task-instance endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - task instance detail
+  - retries left
+  - deferred task
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: dag_run_id
+    type: string
+    required: true
+    description: Run id.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{1,250}$"
+      max_length: 250
+  - name: task_id
+    type: string
+    required: true
+    description: Task id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: map_index
+    type: integer
+    required: false
+    default: -1
+    description: Map index for a dynamically mapped task. Leave at -1 for an ordinary task.
+    validation: {min: -1, max: 100000}
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [task-instance, "{{ args.dag_id }}", "{{ args.dag_run_id }}", "{{ args.task_id }}", "{{ args.map_index }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: One task instance
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00", task_id: load_warehouse}
+  - title: One mapped task instance
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00", task_id: load_partition, map_index: 3}

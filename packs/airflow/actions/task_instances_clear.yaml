@@ -1,0 +1,79 @@
+schema_version: 1
+id: airflow.task_instances_clear
+title: Clear and re-run task instances (POST /api/v2/dags/{dag_id}/clearTaskInstances)
+kind: script
+risk: high
+description: >
+  Clear selected task instances of one DAG and let the scheduler run them
+  again. Narrower than clearing a whole run: name the task ids, optionally one
+  run, and optionally everything downstream. The cleared tasks execute for
+  real. Run airflow.task_instances_clear_preview first.
+side_effects:
+  - Resets the matching task instances and re-queues them for execution.
+  - Cleared tasks run again with their real side effects, including writes and third-party calls.
+  - Resets the DAG runs that own the cleared task instances.
+  - With include_downstream, also re-runs every task that depends on the selected ones.
+search_terms:
+  - clear task
+  - retry one task
+  - rerun task instance
+  - clear downstream tasks
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: dag_run_id
+    type: string
+    required: false
+    default: ""
+    description: Restrict to one run. Empty clears matching tasks across every run of the DAG.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{0,250}$"
+      max_length: 250
+  - name: task_ids
+    type: string
+    required: false
+    default: ""
+    description: Comma-separated task ids to clear. Empty clears every matching task.
+    validation:
+      pattern: "^[A-Za-z0-9._,-]{0,1000}$"
+      max_length: 1000
+  - name: only_failed
+    type: string
+    required: false
+    default: "true"
+    description: >
+      Clear only failed task instances (true, the default) or every matching
+      one. Clearing everything re-runs tasks that already succeeded.
+    validation:
+      enum: ["true", "false"]
+  - name: include_downstream
+    type: string
+    required: false
+    default: "false"
+    description: Also clear every task downstream of the selected ones, so they re-run too.
+    validation:
+      enum: ["true", "false"]
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv:
+    - clear-task-instances
+    - "{{ args.dag_id }}"
+    - "false"
+    - "{{ args.dag_run_id }}"
+    - "{{ args.task_ids }}"
+    - "{{ args.only_failed }}"
+    - "{{ args.include_downstream }}"
+  timeout: 120s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Retry one failed task in one run
+    args: {dag_id: daily_sales_etl, dag_run_id: "scheduled__2026-08-05T00:00:00+00:00", task_ids: load_warehouse}

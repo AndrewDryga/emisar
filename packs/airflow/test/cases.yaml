@@ -1,0 +1,399 @@
+services: [airflow]
+versions:
+  - version: "3.3.0"
+    digest: "@sha256:fb2c895e33395e4224c3de041e1751b095ee2c214cdf2d330bbaf62fcce0f54b"
+    default: true
+risk_accountability:
+  mode: complete
+secret_env: [AIRFLOW_PASSWORD]
+env:
+  AIRFLOW_URL: "http://airflow:8080"
+  AIRFLOW_USERNAME: admin
+  AIRFLOW_PASSWORD: packtest-canary-airflow-admin-5b7d
+defaults:
+  expect:
+    stdout_not_empty: true
+    # The SUT seeds a variable, a connection password, and a connection extra
+    # with these values. No action in this pack may return any of them.
+    stdout_not_contains:
+      - packtest-canary-airflow-admin-5b7d
+      - packtest-canary-airflow-variable-4f1c
+      - packtest-canary-airflow-conn-9a3e
+      - packtest-canary-airflow-extra-77b2
+cases:
+  # ------------------------------------------------------------- health
+  - action: airflow.health
+    expect:
+      json:
+        /scheduler/status: healthy
+        /metadatabase/status: healthy
+
+  - action: airflow.version
+    expect:
+      stdout_contains: ['"version"', '"git_version"']
+
+  - action: airflow.jobs
+    expect:
+      stdout_contains: [SchedulerJob, TriggererJob]
+
+  # -------------------------------------------------------- DAG inventory
+  - action: airflow.dags
+    expect:
+      stdout_contains: [packtest_pipeline, packtest_failing]
+
+  - action: airflow.dags
+    name: airflow.dags-filtered-by-tag
+    args: {tags: failure}
+    expect:
+      stdout_contains: [packtest_failing]
+      stdout_not_contains: [packtest_pipeline]
+
+  - action: airflow.dag
+    args: {dag_id: packtest_pipeline}
+    expect:
+      json:
+        /dag_id: packtest_pipeline
+        /is_paused: false
+
+  - action: airflow.dag
+    name: airflow.dag-unknown-fails
+    args: {dag_id: no-such-dag}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Airflow API request failed", "/api/v2/dags/no-such-dag"]
+
+  - action: airflow.dag_details
+    args: {dag_id: packtest_pipeline}
+    expect:
+      stdout_contains: ['"catchup"', packtest_pipeline]
+
+  - action: airflow.dag_stats
+    expect:
+      stdout_contains: [packtest_pipeline, packtest_failing, '"success"']
+
+  - action: airflow.dag_tasks
+    args: {dag_id: packtest_pipeline}
+    expect:
+      stdout_contains: [extract, load]
+
+  - action: airflow.import_errors
+    expect:
+      json:
+        /total_entries: 0
+
+  - action: airflow.dag_warnings
+    expect:
+      json:
+        /total_entries: 0
+
+  - action: airflow.providers
+    args: {limit: 5}
+    expect:
+      stdout_contains: [apache-airflow-providers]
+
+  # ------------------------------------------------- runs and task instances
+  - action: airflow.dag_runs
+    args: {state: failed}
+    expect:
+      stdout_contains: [packtest_seed_failed, packtest_failing]
+
+  - action: airflow.dag_run
+    args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed}
+    expect:
+      json:
+        /dag_run_id: packtest_seed_failed
+        /state: failed
+
+  - action: airflow.task_instances
+    args: {state: failed}
+    expect:
+      stdout_contains: [probe, packtest_failing, '"failed"']
+
+  - action: airflow.task_instance
+    args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed, task_id: probe}
+    expect:
+      json:
+        /task_id: probe
+        /state: failed
+
+  - action: airflow.task_log
+    args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed, task_id: probe, try_number: 1}
+    expect:
+      stdout_contains:
+        - "Task failed with exception"
+        - "RuntimeError: packtest deliberate failure"
+        - "packtest_failing.py"
+
+  - action: airflow.event_logs
+    args: {limit: 10}
+    expect:
+      stdout_contains: ['"event_logs"']
+
+  # ------------------------------------------------- scheduling resources
+  - action: airflow.pools
+    expect:
+      stdout_contains: [packtest_pool, default_pool, '"open_slots"']
+
+  # The seeded connection carries a canary password and a canary token inside
+  # its extra document; the plan-wide stdout_not_contains is what proves
+  # neither leaves the host.
+  - action: airflow.connections
+    expect:
+      stdout_contains: [packtest_conn, warehouse.packtest.invalid, '"has_password":true', '"has_extra":true']
+
+  - action: airflow.variables
+    expect:
+      stdout_contains: [packtest_variable, '"value_bytes":37']
+
+  - action: airflow.assets
+    expect:
+      json:
+        /total_entries: 0
+
+  - action: airflow.asset_events
+    expect:
+      json:
+        /total_entries: 0
+
+  - action: airflow.backfills
+    args: {dag_id: packtest_scheduled}
+    expect:
+      json:
+        /total_entries: 0
+
+  # -------------------------------------------------------------- controls
+  - action: airflow.dag_pause
+    args: {dag_id: packtest_pipeline}
+    expect:
+      json:
+        /dag_id: packtest_pipeline
+        /is_paused: true
+    probes:
+      - name: the DAG reads back paused
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, dag, packtest_pipeline]
+        expect:
+          stdout_contains: ['"is_paused":true']
+
+  # packtest_scheduled ships paused, so this proves the transition rather than
+  # a no-op write.
+  - action: airflow.dag_unpause
+    args: {dag_id: packtest_scheduled}
+    expect:
+      json:
+        /dag_id: packtest_scheduled
+        /is_paused: false
+    probes:
+      - name: the DAG reads back unpaused
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, dag, packtest_scheduled]
+        expect:
+          stdout_contains: ['"is_paused":false']
+
+  - action: airflow.dag_run_trigger
+    args:
+      dag_id: packtest_pipeline
+      dag_run_id: packtest_case_trigger
+      conf: '{"region":"eu"}'
+      note: 'triggered by the "airflow" pack behavior plan'
+    expect:
+      json:
+        /dag_run_id: packtest_case_trigger
+        /run_type: manual
+        /conf/region: eu
+    probes:
+      - name: the run exists with the conf and note it was given
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, dag-run, packtest_pipeline, packtest_case_trigger]
+        expect:
+          stdout_contains: ['"region":"eu"', 'behavior plan']
+
+  # Retiring a finished run is the stable direction to assert: a run marked
+  # failed stays failed, where one sent back to queued is immediately the
+  # scheduler's again.
+  - action: airflow.dag_run_set_state
+    args: {dag_id: packtest_pipeline, dag_run_id: packtest_seed_success, state: failed}
+    expect:
+      json:
+        /dag_run_id: packtest_seed_success
+        /state: failed
+    probes:
+      - name: the run reads back failed
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, dag-run, packtest_pipeline, packtest_seed_success]
+        expect:
+          stdout_contains: ['"state":"failed"']
+
+  - action: airflow.dag_run_clear_preview
+    args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed}
+    expect:
+      stdout_contains: [probe]
+    probes:
+      - name: run stays failed after a dry run
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, dag-run, packtest_failing, packtest_seed_failed]
+        expect:
+          stdout_contains: ['"state":"failed"']
+
+  - action: airflow.dag_run_clear
+    args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed}
+    expect:
+      json:
+        /dag_run_id: packtest_seed_failed
+        /state: queued
+    probes:
+      # The point of a clear is that the work runs again, so the probe waits
+      # for the second attempt rather than for the intermediate state.
+      - name: the task runs a second time
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, task-instance, packtest_failing, packtest_seed_failed, probe, "-1"]
+        retry_for: 180s
+        retry_every: 5s
+        expect:
+          stdout_contains: ['"try_number":2']
+
+  - action: airflow.task_instances_clear_preview
+    args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed, task_ids: probe}
+    expect:
+      stdout_contains: [probe]
+    probes:
+      - name: task stays failed after a dry run
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, task-instance, packtest_failing, packtest_seed_failed, probe, "-1"]
+        expect:
+          stdout_contains: ['"state":"failed"']
+
+  - action: airflow.task_instances_clear
+    args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed, task_ids: probe}
+    expect:
+      stdout_contains: [probe]
+    probes:
+      - name: the task runs a second time
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, task-instance, packtest_failing, packtest_seed_failed, probe, "-1"]
+        retry_for: 180s
+        retry_every: 5s
+        expect:
+          stdout_contains: ['"try_number":2']
+
+  - action: airflow.task_instance_set_state
+    args:
+      dag_id: packtest_failing
+      dag_run_id: packtest_seed_failed
+      task_id: probe
+      state: success
+    expect:
+      stdout_contains: [probe, '"state":"success"']
+    probes:
+      - name: the task reads back successful without having run
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, task-instance, packtest_failing, packtest_seed_failed, probe, "-1"]
+        expect:
+          stdout_contains: ['"state":"success"']
+
+  - action: airflow.dag_run_delete
+    args: {dag_id: packtest_pipeline, dag_run_id: packtest_case_delete}
+    arrange:
+      - name: create the run this case deletes
+        argv:
+          - bash
+          - /packs/airflow/scripts/airflow_api.sh
+          - trigger
+          - packtest_pipeline
+        env:
+          AF_LOGICAL_DATE: ""
+          AF_DAG_RUN_ID: packtest_case_delete
+          AF_CONF: ""
+          AF_NOTE: ""
+    expect:
+      json:
+        /deleted: true
+        /dag_run_id: packtest_case_delete
+    probes:
+      - name: the run is gone while the seeded one remains
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, dag-runs, packtest_pipeline, "", "", "", "10", "-run_after"]
+        expect:
+          stdout_contains: [packtest_seed_success]
+          stdout_not_contains: [packtest_case_delete]
+
+  - action: airflow.pool_set_slots
+    args: {pool_name: packtest_pool, slots: 6}
+    expect:
+      json:
+        /name: packtest_pool
+        /slots: 6
+    probes:
+      - name: the pool lists its new slot count
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, pools, packtest_pool, "10"]
+        expect:
+          stdout_contains: ['"slots":6']
+
+  # Airflow refuses a backfill on a DAG without a periodic schedule, so the
+  # backfill cases use packtest_scheduled.
+  - action: airflow.backfill_create
+    args:
+      dag_id: packtest_scheduled
+      from_date: "2026-01-01T00:00:00Z"
+      to_date: "2026-01-03T00:00:00Z"
+      max_active_runs: 2
+    expect:
+      json:
+        /dag_id: packtest_scheduled
+        /id: 1
+    probes:
+      - name: the backfill is listed for the DAG
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, backfills, packtest_scheduled, "5", "-id"]
+        expect:
+          stdout_contains: ['"id":1', packtest_scheduled]
+
+  - action: airflow.backfill_pause
+    args: {backfill_id: 1}
+    arrange:
+      - name: create the backfill this case pauses
+        argv:
+          - bash
+          - /packs/airflow/scripts/airflow_api.sh
+          - create-backfill
+          - packtest_scheduled
+          - "2026-01-01T00:00:00Z"
+          - "2026-01-03T00:00:00Z"
+          - none
+          - "2"
+          - "false"
+    expect:
+      json:
+        /id: 1
+        /dag_id: packtest_scheduled
+    probes:
+      - name: the backfill reads back paused
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, backfills, packtest_scheduled, "5", "-id"]
+        expect:
+          stdout_contains: ['"is_paused":true']
+
+  - action: airflow.backfill_cancel
+    args: {backfill_id: 1}
+    arrange:
+      - name: create the backfill this case cancels
+        argv:
+          - bash
+          - /packs/airflow/scripts/airflow_api.sh
+          - create-backfill
+          - packtest_scheduled
+          - "2026-01-01T00:00:00Z"
+          - "2026-01-03T00:00:00Z"
+          - none
+          - "2"
+          - "false"
+    expect:
+      json:
+        /id: 1
+        /dag_id: packtest_scheduled
+    probes:
+      - name: the backfill is closed out
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, backfills, packtest_scheduled, "5", "-id"]
+        expect:
+          stdout_contains: ['"id":1', packtest_scheduled]
+          stdout_not_contains: ['"completed_at":null']
+
+  # ------------------------------------------------------------- auth path
+  # A wrong password must fail the action, not return an empty success.
+  - action: airflow.dags
+    name: airflow.dags-invalid-credentials
+    env:
+      AIRFLOW_PASSWORD: packtest-canary-airflow-wrong-1c4a
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["minting an Airflow API token"]

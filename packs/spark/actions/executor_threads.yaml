@@ -1,0 +1,51 @@
+schema_version: 1
+id: spark.executor_threads
+title: Dump an executor's threads (GET .../executors/{executor_id}/threads)
+kind: script
+risk: medium
+description: >
+  Dump the stack traces of every thread in one live executor. This is the read
+  for a task that is running but making no progress — the stack says whether it
+  is blocked on a lock, waiting on a shuffle fetch, or spinning in user code.
+  Only a live driver serves it; the history server does not. Heavier than the
+  other reads: collecting the dump briefly pauses the executor's threads.
+side_effects:
+  - One HTTP GET to the live driver, which asks the executor for a thread dump.
+  - Read-only — no application, job, or executor state is changed.
+  - Briefly pauses the executor's threads while stacks are collected.
+  - Returns no application data — stack frames only.
+search_terms:
+  - thread dump
+  - stuck task
+  - deadlock
+  - executor hung
+  - no progress
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications with source driver.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: executor_id
+    type: string
+    required: true
+    description: Executor id, from spark.executors. "driver" dumps the driver's own threads.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,64}$"
+      max_length: 64
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [executor-threads, "{{ args.app_id }}", "{{ args.executor_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Why executor 1 is not progressing
+    args: {app_id: app-20260805120000-0001, executor_id: "1"}
+  - title: The driver's own threads
+    args: {app_id: app-20260805120000-0001, executor_id: driver}

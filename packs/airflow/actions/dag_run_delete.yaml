@@ -1,0 +1,46 @@
+schema_version: 1
+id: airflow.dag_run_delete
+title: Delete a DAG run (DELETE .../dagRuns/{dag_run_id})
+kind: script
+risk: high
+description: >
+  Delete one DAG run and its task-instance records from the metadata database.
+  Irreversible: the run's history, durations, and notes are gone, and the log
+  files it left behind are orphaned. Use it to clear a run created with a wrong
+  logical date or conf, not to hide a failure — airflow.dag_run_set_state
+  retires a run and keeps the record.
+side_effects:
+  - Permanently removes the DAG run and its task-instance rows from the metadata database.
+  - Run history, durations, notes, and XCom entries for the run are lost.
+  - Cannot be undone; the scheduler may recreate a scheduled run for the same interval.
+search_terms:
+  - delete dag run
+  - remove a run
+  - drop the run record
+args:
+  - name: dag_id
+    type: string
+    required: true
+    description: DAG id.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,250}$"
+      max_length: 250
+  - name: dag_run_id
+    type: string
+    required: true
+    description: Run id to delete.
+    validation:
+      pattern: "^[A-Za-z0-9._:+-]{1,250}$"
+      max_length: 250
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [delete-dag-run, "{{ args.dag_id }}", "{{ args.dag_run_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Remove a run triggered with the wrong conf
+    args: {dag_id: daily_sales_etl, dag_run_id: "manual__2026-08-05T09:14:22"}

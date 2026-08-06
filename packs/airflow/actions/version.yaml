@@ -1,0 +1,27 @@
+schema_version: 1
+id: airflow.version
+title: GET /api/v2/version
+kind: script
+risk: low
+description: >
+  Show the Airflow version and git commit the API server is running. Use it to
+  confirm which release a host is on before reading a version-specific field or
+  filing an upgrade. Needs no credentials.
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/version endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - airflow version
+  - which release
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv: [version]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Show the running Airflow version
+    args: {}

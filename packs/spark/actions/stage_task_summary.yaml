@@ -1,0 +1,73 @@
+schema_version: 1
+id: spark.stage_task_summary
+title: Get task metric quantiles for a stage attempt (GET .../taskSummary)
+kind: script
+risk: low
+description: >
+  Get the task metric quantiles for one stage attempt — duration, GC time,
+  shuffle read and write, input bytes, and memory and disk spill at each
+  quantile. This is the skew read: when the maximum task duration dwarfs the
+  median, the stage is waiting on a few partitions, not on the cluster.
+side_effects:
+  - One read-only HTTP GET to the Spark monitoring API.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - data skew
+  - straggler task
+  - task quantiles
+  - p99 task duration
+  - gc time
+args:
+  - name: app_id
+    type: string
+    required: true
+    description: Application id, from spark.applications.
+    validation:
+      pattern: "^[A-Za-z0-9._-]{1,128}$"
+      max_length: 128
+  - name: stage_id
+    type: integer
+    required: true
+    description: Stage id, from spark.stages.
+    validation: {min: 0, max: 1000000}
+  - name: attempt_id
+    type: integer
+    required: false
+    default: 0
+    description: Stage attempt. 0 is the first attempt; spark.stage lists the rest.
+    validation: {min: 0, max: 1000}
+  - name: source
+    type: string
+    required: false
+    default: history
+    description: Which UI to ask — the history server ($SPARK_HISTORY_URL) or a live driver ($SPARK_UI_URL).
+    validation:
+      enum: ["history", "driver"]
+  - name: quantiles
+    type: string
+    required: false
+    default: "0.05,0.25,0.5,0.75,0.95"
+    description: Comma-separated quantiles between 0 and 1.
+    validation:
+      pattern: "^[0-9.]{1,4}(,[0-9.]{1,4}){0,9}$"
+      max_length: 50
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv:
+    - stage-task-summary
+    - "{{ args.source }}"
+    - "{{ args.app_id }}"
+    - "{{ args.stage_id }}"
+    - "{{ args.attempt_id }}"
+    - "{{ args.quantiles }}"
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Where the time went in a stage
+    args: {app_id: app-20260805120000-0001, stage_id: 4}
+  - title: The long tail only
+    args: {app_id: app-20260805120000-0001, stage_id: 4, quantiles: "0.5,0.9,0.99,1.0"}

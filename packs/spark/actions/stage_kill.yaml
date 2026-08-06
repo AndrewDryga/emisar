@@ -1,0 +1,40 @@
+schema_version: 1
+id: spark.stage_kill
+title: Kill a running Spark stage (POST /stages/stage/kill on the driver UI)
+kind: script
+risk: high
+description: >
+  Kill one running stage in the application on the live driver UI. Narrower
+  than killing the job: the stage's tasks are cancelled, and whether the job
+  survives depends on whether Spark can retry the stage. Use it to shed one
+  runaway stage — a skewed shuffle, a stage stuck on a dead host — without
+  losing the whole job. The action reads the stage back and returns its
+  attempts. Needs spark.ui.killEnabled, which is on by default.
+side_effects:
+  - Cancels the running tasks in the stage.
+  - The owning job fails unless Spark retries the stage successfully.
+  - Partial shuffle output the stage wrote is discarded.
+  - Whether the stage was running is reported by reading it back, not assumed.
+search_terms:
+  - kill spark stage
+  - cancel stage
+  - stuck stage
+  - skewed shuffle
+args:
+  - name: stage_id
+    type: integer
+    required: true
+    description: Stage id to kill, from spark.stages with source driver.
+    validation: {min: 0, max: 1000000}
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [stage-kill, "{{ args.stage_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Kill a stage stuck on one partition
+    args: {stage_id: 7}

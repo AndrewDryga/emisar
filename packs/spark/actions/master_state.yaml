@@ -1,0 +1,32 @@
+schema_version: 1
+id: spark.master_state
+title: Show standalone cluster state (GET /json/ on the master)
+kind: script
+risk: low
+description: >
+  Show a Spark standalone master's cluster state — every worker with its state,
+  cores and memory used against total, the running and completed applications
+  with the resources each holds, and any submitted drivers. This is the
+  capacity read: an application stuck in WAITING with no free cores means the
+  cluster is full, not that the application is broken.
+side_effects:
+  - One read-only HTTP GET to the standalone master's web UI.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - spark cluster state
+  - workers alive
+  - free cores
+  - app waiting
+  - standalone master
+execution:
+  script: {path: scripts/spark_api.sh, interpreter: /bin/bash}
+  argv: [master-state]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Cluster capacity and what is using it
+    args: {}

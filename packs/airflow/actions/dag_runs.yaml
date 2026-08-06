@@ -1,0 +1,86 @@
+schema_version: 1
+id: airflow.dag_runs
+title: List DAG runs (GET /api/v2/dags/{dag_id}/dagRuns)
+kind: script
+risk: low
+description: >
+  List DAG runs with their state, run type, queued/start/end times, duration,
+  and who triggered them. Pass `dag_id: "~"` to search across every DAG at
+  once — combined with `state: failed` that is the one call that answers "what
+  failed in the last hour".
+side_effects:
+  - One read-only HTTP GET to the Airflow /api/v2/dags/{dag_id}/dagRuns endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - failed runs
+  - running dag runs
+  - recent runs
+  - what failed last night
+args:
+  - name: dag_id
+    type: string
+    required: false
+    default: "~"
+    description: DAG id, or ~ (the default) to search runs across every DAG.
+    validation:
+      pattern: "^([A-Za-z0-9._-]{1,250}|~)$"
+      max_length: 250
+  - name: state
+    type: string
+    required: false
+    default: ""
+    description: Restrict to runs in this state. Empty lists every state.
+    validation:
+      enum: ["", "queued", "running", "success", "failed"]
+  - name: run_type
+    type: string
+    required: false
+    default: ""
+    description: Restrict to runs of this type. Empty lists every type.
+    validation:
+      enum: ["", "backfill", "scheduled", "manual", "operator_triggered", "asset_triggered", "asset_materialization"]
+  - name: start_date_gte
+    type: string
+    required: false
+    default: ""
+    description: Only runs that started at or after this ISO 8601 timestamp, e.g. 2026-08-05T00:00:00Z.
+    validation:
+      pattern: '^([0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})?)?)?$'
+      max_length: 40
+  - name: limit
+    type: integer
+    required: false
+    default: 25
+    description: Runs returned in this page.
+    validation: {min: 1, max: 200}
+  - name: order_by
+    type: string
+    required: false
+    default: "-run_after"
+    description: Sort field, prefixed with - for descending.
+    validation:
+      pattern: "^-?[a-z_]{1,64}$"
+      max_length: 65
+execution:
+  script: {path: scripts/airflow_api.sh, interpreter: /bin/bash}
+  argv:
+    - dag-runs
+    - "{{ args.dag_id }}"
+    - "{{ args.state }}"
+    - "{{ args.run_type }}"
+    - "{{ args.start_date_gte }}"
+    - "{{ args.limit }}"
+    - "{{ args.order_by }}"
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Every failed run across the whole deployment
+    args: {state: failed}
+  - title: Recent runs of one DAG
+    args: {dag_id: daily_sales_etl}
+  - title: Runs still going right now
+    args: {state: running}
