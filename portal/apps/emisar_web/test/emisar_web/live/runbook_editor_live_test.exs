@@ -1415,6 +1415,34 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
     end
 
+    test "a stage and an open step lead with the identifier they were given", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      assert has_element?(lv, "#runbook-stage-0 h3", "stage")
+      assert has_element?(lv, "#runbook-stage-0", "Stage 1 · sequential")
+      assert has_element?(lv, "#runbook-stage-0-step-0", "step")
+      assert has_element?(lv, "#runbook-stage-0-step-0", "Step 1")
+
+      change(lv, valid_draft())
+
+      assert has_element?(lv, "#runbook-stage-0 h3", "inspect")
+      assert has_element?(lv, "#runbook-stage-0", "Stage 1 · parallel · up to 4 at once")
+
+      # A row with no identifier yet has only its position to go by.
+      unnamed =
+        valid_draft()
+        |> put_in(["stages", Access.at(0), "id"], "")
+        |> put_in(["stages", Access.at(0), "steps", Access.at(0), "id"], "")
+
+      change(lv, unnamed)
+
+      assert has_element?(lv, "#runbook-stage-0 h3", "Stage 1")
+      refute has_element?(lv, "#runbook-stage-0 h3", "inspect")
+    end
+
     test "an authored step opens as a summary that one click turns back into its form", %{
       conn: conn,
       user: user,
@@ -1500,7 +1528,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                "Edit"
              )
 
+      # Collapsed, the step is a list row: the list's own divider separates it,
+      # and it carries no enclosure of its own.
+      refute has_element?(lv, ~s|#runbook-stage-0-step-0[class*="border-dashed"]|)
+
       render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
+
+      # Expanded, it is a form several screens tall, so it takes the dashed
+      # enclosure that says where it ends and the next step begins.
+      assert has_element?(lv, ~s|#runbook-stage-0-step-0[class*="border-dashed"]|)
 
       refute has_element?(lv, summary)
       refute has_element?(lv, details)

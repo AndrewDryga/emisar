@@ -261,6 +261,27 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       {"Prior output", "output"}
     ]
 
+  # An unnamed row falls back to its position, the way a run-time input card
+  # does — the ordinal is the only name it has yet.
+  defp stage_card_title(stage, index), do: card_title(stage["id"], "Stage #{index + 1}")
+  defp step_card_title(step, index), do: card_title(step["id"], "Step #{index + 1}")
+
+  defp card_title(id, fallback) when is_binary(id) do
+    case String.trim(id) do
+      "" -> fallback
+      id -> id
+    end
+  end
+
+  defp card_title(_id, fallback), do: fallback
+
+  # The run surface's stage phrasing, so a stage describes itself the same way
+  # before and after it runs.
+  defp stage_mode_phrase(%{"mode" => "parallel"} = stage),
+    do: "parallel · up to #{stage["max_parallel"]} at once"
+
+  defp stage_mode_phrase(_stage), do: "sequential"
+
   defp populated_step?(step) do
     String.trim(step["action"] || "") != "" or step["target_refs"] != [] or step["args"] != [] or
       step["outputs"] != [] or step["success"] != []
@@ -283,10 +304,17 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       id={"runbook-stage-#{@stage_index}"}
       class="rounded-2xl border border-zinc-800 p-5 sm:p-6"
     >
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-          Stage {@stage_index + 1}
-        </span>
+      <%!-- Named like a run-time input card: the identifier the operator gave
+            it leads, and the ordinal it happens to sit at follows. --%>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="truncate font-mono text-sm font-medium text-zinc-200">
+            {stage_card_title(@stage, @stage_index)}
+          </h3>
+          <p class="mt-1 text-xs text-zinc-500">
+            Stage {@stage_index + 1} · {stage_mode_phrase(@stage)}
+          </p>
+        </div>
         <div class="flex items-center gap-1">
           <.icon_button
             icon="hero-arrow-up"
@@ -444,11 +472,22 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       |> assign_action_picker()
 
     ~H"""
-    <section id={"runbook-stage-#{@stage_index}-step-#{@step_index}"}>
+    <%!-- Expanded, a step is a form several screens tall, and the list's hairline
+          is far too quiet to say where one ends and the next begins — so it takes
+          the dashed enclosure the policies editor already uses for exactly that.
+          Collapsed, it is a one-line summary that reads as a list row on its own,
+          and a box per row would be chrome the content never asked for. --%>
+    <section
+      id={"runbook-stage-#{@stage_index}-step-#{@step_index}"}
+      class={[not @collapsed? && "rounded-xl border border-dashed border-zinc-800 p-4 sm:p-5"]}
+    >
       <%!-- The run surface's item head: identity left, controls right — here the
             identity is what the step WILL run, so it leads only while collapsed;
             expanded, the fields below own every one of those facts. --%>
-      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+      <%!-- The identity is a title over a subtitle, so the controls center on that
+            block as a unit — the card-header pattern. `items-start` left them
+            riding the top of the row, a line above the name they act on. --%>
+      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div class="min-w-0">
           <.step_summary
             :if={@collapsed?}
@@ -459,14 +498,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             risk={@risk}
             issue_count={@issue_count}
           />
-          <%!-- Expanded, the fields below name every other fact, so the head
-                keeps only the position — which a parallel marker cannot show. --%>
-          <span
-            :if={not @collapsed?}
-            class="flex h-10 items-center text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
-          >
-            Step {@step_index + 1}
-          </span>
+          <%!-- Expanded, the same naming: the step's own identifier over the
+                position a parallel marker cannot show. --%>
+          <div :if={not @collapsed?}>
+            <p class="truncate font-mono text-sm font-medium text-zinc-200">
+              {step_card_title(@step, @step_index)}
+            </p>
+            <p class="mt-1 text-xs text-zinc-500">Step {@step_index + 1}</p>
+          </div>
         </div>
         <div class="flex items-center gap-1 sm:justify-end">
           <.button
