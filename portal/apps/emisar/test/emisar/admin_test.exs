@@ -18,6 +18,36 @@ defmodule Emisar.AdminTest do
   defp job_enabled?(module), do: Emisar.Config.get_env(:emisar, module, [])[:enabled] != false
 
   describe "execute/2" do
+    # user.erase is irreversible — the user AND every account they own — and its
+    # only guard is a `when user_id == confirmation` function head. Nothing
+    # covered it in either direction. This module has already shipped this exact
+    # class: the note at the top of this file records that all four break-glass
+    # verbs crashed on a nil dereference with none of them covered. A clause
+    # reordering or head rewrite that shadows the guard turns a typo'd argv —
+    # runner-supplied — into an erasure.
+    test "erases a user only when the confirmation matches the user id" do
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, {:unsupported_admin_action, "emisar.admin.user.erase"}} =
+               Admin.execute("emisar.admin.user.erase", [
+                 "user_id=#{user.id}",
+                 "confirmation=not-the-user-id",
+                 "reason=typo in the confirmation"
+               ])
+
+      assert {:ok, %{id: _}} = Emisar.Users.fetch_user_by_id(user.id)
+
+      assert {:ok, %{erased_user_id: erased}} =
+               Admin.execute("emisar.admin.user.erase", [
+                 "user_id=#{user.id}",
+                 "confirmation=#{user.id}",
+                 "reason=verified erasure request"
+               ])
+
+      assert erased == user.id
+      assert Emisar.Users.fetch_user_by_id(user.id) == {:error, :not_found}
+    end
+
     test "dispatches a private RPC action from ordinary name-value argv" do
       account = Fixtures.Accounts.create_account()
 

@@ -1629,6 +1629,24 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "save_new_version/3" do
+    # The authorizer states in writing that :api_client gets draft but NOT manage,
+    # so save-version stays closed to it "at the DOMAIN layer, not merely by which
+    # tools the MCP wiring happens to expose today". publish/2 and
+    # save_published_version/3 each pin that; these two did not, and
+    # create_runbook/2 already accepts {:one_of, [manage, draft]} — so the next
+    # "let the LLM revise its draft" change copies that here and an MCP key mints
+    # versions of any runbook family, with the suite green.
+    test "denies an MCP key, which holds draft but not manage" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(owner, slug: "manage-gate")
+
+      assert Runbooks.save_new_version(
+               runbook,
+               %{"description" => "escalated"},
+               api_client_subject(account, owner, "save-version gate")
+             ) == {:error, :unauthorized}
+    end
+
     test "creates an immutable next version and isolates cross-account callers" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       first = create_runbook(subject, slug: "immutable")
@@ -1779,6 +1797,18 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "delete_runbook/2" do
+    # Same domain-layer invariant as save_new_version/3, and a bigger blast
+    # radius: delete tombstones the whole slug family in one update_all.
+    test "denies an MCP key, which holds draft but not manage" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(owner, slug: "delete-gate")
+
+      assert Runbooks.delete_runbook(
+               runbook,
+               api_client_subject(account, owner, "delete gate")
+             ) == {:error, :unauthorized}
+    end
+
     test "soft-deletes the entire visible version family" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       first = create_runbook(subject, slug: "family")
@@ -1814,6 +1844,29 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "dispatch_runbook/4" do
+    # The only gate is one ensure_has_permissions(dispatch_run_permission()) call,
+    # and RunbookRunLive passes current_subject straight through with no
+    # Permissions.gated wrapper — unlike cancel_execution right above it. So this
+    # single clause is all that stops a :viewer's open socket from a crafted
+    # phx-submit fanning a runbook out across the fleet. Nothing exercised it.
+    test "denies a viewer, who can read runbooks but not dispatch" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+
+      runbook =
+        create_runbook(subject, definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      assert Runbooks.dispatch_runbook(
+               runbook,
+               "read-only principal should not dispatch",
+               membership_subject(account, :viewer)
+             ) == {:error, :unauthorized}
+
+      refute Repo.exists?(RunbookExecution)
+    end
+
     test "creates the durable execution and first physical attempt" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)

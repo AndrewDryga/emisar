@@ -584,6 +584,39 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "set_account_disabled_for_support/4" do
+    # This function's own @doc says the permission check "is the only thing
+    # standing between a future caller and disabling any account by id. It is not
+    # decoration." Nothing tested it, across ~50 call sites that all pass owner
+    # subjects. Swap the gate to view_own_account_permission() — held by every
+    # membership role AND :api_client — and any authenticated principal locks any
+    # tenant out by UUID, with the suite green.
+    test "denies a principal without manage_own_account" do
+      {_user, management_account, subject} = Fixtures.Subjects.owner_subject()
+      account = Fixtures.Accounts.create_account()
+
+      viewer =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(
+            account_id: management_account.id,
+            role: "viewer"
+          )
+        )
+
+      assert Accounts.set_account_disabled_for_support(
+               account.id,
+               true,
+               "read-only principal should not disable an account",
+               viewer
+             ) == {:error, :unauthorized}
+
+      assert {:ok, %Account{disabled_at: nil}} =
+               Accounts.fetch_account_by_id_or_slug_including_disabled(account.id)
+
+      # ...and the real support path still works, so the gate is the difference.
+      assert {:ok, %Account{disabled_at: %DateTime{}}} =
+               Accounts.set_account_disabled_for_support(account.id, true, "abuse", subject)
+    end
+
     test "disables and re-enables an account with atomic audit attribution" do
       {actor, _management_account, subject} = Fixtures.Subjects.owner_subject()
       account = Fixtures.Accounts.create_account()
