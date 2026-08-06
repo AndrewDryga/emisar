@@ -31,7 +31,7 @@ defmodule EmisarWeb.Components.StepsTest do
       refute html =~ "divide-y"
     end
 
-    test "plan: divide-y rows with circled position marks" do
+    test "plan: divide-y rows whose mark reads at the row title's size" do
       assigns = %{steps: ["restart nginx", "flush the cache"]}
 
       html =
@@ -42,8 +42,11 @@ defmodule EmisarWeb.Components.StepsTest do
         """)
 
       assert html =~ "divide-y divide-zinc-800/70"
-      # A position mark that stays under the cap height of a 14px row title.
+      # The mark reads at the row title's size, in a fixed column so a `32`
+      # and a `1` line up — and carries no disc around it.
       assert html =~ "h-5 w-5"
+      assert html =~ "text-sm font-semibold leading-5 tabular-nums"
+      refute html =~ "rounded-full"
       # No horizontal padding — the plan list sits on the canvas, not in a panel.
       assert html =~ "gap-3 py-3"
       assert html =~ "restart nginx"
