@@ -1475,14 +1475,14 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # The phrase names itself, so no glyph labels it.
       refute has_element?(lv, summary, "→")
       assert has_element?(lv, summary, "uptime")
-      assert has_element?(lv, details, "From run-time input")
+      assert has_element?(lv, details, "from run-time input")
       assert has_element?(lv, details, "in structured output")
 
       # An operator-supplied value reads like the name it belongs to.
       assert has_element?(lv, "#{details} span[class*='font-mono']", "config_path")
       assert has_element?(lv, "#{details} span[class*='font-mono']", "/healthy")
       assert has_element?(lv, "#{details} span[class*='font-mono']", "true")
-      assert has_element?(lv, details, "Observe again every 10s · timeout 120s")
+      assert has_element?(lv, details, "observe again every 10s · timeout 120s")
 
       # Every value sits beside its own name, in one column per step.
       assert has_element?(lv, ~s|#{details} dl[class*="max-content"]|)

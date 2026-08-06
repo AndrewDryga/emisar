@@ -635,6 +635,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           {@step["action"]}
         </span>
         <span :if={@step["action"] == ""} class="text-sm text-zinc-500">No action chosen</span>
+        <%!-- The step's own name rides with the action it runs — a later step
+              binds to `<id>.<output>`, so it is identity, not addressing. The
+              separator keeps two mono identifiers from reading as one. --%>
+        <span :if={@step["id"] != ""} class="text-zinc-500">·</span>
+        <span :if={@step["id"] != ""} class="font-mono text-xs text-zinc-500">{@step["id"]}</span>
         <.risk_pill :if={@risk} risk={@risk} />
         <span
           :if={@issue_count > 0}
@@ -658,8 +663,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         >
           {target.label}
         </span>
-        <span :if={@step["id"] != ""} class="text-zinc-500">·</span>
-        <span :if={@step["id"] != ""} class="font-mono text-zinc-500">{@step["id"]}</span>
       </p>
     </div>
     """
@@ -807,15 +810,18 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   end
 
   defp summary_argument_note([]), do: nil
-  defp summary_argument_note(_arguments), do: "None bound"
+  defp summary_argument_note(_arguments), do: "none bound"
 
+  # A row reads as one sentence — `file from run-time input config_path` — so a
+  # value phrase continues its name in lower case. Only a proper noun keeps its
+  # capital (`JSON Pointer`).
   defp summary_argument_value(%{"source" => "input", "ref" => ref}),
-    do: [text: "From run-time input", code: ref]
+    do: [text: "from run-time input", code: ref]
 
   defp summary_argument_value(%{"source" => "output", "ref" => ref}),
-    do: [text: "From step output", code: ref]
+    do: [text: "from step output", code: ref]
 
-  defp summary_argument_value(%{"value" => ""}), do: [text: "No value"]
+  defp summary_argument_value(%{"value" => ""}), do: [text: "no value"]
   defp summary_argument_value(argument), do: [code: argument["value"]]
 
   defp summary_output_rows(step) do
@@ -848,7 +854,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     do: [text: String.replace(condition["operator"], "_", " "), code: condition["value"]]
 
   defp summary_wait_note(%{"enabled" => "true"} = wait) do
-    "Observe again every #{wait["interval_seconds"]}s · timeout #{wait["timeout_seconds"]}s · " <>
+    "observe again every #{wait["interval_seconds"]}s · timeout #{wait["timeout_seconds"]}s · " <>
       "up to #{wait["max_attempts"]} observations"
   end
 
@@ -859,9 +865,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp output_source_label(source), do: source
 
   defp extractor_label("json_pointer"), do: "JSON Pointer"
-  defp extractor_label("contains"), do: "Contains"
-  defp extractor_label("grep"), do: "Grep"
-  defp extractor_label("regex"), do: "Regex"
+  defp extractor_label("contains"), do: "contains"
+  defp extractor_label("grep"), do: "grep"
+  defp extractor_label("regex"), do: "regex"
   defp extractor_label(type), do: type
 
   defp assign_action_picker(assigns) do
