@@ -18,6 +18,27 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account.id}/runners")
     end
 
+    test "shared account topics have one subscription per live socket", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      for path <- [
+            ~p"/app/#{account}",
+            ~p"/app/#{account}/approvals",
+            ~p"/app/#{account}/runners",
+            ~p"/app/#{account}/runners/install"
+          ] do
+        assert {:ok, view, _html} = live(conn, path)
+
+        duplicates =
+          Emisar.PubSub.Server
+          |> Registry.keys(view.pid)
+          |> Enum.frequencies()
+          |> Enum.filter(fn {_topic, count} -> count > 1 end)
+
+        assert duplicates == []
+      end
+    end
+
     test "a non-member's slug 404s — same as an unknown slug, so neither leaks", %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
 

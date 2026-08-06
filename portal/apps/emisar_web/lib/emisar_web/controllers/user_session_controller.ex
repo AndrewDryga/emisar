@@ -7,7 +7,7 @@ defmodule EmisarWeb.UserSessionController do
   second factor enrolled is diverted to the MFA challenge (`MfaChallengeLive`)
   after the magic link verifies and only reaches a full session via `mfa_complete`.
   Account-wide MFA *enrollment* is still enforced post-login by `UserAuth`'s
-  `:ensure_mfa_compliant` gate.
+  `:ensure_account_compliant` gate.
   """
 
   use EmisarWeb, :controller

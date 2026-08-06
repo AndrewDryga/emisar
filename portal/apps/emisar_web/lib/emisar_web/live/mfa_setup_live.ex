@@ -2,7 +2,7 @@ defmodule EmisarWeb.MfaSetupLive do
   @moduledoc """
   Enforced-MFA enrollment interstitial. When an account requires 2FA
   (`account.settings.require_mfa`) and the signed-in member hasn't enrolled,
-  `UserAuth.on_mount(:ensure_mfa_compliant)` forwards every /app mount
+  `UserAuth.on_mount(:ensure_account_compliant)` forwards every /app mount
   here — most importantly the invite-accept flow, so a fresh invitee
   enrolls as the natural second step before first seeing the dashboard.
 

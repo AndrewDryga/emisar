@@ -58,7 +58,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
       {:ok, request} ->
         Approvals.subscribe_request(account_id, request.id)
-        Runners.subscribe_connections(account_id)
 
         run = fetch_action_run(request, socket.assigns.current_subject)
         execution_plan = execution_plan(request)

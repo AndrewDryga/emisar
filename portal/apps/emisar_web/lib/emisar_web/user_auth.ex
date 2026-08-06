@@ -8,7 +8,7 @@ defmodule EmisarWeb.UserAuth do
   use EmisarWeb, :verified_routes
   import Plug.Conn
   import Phoenix.Controller
-  alias Emisar.{Accounts, Auth, Marketing, Runners}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Auth, Catalog, Marketing, Runners}
   alias Emisar.Auth.Subject
   alias EmisarWeb.{Analytics, MarketingAttribution}
   alias EmisarWeb.RequestContext
@@ -362,11 +362,11 @@ defmodule EmisarWeb.UserAuth do
     {:cont, mount_current_user(session, socket)}
   end
 
-  def on_mount(:ensure_authenticated, _params, session, socket) do
+  def on_mount(:ensure_authenticated, params, session, socket) do
     socket = mount_current_user(session, socket)
 
     if socket.assigns.current_user do
-      {:cont, mount_current_account(socket, session)}
+      {:cont, mount_current_account_for_route(socket, session, params)}
     else
       socket =
         socket
@@ -419,11 +419,14 @@ defmodule EmisarWeb.UserAuth do
           auth_opts(socket.assigns)
         )
 
+      switchable_accounts = load_switchable_accounts(subject)
+
       {:cont,
        socket
        |> Phoenix.Component.assign(:current_account, membership.account)
        |> Phoenix.Component.assign(:current_membership, membership)
        |> Phoenix.Component.assign(:current_subject, subject)
+       |> Phoenix.Component.assign(:switchable_accounts, switchable_accounts)
        |> Phoenix.LiveView.attach_hook(
          :ensure_slug_unchanged,
          :handle_params,
@@ -440,12 +443,11 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # require_sso enforcement (approach B). Composed AFTER :ensure_account_slug, so
-  # current_account + the subject carrying the session's auth provenance are set.
-  # Delegates the decision to `Accounts.ensure_account_compliant/2` (shared with
-  # the controller-route plug); on a step-up it bounces to the /sso_required
-  # shim, which logs the session out and lands on the account's branded sign-in
-  # (a LiveView on_mount can't clear the plug session itself).
+  # SSO enforcement for the MFA-enrollment interstitial. Composed after
+  # :ensure_authenticated, so the session account and subject carrying its auth
+  # provenance are set. On a step-up it bounces to the /sso_required shim, which
+  # logs the session out and lands on the account's branded sign-in (a LiveView
+  # on_mount can't clear the plug session itself).
   def on_mount(:ensure_sso_compliant, _params, _session, socket) do
     account = socket.assigns[:current_account]
 
@@ -461,19 +463,27 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # Account-wide MFA enforcement. Composed AFTER :ensure_authenticated so
-  # current_account is mounted. Delegates to `Accounts.ensure_account_compliant/2`
-  # (shared with the controller-route plug); a non-enrolled member of a
-  # require_mfa account is funnelled to /app/mfa_setup with no error flash (the
-  # setup page explains the enforcement and walks them through enrollment). The
-  # profile page is the one exception — the voluntary MFA setup UI lives there,
-  # so a member must be able to LOAD it while still un-enrolled (a LOCATION
-  # exemption, layered here rather than in the shared policy).
-  def on_mount(:ensure_mfa_compliant, _params, _session, socket) do
-    account = socket.assigns[:current_account]
-    subject = socket.assigns[:current_subject]
+  # Tenant routes enforce the account's SSO and MFA posture from one domain
+  # decision. Splitting this across two hooks repeated provider/identity reads
+  # whenever SSO enforcement was enabled. The profile remains the one location
+  # where an unenrolled member may load the voluntary MFA setup UI.
+  def on_mount(:ensure_account_compliant, _params, _session, socket) do
+    account = socket.assigns.current_account
+    subject = socket.assigns.current_subject
 
-    ensure_mfa_compliant(socket, account, subject)
+    case Accounts.ensure_account_compliant(account, subject) do
+      {:error, :sso_required} ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
+
+      {:error, :mfa_required} ->
+        enforce_mfa_requirement(socket)
+
+      :ok ->
+        {:cont, socket}
+
+      {:error, reason} when reason in [:not_found, :unauthorized] ->
+        raise EmisarWeb.NotFoundError
+    end
   end
 
   # Tracks the account's pending-approval count, pending-pack-trust count, AND
@@ -494,22 +504,20 @@ defmodule EmisarWeb.UserAuth do
       account_id = socket.assigns.current_account.id
       subject = socket.assigns[:current_subject]
 
-      if subject && Emisar.Approvals.subject_can_view_approvals?(subject),
-        do: Emisar.Approvals.subscribe_account_approvals(account_id)
+      if subject && Approvals.subject_can_view_approvals?(subject),
+        do: Approvals.subscribe_account_approvals(account_id)
 
-      if subject && Emisar.Catalog.subject_can_view_packs?(subject),
-        do: Emisar.Catalog.subscribe_account_packs(account_id)
+      if subject && Catalog.subject_can_view_packs?(subject),
+        do: Catalog.subscribe_account_packs(account_id)
 
       if subject && Runners.subject_can_view_runners?(subject),
         do: Runners.subscribe_connections(account_id)
 
       {:cont,
        socket
+       |> Phoenix.Component.assign(navigation_facts_for(subject))
        |> Phoenix.Component.assign(:pending_approvals_count, approval_count_for(subject))
        |> Phoenix.Component.assign(:pending_packs_count, pack_pending_count_for(subject))
-       |> Phoenix.Component.assign(:fleet_all_offline?, fleet_offline_for(subject))
-       |> Phoenix.Component.assign(:no_agents?, no_agents_for(subject))
-       |> Phoenix.Component.assign(:onboarding_incomplete?, onboarding_incomplete_for(subject))
        |> Phoenix.LiveView.attach_hook(
          :refresh_pending_approvals,
          :handle_info,
@@ -531,11 +539,9 @@ defmodule EmisarWeb.UserAuth do
       # so these four reads run once per live socket, not on the dead render too.
       {:cont,
        socket
+       |> Phoenix.Component.assign(navigation_facts_for(nil))
        |> Phoenix.Component.assign(:pending_approvals_count, 0)
-       |> Phoenix.Component.assign(:pending_packs_count, 0)
-       |> Phoenix.Component.assign(:fleet_all_offline?, false)
-       |> Phoenix.Component.assign(:no_agents?, false)
-       |> Phoenix.Component.assign(:onboarding_incomplete?, false)}
+       |> Phoenix.Component.assign(:pending_packs_count, 0)}
     end
   end
 
@@ -554,24 +560,11 @@ defmodule EmisarWeb.UserAuth do
      )}
   end
 
-  defp ensure_mfa_compliant(%{view: EmisarWeb.ProfileLive} = socket, _account, _subject),
+  defp enforce_mfa_requirement(%{view: EmisarWeb.ProfileLive} = socket),
     do: {:cont, socket}
 
-  defp ensure_mfa_compliant(socket, account, subject) do
-    case Accounts.ensure_account_compliant(account, subject) do
-      {:error, :mfa_required} ->
-        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
-
-      {:error, :sso_required} ->
-        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
-
-      :ok ->
-        {:cont, socket}
-
-      {:error, reason} when reason in [:not_found, :unauthorized] ->
-        raise EmisarWeb.NotFoundError
-    end
-  end
+  defp enforce_mfa_requirement(socket),
+    do: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
 
   defp subscribe_and_refetch_account(socket, user, account_ref, membership) do
     if Phoenix.LiveView.connected?(socket) do
@@ -653,13 +646,9 @@ defmodule EmisarWeb.UserAuth do
     subject = socket.assigns[:current_subject]
 
     {:halt,
-     Phoenix.Component.assign(socket, %{
-       fleet_all_offline?: fleet_offline_for(subject),
-       # A runner registering clears the onboarding nudge live (it depends on
-       # any_runners?, which the same presence event just flipped).
-       onboarding_incomplete?: onboarding_incomplete_for(subject),
-       fleet_recompute_scheduled?: false
-     })}
+     socket
+     |> Phoenix.Component.assign(navigation_facts_for(subject))
+     |> Phoenix.Component.assign(:fleet_recompute_scheduled?, false)}
   end
 
   defp refresh_fleet_offline(_msg, socket), do: {:cont, socket}
@@ -693,38 +682,42 @@ defmodule EmisarWeb.UserAuth do
   defp resend_confirmation_email(_event, _params, socket), do: {:cont, socket}
 
   defp approval_count_for(nil), do: 0
-  defp approval_count_for(subject), do: Emisar.Approvals.count_pending_approval_requests(subject)
+  defp approval_count_for(subject), do: Approvals.count_pending_approval_requests(subject)
 
-  # Pack-decision badge counterpart: computed at mount (assign_new) and kept
+  # Pack-decision badge counterpart: computed at connected mount and kept
   # live by `refresh_pending_packs` on the account's packs topic. Counts
   # every version awaiting a decision — pending trust reviews AND
   # retired-blocked trusted versions.
   defp pack_pending_count_for(nil), do: 0
 
   defp pack_pending_count_for(subject),
-    do: Emisar.Catalog.count_pack_versions_needing_decision(subject)
+    do: Catalog.count_pack_versions_needing_decision(subject)
 
-  # Fleet-offline alert: computed at mount (assign_new) and kept live by
-  # `refresh_fleet_offline` on the account's runner-connections topic.
-  defp fleet_offline_for(nil), do: false
-  defp fleet_offline_for(subject), do: Runners.fleet_all_offline?(subject)
+  defp navigation_facts_for(nil) do
+    %{fleet_all_offline?: false, no_agents?: false, onboarding_incomplete?: false}
+  end
 
-  # "Connect an agent" nudge (the LLM-agents nav dot): no agent key yet AND the
-  # fleet exists — a brand-new account's first job is a runner, so nudging
-  # agents before any host is connected points at the wrong next step.
-  defp no_agents_for(nil), do: false
+  # One fleet aggregate and one key-existence read own all three navigation
+  # cues. The old helpers repeated both existence queries to derive mutually
+  # exclusive dots from the same two facts.
+  defp navigation_facts_for(subject) do
+    {has_runners?, fleet_all_offline?} =
+      case Runners.fetch_fleet_status(subject) do
+        {:ok, status} ->
+          {status.counts.active > 0, :no_runners_online in status.reasons}
 
-  defp no_agents_for(subject),
-    do: Emisar.ApiKeys.no_agents?(subject) and Runners.any_runners?(subject)
+        {:error, _reason} ->
+          {false, false}
+      end
 
-  # "Finish onboarding" nudge (the Dashboard nav dot): the account has neither a
-  # runner NOR an LLM agent yet, so it can't do anything — a fresh workspace's
-  # very first step. Adding EITHER a runner or an agent clears it. (Distinct from
-  # the two dots above, which nudge the *next* step once one exists.)
-  defp onboarding_incomplete_for(nil), do: false
+    agent_missing? = ApiKeys.no_agents?(subject)
 
-  defp onboarding_incomplete_for(subject),
-    do: not Runners.any_runners?(subject) and Emisar.ApiKeys.no_agents?(subject)
+    %{
+      fleet_all_offline?: fleet_all_offline?,
+      no_agents?: agent_missing? and has_runners?,
+      onboarding_incomplete?: agent_missing? and not has_runners?
+    }
+  end
 
   defp mount_current_user(session, socket) do
     # When a parent LiveView already mounted the user, inherit both assigns
@@ -748,6 +741,19 @@ defmodule EmisarWeb.UserAuth do
       |> Phoenix.Component.assign(:current_auth, auth)
     end
   end
+
+  # Slugged routes resolve their URL account in `:ensure_account_slug`; doing a
+  # session-account lookup here first only loaded an account the URL immediately
+  # replaced. The slug hook still subscribes and re-fetches on connect.
+  defp mount_current_account_for_route(
+         socket,
+         _session,
+         %{"account_id_or_slug" => _account_ref}
+       ),
+       do: socket
+
+  defp mount_current_account_for_route(socket, session, _params),
+    do: mount_current_account(socket, session)
 
   defp mount_current_account(socket, session) do
     # Resolve everything in one shot so assign_new closures don't race

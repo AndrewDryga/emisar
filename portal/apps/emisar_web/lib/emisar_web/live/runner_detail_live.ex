@@ -4,7 +4,6 @@ defmodule EmisarWeb.RunnerDetailLive do
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, TransportReason, UrlHelpers}
 
   def mount(%{"id" => id}, _session, socket) do
-    account_id = socket.assigns.current_account.id
     membership = socket.assigns.current_membership
 
     case Runners.fetch_runner_by_id(id, socket.assigns.current_subject) do
@@ -21,8 +20,6 @@ defmodule EmisarWeb.RunnerDetailLive do
         # rather than 403 — don't leak the existence of runners the
         # operator's scope doesn't grant access to.
         if Runners.runner_in_scope?(runner, membership) do
-          if connected?(socket), do: Runners.subscribe_connections(account_id)
-
           {:ok,
            socket
            |> assign(:page_title, runner.name)

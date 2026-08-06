@@ -19,9 +19,6 @@ defmodule EmisarWeb.ApprovalsLive do
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
-    if connected?(socket),
-      do: Approvals.subscribe_account_approvals(socket.assigns.current_account.id)
-
     {:ok, assign(socket, :page_title, "Approvals")}
   end
 

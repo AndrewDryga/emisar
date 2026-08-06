@@ -356,8 +356,8 @@ defmodule EmisarWeb.Router do
     get "/:account_id_or_slug/sso_required", SSORequiredController, :show
     post "/:account_id_or_slug/sso_required", SSORequiredController, :revoke
 
-    # Outside the slug scope on purpose: this is where ensure_mfa_compliant
-    # SENDS a non-compliant member, so it must mount without the MFA gate (that
+    # Outside the slug scope on purpose: this is where ensure_account_compliant
+    # sends a non-compliant member, so it must mount without that combined gate (it
     # would loop). It DOES carry the SSO gate: SSO precedes MFA, so a member of a
     # require_sso+require_mfa account must satisfy SSO before enrolling a factor
     # (else a magic-link session could enroll TOTP without ever passing SSO).
@@ -378,8 +378,7 @@ defmodule EmisarWeb.Router do
           {EmisarWeb.UserAuth, :reload_stale_assets},
           {EmisarWeb.UserAuth, :ensure_authenticated},
           {EmisarWeb.UserAuth, :ensure_account_slug},
-          {EmisarWeb.UserAuth, :ensure_sso_compliant},
-          {EmisarWeb.UserAuth, :ensure_mfa_compliant},
+          {EmisarWeb.UserAuth, :ensure_account_compliant},
           {EmisarWeb.UserAuth, :track_pending_approvals},
           {EmisarWeb.UserAuth, :email_confirmation},
           {EmisarWeb.UserAuth, :track_pageviews}

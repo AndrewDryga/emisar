@@ -9,10 +9,6 @@ defmodule EmisarWeb.RunnersLive do
   @reload_debounce_ms 500
 
   def mount(_params, _session, socket) do
-    account_id = socket.assigns.current_account.id
-
-    if connected?(socket), do: Runners.subscribe_connections(account_id)
-
     {:ok,
      socket
      |> assign(:page_title, "Runners")

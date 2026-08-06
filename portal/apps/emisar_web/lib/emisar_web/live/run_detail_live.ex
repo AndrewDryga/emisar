@@ -39,10 +39,6 @@ defmodule EmisarWeb.RunDetailLive do
       {:ok, run} ->
         if connected?(socket) do
           Runs.subscribe_run(run.account_id, run.id)
-          # Watch the runner's live connection so a socket dropping mid-run
-          # surfaces as a banner — without it, an in-flight run whose runner
-          # vanished just looks slow until the timeout sweep errors it.
-          Runners.subscribe_connections(run.account_id)
         end
 
         # Load the SAME window the live stream converges to — the most-recent

@@ -371,7 +371,7 @@ defmodule EmisarWeb.SSOControllerTest do
       # The provider does NOT satisfy MFA, so require_mfa still funnels this
       # SSO user into TOTP setup (the satisfies_mfa flag is enforced). Bare
       # /app forwards to the account slug; the slugged dashboard's
-      # :ensure_mfa_compliant on_mount is what redirects to /app/mfa_setup.
+      # :ensure_account_compliant on_mount is what redirects to /app/mfa_setup.
       authed = logged_in |> recycle() |> get(~p"/app")
       assert authed.status == 302
       slugged = authed |> recycle() |> get(redirected_to(authed))

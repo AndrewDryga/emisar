@@ -41,7 +41,6 @@ defmodule EmisarWeb.RunnerInstallLive do
   defp mount_install(socket) do
     socket =
       if connected?(socket) do
-        Runners.subscribe_connections(socket.assigns.current_account.id)
         Process.send_after(self(), :reveal_troubleshooting, RunnerInstall.troubleshoot_after_ms())
 
         base = UrlHelpers.derive_base_url(socket)

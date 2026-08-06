@@ -21,8 +21,6 @@ defmodule EmisarWeb.DashboardLive do
 
       if connected?(socket) do
         Runs.subscribe_account_runs(account_id)
-        Runners.subscribe_connections(account_id)
-        Approvals.subscribe_account_approvals(account_id)
         {:ok, load(socket)}
       else
         {:ok, socket |> assign(:page_title, "Dashboard") |> assign(:loading?, true)}
@@ -122,7 +120,6 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
     |> assign(:team_security, team_security(subject))
     |> assign(:sso_enabled?, sso_enabled?(subject))
-    |> assign(:pending_packs_count, Catalog.count_pack_versions_needing_decision(subject))
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
     |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))

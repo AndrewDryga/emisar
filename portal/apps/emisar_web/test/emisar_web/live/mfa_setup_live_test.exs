@@ -255,7 +255,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
   end
 
-  describe ":ensure_mfa_compliant gate allow-paths" do
+  describe ":ensure_account_compliant gate allow-paths" do
     test "require_mfa OFF — an un-enrolled member mounts a slugged page normally", %{
       conn: conn,
       user: user
@@ -313,7 +313,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     } do
       # a magic-link sign-in records `mfa: false` (the link
       # proves email control, not a second factor). So on a require_mfa account the
-      # member is still un-enrolled, and the first /app mount's :ensure_mfa_compliant
+      # member is still un-enrolled, and the first /app mount's :ensure_account_compliant
       # gate funnels them into TOTP setup — the magic link is not an MFA bypass.
       magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
@@ -322,7 +322,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
         |> Plug.Test.init_test_session(%{})
         |> Plug.Conn.put_session(:user_token, magic_token)
 
-      # The slugged dashboard's :ensure_mfa_compliant on_mount redirects an
+      # The slugged dashboard's :ensure_account_compliant on_mount redirects an
       # un-enrolled member of a require_mfa account to /app/mfa_setup.
       assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} =
                live(conn, ~p"/app/#{account}")
