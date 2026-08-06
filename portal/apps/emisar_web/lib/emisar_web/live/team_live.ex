@@ -1667,8 +1667,8 @@ defmodule EmisarWeb.TeamLive do
                     >
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <p class="text-xs text-zinc-400">
-                        Any API key this member mints reaches exactly what they do, and narrowing
-                        this takes effect on their open sessions immediately.
+                        Any API key they create reaches only what you allow here, so narrowing
+                        this narrows their keys too.
                       </p>
 
                       <div>
