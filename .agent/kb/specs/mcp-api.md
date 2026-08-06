@@ -15,10 +15,10 @@ Schema before the model can choose anything. That wastes context, and some
 clients omit or defer tools when the catalog grows.
 
 Client-maintained action allowlists are not the answer. An API key sees actions
-advertised by runners inside the minting operator's current runner scope. That
-set changes as runners connect, packs change, and scope changes. Emisar remains
-the source of truth; its scope, trust, policy, approval, and audit controls are
-the authorization boundary.
+advertised by runners inside the minting operator's current runner scope, narrowed
+further by their pack scope. That set changes as runners connect, packs change, and
+scope changes. Emisar remains the source of truth; its scope, trust, policy,
+approval, and audit controls are the authorization boundary.
 
 The product problem is broader than catalog size. Operators routinely receive a
 shell command, Python script, or copied configuration they do not fully
@@ -185,9 +185,10 @@ mutation recovery or cancellation correlation.
 ### Scope and disclosure
 
 Every read uses the API key's account and the minting operator's current runner
-scope. Data visible only through an inaccessible runner must not affect a
-result, total, cursor, error distinction, or search rank. Exact lookup outside
-scope is indistinguishable from absence.
+and pack scope. Data visible only through an inaccessible runner, or only in an
+out-of-scope pack on an accessible runner, must not affect a result, total,
+cursor, error distinction, or search rank. Exact lookup outside scope is
+indistinguishable from absence.
 
 Composite immutable resources are authorized atomically before pagination. In
 particular, a runbook containing any exact out-of-scope runner ref is itself
@@ -1987,7 +1988,7 @@ production actions.
 
 ## Security invariants
 
-- Discovery never widens account or runner scope and never authorizes execution.
+- Discovery never widens account, runner, or pack scope and never authorizes execution.
 - Only exact currently trusted complete pack manifests enter discovery. Pending,
   rejected, revoked, and retirement-blocked refs remain operator-only catalog
   facts. A run already authorized against a then-visible ref may report that its
