@@ -1172,11 +1172,14 @@ defmodule EmisarWeb.TeamLive do
 
             <fieldset>
               <legend class="text-sm font-medium text-zinc-300">Access</legend>
-              <p class="mt-0.5 text-xs text-zinc-400">
-                Which runners this role applies to, and which packs they can run there.
-                New members start with no runner access.
-              </p>
-              <div class="mt-2.5">
+              <%!-- The eyebrows below already say the two decisions, so this line
+                    spends itself on the one thing they cannot: why the first card
+                    is preselected. --%>
+              <p class="mt-0.5 text-xs text-zinc-400">New members start with no access.</p>
+              <div class="mt-3">
+                <.label variant={:eyebrow}>Runners</.label>
+              </div>
+              <div class="mt-2">
                 <.choice_cards
                   name="invite[runner_access_mode]"
                   value={@form[:runner_access_mode].value}
@@ -1664,35 +1667,38 @@ defmodule EmisarWeb.TeamLive do
                     >
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <p class="text-xs text-zinc-400">
-                        Role controls what this member can do. Access controls which runners it
-                        applies to, and which packs they can run there.
+                        Any API key this member mints reaches exactly what they do, and narrowing
+                        this takes effect on their open sessions immediately.
                       </p>
 
                       <div>
-                        <.choice_cards
-                          name="runner_access_mode"
-                          value={@scope_access_mode}
-                          attached_value="restricted"
-                        >
-                          <:card value="none" title="No runners">
-                            Keep the member in the workspace without runner reach.
-                          </:card>
-                          <:card value="all" title="All runners">
-                            Grant every current and future runner in this workspace.
-                          </:card>
-                          <:card value="restricted" title="Selected runners">
-                            Grant only selected runner groups or individual runners.
-                          </:card>
-                        </.choice_cards>
+                        <.label variant={:eyebrow}>Runners</.label>
+                        <div class="mt-2">
+                          <.choice_cards
+                            name="runner_access_mode"
+                            value={@scope_access_mode}
+                            attached_value="restricted"
+                          >
+                            <:card value="none" title="No runners">
+                              Keep the member in the workspace without runner reach.
+                            </:card>
+                            <:card value="all" title="All runners">
+                              Grant every current and future runner in this workspace.
+                            </:card>
+                            <:card value="restricted" title="Selected runners">
+                              Grant only selected runner groups or individual runners.
+                            </:card>
+                          </.choice_cards>
 
-                        <.runner_scope_select
-                          :if={@scope_access_mode == "restricted"}
-                          name="scope[]"
-                          variant={:attached}
-                          runners={@runners}
-                          selected={@scope_draft}
-                          validation_error={@scope_error}
-                        />
+                          <.runner_scope_select
+                            :if={@scope_access_mode == "restricted"}
+                            name="scope[]"
+                            variant={:attached}
+                            runners={@runners}
+                            selected={@scope_draft}
+                            validation_error={@scope_error}
+                          />
+                        </div>
                       </div>
 
                       <.pack_access_field
@@ -2193,7 +2199,7 @@ defmodule EmisarWeb.TeamLive do
             phx-click="start_scope_edit"
             phx-value-membership_id={@membership.id}
           >
-            Set runner access
+            Set access
           </.menu_item>
           <.menu_item
             :if={@member.disabled?}

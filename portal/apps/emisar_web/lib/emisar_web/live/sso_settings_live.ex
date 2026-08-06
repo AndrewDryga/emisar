@@ -2275,10 +2275,16 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.choice_cards>
           </div>
           <div class="sm:col-span-2">
-            <.label>Default runner access for new members</.label>
+            <.label>Default access for new members</.label>
+            <%!-- The eyebrows below name the two decisions, so this line spends
+                  itself on what they cannot: a group mapping can widen this. --%>
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-              Role controls what a new member can do. Runner access controls where it applies.
+              Every member provisioned through this connection starts here; a group mapping below
+              adds to it.
             </p>
+            <div class="mt-2">
+              <.label variant={:eyebrow}>Runners</.label>
+            </div>
             <div class="mt-2">
               <.choice_cards
                 name="provider[default_runner_access_mode]"
@@ -3199,7 +3205,10 @@ defmodule EmisarWeb.SSOSettingsLive do
       </div>
 
       <div>
-        <.label>Runner access grant</.label>
+        <.label>Access this group grants</.label>
+        <div class="mt-2">
+          <.label variant={:eyebrow}>Runners</.label>
+        </div>
         <div class="mt-2">
           <.choice_cards
             name={@form[:runner_access_mode].name}

@@ -22,7 +22,15 @@ defmodule EmisarWeb.RunnerScope do
   use Phoenix.Component
 
   import EmisarWeb.CoreComponents,
-    only: [callout: 1, checkbox: 1, choice_cards: 1, error: 1, input: 1, loading_state: 1]
+    only: [
+      callout: 1,
+      checkbox: 1,
+      choice_cards: 1,
+      error: 1,
+      input: 1,
+      label: 1,
+      loading_state: 1
+    ]
 
   alias Emisar.Accounts
 
@@ -211,28 +219,34 @@ defmodule EmisarWeb.RunnerScope do
   defp pack_access_control(assigns) do
     ~H"""
     <div :if={@runner_mode != "none"}>
-      <.choice_cards name={@mode_name} value={@mode_value} attached_value="restricted">
-        <:card value="all" title="All packs">
-          Every pack on those runners, including ones installed later.
-        </:card>
-        <:card value="restricted" title="Selected packs">
-          Only actions from the packs you name.
-        </:card>
-      </.choice_cards>
+      <%!-- Named, because two card groups stacked flush read as one long radio
+            list: the operator cannot see that the second one is a separate
+            decision until they miscount the options. --%>
+      <.label variant={:eyebrow}>Packs</.label>
+      <div class="mt-2">
+        <.choice_cards name={@mode_name} value={@mode_value} attached_value="restricted">
+          <:card value="all" title="All packs">
+            Every pack on those runners, including ones installed later.
+          </:card>
+          <:card value="restricted" title="Selected packs">
+            Only actions from the packs you name.
+          </:card>
+        </.choice_cards>
 
-      <.pack_scope_select
-        :if={to_string(@mode_value) == "restricted"}
-        name={@scope_name}
-        variant={:attached}
-        packs={@packs}
-        selected={@selected}
-        empty_message={@empty_message}
-        submit_error_field={@submit_error_field}
-        submit_error_message={@submit_error_message}
-        validation_error={@validation_error}
-        loading?={@loading?}
-        load_error={@load_error}
-      />
+        <.pack_scope_select
+          :if={to_string(@mode_value) == "restricted"}
+          name={@scope_name}
+          variant={:attached}
+          packs={@packs}
+          selected={@selected}
+          empty_message={@empty_message}
+          submit_error_field={@submit_error_field}
+          submit_error_message={@submit_error_message}
+          validation_error={@validation_error}
+          loading?={@loading?}
+          load_error={@load_error}
+        />
+      </div>
     </div>
     """
   end

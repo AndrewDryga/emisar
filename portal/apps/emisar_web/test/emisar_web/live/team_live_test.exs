@@ -181,7 +181,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Read-only across runs"
       assert html =~ "Dispatches actions and approves them"
       assert has_element?(lv, "input[name='invite[runner_access_mode]'][value='none']:checked")
-      assert html =~ "New members start with no runner access"
+      assert html =~ "New members start with no access"
     end
 
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
