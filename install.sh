@@ -178,9 +178,9 @@ while [ $# -gt 0 ]; do
     --no-start) NO_START=1; shift;;
     --no-service) NO_SERVICE=1; shift;;
     --bin-dir) require_value "$@"; BIN_DIR="$2"; shift 2;;
-    --etc-dir) require_value "$@"; require_owned_dir --etc-dir "$2"; ETC_DIR="$2"; shift 2;;
-    --data-dir) require_value "$@"; require_owned_dir --data-dir "$2"; DATA_DIR="$2"; shift 2;;
-    --log-dir) require_value "$@"; require_owned_dir --log-dir "$2"; LOG_DIR="$2"; shift 2;;
+    --etc-dir) require_value "$@"; ETC_DIR="$2"; shift 2;;
+    --data-dir) require_value "$@"; DATA_DIR="$2"; shift 2;;
+    --log-dir) require_value "$@"; LOG_DIR="$2"; shift 2;;
     --user) require_value "$@"; SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
     --yes|-y) ASSUME_YES=1; shift;;
     --packs) require_value "$@"; PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
@@ -188,6 +188,19 @@ while [ $# -gt 0 ]; do
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
   esac
 done
+
+# Validate the directory inputs HERE, not in the flag arms. require_owned_dir was
+# reachable only through --etc-dir/--data-dir/--log-dir, while the usage text
+# advertises ETC_DIR, DATA_DIR, LOG_DIR and BIN_DIR as supported environment
+# variables — and that path validated nothing. A template rendering /etc/${x} or
+# /var/lib/${x} with an empty x therefore reached `rm -rf` under --uninstall
+# --purge, and `chown -R` on a host's real /var/lib. The flag guard exists
+# because --data-dir /var/lib already did the second one to a host. BIN_DIR was
+# unguarded in both forms and reaches a root chmod 755.
+require_owned_dir BIN_DIR "${BIN_DIR}"
+require_owned_dir ETC_DIR "${ETC_DIR}"
+require_owned_dir DATA_DIR "${DATA_DIR}"
+require_owned_dir LOG_DIR "${LOG_DIR}"
 
 # -----------------------------------------------------------------------
 # Logging helpers
@@ -955,7 +968,16 @@ drop_config_skeleton() {
     else
       log "writing pre-configured config to ${cfg}"
     fi
-    config_skeleton > "${cfg}"
+    # Stage, then move. `config_skeleton > "${cfg}"` truncated the destination
+    # BEFORE the generator ran, and the generator validates labels only after
+    # emitting its first heredoc — so a label value carrying a space (cloud
+    # instance tags routinely do) died mid-write. finish_install rolls back the
+    # binary and the unit but not the config, so the retry saw a file that
+    # existed, printed "config exists; leaving untouched", and the host stayed
+    # broken forever.
+    cfg_staged="$(mktemp "${cfg}.tmp.XXXXXX")"
+    config_skeleton > "${cfg_staged}"
+    mv -f "${cfg_staged}" "${cfg}"
     chmod 640 "${cfg}"
     chown "root:${SERVICE_GROUP}" "${cfg}" 2>/dev/null || true
     NEEDS_CONFIGURATION="${needs}"
@@ -983,7 +1005,18 @@ drop_config_skeleton() {
     # key rotated (below) but not their cloud.url, because this branch leaves the
     # config alone — so the runner authenticates nowhere and nothing says why.
     # Name the ignored value rather than silently dropping it.
-    if [ -n "${EMISAR_URL:-}" ] && ! grep -qF "${EMISAR_URL}" "${cfg}" 2>/dev/null; then
+    # Compare against the TRANSLATED value. config_skeleton rewrites https:// to
+    # wss:// before storing, so grepping for the literal EMISAR_URL could never
+    # match on a correctly configured host — this warning fired on every correct
+    # re-run of our own documented one-liner (the upgrade and key-rotation
+    # paths), telling the operator their URL was rejected and inviting them to
+    # move a working config aside.
+    configured_url="${EMISAR_URL:-}"
+    case "${configured_url}" in
+      https://*) configured_url="wss://${configured_url#https://}";;
+      http://*)  configured_url="ws://${configured_url#http://}";;
+    esac
+    if [ -n "${configured_url}" ] && ! grep -qF "${configured_url}" "${cfg}" 2>/dev/null; then
       warn "EMISAR_URL='${EMISAR_URL}' was NOT applied: ${cfg} already exists and keeps its"
       warn "current cloud.url. Edit it by hand, or move the file aside and re-run."
     fi
@@ -1349,7 +1382,18 @@ start_service() {
       launchctl bootout system "${plist}" 2>/dev/null || true
       log "loading com.emisar.runner"
       launchctl bootstrap system "${plist}"
-      launchctl print system/com.emisar.runner || true
+      # Verify, like the systemd arm above. This was `|| true`, so a daemon that
+      # failed to load reported a successful install — and because
+      # SERVICE_STARTED stayed 0, the summary then told the operator to run the
+      # very bootstrap this just ran, which answers "Operation already in
+      # progress" on a healthy machine. macOS is the evaluation path, so that is
+      # the first thing a new operator sees.
+      sleep 2
+      if ! launchctl print system/com.emisar.runner >/dev/null 2>&1; then
+        launchctl print system/com.emisar.runner || true
+        die "com.emisar.runner did not stay loaded"
+      fi
+      SERVICE_STARTED=1
       ;;
   esac
 }
@@ -1600,12 +1644,22 @@ EOF
       fi
       ;;
     launchd)
-      cat <<EOF
+      # Only tell them to load it if we did not. Printing this unconditionally
+      # meant a successful install ended by instructing the operator to run a
+      # bootstrap that then failed with "Operation already in progress".
+      if [ "${SERVICE_STARTED}" = "1" ]; then
+        cat <<EOF
+  Check logs:
+       tail -f ${LOG_DIR}/emisar.err.log ${LOG_DIR}/emisar.out.log
+EOF
+      else
+        cat <<EOF
   3. Load the LaunchDaemon:
        sudo launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist
   4. Check logs:
        tail -f ${LOG_DIR}/emisar.err.log ${LOG_DIR}/emisar.out.log
 EOF
+      fi
       ;;
   esac
 

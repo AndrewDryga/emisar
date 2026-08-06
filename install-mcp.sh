@@ -803,16 +803,29 @@ done <<<"${install_dirs}"
 
 if [ -z "${VERSION}" ]; then
   log "querying latest mcp-v* release"
+  # Take the HIGHEST version, not the first. The API orders by CREATION, so a
+  # patch backported to an older line after a newer minor shipped sat at the top
+  # and silently DOWNGRADED the bridge on every fresh install — while printing
+  # "latest release: mcp-v0.9.1", which was simply untrue. install.sh carries
+  # this fix and the incident that produced it; this stream never got it.
+  # Sorted numerically field by field: `sort -V` is not portable to every host
+  # this runs on, and a lexical sort puts v0.9.0 above v0.10.0.
+  #
+  # Assign first, then pipe, so a failed API call is distinguishable from a
+  # successful one with no matching release.
+  releases=$(github_api "https://api.github.com/repos/${REPO}/releases?per_page=100") \
+    || die "could not query GitHub releases API"
   VERSION=$(
-    github_api \
-      "https://api.github.com/repos/${REPO}/releases?per_page=100" \
+    printf '%s\n' "${releases}" \
       | tr '{' '\n' \
       | grep -v '"draft":[[:space:]]*true' \
       | grep -v '"prerelease":[[:space:]]*true' \
       | grep -oE '"tag_name":[[:space:]]*"mcp-v[0-9]+\.[0-9]+\.[0-9]+"' \
-      | head -1 \
-      | sed -E 's/.*"(mcp-v[^"]+)".*/\1/'
-  ) || die "could not query GitHub releases API"
+      | sed -E 's/.*"mcp-v([0-9]+\.[0-9]+\.[0-9]+)".*/\1/' \
+      | sort -t. -k1,1n -k2,2n -k3,3n \
+      | tail -1 \
+      | sed -E 's/^/mcp-v/'
+  )
   [ -n "${VERSION}" ] || die "no mcp-v* release found yet"
   log "latest release: ${VERSION}"
 else
@@ -1582,7 +1595,13 @@ install_client_config() {
       if file_has_content "${config_file}"; then
         cp -p "${config_file}" "${config_file}.emisar-bak" || return 1
       else
-        printf '{}\n' >"${config_file}" || return 1
+        # Stage and move, like every other writer here. A bare `>` redirect
+        # FOLLOWS a destination symlink — the exact shape this file's header
+        # declares fixed — and this runs as root against the operator's own
+        # home under the documented sudo invocation.
+        seed_tmp="$(mktemp "${config_file}.emisar-new.XXXXXX")" || return 1
+        printf '{}\n' >"${seed_tmp}" || { rm -f "${seed_tmp}"; return 1; }
+        mv -f "${seed_tmp}" "${config_file}" || { rm -f "${seed_tmp}"; return 1; }
       fi
       merge_json_config "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}" "${client_id}" "${kind}"
       ;;
