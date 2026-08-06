@@ -74,7 +74,9 @@ export TFE_TOKEN
 
 runner=/run/emisar-admin-runner/bin/emisar
 expected_version="emisar version ${runner_version}"
-required_packs='linux-core debugging systemd-deep cloud-init docker firewall nic time-sync elixir-beam'
+# Seed from the checksum-verified release so first boot does not depend on the
+# registry; the exact-version/hash loop below owns the final installed bytes.
+bundled_packs='linux-core debugging systemd-deep cloud-init docker firewall nic time-sync elixir-beam'
 runner_bin_dir=$(dirname "$runner")
 install -d -m 0755 "$runner_bin_dir"
 install -m 0755 /var/lib/emisar-admin-runner/gcloud.sh "$runner_bin_dir/gcloud"
@@ -121,7 +123,7 @@ if [ "$installed_version" != "$expected_version" ]; then
   [ "$("$${runner}.new" --version)" = "$expected_version" ]
   mv "$${runner}.new" "$runner"
 
-  for pack in $required_packs; do
+  for pack in $bundled_packs; do
     bundle_pack="$${bundle_dir}/$${release_name}/packs/$${pack}"
     if [ -f "$${bundle_pack}/pack.yaml" ]; then
       "$runner" pack install "$bundle_pack" \

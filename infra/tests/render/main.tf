@@ -38,10 +38,15 @@ locals {
 
   admin_runner_start = templatefile("${path.module}/../../runtime/admin-runner/start.sh", {
     project_id                = local.common.project_id
-    runner_version            = "0.16.0"
+    runner_version            = "0.17.0"
     enrollment_secret_version = "1"
     tfe_secret_version        = "2"
     pinned_packs = join("\n", [
+      "cloud-init=0.1.11|sha256:b6fe92b1196b132b6abf815d2e6ddbe0e082738a1b69cd837355990b339943b6",
+      "debugging=0.2.15|sha256:a36c3bbd405db33b805afbd0c03cc418e3716ae2218873d3569b2c3339bc513f",
+      "docker=0.2.17|sha256:f09ebfe9b5da673ecbfadd4d2d8a77b1ad2ec9af951c8c58ebeaaca21bdc0852",
+      "elixir-beam=0.1.4|sha256:d47cc9856e3585b20564a245d0d508237f2f5378684e7ba190db43473ebd6acd",
+      "firewall=0.1.12|sha256:0c7b40d32bb0ac8e6e017773d49c840d75566e710678bcdb5e50a7170074d854",
       "gcp-certificates=0.1.0|sha256:da73325336f2d11cdff984948bf6f53fe34f43f1bce873c6e01e6a6fc38f792b",
       "gcp-cloudsql=0.3.0|sha256:45cbc52c0088f28a747d80cb2c71879232cb97e95aab65e15efcdd4840c30b32",
       "gcp-compute=0.2.0|sha256:8df5c0c0c759c0a491435e39bb00f91371f2711d54334a3114c097ad21c2c2b2",
@@ -51,7 +56,11 @@ locals {
       "gcp-monitoring=0.2.0|sha256:ab13b607bfdfc3583249d0c06a53daa06c3ed1c012aeaa97563f961bf33d892d",
       "gcp-networking=0.1.0|sha256:8aeca131aa12cc7ee244a1c5bb7663a7434919e7f8a8406cd9206d0b9b02062f",
       "gcp-storage=0.1.0|sha256:976ede94963f134ef0cca63eedd4bdb2dedde67d8e820feceac5a5a9c79a306b",
-      "hcp-terraform=0.6.1|sha256:995d8832b44e6d81bb11dd278d3e32d303738aed3e1346d4ba8584b729eef5dd",
+      "hcp-terraform=0.6.4|sha256:c01e745b013ead4cd3b455a62874b20821d3a90d4b6f342c4f634be6be147ee6",
+      "linux-core=0.3.23|sha256:8e65576b749b0698744f708e1827c82363098cb953fb39279b2a02034fc3e97c",
+      "nic=0.1.1|sha256:fe4e1d8a7e8633d57d95197103c8260d7b1273106595bae24c70efcacf65956d",
+      "systemd-deep=0.1.15|sha256:a39bcb7a8172275a5870bf1e69ee4c13b7289f36312a66778d231368e9afdfcd",
+      "time-sync=0.1.8|sha256:fa271a412ac92244b3a80c2ec8586c0e49ff2da5e83be19f958d61c2b72772d2",
     ])
   })
 

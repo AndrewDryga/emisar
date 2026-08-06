@@ -125,12 +125,15 @@ mounts writable persistent paths `noexec`, so config, durable dispatch state,
 packs, and logs remain under `/var/lib/emisar-admin-runner` while the
 boot-recreatable binary lives on executable tmpfs. Cloud-init also writes the
 unlisted `infra/packs/emisar-admin` pack directly from the Terraform module. The
-bootstrap installs a fixed host operations set from the bundle when present and
-the public pack registry otherwise: `linux-core`, `debugging`, `systemd-deep`,
-`cloud-init`, `docker`, `firewall`, `nic`, `time-sync`, and `elixir-beam`. This
-is intentionally curated instead of host-detected: COS includes unused clients
-and shared ports that falsely suggest Kubernetes, Prometheus, Postgres, and Git
-packs. The runner advertises group `emisar-admin` with `purpose=emisar-admin`; local admission
+verified release bundle seeds a fixed host operations set on first boot:
+`linux-core`, `debugging`, `systemd-deep`, `cloud-init`, `docker`, `firewall`,
+`nic`, `time-sync`, and `elixir-beam`. Every pack in that curated host set, plus
+the public GCP and HCP packs used by this runner, is then reconciled to its exact
+version and content hash from the public registry on every service start, so
+pack updates do not wait for another runner release. The set is curated instead
+of host-detected: COS includes unused clients and shared ports that falsely
+suggest Kubernetes, Prometheus, Postgres, and Git packs. The runner advertises
+group `emisar-admin` with `purpose=emisar-admin`; local admission
 allows the private actions, those nine host packs, `hcp-terraform`, and the GCP
 certificate, Cloud SQL, compute, DNS, IAM, load-balancing, monitoring,
 networking, and storage packs at every declared risk tier. The GCP credentials
@@ -156,7 +159,7 @@ After the first rollout, trust the exact `emisar-admin@0.1.1` hash advertised by
 the new runners in the management account. Critical erasure actions remain
 subject to the management account's normal policy and approval rules.
 
-The pinned `runner-v0.16.0` release understands the structured output schema
+The pinned `runner-v0.17.0` release understands the structured output schema
 used by the current pack catalog; the private pack does not require a custom
 runner build.
 
