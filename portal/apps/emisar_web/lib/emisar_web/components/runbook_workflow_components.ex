@@ -117,43 +117,23 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   @doc "Renders visible frozen arguments as a compact decision-ready list."
   def argument_list(assigns) do
-    rows =
-      assigns.arguments
-      |> Enum.sort_by(&elem(&1, 0))
-      |> Enum.map(fn {name, value} -> {name, argument_value(value)} end)
-
-    assigns = assign(assigns, :rows, rows)
+    assigns = assign(assigns, :rows, Enum.sort_by(assigns.arguments, &elem(&1, 0)))
 
     ~H"""
-    <.fact_list
-      :if={@rows != [] or @show_empty?}
-      label="Arguments"
-      rows={@rows}
-      note="None"
-      class={@class}
-    />
-    """
-  end
-
-  attr :label, :string, required: true
-  attr :rows, :list, required: true, doc: "{term, description} pairs"
-  attr :note, :string, default: nil, doc: "one line rendered in place of an empty list"
-  attr :class, :string, default: nil
-
-  # The one term/description grammar for a compact runbook fact list — the
-  # frozen plan's arguments and the editor's collapsed step summary.
-  defp fact_list(assigns) do
-    ~H"""
-    <div :if={@rows != [] or @note} class={@class}>
-      <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{@label}</p>
-      <p :if={@rows == []} class="mt-1 text-xs text-zinc-500">{@note}</p>
+    <div :if={@rows != [] or @show_empty?} class={@class}>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        Arguments
+      </p>
+      <p :if={@rows == []} class="mt-1 text-xs text-zinc-500">None</p>
       <dl :if={@rows != []} class="mt-1 divide-y divide-zinc-800/60">
         <div
-          :for={{term, description} <- @rows}
+          :for={{name, value} <- @rows}
           class="grid gap-1 py-1.5 text-xs sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3"
         >
-          <dt class="break-all font-mono text-zinc-400">{term}</dt>
-          <dd class="min-w-0 break-words font-mono text-zinc-200">{description}</dd>
+          <dt class="break-all font-mono text-zinc-400">{name}</dt>
+          <dd class="min-w-0 break-words font-mono text-zinc-200">
+            {argument_value(value)}
+          </dd>
         </div>
       </dl>
     </div>
@@ -376,20 +356,27 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         />
       </div>
 
-      <div class="mt-6 space-y-4">
-        <.step_editor
-          :for={{step, step_index} <- Enum.with_index(@stage["steps"])}
-          step={step}
-          step_index={step_index}
-          total_steps={length(@stage["steps"])}
-          stage_index={@stage_index}
-          draft={@draft}
-          catalog={@catalog}
-          open_panels={@open_panels}
-          definition_issues={@definition_issues}
-          read_only?={@read_only?}
-        />
-      </div>
+      <%!-- The same ordered-work list the run surface uses, so an authored step
+            reads as the plan row it becomes. --%>
+      <.steps
+        variant={:plan}
+        marker={if @stage["mode"] == "parallel", do: :parallel, else: :number}
+        class="mt-6"
+      >
+        <:step :for={{step, step_index} <- Enum.with_index(@stage["steps"])}>
+          <.step_editor
+            step={step}
+            step_index={step_index}
+            total_steps={length(@stage["steps"])}
+            stage_index={@stage_index}
+            draft={@draft}
+            catalog={@catalog}
+            open_panels={@open_panels}
+            definition_issues={@definition_issues}
+            read_only?={@read_only?}
+          />
+        </:step>
+      </.steps>
 
       <.add_row
         label="Add step"
@@ -457,25 +444,31 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       |> assign_action_picker()
 
     ~H"""
-    <section
-      id={"runbook-stage-#{@stage_index}-step-#{@step_index}"}
-      class="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5"
-    >
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+    <section id={"runbook-stage-#{@stage_index}-step-#{@step_index}"}>
+      <%!-- The run surface's item head: identity left, controls right — here the
+            identity is what the step WILL run, so it leads only while collapsed;
+            expanded, the fields below own every one of those facts. --%>
+      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+        <div class="min-w-0">
+          <.step_summary
+            :if={@collapsed?}
+            step={@step}
+            stage_index={@stage_index}
+            step_index={@step_index}
+            catalog={@catalog}
+            risk={@risk}
+            issue_count={@issue_count}
+          />
+          <%!-- Expanded, the fields below name every other fact, so the head
+                keeps only the position — which a parallel marker cannot show. --%>
+          <span
+            :if={not @collapsed?}
+            class="flex h-10 items-center text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+          >
             Step {@step_index + 1}
           </span>
-          <.risk_pill :if={@risk} risk={@risk} />
-          <span
-            :if={@collapsed? and @issue_count > 0}
-            class="inline-flex items-center gap-1 text-[11px] font-medium text-rose-300"
-          >
-            <.icon name="hero-exclamation-circle-mini" class="h-3.5 w-3.5" />
-            {@issue_count} {if @issue_count == 1, do: "issue", else: "issues"}
-          </span>
         </div>
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1 sm:justify-end">
           <.button
             type="button"
             variant={:secondary}
@@ -525,12 +518,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         value={@step["collapsed"]}
       />
 
-      <.step_summary
+      <.step_details
         :if={@collapsed?}
         step={@step}
         stage_index={@stage_index}
         step_index={@step_index}
-        catalog={@catalog}
       />
 
       <%!-- Hidden, not removed: every authored value keeps a live input, so a
@@ -624,10 +616,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :stage_index, :integer, required: true
   attr :step_index, :integer, required: true
   attr :catalog, :map, required: true
+  attr :risk, :any, required: true
+  attr :issue_count, :integer, required: true
 
-  # An authored step reads in the frozen plan's row grammar — action, risk (in
-  # the header), then `→ targets · identifier` — followed by every value the
-  # hidden form still carries.
+  # The run surface's item head, one state earlier: the same action · risk line
+  # over the same `→ target · step` meta, reading what the step is configured to
+  # do instead of what it did.
   defp step_summary(assigns) do
     refs = assigns.step["target_refs"] || []
     selection = assigns.step["target_selection"] || "all"
@@ -641,20 +635,22 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       # rose the expanded target control uses.
       |> assign(:targets, target_selection_title(assigns.catalog, refs, selection))
       |> assign(:unavailable, unavailable)
-      |> assign(:arguments, summary_argument_rows(assigns.step))
-      |> assign(:arguments_note, summary_argument_note(assigns.step["args"]))
-      |> assign(:outputs, summary_output_rows(assigns.step))
-      |> assign(:conditions, summary_condition_rows(assigns.step))
-      |> assign(:wait, summary_wait_note(assigns.step["wait"]))
 
     ~H"""
-    <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-summary"} class="mt-4 min-w-0">
-      <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+    <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-summary"} class="min-w-0">
+      <div class="flex flex-wrap items-center gap-2">
         <span :if={@step["action"] != ""} class="font-mono text-sm text-zinc-100">
           {@step["action"]}
         </span>
         <span :if={@step["action"] == ""} class="text-sm text-zinc-500">No action chosen</span>
-        <span :if={@step["pack_id"] != ""} class="text-xs text-zinc-500">{@step["pack_id"]}</span>
+        <.risk_pill :if={@risk} risk={@risk} />
+        <span
+          :if={@issue_count > 0}
+          class="inline-flex items-center gap-1 text-[11px] font-medium text-rose-300"
+        >
+          <.icon name="hero-exclamation-circle-mini" class="h-3.5 w-3.5" />
+          {@issue_count} {if @issue_count == 1, do: "issue", else: "issues"}
+        </span>
       </div>
       <p class="mt-1 text-xs text-zinc-400">
         <span class="text-zinc-500">→</span>
@@ -662,11 +658,69 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         <span :if={@unavailable > 0} class="text-rose-300">· {@unavailable} unavailable</span>
         <span :if={@step["id"] != ""} class="font-mono text-zinc-500">· {@step["id"]}</span>
       </p>
+    </div>
+    """
+  end
 
-      <.fact_list label="Arguments" rows={@arguments} note={@arguments_note} class="mt-3" />
-      <.fact_list label="Extracted outputs" rows={@outputs} class="mt-3" />
-      <.fact_list label="Success conditions" rows={@conditions} class="mt-3" />
-      <.fact_list label="Wait policy" rows={[]} note={@wait} class="mt-3" />
+  attr :step, :map, required: true
+  attr :stage_index, :integer, required: true
+  attr :step_index, :integer, required: true
+
+  # The run surface's item details, one state earlier: the same wait strip and
+  # eyebrow-over-`<.kv>` fact groups, carrying what each row will produce.
+  defp step_details(assigns) do
+    assigns =
+      assigns
+      |> assign(:arguments, summary_argument_rows(assigns.step))
+      |> assign(:arguments_note, summary_argument_note(assigns.step["args"]))
+      |> assign(:outputs, summary_output_rows(assigns.step))
+      |> assign(:conditions, summary_condition_rows(assigns.step))
+      |> assign(:wait, summary_wait_note(assigns.step["wait"]))
+
+    ~H"""
+    <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-details"} class="min-w-0">
+      <div class="mt-4 space-y-4">
+        <dl :if={@wait} class="flex flex-wrap gap-x-10 gap-y-2 text-xs">
+          <.kv label="Wait">{@wait}</.kv>
+        </dl>
+
+        <.summary_facts :if={@arguments != [] or @arguments_note} label="Arguments">
+          <p :if={@arguments == []} class="text-xs text-zinc-500">{@arguments_note}</p>
+          <dl :if={@arguments != []} class="space-y-2 text-xs">
+            <.kv :for={{name, value} <- @arguments} label={name}>
+              <code class="break-all text-[11px] text-zinc-200">{value}</code>
+            </.kv>
+          </dl>
+        </.summary_facts>
+
+        <.summary_facts :if={@outputs != []} label="Extracted outputs">
+          <dl class="space-y-2 text-xs">
+            <.kv :for={{id, extractor} <- @outputs} label={id}>
+              <code class="break-all text-[11px] text-zinc-200">{extractor}</code>
+            </.kv>
+          </dl>
+        </.summary_facts>
+
+        <.summary_facts :if={@conditions != []} label="Success conditions">
+          <dl class="space-y-2 text-xs">
+            <.kv :for={{test, value} <- @conditions} label={test}>
+              <code class="break-all text-[11px] text-zinc-200">{value}</code>
+            </.kv>
+          </dl>
+        </.summary_facts>
+      </div>
+    </div>
+    """
+  end
+
+  attr :label, :string, required: true
+  slot :inner_block, required: true
+
+  defp summary_facts(assigns) do
+    ~H"""
+    <div>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{@label}</p>
+      <div class="mt-2">{render_slot(@inner_block)}</div>
     </div>
     """
   end
@@ -719,9 +773,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     |> Enum.join(" · ")
   end
 
+  # The run surface's condition label, one state earlier — same `output ·
+  # operator` phrase, with the expected value where the verdict will land.
   defp summary_condition_rows(step) do
-    Enum.map(step["success"], &{&1["output"], "#{operator_label(&1["operator"])} #{&1["value"]}"})
+    Enum.map(step["success"], &{condition_label(&1), &1["value"]})
   end
+
+  defp condition_label(condition),
+    do: "#{condition["output"]} · #{String.replace(condition["operator"], "_", " ")}"
 
   defp summary_wait_note(%{"enabled" => "true"} = wait) do
     "Observe again every #{wait["interval_seconds"]}s · timeout #{wait["timeout_seconds"]}s · " <>
@@ -738,17 +797,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp extractor_label("grep"), do: "Grep"
   defp extractor_label("regex"), do: "Regex"
   defp extractor_label(type), do: type
-
-  defp operator_label("equals"), do: "Equals"
-  defp operator_label("not_equals"), do: "Not equal"
-  defp operator_label("greater_than"), do: "Greater than"
-  defp operator_label("greater_than_or_equal"), do: "Greater than or equal"
-  defp operator_label("less_than"), do: "Less than"
-  defp operator_label("less_than_or_equal"), do: "Less than or equal"
-  defp operator_label("contains"), do: "Contains"
-  defp operator_label("one_of"), do: "One of"
-  defp operator_label("matches"), do: "Matches regex"
-  defp operator_label(operator), do: operator
 
   defp assign_action_picker(assigns) do
     groups =

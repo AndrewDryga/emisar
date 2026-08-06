@@ -1464,13 +1464,18 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/edit")
 
       summary = "#runbook-stage-0-step-0-summary"
+      details = "#runbook-stage-0-step-0-details"
 
+      # The run surface's plan-row grammar: the shared ordered list carrying the
+      # stage's own marker, an action · target head, then the fact groups.
+      assert has_element?(lv, ~s|#runbook-stage-0 ol [data-steps-marker="parallel"]|)
       assert has_element?(lv, summary, "linux.uptime")
       assert has_element?(lv, summary, "DEFAULT · all")
-      assert has_element?(lv, summary, "From run-time input config_path")
-      assert has_element?(lv, summary, "Structured output · JSON Pointer · /healthy")
-      assert has_element?(lv, summary, "Equals true")
-      assert has_element?(lv, summary, "Observe again every 10s · timeout 120s")
+      assert has_element?(lv, summary, "uptime")
+      assert has_element?(lv, details, "From run-time input config_path")
+      assert has_element?(lv, details, "Structured output · JSON Pointer · /healthy")
+      assert has_element?(lv, details, "healthy · equals")
+      assert has_element?(lv, details, "Observe again every 10s · timeout 120s")
       assert has_element?(lv, ~s|#runbook-stage-0-step-0-form[class~="hidden"]|)
 
       assert has_element?(
@@ -1487,9 +1492,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
 
       refute has_element?(lv, summary)
+      refute has_element?(lv, details)
       refute has_element?(lv, ~s|#runbook-stage-0-step-0-form[class~="hidden"]|)
       assert has_element?(lv, "#runbook-stage-0-step-0-form button", "Add output")
       assert has_element?(lv, ~s|button[phx-click="toggle_step"]|, "Collapse")
+
+      # Expanded, the head keeps only the position the fields below cannot show.
+      assert has_element?(lv, "#runbook-stage-0-step-0", "Step 1")
 
       # Disclosure alone leaves the draft clean — no new version to save.
       assert has_element?(lv, "#runbook-actions-desktop-save-reason", "No unsaved changes.")
