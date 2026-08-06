@@ -52,23 +52,10 @@ defmodule EmisarWeb.ActivateLive do
   def handle_event("lookup", %{"lookup" => %{"code" => code}}, socket) do
     code = String.trim(code)
 
-    cond do
-      code == "" ->
-        {:noreply, assign(socket, lookup_error: "Enter the code shown in your terminal.")}
-
-      # The device-code space is large and short-lived, so guessing is not
-      # practical — but this is the one credential-shaped lookup in the product
-      # with no cap at all, and it is deliberately not account-scoped. Bucket by
-      # the signed-in user so an automated sweep costs something.
-      Throttle.check("device_code_lookup", lookup_key(socket), 20, 900_000) !=
-          :ok ->
-        {:noreply,
-         assign(socket,
-           lookup_error: "Too many attempts. Wait a few minutes and try again."
-         )}
-
-      true ->
-        {:noreply, socket |> assign(:code, code) |> lookup(code)}
+    if code == "" do
+      {:noreply, assign(socket, lookup_error: "Enter the code shown in your terminal.")}
+    else
+      {:noreply, socket |> assign(:code, code) |> lookup(code)}
     end
   end
 
@@ -116,6 +103,24 @@ defmodule EmisarWeb.ActivateLive do
     # to retype from the terminal.
     socket = assign(socket, :code_form, to_form(%{"code" => code}, as: :lookup))
 
+    # The cap lives HERE, not in the typed-form handler, so every caller pays it.
+    # It sat in handle_event("lookup") only, while handle_params resolves a
+    # ?code= straight through on mount — so appending a query string to your own
+    # activate URL was an uncapped sweep of a deliberately cross-tenant,
+    # credential-shaped lookup. Guessing was never practical (30^8 over a
+    # 15-minute TTL); the point is that the control the comment relies on now
+    # actually covers the paths that reach the lookup.
+    if Throttle.check("device_code_lookup", lookup_key(socket), 20, 900_000) != :ok do
+      assign(socket,
+        grant: nil,
+        lookup_error: "Too many attempts. Wait a few minutes and try again."
+      )
+    else
+      do_lookup(socket, code)
+    end
+  end
+
+  defp do_lookup(socket, code) do
     case ApiKeys.fetch_pending_device_grant_by_user_code(code, socket.assigns.current_subject) do
       {:ok, grant} ->
         socket |> assign(:grant, grant) |> assign(:lookup_error, nil)

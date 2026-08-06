@@ -419,7 +419,19 @@ defmodule EmisarWeb.DocsComponents do
           >
             <.icon name="hero-x-mark" class="h-5 w-5" />
           </button>
-          <img src={@src} alt={@alt} class="max-h-full max-w-full rounded-lg shadow-2xl" />
+          <%!-- loading="lazy" is load-bearing here, not a nicety. This dialog is
+               `hidden` (display:none) from first render, and display:none does NOT
+               stop a browser fetching an <img src> inside it — so this eagerly
+               requested the same file the trigger above deferred, defeating its
+               lazy attribute entirely. That put ~490 KB on the wire at first paint
+               on /docs/sso/okta, entra, jumpcloud and /docs/runbooks: the site's
+               highest-value SEO pages. --%>
+          <img
+            src={@src}
+            alt={@alt}
+            loading="lazy"
+            class="max-h-full max-w-full rounded-lg shadow-2xl"
+          />
         </div>
       </div>
       <figcaption :if={@caption} class="mt-2.5 text-sm leading-6 text-zinc-500">

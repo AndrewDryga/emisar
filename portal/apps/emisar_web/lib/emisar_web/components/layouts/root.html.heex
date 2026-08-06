@@ -45,6 +45,12 @@
       property="og:image"
       content={assigns[:og_image] || "https://emisar.dev/images/og/emisar-og.webp"}
     />
+    <%!-- Every card is 1200x630. Declaring it lets a scraper lay the preview out
+         on first fetch instead of after downloading the image, which is what
+         makes a freshly shared link render immediately rather than as a bare
+         title. --%>
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:url" content={assigns[:canonical_url] || "https://emisar.dev"} />
     <meta property="og:site_name" content="emisar" />
     <meta
