@@ -394,7 +394,13 @@ defmodule EmisarWeb.RunsLiveTest do
     refute html =~ "linux.bravo_run"
   end
 
-  describe "no-LLM onboarding banner" do
+  # The nav-dot alert label, verbatim from core_components' agents nav_link. These
+  # tests previously refuted "No LLM connected yet", a string that exists nowhere
+  # in the app — so all three passed regardless of what rendered, including if
+  # the banner they were written to bury came back word for word.
+  @agents_nudge "No LLM agent connected yet"
+
+  describe "no-LLM onboarding nudge" do
     test "the page-wide banner is GONE — the nav dot is the one nudge signal", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
@@ -403,24 +409,43 @@ defmodule EmisarWeb.RunsLiveTest do
       # Three signals for one fact (banner + nav dot + dashboard pillar) was
       # noise; the banner strip died. No agents AND no runners → not even the
       # dot: the first job is a runner, so the agents nudge waits its turn.
-      refute html =~ "No LLM connected yet"
+      refute html =~ @agents_nudge
     end
 
-    test "still no banner once an MCP key exists", %{conn: conn} do
+    test "the dot appears once there is a runner but still no agent", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
+
+      # The positive half. Without it every assertion here is a refute, and a
+      # nudge that never renders at all would satisfy the whole block.
+      assert html =~ @agents_nudge
+    end
+
+    test "the dot is gone once an MCP key exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
       Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
 
-      refute html =~ "No LLM connected yet"
+      refute html =~ @agents_nudge
     end
 
-    test "is suppressed on the agents page itself (where the operator would act)", %{conn: conn} do
+    # The dot is sidebar STATE, not a one-time prompt, so it keeps rendering on
+    # the agents page — the same way the fleet-offline dot keeps rendering on the
+    # runners page. The old test claimed it was suppressed here; nothing has ever
+    # implemented that, and refuting a string the app never emits is what let the
+    # claim stand. Suppressing one nav dot per-page and not its sibling would be
+    # the inconsistency, so this pins the behavior we actually want.
+    test "still shows on the agents page — it is state, not a one-time prompt", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
 
-      refute html =~ "No LLM connected yet"
+      assert html =~ @agents_nudge
     end
   end
 end
