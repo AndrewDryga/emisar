@@ -140,7 +140,12 @@ const openIdPGuide = `(()=>{const s=[...document.querySelectorAll('summary')].fi
 var docsShots = []shot{
 	{Name: "policy-editor", Path: "/app/demo/policies", Anchor: Anchor{Heading: "Default policy", Climb: "section"}, Width: docsWidth, Output: "screenshots/policy-editor.webp"},
 	{Name: "audit-view", Path: "/app/demo/audit?event_type[]=group:Run", Anchor: Anchor{Selector: "#audit-events"}, Width: 1280, Output: "screenshots/audit-view.webp"},
-	{Name: "runner-fleet", Path: "/app/demo/runners", Anchor: Anchor{Selector: "#runners"}, Width: docsWidth, Output: "screenshots/runner-fleet.webp"},
+	// Top-anchored, like team-page and for the same reason: #runners sits partway
+	// down the page, and chromedp mis-clips a tall element anchored there — with a
+	// live fleet the list grew past that threshold and lost its first group off the
+	// top. #shell-canvas starts at the top of the console content, so the crop is
+	// deterministic; TopCSS keeps the heading and the whole fleet.
+	{Name: "runner-fleet", Path: "/app/demo/runners", Anchor: Anchor{Selector: "#shell-canvas"}, Width: docsWidth, TopCSS: 1050, Output: "screenshots/runner-fleet.webp"},
 	// The team page is a desktop 3-column layout: the member roster beside the
 	// Security/SSO rail. Anchor the whole console content (#shell-canvas — the page
 	// minus the nav rail) at a desktop width and keep the top TopCSS pixels: the

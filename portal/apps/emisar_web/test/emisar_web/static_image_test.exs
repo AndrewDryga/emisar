@@ -4,7 +4,7 @@ defmodule EmisarWeb.StaticImageTest do
 
   describe "dimensions/1" do
     test "reads a served WebP screenshot's real size" do
-      assert StaticImage.dimensions("/images/screenshots/runner-fleet.webp") == {1680, 910}
+      assert StaticImage.dimensions("/images/screenshots/runner-fleet.webp") == {1680, 1580}
     end
 
     # VP8X is the extended container cwebp emits for alpha/ICC/animation. It
