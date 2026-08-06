@@ -86,7 +86,15 @@ resource "google_compute_backend_service" "livebook_public" {
 }
 
 resource "terraform_data" "livebook_backend_ready" {
-  count = var.livebook_enabled ? 2 : 0
+  # Only wait when an instance is actually expected. livebook_running = false is
+  # the documented day-to-day park dial, and it empties the instance group — so
+  # getHealth returns 200 with no health states forever, the loop below never
+  # sees HEALTHY, and any apply that CREATES or REPLACES these backends in that
+  # state burns 10 minutes and then hard-fails. google_compute_url_map.https
+  # depends on this, so the whole load balancer never gets built: a DR rebuild
+  # against a provisioned-but-parked workbench cannot complete. The app twin
+  # already short-circuits on a zero expectation; this is the same rule.
+  count = var.livebook_enabled && var.livebook_running ? 2 : 0
 
   triggers_replace = [
     count.index == 0 ?

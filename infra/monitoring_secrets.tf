@@ -1,10 +1,21 @@
 # Secret Manager access by a principal we did not expect.
 #
-# `google_logging_project_sink.security_evidence` already collects every
-# AccessSecretVersion into a 400-day locked bucket, and until now nothing read
-# it. That made it audit EVIDENCE, not detection: an attacker holding the VM
-# service account's token could read all eleven secrets and leave a complete,
-# faithful, entirely un-alerted trail. This is the thing that pages.
+# `google_logging_project_sink.security_evidence` collects every
+# AccessSecretVersion into a 400-day locked bucket, and nothing read it. This
+# turns that evidence into detection for ONE case: a principal outside the
+# expected set below — a leaked user credential, a new service account, a
+# foreign identity — reading a secret version.
+#
+# Be precise about what it does NOT catch, because the exclusion list is load
+# bearing and reads like an oversight. An attacker holding the VM service
+# account's token is EXEMPT here by design: that identity reads all eleven
+# secrets on every boot, so alerting on it would page on each instance
+# replacement and be muted within a week. Stolen-VM-token abuse stays an
+# evidence-sink question, answered from the locked bucket after the fact, not a
+# page. Do not "fix" this by dropping the VM SA from expected_secret_readers —
+# that trades a real control for a noisy one. If we want that case to page, it
+# needs a RATE condition over the boot-time baseline (instance_count ×
+# len(runtime_secrets) per hour), which is a separate policy.
 
 locals {
   # The principals whose access is routine. Splat, not [0] — Livebook is

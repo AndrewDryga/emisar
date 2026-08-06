@@ -1,7 +1,5 @@
 # Executive Overview
 
-<!-- livebook: {"persist_outputs": true} -->
-
 ## Setup
 
 ```elixir

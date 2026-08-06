@@ -1,7 +1,5 @@
 # Engagement and Retention
 
-<!-- livebook: {"persist_outputs": true} -->
-
 An active account dispatched at least one action in the period. This measures product use, not sign-in activity.
 
 ## Setup

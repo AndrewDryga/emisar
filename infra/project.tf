@@ -23,6 +23,10 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "sts.googleapis.com",
+    # google_billing_budget calls this against the project's quota. Without it a
+    # fresh apply or a DR rebuild dies on SERVICE_DISABLED, and the budget's
+    # depends_on reads as though the ordering were already handled.
+    "billingbudgets.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false

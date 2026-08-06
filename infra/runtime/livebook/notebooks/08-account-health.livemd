@@ -1,7 +1,5 @@
 # Account Health
 
-<!-- livebook: {"persist_outputs": true} -->
-
 Runner connectivity is last-known database activity, not the live Presence registry. Use an explicit Erlang distribution connection when debugging exact online state.
 
 ## Setup

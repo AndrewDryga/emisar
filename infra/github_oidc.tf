@@ -31,12 +31,15 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   # after a rename or transfer — so whoever claims the old path could satisfy
   # all of them from their own workflow and mint a token that publishes packs
   # customer runners execute. repository_id is immutable; pin it too when known.
-  attribute_condition = join(" && ", concat([
+  # repository_id is the only IMMUTABLE claim here: the other four are names an
+  # attacker reproduces in a repo claimed at our old path after a rename or
+  # transfer. It is unconditional now — the variable is validated numeric and
+  # defaults to the real id, so there is no longer an "unset" case to branch on.
+  attribute_condition = join(" && ", [
     "assertion.repository == \"${var.github_repository}\"",
     "assertion.ref == \"refs/heads/main\"",
     "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/cd.yml@refs/heads/main\"",
     "assertion.environment == \"pack-registry-production\"",
-    ], var.github_repository_id == "" ? [] : [
     "assertion.repository_id == \"${var.github_repository_id}\"",
-  ]))
+  ])
 }

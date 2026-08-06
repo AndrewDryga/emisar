@@ -191,8 +191,20 @@ variable "github_repository_id" {
     replace catalog objects that customer runners execute. Empty disables the
     extra clause (set it before relying on the path pin alone).
     Read it with: gh api repos/<owner>/<repo> --jq .id
+
+    Defaults to the real id, exactly as github_repository defaults to the real
+    path. It used to default to "", which silently DROPPED the clause and left
+    four attacker-reproducible name conditions as the whole boundary — guarding
+    a token that can replace v1/catalog.json, which every customer runner
+    resolves. The id is public via the GitHub API and is not a scale or contact
+    tell, so there is no reason to leave the safe value unset.
   EOT
-  default     = ""
+  default     = "1243017690"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_id))
+    error_message = "github_repository_id must be the numeric repository id: gh api repos/<owner>/<repo> --jq .id"
+  }
 }
 
 variable "mailer_from_email" {
@@ -459,4 +471,14 @@ variable "monthly_budget_amount" {
   description = "Monthly spend threshold for the budget's alert tiers, in the billing account's currency. A workspace variable because the number is a spend-posture tell and this repository is public. Only read when billing_account_id is set."
   sensitive   = true
   default     = 0
+
+  # 0 makes every threshold $0, so the 50/90/100% tiers all trip on the first
+  # cent and page the on-call rotation — call and SMS — every month forever. The
+  # cure an operator reaches for is muting the spend channel, which disables the
+  # only runaway-bill control on the stack. Setting billing_account_id without
+  # this is the easy way to get there, so refuse it.
+  validation {
+    condition     = var.monthly_budget_amount > 0 || var.billing_account_id == ""
+    error_message = "Set monthly_budget_amount above 0 whenever billing_account_id is set; a 0 budget pages on the first cent of spend."
+  }
 }

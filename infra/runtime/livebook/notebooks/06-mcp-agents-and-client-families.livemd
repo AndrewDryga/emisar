@@ -1,7 +1,5 @@
 # MCP Agents and Client Families
 
-<!-- livebook: {"persist_outputs": true} -->
-
 An agent is an active MCP API key. Client family comes from self-reported MCP `clientInfo.name` snapshotted on runs; it is not proof of the upstream LLM provider or model.
 
 ## Setup

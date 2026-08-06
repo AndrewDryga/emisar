@@ -158,7 +158,15 @@ resource "google_compute_firewall" "egress_inventory" {
   }
 
   destination_ranges = ["0.0.0.0/0"]
-  target_tags        = ["emisar"]
+  # Both tags. The Livebook VM carries emisar-livebook, so it was absent from the
+  # very inventory the future default-deny will be written from — and it is the
+  # highest-trust host in the project: the production RELEASE_COOKIE (dist access
+  # to every portal node) and an emisar_owner database membership. A deny list
+  # built from an inventory that omits it either breaks the workbench or leaves
+  # it unbounded, and until then a compromised Livebook exfiltrates with no
+  # record, since flow logs sample at 1%. The rule is an allow, so adding the tag
+  # permits nothing new.
+  target_tags = ["emisar", "emisar-livebook"]
 
   log_config {
     metadata = "INCLUDE_ALL_METADATA"

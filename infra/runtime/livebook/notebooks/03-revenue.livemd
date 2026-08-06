@@ -1,7 +1,5 @@
 # Revenue
 
-<!-- livebook: {"persist_outputs": true} -->
-
 MRR is computed from Paddle's mirrored charged unit amount, quantity, currency, interval, and frequency. It includes active subscriptions only, separates currencies, and never substitutes catalog display prices. Historical MRR movements are not available from the current-state subscription mirror.
 
 ## Setup

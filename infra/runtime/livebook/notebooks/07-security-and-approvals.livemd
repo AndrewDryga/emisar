@@ -1,7 +1,5 @@
 # Security and Approvals
 
-<!-- livebook: {"persist_outputs": true} -->
-
 ## Setup
 
 ```elixir

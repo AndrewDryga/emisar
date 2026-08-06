@@ -1,7 +1,5 @@
 # Emisar Product Analytics
 
-<!-- livebook: {"persist_outputs": true} -->
-
 This notebook pack reports product, revenue, reliability, and security facts from the production PostgreSQL mirror. Every query is aggregate or bounded, runs through an IAM-authenticated local proxy, defaults to read-only, and has a 30-second statement timeout.
 
 ## Dashboards

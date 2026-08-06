@@ -1,7 +1,5 @@
 # Growth and Activation
 
-<!-- livebook: {"persist_outputs": true} -->
-
 Activation means the account dispatched its first action. Runner registration is shown as the preceding setup milestone.
 
 ## Setup

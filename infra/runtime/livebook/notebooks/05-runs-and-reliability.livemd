@@ -1,7 +1,5 @@
 # Runs and Reliability
 
-<!-- livebook: {"persist_outputs": true} -->
-
 ## Setup
 
 ```elixir

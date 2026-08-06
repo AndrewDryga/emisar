@@ -66,4 +66,14 @@ resource "google_logging_project_exclusion" "lb_healthcheck_flows" {
       OR ip_in_net(jsonPayload.connection.src_ip, "130.211.0.0/22")
     )
   FILTER
+
+  # Creating an exclusion needs logging.exclusions.create, which is exactly what
+  # the configWriter grant above carries — and the API has to be on. This
+  # resource referenced neither, so on a fresh apply Terraform was free to
+  # schedule it before either existed and 403. Its sibling bucket config in this
+  # same file already declares both.
+  depends_on = [
+    google_project_service.apis,
+    google_project_iam_member.terraform_apply_authority,
+  ]
 }

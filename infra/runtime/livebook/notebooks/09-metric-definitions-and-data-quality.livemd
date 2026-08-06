@@ -1,7 +1,5 @@
 # Metric Definitions and Data Quality
 
-<!-- livebook: {"persist_outputs": true} -->
-
 ## Definitions
 
 | Metric | Definition |
