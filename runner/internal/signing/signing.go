@@ -6,7 +6,8 @@
 // defense: a compromised control plane can relay a customer-authorized bridge's
 // signed action but can neither forge, redirect, nor replay one.
 //
-// The v4 claim binds the exact public runner-reference set the operator selected.
+// The v5 claim binds the exact public runner-reference set the operator selected,
+// plus digests of the evidence/expectation narrative a human approver reads.
 // A cert's CA-authored scope is a second, coarser ceiling: even a correctly
 // targeted claim is refused outside the allowed group/labels. The leaf public key
 // the attestation verifies under comes from the CA-verified cert, never from config.
@@ -24,6 +25,9 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/attest"
 	"github.com/andrewdryga/emisar/runner/internal/runnerref"
 )
+
+// sha256HexLen is the length of a lower-hex SHA-256 digest.
+const sha256HexLen = 64
 
 // CAConfig is one trusted certificate-authority public key as it comes from config.
 type CAConfig struct {
@@ -265,16 +269,31 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 	if err != nil || len(leaf) != ed25519.PublicKeySize {
 		return refuse("bad_signature", "certificate public_key is not a valid Ed25519 key")
 	}
+	// The approver-facing narrative is bound by digest and never relayed to us,
+	// so the envelope's digests ARE our copy of it. Taking them unchecked would
+	// let a control plane pick the bytes we verify against; requiring the
+	// canonical shape means a tampered digest fails as a bad signature rather
+	// than as a malformed field.
+	// An ABSENT digest is legitimate — it means the bridge sent no narrative, and
+	// the claim then binds the digest of the empty string. A PRESENT one must be
+	// canonical: a stripped or reshaped digest simply fails the signature below,
+	// which is the outcome we want, but rejecting a malformed one here keeps the
+	// refusal honest about what went wrong.
+	if !narrativeDigestWellFormed(att.EvidenceSHA256) || !narrativeDigestWellFormed(att.ExpectedSHA256) {
+		return refuse("bad_signature", "attestation narrative digest is not lower-hex SHA-256")
+	}
 	claim := attest.Claim{
-		ActionID:     dispatch.ActionID,
-		PackRef:      dispatch.PackRef,
-		ArgsRaw:      dispatch.ArgsRaw,
-		RunnerRefs:   att.RunnerRefs,
-		Reason:       dispatch.Reason,
-		OperationID:  dispatch.OperationID,
-		PortalOrigin: v.origin,
-		Nonce:        att.Nonce,
-		IssuedAt:     att.IssuedAt,
+		ActionID:       dispatch.ActionID,
+		PackRef:        dispatch.PackRef,
+		EvidenceSHA256: att.EvidenceSHA256,
+		ExpectedSHA256: att.ExpectedSHA256,
+		ArgsRaw:        dispatch.ArgsRaw,
+		RunnerRefs:     att.RunnerRefs,
+		Reason:         dispatch.Reason,
+		OperationID:    dispatch.OperationID,
+		PortalOrigin:   v.origin,
+		Nonce:          att.Nonce,
+		IssuedAt:       att.IssuedAt,
 	}
 	valid, err := attest.Verify(ed25519.PublicKey(leaf), claim, att.Signature)
 	if err != nil {
@@ -302,6 +321,26 @@ func validNonce(nonce string) bool {
 	}
 	for _, char := range nonce {
 		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// narrativeDigestWellFormed reports whether a relayed narrative digest is either
+// absent or exactly 64 lower-hex characters. Upper-case is rejected on purpose:
+// the signed body carries one spelling, so accepting another would verify a
+// digest that can never have been signed.
+func narrativeDigestWellFormed(s string) bool {
+	if s == "" {
+		return true
+	}
+	if len(s) != sha256HexLen {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}

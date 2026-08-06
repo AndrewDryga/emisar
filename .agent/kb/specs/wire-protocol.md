@@ -213,7 +213,7 @@ nesting, arguments over 32 KiB, and a complete message over 128 KiB. It decodes
 numbers with `UseNumber`; values above 2^53 are never converted through
 `float64`.
 
-### Signed action attestation v4
+### Signed action attestation v5
 
 The bridge sends `Emisar-Attestation` as unpadded base64url of the bounded JSON
 envelope. The portal accepts at most 8192 encoded header bytes, compares its
@@ -226,7 +226,16 @@ The Ed25519 signature covers fixed JSON binding:
 - SHA-256 of the exact argument bytes;
 - canonical sorted complete `runner_refs`;
 - exact reason;
+- SHA-256 of the approver-facing `evidence` and `expected` narrative;
 - operation ID, nonce, and RFC3339 issuance time.
+
+The narrative is bound by digest and never relayed: the two fields together run
+to 6,000 characters against the 8 KiB envelope budget. Both are optional and both
+are always hashed, so an absent one signs as the digest of the empty string —
+that is what binds "the bridge sent no justification", denying a control plane
+the chance to invent one. A verifier therefore takes `evidence_sha256` and
+`expected_sha256` from the envelope rather than recomputing them from text it
+does not have.
 
 An enforcing runner verifies the leaf certificate against its configured
 customer CA, certificate validity and local group/label scope, origin,

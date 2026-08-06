@@ -114,6 +114,33 @@ func signForTargets(t *testing.T, priv ed25519.PrivateKey, actionID string, args
 	return signedAttestation(t, priv, dispatch, runnerRefs, nonce, issuedAt, cert)
 }
 
+// signWithNarrative signs a dispatch that carries the approver-facing evidence
+// and expectation. The bridge binds them by digest and never relays the text, so
+// the envelope carries only the digests — exactly what a runner sees.
+func signWithNarrative(t *testing.T, priv ed25519.PrivateKey, actionID string, args map[string]any, nonce, issuedAt, evidence, expected string) *Attestation {
+	t.Helper()
+	att := signForTargets(t, priv, actionID, args, []string{testRunnerRef(t)}, nonce, issuedAt)
+	dispatch := testDispatch(t, actionID, args)
+	runnerRefs, err := attest.CanonicalRunnerRefs([]string{testRunnerRef(t)})
+	if err != nil {
+		t.Fatalf("CanonicalRunnerRefs: %v", err)
+	}
+	claim := attest.Claim{
+		ActionID: dispatch.ActionID, PackRef: dispatch.PackRef, ArgsRaw: dispatch.ArgsRaw,
+		RunnerRefs: runnerRefs, Reason: dispatch.Reason, OperationID: dispatch.OperationID,
+		Evidence: evidence, Expected: expected,
+		PortalOrigin: testOrigin, Nonce: testNonce(nonce), IssuedAt: issuedAt,
+	}
+	sig, err := attest.Sign(priv, claim)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	att.Signature = sig
+	att.EvidenceSHA256 = attest.TextSHA256(evidence)
+	att.ExpectedSHA256 = attest.TextSHA256(expected)
+	return att
+}
+
 func signedAttestation(t testing.TB, priv ed25519.PrivateKey, dispatch Dispatch, runnerRefs []string, nonce, issuedAt string, cert attest.Cert) *Attestation {
 	t.Helper()
 	runnerRefs, err := attest.CanonicalRunnerRefs(runnerRefs)
@@ -242,6 +269,56 @@ func TestCheckHappyPath(t *testing.T) {
 	att := sign(t, priv, "docker.restart", args, "n1", fixedNow)
 	if d := v.Check(testDispatch(t, "docker.restart", args), att); !d.Allowed {
 		t.Fatalf("valid signed dispatch refused: %+v", d)
+	}
+}
+
+// TestCheckVerifiesSignedNarrative is the regression test for v5's approver
+// narrative. Evidence and expectation are bound by DIGEST and never relayed as
+// text, so the runner has to take the digests off the envelope. It shipped
+// building the claim without them, which verified every narrative-bearing
+// dispatch against the digest of the empty string — refusing precisely the calls
+// the feature exists to authorize, with no test to notice.
+func TestCheckVerifiesSignedNarrative(t *testing.T) {
+	v, priv := newTestVerifier(t)
+	args := map[string]any{"container": "web"}
+	att := signWithNarrative(t, priv, "docker.restart", args, "narrative-ok", fixedNow,
+		"get_action showed cass-103 flapping for 20 minutes",
+		"the container restarts and rejoins the cluster")
+	if d := v.Check(testDispatch(t, "docker.restart", args), att); !d.Allowed {
+		t.Fatalf("signed dispatch carrying an approver narrative refused: %+v", d)
+	}
+}
+
+// TestCheckBindsNarrativeDigests proves the digests are load-bearing in both
+// directions: a control plane can neither substitute a justification the bridge
+// never signed nor strip one the bridge did sign.
+func TestCheckBindsNarrativeDigests(t *testing.T) {
+	args := map[string]any{"container": "web"}
+	tests := []struct {
+		name   string
+		code   string
+		mutate func(*Attestation)
+	}{
+		{"evidence substituted", "bad_signature", func(att *Attestation) {
+			att.EvidenceSHA256 = attest.TextSHA256("a justification nobody signed")
+		}},
+		{"expectation substituted", "bad_signature", func(att *Attestation) {
+			att.ExpectedSHA256 = attest.TextSHA256("an outcome nobody signed")
+		}},
+		{"evidence stripped", "bad_signature", func(att *Attestation) { att.EvidenceSHA256 = "" }},
+		{"evidence malformed", "bad_signature", func(att *Attestation) { att.EvidenceSHA256 = strings.Repeat("Z", 64) }},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			v, priv := newTestVerifier(t)
+			att := signWithNarrative(t, priv, "docker.restart", args, "narrative-"+test.name, fixedNow,
+				"the signed evidence", "the signed expectation")
+			test.mutate(att)
+			if d := v.Check(testDispatch(t, "docker.restart", args), att); d.Allowed || d.Code != test.code {
+				t.Fatalf("tampered %s decision = %+v, want %s", test.name, d, test.code)
+			}
+		})
 	}
 }
 

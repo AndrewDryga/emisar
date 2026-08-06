@@ -56,12 +56,19 @@ type Claim struct {
 	// digest of the empty string. That is the load-bearing half: it binds "the
 	// bridge sent no evidence", so a control plane cannot invent a
 	// justification for an action the operator never justified.
-	Evidence     string
-	Expected     string
-	OperationID  string
-	PortalOrigin string
-	Nonce        string
-	IssuedAt     string // RFC3339 UTC, e.g. "2026-06-17T12:00:00Z"
+	Evidence string
+	Expected string
+	// EvidenceSHA256 and ExpectedSHA256 are the VERIFIER's form of the two
+	// fields above. A runner is bound by digest and never receives the
+	// narrative text, so it fills these straight from the envelope; when set
+	// they are signed as-is and the text form is ignored. A signer holds the
+	// text, leaves these empty, and lets it hash.
+	EvidenceSHA256 string
+	ExpectedSHA256 string
+	OperationID    string
+	PortalOrigin   string
+	Nonce          string
+	IssuedAt       string // RFC3339 UTC, e.g. "2026-06-17T12:00:00Z"
 }
 
 // Envelope is the relayed wire representation of a signed claim. The bridge
@@ -95,6 +102,20 @@ type Envelope struct {
 func TextSHA256(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+
+// narrativeDigest resolves one narrative field to the digest that gets signed.
+// A verifier holds only the digest; a signer holds only the text. Routing both
+// through ONE resolver keeps a single encoding for the two sides — the
+// alternative, hashing on the signer and comparing digests on the verifier, is
+// two paths that can silently disagree, which is exactly how v5 first shipped:
+// the runner built its claim without these fields and verified every signed
+// narrative against the digest of the empty string.
+func narrativeDigest(digest, text string) string {
+	if digest != "" {
+		return digest
+	}
+	return TextSHA256(text)
 }
 
 // SigningBytes is the exact byte string that is signed and verified. A fixed
@@ -141,8 +162,8 @@ func SigningBytes(c Claim) ([]byte, error) {
 		ArgsSHA256:       argsDigest,
 		RunnerRefsSHA256: hex.EncodeToString(runnerRefsDigest[:]),
 		Reason:           c.Reason,
-		EvidenceSHA256:   TextSHA256(c.Evidence),
-		ExpectedSHA256:   TextSHA256(c.Expected),
+		EvidenceSHA256:   narrativeDigest(c.EvidenceSHA256, c.Evidence),
+		ExpectedSHA256:   narrativeDigest(c.ExpectedSHA256, c.Expected),
 		OperationID:      c.OperationID,
 		Nonce:            c.Nonce,
 		IssuedAt:         c.IssuedAt,
