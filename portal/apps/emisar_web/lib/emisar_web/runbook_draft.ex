@@ -151,7 +151,8 @@ defmodule EmisarWeb.RunbookDraft do
       "args" => [],
       "outputs" => [],
       "success" => [],
-      "wait" => @default_wait
+      "wait" => @default_wait,
+      "collapsed" => "false"
     }
   end
 
@@ -306,8 +307,12 @@ defmodule EmisarWeb.RunbookDraft do
     }
   end
 
+  # A step that was already authored opens as a summary, so loading a saved
+  # runbook reads as a workflow rather than a wall of controls. The flag rides
+  # the row itself so reordering and removal carry it; `command/1` ignores it.
   defp step_from_definition(step) do
     %{
+      "collapsed" => "true",
       "id" => step["id"] || "",
       "pack_id" => get_in(step, ["pack", "id"]) || "",
       "action" => step["action"] || "",

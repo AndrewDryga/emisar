@@ -234,6 +234,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   draft={@draft}
                   catalog={@catalog}
                   open_panels={@open_panels}
+                  definition_issues={@definition_issues}
                   read_only?={@read_only?}
                 />
               </div>

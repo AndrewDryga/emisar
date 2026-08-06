@@ -697,8 +697,20 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         )
 
       change(lv, draft)
+
+      # A closed panel still carries every authored value, so the next change
+      # anywhere in the form cannot reset the wait policy to its default.
+      assert has_element?(lv, ~s|#runbook-stage-0-step-0-wait-controls[class~="hidden"]|)
+
+      assert has_element?(
+               lv,
+               ~s|input[name="draft[stages][0][steps][0][wait][interval_seconds]"][value="10"]|
+             )
+
       render_click(lv, "toggle_panel", %{"key" => "wait-0-0"})
       html = render(lv)
+
+      refute has_element?(lv, ~s|#runbook-stage-0-step-0-wait-controls[class~="hidden"]|)
 
       assert has_element?(
                lv,
@@ -1403,6 +1415,147 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
     end
 
+    test "an authored step opens as a summary that one click turns back into its form", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user,
+        args: [%{"name" => "path", "type" => "path", "required" => true, "sensitive" => false}]
+      )
+
+      subject = owner_subject(user, account)
+
+      input =
+        RunbookDraft.input()
+        |> Map.merge(%{"id" => "config_path", "description" => "Config file"})
+
+      argument =
+        RunbookDraft.argument()
+        |> Map.merge(%{
+          "name" => "path",
+          "type" => "path",
+          "required" => "true",
+          "source" => "input",
+          "ref" => "config_path"
+        })
+
+      output = Map.merge(RunbookDraft.output(), %{"id" => "healthy", "expression" => "/healthy"})
+      condition = Map.merge(RunbookDraft.success(), %{"output" => "healthy", "value" => "true"})
+      step = ["stages", Access.at(0), "steps", Access.at(0)]
+
+      draft =
+        valid_draft(inputs: [input])
+        |> put_in(step ++ ["args"], [argument])
+        |> put_in(step ++ ["outputs"], [output])
+        |> put_in(step ++ ["success"], [condition])
+        |> put_in(step ++ ["wait", "enabled"], "true")
+
+      {:ok, runbook} =
+        Runbooks.create_runbook(
+          %{
+            "title" => "Fleet health",
+            "slug" => "fleet-health",
+            "definition" => canonical_definition(draft)
+          },
+          subject
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/edit")
+
+      summary = "#runbook-stage-0-step-0-summary"
+
+      assert has_element?(lv, summary, "linux.uptime")
+      assert has_element?(lv, summary, "DEFAULT · all")
+      assert has_element?(lv, summary, "From run-time input config_path")
+      assert has_element?(lv, summary, "Structured output · JSON Pointer · /healthy")
+      assert has_element?(lv, summary, "Equals true")
+      assert has_element?(lv, summary, "Observe again every 10s · timeout 120s")
+      assert has_element?(lv, ~s|#runbook-stage-0-step-0-form[class~="hidden"]|)
+
+      assert has_element?(
+               lv,
+               ~s|input[type="hidden"][name="draft[stages][0][steps][0][collapsed]"][value="true"]|
+             )
+
+      assert has_element?(
+               lv,
+               ~s|button[phx-click="toggle_step"][phx-value-step="0"][aria-expanded="false"]|,
+               "Edit"
+             )
+
+      render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
+
+      refute has_element?(lv, summary)
+      refute has_element?(lv, ~s|#runbook-stage-0-step-0-form[class~="hidden"]|)
+      assert has_element?(lv, "#runbook-stage-0-step-0-form button", "Add output")
+      assert has_element?(lv, ~s|button[phx-click="toggle_step"]|, "Collapse")
+
+      # Disclosure alone leaves the draft clean — no new version to save.
+      assert has_element?(lv, "#runbook-actions-desktop-save-reason", "No unsaved changes.")
+    end
+
+    test "a step added in this session opens as a form and keeps its own disclosure", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      refute has_element?(lv, "#runbook-stage-0-step-0-summary")
+      refute has_element?(lv, ~s|#runbook-stage-0-step-0-form[class~="hidden"]|)
+
+      render_click(lv, "add_step", %{"stage" => "0"})
+      render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
+
+      assert has_element?(lv, ~s|#runbook-stage-0-step-0-form[class~="hidden"]|)
+      refute has_element?(lv, ~s|#runbook-stage-0-step-1-form[class~="hidden"]|)
+
+      # A later change anywhere in the form posts the collapsed step too, so the
+      # browser's hidden field is what keeps it collapsed.
+      collapsed_step = %{
+        RunbookDraft.step()
+        | "collapsed" => "true",
+          "id" => "uptime",
+          "pack_id" => "linux-core",
+          "action" => "linux.uptime"
+      }
+
+      change(
+        lv,
+        put_in(valid_draft(), ["stages", Access.at(0), "steps", Access.at(0)], collapsed_step)
+      )
+
+      assert has_element?(lv, "#runbook-stage-0-step-0-summary", "linux.uptime")
+      assert has_element?(lv, ~s|#runbook-stage-0-step-0-form[class~="hidden"]|)
+    end
+
+    test "a collapsed step reports how many definition issues it still carries", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      unnamed_step = %{
+        RunbookDraft.step()
+        | "collapsed" => "true",
+          "id" => "",
+          "pack_id" => "linux-core",
+          "action" => "linux.uptime",
+          "target_refs" => ["group:default"]
+      }
+
+      change(
+        lv,
+        put_in(valid_draft(), ["stages", Access.at(0), "steps", Access.at(0)], unnamed_step)
+      )
+
+      assert has_element?(lv, "#runbook-stage-0-step-0", "1 issue")
+
+      render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
+
+      refute has_element?(lv, "#runbook-stage-0-step-0", "1 issue")
+    end
+
     test "a viewer inspects the same structured definition without mutation controls", %{
       user: owner,
       account: account
@@ -1456,6 +1609,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute has_element?(lv, "#delete-runbook")
       refute has_element?(lv, "button", "Add input")
       refute has_element?(lv, ~s(button[aria-label="Remove input"]))
+
+      # Disclosure is inspection, so it stays available and says so.
+      assert has_element?(lv, ~s|button[phx-click="toggle_step"]|, "Show")
+      render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
+      assert has_element?(lv, ~s|button[phx-click="toggle_step"]|, "Hide")
     end
   end
 

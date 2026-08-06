@@ -117,23 +117,43 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   @doc "Renders visible frozen arguments as a compact decision-ready list."
   def argument_list(assigns) do
-    assigns = assign(assigns, :rows, Enum.sort_by(assigns.arguments, &elem(&1, 0)))
+    rows =
+      assigns.arguments
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map(fn {name, value} -> {name, argument_value(value)} end)
+
+    assigns = assign(assigns, :rows, rows)
 
     ~H"""
-    <div :if={@rows != [] or @show_empty?} class={@class}>
-      <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-        Arguments
-      </p>
-      <p :if={@rows == []} class="mt-1 text-xs text-zinc-500">None</p>
+    <.fact_list
+      :if={@rows != [] or @show_empty?}
+      label="Arguments"
+      rows={@rows}
+      note="None"
+      class={@class}
+    />
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :rows, :list, required: true, doc: "{term, description} pairs"
+  attr :note, :string, default: nil, doc: "one line rendered in place of an empty list"
+  attr :class, :string, default: nil
+
+  # The one term/description grammar for a compact runbook fact list — the
+  # frozen plan's arguments and the editor's collapsed step summary.
+  defp fact_list(assigns) do
+    ~H"""
+    <div :if={@rows != [] or @note} class={@class}>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{@label}</p>
+      <p :if={@rows == []} class="mt-1 text-xs text-zinc-500">{@note}</p>
       <dl :if={@rows != []} class="mt-1 divide-y divide-zinc-800/60">
         <div
-          :for={{name, value} <- @rows}
+          :for={{term, description} <- @rows}
           class="grid gap-1 py-1.5 text-xs sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3"
         >
-          <dt class="break-all font-mono text-zinc-400">{name}</dt>
-          <dd class="min-w-0 break-words font-mono text-zinc-200">
-            {argument_value(value)}
-          </dd>
+          <dt class="break-all font-mono text-zinc-400">{term}</dt>
+          <dd class="min-w-0 break-words font-mono text-zinc-200">{description}</dd>
         </div>
       </dl>
     </div>
@@ -274,6 +294,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :draft, :map, required: true
   attr :catalog, :map, required: true
   attr :open_panels, :any, required: true
+  attr :definition_issues, :list, required: true
   attr :read_only?, :boolean, required: true
 
   def stage_editor(assigns) do
@@ -365,6 +386,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           draft={@draft}
           catalog={@catalog}
           open_panels={@open_panels}
+          definition_issues={@definition_issues}
           read_only?={@read_only?}
         />
       </div>
@@ -387,6 +409,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :draft, :map, required: true
   attr :catalog, :map, required: true
   attr :open_panels, :any, required: true
+  attr :definition_issues, :list, required: true
   attr :read_only?, :boolean, required: true
 
   defp step_editor(assigns) do
@@ -426,6 +449,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           assigns.step["action"]
         )
       )
+      |> assign(:collapsed?, assigns.step["collapsed"] == "true")
+      |> assign(
+        :issue_count,
+        step_issue_count(assigns.definition_issues, assigns.stage_index, assigns.step_index)
+      )
       |> assign_action_picker()
 
     ~H"""
@@ -439,8 +467,28 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             Step {@step_index + 1}
           </span>
           <.risk_pill :if={@risk} risk={@risk} />
+          <span
+            :if={@collapsed? and @issue_count > 0}
+            class="inline-flex items-center gap-1 text-[11px] font-medium text-rose-300"
+          >
+            <.icon name="hero-exclamation-circle-mini" class="h-3.5 w-3.5" />
+            {@issue_count} {if @issue_count == 1, do: "issue", else: "issues"}
+          </span>
         </div>
         <div class="flex items-center gap-1">
+          <.button
+            type="button"
+            variant={:secondary}
+            size={:sm}
+            phx-click="toggle_step"
+            phx-value-stage={@stage_index}
+            phx-value-step={@step_index}
+            aria-expanded={to_string(not @collapsed?)}
+            aria-controls={"runbook-stage-#{@stage_index}-step-#{@step_index}-form"}
+            class="mr-1"
+          >
+            {step_toggle_label(@collapsed?, @read_only?)}
+          </.button>
           <.icon_button
             icon="hero-arrow-up"
             label="Move step up"
@@ -471,85 +519,236 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         </div>
       </div>
 
-      <div
-        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-overview"}
-        class="mt-5 grid gap-4 xl:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)] xl:items-end"
-      >
-        <.input
-          name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
-          value={@step["id"]}
-          label="Identifier"
-          label_variant={:eyebrow}
-          disabled={@read_only?}
-          class="font-mono"
-        />
+      <input
+        type="hidden"
+        name={"draft[stages][#{@stage_index}][steps][#{@step_index}][collapsed]"}
+        value={@step["collapsed"]}
+      />
 
-        <.target_picker
+      <.step_summary
+        :if={@collapsed?}
+        step={@step}
+        stage_index={@stage_index}
+        step_index={@step_index}
+        catalog={@catalog}
+      />
+
+      <%!-- Hidden, not removed: every authored value keeps a live input, so a
+            later change anywhere in the form still posts the whole draft. --%>
+      <div
+        id={"runbook-stage-#{@stage_index}-step-#{@step_index}-form"}
+        class={@collapsed? && "hidden"}
+      >
+        <div
+          id={"runbook-stage-#{@stage_index}-step-#{@step_index}-overview"}
+          class="mt-5 grid gap-4 xl:grid-cols-[9rem_minmax(0,1fr)_minmax(0,1fr)] xl:items-end"
+        >
+          <.input
+            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][id]"}
+            value={@step["id"]}
+            label="Identifier"
+            label_variant={:eyebrow}
+            disabled={@read_only?}
+            class="font-mono"
+          />
+
+          <.target_picker
+            step={@step}
+            stage_index={@stage_index}
+            step_index={@step_index}
+            catalog={@catalog}
+            options={@target_options}
+            read_only?={@read_only?}
+          />
+
+          <div>
+            <div class="flex min-h-5 items-center justify-between gap-2">
+              <.label variant={:eyebrow}>Action</.label>
+              <.tooltip
+                :if={@action_error?}
+                id={"runbook-stage-#{@stage_index}-step-#{@step_index}-action-error"}
+                text="This action is not available on every selected runner. Choose another action or update the targets."
+                placement={:bottom}
+                align={:right}
+                class="shrink-0"
+              >
+                <.icon name="hero-exclamation-circle-mini" class="h-4 w-4 text-rose-300" />
+              </.tooltip>
+            </div>
+            <.searchable_select
+              id={@action_picker_id}
+              name={"draft[stages][#{@stage_index}][steps][#{@step_index}][action_choice]"}
+              value={@action_choice}
+              selected_label={@action_selected_label}
+              groups={@action_groups}
+              blank_label={if @step["target_refs"] == [], do: nil, else: "Choose action…"}
+              disabled={@read_only? or not @targets_resolved?}
+              class="mt-2"
+              aria_label="Action"
+            />
+          </div>
+        </div>
+
+        <.bindings_editor
           step={@step}
           stage_index={@stage_index}
           step_index={@step_index}
-          catalog={@catalog}
-          options={@target_options}
+          draft={@draft}
           read_only?={@read_only?}
         />
-
-        <div>
-          <div class="flex min-h-5 items-center justify-between gap-2">
-            <.label variant={:eyebrow}>Action</.label>
-            <.tooltip
-              :if={@action_error?}
-              id={"runbook-stage-#{@stage_index}-step-#{@step_index}-action-error"}
-              text="This action is not available on every selected runner. Choose another action or update the targets."
-              placement={:bottom}
-              align={:right}
-              class="shrink-0"
-            >
-              <.icon name="hero-exclamation-circle-mini" class="h-4 w-4 text-rose-300" />
-            </.tooltip>
-          </div>
-          <.searchable_select
-            id={@action_picker_id}
-            name={"draft[stages][#{@stage_index}][steps][#{@step_index}][action_choice]"}
-            value={@action_choice}
-            selected_label={@action_selected_label}
-            groups={@action_groups}
-            blank_label={if @step["target_refs"] == [], do: nil, else: "Choose action…"}
-            disabled={@read_only? or not @targets_resolved?}
-            class="mt-2"
-            aria_label="Action"
-          />
-        </div>
+        <.outputs_editor
+          step={@step}
+          stage_index={@stage_index}
+          step_index={@step_index}
+          read_only?={@read_only?}
+        />
+        <.success_editor
+          step={@step}
+          stage_index={@stage_index}
+          step_index={@step_index}
+          read_only?={@read_only?}
+        />
+        <.wait_editor
+          wait={@step["wait"]}
+          stage_index={@stage_index}
+          step_index={@step_index}
+          open_panels={@open_panels}
+          read_only?={@read_only?}
+        />
       </div>
-
-      <.bindings_editor
-        step={@step}
-        stage_index={@stage_index}
-        step_index={@step_index}
-        draft={@draft}
-        read_only?={@read_only?}
-      />
-      <.outputs_editor
-        step={@step}
-        stage_index={@stage_index}
-        step_index={@step_index}
-        read_only?={@read_only?}
-      />
-      <.success_editor
-        step={@step}
-        stage_index={@stage_index}
-        step_index={@step_index}
-        read_only?={@read_only?}
-      />
-      <.wait_editor
-        wait={@step["wait"]}
-        stage_index={@stage_index}
-        step_index={@step_index}
-        open_panels={@open_panels}
-        read_only?={@read_only?}
-      />
     </section>
     """
   end
+
+  attr :step, :map, required: true
+  attr :stage_index, :integer, required: true
+  attr :step_index, :integer, required: true
+  attr :catalog, :map, required: true
+
+  # An authored step reads in the frozen plan's row grammar — action, risk (in
+  # the header), then `→ targets · identifier` — followed by every value the
+  # hidden form still carries.
+  defp step_summary(assigns) do
+    refs = assigns.step["target_refs"] || []
+    selection = assigns.step["target_selection"] || "all"
+
+    unavailable =
+      Enum.count(refs, &(not RunbookEditorCatalog.target_available?(assigns.catalog, &1)))
+
+    assigns =
+      assigns
+      # The unavailable count renders beside the label so it can carry the same
+      # rose the expanded target control uses.
+      |> assign(:targets, target_selection_title(assigns.catalog, refs, selection))
+      |> assign(:unavailable, unavailable)
+      |> assign(:arguments, summary_argument_rows(assigns.step))
+      |> assign(:arguments_note, summary_argument_note(assigns.step["args"]))
+      |> assign(:outputs, summary_output_rows(assigns.step))
+      |> assign(:conditions, summary_condition_rows(assigns.step))
+      |> assign(:wait, summary_wait_note(assigns.step["wait"]))
+
+    ~H"""
+    <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-summary"} class="mt-4 min-w-0">
+      <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span :if={@step["action"] != ""} class="font-mono text-sm text-zinc-100">
+          {@step["action"]}
+        </span>
+        <span :if={@step["action"] == ""} class="text-sm text-zinc-500">No action chosen</span>
+        <span :if={@step["pack_id"] != ""} class="text-xs text-zinc-500">{@step["pack_id"]}</span>
+      </div>
+      <p class="mt-1 text-xs text-zinc-400">
+        <span class="text-zinc-500">→</span>
+        <span class="font-medium text-zinc-300">{@targets}</span>
+        <span :if={@unavailable > 0} class="text-rose-300">· {@unavailable} unavailable</span>
+        <span :if={@step["id"] != ""} class="font-mono text-zinc-500">· {@step["id"]}</span>
+      </p>
+
+      <.fact_list label="Arguments" rows={@arguments} note={@arguments_note} class="mt-3" />
+      <.fact_list label="Extracted outputs" rows={@outputs} class="mt-3" />
+      <.fact_list label="Success conditions" rows={@conditions} class="mt-3" />
+      <.fact_list label="Wait policy" rows={[]} note={@wait} class="mt-3" />
+    </div>
+    """
+  end
+
+  defp step_toggle_label(true, true), do: "Show"
+  defp step_toggle_label(false, true), do: "Hide"
+  defp step_toggle_label(true, false), do: "Edit"
+  defp step_toggle_label(false, false), do: "Collapse"
+
+  defp step_issue_count(issues, stage_index, step_index) do
+    base = "/stages/#{stage_index}/steps/#{step_index}"
+
+    Enum.count(issues, &step_issue?(&1.path, base))
+  end
+
+  defp step_issue?(path, base) when is_binary(path),
+    do: path == base or String.starts_with?(path, base <> "/")
+
+  defp step_issue?(_path, _base), do: false
+
+  defp summary_argument_rows(step) do
+    step["args"]
+    |> Enum.reject(&(&1["source"] == "omit"))
+    |> Enum.map(&{&1["name"], summary_argument_value(&1)})
+  end
+
+  defp summary_argument_note([]), do: nil
+  defp summary_argument_note(_arguments), do: "None bound"
+
+  defp summary_argument_value(%{"source" => "input", "ref" => ref}),
+    do: "From run-time input #{ref}"
+
+  defp summary_argument_value(%{"source" => "output", "ref" => ref}), do: "From #{ref}"
+  defp summary_argument_value(%{"value" => ""}), do: "No value"
+  defp summary_argument_value(argument), do: argument["value"]
+
+  defp summary_output_rows(step) do
+    Enum.map(step["outputs"], &{&1["id"], summary_output_description(&1)})
+  end
+
+  defp summary_output_description(output) do
+    [
+      output_source_label(output["source"]),
+      extractor_label(output["extract_type"]),
+      output["expression"],
+      output["extract_type"] == "regex" && "capture #{output["capture"]}",
+      output["sensitive"] == "true" && "Sensitive"
+    ]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.join(" · ")
+  end
+
+  defp summary_condition_rows(step) do
+    Enum.map(step["success"], &{&1["output"], "#{operator_label(&1["operator"])} #{&1["value"]}"})
+  end
+
+  defp summary_wait_note(%{"enabled" => "true"} = wait) do
+    "Observe again every #{wait["interval_seconds"]}s · timeout #{wait["timeout_seconds"]}s · " <>
+      "up to #{wait["max_attempts"]} observations"
+  end
+
+  defp summary_wait_note(_wait), do: nil
+
+  defp output_source_label("structured_output"), do: "Structured output"
+  defp output_source_label(source), do: source
+
+  defp extractor_label("json_pointer"), do: "JSON Pointer"
+  defp extractor_label("contains"), do: "Contains"
+  defp extractor_label("grep"), do: "Grep"
+  defp extractor_label("regex"), do: "Regex"
+  defp extractor_label(type), do: type
+
+  defp operator_label("equals"), do: "Equals"
+  defp operator_label("not_equals"), do: "Not equal"
+  defp operator_label("greater_than"), do: "Greater than"
+  defp operator_label("greater_than_or_equal"), do: "Greater than or equal"
+  defp operator_label("less_than"), do: "Less than"
+  defp operator_label("less_than_or_equal"), do: "Less than or equal"
+  defp operator_label("contains"), do: "Contains"
+  defp operator_label("one_of"), do: "One of"
+  defp operator_label("matches"), do: "Matches regex"
+  defp operator_label(operator), do: operator
 
   defp assign_action_picker(assigns) do
     groups =
@@ -880,6 +1079,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
     if unavailable > 0, do: "#{summary} · #{unavailable} unavailable", else: summary
   end
+
+  defp target_selection_title(catalog, refs, selection, unavailable \\ 0)
 
   defp target_selection_title(catalog, [], _selection, _unavailable),
     do: empty_target_selection_label(catalog)
@@ -1361,10 +1562,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         label="Wait policy"
         hint={if @wait["enabled"] == "true", do: "Observe again", else: "Halt execution"}
       />
+      <%!-- Hidden, not removed: a closed panel that dropped its inputs let the
+            next change anywhere in the form reset an authored wait policy. --%>
       <div
-        :if={MapSet.member?(@open_panels, @panel_key)}
         id={"runbook-stage-#{@stage_index}-step-#{@step_index}-wait-controls"}
-        class="mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]"
+        class={[
+          "mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]",
+          not MapSet.member?(@open_panels, @panel_key) && "hidden"
+        ]}
       >
         <.input
           type="select"

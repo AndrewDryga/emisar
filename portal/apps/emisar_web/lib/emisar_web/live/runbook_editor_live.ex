@@ -14,7 +14,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   @input_fields ~w[id description type required sensitive default minimum maximum
                    min_length max_length]
   @stage_fields ~w[id title mode max_parallel]
-  @step_fields ~w[id target_selection]
+  @step_fields ~w[id target_selection collapsed]
   @wait_fields ~w[enabled interval_seconds timeout_seconds max_attempts]
   @argument_fields ~w[name type required sensitive source value ref]
   @output_fields ~w[id source sensitive extract_type expression capture]
@@ -383,6 +383,14 @@ defmodule EmisarWeb.RunbookEditorLive do
     {:noreply, update(socket, :open_panels, &toggle_panel(&1, key))}
   end
 
+  # Disclosure only — it changes no persisted value, so it skips the dirty
+  # fingerprint and the preview, and a read-only viewer may still open a step.
+  def handle_event("toggle_step", %{"stage" => stage_index, "step" => step_index}, socket) do
+    draft = update_step(socket.assigns.draft, stage_index, step_index, &toggle_collapsed/1)
+
+    {:noreply, assign(socket, :draft, draft)}
+  end
+
   def handle_info(
         {:runbook_preview, generation},
         %{assigns: %{preview_generation: generation}} = socket
@@ -459,6 +467,9 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp toggle_panel(panels, key) do
     if MapSet.member?(panels, key), do: MapSet.delete(panels, key), else: MapSet.put(panels, key)
   end
+
+  defp toggle_collapsed(%{"collapsed" => "true"} = step), do: %{step | "collapsed" => "false"}
+  defp toggle_collapsed(step), do: Map.put(step, "collapsed", "true")
 
   defp validate_and_preview(socket) do
     definition = canonical_definition(socket.assigns.draft)
