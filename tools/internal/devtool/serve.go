@@ -29,17 +29,8 @@ func portFromURL(raw string) (int, error) {
 }
 
 func (a *App) serveLock(port int, publicURL string) (*os.File, error) {
-	runtimeRoot := os.Getenv("XDG_RUNTIME_DIR")
-	if runtimeRoot == "" {
-		runtimeRoot = os.TempDir()
-	}
-	canonical, err := filepath.EvalSymlinks(a.Root)
+	dir, err := a.serveRuntimeDir()
 	if err != nil {
-		canonical = a.Root
-	}
-	key := sha256.Sum256([]byte(canonical))
-	dir := filepath.Join(runtimeRoot, fmt.Sprintf("emisar-dev-%d", os.Getuid()), fmt.Sprintf("%x", key[:8]))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	lock, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("serve-%d.lock", port)), os.O_CREATE|os.O_RDWR, 0o600)
@@ -172,6 +163,170 @@ func (a *App) stopServiceForwards() {
 		stop()
 	}
 	a.serviceForwardStops = nil
+}
+
+// serveRuntimeDir is where the lock, the pid, and a detached server's log live —
+// one directory per workspace, so two checkouts never fight over either.
+func (a *App) serveRuntimeDir() (string, error) {
+	runtimeRoot := os.Getenv("XDG_RUNTIME_DIR")
+	if runtimeRoot == "" {
+		runtimeRoot = os.TempDir()
+	}
+	canonical, err := filepath.EvalSymlinks(a.Root)
+	if err != nil {
+		canonical = a.Root
+	}
+	key := sha256.Sum256([]byte(canonical))
+	dir := filepath.Join(runtimeRoot, fmt.Sprintf("emisar-dev-%d", os.Getuid()), fmt.Sprintf("%x", key[:8]))
+	return dir, os.MkdirAll(dir, 0o700)
+}
+
+func (a *App) serveLogPath() (string, error) {
+	dir, err := a.serveRuntimeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "serve.log"), nil
+}
+
+// A detached server is a re-exec of this same command in its own session, so it
+// survives the shell — or the agent turn — that asked for it. The CHILD takes
+// the flock, which keeps `already owns Phoenix` working unchanged.
+func (a *App) serveDetached(ctx context.Context) error {
+	workspace, _, err := a.up(ctx)
+	if err != nil {
+		return err
+	}
+	port, err := portFromURL(workspace.PortalURL)
+	if err != nil {
+		return err
+	}
+	if portListening(port) {
+		fmt.Fprintf(a.Out, "already serving at %s\n", workspace.PortalURL)
+		return nil
+	}
+	logPath, err := a.serveLogPath()
+	if err != nil {
+		return err
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	command := exec.Command(executable, "serve")
+	command.Dir = a.Root
+	command.Env = os.Environ()
+	command.Stdin, command.Stdout, command.Stderr = nil, logFile, logFile
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	if err := command.Process.Release(); err != nil {
+		return err
+	}
+	if err := waitForPortState(ctx, port, true, 3*time.Minute); err != nil {
+		return fmt.Errorf("%w — see %s", err, logPath)
+	}
+	fmt.Fprintf(a.Out, "serving at %s (detached, log: %s)\n", workspace.PortalURL, logPath)
+	return nil
+}
+
+// Waits for the port to reach `want` — listening for a start, quiet for a stop.
+func waitForPortState(ctx context.Context, port int, want bool, limit time.Duration) error {
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if portListening(port) == want {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("port %d did not become listening=%t within %s", port, want, limit)
+}
+
+// Stops whatever holds the port, detached or not: the pid in the lock file owns
+// a whole process group, so the group signal reaches Phoenix itself.
+func (a *App) serveStop(ctx context.Context) error {
+	workspace, _, err := a.up(ctx)
+	if err != nil {
+		return err
+	}
+	port, err := portFromURL(workspace.PortalURL)
+	if err != nil {
+		return err
+	}
+	if !portListening(port) {
+		fmt.Fprintf(a.Out, "nothing serving at %s\n", workspace.PortalURL)
+		return nil
+	}
+	pid, err := a.servePID(port)
+	if err != nil {
+		return err
+	}
+	// `./run serve` traps SIGTERM and tears Phoenix down with it, so signal the
+	// OWNER by pid. Signalling a process group instead only works when the owner
+	// happens to lead one, which a foreground or nohup'd server does not — and
+	// the failure is silent, which is how a stop that stopped nothing reported
+	// success.
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		return fmt.Errorf("signalling ./run serve (pid %d): %w", pid, err)
+	}
+	if err := waitForPortState(ctx, port, false, 20*time.Second); err != nil {
+		return fmt.Errorf("%s is still held by pid %d after SIGTERM", workspace.PortalURL, pid)
+	}
+	fmt.Fprintf(a.Out, "stopped %s\n", workspace.PortalURL)
+	return nil
+}
+
+func (a *App) serveStatus(ctx context.Context) error {
+	workspace, _, err := a.up(ctx)
+	if err != nil {
+		return err
+	}
+	port, err := portFromURL(workspace.PortalURL)
+	if err != nil {
+		return err
+	}
+	logPath, err := a.serveLogPath()
+	if err != nil {
+		return err
+	}
+	if !portListening(port) {
+		fmt.Fprintf(a.Out, "not serving — start it with ./run serve --detach (log: %s)\n", logPath)
+		return nil
+	}
+	if pid, err := a.servePID(port); err == nil {
+		fmt.Fprintf(a.Out, "serving at %s (pid %d, log: %s)\n", workspace.PortalURL, pid, logPath)
+		return nil
+	}
+	fmt.Fprintf(a.Out, "serving at %s (log: %s)\n", workspace.PortalURL, logPath)
+	return nil
+}
+
+// The owner writes `pid <n>` into the lock file it holds; an untracked process
+// on the port leaves nothing to read, which is worth saying out loud.
+func (a *App) servePID(port int) (int, error) {
+	dir, err := a.serveRuntimeDir()
+	if err != nil {
+		return 0, err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, fmt.Sprintf("serve-%d.lock", port)))
+	if err != nil {
+		return 0, fmt.Errorf("port %d is held by an untracked process: %w", port, err)
+	}
+	pid := 0
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "pid %d", &pid); err != nil || pid <= 0 {
+		return 0, fmt.Errorf("port %d is held by an untracked process", port)
+	}
+	return pid, nil
 }
 
 func serveInvocation(interactive bool) (string, []string) {

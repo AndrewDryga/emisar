@@ -20,7 +20,7 @@ Usage:
 First run:
   ./run bootstrap             Print box-first and native prerequisite commands
   ./run setup                 Prepare tools, services, dependencies, and the database
-  ./run serve                 Start Phoenix with live reload
+  ./run serve --detach        Start Phoenix in the background (survives this shell)
 
 Fast feedback:
   ./run test portal --stale   Re-run tests affected by recent edits
@@ -31,7 +31,9 @@ Local development:
   setup                       Prepare the complete development environment
   up                          Start PostgreSQL and Keycloak
   down [--all]                Stop PostgreSQL and Keycloak, or every started stack
-  serve [--iex]               Start Phoenix, optionally with an interactive IEx shell
+  serve [--iex]               Start Phoenix in the foreground, optionally with an IEx shell
+  serve --detach|--stop|--status
+                              Run Phoenix detached from this shell, stop it, or report it
   status                      Show workspace listeners and sidecar state without changing it
   logs [--follow] [service]   Show scoped db/keycloak logs (host only)
   psql [psql-args...]         Open this workspace's development database
@@ -164,10 +166,18 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.down(ctx, rest)
 	case "serve":
 		iex := false
-		if len(rest) == 1 && rest[0] == "--iex" {
+		switch {
+		case len(rest) == 0:
+		case len(rest) == 1 && rest[0] == "--iex":
 			iex = true
-		} else if len(rest) != 0 {
-			return usage("usage: ./run serve [--iex]")
+		case len(rest) == 1 && rest[0] == "--detach":
+			return a.serveDetached(ctx)
+		case len(rest) == 1 && rest[0] == "--stop":
+			return a.serveStop(ctx)
+		case len(rest) == 1 && rest[0] == "--status":
+			return a.serveStatus(ctx)
+		default:
+			return usage("usage: ./run serve [--iex|--detach|--stop|--status]")
 		}
 		return a.serve(ctx, iex)
 	case "status":

@@ -36,6 +36,61 @@ func TestServeLockRejectsSecondOwnerAndReleases(t *testing.T) {
 	second.Close()
 }
 
+func TestServePIDReadsTheOwnerFromItsLockFile(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	app := &App{Root: root}
+
+	if _, err := app.servePID(4000); err == nil {
+		t.Fatal("expected an untracked-process error when no lock file exists")
+	}
+
+	dir, err := app.serveRuntimeDir()
+	if err != nil {
+		t.Fatalf("serveRuntimeDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "serve-4000.lock"), []byte("pid 4321"), 0o600); err != nil {
+		t.Fatalf("writing lock: %v", err)
+	}
+
+	pid, err := app.servePID(4000)
+	if err != nil {
+		t.Fatalf("servePID: %v", err)
+	}
+	if pid != 4321 {
+		t.Fatalf("servePID = %d, want 4321", pid)
+	}
+}
+
+func TestServePIDRejectsAnUnreadableOwner(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	app := &App{Root: root}
+	dir, err := app.serveRuntimeDir()
+	if err != nil {
+		t.Fatalf("serveRuntimeDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "serve-4000.lock"), []byte("owned by someone"), 0o600); err != nil {
+		t.Fatalf("writing lock: %v", err)
+	}
+
+	// A lock file that does not name a pid must never be signalled by guess.
+	if _, err := app.servePID(4000); err == nil {
+		t.Fatal("expected an untracked-process error for a lock file with no pid")
+	}
+}
+
+func TestWaitForPortStateGivesUpWithoutBlockingForever(t *testing.T) {
+	if err := waitForPortState(context.Background(), 1, true, 50*time.Millisecond); err == nil {
+		t.Fatal("expected a timeout waiting for a port nothing listens on")
+	}
+	// The stop side is the same wait inverted, and it must return at once when
+	// the port is already quiet rather than reporting a false failure.
+	if err := waitForPortState(context.Background(), 1, false, 50*time.Millisecond); err != nil {
+		t.Fatalf("waiting for an already-quiet port: %v", err)
+	}
+}
+
 func TestInBoxUsesStableCoopMarker(t *testing.T) {
 	app := testApp(t)
 	t.Setenv("COOP_BOX", "1")
