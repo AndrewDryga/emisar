@@ -445,6 +445,11 @@ func Run(config Config) (Totals, error) {
 	if info, err := os.Stat(config.Emisar); err != nil || info.Mode()&0o111 == 0 {
 		return Totals{}, fmt.Errorf("emisar binary not found or executable at %s", config.Emisar)
 	}
+	staged, err := stageConfig(config.Config)
+	if err != nil {
+		return Totals{}, err
+	}
+	config.Config = staged
 	if err := os.MkdirAll(config.Reports, 0o755); err != nil {
 		return Totals{}, err
 	}
@@ -505,6 +510,39 @@ func withDefaults(config Config) Config {
 		config.BaseEnv = os.Environ()
 	}
 	return config
+}
+
+// stageConfig copies the harness config somewhere this process owns and no one
+// else can write, and returns that path.
+//
+// The runner refuses a config owned by neither root nor itself, and one that is
+// group- or world-writable, because whoever holds that write bit chooses the
+// packs it loads. That check is the product working. But the harness reads its
+// config from /workspace, a read-only bind mount of the repository checkout,
+// which carries the HOST's ownership: on CI that is the job user, so the runner
+// correctly refused every action and all 42 behavior packs failed at once.
+// Docker Desktop remaps bind-mount ownership to the container user, so a
+// workstation never sees it — the Linux matrix is the only judge of this class.
+//
+// Copying rather than relaxing the check keeps the harness exercising the real
+// admission path, and works for a root and a nonroot runner_user alike, since
+// the copy is owned by whoever is running.
+func stageConfig(path string) (string, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read harness config %s: %w", path, err)
+	}
+	// A private 0700 directory rather than a fixed name in the shared /tmp, so
+	// nothing else can pre-create the path we are about to write.
+	dir, err := os.MkdirTemp("", "packtest-config")
+	if err != nil {
+		return "", fmt.Errorf("stage harness config: %w", err)
+	}
+	staged := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(staged, contents, 0o600); err != nil {
+		return "", fmt.Errorf("stage harness config at %s: %w", staged, err)
+	}
+	return staged, nil
 }
 
 func loadPlan(path string) (Plan, error) {

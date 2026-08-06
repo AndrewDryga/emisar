@@ -49,9 +49,12 @@ cases:
 	writeExecutable(t, filepath.Join(root, "probe"), "#!/bin/sh\ncat \""+filepath.Join(root, "state")+"\"\n")
 	writeExecutable(t, filepath.Join(root, "cleanup"), "#!/bin/sh\nprintf cleaned > \""+filepath.Join(root, "state")+"\"\n")
 
+	harnessConfig := filepath.Join(root, "test-config.yaml")
+	write(t, harnessConfig, "env_allowlist: []\n")
+
 	var output bytes.Buffer
 	totals, err := Run(Config{
-		Emisar: emisar, PacksDir: filepath.Join(root, "packs"), Config: "test.yaml",
+		Emisar: emisar, PacksDir: filepath.Join(root, "packs"), Config: harnessConfig,
 		Reports: filepath.Join(root, "reports"), Out: &output,
 	})
 	if err != nil {
@@ -638,9 +641,11 @@ func TestRunReportsMalformedPlan(t *testing.T) {
 	write(t, filepath.Join(root, "packs", "broken", "test", "cases.yaml"), "services: [")
 	emisar := filepath.Join(root, "emisar")
 	writeExecutable(t, emisar, "#!/bin/sh\nexit 0\n")
+	harnessConfig := filepath.Join(root, "test-config.yaml")
+	write(t, harnessConfig, "env_allowlist: []\n")
 	var output bytes.Buffer
 	_, err := Run(Config{
-		Emisar: emisar, PacksDir: filepath.Join(root, "packs"),
+		Emisar: emisar, PacksDir: filepath.Join(root, "packs"), Config: harnessConfig,
 		Reports: filepath.Join(root, "reports"), Out: &output,
 	})
 	if err == nil || !strings.Contains(err.Error(), "parse") {
