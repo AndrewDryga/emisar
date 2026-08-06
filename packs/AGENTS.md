@@ -4,20 +4,21 @@
 
 ## The gate (verify before claiming done)
 
-A pack change is done only when the complete repository-owned pack gate is green:
+Both are required before committing a pack change:
 
 ```
 ./run gate packs
+./run test packs [name-pattern]
 ```
 
-It validates every pack with the runner's load-time checks, verifies the
-cross-language hash goldens, rebuilds the catalog into a temporary directory
-and byte-compares it with the committed artifact, then runs the focused Portal
-catalog tests. Use `./run pack check <name>` while editing one pack and
-`./run test packs [name-pattern]` for pack-owned behavioral cases. A malformed
-pack breaks **both** consumers: the runner (loads + SHA-256-pins each pack at
-runtime) and the portal (which serves the catalog **artifact** built from
-`packs/`).
+`./run gate packs` validates every pack with the runner's load-time checks,
+verifies the cross-language hash goldens, rebuilds the catalog into a temporary
+directory and byte-compares it with the committed artifact, then runs the
+focused Portal catalog tests — but it never executes a pack action, so the
+behavior cases are required too; the gate alone has shipped regressions. Use
+`./run pack check <name>` while editing one pack. A malformed pack breaks
+**both** consumers: the runner (loads + SHA-256-pins each pack at runtime) and
+the portal (which serves the catalog **artifact** built from `packs/`).
 
 **Validate is not the whole gate — a pack add/change also touches these, every time:**
 
