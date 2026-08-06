@@ -1471,6 +1471,9 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(lv, ~s|#runbook-stage-0 ol [data-steps-marker="parallel"]|)
       assert has_element?(lv, summary, "linux.uptime")
       assert has_element?(lv, summary, "Group DEFAULT (every runner)")
+
+      # The phrase names itself, so no glyph labels it.
+      refute has_element?(lv, summary, "→")
       assert has_element?(lv, summary, "uptime")
       assert has_element?(lv, details, "From run-time input")
       assert has_element?(lv, details, "in structured output")

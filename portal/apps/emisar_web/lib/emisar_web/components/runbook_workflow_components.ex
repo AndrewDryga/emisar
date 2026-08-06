@@ -644,18 +644,22 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           {@issue_count} {if @issue_count == 1, do: "issue", else: "issues"}
         </span>
       </div>
-      <%!-- Flex gaps, not markup whitespace: HEEx turns the newline between two
+      <%!-- No leading glyph: this line belongs to the action above the way every
+            fact below belongs to the step — by sitting there. A target phrase
+            names what it is, so an arrow would label nothing.
+
+            Flex gaps, not markup whitespace: HEEx turns the newline between two
             spans into a rendered space, which stacked with the separator's own
             space into a visible gutter. --%>
       <p class="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-xs">
-        <span class="text-zinc-500">→</span>
         <span
           :for={target <- @targets}
           class={if target.available?, do: "text-zinc-300", else: "text-rose-300"}
         >
           {target.label}
         </span>
-        <span :if={@step["id"] != ""} class="font-mono text-zinc-500">· {@step["id"]}</span>
+        <span :if={@step["id"] != ""} class="text-zinc-500">·</span>
+        <span :if={@step["id"] != ""} class="font-mono text-zinc-500">{@step["id"]}</span>
       </p>
     </div>
     """
