@@ -27,6 +27,7 @@ defmodule EmisarWeb.TeamLive do
        |> assign(:scope_error, nil)
        |> assign(:scope_pack_mode, "all")
        |> assign(:scope_pack_draft, [])
+       |> assign(:scope_pack_error, nil)
        |> assign(:runners, [])
        |> assign(:runners_by_id, %{})
        |> assign(:runner_load_error?, false)
@@ -101,7 +102,8 @@ defmodule EmisarWeb.TeamLive do
          |> assign(:scope_draft, [])
          |> assign(:scope_error, nil)
          |> assign(:scope_pack_mode, "all")
-         |> assign(:scope_pack_draft, [])}
+         |> assign(:scope_pack_draft, [])
+         |> assign(:scope_pack_error, nil)}
     end
   end
 
@@ -126,6 +128,7 @@ defmodule EmisarWeb.TeamLive do
          |> assign(:scope_error, nil)
          |> assign(:scope_pack_mode, to_string(access.pack_mode))
          |> assign(:scope_pack_draft, RunnerScope.to_pack_values(access.pack_ids))
+         |> assign(:scope_pack_error, nil)
          |> assign(:editing_id, nil)
          |> assign(:edit_form, nil)}
 
@@ -142,7 +145,8 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:scope_draft, [])
      |> assign(:scope_error, nil)
      |> assign(:scope_pack_mode, "all")
-     |> assign(:scope_pack_draft, [])}
+     |> assign(:scope_pack_draft, [])
+     |> assign(:scope_pack_error, nil)}
   end
 
   # Live-normalize the scope selection so the picker can disable a runner the
@@ -155,10 +159,22 @@ defmodule EmisarWeb.TeamLive do
     # The pack list has no coverage rule to normalize — what is checked IS the
     # draft, including a pack the account no longer carries, which the picker
     # keeps ticked so the operator can see and remove it.
+    pack_mode = Map.get(params, "pack_access_mode", "all")
+    pack_scope = List.wrap(params["pack_scope"])
+
+    # Same terms as the runner half: clearing a selection you had is a mistake
+    # worth naming, but merely REVEALING an empty one is not — a form does not
+    # accuse you of a blank you have not reached yet.
+    pack_error =
+      if pack_mode == "restricted" and pack_scope == [] and
+           socket.assigns.scope_pack_draft != [],
+         do: @pack_scope_required
+
     socket =
       socket
-      |> assign(:scope_pack_mode, Map.get(params, "pack_access_mode", "all"))
-      |> assign(:scope_pack_draft, List.wrap(params["pack_scope"]))
+      |> assign(:scope_pack_mode, pack_mode)
+      |> assign(:scope_pack_draft, pack_scope)
+      |> assign(:scope_pack_error, pack_error)
 
     case Accounts.build_runner_access(mode, scope, socket.assigns.runners) do
       {:ok, %Accounts.RunnerAccess{} = access} ->
@@ -401,32 +417,16 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("save_scopes", %{"membership_id" => id} = params, socket) do
-    with_membership(socket, id, fn membership ->
-      case Accounts.build_runner_access(
-             params["runner_access_mode"],
-             List.wrap(params["scope"]),
-             access_allowlist(socket),
-             Map.get(params, "pack_access_mode", "all"),
-             List.wrap(params["pack_scope"])
-           ) do
-        {:ok, access} ->
-          case Accounts.update_membership_runner_access(
-                 membership,
-                 access,
-                 socket.assigns.current_subject
-               ) do
-            {:ok, _membership} -> {:ok, "Runner access updated."}
-            {:error, reason} -> {:error, error_message(reason)}
-          end
+    access =
+      Accounts.build_runner_access(
+        params["runner_access_mode"],
+        List.wrap(params["scope"]),
+        access_allowlist(socket),
+        Map.get(params, "pack_access_mode", "all"),
+        List.wrap(params["pack_scope"])
+      )
 
-        {:error, :invalid_pack_access} ->
-          {:error, @pack_scope_required}
-
-        {:error, :invalid_runner_access} ->
-          {:error, @runner_scope_required}
-      end
-    end)
-    |> tap_clear_scope_edit()
+    save_built_access(socket, id, access)
   end
 
   # Keeps @edit_form current with what's typed, so a rejected save re-renders the
@@ -575,6 +575,37 @@ defmodule EmisarWeb.TeamLive do
     do: {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
 
   defp tap_clear_edit(other), do: other
+
+  defp save_built_access(socket, id, {:ok, access}) do
+    with_membership(socket, id, fn membership ->
+      case Accounts.update_membership_runner_access(
+             membership,
+             access,
+             socket.assigns.current_subject
+           ) do
+        {:ok, _membership} -> {:ok, "Access updated."}
+        {:error, reason} -> {:error, error_message(reason)}
+      end
+    end)
+    |> tap_clear_scope_edit()
+  end
+
+  defp save_built_access(socket, id, {:error, :invalid_pack_access}),
+    do: reject_scope_save(socket, id, :scope_pack_error, @pack_scope_required)
+
+  defp save_built_access(socket, id, {:error, :invalid_runner_access}),
+    do: reject_scope_save(socket, id, :scope_error, @runner_scope_required)
+
+  # An empty selection is fixable by ticking a box, so it belongs AT the box — a
+  # flash at the top of the page puts the message nowhere near the control, and
+  # the auto-dismiss then eats it. Inline only for the editor actually on screen
+  # though: a submission naming another member has no control to point at, and
+  # the open row's picker would blame the wrong person.
+  defp reject_scope_save(%{assigns: %{scope_editing_id: id}} = socket, id, key, message),
+    do: {:noreply, assign(socket, key, message)}
+
+  defp reject_scope_save(socket, _id, _key, message),
+    do: {:noreply, put_flash(socket, :error, message)}
 
   # Repetitive plumbing: look up the membership, run `fun`, flash + reload.
   defp with_membership(socket, id, fun) do
@@ -1710,6 +1741,7 @@ defmodule EmisarWeb.TeamLive do
                         mode_value={@scope_pack_mode}
                         scope_name="pack_scope[]"
                         selected={@scope_pack_draft}
+                        validation_error={@scope_pack_error}
                       />
 
                       <div class="flex items-center gap-3">

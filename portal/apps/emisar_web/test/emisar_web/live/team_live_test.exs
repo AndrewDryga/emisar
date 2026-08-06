@@ -644,6 +644,68 @@ defmodule EmisarWeb.TeamLiveTest do
                }
     end
 
+    test "an emptied pack selection is named at the picker, not in a flash", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackErrOrg"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      email = "packerr-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: m}} =
+        Emisar.Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
+          subject
+        )
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r1", group: "dba")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
+      form = "form[phx-submit='save_scopes']"
+
+      # Revealing an empty pack picker accuses nobody.
+      revealed =
+        render_change(lv, "scope_changed", %{
+          "runner_access_mode" => "all",
+          "pack_access_mode" => "restricted"
+        })
+
+      refute revealed =~ "Choose at least one pack"
+
+      render_change(lv, "scope_changed", %{
+        "runner_access_mode" => "all",
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      })
+
+      assert has_element?(lv, "#{form} input[value='pack:postgres']:checked")
+
+      # Clearing a selection you had IS worth naming, at the control.
+      cleared =
+        render_change(lv, "scope_changed", %{
+          "runner_access_mode" => "all",
+          "pack_access_mode" => "restricted"
+        })
+
+      assert cleared =~ "Choose at least one pack"
+
+      # Saving it anyway keeps the message at the control and the editor open,
+      # rather than throwing it to the top of a page that scrolled away.
+      saved =
+        render_submit(lv, "save_scopes", %{
+          "membership_id" => m.id,
+          "runner_access_mode" => "all",
+          "pack_access_mode" => "restricted"
+        })
+
+      assert saved =~ "Choose at least one pack"
+      assert has_element?(lv, form)
+    end
+
     test "the scope editor narrows the same grant to selected packs", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackScopeOrg"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
