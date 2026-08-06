@@ -75,6 +75,15 @@ ARG EMISAR_DEV_ROUTES=""
 ENV EMISAR_DEV_ROUTES=${EMISAR_DEV_ROUTES}
 
 # Place install.sh / install-mcp.sh where InstallController +
+# These must stay ABOVE `mix assets.deploy`, however much they look like a
+# compile-only input. The install controllers read them in their MODULE BODY
+# (install_controller.ex:22), and every mix task compiles the project first — so
+# assets.deploy fails with `could not read file "/install.sh"` if they are not
+# here yet. Moving them down to sit beside `mix compile` breaks the image build,
+# and the portal gate does not catch it because the gate never builds the image.
+COPY install.sh /install.sh
+COPY install-mcp.sh /install-mcp.sh
+
 # Application configuration is a compile input, not a dependency input.
 RUN mkdir -p config
 COPY portal/config/config.exs portal/config/${MIX_ENV}.exs config/
@@ -86,15 +95,6 @@ COPY portal/apps apps
 
 # Build assets (esbuild + tailwind)
 RUN mix assets.deploy
-
-# The installers are read at COMPILE time by the install controllers'
-# @external_resource (InstallMcpController's `Path.expand` resolves six levels up
-# from its source dir => container root), and by nothing before that. They sat
-# above assets.deploy, so every installer edit rebuilt esbuild and tailwind for
-# no reason — nine of the last two hundred commits did exactly that, on the
-# release path. Inputs enter at their narrowest layer.
-COPY install.sh /install.sh
-COPY install-mcp.sh /install-mcp.sh
 
 # Compile + release
 RUN mix compile

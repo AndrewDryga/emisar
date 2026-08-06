@@ -45,9 +45,24 @@ func (a *App) capture(ctx context.Context, args []string) error {
 			BaseURL: workspace.PortalURL, Email: os.Getenv("EMAIL"), Slug: os.Getenv("ACCOUNT_SLUG"), Out: consoleOut, DesktopWide: width,
 		})
 	case "docs":
-		port, _ := portFromURL(workspace.PortalURL)
+		// PORTAL_URL retargets the capture, defaulting to the live-reload dev
+		// server that suits editing a page and re-shooting it. The fleet shots
+		// need the packaged stack instead: connection state is Presence, so a
+		// runner only appears online once a container adopts it, and the only
+		// containers that do — runner-1/2/3 and runner-signed — talk to the
+		// compose portal. Captured against dev, /docs/runners could only ever
+		// show a dead fleet, which is how its screenshot came to contradict its
+		// own caption.
+		//
+		//	COMPOSE_PROFILES=test ./run smoke
+		//	PORTAL_URL=http://localhost:4010 ./run capture docs runner-fleet
+		base := workspace.PortalURL
+		if override := os.Getenv("PORTAL_URL"); override != "" {
+			base = override
+		}
+		port, _ := portFromURL(base)
 		return devbrowser.CaptureDocs(ctx, manager, devbrowser.DocsConfig{
-			BaseURL:     workspace.PortalURL,
+			BaseURL:     base,
 			KeycloakURL: workspace.KeycloakURL,
 			Email:       os.Getenv("EMAIL"),
 			Temp:        filepath.Join(a.cacheRoot(), fmt.Sprintf("docshots-%d", port)),
