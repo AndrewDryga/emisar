@@ -309,7 +309,12 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 
 	state := c.opts.StateBuilder.Build()
 	if err := validateRunnerStateSize(state); err != nil {
-		return true, err
+		// Local, deterministic, and unchanged by retrying: the state we built is
+		// too large to advertise. Report it as NOT connected so the caller keeps
+		// backing off — reporting a successful dial here reset the backoff on
+		// every pass and turned a permanent condition (enough installed packs to
+		// exceed the cap) into a 1 Hz reconnect storm against the portal.
+		return false, err
 	}
 	if err := conn.Send(sessionCtx, state); err != nil {
 		return true, fmt.Errorf("send state: %w", err)
