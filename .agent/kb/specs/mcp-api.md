@@ -1327,7 +1327,7 @@ after the last complete run returned, without truncating or skipping an item.
 
 `own` means operations created by the current durable credential lineage,
 including rotated successor keys. `account` means all account runs currently
-visible to the caller and requires the account-history permission; it never
+visible to the caller; it requires the same run-read access as `own` and never
 bypasses the caller's current runner scope.
 
 Every run summary carries `operation_id`, exact `action_id` and `pack_ref`,

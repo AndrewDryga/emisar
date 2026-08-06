@@ -192,9 +192,11 @@ The runner-side guarantees above pair with the control plane's own model:
   replayable secrets.
 - Policy is default-deny: no policy row, no matching tier default, no
   override → the dispatch is refused.
-- MCP access is scoped (`actions:read`, `actions:execute`,
-  `audit:read`) over API keys or OAuth (PKCE S256 only), and per-user
-  runner ACLs narrow which hosts an operator or key can touch at all.
+- An MCP credential is an `:mcp`-kind API key or an OAuth token (PKCE
+  S256 only). It carries no per-key authorization scope of its own: what
+  it may do is decided by the account's policy, the approval gate, and
+  the runner ACL of the operator who minted it, which narrows the hosts
+  it can touch at all.
 - Operator sign-in supports TOTP MFA with one-shot hashed recovery
   codes; approvals and credential lifecycles are all audited.
 
