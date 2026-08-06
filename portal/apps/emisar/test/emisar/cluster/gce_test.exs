@@ -64,6 +64,29 @@ defmodule Emisar.Cluster.GCETest do
       GenServer.stop(pid)
     end
 
+    test "re-offers a discovered peer that is not in the cluster on every poll" do
+      test_pid = self()
+
+      state = %State{
+        topology: :test,
+        connect: {__MODULE__, :record_connect, [test_pid]},
+        disconnect: {__MODULE__, :record_disconnect, [test_pid]},
+        list_nodes: {__MODULE__, :list_nodes, []},
+        config: [discover_fn: fn _ -> {:ok, [instance("10.0.0.1")]} end, polling_interval: 10]
+      }
+
+      {:ok, pid} = GCE.start_link([state])
+
+      # `list_nodes` stays empty, so the peer is discovered but never joins the
+      # cluster — each poll has to offer it again. Connecting only the newly
+      # discovered delta made a dropped link permanent: the peer stayed in
+      # `known`, so no later poll ever retried it.
+      assert_receive {:connect, :"emisar@10.0.0.1"}, @connect_timeout
+      assert_receive {:connect, :"emisar@10.0.0.1"}, @connect_timeout
+
+      GenServer.stop(pid)
+    end
+
     test "survives a discovery failure without connecting or crashing" do
       test_pid = self()
 

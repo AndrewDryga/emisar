@@ -81,7 +81,6 @@ defmodule Emisar.Cluster.GCE do
 
   defp reconcile(%State{topology: topology, meta: known} = state, discovered) do
     removed = MapSet.difference(known, discovered)
-    added = MapSet.difference(discovered, known)
 
     known =
       case Cluster.Strategy.disconnect_nodes(
@@ -99,12 +98,18 @@ defmodule Emisar.Cluster.GCE do
           Enum.reduce(bad_nodes, discovered, fn {node, _}, acc -> MapSet.put(acc, node) end)
       end
 
+    # Every discovered peer, not just the newly-discovered ones: `connect_nodes/4`
+    # already skips whatever is in `Node.list()`, so re-offering the full set each
+    # poll is what makes a dropped connection heal. Passing only the delta made
+    # `known` a stale shadow of the real cluster — a peer that stayed RUNNING but
+    # lost its distribution link was never retried, so Presence silently split and
+    # dispatch answered `target_contract_changed` on whichever node had lost it.
     known =
       case Cluster.Strategy.connect_nodes(
              topology,
              state.connect,
              state.list_nodes,
-             MapSet.to_list(added)
+             MapSet.to_list(known)
            ) do
         :ok ->
           known
