@@ -200,12 +200,19 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     # reason_text is the runner's terminal reason — a varchar(255) column, so it
     # keeps the DB string cap. Only the dispatch justification `reason` (now a
     # text column) carries the raised @max_reason_length.
-    |> validate_length(:reason_text, max: @max_db_string_length)
+    |> validate_length(:reason_text, max: @max_db_string_length, count: :codepoints)
     |> validate_length(:error_message, max: @max_runner_text_length)
     |> validate_change(:executed_command, &validate_executed_command/2)
-    |> validate_length(:emitted_stdout_sha256, max: @max_db_string_length)
-    |> validate_length(:emitted_stderr_sha256, max: @max_db_string_length)
-    |> validate_length(:event_id, max: @max_db_string_length)
+    # count: :codepoints, because varchar(255) counts CODEPOINTS and Ecto's
+    # validate_length defaults to GRAPHEMES. These three come straight off the
+    # runner's result payload, so 255 multi-codepoint graphemes passed validation
+    # and then raised Postgrex 22001 on insert — a raise, not a changeset error,
+    # so it never reached the socket's {:error, _} branch. The socket died, the
+    # result stayed unacked, and the runner's dedup ring replayed it on every
+    # reconnect: a permanent loop from one crafted result.
+    |> validate_length(:emitted_stdout_sha256, max: @max_db_string_length, count: :codepoints)
+    |> validate_length(:emitted_stderr_sha256, max: @max_db_string_length, count: :codepoints)
+    |> validate_length(:event_id, max: @max_db_string_length, count: :codepoints)
     |> validate_structured_output()
     |> validate_number(:exit_code,
       greater_than_or_equal_to: @min_db_integer,
