@@ -1407,12 +1407,22 @@ defmodule Emisar.ApiKeys do
   defp ensure_approver_still_valid(%DeviceGrant{} = grant, repo) do
     grant = repo.preload(grant, [:account, :approved_by_membership])
 
-    if is_nil(grant.account) or is_nil(grant.approved_by_membership) do
+    # Existence is not standing. The assoc's `where: [deleted_at: nil]` catches a
+    # REMOVED approver, but suspension sets `disabled_at` — so an operator
+    # offboarded inside the grant's 15-minute window still minted live emk- keys
+    # on their own seat, moments after suspend_membership's own after_commit had
+    # revoked every key they held. SCIM deprovisioning writes the same column, so
+    # this covered automated offboarding too.
+    if is_nil(grant.account) or not approver_in_good_standing?(grant.approved_by_membership) do
       {:error, :access_denied}
     else
       {:ok, grant}
     end
   end
+
+  defp approver_in_good_standing?(nil), do: false
+  defp approver_in_good_standing?(%Accounts.Membership{disabled_at: nil}), do: true
+  defp approver_in_good_standing?(%Accounts.Membership{}), do: false
 
   # Deliberate per-row inserts: each key mints its own secret via a
   # `mint_quick` changeset (auto-generated, invisible until first use — the
