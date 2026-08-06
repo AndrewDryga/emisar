@@ -714,7 +714,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(
                lv,
-               ~s|#runbook-stage-0-step-0-wait-controls[class~="lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]"]|
+               ~s|#runbook-stage-0-step-0-wait-controls[class~="lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)]"]|
              )
 
       assert :binary.match(html, ~s(name="draft[stages][0][steps][0][wait][enabled]")) <
@@ -1470,11 +1470,15 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # stage's own marker, an action · target head, then the fact groups.
       assert has_element?(lv, ~s|#runbook-stage-0 ol [data-steps-marker="parallel"]|)
       assert has_element?(lv, summary, "linux.uptime")
-      assert has_element?(lv, summary, "DEFAULT · all")
+      assert has_element?(lv, summary, "Group DEFAULT (every runner)")
       assert has_element?(lv, summary, "uptime")
-      assert has_element?(lv, details, "From run-time input config_path")
-      assert has_element?(lv, details, "Structured output · JSON Pointer · /healthy")
-      assert has_element?(lv, details, "equals true")
+      assert has_element?(lv, details, "From run-time input")
+      assert has_element?(lv, details, "in structured output")
+
+      # An operator-supplied value reads like the name it belongs to.
+      assert has_element?(lv, "#{details} span[class*='font-mono']", "config_path")
+      assert has_element?(lv, "#{details} span[class*='font-mono']", "/healthy")
+      assert has_element?(lv, "#{details} span[class*='font-mono']", "true")
       assert has_element?(lv, details, "Observe again every 10s · timeout 120s")
 
       # Every value sits beside its own name, in one column per step.

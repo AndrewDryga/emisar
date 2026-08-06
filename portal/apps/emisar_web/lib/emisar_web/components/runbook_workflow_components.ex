@@ -626,15 +626,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     refs = assigns.step["target_refs"] || []
     selection = assigns.step["target_selection"] || "all"
 
-    unavailable =
-      Enum.count(refs, &(not RunbookEditorCatalog.target_available?(assigns.catalog, &1)))
-
-    assigns =
-      assigns
-      # The unavailable count renders beside the label so it can carry the same
-      # rose the expanded target control uses.
-      |> assign(:targets, target_selection_title(assigns.catalog, refs, selection))
-      |> assign(:unavailable, unavailable)
+    assigns = assign(assigns, :targets, summary_targets(assigns.catalog, refs, selection))
 
     ~H"""
     <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-summary"} class="min-w-0">
@@ -652,10 +644,17 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           {@issue_count} {if @issue_count == 1, do: "issue", else: "issues"}
         </span>
       </div>
-      <p class="mt-1 text-xs text-zinc-400">
+      <%!-- Flex gaps, not markup whitespace: HEEx turns the newline between two
+            spans into a rendered space, which stacked with the separator's own
+            space into a visible gutter. --%>
+      <p class="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-xs">
         <span class="text-zinc-500">→</span>
-        <span class="font-medium text-zinc-300">{@targets}</span>
-        <span :if={@unavailable > 0} class="text-rose-300">· {@unavailable} unavailable</span>
+        <span
+          :for={target <- @targets}
+          class={if target.available?, do: "text-zinc-300", else: "text-rose-300"}
+        >
+          {target.label}
+        </span>
         <span :if={@step["id"] != ""} class="font-mono text-zinc-500">· {@step["id"]}</span>
       </p>
     </div>
@@ -717,7 +716,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     """
   end
 
-  attr :rows, :list, required: true
+  attr :rows, :list, required: true, doc: "{name, [text: …, code: …]} pairs"
 
   # A second `max-content` column so several arguments line up with each other,
   # not just with the group name.
@@ -726,12 +725,27 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     <div class="grid grid-cols-[max-content,minmax(0,1fr)] gap-x-2 gap-y-1">
       <%!-- `contents` keeps each pair's two spans as direct grid children, so
             the columns span every row. --%>
-      <div :for={{name, value} <- @rows} class="contents">
+      <div :for={{name, segments} <- @rows} class="contents">
         <span class="font-mono text-zinc-300">{name}</span>
-        <span class="min-w-0 break-words text-zinc-400">{value}</span>
+        <span class="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+          <.fact_segment :for={{kind, value} <- segments} kind={kind} value={value} />
+        </span>
       </div>
     </div>
     """
+  end
+
+  attr :kind, :atom, required: true
+  attr :value, :string, required: true
+
+  # One tone rule across every fact: a value the operator typed or chose reads
+  # like the name it belongs to; the words joining them recede.
+  defp fact_segment(%{kind: :code} = assigns) do
+    ~H|<span class="min-w-0 break-all font-mono text-zinc-300">{@value}</span>|
+  end
+
+  defp fact_segment(assigns) do
+    ~H|<span class="text-zinc-400">{@value}</span>|
   end
 
   defp step_toggle_label(true, true), do: "Show"
@@ -750,6 +764,38 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp step_issue?(_path, _base), do: false
 
+  # A group's target refs read as phrases an operator would say, each carrying
+  # whether it still resolves — a per-ref fact a trailing count cannot give.
+  defp summary_targets(catalog, [], _selection),
+    do: [%{label: empty_target_selection_label(catalog), available?: true}]
+
+  defp summary_targets(catalog, refs, selection) do
+    Enum.map(refs, fn ref ->
+      available? = RunbookEditorCatalog.target_available?(catalog, ref)
+
+      %{label: target_phrase(catalog, ref, selection, available?), available?: available?}
+    end)
+  end
+
+  defp target_phrase(catalog, ref, selection, available?) do
+    {noun, qualifiers} = target_noun(catalog, ref, selection)
+    qualifiers = if available?, do: qualifiers, else: qualifiers ++ ["unavailable"]
+
+    case qualifiers do
+      [] -> noun
+      qualifiers -> "#{noun} (#{Enum.join(qualifiers, ", ")})"
+    end
+  end
+
+  defp target_noun(_catalog, "group:" <> group, "random_one"),
+    do: {"Group #{String.upcase(group)}", ["one random runner"]}
+
+  defp target_noun(_catalog, "group:" <> group, _selection),
+    do: {"Group #{String.upcase(group)}", ["every runner"]}
+
+  defp target_noun(catalog, ref, selection),
+    do: {"Runner #{RunbookEditorCatalog.target_label(catalog, ref, selection)}", []}
+
   defp summary_argument_rows(step) do
     step["args"]
     |> Enum.reject(&(&1["source"] == "omit"))
@@ -760,36 +806,42 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp summary_argument_note(_arguments), do: "None bound"
 
   defp summary_argument_value(%{"source" => "input", "ref" => ref}),
-    do: "From run-time input #{ref}"
+    do: [text: "From run-time input", code: ref]
 
-  defp summary_argument_value(%{"source" => "output", "ref" => ref}), do: "From #{ref}"
-  defp summary_argument_value(%{"value" => ""}), do: "No value"
-  defp summary_argument_value(argument), do: argument["value"]
+  defp summary_argument_value(%{"source" => "output", "ref" => ref}),
+    do: [text: "From step output", code: ref]
+
+  defp summary_argument_value(%{"value" => ""}), do: [text: "No value"]
+  defp summary_argument_value(argument), do: [code: argument["value"]]
 
   defp summary_output_rows(step) do
-    Enum.map(step["outputs"], &{&1["id"], summary_output_description(&1)})
+    Enum.map(step["outputs"], &{&1["id"], summary_output_value(&1)})
   end
 
-  defp summary_output_description(output) do
-    [
-      output_source_label(output["source"]),
-      extractor_label(output["extract_type"]),
-      output["expression"],
-      output["extract_type"] == "regex" && "capture #{output["capture"]}",
-      output["sensitive"] == "true" && "Sensitive"
-    ]
-    |> Enum.filter(&(is_binary(&1) and &1 != ""))
-    |> Enum.join(" · ")
+  defp summary_output_value(output) do
+    [text: extractor_label(output["extract_type"]), code: output["expression"]] ++
+      output_capture(output) ++
+      [text: "in #{output_source_label(output["source"])}"] ++
+      output_sensitivity(output)
   end
+
+  defp output_capture(%{"extract_type" => "regex", "capture" => capture})
+       when capture not in ["", "0"],
+       do: [text: "capture #{capture}"]
+
+  defp output_capture(_output), do: []
+
+  defp output_sensitivity(%{"sensitive" => "true"}), do: [text: "· sensitive"]
+  defp output_sensitivity(_output), do: []
 
   # The output names the row, so its assertion reads as one phrase — the run
   # surface's operator wording, then the value its verdict will judge.
   defp summary_condition_rows(step) do
-    Enum.map(step["success"], &{&1["output"], condition_assertion(&1)})
+    Enum.map(step["success"], &{&1["output"], summary_condition_value(&1)})
   end
 
-  defp condition_assertion(condition),
-    do: "#{String.replace(condition["operator"], "_", " ")} #{condition["value"]}"
+  defp summary_condition_value(condition),
+    do: [text: String.replace(condition["operator"], "_", " "), code: condition["value"]]
 
   defp summary_wait_note(%{"enabled" => "true"} = wait) do
     "Observe again every #{wait["interval_seconds"]}s · timeout #{wait["timeout_seconds"]}s · " <>
@@ -798,7 +850,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp summary_wait_note(_wait), do: nil
 
-  defp output_source_label("structured_output"), do: "Structured output"
+  # Reads mid-phrase ("in structured output"), so it stays lower case.
+  defp output_source_label("structured_output"), do: "structured output"
   defp output_source_label(source), do: source
 
   defp extractor_label("json_pointer"), do: "JSON Pointer"
@@ -1136,8 +1189,6 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
     if unavailable > 0, do: "#{summary} · #{unavailable} unavailable", else: summary
   end
-
-  defp target_selection_title(catalog, refs, selection, unavailable \\ 0)
 
   defp target_selection_title(catalog, [], _selection, _unavailable),
     do: empty_target_selection_label(catalog)
@@ -1621,10 +1672,13 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       />
       <%!-- Hidden, not removed: a closed panel that dropped its inputs let the
             next change anywhere in the form reset an authored wait policy. --%>
+      <%!-- Fractions, not rem floors: four hard minimums needed 756px inside a
+            step column that measures 717px at 1440, so `Maximum observations`
+            was clipped off the right edge. --%>
       <div
         id={"runbook-stage-#{@stage_index}-step-#{@step_index}-wait-controls"}
         class={[
-          "mt-4 grid gap-3 lg:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(11rem,1fr)]",
+          "mt-4 grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)]",
           not MapSet.member?(@open_panels, @panel_key) && "hidden"
         ]}
       >
