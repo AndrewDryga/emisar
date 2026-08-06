@@ -1634,14 +1634,17 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
 
       # Collapsed, the step is a list row: the list's own divider separates it,
-      # and it carries no enclosure of its own.
-      refute has_element?(lv, ~s|#runbook-stage-0-step-0[class*="border-dashed"]|)
+      # it keeps the rail marker, and it carries no enclosure of its own.
+      refute has_element?(lv, ~s|li[class*="border-dashed"] #runbook-stage-0-step-0|)
+      assert has_element?(lv, "#runbook-stage-0 li [data-steps-marker]")
 
       render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
 
-      # Expanded, it is a form several screens tall, so it takes the dashed
-      # enclosure that says where it ends and the next step begins.
-      assert has_element?(lv, ~s|#runbook-stage-0-step-0[class*="border-dashed"]|)
+      # Expanded, it is a form several screens tall, so the ROW takes the dashed
+      # enclosure that says where it ends and the next step begins — and drops
+      # the rail, which would only indent the fields inside the panel.
+      assert has_element?(lv, ~s|li[class*="border-dashed"] #runbook-stage-0-step-0|)
+      refute has_element?(lv, ~s|li[class*="border-dashed"] [data-steps-marker]|)
 
       refute has_element?(lv, summary)
       refute has_element?(lv, details)

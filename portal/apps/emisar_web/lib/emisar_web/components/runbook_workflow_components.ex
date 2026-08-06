@@ -391,7 +391,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         marker={if @stage["mode"] == "parallel", do: :parallel, else: :number}
         class="mt-6"
       >
-        <:step :for={{step, step_index} <- Enum.with_index(@stage["steps"])}>
+        <:step
+          :for={{step, step_index} <- Enum.with_index(@stage["steps"])}
+          boxed={step["collapsed"] != "true"}
+        >
           <.step_editor
             step={step}
             step_index={step_index}
@@ -473,14 +476,13 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
     ~H"""
     <%!-- Expanded, a step is a form several screens tall, and the list's hairline
-          is far too quiet to say where one ends and the next begins — so it takes
-          the dashed enclosure the policies editor already uses for exactly that.
-          Collapsed, it is a one-line summary that reads as a list row on its own,
-          and a box per row would be chrome the content never asked for. --%>
-    <section
-      id={"runbook-stage-#{@stage_index}-step-#{@step_index}"}
-      class={[not @collapsed? && "rounded-xl border border-dashed border-zinc-800 p-4 sm:p-5"]}
-    >
+          is far too quiet to say where one ends and the next begins — so the ROW
+          takes the dashed enclosure the policies editor already uses for exactly
+          that (`<:step boxed>`), which also hands the fields back the rail's
+          width. Collapsed, it is a one-line summary that reads as a list row on
+          its own, and a box per row would be chrome the content never asked
+          for. --%>
+    <section id={"runbook-stage-#{@stage_index}-step-#{@step_index}"} class="min-w-0 flex-1">
       <%!-- The run surface's item head: identity left, controls right — here the
             identity is what the step WILL run, so it leads only while collapsed;
             expanded, the fields below own every one of those facts. --%>

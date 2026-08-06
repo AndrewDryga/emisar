@@ -3052,13 +3052,23 @@ defmodule EmisarWeb.CoreComponents do
   attr :variant, :atom, default: :guide, values: [:guide, :plan]
   attr :marker, :atom, default: :number, values: [:number, :parallel]
   attr :class, :string, default: nil
-  slot :step, required: true
+
+  slot :step, required: true do
+    attr :boxed, :boolean,
+      doc:
+        "render THIS row as a self-contained panel — it drops the rail, because a panel already says where the row starts and the rail would only indent its contents"
+  end
 
   def steps(assigns) do
     ~H"""
     <ol class={[steps_list_class(@variant), @class]}>
-      <li :for={{step, idx} <- Enum.with_index(@step)} class={steps_row_class(@variant)}>
-        <span class={steps_marker_class(@variant)} data-steps-marker={@marker}>
+      <li :for={{step, idx} <- Enum.with_index(@step)} class={steps_row_class(@variant, step[:boxed])}>
+        <%!-- `!`, not `not`: a slot that never set the attr reads back nil. --%>
+        <span
+          :if={!step[:boxed]}
+          class={steps_marker_class(@variant)}
+          data-steps-marker={@marker}
+        >
           <.icon
             :if={@marker == :parallel}
             name="hero-arrows-right-left"
@@ -3077,12 +3087,17 @@ defmodule EmisarWeb.CoreComponents do
   defp steps_list_class(:guide), do: "space-y-3 text-sm leading-relaxed text-zinc-400"
   defp steps_list_class(:plan), do: "divide-y divide-zinc-800/70"
 
+  # A boxed row IS the panel, so the enclosure sits on the row itself — the
+  # marker inside it would only be an indent the panel already provides.
+  defp steps_row_class(_variant, true),
+    do: "my-3 flex items-start rounded-xl border border-dashed border-zinc-800 p-4 sm:p-5"
+
   # Baseline-aligned: the guide marker is TYPE (a quiet "1."), not a widget,
   # so it sits on the text baseline like any numeral.
-  defp steps_row_class(:guide), do: "flex items-baseline gap-2.5"
+  defp steps_row_class(:guide, _boxed), do: "flex items-baseline gap-2.5"
   # No horizontal padding — the plan list sits on the canvas (runbook run
   # page), not inside a panel gutter.
-  defp steps_row_class(:plan), do: "flex items-start gap-3 py-3"
+  defp steps_row_class(:plan, _boxed), do: "flex items-start gap-3 py-3"
 
   # A bare ordered-list numeral — a filled disc per row read as chrome and
   # outweighed the instructions it was numbering.
