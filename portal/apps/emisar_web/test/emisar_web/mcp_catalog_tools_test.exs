@@ -254,8 +254,24 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute encoded =~ "hostile"
     assert Enum.any?(hd(all["packs"])["issues"], &(&1["code"] == "descriptor_mismatch"))
 
+    # find_actions now answers the way get_action does for the same condition: the
+    # action IS deployed and trusted, and nothing in scope can execute it.
+    # Returning ok with an empty candidate list made the model report the
+    # capability as nonexistent — the server instructions tell it to do exactly
+    # that on an empty discovery — when the real answer is that a runner needs
+    # attention. The continuation carries pack_ref because list_runners requires
+    # it once an action is named.
     unavailable = call(conn, "find_actions", %{"action_id" => "demo.action7"})
-    assert unavailable["candidates"] == []
+    assert unavailable["error"]["code"] == "action_unavailable"
+    assert unavailable["error"]["next"]["tool"] == "list_runners"
+    assert unavailable["error"]["next"]["arguments"]["pack_ref"] == pack_ref
+    assert unavailable["error"]["next"]["arguments"]["action_id"] == "demo.action7"
+
+    # The boundary: an action we do not ship at all is still an ordinary empty
+    # search, not an unavailability claim about something that exists.
+    absent = call(conn, "find_actions", %{"action_id" => "demo.nosuchaction"})
+    assert absent["candidates"] == []
+    assert absent["ok"] == true
 
     unavailable_detail =
       call(conn, "get_action", %{"action_id" => "demo.action7", "pack_ref" => pack_ref})

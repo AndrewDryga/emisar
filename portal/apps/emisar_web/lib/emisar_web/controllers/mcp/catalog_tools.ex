@@ -139,15 +139,14 @@ defmodule EmisarWeb.MCP.CatalogTools do
       |> Enum.reject(&is_nil/1)
       |> Enum.sort_by(&{-&1.score, &1.action["action_id"], &1.pack_ref})
 
-    paginate(
-      "find_actions",
-      candidates,
-      &search_key/1,
-      scope,
-      args,
-      :candidates,
-      &candidate_result/1
-    )
+    if candidates == [] and exact_action_filter?(args) do
+      case deployed_pack_ref(snapshot, args) do
+        nil -> paginate_candidates(candidates, scope, args)
+        pack_ref -> unavailable_action_error(args, pack_ref)
+      end
+    else
+      paginate_candidates(candidates, scope, args)
+    end
   end
 
   # An empty `runner_refs` asks for every compatible runner; an explicit list is
@@ -345,6 +344,59 @@ defmodule EmisarWeb.MCP.CatalogTools do
         Map.update!(acc, String.to_existing_atom(runner.status), &(&1 + 1))
       end
     )
+  end
+
+  defp paginate_candidates(candidates, scope, args) do
+    paginate(
+      "find_actions",
+      candidates,
+      &search_key/1,
+      scope,
+      args,
+      :candidates,
+      &candidate_result/1
+    )
+  end
+
+  # An exact action_id filter names ONE action, so an empty result is a claim
+  # about that action rather than a search that found nothing.
+  defp exact_action_filter?(%{action_id: action_id}) when is_binary(action_id), do: true
+  defp exact_action_filter?(_args), do: false
+
+  # The pack that ships this action, matched the way searchable_actions/3 does
+  # but WITHOUT the runner-availability filter — "we ship this and it is trusted;
+  # nothing in scope can run it". nil means the action genuinely is not in the
+  # catalog, which is an ordinary empty search result. Sorted so a hand-off names
+  # the same pack every time when an id appears in more than one.
+  defp deployed_pack_ref(snapshot, args) do
+    snapshot.packs
+    |> Enum.filter(fn pack ->
+      (is_nil(args.pack_id) or pack.pack_id == args.pack_id) and
+        (is_nil(args.pack_ref) or pack.pack_ref == args.pack_ref) and
+        Enum.any?(pack.actions, &(&1["action_id"] == args.action_id))
+    end)
+    |> Enum.map(& &1.pack_ref)
+    |> Enum.sort()
+    |> List.first()
+  end
+
+  # The same answer get_action already gives for the same condition. The
+  # continuation carries pack_ref as well as action_id because list_runners
+  # REQUIRES the pack once an action is named — an action id alone is ambiguous
+  # across packs, and find_actions can be filtered by action_id on its own.
+  defp unavailable_action_error(args, pack_ref) do
+    payload =
+      error(
+        "action_unavailable",
+        "No in-scope connected runner can execute this exact trusted action."
+      )
+
+    next = %{
+      tool: "list_runners",
+      arguments: %{action_id: args.action_id, pack_ref: pack_ref, limit: 15}
+    }
+
+    {:error, put_in(payload, [:error, :next], next)}
   end
 
   defp searchable_actions(pack, runners, args) do
