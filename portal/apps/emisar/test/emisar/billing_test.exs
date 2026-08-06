@@ -148,11 +148,15 @@ defmodule Emisar.BillingTest do
       assert Billing.account_audit_retention_days(enterprise.id) == 365
     end
 
-    test "falls back to the free window for an unknown/renamed plan" do
+    # Read-tolerant degradation is right for DISPLAY, but this number also drives
+    # two sweeps that Repo.delete_all run history — so an unrecognized slug fails
+    # OPEN to the longest window any plan defines. Collapsing to the free floor
+    # meant one renamed Paddle price pruned a paying account to 7 days.
+    test "retains for the longest window on an unknown/renamed plan" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "legacy-unlisted-plan")
 
-      assert Billing.account_audit_retention_days(account.id) == 7
+      assert Billing.account_audit_retention_days(account.id) == 365
     end
 
     test "an audit_retention_days entitlement overrides the plan default" do

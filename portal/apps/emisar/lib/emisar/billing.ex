@@ -65,6 +65,14 @@ defmodule Emisar.Billing do
     }
   }
 
+  # The longest retention any plan defines. An unrecognized plan slug retains for
+  # this long rather than the free floor, because the number drives destructive
+  # sweeps — see plan_retention_days/1.
+  @max_plan_retention_days @plans
+                           |> Map.values()
+                           |> Enum.map(& &1.audit_retention_days)
+                           |> Enum.max()
+
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
   end
@@ -126,12 +134,31 @@ defmodule Emisar.Billing do
 
   # Retention must stay a positive integer — an "unlimited" or 0-day
   # entitlement falls back rather than disabling (or instant-sweeping) audit.
-  defp entitled_retention_days(%{entitlements: entitlements, plan_def: plan_def}) do
+  defp entitled_retention_days(%{entitlements: entitlements} = posture) do
     case Entitlements.limit(entitlements, "audit_retention_days") do
       days when is_integer(days) and days > 0 -> days
-      _ -> plan_def.audit_retention_days
+      _ -> plan_retention_days(posture)
     end
   end
+
+  # Read-tolerant degradation is right for DISPLAY, but this number also drives
+  # two sweeps that Repo.delete_all run history. Collapsing an unrecognized plan
+  # slug to the free floor meant one renamed Paddle price — or a mistyped
+  # entitlement key, which Entitlements.parse drops silently — would prune a
+  # paying account's runs to 7 days on the next daily tick, irreversibly.
+  #
+  # So an unknown plan fails OPEN to the longest window we define: keeping data
+  # too long is a correctable mistake, deleting it is not. A KNOWN plan still
+  # uses its own retention, which is what a deliberate downgrade should do.
+  defp plan_retention_days(%{known_plan: nil, plan_name: plan_name}) do
+    Logger.warning(
+      "billing: unknown plan #{inspect(plan_name)}; retaining for the longest window"
+    )
+
+    @max_plan_retention_days
+  end
+
+  defp plan_retention_days(%{plan_def: plan_def}), do: plan_def.audit_retention_days
 
   defp entitled_feature(%{entitlements: entitlements}, key, default) do
     case Entitlements.feature(entitlements, key) do

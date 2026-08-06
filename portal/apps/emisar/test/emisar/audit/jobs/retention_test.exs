@@ -166,13 +166,16 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
     assert replacement.payload["count"] == 1
   end
 
-  # an account whose subscription carries an unknown /
-  # renamed plan name resolves to the "free" window rather than crashing, so a
-  # legacy plan string can't wedge the nightly prune.
-  test "falls back to the free window when the plan is unresolvable" do
+  # An unknown / renamed plan name must not crash the nightly prune — and must
+  # not SHORTEN it either. This number drives a Repo.delete_all, so collapsing an
+  # unrecognized slug to the 7-day free floor meant one renamed Paddle price
+  # pruned a paying account's history on the next tick, irreversibly. It fails
+  # open to the longest window we define instead: keeping data too long is
+  # correctable, deleting it is not.
+  test "retains for the longest window when the plan is unresolvable" do
     account = Fixtures.Accounts.create_account()
     # A subscription with a plan name no @plans entry matches; Billing.plan/1
-    # returns nil for it and the worker falls back to the free (7-day) window.
+    # returns nil for it and the worker fails open to the longest window.
     Fixtures.Accounts.create_subscription(account, "legacy-unlisted-plan")
 
     ten_days_ago = DateTime.add(DateTime.utc_now(), -10 * 86_400, :second)
@@ -182,8 +185,8 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
 
     assert :ok = Retention.execute([])
 
-    # 10 days > the free fallback's 7-day window → pruned.
-    refute Repo.reload(stale)
+    # 10 days is inside the 365-day fail-open window → kept.
+    assert Repo.reload(stale)
   end
 
   # the sweep pages accounts via `Account.Query.all`, not

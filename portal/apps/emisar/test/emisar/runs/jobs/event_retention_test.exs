@@ -100,21 +100,21 @@ defmodule Emisar.Runs.Jobs.EventRetentionTest do
     assert event_ids(account.id) == MapSet.new([kept.id])
   end
 
-  # an account whose subscription carries an unknown /
-  # renamed plan name resolves to the free window rather than crashing, so the
-  # run-event prune (which keys on the SAME plan lookup as audit retention)
-  # degrades gracefully on a legacy plan string.
-  test "falls back to the free window when the plan is unresolvable" do
+  # An unknown / renamed plan name must not crash the prune — and must not
+  # SHORTEN it. This sweep keys on the SAME plan lookup as audit retention and
+  # Repo.delete_all's what it selects, so an unrecognized slug fails open to the
+  # longest window we define rather than collapsing to the 7-day free floor.
+  test "retains for the longest window when the plan is unresolvable" do
     account = Fixtures.Accounts.create_account()
     Fixtures.Accounts.create_subscription(account, "legacy-unlisted-plan")
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     old_run = finished_run(account, runner, @beyond_window_days)
-    add_event(old_run, 1)
+    event = add_event(old_run, 1)
 
     assert :ok = EventRetention.execute([])
 
-    # 30 days > the free fallback's 7-day window → pruned.
-    assert event_ids(account.id) == MapSet.new()
+    # 30 days is inside the 365-day fail-open window → kept.
+    assert event_ids(account.id) == MapSet.new([event.id])
   end
 
   # the sweep pages accounts via `Account.Query.all`, not
