@@ -71,13 +71,31 @@ independently (the chain is per-file: rotation breaks it by design).`,
 						if firstBreak == nil {
 							firstBreak = err
 						}
-					} else {
+					} else if !all {
+						// One explicitly named file that cannot be opened is a
+						// plain command error: the operator gets the reason.
 						return err
+					} else {
+						// A rotated sibling that could not be read at all
+						// (vanished mid-rotation, bad permissions, truncated).
+						// Report it and keep walking: discoverRotated hands back
+						// oldest-first, so returning here skipped every later
+						// file INCLUDING the active log, which is the one that
+						// matters most on a forensic tool.
+						fmt.Fprintf(os.Stderr, "audit: %s: %v\n", p, err)
+						if firstBreak == nil {
+							firstBreak = err
+						}
 					}
 				}
 			}
 			if firstBreak != nil {
-				os.Exit(1)
+				// Return rather than os.Exit so cobra's error path runs — every
+				// deferred cleanup, the same "error:" prefix as every other
+				// command, and a non-zero exit from main either way. os.Exit
+				// here also took the test binary with it, which is why no test
+				// covered a chain break at all.
+				return firstBreak
 			}
 			return nil
 		},

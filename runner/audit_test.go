@@ -135,6 +135,47 @@ func TestAuditVerifyCmd_AllWithNoRotatedSiblings(t *testing.T) {
 	}
 }
 
+// An unreadable ROTATED sibling must not hide the active log. discoverRotated
+// returns oldest-first, so aborting the walk on the first unreadable file
+// skipped every later one — including the active journal, the file an operator
+// running a forensic tool most needs verified.
+func TestAuditVerifyCmd_AllReachesActiveLogPastUnreadableSibling(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the 0000 mode this test relies on to make a file unreadable")
+	}
+	withFlags(t)
+	dir := t.TempDir()
+	packDir := writePack(t, filepath.Join(dir, "packs"), "linux")
+	flagConfig = writeMinimalConfig(t, dir, packDir)
+	active := filepath.Join(dir, "events.jsonl")
+	writeChain(t, active, 3)
+
+	// A rotated sibling that exists but cannot be opened.
+	unreadable := active + ".1"
+	writeChain(t, unreadable, 2)
+	if err := os.Chmod(unreadable, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o600) })
+
+	var execErr error
+	out := captureStdout(t, func() {
+		cmd := auditVerifyCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		cmd.SetArgs([]string{"--all"})
+		execErr = cmd.Execute()
+	})
+
+	// The unreadable sibling is still a failure — the command exits non-zero.
+	if execErr == nil {
+		t.Fatal("an unreadable rotated file must fail the command")
+	}
+	// ...but the active log was reached and verified anyway.
+	if !strings.Contains(out, active) || !strings.Contains(out, "chain intact") {
+		t.Fatalf("the active log must still be verified past a bad sibling:\n%s", out)
+	}
+}
+
 // `audit verify` enforces MaximumNArgs(1): two positional paths is a cobra
 // arg-count error.
 func TestAuditVerifyCmd_MaximumNArgs(t *testing.T) {
