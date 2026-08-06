@@ -282,6 +282,22 @@ resource "google_compute_region_instance_group_manager" "emisar" {
     initial_delay_sec = 240
   }
 
+  # A dry zone must not pin a rollout. Create-before-destroy leaves the surge no
+  # reserved slot to take — its predecessor still holds it — so without this the
+  # group retries the same exhausted zone for hours while every apply fails on
+  # the wait_for_instances timeout. Alternate-zone repair requires update on
+  # repair, and is unsupported on EVEN / ANY_SINGLE_ZONE shapes or a stateful
+  # group, so the BALANCED shape above is load-bearing here. Nothing
+  # redistributes afterwards (instance_redistribution_type is NONE), so a rollout
+  # through a dry zone can leave the fleet lopsided until the next one.
+  instance_lifecycle_policy {
+    force_update_on_repair = "YES"
+
+    on_repair {
+      allow_changing_zone = "YES"
+    }
+  }
+
   # Create healthy replacements before removing old VMs. The per-zone surge may
   # temporarily exceed the configured target; BALANCED placement can use
   # whichever selected zone has capacity.

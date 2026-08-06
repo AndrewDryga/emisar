@@ -62,7 +62,11 @@ is the separate, credentials-gated deploy step.
    Auto-healing uses DB-independent `/healthz`; the load balancer uses DB-aware
    `/readyz`. Never collapse the probes or return to delete-before-create updates.
    A regional MIG's fixed surge must be at least its zone count; keep
-   `max_surge_fixed = length(var.zones)` and `max_unavailable_fixed = 0`. Old and
+   `max_surge_fixed = length(var.zones)` and `max_unavailable_fixed = 0`. A dry
+   zone must not pin a rollout, so the group repairs in an alternate zone —
+   `allow_changing_zone` requires `force_update_on_repair`, and is unsupported on
+   an `EVEN` / `ANY_SINGLE_ZONE` shape or a stateful group; adding stateful
+   configuration or narrowing the shape silently costs that escape. Old and
    new app versions overlap during a rollout, so schema changes must be compatible
    with both until a later release contracts the old shape. Readiness-contract
    replacements use generation-named health checks and backend services with
