@@ -257,7 +257,13 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	if err != nil {
 		return err
 	}
-	if len(scripts) > 0 {
+	// Fail rather than skip. A broken pathspec — a rename, a moved directory —
+	// used to make this phase pass by selecting nothing, which is the shape of a
+	// check that silently stops checking.
+	if len(scripts) == 0 {
+		return fmt.Errorf("no tracked shell scripts matched the lint pathspec")
+	}
+	{
 		if err := a.gatePhase("tooling shell scripts", func() error {
 			if err := a.run(ctx, a.Root, nil, "shellcheck", scripts...); err != nil {
 				return err
@@ -290,7 +296,7 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 // deliberately malformed inputs.
 func (a *App) trackedShellFiles(ctx context.Context) ([]string, error) {
 	data, err := a.output(ctx, a.Root, nil, "git", "ls-files", "-z", "--",
-		".shell", "run", "*.sh",
+		".shell", "run", "*.sh", ".githooks",
 		":(exclude)install.sh", ":(exclude)install-mcp.sh",
 		":(exclude)infra/runtime/*", ":(exclude)packs/*")
 	if err != nil {
@@ -298,7 +304,12 @@ func (a *App) trackedShellFiles(ctx context.Context) ([]string, error) {
 	}
 	var scripts []string
 	for _, path := range nulFields(data) {
-		if path != ".shell" && path != "run" && filepath.Ext(path) != ".sh" {
+		// The git hooks are tracked #!/bin/sh scripts with no extension, so an
+		// extension filter linted none of them — and pre-commit is the entry
+		// point to `./run check staged`, where a syntax error disables the
+		// commit gate quietly.
+		if path != ".shell" && path != "run" &&
+			!strings.HasPrefix(path, ".githooks/") && filepath.Ext(path) != ".sh" {
 			continue
 		}
 		if info, statErr := os.Stat(filepath.Join(a.Root, filepath.FromSlash(path))); statErr == nil && !info.IsDir() {

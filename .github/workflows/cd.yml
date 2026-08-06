@@ -272,6 +272,24 @@ jobs:
             --out dist/packs \
             --previous /tmp/previous.json
 
+      # CI proved build(packs, previous=COMMITTED) == committed. This builds
+      # against the LIVE catalog, so when live history has diverged — a manual
+      # publish, or a run that failed after mutating the registry — the two
+      # differ and we would publish an ungated catalog, then red the deploy on
+      # deployment-plan's own cmp AFTER the public registry was already
+      # overwritten. That ordering has bitten once. Compare before minting
+      # credentials, not after publishing.
+      - name: Refuse a catalog that differs from the tested one
+        run: |
+          set -euo pipefail
+          if ! cmp -s dist/packs/v1/catalog.json portal/apps/emisar/priv/packs/catalog.json; then
+            echo "::error::Built catalog differs from the committed, CI-verified catalog."
+            echo "::error::Live registry history has diverged; reconcile it before publishing."
+            diff <(jq -S . portal/apps/emisar/priv/packs/catalog.json) \
+                 <(jq -S . dist/packs/v1/catalog.json) || true
+            exit 1
+          fi
+
       - name: Refuse a superseded release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

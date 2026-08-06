@@ -250,6 +250,9 @@ func (a *App) setup(ctx context.Context) error {
 	if err := a.checkDevelopmentTools(ctx); err != nil {
 		return err
 	}
+	if err := a.installGitHooks(ctx); err != nil {
+		return err
+	}
 	workspace, env, err := a.up(ctx)
 	if err != nil {
 		return err
@@ -269,6 +272,17 @@ func (a *App) setup(ctx context.Context) error {
 	fmt.Fprintln(a.Out, "development setup ready; run './run seed' once when demo data is needed")
 	a.printURLs(workspace)
 	return nil
+}
+
+// installGitHooks points git at the tracked hooks. Nothing did: core.hooksPath
+// was set by hand in whichever clone happened to have it, and the only mention
+// anywhere in the tree was a comment in prepare-commit-msg CLAIMING the repo
+// pins it. So a fresh clone or a new box ran no staged-migration guard, no
+// staged-format check, and no Coop-Task trailer verification — and that last one
+// has no backstop in CI, which is the whole reason it exists (git drops a
+// malformed trailer silently).
+func (a *App) installGitHooks(ctx context.Context) error {
+	return a.run(ctx, a.Root, nil, "git", "config", "core.hooksPath", ".githooks")
 }
 
 func (a *App) seed(ctx context.Context) error {
@@ -397,6 +411,16 @@ func (a *App) smoke(ctx context.Context) error {
 		}
 	}
 	if err := a.run(ctx, a.Root, nil, "docker", "compose", "up", "-d", "--build"); err != nil {
+		return err
+	}
+	// `up -d` returns as soon as containers are CREATED, so this used to print a
+	// URL that answers connection-refused through the portal's 15s start period
+	// and up to a minute of health retries. Block on the portal's healthcheck
+	// before claiming it is up; the wait is scoped to that service because the
+	// one-shot seeder exits 0 and would trip --wait. Every other path in this
+	// file already waits.
+	if err := a.run(ctx, a.Root, nil, "docker", "compose", "up", "-d",
+		"--wait", "--wait-timeout", "180", "portal"); err != nil {
 		return err
 	}
 	fmt.Fprintln(a.Out, "packaged stack started at http://localhost:4010")

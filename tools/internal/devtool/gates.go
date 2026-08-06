@@ -89,8 +89,10 @@ const (
   tools-image [<name>]       print the shared behavior client image tag, or
                              nothing when the named pack ships its own client
 
-Use "./run test packs [name-pattern]" for pack-owned behavior cases and
-"./run gate packs" for the complete pack Definition of Done.
+Both are required before committing a pack change: "./run gate packs" validates
+authoring, hashes, and the catalog, and "./run test packs [name-pattern]" runs
+the behavior cases that actually execute an action. The gate alone has shipped
+two regressions — it never runs a pack script.
 `
 )
 

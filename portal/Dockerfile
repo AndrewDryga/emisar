@@ -75,11 +75,6 @@ ARG EMISAR_DEV_ROUTES=""
 ENV EMISAR_DEV_ROUTES=${EMISAR_DEV_ROUTES}
 
 # Place install.sh / install-mcp.sh where InstallController +
-# InstallMcpController's compile-time `Path.expand` resolves to (six
-# levels up from each controller's source dir => container root).
-COPY install.sh /install.sh
-COPY install-mcp.sh /install-mcp.sh
-
 # Application configuration is a compile input, not a dependency input.
 RUN mkdir -p config
 COPY portal/config/config.exs portal/config/${MIX_ENV}.exs config/
@@ -91,6 +86,15 @@ COPY portal/apps apps
 
 # Build assets (esbuild + tailwind)
 RUN mix assets.deploy
+
+# The installers are read at COMPILE time by the install controllers'
+# @external_resource (InstallMcpController's `Path.expand` resolves six levels up
+# from its source dir => container root), and by nothing before that. They sat
+# above assets.deploy, so every installer edit rebuilt esbuild and tailwind for
+# no reason — nine of the last two hundred commits did exactly that, on the
+# release path. Inputs enter at their narrowest layer.
+COPY install.sh /install.sh
+COPY install-mcp.sh /install-mcp.sh
 
 # Compile + release
 RUN mix compile

@@ -131,7 +131,14 @@ func (selection *Selection) include(file string) {
 	if file == "server.json" {
 		selection.MCPListing = true
 	}
-	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum") || filepath.Ext(file) == ".md" {
+	// .github/workflows and .githooks route here because actionlint and the
+	// shell lint both live inside the TOOLING gate. Workflow changes previously
+	// set only selection.Workflows, which no job consumes and ci-gate does not
+	// require — so a workflow-only PR was linted by nothing while the CI summary
+	// printed "Actions - Validate workflows | run". .githooks and .gitignore
+	// selected no job at all, though agentcheck asserts the commit-msg hook and
+	// the distribution ignore policy from inside that same gate.
+	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", ".github/workflows/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum", ".gitignore", ".tool-versions") || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	if packSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {

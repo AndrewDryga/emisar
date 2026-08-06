@@ -26,11 +26,13 @@ import (
 var (
 	staleManualText = regexp.MustCompile(`coop tasks list|xx_done|dev/run\b|\.agent/screenshots\b`)
 	staleSkillText  = regexp.MustCompile("(?i)(/code-review|/security-review)|v0\\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`")
-	// Every verb the portal actually exposes. Hardcoding a narrower set than the
-	// schema means a citation this does not match is never validated at all —
-	// `update` was missing, so every `update_runbook_draft` reference in a public
-	// skill went unchecked by the check whose whole job is checking them.
-	publicMCPTool = regexp.MustCompile("`(list|find|get|run|wait_for|recent|execute|create|update|cancel|approve|deny)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`")
+	// Deliberately BROADER than the shipped tool set: its job is to catch a
+	// citation of a tool that does not exist, so it cannot be derived from the
+	// tools that do. checkPublicSkillMCPTools asserts every shipped name matches
+	// it, so a new verb fails the check here instead of silently falling outside
+	// it — which is how `update` went missing and left every
+	// `update_runbook_draft` citation unvalidated.
+	publicMCPTool = regexp.MustCompile("`(list|find|get|run|wait_for|recent|execute|create|update|cancel|approve|deny|describe|search|start|stop)_(action|actions|operation|operations|pack|packs|runner|runners|run|runs|runbook|runbooks)(_[a-z0-9]+)*`")
 	cardPolicy    = regexp.MustCompile(`(?i)\bmust\b|\bnever\b|\bdo[[:space:]]+not\b`)
 	inlineCode    = regexp.MustCompile("`[^`]*`")
 	markdownLink  = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
@@ -770,6 +772,16 @@ func (c *checker) checkPublicSkillMCPTools() {
 		c.fail("%s contains no MCP tool names", schemaPath)
 		return
 	}
+	// The pattern must be able to SEE every tool we ship, or a citation of a
+	// near-miss (get_runner for list_runners) is never examined. Assert that here
+	// so adding a tool with a new verb fails loudly rather than quietly shrinking
+	// this check's reach.
+	for name := range schema.Tools {
+		if !publicMCPTool.MatchString("`" + name + "`") {
+			c.fail("%s ships MCP tool %q that the citation pattern cannot match; widen publicMCPTool", schemaPath, name)
+		}
+	}
+
 	citations := c.skillFiles("skills")
 	if len(citations) == 0 {
 		c.fail("skills/ contains no customer SKILL.md files to check MCP tool names in")
