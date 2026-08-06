@@ -978,8 +978,18 @@ func writeFrame(w io.Writer, frame []byte) error {
 	// control character inside a JSON string is rejected, and an escaped \n
 	// stays one line); only the encoder's own whitespace can, which is exactly
 	// what a reformatting proxy in front of the portal produces.
+	// Collapse it rather than failing. The frame has already passed a strict
+	// parse, so a raw newline here can only be insignificant space BETWEEN
+	// tokens — a control character inside a JSON string is rejected, and an
+	// escaped \n stays one line — which makes a space semantically identical.
+	// Refusing instead returned an error that unwound through serve into
+	// fatalln, so one reformatted upstream response killed the process and
+	// every concurrent in-flight request with it, including dispatches that had
+	// already reached the portal. Locally built frames never contain newlines,
+	// so this is a no-op for them.
 	if bytes.ContainsAny(trimmed, "\n\r") {
-		return fmt.Errorf("refusing to write a frame containing a newline")
+		trimmed = bytes.ReplaceAll(trimmed, []byte("\n"), []byte(" "))
+		trimmed = bytes.ReplaceAll(trimmed, []byte("\r"), []byte(" "))
 	}
 	line := make([]byte, 0, len(trimmed)+1)
 	line = append(line, trimmed...)

@@ -2252,6 +2252,31 @@ func TestWriteFrame_RejectsShortWriteAndNormalizesDelimiter(t *testing.T) {
 	}
 }
 
+// A pretty-printed upstream response must survive as ONE frame. It passes the
+// strict parser (which accepts whitespace between tokens), so refusing to write
+// it failed the write, unwound through serve, and killed the process — dropping
+// every concurrent in-flight request because one proxy reformatted a body.
+func TestWriteFrame_CollapsesPrettyPrintedUpstreamBody(t *testing.T) {
+	pretty := []byte("{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"result\": \"ok\"\n}")
+
+	var out bytes.Buffer
+	if err := writeFrame(&out, pretty); err != nil {
+		t.Fatalf("a pretty-printed body must still be written, got %v", err)
+	}
+	got := out.String()
+	if strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("output must be exactly one line, got %q", got)
+	}
+	// Still valid JSON, and still the same message.
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSuffix(got, "\n")), &decoded); err != nil {
+		t.Fatalf("collapsed frame must stay valid JSON: %v", err)
+	}
+	if decoded["result"] != "ok" || decoded["jsonrpc"] != "2.0" {
+		t.Fatalf("collapsed frame changed the message: %v", decoded)
+	}
+}
+
 // EOF on stdin is a clean exit: serve returns nil (io.EOF mapped to
 // a graceful return) when input ends without a terminating newline.
 func TestServe_EOFWithoutNewlineExitsClean(t *testing.T) {
