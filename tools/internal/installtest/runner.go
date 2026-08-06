@@ -271,10 +271,14 @@ func runnerInstallRollback(h *harness) error {
 		return err
 	}
 	badEtc := h.path("bad-etc")
-	if err := h.mkdir(filepath.Join(badEtc, "config.yaml")); err != nil {
+	if err := h.mkdir(badEtc); err != nil {
 		return err
 	}
-	failure := h.command(h.root, map[string]string{"EMISAR_PACKS": ""}, "bash",
+	failureEnv := map[string]string{
+		"EMISAR_PACKS":      "",
+		"RUNNER_LABEL_ROLE": "invalid label",
+	}
+	failure := h.command(h.root, failureEnv, "bash",
 		h.repoPath("install.sh"), "--yes", "--no-service", "--version", "runner-v"+version,
 		"--bin-dir", bin, "--etc-dir", badEtc, "--data-dir", data, "--log-dir", logDir)
 	if err := expectFailure(failure, "restored previous binary after failed upgrade"); err != nil {
