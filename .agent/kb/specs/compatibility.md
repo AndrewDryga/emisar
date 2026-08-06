@@ -371,10 +371,17 @@ help
 ```
 
 The runner's global flags are `--config`, `--json`, `--packs-dir`, and
-`-v/--version`. `action run` also accepts `--arg`, `--reason`, `--timeout`, and
-`--stream`. Pack registry operations accept `--registry`; pack installation
-also accepts `--hash`, `--dest`, and `--force`. These command names and flags,
-including the documented aliases, are public inputs. The structured output
+`-v/--version`. **Every flag `emisar <verb> --help` documents on the commands
+above is frozen with its command** — the list is deliberately not enumerated
+here, because an enumeration drifts silently as verbs gain flags and then reads
+as permission to rename the ones it forgot. `action run --arg/--reason/
+--timeout/--stream`, `pack install --hash/--dest/--force`, `pack suggest
+--catalog/--names-only`, `pack update --dry-run`, `audit verify --all`, `events
+tail --lines/-f`, `events grep --action/--caller/--event`, `state
+check-dispatch-log --data-dir`, and the whole `signing` group's `--ca-id`,
+`--ca-key`, `--key-id`, `--scope`, `--ttl`, and `--pubkey` are all inside the
+freeze. These command names and flags, including the documented aliases, are
+public inputs. The structured output
 `--json` emits exists to be parsed by scripts, so those shapes freeze with the
 flags: after 1.0 they change only additively.
 
