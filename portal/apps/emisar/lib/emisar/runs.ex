@@ -268,7 +268,8 @@ defmodule Emisar.Runs do
   Options: `preload:` — associations the caller renders (`:runner`,
   `:api_key`); `limit:` — page size (default 8); `scope:` — `:account`
   (default) for the whole account's runs, or `:own` for just this API
-  key's runs (the MCP `recent_runs` recall path).
+  key's runs (the MCP `recent_runs` recall path); `count: false` — skip the
+  total aggregate when a fixed snippet already has its count elsewhere.
   """
   def list_recent_runs(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -280,7 +281,8 @@ defmodule Emisar.Runs do
       {scope, opts} = Keyword.pop(opts, :scope, :account)
       {runner_id, opts} = Keyword.pop(opts, :runner_id)
       {action_id, opts} = Keyword.pop(opts, :action_id)
-      limit = Keyword.get(opts, :limit, 8)
+      {limit, opts} = Keyword.pop(opts, :limit, 8)
+      opts = Keyword.put(opts, :page, limit: limit)
 
       ActionRun.Query.all()
       |> scope_runs_to_membership(subject)
@@ -289,7 +291,7 @@ defmodule Emisar.Runs do
       |> maybe_by_action_id(action_id)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
-      |> Repo.list(ActionRun.Query, page: [limit: limit])
+      |> Repo.list(ActionRun.Query, opts)
     end
   end
 

@@ -1717,7 +1717,8 @@ defmodule Emisar.Catalog do
   # The fleet read carries live membership + API-key runner scope, so it — not
   # the account — decides which advertisements may reach a model at all.
   defp model_snapshot(%Subject{} = subject) do
-    with {:ok, runners} <- Runners.list_all_runners_for_account(subject) do
+    with {:ok, runners} <-
+           Runners.list_all_runners_for_account(subject, preload: [:online?]) do
       runner_ids = Enum.map(runners, & &1.id)
 
       actions =

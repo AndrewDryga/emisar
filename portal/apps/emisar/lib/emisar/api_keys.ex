@@ -126,6 +126,38 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
+  `{:ok, [{key_id, last_used_at}]}` for at most 100 visible agent-key ids in
+  the subject's account. This is the Agents page's bounded activity poll: it
+  selects no key secrets, owners, rotation rows, or pagination count. Requires
+  `view_api_keys`.
+  """
+  def list_key_usage_timestamps(ids, %Subject{} = subject) when is_list(ids) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_api_keys_permission()
+           ) do
+      ids = ids |> Enum.filter(&Repo.valid_uuid?/1) |> Enum.uniq() |> Enum.take(100)
+
+      usage =
+        case ids do
+          [] ->
+            []
+
+          ids ->
+            ApiKey.Query.visible_to_operators()
+            |> ApiKey.Query.by_kind(:mcp)
+            |> ApiKey.Query.by_ids(ids)
+            |> ApiKey.Query.select_usage_timestamps()
+            |> Authorizer.for_subject(subject)
+            |> Repo.all()
+        end
+
+      {:ok, usage}
+    end
+  end
+
+  @doc """
   Lists audit-export tokens (`kind: :audit_export`) for the audit page.
   Same visibility rules + creator preload as the agents list, but scoped
   to the SIEM-export bucket only so the audit page renders just the keys

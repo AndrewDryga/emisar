@@ -38,8 +38,8 @@ defmodule Emisar.Runners.Runner do
     field :max_attestation_age_seconds, :integer
 
     # Connection state lives in `Emisar.Runners.Presence`, not the DB.
-    # These virtuals are filled from presence metadata by the context
-    # read functions; see `Emisar.Runners.connection_state/1`.
+    # The context fills these virtuals only when a read requests the
+    # `:online?` virtual preload; see `Emisar.Runners.connection_state/1`.
     field :online?, :boolean, virtual: true, default: false
     field :action_load, :integer, virtual: true, default: 0
     field :last_heartbeat_at, :utc_datetime_usec, virtual: true

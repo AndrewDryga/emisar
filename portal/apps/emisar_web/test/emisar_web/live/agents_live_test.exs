@@ -601,6 +601,40 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "NeverBot"
     end
 
+    test "a tick polls visible usage once and recomputes activity without a full reload", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "PollingBot"}, subject)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+      assert html =~ "never used"
+
+      test_pid = self()
+      handler = make_ref()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, _metadata, _config ->
+          send(test_pid, {:repo_query, self()})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      key
+      |> Ecto.Changeset.change(last_used_at: DateTime.utc_now())
+      |> Repo.update!()
+
+      send(lv.pid, :tick)
+      html = render(lv)
+
+      assert html =~ "active"
+      assert drain_repo_query_count(lv.pid) == 1
+    end
+
     test "custom-key form shows validation errors inline on the field, not in a flash",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
@@ -1209,6 +1243,15 @@ defmodule EmisarWeb.AgentsLiveTest do
   defp text_position(html, text) do
     {position, _length} = :binary.match(html, text)
     position
+  end
+
+  defp drain_repo_query_count(pid, count \\ 0) do
+    receive do
+      {:repo_query, ^pid} -> drain_repo_query_count(pid, count + 1)
+      {:repo_query, _other_pid} -> drain_repo_query_count(pid, count)
+    after
+      0 -> count
+    end
   end
 
   # A key mutation with the view mounted broadcasts {:list_changed, :api_key, …}

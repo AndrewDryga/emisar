@@ -3230,7 +3230,10 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, [pack_version], _metadata} = Catalog.list_pack_versions(subject)
       assert {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
-      assert {:ok, [runner]} = Runners.list_all_runners_for_account(subject)
+
+      assert {:ok, [runner]} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
       assert {:ok, runner_ref} = Runners.public_ref(runner)
 
       request = %{
@@ -3272,7 +3275,9 @@ defmodule Emisar.CatalogTest do
                  )
                )
 
-      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, runners} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
       assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
 
       assert Map.keys(projection.candidates) == [{"demo", "demo.inspect"}]
@@ -3289,7 +3294,9 @@ defmodule Emisar.CatalogTest do
       online = advertise_editor_action(account, subject, [])
       _offline = advertise_editor_action(account, subject, connected?: false)
 
-      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, runners} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
       assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
 
       assert Map.keys(projection.candidates[{"demo", "demo.inspect"}]) == [online.id]
@@ -3337,7 +3344,9 @@ defmodule Emisar.CatalogTest do
       first = advertise_editor_action(account, subject, version: "1.0.0")
       second = advertise_editor_action(account, subject, version: "1.2.0")
 
-      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, runners} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
       assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
 
       assert [common] = Catalog.common_actions(projection, [first.id, second.id])
@@ -3356,7 +3365,9 @@ defmodule Emisar.CatalogTest do
       first = advertise_editor_action(account, subject, version: "1.0.0")
       second = advertise_editor_action(account, subject, version: "2.0.0", risk: "critical")
 
-      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, runners} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
       assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
 
       assert Catalog.common_actions(projection, [first.id]) != []
@@ -3369,7 +3380,9 @@ defmodule Emisar.CatalogTest do
       advertising = advertise_editor_action(account, subject, [])
       bare = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, runners} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
       assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
 
       assert Catalog.common_actions(projection, [advertising.id]) != []

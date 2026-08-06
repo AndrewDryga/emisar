@@ -180,6 +180,41 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "list_key_usage_timestamps/2" do
+    test "returns only id and last-used time for the requested visible agent keys" do
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, used_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      {_raw, unused_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      used_key = Fixtures.ApiKeys.mark_used(used_key)
+
+      assert {:ok, usage} =
+               ApiKeys.list_key_usage_timestamps([used_key.id, unused_key.id], subject)
+
+      assert Enum.sort(usage) ==
+               Enum.sort([{used_key.id, used_key.last_used_at}, {unused_key.id, nil}])
+    end
+
+    test "cross-account ids and non-agent keys are omitted" do
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, agent_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      {_other_user, other_account, _other_subject} = owner_subject_pair()
+      {_raw, foreign_key} = Fixtures.ApiKeys.create_api_key(account_id: other_account.id)
+
+      assert ApiKeys.list_key_usage_timestamps([foreign_key.id], subject) == {:ok, []}
+      assert {:ok, [{agent_id, nil}]} = ApiKeys.list_key_usage_timestamps([agent_key.id], subject)
+      assert agent_id == agent_key.id
+    end
+
+    test "a runner subject without view_api_keys permission is refused" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Subject.for_runner(runner, account)
+
+      assert ApiKeys.list_key_usage_timestamps([], subject) == {:error, :unauthorized}
+    end
+  end
+
   describe "list_audit_export_keys_for_account/2" do
     test "audit-export tokens land on the audit list, never the agents list" do
       {_user, account, subject} = owner_subject_pair()

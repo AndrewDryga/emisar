@@ -14,9 +14,10 @@ defmodule EmisarWeb.AgentsLive do
   status onto it (`ApiKeys.with_bridge_compatibility/2`) and renders the
   result — words, colors and countdowns only.
 
-  We re-render every #{5} s via a self-scheduled `:tick` so "Last call"
-  + the status badge stay fresh without a full PubSub subscription on
-  every MCP request.
+  Every #{5} s a self-scheduled `:tick` polls only the visible keys' ids and
+  `last_used_at`, then recomputes time-based facts in memory. Key lifecycle
+  PubSub events still reload the full page, so membership, pagination, owner,
+  and rotation changes reflow immediately without doing that work per tick.
   """
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Compat}
@@ -174,7 +175,7 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_info(:tick, socket) do
     Process.send_after(self(), :tick, @refresh_ms)
-    {:noreply, reload(socket)}
+    {:noreply, refresh_key_activity(socket)}
   end
 
   # Every api_key change (including `api_key.first_used`) reloads the list;
@@ -262,9 +263,42 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
-  # Refresh-in-place (tick / mutation): re-runs with current URL params
-  # so the operator doesn't jump back to page 1 on revoke or every 5 s.
+  # Structural refresh-in-place (PubSub / mutation): re-runs with current URL
+  # params so the operator doesn't jump back to page 1 after a lifecycle change.
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+
+  # A tick changes only activity timestamps and facts derived from `now`.
+  # Lifecycle broadcasts own structural reloads, so owner options, pagination,
+  # the total count, creator joins, and rotation preloads stay untouched here.
+  defp refresh_key_activity(socket) do
+    ids = Enum.map(socket.assigns.key_rows, fn {key, _facts} -> key.id end)
+
+    usage_by_id =
+      case ApiKeys.list_key_usage_timestamps(ids, socket.assigns.current_subject) do
+        {:ok, usage} -> Map.new(usage)
+        {:error, _reason} -> %{}
+      end
+
+    now = DateTime.utc_now()
+
+    rows =
+      Enum.map(socket.assigns.key_rows, fn {key, _facts} ->
+        key = %{key | last_used_at: Map.get(usage_by_id, key.id, key.last_used_at)}
+        {key, row_facts(key, now)}
+      end)
+
+    summary = ApiKeys.summarize_key_facts(Enum.map(rows, fn {_key, facts} -> facts end))
+
+    socket
+    |> assign(:key_rows, rows)
+    |> assign(:active_count, summary.activity.active)
+    |> assign(:idle_count, summary.activity.idle)
+    |> assign(:dormant_count, summary.activity.dormant)
+    |> assign(:never_used_count, summary.activity.never_used)
+    |> assign(:issued_count, summary.live)
+    |> assign(:quick_connected?, quick_key_connected?(socket, rows))
+    |> assign_connect_inline(summary)
+  end
 
   # The connect panel embeds INLINE only while connecting IS the page's job:
   # a fleet with no live agent keys (onboarding — the runners-wizard pattern),

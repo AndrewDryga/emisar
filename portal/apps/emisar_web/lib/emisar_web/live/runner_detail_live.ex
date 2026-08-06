@@ -6,7 +6,11 @@ defmodule EmisarWeb.RunnerDetailLive do
   def mount(%{"id" => id}, _session, socket) do
     membership = socket.assigns.current_membership
 
-    case Runners.fetch_runner_by_id(id, socket.assigns.current_subject) do
+    case Runners.fetch_runner_by_id(
+           id,
+           socket.assigns.current_subject,
+           preload: [:online?]
+         ) do
       # A denied role and a missing runner are indistinguishable — never leak
       # existence, never crash on {:error, :unauthorized}.
       {:error, _} ->

@@ -24,6 +24,10 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def select_ids(queryable),
     do: select(queryable, [api_keys: k], k.id)
 
+  @doc "Selects `{key_id, last_used_at}` for the Agents page's bounded activity poll."
+  def select_usage_timestamps(queryable),
+    do: select(queryable, [api_keys: k], {k.id, k.last_used_at})
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [api_keys: k], k.account_id == ^account_id)
 

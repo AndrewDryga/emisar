@@ -414,7 +414,13 @@ defmodule EmisarWeb.DashboardLiveTest do
       # Once the runner advertises an action, the first-run prompt becomes
       # truthful and usable without requiring a page refresh.
       Fixtures.Catalog.create_action(runner: runner)
-      send(lv.pid, :reload_dashboard)
+
+      send(lv.pid, %{
+        event: "presence_diff",
+        payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
+      })
+
+      send(lv.pid, :refresh_dashboard)
       html = render(lv)
       assert html =~ "Ask your agent to run an action"
       assert html =~ "load, memory, disk, and any failed services"
@@ -504,33 +510,56 @@ defmodule EmisarWeb.DashboardLiveTest do
              )
     end
 
-    test "account broadcasts schedule a debounced stats reload", %{conn: conn} do
+    test "runner topology broadcasts schedule a debounced fleet refresh", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "Get to your first gated run"
 
-      # A runner registers elsewhere; the dashboard hears the account
-      # broadcast (2-tuple) or a topology-changing presence_diff and arms a
-      # debounced reload rather than re-querying per message. The reload fires on the
-      # :reload_dashboard timer — inject it directly to stand in for the timer.
-      # The checklist flips LIVE: step 1 reads done without a refresh.
+      # A runner registers elsewhere; the dashboard hears the topology-changing
+      # Presence diff and arms a debounced runner-only refresh. Inject the timer
+      # directly so the checklist flips without waiting in the test.
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      send(lv.pid, {:runner_updated, runner})
-      send(lv.pid, :reload_dashboard)
-      assert render(lv) =~ "1 runner connected"
 
       send(lv.pid, %{
         event: "presence_diff",
         payload: %{joins: %{runner.id => %{metas: [%{}]}}, leaves: %{}}
       })
 
-      send(lv.pid, :reload_dashboard)
+      send(lv.pid, :refresh_dashboard)
       assert render(lv) =~ "1 of 3 done"
 
       # Unrelated message shapes are ignored, never a crash.
       send(lv.pid, :stray_message)
       assert render(lv) =~ "1 of 3 done"
+    end
+
+    test "a run event refreshes only recent runs and their statistics", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 6
+    end
+
+    test "an approval event refreshes only the fixed five-row queue snippet", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+      assert refresh_query_count(lv, {:approval_updated, Ecto.UUID.generate()}) == 3
+    end
+
+    test "a runner topology event refreshes only fleet and advertised-action facts", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
+
+      event = %{
+        event: "presence_diff",
+        payload: %{joins: %{Ecto.UUID.generate() => %{metas: [%{}]}}, leaves: %{}}
+      }
+
+      assert refresh_query_count(lv, event) == 3
     end
   end
 
@@ -704,5 +733,40 @@ defmodule EmisarWeb.DashboardLiveTest do
         reason: "first run",
         source: "operator"
       })
+  end
+
+  defp refresh_query_count(lv, event) do
+    test_pid = self()
+    handler = make_ref()
+
+    :telemetry.attach(
+      handler,
+      [:emisar, :repo, :query],
+      fn _event, _measurements, _metadata, _config ->
+        send(test_pid, {:repo_query, self()})
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    send(lv.pid, event)
+    _ = render(lv)
+    _ = drain_repo_query_count(lv.pid)
+
+    send(lv.pid, :refresh_dashboard)
+    _ = render(lv)
+    query_count = drain_repo_query_count(lv.pid)
+    :ok = :telemetry.detach(handler)
+    query_count
+  end
+
+  defp drain_repo_query_count(pid, count \\ 0) do
+    receive do
+      {:repo_query, ^pid} -> drain_repo_query_count(pid, count + 1)
+      {:repo_query, _other_pid} -> drain_repo_query_count(pid, count)
+    after
+      0 -> count
+    end
   end
 end

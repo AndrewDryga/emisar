@@ -136,8 +136,8 @@ defmodule EmisarWeb.RunsLive do
   # them to render its choices and to resolve a deep-linked runner_id to a name.
   defp put_runner_options(filters, subject) do
     options =
-      case Runners.list_all_runners_for_account(subject) do
-        {:ok, runners} -> runners |> Enum.sort_by(& &1.name) |> Enum.map(&{&1.id, &1.name})
+      case Runners.list_runner_options(subject) do
+        {:ok, options} -> options
         _ -> []
       end
 

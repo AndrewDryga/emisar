@@ -163,4 +163,36 @@ defmodule Emisar.Runners.ConnectionChangeTest do
                MapSet.new(["runner"])
     end
   end
+
+  describe "preload_runners_presence/1" do
+    test "hydrates each runner from its own account's Presence topic" do
+      account_a = Ecto.UUID.generate()
+      account_b = Ecto.UUID.generate()
+      runner_a = %Runners.Runner{id: Ecto.UUID.generate(), account_id: account_a}
+      runner_b = %Runners.Runner{id: Ecto.UUID.generate(), account_id: account_b}
+      heartbeat = 1_721_234_567
+
+      {:ok, _ref} =
+        Runners.Presence.track(
+          self(),
+          Runners.Presence.topic(account_a),
+          runner_a.id,
+          %{action_load: 4, last_heartbeat_at: heartbeat}
+        )
+
+      assert [hydrated_a, hydrated_b] =
+               Runners.preload_runners_presence([runner_a, runner_b])
+
+      assert hydrated_a.online?
+      assert hydrated_a.action_load == 4
+      assert hydrated_a.last_heartbeat_at == DateTime.from_unix!(heartbeat)
+      refute hydrated_b.online?
+      assert hydrated_b.action_load == 0
+      refute hydrated_b.last_heartbeat_at
+    end
+
+    test "an empty result never reads Presence" do
+      assert Runners.preload_runners_presence([]) == []
+    end
+  end
 end

@@ -35,34 +35,50 @@ defmodule EmisarWeb.DashboardLive do
     Billing.subject_can_manage_billing?(subject) and not Runs.subject_can_view_runs?(subject)
   end
 
-  # Durable domain events and real runner joins/leaves can arrive in bursts, and
-  # load/1 is ~9 queries. Coalesce those topology changes; heartbeat metadata is
-  # ignored by the Presence handler below.
+  # Durable domain events and real runner joins/leaves can arrive in bursts.
+  # One debounce queue coalesces them, while the queued domains keep unrelated
+  # dashboard sections from re-querying. Heartbeat-only Presence metadata is
+  # ignored.
   def handle_info(%{event: "presence_diff"} = event, socket) do
     change = Runners.normalize_connection_change(event)
 
     if Runners.connection_topology_changed?(change) do
-      {:noreply, schedule_reload(socket)}
+      {:noreply, schedule_refresh(socket, :runners)}
     else
       {:noreply, socket}
     end
   end
 
-  def handle_info({_event, _struct}, socket), do: {:noreply, schedule_reload(socket)}
+  def handle_info({:run_updated, _run_id}, socket),
+    do: {:noreply, schedule_refresh(socket, :runs)}
 
-  def handle_info(:reload_dashboard, socket),
-    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> load()}
+  def handle_info({:approval_updated, _request_id}, socket),
+    do: {:noreply, schedule_refresh(socket, :approvals)}
+
+  def handle_info(:refresh_dashboard, socket) do
+    socket =
+      socket.assigns.pending_refreshes
+      |> Enum.reduce(socket, &refresh_domain/2)
+      |> assign(:refresh_scheduled?, false)
+      |> assign(:pending_refreshes, [])
+      |> assign_current_setup_state()
+
+    {:noreply, socket}
+  end
 
   # Total catch-all: the badge hooks forward account-topic broadcasts to every
   # authenticated LV, so any other shape must be ignored, not crash.
   def handle_info(_msg, socket), do: {:noreply, socket}
 
-  defp schedule_reload(socket) do
-    if socket.assigns[:reload_scheduled?] do
+  defp schedule_refresh(socket, domain) do
+    pending_refreshes = Enum.uniq([domain | socket.assigns.pending_refreshes])
+    socket = assign(socket, :pending_refreshes, pending_refreshes)
+
+    if socket.assigns.refresh_scheduled? do
       socket
     else
-      Process.send_after(self(), :reload_dashboard, @reload_debounce_ms)
-      assign(socket, :reload_scheduled?, true)
+      Process.send_after(self(), :refresh_dashboard, @reload_debounce_ms)
+      assign(socket, :refresh_scheduled?, true)
     end
   end
 
@@ -75,18 +91,36 @@ defmodule EmisarWeb.DashboardLive do
     # results are kept alongside the collapsed lists: an empty list only means
     # "genuinely empty account" when its read verifiably succeeded, and the
     # first-run checklist refuses to activate on unverified emptiness.
-    runners_read = Runners.list_all_runners_for_account(subject)
     api_keys_read = ApiKeys.list_api_keys_for_account(subject)
-
-    # :api_key so the source badge names the actual agent ("Claude Code -
-    # on-call"), same as the runs page — not the generic "MCP / LLM".
-    recent_runs_read =
-      Runs.list_recent_runs(subject, limit: 8, preload: [:runner, :attribution])
-
-    runners = list_or_empty(runners_read)
     api_keys = list_or_empty(api_keys_read)
-    recent_runs = list_or_empty(recent_runs_read)
-    pending = list_or_empty(Approvals.list_pending_approval_requests(subject))
+
+    socket
+    |> assign(:page_title, "Dashboard")
+    |> assign(:loading?, false)
+    |> assign(:refresh_scheduled?, false)
+    |> assign(:pending_refreshes, [])
+    |> assign(:setup_reads, %{api_keys: read_ok?(api_keys_read)})
+    |> assign(:agents, agents_summary(api_keys))
+    |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
+    |> assign(:team_security, team_security(subject))
+    |> assign(:sso_enabled?, sso_enabled?(subject))
+    |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
+    |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
+    |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
+    |> refresh_runners()
+    |> refresh_runs()
+    |> refresh_approvals()
+    |> assign_current_setup_state()
+  end
+
+  defp refresh_domain(:runners, socket), do: refresh_runners(socket)
+  defp refresh_domain(:runs, socket), do: refresh_runs(socket)
+  defp refresh_domain(:approvals, socket), do: refresh_approvals(socket)
+
+  defp refresh_runners(socket) do
+    subject = socket.assigns.current_subject
+    runners_read = Runners.list_all_runners_for_account(subject, preload: [:online?])
+    runners = list_or_empty(runners_read)
 
     # Only a currently ONLINE runner's advertised actions are dispatchable —
     # catalog rows left behind by an offline runner can't back the checklist's
@@ -103,27 +137,53 @@ defmodule EmisarWeb.DashboardLive do
         _ -> false
       end
 
-    show_setup? =
-      recent_runs == [] and
-        Enum.all?([runners_read, api_keys_read, recent_runs_read, actions_read], &read_ok?/1)
-
     socket
-    |> assign(:page_title, "Dashboard")
-    |> assign(:loading?, false)
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, length(online_runner_ids))
     |> assign(:actions_advertised?, actions_advertised?)
-    |> assign(:recent_runs, recent_runs)
+    |> put_setup_read(:runners, runners_read)
+    |> put_setup_read(:actions, actions_read)
+  end
+
+  defp refresh_runs(socket) do
+    subject = socket.assigns.current_subject
+
+    # :api_key so the source badge names the actual agent ("Claude Code -
+    # on-call"), same as the runs page — not the generic "MCP / LLM".
+    recent_runs_read =
+      Runs.list_recent_runs(subject,
+        limit: 8,
+        count: false,
+        preload: [:runner, :attribution]
+      )
+
+    socket
+    |> assign(:recent_runs, list_or_empty(recent_runs_read))
     |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
-    |> assign(:pending_approvals, pending)
-    |> assign(:agents, agents_summary(api_keys))
-    |> assign(:billing, unwrap_ok(Billing.billing_summary(account, subject)))
-    |> assign(:team_security, team_security(subject))
-    |> assign(:sso_enabled?, sso_enabled?(subject))
-    |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
-    |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
-    |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
-    |> assign_setup_state(subject, show_setup?)
+    |> put_setup_read(:recent_runs, recent_runs_read)
+  end
+
+  defp refresh_approvals(socket) do
+    read =
+      Approvals.list_pending_approval_requests(socket.assigns.current_subject,
+        page: [limit: 5],
+        count: false
+      )
+
+    assign(socket, :pending_approvals, list_or_empty(read))
+  end
+
+  defp put_setup_read(socket, name, result) do
+    setup_reads = Map.put(socket.assigns.setup_reads, name, read_ok?(result))
+    assign(socket, :setup_reads, setup_reads)
+  end
+
+  defp assign_current_setup_state(socket) do
+    show_setup? =
+      socket.assigns.recent_runs == [] and
+        Enum.all?(socket.assigns.setup_reads, fn {_key, ok?} -> ok? end)
+
+    assign_setup_state(socket, socket.assigns.current_subject, show_setup?)
   end
 
   # First-run: until the account has actually RUN something, the dashboard's job

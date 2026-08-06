@@ -716,6 +716,20 @@ defmodule Emisar.RunsTest do
       assert run.runner.id == runner.id
     end
 
+    test "count: false skips the total while keeping the fixed limit" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      for _ <- 1..3, do: Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, runs, metadata} =
+               Runs.list_recent_runs(subject, limit: 2, count: false)
+
+      assert length(runs) == 2
+      assert metadata.limit == 2
+      assert metadata.count == nil
+    end
+
     test "scope: :own returns only this API key's runs" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)

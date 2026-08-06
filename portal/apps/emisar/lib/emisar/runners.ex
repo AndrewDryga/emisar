@@ -181,9 +181,9 @@ defmodule Emisar.Runners do
   `:group` / `:status` opts narrow the set. The authenticated subject's
   runner access applies in the query before pagination: `none` returns no rows,
   `all` is unrestricted, and `restricted` filters by stored groups and ids.
-  Returns `{:ok, [runner], %Paginator.Metadata{}}`,
-  presence-decorated. MCP paths that need the complete accessible fleet use
-  `list_all_runners_for_account/1` instead.
+  Pass `preload: [:online?]` when the caller renders live connection facts.
+  Returns `{:ok, [runner], %Paginator.Metadata{}}`. MCP paths that need the
+  complete accessible fleet use `list_all_runners_for_account/2` instead.
   """
   def list_runners_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -201,34 +201,59 @@ defmodule Emisar.Runners do
       |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runner.Query, opts)
-      |> decorate_result()
     end
   end
 
   @doc """
   Every non-deleted runner visible to the subject's membership — the COMPLETE
-  scoped set, deliberately un-paginated and presence-decorated.
+  scoped set, deliberately un-paginated. Pass `preload: [:online?]` when the
+  caller needs live connection facts.
 
   The MCP path: `tools/list`, dispatch resolution, and runner
   inventory must see every accessible runner (no status/group filter), not a
   page. The UI uses the paginated
   `list_runners_for_account/2`. Returns `{:ok, runners}`.
   """
-  def list_all_runners_for_account(%Subject{} = subject) do
+  def list_all_runners_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.view_runners_permission()
            ) do
+      preloads = Keyword.get(opts, :preload, [])
+
       runners =
         Runner.Query.not_deleted()
         |> Runner.Query.ordered_by_group_name()
         |> scope_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
-        |> decorate_connection()
+        |> apply_runner_preloads(preloads)
 
       {:ok, runners}
+    end
+  end
+
+  @doc """
+  `{:ok, [{runner_id, name}]}` for the subject's complete visible fleet, sorted
+  by name. Selects only the two stable fields a runner dropdown renders and
+  never reads Presence. Requires `view_runners`.
+  """
+  def list_runner_options(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      options =
+        Runner.Query.not_deleted()
+        |> Runner.Query.ordered_by_name()
+        |> Runner.Query.select_options()
+        |> scope_to_subject_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, options}
     end
   end
 
@@ -282,7 +307,7 @@ defmodule Emisar.Runners do
 
   @doc "Resolves several strict targets through one bounded, scoped fleet read."
   def resolve_runbook_target_sets(targets, %Subject{} = subject) when is_list(targets) do
-    with {:ok, runners} <- list_all_runners_for_account(subject) do
+    with {:ok, runners} <- list_all_runners_for_account(subject, preload: [:online?]) do
       available = available_runbook_targets(runners)
 
       targets
@@ -472,7 +497,6 @@ defmodule Emisar.Runners do
       |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Runner.Query, opts)
-      |> decorate_result()
     else
       false -> {:error, :not_found}
       other -> other
@@ -495,7 +519,6 @@ defmodule Emisar.Runners do
       |> scope_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Runner.Query, opts)
-      |> decorate_result()
     end
   end
 
@@ -1248,9 +1271,9 @@ defmodule Emisar.Runners do
 
   @doc """
   Derived connection state for a runner struct carrying the virtual
-  `online?` field (set by `list_runners_for_account/2` and
-  `fetch_runner_by_id/3` from presence). `:disabled` wins over stale presence
-  metadata; a never-connected runner with no presence is `:pending`.
+  `online?` field (requested with `preload: [:online?]` on runner reads).
+  `:disabled` wins over stale presence metadata; a never-connected runner with
+  no presence is `:pending`.
   """
   # No heartbeat-age `:stale` state by design — liveness is enforced at the
   # socket, not re-derived from `last_heartbeat_at`: the runner heartbeats every
@@ -1602,19 +1625,10 @@ defmodule Emisar.Runners do
   def project_allowed_online_ids(online_ids, change, allowed_ids),
     do: ConnectionChange.project_allowed_online_ids(online_ids, change, allowed_ids)
 
-  # Fill the virtual online?/action_load/last_heartbeat_at fields from
-  # presence so read callers get connection state without a second
-  # lookup. Grouped by account_id so a multi-account listing decorates
-  # correctly.
-  defp decorate_result({:ok, runners, metadata}),
-    do: {:ok, decorate_connection(runners), metadata}
+  @doc "Internal — virtual `:online?` preload callback for runner reads."
+  def preload_runners_presence([]), do: []
 
-  defp decorate_result({:ok, runner}), do: {:ok, decorate_connection(runner)}
-  defp decorate_result({:error, reason}), do: {:error, reason}
-
-  defp decorate_connection([]), do: []
-
-  defp decorate_connection(runners) when is_list(runners) do
+  def preload_runners_presence(runners) when is_list(runners) do
     metas_by_account =
       runners
       |> Enum.map(& &1.account_id)
@@ -1626,8 +1640,10 @@ defmodule Emisar.Runners do
     end)
   end
 
-  defp decorate_connection(%Runner{} = runner) do
-    put_connection_meta(runner, Map.get(connection_metas(runner.account_id), runner.id))
+  defp apply_runner_preloads(runners, preloads) do
+    Enum.reduce(List.wrap(preloads), runners, fn
+      :online?, runners -> preload_runners_presence(runners)
+    end)
   end
 
   defp put_connection_meta(runner, %{metas: [_ | _] = metas}) do

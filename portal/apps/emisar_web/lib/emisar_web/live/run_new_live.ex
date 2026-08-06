@@ -48,7 +48,11 @@ defmodule EmisarWeb.RunNewLive do
   end
 
   defp lookup_runner(runner_id, socket) do
-    case Runners.fetch_runner_by_id(runner_id, socket.assigns.current_subject) do
+    case Runners.fetch_runner_by_id(
+           runner_id,
+           socket.assigns.current_subject,
+           preload: [:online?]
+         ) do
       {:ok, r} -> r
       {:error, :not_found} -> nil
     end

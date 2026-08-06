@@ -1350,7 +1350,8 @@ defmodule Emisar.Runbooks do
              subject,
              Authorizer.view_runbooks_permission()
            ),
-         {:ok, runners} <- Runners.list_all_runners_for_account(subject),
+         {:ok, runners} <-
+           Runners.list_all_runners_for_account(subject, preload: [:online?]),
          available = Runners.available_runbook_targets(runners),
          {:ok, catalog} <-
            Catalog.build_editor_projection(Enum.map(available, & &1.runner), subject) do

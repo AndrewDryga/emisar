@@ -227,7 +227,7 @@ defmodule Emisar.RunnersTest do
       assert filter_names(subject, "disabled") == ["r-disabled"]
     end
 
-    test "decorates online?, action_load + last heartbeat from presence" do
+    test "hydrates online?, action_load + last heartbeat only through the virtual preload" do
       {account, _user, subject} = account_with_owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
@@ -240,7 +240,13 @@ defmodule Emisar.RunnersTest do
           5
         )
 
-      assert {:ok, [listed], _} = Runners.list_runners_for_account(subject)
+      assert {:ok, [plain], _} = Runners.list_runners_for_account(subject)
+      refute plain.online?
+      assert plain.action_load == 0
+
+      assert {:ok, [listed], _} =
+               Runners.list_runners_for_account(subject, preload: [:online?])
+
       assert listed.online?
       assert listed.action_load == 5
     end
@@ -253,17 +259,16 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "list_all_runners_for_account/1" do
-    test "returns every scoped runner — no pagination cap — decorated + account-scoped" do
+  describe "list_all_runners_for_account/2" do
+    test "returns every scoped runner without a pagination cap and preloads Presence on request" do
       {account, _user, subject} = account_with_owner_subject()
 
       # 40 runners — past the paginator's 35-row default page.
       for _ <- 1..40,
           do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-      {:ok, all} = Runners.list_all_runners_for_account(subject)
+      {:ok, all} = Runners.list_all_runners_for_account(subject, preload: [:online?])
       assert length(all) == 40
-      # Presence-decorated: the virtual field is populated, not left unloaded.
       assert Enum.all?(all, &(&1.online? == false))
 
       # The UI reader is deliberately left paginated.
@@ -289,6 +294,32 @@ defmodule Emisar.RunnersTest do
       no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
 
       assert {:error, :unauthorized} = Runners.list_all_runners_for_account(no_view)
+    end
+  end
+
+  describe "list_runner_options/1" do
+    test "returns only the visible fleet's ids and names in name order" do
+      {account, _user, subject} = account_with_owner_subject()
+      zulu = Fixtures.Runners.create_runner(account_id: account.id, name: "zulu")
+      alpha = Fixtures.Runners.create_runner(account_id: account.id, name: "alpha")
+
+      assert Runners.list_runner_options(subject) ==
+               {:ok, [{alpha.id, "alpha"}, {zulu.id, "zulu"}]}
+    end
+
+    test "cross-account runners are omitted" do
+      {_account, _user, subject} = account_with_owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+      Fixtures.Runners.create_runner(account_id: other_account.id, name: "foreign")
+
+      assert Runners.list_runner_options(subject) == {:ok, []}
+    end
+
+    test "a subject without view_runners is unauthorized" do
+      account = Fixtures.Accounts.create_account()
+      no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Runners.list_runner_options(no_view) == {:error, :unauthorized}
     end
   end
 
@@ -465,7 +496,8 @@ defmodule Emisar.RunnersTest do
       disabled = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Runners.disable_runner(disabled)
 
-      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, runners} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
 
       assert [target] = Runners.available_runbook_targets(runners)
       assert target.id == online.id
@@ -483,7 +515,9 @@ defmodule Emisar.RunnersTest do
       first = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       second = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
-      assert {:ok, runners} = Runners.list_all_runners_for_account(subject)
+      assert {:ok, runners} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
       available = Runners.available_runbook_targets(runners)
       assert {:ok, second_ref} = Runners.public_ref(second)
 
@@ -556,7 +590,12 @@ defmodule Emisar.RunnersTest do
           5
         )
 
-      assert {:ok, fetched} = Runners.fetch_runner_by_id(runner.id, subject)
+      assert {:ok, plain} = Runners.fetch_runner_by_id(runner.id, subject)
+      refute plain.online?
+
+      assert {:ok, fetched} =
+               Runners.fetch_runner_by_id(runner.id, subject, preload: [:online?])
+
       assert fetched.id == runner.id
       assert fetched.online?
       assert fetched.action_load == 5

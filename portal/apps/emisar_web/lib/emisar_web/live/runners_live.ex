@@ -202,6 +202,8 @@ defmodule EmisarWeb.RunnersLive do
     # notice never disagrees with the counters beside it.
     fleet = load_fleet_status(socket.assigns.current_subject)
 
+    opts = Keyword.put(opts, :preload, [:online?])
+
     case Runners.list_runners_for_account(socket.assigns.current_subject, opts) do
       {:ok, runners, meta} ->
         groups =

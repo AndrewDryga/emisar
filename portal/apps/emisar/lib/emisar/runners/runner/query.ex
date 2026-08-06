@@ -47,6 +47,10 @@ defmodule Emisar.Runners.Runner.Query do
   def select_scope_facts(queryable),
     do: select(queryable, [runners: r], %{id: r.id, group: r.group})
 
+  @doc "Selects `{runner_id, runner_name}` for account-scoped UI option lists."
+  def select_options(queryable),
+    do: select(queryable, [runners: r], {r.id, r.name})
+
   @doc """
   The distinct group names the matched runners carry — the existence half of a
   runner-scope allowlist, so a selection can be checked against a group without
@@ -100,6 +104,9 @@ defmodule Emisar.Runners.Runner.Query do
 
   def ordered_by_group_name(queryable),
     do: order_by(queryable, [runners: r], asc: r.group, asc: r.name)
+
+  def ordered_by_name(queryable),
+    do: order_by(queryable, [runners: r], asc: r.name, asc: r.id)
 
   def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
@@ -259,7 +266,7 @@ defmodule Emisar.Runners.Runner.Query do
     do: [{:runners, :asc, :group}, {:runners, :asc, :name}, {:runners, :asc, :id}]
 
   @impl Emisar.Repo.Query
-  def preloads, do: []
+  def preloads, do: [online?: &Emisar.Runners.preload_runners_presence/1]
 
   @impl Emisar.Repo.Query
   def filters,
