@@ -1474,8 +1474,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(lv, summary, "uptime")
       assert has_element?(lv, details, "From run-time input config_path")
       assert has_element?(lv, details, "Structured output · JSON Pointer · /healthy")
-      assert has_element?(lv, details, "healthy · equals")
+      assert has_element?(lv, details, "equals true")
       assert has_element?(lv, details, "Observe again every 10s · timeout 120s")
+
+      # Every value sits beside its own name, in one column per step.
+      assert has_element?(lv, ~s|#{details} dl[class*="max-content"]|)
+      assert has_element?(lv, "#{details} dt", "Arguments")
       assert has_element?(lv, ~s|#runbook-stage-0-step-0-form[class~="hidden"]|)
 
       assert has_element?(

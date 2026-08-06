@@ -679,36 +679,28 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
     ~H"""
     <div id={"runbook-stage-#{@stage_index}-step-#{@step_index}-details"} class="min-w-0">
-      <div class="mt-4 space-y-4">
-        <dl :if={@wait} class="flex flex-wrap gap-x-10 gap-y-2 text-xs">
-          <.kv label="Wait">{@wait}</.kv>
-        </dl>
+      <%!-- One label column for the whole step, so a name sits beside its value
+            and every name still lines up down the card. A `justify-between`
+            fact row would fling `From run-time input config_path` to a far edge
+            an operator has to track back from. --%>
+      <dl class="mt-3 grid grid-cols-[max-content,minmax(0,1fr)] gap-x-6 gap-y-1 text-xs">
+        <.summary_group :if={@arguments != [] or @arguments_note} label="Arguments">
+          <p :if={@arguments == []} class="text-zinc-500">{@arguments_note}</p>
+          <.summary_pairs rows={@arguments} />
+        </.summary_group>
 
-        <.summary_facts :if={@arguments != [] or @arguments_note} label="Arguments">
-          <p :if={@arguments == []} class="text-xs text-zinc-500">{@arguments_note}</p>
-          <dl :if={@arguments != []} class="space-y-2 text-xs">
-            <.kv :for={{name, value} <- @arguments} label={name}>
-              <code class="break-all text-[11px] text-zinc-200">{value}</code>
-            </.kv>
-          </dl>
-        </.summary_facts>
+        <.summary_group :if={@outputs != []} label="Outputs">
+          <.summary_pairs rows={@outputs} />
+        </.summary_group>
 
-        <.summary_facts :if={@outputs != []} label="Extracted outputs">
-          <dl class="space-y-2 text-xs">
-            <.kv :for={{id, extractor} <- @outputs} label={id}>
-              <code class="break-all text-[11px] text-zinc-200">{extractor}</code>
-            </.kv>
-          </dl>
-        </.summary_facts>
+        <.summary_group :if={@conditions != []} label="Conditions">
+          <.summary_pairs rows={@conditions} />
+        </.summary_group>
 
-        <.summary_facts :if={@conditions != []} label="Success conditions">
-          <dl class="space-y-2 text-xs">
-            <.kv :for={{test, value} <- @conditions} label={test}>
-              <code class="break-all text-[11px] text-zinc-200">{value}</code>
-            </.kv>
-          </dl>
-        </.summary_facts>
-      </div>
+        <.summary_group :if={@wait} label="Wait">
+          <p class="text-zinc-300">{@wait}</p>
+        </.summary_group>
+      </dl>
     </div>
     """
   end
@@ -716,11 +708,28 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :label, :string, required: true
   slot :inner_block, required: true
 
-  defp summary_facts(assigns) do
+  # A group's `<dt>`/`<dd>` are direct children of the step's grid, so every
+  # group name shares one column — the `<.kv layout={:grid}>` contract.
+  defp summary_group(assigns) do
     ~H"""
-    <div>
-      <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{@label}</p>
-      <div class="mt-2">{render_slot(@inner_block)}</div>
+    <dt class="text-zinc-400">{@label}</dt>
+    <dd class="min-w-0">{render_slot(@inner_block)}</dd>
+    """
+  end
+
+  attr :rows, :list, required: true
+
+  # A second `max-content` column so several arguments line up with each other,
+  # not just with the group name.
+  defp summary_pairs(assigns) do
+    ~H"""
+    <div class="grid grid-cols-[max-content,minmax(0,1fr)] gap-x-2 gap-y-1">
+      <%!-- `contents` keeps each pair's two spans as direct grid children, so
+            the columns span every row. --%>
+      <div :for={{name, value} <- @rows} class="contents">
+        <span class="font-mono text-zinc-300">{name}</span>
+        <span class="min-w-0 break-words text-zinc-400">{value}</span>
+      </div>
     </div>
     """
   end
@@ -773,14 +782,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     |> Enum.join(" · ")
   end
 
-  # The run surface's condition label, one state earlier — same `output ·
-  # operator` phrase, with the expected value where the verdict will land.
+  # The output names the row, so its assertion reads as one phrase — the run
+  # surface's operator wording, then the value its verdict will judge.
   defp summary_condition_rows(step) do
-    Enum.map(step["success"], &{condition_label(&1), &1["value"]})
+    Enum.map(step["success"], &{&1["output"], condition_assertion(&1)})
   end
 
-  defp condition_label(condition),
-    do: "#{condition["output"]} · #{String.replace(condition["operator"], "_", " ")}"
+  defp condition_assertion(condition),
+    do: "#{String.replace(condition["operator"], "_", " ")} #{condition["value"]}"
 
   defp summary_wait_note(%{"enabled" => "true"} = wait) do
     "Observe again every #{wait["interval_seconds"]}s · timeout #{wait["timeout_seconds"]}s · " <>
