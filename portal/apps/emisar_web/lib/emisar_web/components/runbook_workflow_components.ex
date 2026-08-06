@@ -695,11 +695,26 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             Flex gaps, not markup whitespace: HEEx turns the newline between two
             spans into a rendered space, which stacked with the separator's own
             space into a visible gutter. --%>
-      <p class="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-xs">
+      <p class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <span
           :for={target <- @targets}
-          class={if target.available?, do: "text-zinc-300", else: "text-rose-300"}
+          class={[
+            "inline-flex items-center gap-1.5",
+            if(target.available?, do: "text-zinc-300", else: "text-rose-300")
+          ]}
         >
+          <%!-- The dots are the only thing saying how many runners this reaches,
+                so they carry their own name for hover, focus, and a reader. --%>
+          <.tooltip
+            :if={target.kind}
+            id={"runbook-stage-#{@stage_index}-step-#{@step_index}-scope-#{target.index}"}
+            text={target.scope}
+          >
+            <.target_scope_icon
+              kind={target.kind}
+              tone={if target.available?, do: :brand, else: :rose}
+            />
+          </.tooltip>
           {target.label}
         </span>
       </p>
@@ -810,37 +825,49 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp step_issue?(_path, _base), do: false
 
-  # A group's target refs read as phrases an operator would say, each carrying
-  # whether it still resolves — a per-ref fact a trailing count cannot give.
-  defp summary_targets(catalog, [], _selection),
-    do: [%{label: empty_target_selection_label(catalog), available?: true}]
+  # Each ref carries the picker's own scope icon, the name, and whether it still
+  # resolves — a per-ref fact a trailing count cannot give. The dots say how many
+  # runners this reaches, so the words no longer repeat it.
+  defp summary_targets(catalog, [], _selection) do
+    [
+      %{
+        index: 0,
+        kind: nil,
+        label: empty_target_selection_label(catalog),
+        available?: true,
+        scope: nil
+      }
+    ]
+  end
 
   defp summary_targets(catalog, refs, selection) do
-    Enum.map(refs, fn ref ->
+    refs
+    |> Enum.with_index()
+    |> Enum.map(fn {ref, index} ->
       available? = RunbookEditorCatalog.target_available?(catalog, ref)
+      {kind, name, scope} = target_scope(catalog, ref, selection)
 
-      %{label: target_phrase(catalog, ref, selection, available?), available?: available?}
+      %{
+        index: index,
+        kind: kind,
+        label: if(available?, do: name, else: "#{name} (unavailable)"),
+        available?: available?,
+        scope: if(available?, do: scope, else: "#{scope} — unavailable")
+      }
     end)
   end
 
-  defp target_phrase(catalog, ref, selection, available?) do
-    {noun, qualifiers} = target_noun(catalog, ref, selection)
-    qualifiers = if available?, do: qualifiers, else: qualifiers ++ ["unavailable"]
+  defp target_scope(_catalog, "group:" <> group, "random_one"),
+    do: {:group_one, String.upcase(group), "One random runner in group #{group}"}
 
-    case qualifiers do
-      [] -> noun
-      qualifiers -> "#{noun} (#{Enum.join(qualifiers, ", ")})"
-    end
+  defp target_scope(_catalog, "group:" <> group, _selection),
+    do: {:group_all, String.upcase(group), "Every runner in group #{group}"}
+
+  defp target_scope(catalog, ref, selection) do
+    name = RunbookEditorCatalog.target_label(catalog, ref, selection)
+
+    {:runner, name, "Runner #{name}"}
   end
-
-  defp target_noun(_catalog, "group:" <> group, "random_one"),
-    do: {"Group #{String.upcase(group)}", ["one random runner"]}
-
-  defp target_noun(_catalog, "group:" <> group, _selection),
-    do: {"Group #{String.upcase(group)}", ["every runner"]}
-
-  defp target_noun(catalog, ref, selection),
-    do: {"Runner #{RunbookEditorCatalog.target_label(catalog, ref, selection)}", []}
 
   defp summary_argument_rows(step) do
     step["args"]
@@ -1207,6 +1234,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   attr :kind, :atom, required: true, values: [:group_all, :group_one, :runner]
 
+  attr :tone, :atom,
+    default: :brand,
+    values: [:brand, :rose],
+    doc: "rose when the ref no longer resolves, so the dots don't read as fine"
+
   defp target_scope_icon(assigns) do
     {accent_dots, neutral_dots} =
       case assigns.kind do
@@ -1236,11 +1268,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       ]}
     >
       <span
-        :for={tone <- @dots}
+        :for={dot <- @dots}
         class={[
           "h-1.5 w-1.5 rounded-full",
-          tone == :accent && "bg-brand-400",
-          tone == :neutral && "bg-zinc-600"
+          dot == :accent && @tone == :brand && "bg-brand-400",
+          dot == :accent && @tone == :rose && "bg-rose-400",
+          dot == :neutral && "bg-zinc-600"
         ]}
       ></span>
     </span>
