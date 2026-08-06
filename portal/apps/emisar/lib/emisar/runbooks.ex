@@ -21,8 +21,13 @@ defmodule Emisar.Runbooks do
   # One runbook list page is 35 rows; 64 bounds the batch without capping the
   # page it serves.
   @max_risk_runbook_ids 64
-  # The published `<slug>@<version>` identity a model executes by.
-  @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
+  # The published `<slug>@<version>` identity a model executes by. The version is
+  # bounded to 9 digits because it is String.to_integer'd into an int4 column: an
+  # unbounded `[0-9]*` accepted 94 digits from a schema-valid ref, and Postgrex
+  # then RAISED an encode error rather than returning one — a 500 with a
+  # stacktrace instead of a JSON-RPC error frame, on a boundary whose caller is
+  # an untrusted LLM and which allows 300 requests a minute.
+  @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]{0,8})\z/
   # Mirrored at compile time so a schema change reaches every consumer that
   # embeds it in its own compile-time attributes.
   @definition_schema Definition.schema()

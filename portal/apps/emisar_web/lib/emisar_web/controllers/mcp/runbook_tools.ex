@@ -12,7 +12,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract, Service}
   alias EmisarWeb.MCP.ValidationError
 
-  @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]*)\z/
+  @runbook_ref ~r/\A([a-z][a-z0-9_-]{0,79})@([1-9][0-9]{0,8})\z/
   @default_limit 15
   @max_definition_issues 64
   @hidden_contract_reasons [
