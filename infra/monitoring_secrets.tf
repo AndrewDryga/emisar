@@ -62,7 +62,10 @@ resource "google_monitoring_alert_policy" "unexpected_secret_access" {
   conditions {
     display_name = "Secret Read By An Unexpected Principal"
     condition_threshold {
-      filter          = "metric.type = \"logging.googleapis.com/user/${google_logging_metric.unexpected_secret_access.name}\""
+      # Monitoring rejects a condition filter that does not restrict resource.type.
+      # Secret Manager has no monitored resource of its own, so its audit entries —
+      # and therefore this metric's series — carry the generic `audited_resource`.
+      filter          = "resource.type = \"audited_resource\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.unexpected_secret_access.name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
