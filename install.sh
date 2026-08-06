@@ -428,6 +428,15 @@ Documentation=https://github.com/${REPO}
 Wants=network-online.target
 After=network-online.target
 
+# The rate limiter lives in [Unit]. systemd moved these keys out of [Service]
+# in v230 and only keeps the legacy un-suffixed spellings there as compat
+# aliases, so StartLimitIntervalSec under [Service] is parsed as an unknown key
+# and silently dropped — leaving the default 10s window, which RestartSec=5s can
+# never fill. The cap below is what stops a permanently-broken config (e.g. a
+# revoked enrollment key returning 401) hammering the cloud forever.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
 [Service]
 Type=simple
 User=${SERVICE_USER}
@@ -436,13 +445,10 @@ EnvironmentFile=-${ETC_DIR}/runner.env
 ExecStart=${BIN_DIR}/emisar --config ${ETC_DIR}/config.yaml connect
 ExecReload=/bin/kill -HUP \$MAINPID
 
-# Restart only on failure — clean shutdowns stay shut down.
-# StartLimitBurst caps a permanently-broken config (e.g., revoked
-# enrollment key returning 401) so it doesn't hammer the cloud forever.
+# Restart only on failure — clean shutdowns stay shut down. The burst cap that
+# bounds a permanently-broken config lives in [Unit] above.
 Restart=on-failure
 RestartSec=5s
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 # Cancel grace: longer than the longest action's cancel_grace so
 # systemd doesn't SIGKILL us mid-cleanup. 7 minutes covers the
