@@ -1,6 +1,6 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Runners, SSO}
+  alias Emisar.{Accounts, Catalog, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
@@ -8,6 +8,7 @@ defmodule EmisarWeb.TeamLive do
   # in strings (HTTP params); membership.role itself is an atom.
   @roles Enum.map(Emisar.Auth.roles(), &Atom.to_string/1)
   @runner_scope_required "Choose at least one runner group or runner for selected access."
+  @pack_scope_required "Choose at least one pack for selected pack access."
 
   def mount(_params, _session, socket) do
     if Runners.subject_can_view_runners?(socket.assigns.current_subject) do
@@ -24,12 +25,17 @@ defmodule EmisarWeb.TeamLive do
        |> assign(:scope_access_mode, "none")
        |> assign(:scope_draft, [])
        |> assign(:scope_error, nil)
+       |> assign(:scope_pack_mode, "all")
+       |> assign(:scope_pack_draft, [])
        |> assign(:runners, [])
        |> assign(:runners_by_id, %{})
        |> assign(:runner_load_error?, false)
+       |> assign(:pack_advertisements, %{})
        |> assign(:approval_access_modes, %{})
        |> assign(:approval_scope_drafts, %{})
        |> assign(:approval_scope_errors, %{})
+       |> assign(:approval_pack_modes, %{})
+       |> assign(:approval_pack_drafts, %{})
        # The branded sign-in link is a per-account constant to hand to members.
        |> assign(
          :sign_in_url,
@@ -93,7 +99,9 @@ defmodule EmisarWeb.TeamLive do
          |> assign(:scope_editing_id, nil)
          |> assign(:scope_access_mode, "none")
          |> assign(:scope_draft, [])
-         |> assign(:scope_error, nil)}
+         |> assign(:scope_error, nil)
+         |> assign(:scope_pack_mode, "all")
+         |> assign(:scope_pack_draft, [])}
     end
   end
 
@@ -116,6 +124,8 @@ defmodule EmisarWeb.TeamLive do
          |> assign(:scope_access_mode, to_string(access.mode))
          |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))
          |> assign(:scope_error, nil)
+         |> assign(:scope_pack_mode, to_string(access.pack_mode))
+         |> assign(:scope_pack_draft, RunnerScope.to_pack_values(access.pack_ids))
          |> assign(:editing_id, nil)
          |> assign(:edit_form, nil)}
 
@@ -130,7 +140,9 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:scope_editing_id, nil)
      |> assign(:scope_access_mode, "none")
      |> assign(:scope_draft, [])
-     |> assign(:scope_error, nil)}
+     |> assign(:scope_error, nil)
+     |> assign(:scope_pack_mode, "all")
+     |> assign(:scope_pack_draft, [])}
   end
 
   # Live-normalize the scope selection so the picker can disable a runner the
@@ -139,6 +151,14 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("scope_changed", params, socket) do
     mode = Map.get(params, "runner_access_mode", socket.assigns.scope_access_mode)
     scope = List.wrap(params["scope"])
+
+    # The pack list has no coverage rule to normalize — what is checked IS the
+    # draft, including a pack the account no longer carries, which the picker
+    # keeps ticked so the operator can see and remove it.
+    socket =
+      socket
+      |> assign(:scope_pack_mode, Map.get(params, "pack_access_mode", "all"))
+      |> assign(:scope_pack_draft, List.wrap(params["pack_scope"]))
 
     case Accounts.build_runner_access(mode, scope, socket.assigns.runners) do
       {:ok, %Accounts.RunnerAccess{} = access} ->
@@ -291,6 +311,21 @@ defmodule EmisarWeb.TeamLive do
     mode = params["runner_access_mode"]
     scope = List.wrap(params["scope"])
 
+    socket =
+      socket
+      |> assign(
+        :approval_pack_modes,
+        Map.put(
+          socket.assigns.approval_pack_modes,
+          id,
+          Map.get(params, "pack_access_mode", "all")
+        )
+      )
+      |> assign(
+        :approval_pack_drafts,
+        Map.put(socket.assigns.approval_pack_drafts, id, List.wrap(params["pack_scope"]))
+      )
+
     case Accounts.build_runner_access(mode, scope, socket.assigns.runners) do
       {:ok, access} ->
         {:noreply,
@@ -370,7 +405,9 @@ defmodule EmisarWeb.TeamLive do
       case Accounts.build_runner_access(
              params["runner_access_mode"],
              List.wrap(params["scope"]),
-             socket.assigns.runners
+             access_allowlist(socket),
+             Map.get(params, "pack_access_mode", "all"),
+             List.wrap(params["pack_scope"])
            ) do
         {:ok, access} ->
           case Accounts.update_membership_runner_access(
@@ -381,6 +418,9 @@ defmodule EmisarWeb.TeamLive do
             {:ok, _membership} -> {:ok, "Runner access updated."}
             {:error, reason} -> {:error, error_message(reason)}
           end
+
+        {:error, :invalid_pack_access} ->
+          {:error, @pack_scope_required}
 
         {:error, :invalid_runner_access} ->
           {:error, @runner_scope_required}
@@ -716,6 +756,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:directory_by_user_id, directory_by_user_id)
         |> assign(:runners, runners)
         |> assign(:runners_by_id, runners_by_id)
+        |> assign(:pack_advertisements, account_pack_advertisements(socket))
         |> assign(:current_role, current_role(member_facts, socket.assigns.current_user.id))
         |> assign(
           :suppressed_emails,
@@ -736,6 +777,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:directory_by_user_id, %{})
         |> assign(:runners, [])
         |> assign(:runners_by_id, %{})
+        |> assign(:pack_advertisements, %{})
         |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
         |> assign(:provider_facts, [])
@@ -758,6 +800,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:loading?, false)
         |> assign(:runners, runners)
         |> assign(:runners_by_id, Map.new(runners, &{&1.id, &1}))
+        |> assign(:pack_advertisements, account_pack_advertisements(socket))
         |> assign(:runner_load_error?, false)
 
       {:error, _reason} ->
@@ -765,7 +808,17 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:loading?, false)
         |> assign(:runners, [])
         |> assign(:runners_by_id, %{})
+        |> assign(:pack_advertisements, %{})
         |> assign(:runner_load_error?, true)
+    end
+  end
+
+  # A role without view_catalog gets no pack choices rather than a crash — the
+  # same shape as the runner and directory loads above.
+  defp account_pack_advertisements(socket) do
+    case Catalog.list_pack_advertisements(socket.assigns.current_subject) do
+      {:ok, advertisements} -> advertisements
+      {:error, _reason} -> %{}
     end
   end
 
@@ -865,6 +918,17 @@ defmodule EmisarWeb.TeamLive do
   # People blocked at sign-in until an admin approves. Gated on configure_sso;
   # each acts on a request from the loaded list, then refreshes the SSO state.
 
+  # Runners AND every pack the account carries — deliberately wider than the
+  # picker, which only offers the packs the CHOSEN runners advertise: a grant may
+  # name a pack that is momentarily unadvertised (its host is offline) without
+  # the save being rejected.
+  defp access_allowlist(socket) do
+    Accounts.runner_access_allowlist(
+      socket.assigns.runners,
+      Map.keys(socket.assigns.pack_advertisements)
+    )
+  end
+
   defp do_approve_request(socket, id, params) do
     case find_pending_request(socket, id) do
       nil ->
@@ -875,9 +939,19 @@ defmodule EmisarWeb.TeamLive do
 
         scope = List.wrap(params["scope"])
 
-        case Accounts.build_runner_access(mode, scope, socket.assigns.runners) do
+        case Accounts.build_runner_access(
+               mode,
+               scope,
+               access_allowlist(socket),
+               Map.get(params, "pack_access_mode", "all"),
+               List.wrap(params["pack_scope"])
+             ) do
           {:ok, access} ->
             approve_request_with_access(socket, request, access)
+
+          {:error, :invalid_pack_access} ->
+            {:noreply,
+             put_flash(socket, :error, "Choose which packs before approving this request.")}
 
           {:error, :invalid_runner_access} ->
             {:noreply,
@@ -942,11 +1016,20 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
+  # No reach at all needs no pack qualifier; every other grant states both
+  # dimensions, because "All runners" alone reads as more than it grants.
   defp runner_access_label(%Accounts.RunnerAccess{mode: :none}), do: "No runners"
-  defp runner_access_label(%Accounts.RunnerAccess{mode: :all}), do: "All runners"
 
-  defp runner_access_label(%Accounts.RunnerAccess{mode: :restricted}),
-    do: "Selected runners"
+  defp runner_access_label(%Accounts.RunnerAccess{} = access),
+    do: runner_reach_label(access) <> " · " <> pack_reach_label(access)
+
+  defp runner_reach_label(%Accounts.RunnerAccess{mode: :all}), do: "All runners"
+  defp runner_reach_label(%Accounts.RunnerAccess{mode: :restricted}), do: "Selected runners"
+
+  # The MODE, never a count: the selected packs are named by their own tags on
+  # the same row, so a count here would be a second label for one fact.
+  defp pack_reach_label(%Accounts.RunnerAccess{pack_mode: :all}), do: "all packs"
+  defp pack_reach_label(%Accounts.RunnerAccess{}), do: "selected packs"
 
   defp current_role(member_facts, user_id) do
     case Enum.find(member_facts, &(&1.membership.user_id == user_id)) do
@@ -1091,9 +1174,10 @@ defmodule EmisarWeb.TeamLive do
             </fieldset>
 
             <fieldset>
-              <legend class="text-sm font-medium text-zinc-300">Runner access</legend>
+              <legend class="text-sm font-medium text-zinc-300">Access</legend>
               <p class="mt-0.5 text-xs text-zinc-400">
-                Where this role applies. New members start with no runner access.
+                Which runners this role applies to, and which packs they can run there.
+                New members start with no runner access.
               </p>
               <div class="mt-2.5">
                 <.choice_cards
@@ -1126,6 +1210,22 @@ defmodule EmisarWeb.TeamLive do
                       "Runner access options could not be loaded. Try again before sending the invite."
                     end
                   }
+                />
+              </div>
+
+              <div class="mt-4">
+                <.pack_access_field
+                  runner_mode={to_string(@form[:runner_access_mode].value)}
+                  runner_scope={List.wrap(@form[:scope].value)}
+                  runners={@runners}
+                  advertisements={@pack_advertisements}
+                  mode_name="invite[pack_access_mode]"
+                  mode_value={@form[:pack_access_mode].value}
+                  scope_name="invite[pack_scope][]"
+                  selected={List.wrap(@form[:pack_scope].value)}
+                  submit_error_field={@form[:pack_access_mode]}
+                  submit_error_message="Choose at least one pack for selected pack access."
+                  loading?={@loading?}
                 />
               </div>
             </fieldset>
@@ -1209,6 +1309,17 @@ defmodule EmisarWeb.TeamLive do
                   runners={@runners}
                   selected={Map.get(@approval_scope_drafts, request.id, [])}
                   validation_error={Map.get(@approval_scope_errors, request.id)}
+                />
+                <.pack_access_field
+                  runner_mode={Map.get(@approval_access_modes, request.id, "none")}
+                  runner_scope={Map.get(@approval_scope_drafts, request.id, [])}
+                  runners={@runners}
+                  advertisements={@pack_advertisements}
+                  variant={:select}
+                  mode_name="pack_access_mode"
+                  mode_value={Map.get(@approval_pack_modes, request.id, "all")}
+                  scope_name="pack_scope[]"
+                  selected={Map.get(@approval_pack_drafts, request.id, [])}
                 />
                 <.button variant={:secondary} tone={:amber} size={:sm}>Approve</.button>
               </form>
@@ -1379,24 +1490,31 @@ defmodule EmisarWeb.TeamLive do
                         <% access = member.runner_access %>
                         <div class="mt-1 flex flex-wrap items-center gap-1">
                           <span class="text-[10px] uppercase tracking-wider text-zinc-400">
-                            runner access:
+                            access:
                           </span>
                           <span class="text-xs text-zinc-400">{runner_access_label(access)}</span>
-                          <.chip :for={group <- access.groups} tone={:neutral}>
-                            Group: {group}
-                          </.chip>
-                          <%!-- The full runner id rides the chip's title; the label names
-                           the live runner, and falls back to the shared removed-runner
-                           label when the id no longer resolves. --%>
-                          <.chip
+                          <.identity_tag
+                            :for={group <- access.groups}
+                            category="group"
+                            value={group}
+                          />
+                          <%!-- The full runner id rides the tag's title; the value half
+                           names the live runner, and falls back to the shared
+                           removed-runner label when the id no longer resolves. --%>
+                          <.identity_tag
                             :for={runner_id <- access.runner_ids}
-                            tone={:neutral}
+                            category="runner"
                             title={runner_id}
                           >
                             <% runner = Map.get(@runners_by_id, runner_id) %>
-                            <span :if={runner}>Runner: {runner.name}</span>
+                            <span :if={runner}>{runner.name}</span>
                             <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
-                          </.chip>
+                          </.identity_tag>
+                          <.identity_tag
+                            :for={pack_id <- access.pack_ids}
+                            category="pack"
+                            value={pack_id}
+                          />
                           <%!-- No "managed by identity provider" note here: the sync badge
                            by the name already says the member is IdP-provisioned, and the
                            role lock says its settings are IdP-owned. Runner access has no
@@ -1529,7 +1647,8 @@ defmodule EmisarWeb.TeamLive do
                     >
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <p class="text-xs text-zinc-400">
-                        Role controls what this member can do. Runner access controls where it applies.
+                        Role controls what this member can do. Access controls which runners it
+                        applies to, and which packs they can run there.
                       </p>
 
                       <div>
@@ -1558,6 +1677,17 @@ defmodule EmisarWeb.TeamLive do
                           validation_error={@scope_error}
                         />
                       </div>
+
+                      <.pack_access_field
+                        runner_mode={@scope_access_mode}
+                        runner_scope={@scope_draft}
+                        runners={@runners}
+                        advertisements={@pack_advertisements}
+                        mode_name="pack_access_mode"
+                        mode_value={@scope_pack_mode}
+                        scope_name="pack_scope[]"
+                        selected={@scope_pack_draft}
+                      />
 
                       <div class="flex items-center gap-3">
                         <.button phx-disable-with="Saving...">Save scope</.button>

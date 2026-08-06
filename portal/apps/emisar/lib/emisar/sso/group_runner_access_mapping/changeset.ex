@@ -2,13 +2,14 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping.Changeset do
   use Emisar, :changeset
   alias Emisar.SSO.GroupRunnerAccessMapping
 
-  # The persisted `runner_scope_*` arrays are deliberately NOT cast — they are
-  # derived from the raw `scope` selection, so a submitted array can never
-  # widen the grant.
-  @fields ~w[external_group_id external_group_display runner_access_mode scope]a
+  # The persisted `runner_scope_*` / `pack_scope_*` arrays are deliberately NOT
+  # cast — they are derived from the raw `scope` / `pack_scope` selections, so a
+  # submitted array can never widen the grant.
+  @fields ~w[external_group_id external_group_display runner_access_mode scope
+             pack_access_mode pack_scope]a
   @update_fields List.delete(@fields, :external_group_id)
   @max_string_length 255
-  @no_runner_facts %{groups: [], runners: []}
+  @no_runner_facts %{groups: [], runners: [], packs: []}
 
   def create(account_id, provider_id, attrs, allowlist \\ @no_runner_facts) do
     %GroupRunnerAccessMapping{}
@@ -32,7 +33,7 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping.Changeset do
     changeset
     |> validate_length(:external_group_id, max: @max_string_length)
     |> validate_length(:external_group_display, max: @max_string_length)
-    |> Emisar.Accounts.RunnerAccess.validate_selection(:runner, :scope, allowlist)
+    |> Emisar.Accounts.RunnerAccess.validate_selection(:runner, :scope, :pack_scope, allowlist)
     |> validate_exclusion(:runner_access_mode, [:none], message: "must grant runner access")
     |> unique_constraint([:provider_id, :external_group_id],
       name: :sso_directory_group_runner_access_mappings_provider_group_index

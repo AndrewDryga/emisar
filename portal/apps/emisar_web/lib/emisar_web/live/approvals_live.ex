@@ -532,8 +532,11 @@ defmodule EmisarWeb.ApprovalsLive do
                     <span class="truncate font-mono text-sm text-zinc-100">{g.action_id}</span>
                   </:title>
                   <:chips>
-                    <.chip>runner: {if g.runner, do: g.runner.name, else: "any"}</.chip>
-                    <.chip>args: {if g.args_sha256, do: "exact", else: "any"}</.chip>
+                    <.identity_tag
+                      category="runner"
+                      value={if g.runner, do: g.runner.name, else: "any"}
+                    />
+                    <.identity_tag category="args" value={if g.args_sha256, do: "exact", else: "any"} />
                     <.chip :if={g.expires_at == nil} tone={:amber}>no expiry</.chip>
                   </:chips>
                   <:meta>

@@ -8,7 +8,7 @@
       toc={[
         {"roles", "Roles"},
         {"inviting", "Inviting your team"},
-        {"runner-scopes", "Per-member runner scopes"},
+        {"runner-scopes", "Per-member scope: runners and packs"},
         {"mfa", "MFA"},
         {"sessions", "Sessions & credentials"}
       ]}
@@ -101,7 +101,7 @@
         blocked) and unsuspended without losing their history.
       </p>
 
-      <.docs_h2 id="runner-scopes">Per-member runner scopes</.docs_h2>
+      <.docs_h2 id="runner-scopes">Per-member scope: runners and packs</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Roles answer <em>what</em>
         someone can do; runner scopes answer <em>where</em>. The owner who
@@ -132,10 +132,22 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        Then narrow what they can run there. A grant is
+        <strong class="text-zinc-200">all packs</strong>
+        by default, or an explicit list — so the DBA who legitimately manages the database fleet
+        can run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres.*</code>
+        on those hosts without also getting <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">shell</code>. Runner groups can't
+        express that on their own: the packs you most want to withhold are the ones installed
+        everywhere. The two dimensions intersect — the member reaches a runner only if it is in
+        their runner scope, and can run an action there only if its pack is in their pack scope.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Scoping is treated as <strong class="text-zinc-200">existence-hiding</strong>, not just
         permission-denying: out-of-scope runners don't appear in lists, their detail pages 404,
-        and their actions vanish from the member's dispatch surface. An API key inherits its
-        owner's scope, so "the DBA's agent only reaches <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-*</code>" falls out
+        and their actions vanish from the member's dispatch surface. Out-of-scope packs drop out
+        of the same discovery and dispatch surfaces, while run history for a runner they do reach
+        stays whole — an operator never reads a partial record of their own hosts. An API key
+        inherits its owner's scope, so "the DBA's agent only reaches <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-*</code>" falls out
         of scoping the DBA — not a policy convention, and not a per-key setting to keep in sync.
         Scope changes are audited.
       </p>

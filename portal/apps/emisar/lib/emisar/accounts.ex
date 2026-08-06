@@ -1389,6 +1389,8 @@ defmodule Emisar.Accounts do
       role: role,
       directory_managed: directory_managed?,
       runner_access_mode: access.mode,
+      pack_access_mode: access.pack_mode,
+      pack_scope_pack_ids: access.pack_ids,
       runner_access_directory_managed: directory_managed?,
       directory_provider_id: directory_provider_id(directory_provider, directory_managed?),
       directory_authorization_version:
@@ -1420,17 +1422,28 @@ defmodule Emisar.Accounts do
 
   @doc """
   Canonical runner access for a picker's explicit mode plus the raw
-  `"group:<name>"` / `"runner:<id>"` values it submitted, allowlisted against
-  `runners` (a runner list, or a `%{groups: _, runners: _}` fact map). Returns
-  `{:ok, access} | {:error, :invalid_runner_access}`, so a crafted selection
-  can never widen reach.
+  `"group:<name>"` / `"runner:<id>"` values it submitted, narrowed by the pack
+  mode and its raw `"pack:<id>"` values, allowlisted against `allowlist` (a
+  runner list, or a `%{groups: _, runners: _, packs: _}` fact map). Returns
+  `{:ok, access} | {:error, :invalid_runner_access | :invalid_pack_access}`, so
+  a crafted selection can never widen reach.
   """
-  def build_runner_access(mode, values, runners),
-    do: RunnerAccess.from_selection(mode, values, runners)
+  def build_runner_access(mode, values, allowlist, pack_mode \\ :all, pack_values \\ []),
+    do: RunnerAccess.from_selection(mode, values, allowlist, pack_mode, pack_values)
 
   @doc ~s(The `"group:<name>"` / `"runner:<id>"` selector values a persisted `{groups, runner_ids}` scope renders as.)
   def runner_access_selection_values(groups, runner_ids),
     do: RunnerAccess.selection_values(groups, runner_ids)
+
+  @doc ~s(The `"pack:<id>"` selector values a persisted pack scope renders as.)
+  def pack_access_selection_values(pack_ids), do: RunnerAccess.pack_selection_values(pack_ids)
+
+  @doc """
+  The account facts a grant form's selection is resolved against — its runners
+  (and the groups they name) plus the pack ids the account carries.
+  """
+  def runner_access_allowlist(runners, packs \\ []),
+    do: RunnerAccess.allowlist(runners, packs)
 
   @doc "Explicit no-runner access — the fail-closed value a caller grants when it grants nothing."
   def empty_runner_access, do: RunnerAccess.none()
@@ -1531,7 +1544,7 @@ defmodule Emisar.Accounts do
         end
       end)
       |> Multi.update(:membership, fn %{target: target} ->
-        Membership.Changeset.update_runner_access(target, access.mode)
+        Membership.Changeset.update_runner_access(target, access)
       end)
       |> Multi.run(:runner_access, fn repo, %{membership: updated} ->
         replace_runner_access_rows(repo, updated.id, access)
@@ -2448,7 +2461,7 @@ defmodule Emisar.Accounts do
       if target.role == :owner do
         Membership.Changeset.sync_runner_authorization(
           target,
-          access.mode,
+          access,
           provider.id,
           provider.authorization_version
         )
@@ -2456,7 +2469,7 @@ defmodule Emisar.Accounts do
         Membership.Changeset.sync_authorization(
           target,
           role,
-          access.mode,
+          access,
           provider.id,
           provider.authorization_version
         )
@@ -2950,8 +2963,8 @@ defmodule Emisar.Accounts do
              subject,
              Authorizer.invite_member_permission()
            ) do
-      runners = invitation_runner_facts(Repo, account_id, attrs, false)
-      {:ok, InvitationInput.changeset(attrs, runners)}
+      allowlist = invitation_access_facts(Repo, account_id, attrs, false)
+      {:ok, InvitationInput.changeset(attrs, allowlist)}
     end
   end
 
@@ -3062,8 +3075,8 @@ defmodule Emisar.Accounts do
   # nondelegation stay tagged atoms; invalid input comes back as the changeset
   # the LiveView renders inline.
   defp validate_invitation(repo, attrs, %Subject{account: %Account{id: account_id}} = subject) do
-    runners = invitation_runner_facts(repo, account_id, attrs, true)
-    changeset = InvitationInput.changeset(attrs, runners)
+    allowlist = invitation_access_facts(repo, account_id, attrs, true)
+    changeset = InvitationInput.changeset(attrs, allowlist)
 
     with {:ok, invitation} <- Ecto.Changeset.apply_action(changeset, :insert),
          :ok <- ensure_invite_permitted(invitation.role, subject),
@@ -3072,14 +3085,28 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # `none`/`all` name no runners, so the mount-time form builder reads nothing
-  # (IL-18); a malformed selection resolves nothing and the input changeset
-  # fails it closed.
+  # `none`/`all` name no runners and `all` packs names none either, so the
+  # mount-time form builder reads nothing (IL-18); a malformed selection resolves
+  # nothing and the input changeset fails it closed.
+  defp invitation_access_facts(repo, account_id, attrs, lock?) do
+    RunnerAccess.allowlist(
+      invitation_runner_facts(repo, account_id, attrs, lock?),
+      invitation_pack_facts(repo, account_id, attrs)
+    )
+  end
+
   defp invitation_runner_facts(repo, account_id, attrs, lock?) do
     case RunnerAccess.selection_refs(invitation_scope_values(attrs)) do
       {:ok, {[], []}} -> []
       {:ok, {groups, runner_ids}} -> runner_facts(repo, account_id, groups, runner_ids, lock?)
       {:error, :invalid_runner_access} -> []
+    end
+  end
+
+  defp invitation_pack_facts(repo, account_id, attrs) do
+    case Map.get(attrs, "pack_access_mode") || Map.get(attrs, :pack_access_mode) do
+      mode when mode in ["restricted", :restricted] -> account_pack_ids(repo, account_id)
+      _mode -> []
     end
   end
 
@@ -3117,6 +3144,21 @@ defmodule Emisar.Accounts do
 
   defp lock_clause(true), do: "FOR UPDATE"
   defp lock_clause(false), do: ""
+
+  # The pack dimension is a name filter, not a foreign key, so an id that stops
+  # existing simply stops matching — no lock, and no Accounts -> Catalog
+  # dependency for one account-scoped column read (the same reason `runner_facts`
+  # stays here).
+  defp account_pack_ids(repo, account_id) do
+    query = """
+    SELECT DISTINCT pack_id
+    FROM catalog_pack_versions
+    WHERE account_id = $1
+    """
+
+    %{rows: rows} = Ecto.Adapters.SQL.query!(repo, query, [Ecto.UUID.dump!(account_id)])
+    Enum.map(rows, fn [pack_id] -> pack_id end)
+  end
 
   @doc """
   Resends a pending account invitation. Requires `invite` on memberships,

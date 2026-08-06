@@ -1,8 +1,9 @@
 defmodule Emisar.Accounts.Membership.Changeset do
   use Emisar, :changeset
-  alias Emisar.Accounts.Membership
+  alias Emisar.Accounts.{Membership, RunnerAccess}
 
   @create_fields ~w[account_id user_id role directory_managed runner_access_mode runner_access_directory_managed
+                    pack_access_mode pack_scope_pack_ids
                     directory_provider_id directory_authorization_version directory_authorization_pending_version
                     invited_by_id invitation_token_digest invitation_accepted_at]a
   @update_fields ~w[role invitation_accepted_at]a
@@ -28,8 +29,13 @@ defmodule Emisar.Accounts.Membership.Changeset do
     cast(membership, attrs, @update_fields)
   end
 
-  def update_runner_access(%Membership{} = membership, mode),
-    do: change(membership, runner_access_mode: mode)
+  def update_runner_access(%Membership{} = membership, %RunnerAccess{} = access) do
+    change(membership,
+      runner_access_mode: access.mode,
+      pack_access_mode: access.pack_mode,
+      pack_scope_pack_ids: access.pack_ids
+    )
+  end
 
   # Directory sync sets the role AND marks it directory-managed, so the operator
   # role-change path rejects a manual change to it (the lock is domain-owned, not
@@ -37,11 +43,19 @@ defmodule Emisar.Accounts.Membership.Changeset do
   def sync_role(%Membership{} = membership, role),
     do: change(membership, role: role, directory_managed: true)
 
-  def sync_authorization(%Membership{} = membership, role, mode, provider_id, version) do
+  def sync_authorization(
+        %Membership{} = membership,
+        role,
+        %RunnerAccess{} = access,
+        provider_id,
+        version
+      ) do
     change(membership,
       role: role,
       directory_managed: true,
-      runner_access_mode: mode,
+      runner_access_mode: access.mode,
+      pack_access_mode: access.pack_mode,
+      pack_scope_pack_ids: access.pack_ids,
       runner_access_directory_managed: true,
       directory_provider_id: provider_id,
       directory_authorization_version: version,
@@ -49,9 +63,16 @@ defmodule Emisar.Accounts.Membership.Changeset do
     )
   end
 
-  def sync_runner_authorization(%Membership{} = membership, mode, provider_id, version) do
+  def sync_runner_authorization(
+        %Membership{} = membership,
+        %RunnerAccess{} = access,
+        provider_id,
+        version
+      ) do
     change(membership,
-      runner_access_mode: mode,
+      runner_access_mode: access.mode,
+      pack_access_mode: access.pack_mode,
+      pack_scope_pack_ids: access.pack_ids,
       runner_access_directory_managed: true,
       directory_provider_id: provider_id,
       directory_authorization_version: version,

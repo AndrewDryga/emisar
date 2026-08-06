@@ -363,11 +363,22 @@ defmodule EmisarWeb.AuditSummary do
   defp mfa_limit_step("mfa_enrollment_issue"), do: "enrollment code delivery"
   defp mfa_limit_step(_scope), do: nil
 
+  # Both dimensions of the grant, so a change that only narrowed packs still
+  # reads as a change instead of "all -> all".
   defp access_from_to(payload) do
-    before_mode = payload |> map_value(:before) |> get(:mode)
-    after_mode = payload |> map_value(:after) |> get(:mode)
+    before_reach = payload |> map_value(:before) |> access_reach()
+    after_reach = payload |> map_value(:after) |> access_reach()
 
-    from_to(before_mode, after_mode)
+    from_to(before_reach, after_reach)
+  end
+
+  defp access_reach(access) do
+    case {get(access, :mode), get(access, :pack_mode)} do
+      {nil, _pack_mode} -> nil
+      {mode, nil} -> mode
+      {"none", _pack_mode} -> "none"
+      {mode, pack_mode} -> "#{mode} runners · #{pack_mode} packs"
+    end
   end
 
   defp pairs(kw) do

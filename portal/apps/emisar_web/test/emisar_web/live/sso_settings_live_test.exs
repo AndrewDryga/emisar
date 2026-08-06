@@ -1345,7 +1345,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert html =~ "Group runner access added."
       assert html =~ "Database team"
-      assert html =~ "Group: database"
+      assert html =~ "database"
 
       assert {:ok, [mapping], _meta} =
                SSO.list_group_runner_access_mappings(provider, owner)
@@ -1396,7 +1396,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert has_element?(lv, "span[title='#{runner.id}']", "Runner: r20")
+      assert has_element?(lv, "span[title='#{runner.id}']", "r20")
     end
 
     test "a mapped runner scope that no longer resolves reads as a removed runner", %{
@@ -1427,7 +1427,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       assert has_element?(lv, "span[title='#{runner.id}']", "Removed runner")
-      refute html =~ "Runner: r21"
+      refute html =~ "r21"
     end
 
     test "the role select never offers Owner; a forced owner mapping is rejected inline", %{

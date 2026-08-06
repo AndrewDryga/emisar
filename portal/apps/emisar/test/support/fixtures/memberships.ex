@@ -76,7 +76,7 @@ defmodule Emisar.Fixtures.Memberships do
 
     {:ok, updated} =
       membership
-      |> Membership.Changeset.update_runner_access(access.mode)
+      |> Membership.Changeset.update_runner_access(access)
       |> Repo.update()
 
     MembershipRunnerScope.Query.by_membership_id(membership.id)

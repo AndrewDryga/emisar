@@ -15,7 +15,7 @@ defmodule Emisar.SSO do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Runners, Users}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Catalog, Crypto, Repo, Runners, Users}
   alias Emisar.Auth.Subject
   alias Emisar.SSO.{Authorizer, DirectoryGroup, DirectoryGroupMember}
   alias Emisar.SSO.GroupRoleMapping
@@ -701,14 +701,20 @@ defmodule Emisar.SSO do
     mode: :default_runner_access_mode,
     scope: :default_runner_scope,
     groups: :default_runner_scope_groups,
-    runner_ids: :default_runner_scope_runner_ids
+    runner_ids: :default_runner_scope_runner_ids,
+    pack_mode: :default_pack_access_mode,
+    pack_scope: :default_pack_scope,
+    pack_ids: :default_pack_scope_pack_ids
   }
 
   @mapping_scope_fields %{
     mode: :runner_access_mode,
     scope: :scope,
     groups: :runner_scope_groups,
-    runner_ids: :runner_scope_runner_ids
+    runner_ids: :runner_scope_runner_ids,
+    pack_mode: :pack_access_mode,
+    pack_scope: :pack_scope,
+    pack_ids: :pack_scope_pack_ids
   }
 
   defp provider_selection(attrs, account_id, %IdentityProvider{} = provider) do
@@ -729,36 +735,44 @@ defmodule Emisar.SSO do
     )
   end
 
-  # The picker's raw `"group:<name>"` / `"runner:<id>"` values are the only
-  # accepted way to name runner reach: a submitted persisted array is dropped
-  # here, and the selection is resolved against `account_id`'s live runners, so
-  # a crafted submission can never widen reach past what the account offers.
+  # The picker's raw `"group:<name>"` / `"runner:<id>"` and `"pack:<id>"` values
+  # are the only accepted way to name reach: a submitted persisted array is
+  # dropped here, and the selection is resolved against `account_id`'s live
+  # runners and known packs, so a crafted submission can never widen reach past
+  # what the account offers.
   defp put_runner_selection(attrs, account_id, fields, %Accounts.RunnerAccess{} = stored) do
     stored_values = Accounts.RunnerAccess.selection_values(stored.groups, stored.runner_ids)
-    values = submitted_scope_values(attrs, fields, stored_values)
+    values = submitted_scope_values(attrs, fields.scope, fields.mode, stored_values)
+
+    stored_pack_values = Accounts.RunnerAccess.pack_selection_values(stored.pack_ids)
+
+    pack_values =
+      submitted_scope_values(attrs, fields.pack_scope, fields.pack_mode, stored_pack_values)
 
     attrs =
       attrs
       |> drop_attr(fields.groups)
       |> drop_attr(fields.runner_ids)
+      |> drop_attr(fields.pack_ids)
       |> put_attr_values(fields.scope, values)
+      |> put_attr_values(fields.pack_scope, pack_values)
 
     {attrs, runner_selection_allowlist(account_id, values)}
   end
 
-  defp submitted_scope_values(attrs, fields, stored_values) do
-    case fetch_attr(attrs, fields.scope) do
+  defp submitted_scope_values(attrs, scope_field, mode_field, stored_values) do
+    case fetch_attr(attrs, scope_field) do
       {:ok, values} -> List.wrap(values)
-      :error -> unsubmitted_scope_values(attrs, fields, stored_values)
+      :error -> unsubmitted_scope_values(attrs, mode_field, stored_values)
     end
   end
 
   # Attrs carrying the mode but no selection are "nothing is checked"; attrs
-  # mentioning neither are not a runner-access submission at all — an unrelated
+  # mentioning neither are not a reach submission at all — an unrelated
   # edit, or the untouched form — so the stored selection carries over instead
   # of reading as a cleared picker.
-  defp unsubmitted_scope_values(attrs, fields, stored_values) do
-    case fetch_attr(attrs, fields.mode) do
+  defp unsubmitted_scope_values(attrs, mode_field, stored_values) do
+    case fetch_attr(attrs, mode_field) do
       {:ok, _mode} -> []
       :error -> stored_values
     end
@@ -768,12 +782,17 @@ defmodule Emisar.SSO do
   # the changeset rejects it on the mode field instead of granting whichever
   # part of it happened to exist.
   defp runner_selection_allowlist(account_id, values) do
+    # Runners answers which groups EXIST — a selected group whose runners were
+    # not themselves selected resolves to a group with no runner rows, so its
+    # own `groups` key is the authority, never one derived from `runners`.
+    packs = Catalog.list_pack_ids_for_account(account_id)
+
     with {:ok, {groups, runner_ids}} <- Accounts.RunnerAccess.selection_refs(values),
-         {:ok, allowlist} <-
+         {:ok, facts} <-
            Runners.runner_selection_facts_for_account(account_id, groups, runner_ids) do
-      allowlist
+      Map.put(facts, :packs, packs)
     else
-      {:error, _reason} -> %{groups: [], runners: []}
+      {:error, _reason} -> %{groups: [], runners: [], packs: packs}
     end
   end
 
@@ -789,7 +808,8 @@ defmodule Emisar.SSO do
   end
 
   @authorization_fields ~w[default_role default_runner_access_mode
-                           default_runner_scope_groups default_runner_scope_runner_ids]a
+                           default_runner_scope_groups default_runner_scope_runner_ids
+                           default_pack_access_mode default_pack_scope_pack_ids]a
 
   defp prepare_provider_authorization_change(provider, changeset, force? \\ false) do
     changes_authorization? =

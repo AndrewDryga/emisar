@@ -8,10 +8,16 @@ defmodule Emisar.Accounts.Membership do
 
   @roles Auth.Role.all()
   @runner_access_modes Emisar.Accounts.RunnerAccess.modes()
+  @pack_access_modes Emisar.Accounts.RunnerAccess.pack_modes()
 
   schema "account_memberships" do
     field :role, Ecto.Enum, values: @roles, default: :operator
     field :runner_access_mode, Ecto.Enum, values: @runner_access_modes, default: :none
+    # The pack dimension of the same grant — which packs the member may run on
+    # the runners above. A flat, bounded id list, so it rides two columns rather
+    # than the normalized rows the runner dimension needs for its write trigger.
+    field :pack_access_mode, Ecto.Enum, values: @pack_access_modes, default: :all
+    field :pack_scope_pack_ids, {:array, :string}, default: []
     field :runner_access_directory_managed, :boolean, default: false
     field :directory_provider_id, Ecto.UUID
     field :directory_authorization_version, :integer, default: 0

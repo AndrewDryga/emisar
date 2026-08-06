@@ -33,10 +33,17 @@ defmodule Emisar.SSO.IdentityProvider do
 
     field :default_runner_scope_groups, {:array, :string}, default: []
     field :default_runner_scope_runner_ids, {:array, Ecto.UUID}, default: []
-    # The raw `"group:<name>"` / `"runner:<id>"` picker selection — the only
-    # accepted way to set the two arrays above, so a rejected submission still
-    # renders what the operator chose.
+
+    field :default_pack_access_mode, Ecto.Enum,
+      values: Emisar.Accounts.RunnerAccess.pack_modes(),
+      default: :all
+
+    field :default_pack_scope_pack_ids, {:array, :string}, default: []
+    # The raw `"group:<name>"` / `"runner:<id>"` and `"pack:<id>"` picker
+    # selections — the only accepted way to set the persisted arrays above, so a
+    # rejected submission still renders what the operator chose.
     field :default_runner_scope, {:array, :string}, virtual: true
+    field :default_pack_scope, {:array, :string}, virtual: true
     field :authorization_version, :integer, default: 0
     field :satisfies_mfa, :boolean, default: false
     field :allowed_email_domain, :string

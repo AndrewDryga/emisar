@@ -2,7 +2,7 @@ defmodule Emisar.RunnerAccessTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts
   alias Emisar.Accounts.RunnerAccess
-  alias Emisar.{Audit, Fixtures, Repo, Runners, Runs}
+  alias Emisar.{Audit, Catalog, Fixtures, Repo, Runners, Runs}
 
   describe "RunnerAccess" do
     test "normalizes restricted access and rejects ambiguous shapes" do
@@ -42,9 +42,88 @@ defmodule Emisar.RunnerAccessTest do
       refute RunnerAccess.covers?(db, db_and_app)
       refute RunnerAccess.covers?(RunnerAccess.none(), db)
     end
+
+    test "normalizes a restricted pack scope and rejects an unusable one" do
+      assert {:ok, access} =
+               RunnerAccess.new(:all, [], [], :restricted, [" shell ", "postgres", "postgres"])
+
+      assert access.pack_mode == :restricted
+      assert access.pack_ids == ["postgres", "shell"]
+
+      assert RunnerAccess.new(:all, [], [], :restricted, []) == {:error, :invalid_pack_access}
+      assert RunnerAccess.new(:all, [], [], :all, ["postgres"]) == {:error, :invalid_pack_access}
+      assert RunnerAccess.new(:all, [], [], "everything", []) == {:error, :invalid_pack_access}
+    end
+
+    test "a grant reaching no runner carries no pack restriction" do
+      assert RunnerAccess.none().pack_mode == :all
+      assert RunnerAccess.none().pack_ids == []
+
+      assert RunnerAccess.new(:none, [], [], :restricted, ["postgres"]) ==
+               {:error, :invalid_pack_access}
+    end
+
+    test "packs union across the grants that reach runners, never through a none grant" do
+      {:ok, db} = RunnerAccess.new(:restricted, ["db"], [], :restricted, ["postgres"])
+      {:ok, web} = RunnerAccess.new(:restricted, ["web"], [], :restricted, ["nginx"])
+
+      # A grant with no reach must not contribute its default `all` packs.
+      assert RunnerAccess.union([RunnerAccess.none(), db]) == db
+
+      assert RunnerAccess.union([db, web]) ==
+               %RunnerAccess{
+                 mode: :restricted,
+                 groups: ["db", "web"],
+                 runner_ids: [],
+                 pack_mode: :restricted,
+                 pack_ids: ["nginx", "postgres"]
+               }
+
+      assert RunnerAccess.union([db, RunnerAccess.all()]) == RunnerAccess.all()
+    end
+
+    test "coverage checks the pack dimension too" do
+      {:ok, one_pack} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+      {:ok, two_packs} = RunnerAccess.new(:all, [], [], :restricted, ["postgres", "shell"])
+
+      assert RunnerAccess.covers?(RunnerAccess.all(), two_packs)
+      assert RunnerAccess.covers?(two_packs, one_pack)
+      assert RunnerAccess.covers?(one_pack, RunnerAccess.none())
+      refute RunnerAccess.covers?(one_pack, two_packs)
+      # Wider runners never buy a wider pack list.
+      refute RunnerAccess.covers?(one_pack, RunnerAccess.all())
+    end
   end
 
-  describe "from_selection/3" do
+  describe "pack_in_scope?/2" do
+    test "an unrestricted grant runs every pack and a restricted one only its own" do
+      {:ok, restricted} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      assert RunnerAccess.pack_in_scope?("shell", RunnerAccess.all())
+      assert RunnerAccess.pack_in_scope?("postgres", restricted)
+      refute RunnerAccess.pack_in_scope?("shell", restricted)
+      refute RunnerAccess.pack_in_scope?("postgres", RunnerAccess.none())
+      # An action with no pack identity cannot be matched against a list.
+      refute RunnerAccess.pack_in_scope?(nil, restricted)
+      refute RunnerAccess.pack_in_scope?("", restricted)
+      assert RunnerAccess.pack_in_scope?(nil, RunnerAccess.all())
+    end
+  end
+
+  describe "pack_selection_refs/1" do
+    test "canonicalizes pack refs and refuses anything else" do
+      assert RunnerAccess.pack_selection_refs(["pack:shell", "pack:postgres", "pack:shell"]) ==
+               {:ok, ["postgres", "shell"]}
+
+      assert RunnerAccess.pack_selection_refs([]) == {:ok, []}
+
+      for values <- [["postgres"], ["pack:"], ["group:db"], [%{"crafted" => "all"}]] do
+        assert RunnerAccess.pack_selection_refs(values) == {:error, :invalid_pack_access}
+      end
+    end
+  end
+
+  describe "from_selection/5" do
     setup do
       database = %{id: Ecto.UUID.generate(), group: "database"}
       web = %{id: Ecto.UUID.generate(), group: "web"}
@@ -106,6 +185,46 @@ defmodule Emisar.RunnerAccessTest do
 
       assert RunnerAccess.from_selection("restricted", values, runners) ==
                {:ok, %RunnerAccess{mode: :restricted, groups: ["database"], runner_ids: []}}
+    end
+
+    test "a restricted pack selection is allowlisted against the account's packs", %{
+      runners: runners
+    } do
+      allowlist = %{
+        groups: ["database"],
+        runners: runners,
+        packs: ["postgres", "shell"]
+      }
+
+      assert RunnerAccess.from_selection("all", [], allowlist, "restricted", ["pack:postgres"]) ==
+               {:ok,
+                %RunnerAccess{
+                  mode: :all,
+                  groups: [],
+                  runner_ids: [],
+                  pack_mode: :restricted,
+                  pack_ids: ["postgres"]
+                }}
+
+      # A pack the account does not carry fails the whole selection rather than
+      # resolving to the part that existed.
+      assert RunnerAccess.from_selection(
+               "all",
+               [],
+               allowlist,
+               "restricted",
+               ["pack:postgres", "pack:unknown"]
+             ) == {:error, :invalid_pack_access}
+
+      assert RunnerAccess.from_selection("all", [], allowlist, "restricted", []) ==
+               {:error, :invalid_pack_access}
+    end
+
+    test "a pack selection is dropped when the grant reaches no runner", %{runners: runners} do
+      allowlist = %{groups: ["database"], runners: runners, packs: ["postgres"]}
+
+      assert RunnerAccess.from_selection("none", [], allowlist, "restricted", ["pack:postgres"]) ==
+               {:ok, RunnerAccess.none()}
     end
 
     test "an explicit allowlist resolves exactly the refs the lookup answered for", %{
@@ -392,18 +511,22 @@ defmodule Emisar.RunnerAccessTest do
       assert event.payload["before"] == %{
                "mode" => "all",
                "groups" => [],
-               "runner_ids" => []
+               "runner_ids" => [],
+               "pack_mode" => "all",
+               "pack_ids" => []
              }
 
       assert event.payload["after"] == %{
                "mode" => "restricted",
                "groups" => ["db"],
-               "runner_ids" => []
+               "runner_ids" => [],
+               "pack_mode" => "all",
+               "pack_ids" => []
              }
     end
   end
 
-  describe "build_runner_access/3" do
+  describe "build_runner_access/5" do
     test "canonicalizes a picker's selection and fails closed on an unknown ref" do
       database = %{id: Ecto.UUID.generate(), group: "database"}
       web = %{id: Ecto.UUID.generate(), group: "web"}
@@ -420,6 +543,45 @@ defmodule Emisar.RunnerAccessTest do
                ["runner:#{Ecto.UUID.generate()}"],
                runners
              ) == {:error, :invalid_runner_access}
+    end
+
+    test "narrows the same grant to the account's packs" do
+      database = %{id: Ecto.UUID.generate(), group: "database"}
+      allowlist = Accounts.runner_access_allowlist([database], ["postgres", "shell"])
+
+      assert Accounts.build_runner_access("all", [], allowlist, "restricted", ["pack:shell"]) ==
+               {:ok,
+                %RunnerAccess{
+                  mode: :all,
+                  groups: [],
+                  runner_ids: [],
+                  pack_mode: :restricted,
+                  pack_ids: ["shell"]
+                }}
+
+      assert Accounts.build_runner_access("all", [], allowlist, "restricted", ["pack:nope"]) ==
+               {:error, :invalid_pack_access}
+    end
+  end
+
+  describe "runner_access_allowlist/2" do
+    test "names the groups its runners carry plus the account's packs" do
+      database = %{id: Ecto.UUID.generate(), group: "database"}
+      ungrouped = %{id: Ecto.UUID.generate(), group: nil}
+
+      assert Accounts.runner_access_allowlist([database, ungrouped], ["postgres"]) ==
+               %{groups: ["database"], runners: [database, ungrouped], packs: ["postgres"]}
+
+      assert Accounts.runner_access_allowlist([]) == %{groups: [], runners: [], packs: []}
+    end
+  end
+
+  describe "pack_access_selection_values/1" do
+    test "renders a persisted pack scope back as the selector values the picker submits" do
+      assert Accounts.pack_access_selection_values(["postgres", "shell"]) ==
+               ["pack:postgres", "pack:shell"]
+
+      assert Accounts.pack_access_selection_values([]) == []
     end
   end
 
@@ -729,6 +891,90 @@ defmodule Emisar.RunnerAccessTest do
       refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
       assert Accounts.runner_access_for_subject(owner_subject) == RunnerAccess.none()
+    end
+
+    test "an action outside the member's packs is refused even on a reachable runner" do
+      {account, owner, owner_subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.uptime",
+        pack_id: "linux-core"
+      )
+
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, other_packs} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+      Fixtures.Memberships.force_runner_access(membership, other_packs)
+
+      attrs = %{runner_id: runner.id, action_id: "linux.uptime", reason: "test pack scope"}
+
+      assert {:error, :pack_out_of_scope} = Runs.dispatch_run(attrs, owner_subject)
+
+      {:ok, this_pack} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
+      Fixtures.Memberships.force_runner_access(membership, this_pack)
+
+      assert {:ok, _status, _run} = Runs.dispatch_run(attrs, owner_subject)
+    end
+
+    test "a queued run is not released after its initiator's packs are narrowed" do
+      {account, owner, _owner_subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.uptime",
+        pack_id: "linux-core"
+      )
+
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          reason: "test pack scope at release",
+          requested_by_id: owner.id,
+          initiating_membership_id: membership.id,
+          args: %{}
+        })
+
+      {:ok, other_packs} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+      Fixtures.Memberships.force_runner_access(membership, other_packs)
+
+      assert {:error, :initiator_no_longer_authorized} = Runs.dispatch_to_runner(run)
+      assert Runs.peek_run_by_id(run.id).status == :pending
+    end
+
+    test "catalog discovery hides an action outside the member's packs" do
+      {account, _owner, _owner_subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.uptime",
+        pack_id: "linux-core"
+      )
+
+      member = create_member(account, "operator")
+      member_subject = Fixtures.Subjects.membership_subject(member)
+
+      {:ok, in_scope} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
+      Fixtures.Memberships.force_runner_access(member, in_scope)
+
+      assert {:ok, _action} =
+               Catalog.fetch_action_by_id("linux.uptime", runner.id, member_subject)
+
+      assert Catalog.risk_by_action_ids(["linux.uptime"], member_subject) ==
+               {:ok, %{"linux.uptime" => :low}}
+
+      {:ok, out_of_scope} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+      Fixtures.Memberships.force_runner_access(member, out_of_scope)
+
+      assert Catalog.fetch_action_by_id("linux.uptime", runner.id, member_subject) ==
+               {:error, :not_found}
     end
   end
 

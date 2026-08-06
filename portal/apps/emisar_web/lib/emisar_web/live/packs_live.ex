@@ -706,7 +706,11 @@ defmodule EmisarWeb.PacksLive do
           runner(s) still on this version:
         </p>
         <div class="mt-2 flex flex-wrap gap-1.5">
-          <.runner_tag :for={runner <- @fact.advertising.runners} runner={runner} />
+          <.identity_tag
+            :for={runner <- @fact.advertising.runners}
+            category={runner.group}
+            value={runner.name}
+          />
         </div>
         <p :if={@fact.advertising.coverage == :partial} class="mt-2">
           More runners than this page reads — others may be on it too.
@@ -873,7 +877,11 @@ defmodule EmisarWeb.PacksLive do
              dozens, and a comprehension renders them with no whitespace
              between — an inline run would overflow the page). --%>
         <div class="mt-2 flex flex-wrap gap-1.5">
-          <.runner_tag :for={runner <- @fact.advertising.runners} runner={runner} />
+          <.identity_tag
+            :for={runner <- @fact.advertising.runners}
+            category={runner.group}
+            value={runner.name}
+          />
         </div>
         <p :if={@fact.advertising.coverage == :partial} class="mt-2">
           More runners than this page reads — others may advertise it too.
@@ -1010,20 +1018,6 @@ defmodule EmisarWeb.PacksLive do
   defp trust_confirm_label(%{retirement_blocked?: true}, _version), do: "Trust anyway"
   defp trust_confirm_label(_fact, %{hash: nil}), do: "Trust pack"
   defp trust_confirm_label(_fact, _version), do: "Trust new contents"
-
-  # A neutral two-tone tag for one advertising runner — the group (muted, left)
-  # then the runner name (brighter, right), split by a divider. WHICH hosts is
-  # informative, not a warning, so it stays zinc even inside a rose retired block.
-  attr :runner, :map, required: true
-
-  defp runner_tag(assigns) do
-    ~H"""
-    <span class="inline-flex items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/60">
-      <span class="bg-zinc-800/50 px-1.5 py-0.5 text-zinc-400">{@runner.group}</span>
-      <span class="border-l border-zinc-700/60 px-1.5 py-0.5 text-zinc-300">{@runner.name}</span>
-    </span>
-    """
-  end
 
   attr :pack_id, :string, required: true
   attr :update, :map, default: nil, doc: "the Catalog's pack-level %{version, hash}, or nil"

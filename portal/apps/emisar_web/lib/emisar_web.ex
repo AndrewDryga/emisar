@@ -97,7 +97,7 @@ defmodule EmisarWeb do
       # Documentation shell (docs_layout/header/h2/code/callout/prev_next)
       import EmisarWeb.DocsComponents
       # Shared runner-scope picker (groups + nested runners in one multi-select)
-      import EmisarWeb.RunnerScope, only: [runner_scope_select: 1]
+      import EmisarWeb.RunnerScope, only: [pack_access_field: 1, runner_scope_select: 1]
       # Shared formatters (relative_time, absolute_time, format_duration)
       import EmisarWeb.TimeHelpers
 

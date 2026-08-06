@@ -644,6 +644,74 @@ defmodule EmisarWeb.TeamLiveTest do
                }
     end
 
+    test "the scope editor narrows the same grant to selected packs", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackScopeOrg"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      email = "packscope-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{membership: m}} =
+        Emisar.Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: email,
+            role: "admin",
+            runner_access_mode: "all"
+          ),
+          subject
+        )
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "r1", group: "dba")
+
+      # The picker offers the packs the SELECTED runners advertise, so the choices
+      # come from the catalog rows, not from the account's pack versions.
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "postgres.uptime",
+        pack_id: "postgres"
+      )
+
+      Fixtures.Catalog.create_action(runner: runner, action_id: "shell.run", pack_id: "shell")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      render_click(lv, "start_scope_edit", %{"membership_id" => m.id})
+
+      # Choosing selected packs reveals the picker, offering exactly the
+      # account's packs.
+      render_change(
+        element(lv, "form[phx-submit='save_scopes']"),
+        %{
+          "membership_id" => m.id,
+          "runner_access_mode" => "all",
+          "pack_access_mode" => "restricted"
+        }
+      )
+
+      assert has_element?(lv, "form[phx-submit='save_scopes'] input[value='pack:postgres']")
+      assert has_element?(lv, "form[phx-submit='save_scopes'] input[value='pack:shell']")
+
+      render_submit(
+        element(lv, "form[phx-submit='save_scopes']"),
+        %{
+          "membership_id" => m.id,
+          "runner_access_mode" => "all",
+          "pack_access_mode" => "restricted",
+          "pack_scope" => ["pack:postgres"]
+        }
+      )
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, m.id) ==
+               %Emisar.Accounts.RunnerAccess{
+                 mode: :all,
+                 groups: [],
+                 runner_ids: [],
+                 pack_mode: :restricted,
+                 pack_ids: ["postgres"]
+               }
+
+      assert render(lv) =~ "All runners · selected packs"
+    end
+
     test "picking a group disables its runners live, so they can't be double-scoped", %{
       conn: conn
     } do
@@ -855,7 +923,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "span[title='#{runner.id}']", "Runner: r11")
+      assert has_element?(lv, "span[title='#{runner.id}']", "r11")
     end
 
     test "a scoped runner that no longer resolves reads as a removed runner", %{conn: conn} do
@@ -886,7 +954,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "span[title='#{runner.id}']", "Removed runner")
-      refute html =~ "Runner: r12"
+      refute html =~ "r12"
     end
   end
 

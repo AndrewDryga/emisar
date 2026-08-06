@@ -84,5 +84,65 @@ defmodule Emisar.Accounts.InvitationInputTest do
         assert "requires at least one runner group or runner" in errors_on(changeset).runner_access_mode
       end
     end
+
+    test "a selected pack scope canonicalizes against the account's packs" do
+      database = %{id: Ecto.UUID.generate(), group: "database"}
+      allowlist = %{groups: ["database"], runners: [database], packs: ["postgres", "shell"]}
+
+      attrs =
+        Fixtures.Accounts.invitation_attrs(
+          runner_access_mode: "all",
+          pack_access_mode: "restricted",
+          pack_scope: ["pack:shell", "pack:postgres", "pack:shell"]
+        )
+
+      changeset = InvitationInput.changeset(attrs, allowlist)
+
+      assert changeset.valid?
+
+      assert Ecto.Changeset.get_field(changeset, :runner_access) == %RunnerAccess{
+               mode: :all,
+               groups: [],
+               runner_ids: [],
+               pack_mode: :restricted,
+               pack_ids: ["postgres", "shell"]
+             }
+
+      assert Ecto.Changeset.get_field(changeset, :pack_scope) ==
+               ["pack:postgres", "pack:shell"]
+    end
+
+    test "an empty or unallowlisted pack selection is a pack_access_mode error" do
+      allowlist = %{groups: [], runners: [], packs: ["postgres"]}
+
+      for pack_scope <- [[], ["pack:unknown"], ["postgres"], ["group:database"]] do
+        attrs =
+          Fixtures.Accounts.invitation_attrs(
+            runner_access_mode: "all",
+            pack_access_mode: "restricted",
+            pack_scope: pack_scope
+          )
+
+        changeset = InvitationInput.changeset(attrs, allowlist)
+
+        assert "requires at least one available pack" in errors_on(changeset).pack_access_mode
+      end
+    end
+
+    test "an invite with no runner reach carries no pack restriction" do
+      attrs =
+        Fixtures.Accounts.invitation_attrs(
+          runner_access_mode: "none",
+          pack_access_mode: "restricted",
+          pack_scope: ["pack:postgres"]
+        )
+
+      changeset =
+        InvitationInput.changeset(attrs, %{groups: [], runners: [], packs: ["postgres"]})
+
+      assert changeset.valid?
+      assert Ecto.Changeset.get_field(changeset, :runner_access) == RunnerAccess.none()
+      assert Ecto.Changeset.get_field(changeset, :pack_scope) == []
+    end
   end
 end

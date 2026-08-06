@@ -866,7 +866,9 @@ defmodule Emisar.SSOTest do
       assert event.payload["runner_access"] == %{
                "mode" => "none",
                "groups" => [],
-               "runner_ids" => []
+               "runner_ids" => [],
+               "pack_mode" => "all",
+               "pack_ids" => []
              }
     end
 
@@ -1550,13 +1552,17 @@ defmodule Emisar.SSOTest do
       assert event.payload["before"] == %{
                "mode" => "none",
                "groups" => [],
-               "runner_ids" => []
+               "runner_ids" => [],
+               "pack_mode" => "all",
+               "pack_ids" => []
              }
 
       assert event.payload["after"] == %{
                "mode" => "restricted",
                "groups" => ["database"],
-               "runner_ids" => []
+               "runner_ids" => [],
+               "pack_mode" => "all",
+               "pack_ids" => []
              }
     end
 
@@ -1878,7 +1884,9 @@ defmodule Emisar.SSOTest do
       assert event.payload["runner_access"] == %{
                "mode" => "restricted",
                "groups" => ["production"],
-               "runner_ids" => []
+               "runner_ids" => [],
+               "pack_mode" => "all",
+               "pack_ids" => []
              }
     end
 
@@ -2581,7 +2589,9 @@ defmodule Emisar.SSOTest do
       assert event.payload["runner_access"] == %{
                "mode" => "restricted",
                "groups" => ["production"],
-               "runner_ids" => []
+               "runner_ids" => [],
+               "pack_mode" => "all",
+               "pack_ids" => []
              }
     end
 
@@ -4597,6 +4607,8 @@ defmodule Emisar.SSOTest do
       assert mapping.external_group_id == "grp-prod"
       assert mapping.runner_access_mode == :restricted
       assert mapping.runner_scope_groups == ["production"]
+      assert mapping.pack_access_mode == :all
+      assert mapping.pack_scope_pack_ids == []
 
       assert {:ok, [event], _meta} =
                Audit.list_events(subject,
@@ -4781,6 +4793,44 @@ defmodule Emisar.SSOTest do
                  %{external_group_id: "grp-x", runner_access_mode: :all},
                  other_subject
                )
+    end
+  end
+
+  describe "group runner access mapping pack scope" do
+    setup do
+      scim_provider()
+    end
+
+    test "narrows a mapping to the account's packs and refuses an unknown one", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+
+      attrs = %{
+        external_group_id: "grp-dba",
+        runner_access_mode: :restricted,
+        scope: ["group:production"],
+        pack_access_mode: :restricted,
+        pack_scope: ["pack:postgres"]
+      }
+
+      assert {:ok, %GroupRunnerAccessMapping{} = mapping} =
+               SSO.create_group_runner_access_mapping(provider, attrs, subject)
+
+      assert mapping.pack_access_mode == :restricted
+      assert mapping.pack_scope_pack_ids == ["postgres"]
+
+      assert {:error, changeset} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{attrs | external_group_id: "grp-other", pack_scope: ["pack:nope"]},
+                 subject
+               )
+
+      assert "is invalid" in errors_on(changeset).pack_access_mode
     end
   end
 

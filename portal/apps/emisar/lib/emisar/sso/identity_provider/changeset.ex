@@ -3,13 +3,15 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
   alias Emisar.SSO.IdentityProvider
 
   # `kind` is set once at create (the IdP preset); update casts the rest. The
-  # persisted `default_runner_scope_*` arrays are deliberately NOT cast — they
-  # are derived from the raw `default_runner_scope` selection, so a submitted
-  # array can never widen the default reach.
+  # persisted `default_runner_scope_*` / `default_pack_scope_*` arrays are
+  # deliberately NOT cast — they are derived from the raw `default_runner_scope`
+  # / `default_pack_scope` selections, so a submitted array can never widen the
+  # default reach.
   @config_fields ~w[name issuer client_id client_secret identifier_claim default_role
                      default_runner_access_mode default_runner_scope satisfies_mfa
+                     default_pack_access_mode default_pack_scope
                      allowed_email_domain provisioner enabled]a
-  @no_runner_facts %{groups: [], runners: []}
+  @no_runner_facts %{groups: [], runners: [], packs: []}
 
   def create(account_id, attrs, allowlist \\ @no_runner_facts) do
     %IdentityProvider{}
@@ -80,6 +82,7 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     |> Emisar.Accounts.RunnerAccess.validate_selection(
       :default_runner,
       :default_runner_scope,
+      :default_pack_scope,
       allowlist
     )
     |> validate_issuer()

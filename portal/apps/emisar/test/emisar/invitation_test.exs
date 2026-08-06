@@ -184,7 +184,9 @@ defmodule Emisar.InvitationTest do
       assert event.payload["runner_access"] == %{
                "mode" => "restricted",
                "groups" => ["production"],
-               "runner_ids" => [staging.id]
+               "runner_ids" => [staging.id],
+               "pack_mode" => "all",
+               "pack_ids" => []
              }
     end
 

@@ -175,7 +175,9 @@ defmodule Emisar.Audit.Events do
     %{
       mode: to_string(access.mode),
       groups: access.groups,
-      runner_ids: access.runner_ids
+      runner_ids: access.runner_ids,
+      pack_mode: to_string(access.pack_mode),
+      pack_ids: access.pack_ids
     }
   end
 

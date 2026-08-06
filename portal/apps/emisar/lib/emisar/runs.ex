@@ -686,6 +686,10 @@ defmodule Emisar.Runs do
 
   defp apply_run_scope(query, _scope, _subject), do: query
 
+  # Runner scope only: the pack dimension gates what a member may DISCOVER and
+  # DISPATCH, never what they may know happened on a host they already reach.
+  # Hiding part of a reachable runner's history would leave an operator reading
+  # an incomplete record with nothing saying so.
   defp scope_runs_to_membership(query, %Subject{} = subject) do
     case Accounts.runner_access_for_subject(subject) do
       %Accounts.RunnerAccess{mode: :none} ->
@@ -972,6 +976,7 @@ defmodule Emisar.Runs do
          {:ok, contract} <-
            fetch_dispatch_contract(account_id, runner_id, action_id, attrs[:pack_ref]),
          action = contract.action,
+         :ok <- pack_in_membership_scope(action.pack_id, account_id, membership_id),
          :ok <- ensure_primary_executable_available(action) do
       attrs
       |> persist_initiating_membership()
@@ -1481,6 +1486,7 @@ defmodule Emisar.Runs do
          :ok <- ensure_frozen_runbook_contract(attrs, contract),
          :ok <- ensure_runbook_item_identity(attrs, account_id),
          action = contract.action,
+         :ok <- pack_in_membership_scope(action.pack_id, account_id, membership_id),
          :ok <- ensure_primary_executable_available(action) do
       attrs =
         attrs
@@ -1817,6 +1823,12 @@ defmodule Emisar.Runs do
              attrs[:pack_ref]
            ),
          :ok <- ensure_frozen_runbook_contract(attrs, contract),
+         :ok <-
+           pack_in_membership_scope(
+             contract.action.pack_id,
+             account_id,
+             attrs[:requested_by_membership_id]
+           ),
          :ok <- ensure_primary_executable_available(contract.action),
          :ok <- current_runbook_policy_allows?(attrs, account_id, contract.descriptor) do
       :ok
@@ -1974,6 +1986,19 @@ defmodule Emisar.Runs do
           do: :ok,
           else: {:error, :runner_out_of_scope}
     end
+  end
+
+  # The pack half of the same per-user ACL, checked once the trusted contract has
+  # named the action's exact pack. Runner scope is checked earlier in the chain
+  # so an out-of-scope runner never learns this account's pack trust state.
+  defp pack_in_membership_scope(_pack_id, _account_id, nil), do: :ok
+
+  defp pack_in_membership_scope(pack_id, account_id, membership_id) do
+    access = Accounts.runner_access_for_membership(account_id, membership_id)
+
+    if Accounts.RunnerAccess.pack_in_scope?(pack_id, access),
+      do: :ok,
+      else: {:error, :pack_out_of_scope}
   end
 
   defp require_runner(nil), do: {:error, :runner_required}
@@ -3469,10 +3494,23 @@ defmodule Emisar.Runs do
            ),
          access = Accounts.runner_access_for_locked_membership(repo, membership),
          true <- Accounts.RunnerAccess.runner_in_scope?(runner, access),
+         true <- run_pack_in_scope?(run, access),
          true <- initiating_api_key_usable?(repo, run) do
       :ok
     else
       _ -> {:error, :initiator_no_longer_authorized}
+    end
+  end
+
+  # The run row carries no pack id, so the action's pack is re-resolved — but
+  # only for a grant that actually restricts packs, so an unrestricted release
+  # never depends on the action still being advertised.
+  defp run_pack_in_scope?(%ActionRun{}, %Accounts.RunnerAccess{pack_mode: :all}), do: true
+
+  defp run_pack_in_scope?(%ActionRun{} = run, %Accounts.RunnerAccess{} = access) do
+    case Catalog.fetch_action_for_account(run.action_id, run.runner_id, run.account_id) do
+      {:ok, action} -> Accounts.RunnerAccess.pack_in_scope?(action.pack_id, access)
+      {:error, :not_found} -> false
     end
   end
 

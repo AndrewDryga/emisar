@@ -860,37 +860,63 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp summary_argument_value(%{"source" => "output", "ref" => ref}),
     do: [text: "from step output", code: ref]
 
-  defp summary_argument_value(%{"value" => ""}), do: [text: "no value"]
-  defp summary_argument_value(argument), do: [code: argument["value"]]
+  defp summary_argument_value(%{"value" => ""}), do: [text: "not set"]
+  defp summary_argument_value(argument), do: [text: "set to", code: argument["value"]]
 
   defp summary_output_rows(step) do
     Enum.map(step["outputs"], &{&1["id"], summary_output_value(&1)})
   end
 
-  defp summary_output_value(output) do
-    [text: extractor_label(output["extract_type"]), code: output["expression"]] ++
-      output_capture(output) ++
-      [text: "in #{output_source_label(output["source"])}"] ++
-      output_sensitivity(output)
-  end
+  defp summary_output_value(output),
+    do: extractor_phrase(output) ++ output_sensitivity(output)
 
-  defp output_capture(%{"extract_type" => "regex", "capture" => capture})
+  # Each phrase says what the extractor actually produces: a JSON Pointer reads
+  # a value (and structured output accepts no other kind, so naming it adds
+  # nothing), `contains` yields a yes/no, `grep` yields matching lines, and a
+  # regex yields its capture.
+  defp extractor_phrase(%{"extract_type" => "contains"} = output),
+    do: [text: "whether #{source_phrase(output)} contains", code: output["expression"]]
+
+  defp extractor_phrase(%{"extract_type" => "grep"} = output),
+    do: [text: "lines in #{source_phrase(output)} containing", code: output["expression"]]
+
+  defp extractor_phrase(%{"extract_type" => "regex", "capture" => capture} = output)
        when capture not in ["", "0"],
-       do: [text: "capture #{capture}"]
+       do: [
+         text: "capture #{capture} of",
+         code: output["expression"],
+         text: "in #{source_phrase(output)}"
+       ]
 
-  defp output_capture(_output), do: []
+  defp extractor_phrase(%{"extract_type" => "regex"} = output),
+    do: [text: "what", code: output["expression"], text: "matches in #{source_phrase(output)}"]
 
-  defp output_sensitivity(%{"sensitive" => "true"}), do: [text: "· sensitive"]
+  defp extractor_phrase(output),
+    do: [text: "from #{source_phrase(output)} at", code: output["expression"]]
+
+  defp output_sensitivity(%{"sensitive" => "true"}), do: [text: "(sensitive)"]
   defp output_sensitivity(_output), do: []
 
-  # The output names the row, so its assertion reads as one phrase — the run
-  # surface's operator wording, then the value its verdict will judge.
+  # The output names the row, so its assertion completes the sentence. The run
+  # surface says `healthy · equals` because its right column is a verdict badge;
+  # here the value follows, so the operator's own words take grammatical glue.
   defp summary_condition_rows(step) do
     Enum.map(step["success"], &{&1["output"], summary_condition_value(&1)})
   end
 
   defp summary_condition_value(condition),
-    do: [text: String.replace(condition["operator"], "_", " "), code: condition["value"]]
+    do: [text: operator_phrase(condition["operator"]), code: condition["value"]]
+
+  defp operator_phrase("equals"), do: "equals"
+  defp operator_phrase("not_equals"), do: "is not equal to"
+  defp operator_phrase("greater_than"), do: "is greater than"
+  defp operator_phrase("greater_than_or_equal"), do: "is greater than or equal to"
+  defp operator_phrase("less_than"), do: "is less than"
+  defp operator_phrase("less_than_or_equal"), do: "is less than or equal to"
+  defp operator_phrase("contains"), do: "contains"
+  defp operator_phrase("one_of"), do: "is one of"
+  defp operator_phrase("matches"), do: "matches regex"
+  defp operator_phrase(operator), do: String.replace(operator, "_", " ")
 
   defp summary_wait_note(%{"enabled" => "true"} = wait) do
     "observe again every #{wait["interval_seconds"]}s · timeout #{wait["timeout_seconds"]}s · " <>

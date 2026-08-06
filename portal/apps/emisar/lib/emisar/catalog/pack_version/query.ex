@@ -18,6 +18,9 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def by_pack_id(queryable, pack_id),
     do: where(queryable, [packs: p], p.pack_id == ^pack_id)
 
+  def distinct_pack_ids(queryable),
+    do: queryable |> distinct(true) |> select([packs: p], p.pack_id)
+
   def by_pack_id_and_version(queryable, pack_id, version) do
     where(queryable, [packs: p], p.pack_id == ^pack_id and p.version == ^version)
   end

@@ -833,6 +833,60 @@ IO.puts(
     IO.ANSI.reset()
 )
 
+# -- Member access shapes ---------------------------------------------
+#
+# The roster is where a grant has to READ correctly, so seed one member per
+# shape it can take: every runner, a group plus one exact host, several groups
+# narrowed to named packs, and every runner narrowed to a single pack. Runs
+# after the catalog because a pack selection is allowlisted against the pack ids
+# the account actually carries.
+
+{:ok, scope_runners} = Runners.list_all_runners_for_account(owner_subject)
+{:ok, scope_packs} = Catalog.list_account_pack_ids(owner_subject)
+scope_allowlist = Accounts.runner_access_allowlist(scope_runners, scope_packs)
+
+runner_ref = fn name ->
+  case Enum.find(scope_runners, &(&1.name == name)) do
+    nil -> raise "seed runner #{name} is missing — member access shapes seed after the fleet"
+    runner -> "runner:" <> runner.id
+  end
+end
+
+set_member_access = fn %User{} = member, mode, scope, pack_mode, pack_scope ->
+  membership = Accounts.peek_sync_membership(account.id, member.id)
+
+  {:ok, access} =
+    Accounts.build_runner_access(mode, scope, scope_allowlist, pack_mode, pack_scope)
+
+  {:ok, _membership} =
+    Accounts.update_membership_runner_access(membership, access, owner_subject)
+end
+
+# A group plus one exact host from a different group — the shape a picker
+# collapses wrongly if it lets a group and its own members both be checked.
+set_member_access.(priya, "restricted", ["group:edge-web", runner_ref.("api-iad-02")], "all", [])
+
+sam = invite_member.("sam@emisar.dev", "Sam Okafor", "operator")
+
+set_member_access.(
+  sam,
+  "restricted",
+  ["group:edge-web", "group:data-postgres"],
+  "restricted",
+  ["pack:linux-core", "pack:postgres"]
+)
+
+# Every runner, one pack: the "may look at Postgres anywhere, may not open a
+# shell" grant that runner groups alone cannot express.
+wren = invite_member.("wren@emisar.dev", "Wren Alvarez", "viewer")
+set_member_access.(wren, "all", [], "restricted", ["pack:postgres"])
+
+IO.puts(
+  IO.ANSI.cyan() <>
+    "✓ Member access shapes: Jordan (all), Priya (group + host), Sam (2 groups, 2 packs), Wren (all runners, 1 pack)" <>
+    IO.ANSI.reset()
+)
+
 # -- Runbook execution history + whole-run approval ------------------
 #
 # The readiness runbook intentionally stays empty. The rollout runbook carries

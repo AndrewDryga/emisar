@@ -67,6 +67,201 @@ defmodule EmisarWeb.RunnerScopeTest do
     end
   end
 
+  describe "selected_runner_ids/3" do
+    test "all reaches every runner; restricted resolves groups and exact ids" do
+      assert RunnerScope.selected_runner_ids(@runners, "all", []) == ["r1", "r2", "r3", "u1"]
+
+      assert RunnerScope.selected_runner_ids(@runners, "restricted", ["group:edge-web"]) ==
+               ["r1", "r2"]
+
+      assert RunnerScope.selected_runner_ids(@runners, "restricted", ["runner:r3", "runner:u1"]) ==
+               ["r3", "u1"]
+
+      assert RunnerScope.selected_runner_ids(@runners, "restricted", []) == []
+    end
+  end
+
+  describe "packs_in_scope/3" do
+    @advertisements %{
+      "linux-core" => ["r1", "r2", "r3"],
+      "postgres" => ["r3"],
+      "caddy" => ["r1"]
+    }
+
+    test "offers only the packs the selected runners carry, counting those runners" do
+      assert RunnerScope.packs_in_scope(@advertisements, ["r1", "r2"]) == [
+               %{id: "caddy", runner_count: 1},
+               %{id: "linux-core", runner_count: 2}
+             ]
+
+      assert RunnerScope.packs_in_scope(@advertisements, ["r3"]) == [
+               %{id: "linux-core", runner_count: 1},
+               %{id: "postgres", runner_count: 1}
+             ]
+
+      assert RunnerScope.packs_in_scope(@advertisements, []) == []
+    end
+
+    test "a chosen pack stays listed even when nothing in scope carries it" do
+      assert RunnerScope.packs_in_scope(@advertisements, ["r1"], ["pack:postgres"]) == [
+               %{id: "caddy", runner_count: 1},
+               %{id: "linux-core", runner_count: 1},
+               %{id: "postgres", runner_count: 0}
+             ]
+    end
+  end
+
+  describe "pack_nodes/2" do
+    test "sorts by pack id and keeps a selection nothing in scope carries" do
+      packs = [
+        %{id: "shell", runner_count: 2},
+        %{id: "postgres", runner_count: 1},
+        %{id: "retired", runner_count: 0}
+      ]
+
+      nodes = RunnerScope.pack_nodes(packs, ["pack:postgres", "pack:retired"])
+
+      assert Enum.map(nodes.available, & &1.name) == ["shell", "postgres"]
+      assert Enum.map(nodes.available, & &1.value) == ["pack:shell", "pack:postgres"]
+      assert Enum.map(nodes.available, & &1.selected) == [false, true]
+      assert Enum.map(nodes.available, & &1.runner_count) == [2, 1]
+      assert Enum.map(nodes.unavailable, & &1.name) == ["retired"]
+    end
+  end
+
+  describe "pack_scope_select/1" do
+    test "renders one checkbox per pack with the runners carrying it" do
+      html =
+        render_component(&RunnerScope.pack_scope_select/1,
+          name: "pack_scope[]",
+          packs: [%{id: "postgres", runner_count: 1}, %{id: "shell", runner_count: 2}],
+          selected: ["pack:postgres"]
+        )
+
+      assert html =~ ~s|name="pack_scope[]" value="pack:postgres"|
+      assert html =~ ~s|name="pack_scope[]" value="pack:shell"|
+      assert html =~ "1 runner"
+      assert html =~ "2 runners"
+    end
+
+    test "the empty state names the reason the caller supplied" do
+      html =
+        render_component(&RunnerScope.pack_scope_select/1,
+          name: "pack_scope[]",
+          packs: [],
+          selected: [],
+          empty_message: "Choose runners first — the packs they carry appear here."
+        )
+
+      assert html =~ "Choose runners first"
+    end
+
+    test "a pack no runner in scope carries stays ticked and removable" do
+      html =
+        render_component(&RunnerScope.pack_scope_select/1,
+          name: "pack_scope[]",
+          packs: [],
+          selected: ["pack:retired"]
+        )
+
+      assert html =~ "Unavailable"
+      assert html =~ ~s(<input type="checkbox" checked)
+      assert html =~ ~s|name="pack_scope[]" value="pack:retired">|
+    end
+  end
+
+  describe "pack_access_field/1" do
+    @field_advertisements %{"linux-core" => ["r1", "r2"], "postgres" => ["r3"]}
+
+    test "renders nothing while the grant reaches no runner" do
+      html =
+        render_component(&RunnerScope.pack_access_field/1,
+          runner_mode: "none",
+          runners: @runners,
+          advertisements: @field_advertisements,
+          mode_name: "pack_access_mode",
+          mode_value: "restricted",
+          scope_name: "pack_scope[]",
+          selected: []
+        )
+
+      refute html =~ "pack:linux-core"
+      refute html =~ "All packs"
+    end
+
+    test "the pack list follows the runner selection" do
+      edge_web =
+        render_component(&RunnerScope.pack_access_field/1,
+          runner_mode: "restricted",
+          runner_scope: ["group:edge-web"],
+          runners: @runners,
+          advertisements: @field_advertisements,
+          mode_name: "pack_access_mode",
+          mode_value: "restricted",
+          scope_name: "pack_scope[]",
+          selected: []
+        )
+
+      assert edge_web =~ ~s|value="pack:linux-core"|
+      refute edge_web =~ ~s|value="pack:postgres"|
+      assert edge_web =~ "2 runners"
+
+      everything =
+        render_component(&RunnerScope.pack_access_field/1,
+          runner_mode: "all",
+          runners: @runners,
+          advertisements: @field_advertisements,
+          mode_name: "pack_access_mode",
+          mode_value: "restricted",
+          scope_name: "pack_scope[]",
+          selected: []
+        )
+
+      assert everything =~ ~s|value="pack:linux-core"|
+      assert everything =~ ~s|value="pack:postgres"|
+    end
+
+    test "an unresolved runner selection owns the empty state, not a pack failure" do
+      html =
+        render_component(&RunnerScope.pack_access_field/1,
+          runner_mode: "restricted",
+          runner_scope: [],
+          runners: @runners,
+          advertisements: @field_advertisements,
+          mode_name: "pack_access_mode",
+          mode_value: "restricted",
+          scope_name: "pack_scope[]",
+          selected: []
+        )
+
+      assert html =~ "Choose runners first"
+    end
+
+    test "the picker appears only once selected packs is chosen" do
+      choice_only =
+        render_component(&RunnerScope.pack_access_field/1,
+          runner_mode: "all",
+          runners: @runners,
+          advertisements: @field_advertisements,
+          mode_name: "pack_access_mode",
+          mode_value: "all",
+          scope_name: "pack_scope[]",
+          selected: []
+        )
+
+      assert choice_only =~ "All packs"
+      assert choice_only =~ "Selected packs"
+      refute choice_only =~ ~s|value="pack:linux-core"|
+    end
+  end
+
+  describe "to_pack_values/1" do
+    test "round-trips a persisted pack scope to selection strings" do
+      assert RunnerScope.to_pack_values(["postgres", "shell"]) == ["pack:postgres", "pack:shell"]
+      assert RunnerScope.to_pack_values([]) == []
+    end
+  end
+
   describe "to_values/2" do
     test "round-trips a persisted {groups, runner_ids} scope to selection strings" do
       assert RunnerScope.to_values(["edge-web"], ["r3"]) == ["group:edge-web", "runner:r3"]

@@ -3857,14 +3857,14 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Small inline chip — the rounded label that sits next to a row title
   or inside a chips slot. Tones name a MEANING, not a hue: `:neutral`
-  (zinc — the default, for identity/metadata labels like "You", a scope,
+  (zinc — the default, for identity/metadata labels like "You", a mode,
   the current plan), `:brand` (emerald — a healthy/affirmative state:
   trusted, enabled, online, enrolled), `:amber` (pending/caution), `:rose`
   (denied/danger). With `mono`, renders monospace text; with `upcase`, the
   uppercase-semibold status-tag look (a pack's trust state, a plan's
   "Current").
 
-      <.chip>group: default</.chip>
+      <.chip>Current</.chip>
       <.chip tone={:rose}>Suspended</.chip>
       <.chip upcase tone={:brand}>Trusted</.chip>
   """
@@ -3905,6 +3905,43 @@ defmodule EmisarWeb.CoreComponents do
   defp chip_class(:amber), do: "bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/30"
   defp chip_class(:rose), do: "bg-rose-500/15 text-rose-200 ring-1 ring-rose-500/30"
   defp chip_class(:neutral), do: "bg-zinc-800/80 text-zinc-300"
+
+  @doc """
+  A compound identity as a two-half tag: the CATEGORY muted on the left, the
+  specific VALUE brighter on the right, split by a divider. Use it wherever an
+  identity only reads correctly as a pair — a runner's group + name, a grant's
+  `group`/`runner`/`pack` + the thing it names. A single-value label stays a
+  `<.chip>`; a pair crammed into one chip as `"Group: x"` is the shape this
+  replaces. Informative, so it stays zinc even inside a rose block.
+
+      <.identity_tag category="group" value="va1-cassandra" />
+      <.identity_tag category={runner.group} value={runner.name} />
+      <.identity_tag category="runner" title={runner_id}>
+        <.removed_runner runner_id={runner_id} />
+      </.identity_tag>
+  """
+  attr :category, :string, required: true
+  attr :value, :string, default: nil, doc: "the value half; omit when passing a slot"
+  attr :class, :string, default: nil
+  attr :rest, :global, doc: "extra attributes (e.g. title for the full id)"
+  slot :inner_block
+
+  def identity_tag(assigns) do
+    ~H"""
+    <span
+      class={[
+        "inline-flex items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/60",
+        @class
+      ]}
+      {@rest}
+    >
+      <span class="bg-zinc-800/50 px-1.5 py-0.5 text-zinc-400">{@category}</span>
+      <span class="border-l border-zinc-700/60 px-1.5 py-0.5 text-zinc-300">
+        {@value}{render_slot(@inner_block)}
+      </span>
+    </span>
+    """
+  end
 
   @doc """
   The honest label for a run's runner after the runner row itself was removed —

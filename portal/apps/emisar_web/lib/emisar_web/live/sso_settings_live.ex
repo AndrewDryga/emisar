@@ -1,6 +1,6 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Runners, SSO}
+  alias Emisar.{Accounts, Catalog, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, LiveForm, MailTo, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -98,6 +98,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:adding_runner_access_mapping, false)
       |> assign(:runners, [])
       |> assign(:runner_load_error?, false)
+      |> assign(:pack_advertisements, %{})
       |> assign(:scim_base_url, "#{Emisar.PublicUrl.base()}/scim/v2")
       # The fixed OIDC redirect URI the operator registers in their IdP — shown
       # in the per-provider setup guide so they paste the exact value.
@@ -286,6 +287,8 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp load_runners(socket) do
+    socket = assign(socket, :pack_advertisements, account_pack_advertisements(socket))
+
     case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
       {:ok, runners} ->
         socket
@@ -296,6 +299,15 @@ defmodule EmisarWeb.SSOSettingsLive do
         socket
         |> assign(:runners, [])
         |> assign(:runner_load_error?, true)
+    end
+  end
+
+  # A role without view_catalog gets no pack choices rather than a crash — the
+  # same shape as the runner load above.
+  defp account_pack_advertisements(socket) do
+    case Catalog.list_pack_advertisements(socket.assigns.current_subject) do
+      {:ok, advertisements} -> advertisements
+      {:error, _reason} -> %{}
     end
   end
 
@@ -1475,6 +1487,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 role_options={@role_options}
                 provisioner_options={@provisioner_options}
                 runners={@runners}
+                pack_advertisements={@pack_advertisements}
                 runner_load_error?={@runner_load_error?}
                 guide_id="new"
                 callback_url={@callback_url}
@@ -1535,6 +1548,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 role_options={@role_options}
                 provisioner_options={@provisioner_options}
                 runners={@runners}
+                pack_advertisements={@pack_advertisements}
                 runner_load_error?={@runner_load_error?}
                 guide_id={provider.id}
                 callback_url={@callback_url}
@@ -1744,6 +1758,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                       {runner_access_mode_label(provider.default_runner_access_mode)}
                     </span>
                   </.meta_field>
+                  <.meta_field
+                    :if={provider.default_runner_access_mode != :none}
+                    label="Default pack access"
+                  >
+                    <span class="text-zinc-300">
+                      {pack_access_mode_label(provider.default_pack_access_mode)}
+                    </span>
+                  </.meta_field>
                   <.meta_field label="Identifier claim">
                     <span class="font-mono text-zinc-300">{provider.identifier_claim}</span>
                   </.meta_field>
@@ -1826,6 +1848,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               mapping_edit_form={@runner_access_mapping_edit_form}
               adding_mapping={@adding_runner_access_mapping}
               runners={@runners}
+              pack_advertisements={@pack_advertisements}
             />
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
               Adds runners on top of the connection default. Groups are matched by id, never by
@@ -2084,6 +2107,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :role_options, :list, required: true
   attr :provisioner_options, :list, required: true
   attr :runners, :list, required: true
+  attr :pack_advertisements, :map, required: true
   attr :runner_load_error?, :boolean, required: true
   attr :guide_id, :string, required: true
   attr :callback_url, :string, required: true
@@ -2284,6 +2308,21 @@ defmodule EmisarWeb.SSOSettingsLive do
                   if @runner_load_error?,
                     do: "Runner access options could not be loaded. Try again before saving."
                 }
+              />
+            </div>
+
+            <div class="mt-4">
+              <.pack_access_field
+                runner_mode={to_string(@form[:default_runner_access_mode].value)}
+                runner_scope={List.wrap(@form[:default_runner_scope].value)}
+                runners={@runners}
+                advertisements={@pack_advertisements}
+                mode_name="provider[default_pack_access_mode]"
+                mode_value={@form[:default_pack_access_mode].value}
+                scope_name="provider[default_pack_scope][]"
+                selected={List.wrap(@form[:default_pack_scope].value)}
+                submit_error_field={@form[:default_pack_access_mode]}
+                submit_error_message="Choose at least one pack for selected pack access."
               />
             </div>
           </div>
@@ -2972,6 +3011,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :synced_groups, :list, default: []
   attr :adding_mapping, :boolean, default: false
   attr :runners, :list, required: true
+  attr :pack_advertisements, :map, required: true
 
   defp group_runner_access_mapping_section(assigns) do
     assigns = assign(assigns, :runners_by_id, Map.new(assigns.runners, &{&1.id, &1}))
@@ -3007,21 +3047,29 @@ defmodule EmisarWeb.SSOSettingsLive do
               </p>
               <div class="mt-1 flex flex-wrap gap-1">
                 <.chip>{runner_access_mode_label(mapping.runner_access_mode)}</.chip>
-                <.chip :for={group <- mapping.runner_scope_groups} tone={:neutral}>
-                  Group: {group}
-                </.chip>
-                <%!-- The full runner id rides the chip's title; the label names the live
-                     runner, and falls back to the shared removed-runner label when the
-                     id no longer resolves. --%>
-                <.chip
+                <.identity_tag
+                  :for={group <- mapping.runner_scope_groups}
+                  category="group"
+                  value={group}
+                />
+                <%!-- The full runner id rides the tag's title; the value half names the
+                     live runner, and falls back to the shared removed-runner label when
+                     the id no longer resolves. --%>
+                <.identity_tag
                   :for={runner_id <- mapping.runner_scope_runner_ids}
-                  tone={:neutral}
+                  category="runner"
                   title={runner_id}
                 >
                   <% runner = Map.get(@runners_by_id, runner_id) %>
-                  <span :if={runner}>Runner: {runner.name}</span>
+                  <span :if={runner}>{runner.name}</span>
                   <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
-                </.chip>
+                </.identity_tag>
+                <.chip>{pack_access_mode_label(mapping.pack_access_mode)}</.chip>
+                <.identity_tag
+                  :for={pack_id <- mapping.pack_scope_pack_ids}
+                  category="pack"
+                  value={pack_id}
+                />
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-2">
@@ -3064,6 +3112,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 form={@mapping_edit_form}
                 synced_groups={@synced_groups}
                 runners={@runners}
+                pack_advertisements={@pack_advertisements}
                 editing?
               />
               <:actions>
@@ -3099,6 +3148,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             form={@mapping_form}
             synced_groups={@synced_groups}
             runners={@runners}
+            pack_advertisements={@pack_advertisements}
           />
           <:actions>
             <.button phx-disable-with="Adding...">Add runner access</.button>
@@ -3119,6 +3169,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :form, Phoenix.HTML.Form, required: true
   attr :synced_groups, :list, required: true
   attr :runners, :list, required: true
+  attr :pack_advertisements, :map, required: true
   attr :editing?, :boolean, default: false
 
   defp runner_access_mapping_fields(assigns) do
@@ -3171,6 +3222,21 @@ defmodule EmisarWeb.SSOSettingsLive do
             selected={List.wrap(@form[:scope].value)}
             submit_error_field={@form[:runner_access_mode]}
             submit_error_message="Choose all runners or at least one selected runner scope."
+          />
+        </div>
+
+        <div class="mt-4">
+          <.pack_access_field
+            runner_mode={to_string(@form[:runner_access_mode].value)}
+            runner_scope={List.wrap(@form[:scope].value)}
+            runners={@runners}
+            advertisements={@pack_advertisements}
+            mode_name={@form[:pack_access_mode].name}
+            mode_value={@form[:pack_access_mode].value}
+            scope_name={"#{@form.name}[pack_scope][]"}
+            selected={List.wrap(@form[:pack_scope].value)}
+            submit_error_field={@form[:pack_access_mode]}
+            submit_error_message="Choose at least one pack for selected pack access."
           />
         </div>
       </div>
@@ -3409,6 +3475,9 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp runner_access_mode_label(:none), do: "No runners"
   defp runner_access_mode_label(:all), do: "All runners"
   defp runner_access_mode_label(:restricted), do: "Selected runners"
+
+  defp pack_access_mode_label(:all), do: "All packs"
+  defp pack_access_mode_label(:restricted), do: "Selected packs"
 
   defp restricted_runner_access?(mode), do: mode in [:restricted, "restricted"]
 

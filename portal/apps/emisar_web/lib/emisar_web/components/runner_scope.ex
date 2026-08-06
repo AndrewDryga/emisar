@@ -1,10 +1,14 @@
 defmodule EmisarWeb.RunnerScope do
   @moduledoc """
-  The shared runner-scope picker: ONE grouped, touch-friendly control where a
-  scope is chosen from runner GROUPS and, nested beneath each, its RUNNERS — so
-  groups and runners live in one place instead of a groups list plus a separate,
-  ungrouped runners list. Selecting a group covers every runner in it, so those
-  runners render disabled ("via group") — picking them on top would be redundant.
+  The shared reach pickers — WHICH runners a grant covers, and WHICH packs on
+  them.
+
+  The runner picker is ONE grouped, touch-friendly control where a scope is
+  chosen from runner GROUPS and, nested beneath each, its RUNNERS — so groups and
+  runners live in one place instead of a groups list plus a separate, ungrouped
+  runners list. Selecting a group covers every runner in it, so those runners
+  render disabled ("via group") — picking them on top would be redundant. The
+  pack picker is the flat sibling that narrows the same grant.
   Used by explicit restricted-access controls for team members and SSO mappings.
 
   A custom checkbox tree (not a native `<select multiple>`): full-row tap targets,
@@ -16,7 +20,10 @@ defmodule EmisarWeb.RunnerScope do
   subject may actually reach. This module renders and serializes only.
   """
   use Phoenix.Component
-  import EmisarWeb.CoreComponents, only: [callout: 1, checkbox: 1, error: 1, loading_state: 1]
+
+  import EmisarWeb.CoreComponents,
+    only: [callout: 1, checkbox: 1, choice_cards: 1, error: 1, input: 1, loading_state: 1]
+
   alias Emisar.Accounts
 
   attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "scope[]")
@@ -144,6 +151,263 @@ defmodule EmisarWeb.RunnerScope do
   end
 
   @doc """
+  The pack half of a grant form: the mode choice plus, when it is `restricted`,
+  the attached pack picker. Renders nothing while the runner mode grants no
+  reach — there is nothing to narrow, and the domain drops a pack selection made
+  against `none` anyway.
+
+  The copy is shared on purpose: a member grant and a directory grant narrow the
+  same way, so they must not drift into two vocabularies.
+  """
+  attr :runner_mode, :string, required: true, doc: "the runner mode this narrows"
+  attr :runner_scope, :list, default: [], doc: ~s(the chosen "group:x"/"runner:id" values)
+  attr :runners, :list, required: true, doc: "the account's runners (need id, group)"
+  attr :advertisements, :map, required: true, doc: "%{pack_id => [runner_id]} from Catalog"
+  attr :variant, :atom, default: :cards, values: [:cards, :select]
+  attr :mode_name, :string, required: true, doc: ~s(mode field name, e.g. "pack_access_mode")
+  attr :mode_value, :any, required: true
+  attr :scope_name, :string, required: true, doc: ~s(checkbox field name, e.g. "pack_scope[]")
+  attr :selected, :list, default: [], doc: ~s(chosen "pack:id" values)
+  attr :submit_error_field, Phoenix.HTML.FormField, default: nil
+  attr :submit_error_message, :string, default: nil
+  attr :validation_error, :string, default: nil
+  attr :loading?, :boolean, default: false
+  attr :load_error, :string, default: nil
+
+  def pack_access_field(assigns) do
+    runner_ids = selected_runner_ids(assigns.runners, assigns.runner_mode, assigns.runner_scope)
+
+    assigns =
+      assigns
+      |> assign(:packs, packs_in_scope(assigns.advertisements, runner_ids, assigns.selected))
+      |> assign(:empty_message, pack_empty_message(assigns.runner_mode, runner_ids))
+
+    pack_access_control(assigns)
+  end
+
+  defp pack_access_control(%{variant: :select} = assigns) do
+    ~H"""
+    <div :if={@runner_mode != "none"} class="space-y-2">
+      <.input
+        type="select"
+        name={@mode_name}
+        value={@mode_value}
+        label="Packs"
+        options={[{"All packs", "all"}, {"Selected packs", "restricted"}]}
+      />
+      <.pack_scope_select
+        :if={to_string(@mode_value) == "restricted"}
+        name={@scope_name}
+        label="Selected packs"
+        packs={@packs}
+        selected={@selected}
+        empty_message={@empty_message}
+        validation_error={@validation_error}
+      />
+    </div>
+    """
+  end
+
+  defp pack_access_control(assigns) do
+    ~H"""
+    <div :if={@runner_mode != "none"}>
+      <.choice_cards name={@mode_name} value={@mode_value} attached_value="restricted">
+        <:card value="all" title="All packs">
+          Every pack on those runners, including ones installed later.
+        </:card>
+        <:card value="restricted" title="Selected packs">
+          Only actions from the packs you name.
+        </:card>
+      </.choice_cards>
+
+      <.pack_scope_select
+        :if={to_string(@mode_value) == "restricted"}
+        name={@scope_name}
+        variant={:attached}
+        packs={@packs}
+        selected={@selected}
+        empty_message={@empty_message}
+        submit_error_field={@submit_error_field}
+        submit_error_message={@submit_error_message}
+        validation_error={@validation_error}
+        loading?={@loading?}
+        load_error={@load_error}
+      />
+    </div>
+    """
+  end
+
+  @doc """
+  Runner ids a `"group:x"` / `"runner:id"` selection covers — every runner when
+  the grant reaches them all.
+  """
+  def selected_runner_ids(runners, mode, _selected) when mode in ["all", :all],
+    do: Enum.map(runners, & &1.id)
+
+  def selected_runner_ids(runners, _mode, selected) do
+    values = MapSet.new(selected)
+
+    for runner <- runners,
+        MapSet.member?(values, "runner:" <> runner.id) or
+          (is_binary(runner.group) and MapSet.member?(values, "group:" <> runner.group)),
+        do: runner.id
+  end
+
+  @doc """
+  The packs a runner selection actually carries, as `[%{id: _, runner_count: _}]`
+  sorted by id. `runner_count` counts only the SELECTED runners advertising the
+  pack, so the number means the same thing as the "2 runners" beside a group row
+  above it. A pack already chosen stays in the list even when nothing in scope
+  advertises it any more, so the operator can see and untick it.
+  """
+  def packs_in_scope(advertisements, runner_ids, selected \\ []) do
+    chosen = MapSet.new(selected)
+    scope = MapSet.new(runner_ids)
+
+    advertisements
+    |> Enum.map(fn {pack_id, advertising} ->
+      %{id: pack_id, runner_count: Enum.count(advertising, &MapSet.member?(scope, &1))}
+    end)
+    |> Enum.filter(&(&1.runner_count > 0 or MapSet.member?(chosen, "pack:" <> &1.id)))
+    |> Enum.sort_by(& &1.id)
+  end
+
+  # The runner scope is the prerequisite: while it names nothing, the pack list
+  # is empty for a reason the operator can fix upstream, not because the account
+  # has no packs.
+  defp pack_empty_message(mode, []) when mode not in ["all", :all],
+    do: "Choose runners first — the packs they carry appear here."
+
+  defp pack_empty_message(_mode, _runner_ids), do: "No packs on the selected runners."
+
+  attr :name, :string, required: true, doc: ~s(checkbox field name, e.g. "pack_scope[]")
+  attr :packs, :list, required: true, doc: "`[%{id: _, runner_count: _}]` from packs_in_scope/3"
+  attr :empty_message, :string, default: "No packs on the selected runners."
+  attr :selected, :list, default: [], doc: ~s(chosen "pack:id" values)
+  attr :label, :string, default: nil
+  attr :variant, :atom, default: :standalone, values: [:standalone, :attached]
+  attr :submit_error_field, Phoenix.HTML.FormField, default: nil
+  attr :submit_error_message, :string, default: nil
+  attr :validation_error, :string, default: nil
+  attr :loading?, :boolean, default: false
+  attr :load_error, :string, default: nil
+  attr :class, :any, default: nil
+  attr :rest, :global
+
+  def pack_scope_select(assigns) do
+    assigns =
+      assigns
+      |> assign(:nodes, pack_nodes(assigns.packs, assigns.selected))
+      |> assign(
+        :visible_error,
+        assigns.validation_error ||
+          visible_submit_error(assigns.submit_error_field, assigns.submit_error_message)
+      )
+
+    ~H"""
+    <div class={[scope_container_class(@variant), @class]} {@rest}>
+      <p :if={@label} class="mb-2 text-sm font-medium text-zinc-300">{@label}</p>
+
+      <div :if={@visible_error} class={scope_feedback_class(@variant)}>
+        <.error>{@visible_error}</.error>
+      </div>
+      <div :if={@loading?} class={scope_feedback_class(@variant)}>
+        <.loading_state />
+      </div>
+      <div :if={@load_error} class={scope_feedback_class(@variant)}>
+        <.callout tone={:rose}>{@load_error}</.callout>
+      </div>
+
+      <div
+        :if={not @loading? and is_nil(@load_error) and empty_pack_nodes?(@nodes)}
+        class={scope_empty_class(@variant)}
+      >
+        {@empty_message}
+      </div>
+
+      <div
+        :if={not @loading? and is_nil(@load_error) and not empty_pack_nodes?(@nodes)}
+        class={scope_tree_class(@variant)}
+      >
+        <.checkbox
+          :for={pack <- @nodes.available}
+          name={@name}
+          value={pack.value}
+          checked={pack.selected}
+          class="flex min-h-10 cursor-pointer select-none items-center gap-3 px-3 py-2 text-xs transition-colors hover:bg-white/[0.04]"
+        >
+          <span class="flex-1 truncate font-mono text-zinc-300">{pack.name}</span>
+          <span class="shrink-0 rounded-full bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
+            {pack.runner_count} {if pack.runner_count == 1, do: "runner", else: "runners"}
+          </span>
+        </.checkbox>
+
+        <%!-- A chosen pack the account no longer carries: keep it visible and
+             TICKED so the operator can see what their rejected submission still
+             names, and untick it to move on. --%>
+        <div :if={@nodes.unavailable != []}>
+          <p class="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            Unavailable
+          </p>
+          <.checkbox
+            :for={pack <- @nodes.unavailable}
+            name={@name}
+            value={pack.value}
+            checked
+            class="flex min-h-10 cursor-pointer select-none items-center gap-3 px-3 py-2 text-xs transition-colors hover:bg-white/[0.04]"
+          >
+            <span class="flex-1 truncate font-mono text-zinc-400">{pack.name}</span>
+            <span class="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+              unavailable
+            </span>
+          </.checkbox>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
+  Selection rows for the pack picker: `%{available: [%{name, value, selected,
+  runner_count}], unavailable: [%{name, value}]}`. `packs` is what
+  `packs_in_scope/3` returned; `selected` is the list of chosen `"pack:id"`
+  values, and one no runner in scope carries stays in `unavailable` so the
+  operator can see and untick it.
+  """
+  def pack_nodes(packs, selected) do
+    selected_set = MapSet.new(selected)
+
+    available =
+      packs |> Enum.reject(&(&1.runner_count == 0)) |> Enum.map(&pack_node(&1, selected_set))
+
+    rendered = MapSet.new(available, & &1.value)
+
+    unavailable =
+      selected
+      |> Enum.uniq()
+      |> Enum.reject(&MapSet.member?(rendered, &1))
+      |> Enum.map(&unavailable_pack_node/1)
+
+    %{available: available, unavailable: unavailable}
+  end
+
+  defp pack_node(pack, selected) do
+    value = "pack:" <> pack.id
+
+    %{
+      name: pack.id,
+      value: value,
+      runner_count: pack.runner_count,
+      selected: MapSet.member?(selected, value)
+    }
+  end
+
+  defp unavailable_pack_node("pack:" <> pack_id = value), do: %{name: pack_id, value: value}
+  defp unavailable_pack_node(value), do: %{name: value, value: value}
+
+  defp empty_pack_nodes?(nodes), do: nodes.available == [] and nodes.unavailable == []
+
+  @doc """
   Nested selection tree for the picker: `%{groups: [%{name, value, selected,
   runners: [%{name, value, selected, covered}]}], ungrouped: [runner…],
   unavailable: [%{kind, name, value}]}`. A runner whose group is in `selected`
@@ -267,6 +531,9 @@ defmodule EmisarWeb.RunnerScope do
   @doc ~s(The `"group:x"`/`"runner:id"` selection strings for a persisted {groups, runner_ids} scope — the selector format Accounts owns and parses back.)
   def to_values(groups, runner_ids),
     do: Accounts.runner_access_selection_values(groups, runner_ids)
+
+  @doc ~s(The `"pack:id"` selection strings for a persisted pack scope.)
+  def to_pack_values(pack_ids), do: Accounts.pack_access_selection_values(pack_ids)
 
   defp runners_in_group(runners, group),
     do: runners |> Enum.filter(&(&1.group == group)) |> Enum.sort_by(& &1.name)

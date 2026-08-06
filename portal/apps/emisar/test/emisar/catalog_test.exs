@@ -2887,6 +2887,98 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "list_account_pack_ids/1" do
+    test "returns every pack id the account carries, sorted" do
+      {account, subject} = account_with_owner()
+
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "linux-core")
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: "postgres",
+        version: "9.10"
+      )
+
+      assert Catalog.list_account_pack_ids(subject) == {:ok, ["linux-core", "postgres"]}
+    end
+
+    test "another account's subject sees none of these packs (cross-account)" do
+      {account, _subject} = account_with_owner()
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+
+      {_other_account, other_subject} = account_with_owner()
+      assert Catalog.list_account_pack_ids(other_subject) == {:ok, []}
+    end
+
+    test "a subject without view_catalog is denied" do
+      {account, _subject} = account_with_owner()
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Catalog.list_account_pack_ids(no_view) == {:error, :unauthorized}
+    end
+  end
+
+  describe "list_pack_advertisements/1" do
+    test "maps each pack to the runners advertising it" do
+      {account, subject} = account_with_owner()
+      edge = Fixtures.Runners.create_runner(account_id: account.id, group: "edge")
+      data = Fixtures.Runners.create_runner(account_id: account.id, group: "data")
+
+      Fixtures.Catalog.create_action(
+        runner: edge,
+        action_id: "linux.uptime",
+        pack_id: "linux-core"
+      )
+
+      Fixtures.Catalog.create_action(runner: data, action_id: "linux.disk", pack_id: "linux-core")
+
+      Fixtures.Catalog.create_action(
+        runner: data,
+        action_id: "postgres.uptime",
+        pack_id: "postgres"
+      )
+
+      assert {:ok, advertisements} = Catalog.list_pack_advertisements(subject)
+      assert Map.keys(advertisements) |> Enum.sort() == ["linux-core", "postgres"]
+      assert Enum.sort(advertisements["linux-core"]) == Enum.sort([edge.id, data.id])
+      assert advertisements["postgres"] == [data.id]
+    end
+
+    test "another account's advertisements are invisible (cross-account)" do
+      {account, _subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, pack_id: "linux-core")
+
+      {_other_account, other_subject} = account_with_owner()
+      assert Catalog.list_pack_advertisements(other_subject) == {:ok, %{}}
+    end
+
+    test "a subject without view_catalog is denied" do
+      {account, _subject} = account_with_owner()
+      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
+
+      assert Catalog.list_pack_advertisements(no_view) == {:error, :unauthorized}
+    end
+  end
+
+  describe "list_pack_ids_for_account/1" do
+    test "reads one already-authorized account's pack ids and fails closed on a bad id" do
+      {account, _subject} = account_with_owner()
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+
+      {other_account, _other_subject} = account_with_owner()
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: other_account.id,
+        pack_id: "linux-core"
+      )
+
+      assert Catalog.list_pack_ids_for_account(account.id) == ["postgres"]
+      assert Catalog.list_pack_ids_for_account("not-a-uuid") == []
+    end
+  end
+
   describe "list_action_pack_options_for_runner/2" do
     setup do
       {account, subject} = account_with_owner()

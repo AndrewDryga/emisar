@@ -1618,6 +1618,70 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
+  Every pack id the account knows, sorted — the choices a member's or directory
+  grant's pack scope may name. Requires `view_catalog`; scoped by
+  `Authorizer.for_subject/2`. Returns `{:ok, [pack_id]}`.
+  """
+  def list_account_pack_ids(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ) do
+      pack_ids =
+        PackVersion.Query.all()
+        |> PackVersion.Query.distinct_pack_ids()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, Enum.sort(pack_ids)}
+    end
+  end
+
+  @doc """
+  Which runners advertise which pack, as `%{pack_id => [runner_id]}` — what a
+  grant editor needs to offer only the packs the chosen runners actually carry,
+  and to say how many of them each one is on. Requires `view_catalog`; scoped by
+  `Authorizer.for_subject/2`. Returns `{:ok, map}`.
+  """
+  def list_pack_advertisements(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_catalog_permission()
+           ) do
+      pairs =
+        RunnerAction.Query.all()
+        |> RunnerAction.Query.distinct_pack_runner_pairs()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      advertisements =
+        pairs
+        |> Enum.reject(fn {pack_id, _runner_id} -> pack_id in [nil, ""] end)
+        |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+
+      {:ok, advertisements}
+    end
+  end
+
+  @doc """
+  Internal - every pack id in one already-authorized account, for the directory
+  sync's pack-scope allowlist.
+  """
+  def list_pack_ids_for_account(account_id) when is_binary(account_id) do
+    if Repo.valid_uuid?(account_id) do
+      PackVersion.Query.all()
+      |> PackVersion.Query.by_account_id(account_id)
+      |> PackVersion.Query.distinct_pack_ids()
+      |> Repo.all()
+      |> Enum.sort()
+    else
+      []
+    end
+  end
+
+  @doc """
   Distinct pack ids advertised by a runner, as `{pack_id, pack_id}` options for
   the runner-detail action catalog's Pack filter (the pack id IS the display
   name). Same `view_catalog` gate + account scoping as the other catalog reads;
@@ -1725,6 +1789,7 @@ defmodule Emisar.Catalog do
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_ids(runner_ids)
         |> RunnerAction.Query.ordered_by_action_seen()
+        |> scope_actions_to_pack_access(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -2001,6 +2066,7 @@ defmodule Emisar.Catalog do
     actions =
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_deployments(deployments)
+      |> scope_actions_to_pack_access(subject)
       |> Authorizer.for_subject(subject)
       |> RunnerAction.Query.limit_to(max_actions + 1)
       |> Repo.all()
@@ -2153,17 +2219,34 @@ defmodule Emisar.Catalog do
   # resolve it on every risk read so a narrowed scope takes effect immediately
   # on open sessions and old API keys.
   defp scope_actions_to_subject_membership(queryable, %Subject{} = subject) do
-    case Accounts.runner_access_for_subject(subject) do
-      %Accounts.RunnerAccess{mode: :none} ->
-        RunnerAction.Query.none(queryable)
+    access = Accounts.runner_access_for_subject(subject)
 
-      %Accounts.RunnerAccess{mode: :all} ->
-        queryable
-
-      %Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups} ->
-        RunnerAction.Query.by_runner_scope_values(queryable, runner_ids, groups)
-    end
+    queryable
+    |> scope_actions_to_runners(access)
+    |> scope_actions_to_packs(access)
   end
+
+  defp scope_actions_to_runners(queryable, %Accounts.RunnerAccess{mode: :none}),
+    do: RunnerAction.Query.none(queryable)
+
+  defp scope_actions_to_runners(queryable, %Accounts.RunnerAccess{mode: :all}), do: queryable
+
+  defp scope_actions_to_runners(queryable, %Accounts.RunnerAccess{mode: :restricted} = access),
+    do: RunnerAction.Query.by_runner_scope_values(queryable, access.runner_ids, access.groups)
+
+  # The pack dimension of the same grant. Reads that scope their runners through
+  # a fleet read compose THIS on top, so a member restricted to some packs never
+  # sees — or selects — an action outside them.
+  defp scope_actions_to_pack_access(queryable, %Subject{} = subject),
+    do: scope_actions_to_packs(queryable, Accounts.runner_access_for_subject(subject))
+
+  defp scope_actions_to_packs(queryable, %Accounts.RunnerAccess{mode: :none}),
+    do: RunnerAction.Query.none(queryable)
+
+  defp scope_actions_to_packs(queryable, %Accounts.RunnerAccess{pack_mode: :all}), do: queryable
+
+  defp scope_actions_to_packs(queryable, %Accounts.RunnerAccess{pack_mode: :restricted} = access),
+    do: RunnerAction.Query.by_pack_ids(queryable, access.pack_ids)
 
   # Severity rank for `RunnerAction.risk` (an Ecto.Enum) — lets us pick the
   # WORST risk when the same action is advertised by more than one runner.

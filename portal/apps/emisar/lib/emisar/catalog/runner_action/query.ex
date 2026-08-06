@@ -94,6 +94,11 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_pack_id(queryable, pack_id),
     do: where(queryable, [runner_actions: a], a.pack_id == ^pack_id)
 
+  def by_pack_ids(queryable, []), do: none(queryable)
+
+  def by_pack_ids(queryable, pack_ids) when is_list(pack_ids),
+    do: where(queryable, [runner_actions: a], a.pack_id in ^pack_ids)
+
   def by_pack_hash(queryable, pack_hash),
     do: where(queryable, [runner_actions: a], a.pack_hash == ^pack_hash)
 
@@ -105,6 +110,14 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   # detail page's Pack filter (the packs THAT runner advertises).
   def distinct_pack_ids(queryable),
     do: queryable |> distinct(true) |> select([runner_actions: a], a.pack_id)
+
+  # Which runner advertises which pack — the pairs a grant editor folds into
+  # "this pack, on N of the runners you picked".
+  def distinct_pack_runner_pairs(queryable) do
+    queryable
+    |> distinct(true)
+    |> select([runner_actions: a], {a.pack_id, a.runner_id})
+  end
 
   def by_account_runner_and_action(queryable, account_id, runner_id, action_id) do
     queryable
