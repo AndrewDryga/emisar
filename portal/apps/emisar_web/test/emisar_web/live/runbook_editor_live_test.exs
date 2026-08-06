@@ -1415,6 +1415,101 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
              )
     end
 
+    test "every fact phrase completes the sentence its name starts", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
+
+      outputs = [
+        %{RunbookDraft.output() | "id" => "healthy", "expression" => "/healthy"},
+        %{
+          RunbookDraft.output()
+          | "id" => "has_error",
+            "source" => "stdout",
+            "extract_type" => "contains",
+            "expression" => "error"
+        },
+        %{
+          RunbookDraft.output()
+          | "id" => "panics",
+            "source" => "stderr",
+            "extract_type" => "grep",
+            "expression" => "panic"
+        },
+        %{
+          RunbookDraft.output()
+          | "id" => "version",
+            "source" => "stdout",
+            "extract_type" => "regex",
+            "expression" => "v(\\d+)",
+            "capture" => "1"
+        },
+        %{
+          RunbookDraft.output()
+          | "id" => "token",
+            "source" => "stdout",
+            "extract_type" => "regex",
+            "expression" => "tok-.+",
+            "sensitive" => "true"
+        }
+      ]
+
+      conditions = [
+        %{
+          RunbookDraft.success()
+          | "output" => "healthy",
+            "operator" => "greater_than_or_equal",
+            "value" => "2"
+        },
+        %{
+          RunbookDraft.success()
+          | "output" => "version",
+            "operator" => "one_of",
+            "value" => ~s(["a"])
+        }
+      ]
+
+      argument = %{
+        RunbookDraft.argument()
+        | "name" => "path",
+          "type" => "path",
+          "required" => "true",
+          "sensitive" => "false",
+          "source" => "literal",
+          "value" => "/etc/caddy/Caddyfile"
+      }
+
+      step = %{
+        RunbookDraft.step()
+        | "collapsed" => "true",
+          "id" => "check",
+          "pack_id" => "linux-core",
+          "action" => "linux.uptime",
+          "args" => [argument],
+          "outputs" => outputs,
+          "success" => conditions
+      }
+
+      change(lv, put_in(valid_draft(), ["stages", Access.at(0), "steps", Access.at(0)], step))
+
+      details = "#runbook-stage-0-step-0-details"
+
+      assert has_element?(lv, details, "set to")
+      assert has_element?(lv, details, "from structured output at")
+      assert has_element?(lv, details, "whether stdout contains")
+      assert has_element?(lv, details, "lines in stderr containing")
+      assert has_element?(lv, details, "capture 1 of")
+      assert has_element?(lv, details, "what")
+      assert has_element?(lv, details, "matches in stdout")
+      assert has_element?(lv, details, "(sensitive)")
+      assert has_element?(lv, details, "is greater than or equal to")
+      assert has_element?(lv, details, "is one of")
+
+      # The extractor kind is never dropped in as a bare noun.
+      refute has_element?(lv, details, "JSON Pointer")
+    end
+
     test "a stage and an open step lead with the identifier they were given", %{
       conn: conn,
       account: account
@@ -1504,13 +1599,18 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       refute has_element?(lv, summary, "→")
       assert has_element?(lv, summary, "uptime")
       assert has_element?(lv, details, "from run-time input")
-      assert has_element?(lv, details, "in structured output")
+      assert has_element?(lv, details, "from structured output at")
 
       # An operator-supplied value reads like the name it belongs to.
       assert has_element?(lv, "#{details} span[class*='font-mono']", "config_path")
       assert has_element?(lv, "#{details} span[class*='font-mono']", "/healthy")
       assert has_element?(lv, "#{details} span[class*='font-mono']", "true")
-      assert has_element?(lv, details, "observe again every 10s · timeout 120s")
+
+      assert has_element?(
+               lv,
+               details,
+               "observe again every 10s, for up to 12 observations or 120s"
+             )
 
       # Every value sits beside its own name, in one column per step.
       assert has_element?(lv, ~s|#{details} dl[class*="max-content"]|)

@@ -919,21 +919,15 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp operator_phrase(operator), do: String.replace(operator, "_", " ")
 
   defp summary_wait_note(%{"enabled" => "true"} = wait) do
-    "observe again every #{wait["interval_seconds"]}s · timeout #{wait["timeout_seconds"]}s · " <>
-      "up to #{wait["max_attempts"]} observations"
+    "observe again every #{wait["interval_seconds"]}s, " <>
+      "for up to #{wait["max_attempts"]} observations or #{wait["timeout_seconds"]}s"
   end
 
   defp summary_wait_note(_wait), do: nil
 
   # Reads mid-phrase ("in structured output"), so it stays lower case.
-  defp output_source_label("structured_output"), do: "structured output"
-  defp output_source_label(source), do: source
-
-  defp extractor_label("json_pointer"), do: "JSON Pointer"
-  defp extractor_label("contains"), do: "contains"
-  defp extractor_label("grep"), do: "grep"
-  defp extractor_label("regex"), do: "regex"
-  defp extractor_label(type), do: type
+  defp source_phrase(%{"source" => "structured_output"}), do: "structured output"
+  defp source_phrase(%{"source" => source}), do: source
 
   defp assign_action_picker(assigns) do
     groups =
