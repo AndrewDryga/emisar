@@ -73,6 +73,15 @@ var pipelineRemoteSources = map[string]bool{
 	"dig":                          true,
 	"whois":                        true,
 	"conntrack":                    true,
+	// Local introspection whose failure still means "cannot see the target":
+	// slabtop reads root-only /proc/slabinfo under a non-root runner, and
+	// systemd-analyze needs a reachable manager. Both shipped piping into head,
+	// so a denial recorded a successful low-risk read with empty output — and
+	// this list is why the gate could not see it. An allowlist keyed on command
+	// NAMES goes stale by construction; anything added here is one more name
+	// the next author has to remember.
+	"slabtop":         true,
+	"systemd-analyze": true,
 }
 
 var pipelineSourceGuards = []string{

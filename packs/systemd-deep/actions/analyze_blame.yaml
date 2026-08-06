@@ -13,7 +13,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "systemd-analyze blame | head -30"
+      # A pipeline exits with head's status, so systemd-analyze failing — no
+      # systemd, an unreachable manager, a container — recorded a SUCCESSFUL
+      # read with empty stdout. "Nothing slow at boot" and "I could not look"
+      # must not be the same answer.
+      - "out=$(systemd-analyze blame 2>&1); status=$?; printf '%s\\n' \"$out\" | head -30; exit $status"
   timeout: 15s
 output:
   parser: text

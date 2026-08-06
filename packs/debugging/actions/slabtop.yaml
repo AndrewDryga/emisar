@@ -22,7 +22,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "slabtop -o -s c | head -40"
+      # A pipeline exits with head's status, so slabtop failing — /proc/slabinfo
+      # is root-only and the runner is non-root by default, and the binary is
+      # absent on a slim host — recorded a SUCCESSFUL read with empty stdout.
+      # "No slab pressure" and "I could not look" must not be the same answer.
+      - "out=$(slabtop -o -s c 2>&1); status=$?; printf '%s\\n' \"$out\" | head -40; exit $status"
   timeout: 15s
 
 output:
