@@ -297,6 +297,16 @@ cases:
           AF_DAG_RUN_ID: packtest_case_delete
           AF_CONF: ""
           AF_NOTE: ""
+      # Airflow refuses to delete a run that is still queued or running, and
+      # packtest_pipeline is trivial enough that the trigger above wins the race
+      # to the delete. Wait for it to finish, so the case tests the delete
+      # rather than the scheduler's head start.
+      - name: the run reaches a terminal state
+        argv: [bash, /packs/airflow/scripts/airflow_api.sh, dag-run, packtest_pipeline, packtest_case_delete]
+        retry_for: 180s
+        retry_every: 5s
+        expect:
+          stdout_contains: ['"state":"success"']
     expect:
       json:
         /deleted: true
