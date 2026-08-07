@@ -33,21 +33,19 @@ locals {
     if id != "emisar-database-url" && (id != "emisar-release-cookie" || var.release_cookie_ready)
   }
 
-  # One deliberately edited generation per secret. Changing a generation writes
-  # a new version for only that secret; its computed version is rendered into
-  # cloud-init, so the instance template rolls and replacement VMs fetch exactly
-  # the reviewed version rather than a mutable `latest` alias.
+  # The two PROVIDER-GENERATED secrets, whose value has no payload to hash: a
+  # deliberately edited generation is the only rotation signal they have.
+  # Changing one writes a new version for only that secret; its computed version
+  # is rendered into cloud-init, so the instance template rolls and replacement
+  # VMs fetch exactly the reviewed version rather than a mutable `latest` alias.
+  #
+  # Every externally-issued secret derives its trigger from the payload instead
+  # (secret_payload_generations below). Eight of them used to be listed here too,
+  # long after that change — a counter nothing read, under a comment promising
+  # that editing it would rotate them.
   secret_generations = {
-    "emisar-secret-key-base"         = 1
-    "emisar-release-cookie"          = 1
-    "emisar-paddle-api-key"          = 1
-    "emisar-paddle-webhook-secret"   = 1
-    "emisar-paddle-client-token"     = 1
-    "emisar-postmark-api-token"      = 1
-    "emisar-postmark-webhook-secret" = 1
-    "emisar-sentry-dsn"              = 1
-    "emisar-mixpanel-token"          = 1
-    "emisar-x-ads-conversions"       = 1
+    "emisar-secret-key-base" = 1
+    "emisar-release-cookie"  = 1
   }
 
   # Externally-issued credentials, one TFC workspace variable each.

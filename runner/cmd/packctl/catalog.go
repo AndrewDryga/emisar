@@ -119,7 +119,6 @@ or drop an already-published one.
 	cmd.Flags().StringVar(&packsDir, "packs", "packs", "packs directory to build from")
 	cmd.Flags().StringVar(&outDir, "out", "dist", "output directory for the artifact tree")
 	cmd.Flags().StringVar(&baseURL, "base-url", defaultRegistryBaseURL, "public base URL tarball URLs join onto")
-	cmd.Flags().StringVar(&repoURL, "repo-url", catalog.DefaultRepoURL, "source repository URL for source links")
 	cmd.Flags().StringVar(&previous, "previous", "", "currently-published catalog.json to check version/hash drift against and carry version history forward from")
 	return cmd
 }
@@ -181,7 +180,6 @@ Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 	}
 	cmd.Flags().StringVar(&dir, "dir", "dist", "built artifact tree (from 'build') to upload")
 	cmd.Flags().StringVar(&bucket, "bucket", "emisar-pack-registry", "target GCS bucket")
-	cmd.Flags().StringVar(&endpoint, "endpoint", "", "GCS JSON API endpoint (default "+catalog.DefaultGCSEndpoint+")")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the upload plan without contacting GCS")
 	return cmd
 }

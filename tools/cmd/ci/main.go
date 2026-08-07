@@ -16,7 +16,7 @@ func main() {
 		fatal(err)
 	}
 	if len(os.Args) < 2 {
-		fatal(fmt.Errorf("usage: go run ./tools/cmd/ci <select|frozen-migrations|attest-parity|install-mcp-publisher|normalize-mcp-private-key>"))
+		fatal(fmt.Errorf("usage: go run ./tools/cmd/ci <select|frozen-migrations|install-mcp-publisher|normalize-mcp-private-key>"))
 	}
 
 	ctx := context.Background()
@@ -31,11 +31,6 @@ func main() {
 			fatal(fmt.Errorf("usage: ci frozen-migrations EVENT BASE"))
 		}
 		err = ci.CheckFrozenMigrations(ctx, root, os.Args[2], os.Args[3])
-	case "attest-parity":
-		if len(os.Args) != 2 {
-			fatal(fmt.Errorf("usage: ci attest-parity"))
-		}
-		err = ci.CheckAttestParity(root)
 	case "install-mcp-publisher":
 		if len(os.Args) > 3 {
 			fatal(fmt.Errorf("usage: ci install-mcp-publisher [destination]"))
