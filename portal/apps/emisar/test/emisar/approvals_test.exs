@@ -1546,6 +1546,47 @@ defmodule Emisar.ApprovalsTest do
       %{account: account, run: run, subject: subject}
     end
 
+    # A viewer holds view_approvals but NOT decide_approval — it can watch the
+    # queue and must not clear it. This is the product's core safety mutation and
+    # nothing proved the gate held.
+    test "a viewer is refused and the request stays pending", %{run: run, subject: subject} do
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: subject.account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      viewer_subject = Fixtures.Subjects.subject_for(viewer, subject.account, role: :viewer)
+
+      assert Approvals.approve_request(request, viewer_subject, "lgtm") ==
+               {:error, :unauthorized}
+
+      assert {:ok, %Request{status: :pending}} =
+               Approvals.fetch_approval_request_by_id(request.id, subject)
+
+      assert {:ok, %ActionRun{status: :pending_approval}} = Runs.fetch_run_by_id(run.id, subject)
+    end
+
+    # The decision is scoped by the deciding subject's account, so an owner of
+    # another tenant holding this request cannot decide it — permission alone is
+    # not enough.
+    test "an owner of another account cannot decide this request", %{
+      run: run,
+      subject: subject
+    } do
+      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      other_subject = operator_subject(Fixtures.Accounts.create_account())
+
+      assert {:error, _} = Approvals.approve_request(request, other_subject, "lgtm")
+
+      assert {:ok, %Request{status: :pending}} =
+               Approvals.fetch_approval_request_by_id(request.id, subject)
+    end
+
     test "transitions the run to :sent + writes an audit event", %{run: run, subject: subject} do
       {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
 
@@ -3967,6 +4008,53 @@ defmodule Emisar.ApprovalsTest do
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
       %{account: account, user: user, subject: subject, key: key}
+    end
+
+    # The cap bounds how long a standing approval grant stays usable, so who may
+    # move it is a security decision. An operator holds decide_approval and
+    # view_approvals but not manage_grants.
+    test "an operator cannot move the cap", %{account: account} do
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+
+      assert Approvals.update_grant_lifetime_settings(
+               account,
+               %{"seconds" => "86400"},
+               operator_subject
+             ) == {:error, :unauthorized}
+
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.max_grant_lifetime_seconds == nil
+    end
+
+    test "an owner of another account cannot move this account's cap", %{account: account} do
+      other_account = Fixtures.Accounts.create_account()
+      other_user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: other_user.id,
+        role: "owner"
+      )
+
+      other_subject = Fixtures.Subjects.subject_for(other_user, other_account, role: :owner)
+
+      assert {:error, _} =
+               Approvals.update_grant_lifetime_settings(
+                 account,
+                 %{"seconds" => "86400"},
+                 other_subject
+               )
+
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.max_grant_lifetime_seconds == nil
     end
 
     test "an owner caps the lifetime with the raw form value", %{
