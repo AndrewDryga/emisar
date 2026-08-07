@@ -52,6 +52,17 @@ defmodule EmisarWeb.RunnerSocketTest do
              |> post(~p"/runner/token/refresh")
              |> json_response(401) == %{"error" => "missing_bearer"}
     end
+
+    test "refuses an expired token rather than renewing it" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, token} = Runners.mint_runner_token(runner)
+      Fixtures.Runners.expire_token(token)
+
+      assert build_conn()
+             |> put_req_header("authorization", "Bearer " <> raw)
+             |> post(~p"/runner/token/refresh")
+             |> json_response(401) == %{"error" => "token_expired"}
+    end
   end
 
   describe "POST /runner/register (bearer-authed)" do
@@ -300,6 +311,22 @@ defmodule EmisarWeb.RunnerSocketTest do
         |> get("/runner/socket/websocket")
 
       assert json_response(conn, 403) == %{"error" => "runner_disabled"}
+    end
+
+    test "an expired runner token → 401 the client can recover from", %{conn: conn} do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, token} = Runners.mint_runner_token(runner)
+      Fixtures.Runners.expire_token(token)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer " <> raw)
+        |> get("/runner/socket/websocket")
+
+      # 401, not the 403 a disabled runner gets: the client drops its cached
+      # token on a 401 and re-registers with its enrollment key, so an expired
+      # credential heals itself without an operator.
+      assert json_response(conn, 401) == %{"error" => "token_expired"}
     end
   end
 

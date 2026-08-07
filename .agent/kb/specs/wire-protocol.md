@@ -55,10 +55,20 @@ after its successor is minted, so a runner that receives one and fails to
 persist it still reconnects and tries again. Refresh failure of any kind leaves
 the runner on its existing token; it never blocks a connect.
 
-Expiry is **not enforced yet**, deliberately. Every token minted before rotation
-existed has no expiry and no `refresh_after`, so it is never asked to rotate;
-enforcement is a separate change, made once refresh telemetry shows the fleet
-rotating. Turning both on together would expire a fleet on the same day.
+**Token expiry.** A token past its `expires_at` is refused wherever it is
+presented — the websocket upgrade and `POST /runner/token/refresh` both answer
+`401 {"error":"token_expired"}` — so a leaked credential cannot renew itself and
+a retired one really does stop working when its grace window closes. `401` is
+the recoverable shape on purpose: the runner discards its cached token and
+re-registers with its enrollment key, no operator involved.
+
+A token with **no** `expires_at` never expires, and that is every token minted
+before rotation existed. Those runners run a build with no refresh path, so
+enforcement deliberately leaves them alone rather than expiring a fleet on the
+same day; they gain an expiry by rotating, once their host is on a runner that
+can ask. A runner or account disabled at the same time keeps its own
+`403` — that verdict is recoverable by re-enabling, and a `401` would wrongly
+send the runner off to re-register instead.
 
 The runner uses configured `runner.id`, or its current hostname by default, as
 its `external_id`. `POST /runner/register` requires that nonblank,

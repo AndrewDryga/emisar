@@ -2140,8 +2140,8 @@ defmodule Emisar.Runners do
   @doc """
   Internal — runner socket upgrade controller, before any Subject exists:
   verifies a presented runner token. Returns `{:ok, token, runner}`,
-  `{:error, :runner_disabled}`, `{:error, :account_disabled}`, or
-  `{:error, :token_invalid}`.
+  `{:error, :runner_disabled}`, `{:error, :account_disabled}`,
+  `{:error, :token_expired}`, or `{:error, :token_invalid}`.
   """
   def verify_runner_token(raw) when is_binary(raw) do
     if String.length(raw) < @token_prefix_size do
@@ -2154,25 +2154,41 @@ defmodule Emisar.Runners do
       with %Token{} = token <- Repo.peek(token_queryable),
            true <- Crypto.secure_compare(token.token_hash, hash),
            runner_queryable = Runner.Query.not_deleted() |> Runner.Query.by_id(token.runner_id),
-           %Runner{} = runner <- Repo.peek(runner_queryable) do
-        if is_nil(runner.disabled_at) do
-          case Accounts.fetch_account_by_id_or_slug_including_disabled(runner.account_id) do
-            {:ok, %{disabled_at: nil}} ->
-              {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
-              {:ok, token, runner}
-
-            {:ok, _disabled_account} ->
-              {:error, :account_disabled}
-
-            {:error, :not_found} ->
-              {:error, :token_invalid}
-          end
-        else
-          {:error, :runner_disabled}
-        end
+           %Runner{} = runner <- Repo.peek(runner_queryable),
+           :ok <- ensure_runner_and_account_enabled(runner),
+           :ok <- ensure_token_not_expired(token) do
+        {:ok, _} = token |> Token.Changeset.usage() |> Repo.update()
+        {:ok, token, runner}
       else
+        {:error, reason} -> {:error, reason}
         _ -> {:error, :token_invalid}
       end
+    end
+  end
+
+  defp ensure_runner_and_account_enabled(%Runner{disabled_at: nil} = runner) do
+    case Accounts.fetch_account_by_id_or_slug_including_disabled(runner.account_id) do
+      {:ok, %{disabled_at: nil}} -> :ok
+      {:ok, _disabled_account} -> {:error, :account_disabled}
+      {:error, :not_found} -> {:error, :token_invalid}
+    end
+  end
+
+  defp ensure_runner_and_account_enabled(%Runner{}), do: {:error, :runner_disabled}
+
+  # A NULL expiry means never expires, and that is every token minted before
+  # rotation shipped — its client has no refresh path, so enforcement must
+  # leave it alone. Checked last, where the token would otherwise be accepted,
+  # so a disabled runner or account keeps its own verdict and its own 403: a
+  # 401 would tell the client to discard its token and re-register, which is
+  # the wrong instruction for an identity an operator can simply re-enable.
+  defp ensure_token_not_expired(%Token{expires_at: nil}), do: :ok
+
+  defp ensure_token_not_expired(%Token{expires_at: expires_at}) do
+    if DateTime.compare(DateTime.utc_now(), expires_at) == :lt do
+      :ok
+    else
+      {:error, :token_expired}
     end
   end
 

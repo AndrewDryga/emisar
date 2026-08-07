@@ -36,7 +36,7 @@ defmodule Emisar.Runners.Token.Changeset do
   def usage(%Token{} = token), do: change(token, last_used_at: DateTime.utc_now())
 
   @doc """
-  Internal — `Runners.refresh_runner_token/2`: retire the outgoing token once
+  Internal — `Runners.refresh_runner_token/1`: retire the outgoing token once
   its successor has been minted. Expiry rather than deletion, so a runner that
   never receives or never persists the successor keeps a working credential for
   the grace window instead of being locked out by its own refresh.

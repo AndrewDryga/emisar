@@ -5,11 +5,12 @@ defmodule Emisar.Runners.Token do
   reconnect. Enrollment keys are one-shot bootstraps; tokens are the durable
   credential.
 
-  A token carries an `expires_at` so a leak nobody discovers still stops
-  working. The runner exchanges a live token for a successor over
-  `POST /runner/token/refresh` — no host access, no enrollment key — and the
-  outgoing token stays valid until the successor is first used, so a runner that
-  persists one and then crashes still has a way in.
+  A token carries an `expires_at`, refused by `Runners.verify_runner_token/1`
+  once it passes, so a leak nobody discovers still stops working. The runner
+  exchanges a live token for a successor over `POST /runner/token/refresh` — no
+  host access, no enrollment key — and the outgoing one keeps working for a
+  grace window after its successor is minted, so a runner that fails to persist
+  the successor still has a way in on its next connect.
   """
   use Emisar, :schema
 
@@ -20,7 +21,7 @@ defmodule Emisar.Runners.Token do
     field :last_used_at, :utc_datetime_usec
     # NULL means never expires. Every token minted before rotation shipped is
     # NULL and stays that way, so enforcement can never strand a runner that has
-    # no refresh path. See Runners.refresh_runner_token/2.
+    # no refresh path. See Runners.refresh_runner_token/1.
     field :expires_at, :utc_datetime_usec
 
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]

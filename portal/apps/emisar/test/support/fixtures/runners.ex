@@ -203,4 +203,15 @@ defmodule Emisar.Fixtures.Runners do
     )
     |> Repo.update!()
   end
+
+  @doc """
+  Moves a token's `expires_at` into the past — what a rotating token looks like
+  once its lifetime runs out, or once refresh has retired it and the grace
+  window has closed.
+  """
+  def expire_token(%Token{} = token) do
+    token
+    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -1, :second))
+    |> Repo.update!()
+  end
 end

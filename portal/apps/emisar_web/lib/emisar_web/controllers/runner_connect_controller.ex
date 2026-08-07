@@ -51,6 +51,11 @@ defmodule EmisarWeb.RunnerConnectController do
       {:error, :account_disabled} ->
         unauthorized(conn, "account_disabled")
 
+      # An expired token cannot buy a live successor — otherwise expiry would
+      # be a formality any leaked credential could refresh its way out of.
+      {:error, :token_expired} ->
+        unauthorized(conn, "token_expired")
+
       {:error, _reason} ->
         unauthorized(conn, "token_invalid")
     end
@@ -144,6 +149,12 @@ defmodule EmisarWeb.RunnerConnectController do
 
       {:error, :token_invalid} ->
         unauthorized(conn, "token_invalid")
+
+      # 401 rather than 403 on purpose: the runner drops its cached token on a
+      # 401 and re-registers with its enrollment key, which is exactly the
+      # recovery an expired credential needs and no operator action at all.
+      {:error, :token_expired} ->
+        unauthorized(conn, "token_expired")
 
       {:error, :runner_disabled} ->
         conn

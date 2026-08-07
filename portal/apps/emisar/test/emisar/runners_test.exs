@@ -3340,6 +3340,17 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.refresh_runner_token(raw) == {:error, :runner_disabled}
     end
+
+    test "an expired token cannot refresh its way back to a live one" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, token} = Runners.mint_runner_token(runner)
+      Fixtures.Runners.expire_token(token)
+
+      # Refresh authenticates with the token itself. Honouring an expired one
+      # would make expiry advisory: whoever holds a leaked credential could
+      # renew it forever without ever touching the host.
+      assert Runners.refresh_runner_token(raw) == {:error, :token_expired}
+    end
   end
 
   describe "token_refresh_after/1" do
@@ -3457,6 +3468,42 @@ defmodule Emisar.RunnersTest do
       {:ok, _} = Runners.delete_runner(runner, subject)
 
       assert Runners.verify_runner_token(raw) == {:error, :token_invalid}
+    end
+
+    test "returns {:error, :token_expired} past the expiry, without consuming the token" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, token} = Runners.mint_runner_token(runner)
+      Fixtures.Runners.expire_token(token)
+
+      assert Runners.verify_runner_token(raw) == {:error, :token_expired}
+      # A refused token is not a used one — bumping last_used_at here would make
+      # a dead credential read as live everywhere the fleet shows last use.
+      assert %Token{last_used_at: nil} = Repo.reload!(token)
+    end
+
+    test "a pre-rotation token has no expiry to pass and still connects" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {raw, token} = Runners.mint_runner_token(runner)
+      Fixtures.Runners.strip_token_expiry(token)
+
+      # Every token minted before rotation shipped holds this shape, on runners
+      # whose build has no refresh path at all. NULL means never expires, which
+      # is what keeps enforcement from stranding them.
+      assert {:ok, %Token{expires_at: nil}, %Runner{}} = Runners.verify_runner_token(raw)
+    end
+
+    test "a disabled runner's expired token keeps the disabled verdict" do
+      {account, _user, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {raw, token} = Runners.mint_runner_token(runner)
+      Fixtures.Runners.expire_token(token)
+
+      {:ok, _disabled} = Runners.disable_runner(runner, subject)
+
+      # Not :token_expired — the transport answers that with a 401, which tells
+      # the runner to discard its token and re-register. Disable has to stay
+      # recoverable by re-enabling, without anyone touching the host.
+      assert Runners.verify_runner_token(raw) == {:error, :runner_disabled}
     end
   end
 
