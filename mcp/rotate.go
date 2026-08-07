@@ -37,17 +37,24 @@ type credentialState struct {
 	Pending         string `json:"pending,omitempty"`
 }
 
+// Every write-side op takes the *os.Root secureDirectory validated rather than
+// a path. A path is re-resolved on each call, so the credential directory could
+// be swapped for a symlink between the check and the create — on a shared host
+// where the parent is group-writable, that redirects the pending key into a
+// directory the attacker owns. A root is a pinned directory descriptor: once
+// opened, replacing the directory entry cannot move where these writes land.
 type credentialFileOps struct {
 	mkdirAll  func(string, os.FileMode) error
 	chmod     func(string, os.FileMode) error
 	readFile  func(string) ([]byte, error)
-	createTmp func(string, string) (*os.File, error)
+	openRoot  func(string) (*os.Root, error)
+	createTmp func(*os.Root, string) (*os.File, error)
 	write     func(*os.File, []byte) (int, error)
 	syncFile  func(*os.File) error
 	closeFile func(*os.File) error
-	rename    func(string, string) error
-	remove    func(string) error
-	syncDir   func(string) error
+	rename    func(*os.Root, string, string) error
+	remove    func(*os.Root, string) error
+	syncDir   func(*os.Root) error
 }
 
 type credentialStore struct {
@@ -95,10 +102,14 @@ func (store *credentialStore) stamp() credentialStateStamp {
 }
 
 func (store *credentialStore) withLock(fun func() error) error {
-	dir := filepath.Dir(store.path)
-	if err := store.secureDirectory(dir); err != nil {
+	root, err := store.secureDirectory(filepath.Dir(store.path))
+	if err != nil {
 		return &credentialWriteAccessError{err: err}
 	}
+	// This call wants only the directory preparation. persist opens its own
+	// root for the writes that need one, so this descriptor closes here rather
+	// than staying open for the whole locked section.
+	_ = root.Close()
 	unlock, err := lockCredentialFile(store.path + ".lock")
 	if err != nil {
 		return &credentialWriteAccessError{err: fmt.Errorf("lock credential state: %w", err)}
@@ -109,15 +120,19 @@ func (store *credentialStore) withLock(fun func() error) error {
 
 func defaultCredentialFileOps() credentialFileOps {
 	return credentialFileOps{
-		mkdirAll:  os.MkdirAll,
-		chmod:     os.Chmod,
-		readFile:  os.ReadFile,
-		createTmp: os.CreateTemp,
+		mkdirAll: os.MkdirAll,
+		chmod:    os.Chmod,
+		readFile: os.ReadFile,
+		openRoot: os.OpenRoot,
+		createTmp: func(root *os.Root, name string) (*os.File, error) {
+			// O_EXCL so a pre-planted name is a failure, never a reuse.
+			return root.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+		},
 		write:     func(file *os.File, data []byte) (int, error) { return file.Write(data) },
 		syncFile:  func(file *os.File) error { return file.Sync() },
 		closeFile: func(file *os.File) error { return file.Close() },
-		rename:    os.Rename,
-		remove:    os.Remove,
+		rename:    func(root *os.Root, from, to string) error { return root.Rename(from, to) },
+		remove:    func(root *os.Root, name string) error { return root.Remove(name) },
 		syncDir:   syncCredentialDirectory,
 	}
 }
@@ -186,22 +201,23 @@ func (store *credentialStore) persist(state credentialState) error {
 	}
 	data = append(data, '\n')
 
-	dir := filepath.Dir(store.path)
-	if err := store.secureDirectory(dir); err != nil {
+	root, err := store.secureDirectory(filepath.Dir(store.path))
+	if err != nil {
 		return err
 	}
+	defer root.Close()
 
-	tmp, err := store.ops.createTmp(dir, ".credential-*.tmp")
+	tmpName := ".credential-" + rand.Text() + ".tmp"
+	tmp, err := store.ops.createTmp(root, tmpName)
 	if err != nil {
 		return fmt.Errorf("create credential temp file: %w", err)
 	}
-	tmpPath := tmp.Name()
 	closed := false
 	defer func() {
 		if !closed {
 			_ = tmp.Close()
 		}
-		_ = store.ops.remove(tmpPath)
+		_ = store.ops.remove(root, tmpName)
 	}()
 
 	if err := tmp.Chmod(0o600); err != nil {
@@ -219,26 +235,33 @@ func (store *credentialStore) persist(state credentialState) error {
 		return fmt.Errorf("close credential state: %w", err)
 	}
 	closed = true
-	if err := store.ops.rename(tmpPath, store.path); err != nil {
+	if err := store.ops.rename(root, tmpName, filepath.Base(store.path)); err != nil {
 		return fmt.Errorf("replace credential state: %w", err)
 	}
-	if err := store.ops.syncDir(dir); err != nil {
+	if err := store.ops.syncDir(root); err != nil {
 		return fmt.Errorf("sync credential directory: %w", err)
 	}
 	return nil
 }
 
-func (store *credentialStore) secureDirectory(dir string) error {
+// secureDirectory returns the directory as a pinned descriptor. Every check it
+// makes is by path and therefore expires the moment it returns; the root is
+// what carries that decision forward to the writes in persist.
+func (store *credentialStore) secureDirectory(dir string) (*os.Root, error) {
 	if err := store.ops.mkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create credential directory: %w", err)
+		return nil, fmt.Errorf("create credential directory: %w", err)
 	}
 	if err := rejectUnsafeCredentialDirectory(dir); err != nil {
-		return fmt.Errorf("secure credential directory %s: %w", dir, err)
+		return nil, fmt.Errorf("secure credential directory %s: %w", dir, err)
 	}
 	if err := store.ops.chmod(dir, 0o700); err != nil {
-		return fmt.Errorf("secure credential directory: %w", err)
+		return nil, fmt.Errorf("secure credential directory: %w", err)
 	}
-	return nil
+	root, err := store.ops.openRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("open credential directory: %w", err)
+	}
+	return root, nil
 }
 
 func (store *credentialStore) validateExistingPath() error {
@@ -310,11 +333,11 @@ func (state credentialState) validate(endpointOrigin, bootstrapPrefix string) er
 	}
 }
 
-func syncCredentialDirectory(dir string) error {
+func syncCredentialDirectory(root *os.Root) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
-	directory, err := os.Open(dir)
+	directory, err := root.Open(".")
 	if err != nil {
 		return err
 	}

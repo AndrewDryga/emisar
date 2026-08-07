@@ -252,7 +252,7 @@ func TestCredentialStore_FailureBoundariesLeaveACompleteOldOrNewState(t *testing
 			store.ops.chmod = func(string, os.FileMode) error { return injected }
 		}, false},
 		{"temp create", func(store *credentialStore, injected error) {
-			store.ops.createTmp = func(string, string) (*os.File, error) { return nil, injected }
+			store.ops.createTmp = func(*os.Root, string) (*os.File, error) { return nil, injected }
 		}, false},
 		{"write", func(store *credentialStore, injected error) {
 			store.ops.write = func(*os.File, []byte) (int, error) { return 0, injected }
@@ -267,10 +267,10 @@ func TestCredentialStore_FailureBoundariesLeaveACompleteOldOrNewState(t *testing
 			store.ops.closeFile = func(*os.File) error { return injected }
 		}, false},
 		{"rename", func(store *credentialStore, injected error) {
-			store.ops.rename = func(string, string) error { return injected }
+			store.ops.rename = func(*os.Root, string, string) error { return injected }
 		}, false},
 		{"directory sync", func(store *credentialStore, injected error) {
-			store.ops.syncDir = func(string) error { return injected }
+			store.ops.syncDir = func(*os.Root) error { return injected }
 		}, true},
 	}
 
@@ -454,10 +454,10 @@ func TestAcknowledgeRotation_PersistFailureNeverActivatesPending(t *testing.T) {
 		inject func(*credentialStore, error)
 	}{
 		{"rename", func(store *credentialStore, injected error) {
-			store.ops.rename = func(string, string) error { return injected }
+			store.ops.rename = func(*os.Root, string, string) error { return injected }
 		}},
 		{"directory sync", func(store *credentialStore, injected error) {
-			store.ops.syncDir = func(string) error { return injected }
+			store.ops.syncDir = func(*os.Root) error { return injected }
 		}},
 	}
 
@@ -922,7 +922,7 @@ func TestInitializeCredentialState_PostRenameFailureStaysFatal(t *testing.T) {
 
 	promoted := testCredentialState(current, "")
 	promoted.Current = successor
-	store.ops.syncDir = func(string) error { return os.ErrPermission }
+	store.ops.syncDir = func(*os.Root) error { return os.ErrPermission }
 	if err := store.persist(promoted); err == nil {
 		t.Fatal("simulated peer promotion unexpectedly synced")
 	}
@@ -1024,5 +1024,63 @@ func jsonRPCResponse(ack string) *http.Response {
 			`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}`,
 		)),
 		Request: (&http.Request{}).WithContext(context.Background()),
+	}
+}
+
+// The credential directory is validated by path, so the decision is stale the
+// moment secureDirectory returns. On a shared host whose config parent is
+// group-writable, an attacker can swap that directory for a symlink to one they
+// own in the window before the write lands, and collect the pending successor
+// key. persist holds the validated directory as an *os.Root, so this swap
+// cannot move where the write goes.
+func TestCredentialStore_PersistIgnoresADirectorySwappedAfterValidation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX directory swap semantics")
+	}
+	configDir := t.TempDir()
+	attacker := t.TempDir()
+	current := testAPIKey(1)
+	store := newCredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(current))
+	state := testCredentialState(current, testAPIKey(2))
+	credentials := filepath.Dir(store.path)
+
+	// Swap the real directory for a symlink to the attacker's, in the window
+	// secureDirectory has already passed: right after it hands back the root.
+	swapped := false
+	realOpenRoot := store.ops.openRoot
+	store.ops.openRoot = func(dir string) (*os.Root, error) {
+		root, err := realOpenRoot(dir)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.Rename(credentials, filepath.Join(configDir, "moved")); err != nil {
+			t.Fatalf("move real directory: %v", err)
+		}
+		if err := os.Symlink(attacker, credentials); err != nil {
+			t.Fatalf("plant symlink: %v", err)
+		}
+		swapped = true
+		return root, nil
+	}
+
+	if err := store.persist(state); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	if !swapped {
+		t.Fatal("the swap never ran, so this proves nothing")
+	}
+
+	entries, err := os.ReadDir(attacker)
+	if err != nil {
+		t.Fatalf("read attacker directory: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("credential write landed in the attacker's directory: %v", entries[0].Name())
+	}
+	// The state went to the real directory, which is now reachable only under
+	// its moved name.
+	moved := filepath.Join(configDir, "moved", filepath.Base(store.path))
+	if _, err := os.Stat(moved); err != nil {
+		t.Fatalf("credential state is not in the validated directory: %v", err)
 	}
 }

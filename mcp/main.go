@@ -338,6 +338,11 @@ func main() {
 	if err != nil {
 		fatalln(err)
 	}
+	// Drop the key from the environment once it is parsed: it is readable from
+	// /proc/<pid>/environ for the life of the process, and every child the
+	// client spawns inherits it. Go cannot wipe the string newSigner already
+	// holds, so this narrows the exposure rather than removing it.
+	_ = os.Unsetenv("EMISAR_SIGNING_KEY")
 
 	// A durably promoted successor takes precedence over the bootstrap key in
 	// the client's config, which may have expired since. A pending successor is
