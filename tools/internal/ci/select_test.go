@@ -209,6 +209,50 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	// Go writes the pack/catalog schema and the Portal reads it; the Portal-side
+	// proof lives in the Portal suite, so a Go-only schema change has to select it.
+	t.Run("cross-language pack schema selects the portal suite", func(t *testing.T) {
+		for _, file := range []string{
+			"runner/pkg/packspec/pack.go",
+			"runner/pkg/actionspec/action.go",
+			"runner/internal/catalog/catalog.go",
+		} {
+			writeFixture(t, root, file, "package spec\n")
+			commitAll(t, root, "pack schema")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.Portal || !selection.Packs {
+				t.Fatalf("%s selection = %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
+	// The bridge halves regressed once by naming a package that does not exist,
+	// which let attested-dispatch changes skip a required check.
+	t.Run("bridge signing seams select the signing scenario", func(t *testing.T) {
+		for _, file := range []string{
+			"mcp/sign.go",
+			"mcp/main.go",
+			"mcp/internal/attest/attest.go",
+			"runner/internal/signing/signing.go",
+			"runner/internal/attest/attest.go",
+		} {
+			writeFixture(t, root, file, "package main\n")
+			commitAll(t, root, "signing seam")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.SigningE2E {
+				t.Fatalf("%s did not select signing-e2e: %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
 	t.Run("infra push publishes portal but not packs", func(t *testing.T) {
 		writeFixture(t, root, "infra/packs/emisar-admin/pack.yaml", "schema_version: 1\n")
 		commitAll(t, root, "infra")

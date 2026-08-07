@@ -122,6 +122,15 @@ func (selection *Selection) include(file string) {
 		selection.Portal = true
 		selection.PortalRelease = true
 	}
+	// The pack/catalog schema is a cross-language contract: Go writes it, the
+	// Portal reads it. Its Portal-side proof (pack_baseline, published_registry,
+	// the packs page) lives in the Portal suite, so a Go-only schema change must
+	// select Portal too — otherwise CI validates one half of a contract whose
+	// halves can only break together.
+	if hasAnyPrefix(file, "runner/pkg/packspec/", "runner/pkg/actionspec/", "runner/internal/catalog/") {
+		selection.Portal = true
+		selection.PortalRelease = true
+	}
 	if strings.HasPrefix(file, "runner/") || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
 		selection.Runner = true
 	}
@@ -141,7 +150,11 @@ func (selection *Selection) include(file string) {
 	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", ".github/workflows/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum", ".gitignore", ".tool-versions") || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
-	if packSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
+	// Matches the PacksRelease list below, deliberately: validatePacks ends in
+	// checkCatalogReproduction, so the code that BUILDS the catalog must run the
+	// job that proves the committed catalog still reproduces. Selecting these for
+	// release but not validation published a catalog nothing had rebuilt.
+	if packSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
 		selection.Packs = true
 	}
 	if packSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
@@ -156,14 +169,19 @@ func (selection *Selection) include(file string) {
 	if strings.HasPrefix(file, ".github/workflows/") || file == ".github/dependabot.yml" {
 		selection.Workflows = true
 	}
+	// Both halves of the signer↔verifier contract, because the e2e drives the
+	// real bridge rather than a reimplementation. The bridge's signing seam is
+	// mcp/sign.go plus the signer construction in mcp/main.go; there is no
+	// mcp/internal/signing package, and naming one here meant a change to
+	// attested dispatch on the bridge side skipped the required check entirely.
 	if hasAnyPrefix(
 		file,
 		"tools/cmd/signing-e2e/",
 		"dev/signing/",
 		"runner/internal/signing/",
 		"runner/internal/attest/",
-		"mcp/internal/signing/",
-	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go") {
+		"mcp/internal/attest/",
+	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go", "mcp/sign.go", "mcp/main.go") {
 		selection.SigningE2E = true
 	}
 	if hasAnyPrefix(
