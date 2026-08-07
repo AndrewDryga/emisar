@@ -10,7 +10,6 @@ defmodule EmisarWeb.Components.CodeInputTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.AuthComponents
-  alias EmisarWeb.CoreComponents
 
   defp render_code_input(attrs) do
     assigns = %{attrs: attrs}

@@ -9,7 +9,6 @@ defmodule EmisarWeb.Components.AuthLayoutTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.AuthComponents
-  alias EmisarWeb.CoreComponents
 
   defp render_auth_layout(title, inner) do
     assigns = %{title: title, inner: inner}

@@ -8,7 +8,6 @@ defmodule EmisarWeb.Components.MarketingHeadingTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
-  alias EmisarWeb.CoreComponents
   alias EmisarWeb.MarketingComponents
 
   defp render_heading(attrs) do

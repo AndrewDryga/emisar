@@ -10,7 +10,6 @@ defmodule EmisarWeb.Components.MarketingButtonTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
-  alias EmisarWeb.CoreComponents
   alias EmisarWeb.MarketingComponents
 
   defp render_button(attrs) do

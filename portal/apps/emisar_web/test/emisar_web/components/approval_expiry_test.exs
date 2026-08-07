@@ -13,7 +13,6 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
-  alias EmisarWeb.CoreComponents
   alias EmisarWeb.DomainComponents
 
   @expires_at ~U[2026-01-01 12:00:00.000000Z]

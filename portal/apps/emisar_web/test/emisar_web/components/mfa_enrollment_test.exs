@@ -9,7 +9,6 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.AuthComponents
-  alias EmisarWeb.CoreComponents
 
   defp render_enrollment(assigns) do
     rendered_to_string(~H"""

@@ -9,7 +9,6 @@ defmodule EmisarWeb.Components.SourceBadgeTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
-  alias EmisarWeb.CoreComponents
   alias EmisarWeb.DomainComponents
 
   describe "source_badge/1" do

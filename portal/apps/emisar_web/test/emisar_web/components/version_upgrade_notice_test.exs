@@ -6,7 +6,6 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
-  alias EmisarWeb.CoreComponents
   alias EmisarWeb.DomainComponents
 
   describe "version_upgrade_notice/1" do

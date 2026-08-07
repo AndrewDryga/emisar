@@ -7,7 +7,6 @@ defmodule EmisarWeb.Components.OutputPreviewTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
-  alias EmisarWeb.CoreComponents
   alias EmisarWeb.DomainComponents
 
   test "renders the runner-reported command and chronological output in one terminal" do
