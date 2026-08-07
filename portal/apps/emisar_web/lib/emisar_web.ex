@@ -94,6 +94,13 @@ defmodule EmisarWeb do
       import Phoenix.HTML
       # Core UI components
       import EmisarWeb.CoreComponents
+      # CoreComponents holds the audience-neutral primitives; these three carry
+      # the marketing, auth and console-domain components that used to live
+      # beside them. Every view still gets every component, so no call site
+      # changes — the split is about which file you read, not what is in scope.
+      import EmisarWeb.MarketingComponents
+      import EmisarWeb.AuthComponents
+      import EmisarWeb.DomainComponents
       # Documentation shell (docs_layout/header/h2/code/callout/prev_next)
       import EmisarWeb.DocsComponents
       # Shared runner-scope picker (groups + nested runners in one multi-select)

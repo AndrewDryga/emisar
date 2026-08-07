@@ -17,7 +17,7 @@ defmodule EmisarWeb.ErrorHTML do
     router: EmisarWeb.Router,
     statics: EmisarWeb.static_paths()
 
-  import EmisarWeb.CoreComponents, only: [brand: 1]
+  import EmisarWeb.MarketingComponents, only: [brand: 1]
 
   def render("404.html", _assigns) do
     error_page(%{

@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.ApprovalExpiryTest do
   @moduledoc """
-  `EmisarWeb.CoreComponents.approval_expiry/1` presents the lifecycle facts
+  `EmisarWeb.DomainComponents.approval_expiry/1` presents the lifecycle facts
   `Approvals.request_facts/2` projects; it reads no clock of its own, so every
   case here is a fixed fact map with a fixed timestamp.
 
@@ -14,6 +14,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
+  alias EmisarWeb.DomainComponents
 
   @expires_at ~U[2026-01-01 12:00:00.000000Z]
 
@@ -22,7 +23,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
 
     html =
       rendered_to_string(~H"""
-      <CoreComponents.approval_expiry
+      <DomainComponents.approval_expiry
         expires_at={@expires_at}
         expired?={false}
         expires_in_seconds={1800}
@@ -42,7 +43,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
 
     html =
       rendered_to_string(~H"""
-      <CoreComponents.approval_expiry
+      <DomainComponents.approval_expiry
         expires_at={@expires_at}
         expired?={false}
         expires_in_seconds={7200}
@@ -57,7 +58,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
 
     html =
       rendered_to_string(~H"""
-      <CoreComponents.approval_expiry
+      <DomainComponents.approval_expiry
         expires_at={@expires_at}
         expired?={false}
         expires_in_seconds={7201}
@@ -75,7 +76,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
 
     html =
       rendered_to_string(~H"""
-      <CoreComponents.approval_expiry
+      <DomainComponents.approval_expiry
         expires_at={@expires_at}
         expired?={true}
         expires_in_seconds={0}
@@ -97,7 +98,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
 
     html =
       rendered_to_string(~H"""
-      <CoreComponents.approval_expiry
+      <DomainComponents.approval_expiry
         expires_at={nil}
         expired?={false}
         expires_in_seconds={@expires_in_seconds}

@@ -10,6 +10,7 @@ defmodule EmisarWeb.Components.CalloutTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
+  alias EmisarWeb.DomainComponents
 
   describe "callout/1" do
     test "neutral is the quiet default with an info icon and spine" do
@@ -164,9 +165,9 @@ defmodule EmisarWeb.Components.CalloutTest do
       # `:info` is a posture fact — the NAKED note grammar, no box wash.
       info =
         rendered_to_string(~H"""
-        <CoreComponents.offline_notice severity={:info} title="Runner offline">
+        <DomainComponents.offline_notice severity={:info} title="Runner offline">
           queues until reconnect
-        </CoreComponents.offline_notice>
+        </DomainComponents.offline_notice>
         """)
 
       assert info =~ "hero-signal-slash"
@@ -175,9 +176,9 @@ defmodule EmisarWeb.Components.CalloutTest do
 
       critical =
         rendered_to_string(~H"""
-        <CoreComponents.offline_notice severity={:critical} title="All runners offline">
+        <DomainComponents.offline_notice severity={:critical} title="All runners offline">
           nothing can dispatch
-        </CoreComponents.offline_notice>
+        </DomainComponents.offline_notice>
         """)
 
       assert critical =~ "bg-rose-400/40"
@@ -190,13 +191,13 @@ defmodule EmisarWeb.Components.CalloutTest do
       assigns = %{}
 
       past_due =
-        rendered_to_string(~H|<CoreComponents.subscription_banner status="past_due" />|)
+        rendered_to_string(~H|<DomainComponents.subscription_banner status="past_due" />|)
 
       assert past_due =~ "Payment past due"
       assert past_due =~ "bg-rose-400/40"
 
       healthy =
-        rendered_to_string(~H|<CoreComponents.subscription_banner status="active" />|)
+        rendered_to_string(~H|<DomainComponents.subscription_banner status="active" />|)
 
       refute healthy =~ "bg-rose-400/40"
       refute healthy =~ "bg-amber-300/40"

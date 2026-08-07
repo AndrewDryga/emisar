@@ -8,6 +8,7 @@ defmodule EmisarWeb.DocsComponents do
   """
   use Phoenix.Component
   import EmisarWeb.CoreComponents
+  import EmisarWeb.MarketingComponents
   alias EmisarWeb.DocsNav
 
   @doc """

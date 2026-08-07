@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.MarketingHeadingTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.marketing_heading/1` — the marketing
+  Renders `EmisarWeb.MarketingComponents.marketing_heading/1` — the marketing
   type scale — and asserts that `tag` controls the semantic level (so pages
   keep their existing, SEO-load-bearing `<h1>`/`<h2>` hierarchy) while
   `scale` controls only the visual size. The size ramp is the contract.
@@ -9,12 +9,13 @@ defmodule EmisarWeb.Components.MarketingHeadingTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
+  alias EmisarWeb.MarketingComponents
 
   defp render_heading(attrs) do
     assigns = %{attrs: attrs}
 
     rendered_to_string(~H"""
-    <CoreComponents.marketing_heading {@attrs}>Title</CoreComponents.marketing_heading>
+    <MarketingComponents.marketing_heading {@attrs}>Title</MarketingComponents.marketing_heading>
     """)
   end
 

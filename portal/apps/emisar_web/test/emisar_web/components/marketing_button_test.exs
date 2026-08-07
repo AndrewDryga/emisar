@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.MarketingButtonTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.marketing_button/1` — the single CTA
+  Renders `EmisarWeb.MarketingComponents.marketing_button/1` — the single CTA
   button the marketing site routes every "Start free"/"Talk to sales"-style
   link through — and asserts the polymorphic contract (`href`/`navigate`
   render a `<.link>`, `external` adds the safe-rel pair, a plain one stays a
@@ -11,12 +11,13 @@ defmodule EmisarWeb.Components.MarketingButtonTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
+  alias EmisarWeb.MarketingComponents
 
   defp render_button(attrs) do
     assigns = %{attrs: attrs}
 
     rendered_to_string(~H"""
-    <CoreComponents.marketing_button {@attrs}>Start free</CoreComponents.marketing_button>
+    <MarketingComponents.marketing_button {@attrs}>Start free</MarketingComponents.marketing_button>
     """)
   end
 

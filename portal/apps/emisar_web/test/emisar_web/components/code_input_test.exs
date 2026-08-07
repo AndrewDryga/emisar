@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.CodeInputTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.code_input/1` — the iPhone-style one-box-per-
+  Renders `EmisarWeb.AuthComponents.code_input/1` — the iPhone-style one-box-per-
   character code entry (magic-link sign-in, TOTP, email step-up). Asserts the
   contract the `CodeInput` JS hook depends on: the hook + `phx-update="ignore"`
   container, one `data-box` input per `length`, the hidden `data-code` aggregate
@@ -9,13 +9,14 @@ defmodule EmisarWeb.Components.CodeInputTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
+  alias EmisarWeb.AuthComponents
   alias EmisarWeb.CoreComponents
 
   defp render_code_input(attrs) do
     assigns = %{attrs: attrs}
 
     rendered_to_string(~H"""
-    <CoreComponents.code_input {@attrs} />
+    <AuthComponents.code_input {@attrs} />
     """)
   end
 

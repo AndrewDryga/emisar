@@ -1,12 +1,13 @@
 defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.version_upgrade_notice/1`, the actionable
+  Renders `EmisarWeb.DomainComponents.version_upgrade_notice/1`, the actionable
   runner and MCP stale-version treatment used by list and detail pages.
   """
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
+  alias EmisarWeb.DomainComponents
 
   describe "version_upgrade_notice/1" do
     test "renders one runner command for the most severe stale status" do
@@ -14,7 +15,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.version_upgrade_notice
+        <DomainComponents.version_upgrade_notice
           id="runner-upgrade"
           kind={:runner}
           versions={["0.0.5", "0.0.0"]}
@@ -43,7 +44,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.version_upgrade_notice
+        <DomainComponents.version_upgrade_notice
           id="runner-upgrade"
           kind={:runner}
           versions={["0.0.0"]}
@@ -62,7 +63,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.version_upgrade_notice
+        <DomainComponents.version_upgrade_notice
           id="runner-upgrade"
           kind={:runner}
           scope={:single}
@@ -82,7 +83,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.version_upgrade_notice
+        <DomainComponents.version_upgrade_notice
           id="mcp-upgrade"
           kind={:mcp}
           versions={["0.0.5"]}
@@ -104,7 +105,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.version_upgrade_notice
+        <DomainComponents.version_upgrade_notice
           id="mcp-upgrade"
           kind={:mcp}
           versions={["0.0.5"]}
@@ -122,7 +123,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.version_upgrade_notice
+        <DomainComponents.version_upgrade_notice
           id="no-upgrade"
           kind={:runner}
           versions={["1.0.0", nil, "dev"]}

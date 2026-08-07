@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.AuthLayoutTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.auth_layout/1` — the split-screen shell every
+  Renders `EmisarWeb.AuthComponents.auth_layout/1` — the split-screen shell every
   passwordless sign-in page wears. Asserts the title, the inner-block slot, the
   left-panel value prop, and the compliance footer (legal links + the legal-name
   copyright) that must not silently drop off a sign-in page.
@@ -8,13 +8,14 @@ defmodule EmisarWeb.Components.AuthLayoutTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
+  alias EmisarWeb.AuthComponents
   alias EmisarWeb.CoreComponents
 
   defp render_auth_layout(title, inner) do
     assigns = %{title: title, inner: inner}
 
     rendered_to_string(~H"""
-    <CoreComponents.auth_layout title={@title}>{@inner}</CoreComponents.auth_layout>
+    <AuthComponents.auth_layout title={@title}>{@inner}</AuthComponents.auth_layout>
     """)
   end
 

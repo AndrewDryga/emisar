@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.SourceBadgeTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.source_badge/1` and verifies that every
+  Renders `EmisarWeb.DomainComponents.source_badge/1` and verifies that every
   icon-encoded dispatch source has a hover/focus tooltip and accessible name
   while the adjacent text remains the accountable actor. Source badges are safe
   in responsive slots that render the same component twice because this
@@ -10,6 +10,7 @@ defmodule EmisarWeb.Components.SourceBadgeTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
+  alias EmisarWeb.DomainComponents
 
   describe "source_badge/1" do
     test "explains every source icon" do
@@ -24,7 +25,7 @@ defmodule EmisarWeb.Components.SourceBadgeTest do
 
         html =
           rendered_to_string(~H"""
-          <CoreComponents.source_badge source={@source} label="Maya Chen" />
+          <DomainComponents.source_badge source={@source} label="Maya Chen" />
           """)
 
         assert html =~ icon

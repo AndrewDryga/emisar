@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.OutputPreviewTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.output_preview/1`, the bounded terminal tail
+  Renders `EmisarWeb.DomainComponents.output_preview/1`, the bounded terminal tail
   used by runbook executions. The command is runner-reported redacted evidence;
   output remains escaped, size-bounded, and keyboard-scrollable.
   """
@@ -8,6 +8,7 @@ defmodule EmisarWeb.Components.OutputPreviewTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
+  alias EmisarWeb.DomainComponents
 
   test "renders the runner-reported command and chronological output in one terminal" do
     assigns = %{
@@ -20,7 +21,7 @@ defmodule EmisarWeb.Components.OutputPreviewTest do
 
     html =
       rendered_to_string(~H"""
-      <CoreComponents.output_preview
+      <DomainComponents.output_preview
         command={@command}
         command_truncated?
         events={@events}
@@ -50,7 +51,7 @@ defmodule EmisarWeb.Components.OutputPreviewTest do
     }
 
     html =
-      rendered_to_string(~H|<CoreComponents.output_preview events={@events} max_chars={6} />|)
+      rendered_to_string(~H|<DomainComponents.output_preview events={@events} max_chars={6} />|)
 
     refute html =~ "first"
     assert html =~ "earlier output omitted"
@@ -60,7 +61,7 @@ defmodule EmisarWeb.Components.OutputPreviewTest do
   test "renders nothing when neither command nor output exists" do
     assigns = %{}
 
-    html = rendered_to_string(~H|<CoreComponents.output_preview events={[]} />|)
+    html = rendered_to_string(~H|<DomainComponents.output_preview events={[]} />|)
 
     refute html =~ "<pre"
   end

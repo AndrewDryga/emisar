@@ -1,6 +1,6 @@
 defmodule EmisarWeb.Components.MfaEnrollmentTest do
   @moduledoc """
-  Renders `EmisarWeb.CoreComponents.mfa_enrollment/1` — the ONE TOTP
+  Renders `EmisarWeb.AuthComponents.mfa_enrollment/1` — the ONE TOTP
   enrollment block (profile voluntary setup + enforced-MFA interstitial).
   Asserts the QR svg, the can't-scan URI disclosure, the shared
   `code_input` confirm form, the slots, and the stacked/split wrappers.
@@ -8,11 +8,12 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
   use ExUnit.Case, async: true
   import Phoenix.Component
   import Phoenix.LiveViewTest
+  alias EmisarWeb.AuthComponents
   alias EmisarWeb.CoreComponents
 
   defp render_enrollment(assigns) do
     rendered_to_string(~H"""
-    <CoreComponents.mfa_enrollment
+    <AuthComponents.mfa_enrollment
       qr_svg={@qr_svg}
       uri={@uri}
       form={@form}
@@ -22,7 +23,7 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
       <:actions>
         <button phx-disable-with="Verifying...">Confirm and enable</button>
       </:actions>
-    </CoreComponents.mfa_enrollment>
+    </AuthComponents.mfa_enrollment>
     """)
   end
 
@@ -38,13 +39,13 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
 
   defp render_email_verification(assigns) do
     rendered_to_string(~H"""
-    <CoreComponents.mfa_enrollment_email_verification
+    <AuthComponents.mfa_enrollment_email_verification
       email={@email}
       form={@form}
       error={@error}
     >
       <:actions><button>Verify email</button></:actions>
-    </CoreComponents.mfa_enrollment_email_verification>
+    </AuthComponents.mfa_enrollment_email_verification>
     """)
   end
 
