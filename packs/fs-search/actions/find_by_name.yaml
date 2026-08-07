@@ -28,6 +28,8 @@ args:
         - /root/.ssh
         - /etc/ssh
         - /etc/sudoers.d
+        - /etc/emisar
+        - /var/lib/emisar
   - name: glob
     type: string
     required: true

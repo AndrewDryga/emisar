@@ -2,11 +2,13 @@ schema_version: 1
 id: grafana.settings
 title: GET /api/admin/settings
 kind: script
-risk: low
+risk: high
 description: >
   Show server settings (auth, smtp, database paths). Requires a Grafana
-  server-admin token; an org-admin token gets 403 here.
-side_effects: ["One API call.", "Read-only — credentials in output may be partially masked but rely on audit redaction."]
+  server-admin token; an org-admin token gets 403 here. Grafana masks the
+  credentials it recognizes and returns the rest as configured, so treat the
+  response as secret-bearing.
+side_effects: ["One API call.", "Read-only, but the response carries whatever credentials Grafana did not mask."]
 args: []
 execution:
   script:

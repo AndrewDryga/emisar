@@ -36,11 +36,23 @@ var fsSearchActions = []string{
 // A file UNDER each crown-jewel directory must be rejected by the subtree
 // (denied_prefixes) rule — the exact-match denied_paths list never covered
 // these, which was the whole defect.
+// The runner's own install roots belong here too. /etc/emisar holds runner.env
+// — the enrollment key plus every pack credential install.sh tells operators to
+// export there — and the gcp-* packs document their service-account key beside
+// it; /var/lib/emisar holds the bearer token that authenticates this runner to
+// the control plane. Reading either from a risk:low, no-approval action is a
+// full runner compromise. The engine refuses these roots directly (they come
+// from the loaded config, so a relocated install is covered), and the pack
+// declares them so the catalog shows the boundary and the default layout is
+// denied even with no protected roots configured.
 var fsSearchDeniedPrefixFiles = []string{
 	"/root/.ssh/id_rsa",
 	"/etc/ssh/ssh_host_ed25519_key",
 	"/etc/ssl/private/server.key",
 	"/etc/sudoers.d/90-custom",
+	"/etc/emisar/runner.env",
+	"/etc/emisar/config.yaml",
+	"/var/lib/emisar/token",
 }
 
 // The single-file crown jewels stay on the exact-match denied_paths list.

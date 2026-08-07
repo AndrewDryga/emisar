@@ -2,9 +2,9 @@ schema_version: 1
 id: bind.rndc_stats
 title: rndc stats + read dump
 kind: exec
-risk: low
+risk: medium
 description: Force a stats dump and read it. Includes query counts, cache stats, NSID.
-side_effects: ["Writes /var/named/data/named_stats.txt.", "Read-only-ish — file rewrite, no service impact."]
+side_effects: ["Writes /var/named/data/named_stats.txt.", "Rewrites BIND's own stats file; no service impact."]
 args: []
 execution:
   command:

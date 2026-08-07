@@ -2,7 +2,11 @@ schema_version: 1
 
 id: grafana
 name: Grafana
-version: 0.1.13
+version: 0.1.14
+# 0.1.13 and below shipped settings as low risk, so the admin-settings dump —
+# which carries whatever credentials Grafana did not mask — auto-ran with no
+# approval. A mislabelled tier that skipped the gate is a security fix.
+retired_below: 0.1.14
 description: >
   Grafana admin-API ops — datasource health, dashboard listings, alert
   state, user list, version, settings. Read-only. Auth via a bearer token

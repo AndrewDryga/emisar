@@ -31,6 +31,8 @@ args:
         - /root/.ssh
         - /etc/ssh
         - /etc/sudoers.d
+        - /etc/emisar
+        - /var/lib/emisar
   - name: min_mb
     type: integer
     required: false

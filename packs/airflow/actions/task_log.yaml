@@ -2,13 +2,13 @@ schema_version: 1
 id: airflow.task_log
 title: Get a task instance log (GET .../logs/{try_number})
 kind: script
-risk: low
+risk: high
 description: >
   Get the log for one attempt of one task instance, as plain text. This is the
   read that explains a failure: pick the try number from the task instance's
   try_number and read the traceback. Airflow's secrets masker hides connection
   and variable values it knows about; anything else the task printed is
-  returned as written.
+  returned as written, which is why this needs an approval.
 side_effects:
   - One read-only HTTP GET to the Airflow task-log endpoint.
   - Read-only — never writes or mutates data.

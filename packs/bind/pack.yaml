@@ -2,7 +2,10 @@ schema_version: 1
 
 id: bind
 name: BIND DNS server
-version: 0.1.11
+version: 0.1.12
+# Unchanged: rndc_stats moving low -> medium corrects the tier for a file
+# rewrite, but the shipped default auto-runs both, so no approval was skipped
+# and no earlier version is unsafe to keep running.
 retired_below: 0.1.7
 description: >
   Authoritative/recursive BIND ops: rndc status + stats, zone validation,

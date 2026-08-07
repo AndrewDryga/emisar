@@ -10,8 +10,19 @@ cases:
     expect:
       stdout_contains: [version, boot time, server is up and running]
   - action: bind.rndc_stats
+    # Medium risk because it makes BIND rewrite its stats file, so the case has
+    # to show that write rather than only the read that follows it. BIND writes
+    # named.stats on `rndc stats` and never at boot, so clearing it first makes
+    # the probe prove this action put it back.
+    arrange:
+      - name: clear the stats file this case makes BIND write
+        argv: [/bin/sh, -c, "rm -f /var/cache/bind/named.stats"]
     expect:
       stdout_contains: [Statistics Dump, Incoming Queries, Cache Statistics]
+    probes:
+      - argv: [/bin/sh, -c, 'test -s /var/cache/bind/named.stats && echo stats-written']
+        expect:
+          stdout_contains: [stats-written]
   - action: bind.named_checkconf
     expect:
       exit: [0]

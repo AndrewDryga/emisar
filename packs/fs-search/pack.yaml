@@ -2,7 +2,11 @@ schema_version: 1
 
 id: fs-search
 name: Filesystem search and inspection
-version: 0.1.8
+version: 0.1.9
+# 0.1.8 and below let a low-risk, no-approval read reach /etc/emisar and
+# /var/lib/emisar — the enrollment key, the operator's pack credentials, and
+# this runner's bearer token. Those versions are unsafe to keep running.
+retired_below: 0.1.9
 description: >
   Generic filesystem operations an LLM-driven runner needs constantly:
   bounded find, recursive grep, file head/tail/hash, du, ls -la, stat.

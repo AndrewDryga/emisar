@@ -26,6 +26,8 @@ args:
         - /root/.ssh
         - /etc/ssh
         - /etc/sudoers.d
+        - /etc/emisar
+        - /var/lib/emisar
 execution:
   command:
     binary: stat
