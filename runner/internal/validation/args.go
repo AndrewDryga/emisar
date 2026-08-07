@@ -393,49 +393,32 @@ func resolveManyRules(in []string) ([]string, error) {
 	return out, nil
 }
 
-// resolveRuleForCheck canonicalizes every inspectable ancestor while allowing
-// an unreadable tail to stay lexical. Request paths still use resolveForCheck
-// and reject unreadable components, so this cannot turn an uninspectable input
-// into an executable path; it only keeps a protected rule from poisoning every
-// otherwise-benign action on a non-root runner.
-func resolveRuleForCheck(p string) (string, error) {
-	cleaned := filepath.Clean(p)
-	if !filepath.IsAbs(cleaned) {
-		return cleaned, nil
-	}
-	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
-		return resolved, nil
-	}
-
-	tail := ""
-	parent := cleaned
-	for {
-		if _, err := os.Lstat(parent); err == nil {
-			resolved, err := filepath.EvalSymlinks(parent)
-			if err != nil {
-				return "", fmt.Errorf("resolve existing component %q: %w", parent, err)
-			}
-			return filepath.Clean(filepath.Join(resolved, tail)), nil
-		} else if !os.IsNotExist(err) && !os.IsPermission(err) {
-			return "", fmt.Errorf("inspect path component %q: %w", parent, err)
-		}
-		tail = filepath.Join(filepath.Base(parent), tail)
-		next := filepath.Dir(parent)
-		if next == parent {
-			return "", fmt.Errorf("path %q has no resolvable existing component", cleaned)
-		}
-		parent = next
-	}
+// resolveForCheck cleans p and resolves symlinks, even when the leaf doesn't
+// exist yet. It walks up to the deepest existing parent, EvalSymlinks-resolves
+// it, and re-attaches the missing tail. This blocks the attack where
+// /var/log/<symlink>/foo points to /etc/foo before /etc/foo exists: the
+// symlinked parent resolves to /etc, and the resulting /etc/foo fails any
+// allowed_prefixes check pinned to /var/log/.
+func resolveForCheck(p string) (string, error) {
+	return resolvePathForCheck(p, false)
 }
 
-// resolveForCheck cleans p and resolves symlinks, even when the leaf
-// doesn't exist yet. It walks up to the deepest existing parent,
-// EvalSymlinks-resolves it, and re-attaches the missing tail. This
-// blocks the attack where /var/log/<symlink>/foo points to /etc/foo
-// before /etc/foo exists: the symlinked parent resolves to /etc, and
-// the resulting /etc/foo fails any allowed_prefixes check pinned to
-// /var/log/.
-func resolveForCheck(p string) (string, error) {
+// resolveRuleForCheck is the same walk for a PROTECTED-RULE path, which may
+// legitimately sit somewhere this process cannot read. It canonicalizes every
+// inspectable ancestor and lets an unreadable tail stay lexical, so one
+// unreadable rule cannot poison every otherwise-benign action on a non-root
+// runner. Request paths keep resolveForCheck and still reject an unreadable
+// component, so this cannot turn an uninspectable input into an executable path.
+func resolveRuleForCheck(p string) (string, error) {
+	return resolvePathForCheck(p, true)
+}
+
+// resolvePathForCheck is the containment walk both callers share. It was two
+// copies that differed in exactly one token — whether a permission error on an
+// ancestor is tolerated — which is the last place this module should carry a
+// second definition: a hardening applied to one copy would silently skip the
+// other.
+func resolvePathForCheck(p string, tolerateUnreadable bool) (string, error) {
 	cleaned := filepath.Clean(p)
 	if !filepath.IsAbs(cleaned) {
 		return cleaned, nil
@@ -443,18 +426,24 @@ func resolveForCheck(p string) (string, error) {
 	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
 		return resolved, nil
 	}
-	// Walk up until we find an existing parent. We may walk all the way
-	// to the volume root ("/"); that's fine — its EvalSymlinks is "/".
+	// Walk up until we find an existing parent. We may walk all the way to the
+	// volume root ("/"); that's fine — its EvalSymlinks is "/".
 	tail := ""
 	parent := cleaned
 	for {
-		if _, err := os.Lstat(parent); err == nil {
+		_, err := os.Lstat(parent)
+		switch {
+		case err == nil:
 			resolved, err := filepath.EvalSymlinks(parent)
 			if err != nil {
 				return "", fmt.Errorf("resolve existing component %q: %w", parent, err)
 			}
 			return filepath.Clean(filepath.Join(resolved, tail)), nil
-		} else if !os.IsNotExist(err) {
+		case os.IsNotExist(err):
+			// Keep walking up; the leaf simply does not exist yet.
+		case tolerateUnreadable && os.IsPermission(err):
+			// Keep walking up; a rule may sit behind a directory we cannot read.
+		default:
 			return "", fmt.Errorf("inspect path component %q: %w", parent, err)
 		}
 		tail = filepath.Join(filepath.Base(parent), tail)
