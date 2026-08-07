@@ -390,7 +390,8 @@
           <p class="mt-2 text-sm text-zinc-400">
             MCP bridge keys are short-lived and rotate themselves. Automatic rotation requires
             an expiring portal-issued key and persistent writable credential storage. Runner
-            enrollment keys are exchanged for a separately revocable per-runner token.
+            enrollment keys are exchanged for a separately revocable per-runner token, which
+            expires after 90 days and refreshes itself at 60.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">

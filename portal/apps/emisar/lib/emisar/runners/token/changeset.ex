@@ -1,7 +1,7 @@
 defmodule Emisar.Runners.Token.Changeset do
   @moduledoc """
-  Changesets for per-runner tokens — the long-lived credential a runner
-  persists at `${data_dir}/token` and presents on every reconnect.
+  Changesets for per-runner tokens — the credential a runner persists at
+  `${data_dir}/token` and presents on every reconnect.
   """
   use Emisar, :changeset
   alias Emisar.Runners.Token

@@ -335,7 +335,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               A bearer secret a fresh host presents to
               <span class="font-medium text-zinc-300">enroll</span>
               as a runner: it runs the install command with the key, registers, and trades it for
-              its own long-lived token. The key is never used again for that host.
+              its own token. The key is never used again for that host.
             </p>
             <p>
               A <span class="font-medium text-zinc-300">single-use</span>

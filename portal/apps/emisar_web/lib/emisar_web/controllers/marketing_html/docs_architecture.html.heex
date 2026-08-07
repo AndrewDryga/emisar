@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="architecture"
-      updated="August 4, 2026"
+      updated="August 7, 2026"
       toc={[
         {"components", "The four pieces"},
         {"flow", "One action, end to end"},
@@ -198,7 +198,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A runner</strong>
-            holds its own long-lived token, its durable dispatch state, the packs installed on that
+            holds its own token, its durable dispatch state, the packs installed on that
             host, the nonce store it needs when it enforces signed dispatch, and the local journal.
             The dispatch and nonce state is what makes a replayed dispatch fail rather than execute
             twice — and only one runner process may own it at a time.

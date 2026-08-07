@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="network-requirements"
-      updated="August 3, 2026"
+      updated="August 7, 2026"
       toc={[
         {"table", "What has to be reachable"},
         {"control-plane", "The runner's control connection"},
@@ -58,8 +58,14 @@
                "Outbound",
                "Your emisar origin, TCP 443",
                "HTTPS POST /runner/register",
-               "Trades the enrollment key for this runner's own long-lived token",
+               "Trades the enrollment key for this runner's own token",
                "First connect, and again after an enrollment-key change"},
+              {"Runner token refresh",
+               "Outbound",
+               "Your emisar origin, TCP 443",
+               "HTTPS POST /runner/token/refresh",
+               "Swaps the runner's token for a successor before the old one expires",
+               "Once its token is 60 days old, on the next connect — no new egress rule"},
               {"Runner control connection",
                "Outbound",
                "Your emisar origin, TCP 443",

@@ -2051,7 +2051,7 @@ defmodule Emisar.Runners do
   # -- Per-runner tokens -----------------------------------------------
 
   @doc """
-  Internal — registration flow only: mints a long-lived per-runner token,
+  Internal — registration flow only: mints a per-runner token,
   persists the hash, returns `{raw_token, token_record}`. Establishes the
   runner identity before any Subject exists.
   """

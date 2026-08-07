@@ -31,9 +31,13 @@ in the host's mode-0600 `/etc/emisar/runner.env` (or the configured equivalent).
 The key is presented to `POST /runner/register`.
 
 The key is a bootstrap credential, not the credential used on every websocket
-connection. Registration returns a long-lived `rnrtok-…` runner token, which the
+connection. Registration returns an `rnrtok-…` runner token, which the
 runner stores at `cloud.token_path` (by default
-`/var/lib/emisar/token.json`) and reuses on later boots. Dashboard install keys
+`/var/lib/emisar/token.json`) and reuses on later boots. That token expires
+after 90 days and the runner refreshes it at 60 over
+`POST /runner/token/refresh`, so a token stolen from a host stops working on its
+own — but bounding a leak is not containing a known one, and the steps below
+still apply. Dashboard install keys
 are single-use; manually created enrollment keys may be reusable or have a
 maximum use count.
 

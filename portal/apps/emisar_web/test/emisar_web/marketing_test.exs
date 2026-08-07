@@ -1937,6 +1937,28 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "does not sign anyone out"
     end
 
+    test "credentials states the runner token's self-rotation and its one prerequisite",
+         %{conn: conn} do
+      html = conn |> get(~p"/docs/credentials") |> html_response(200) |> squish()
+
+      # The schedule, sourced from @token_lifetime_seconds / @token_refresh_after_seconds /
+      # @token_retirement_grace_seconds in Emisar.Runners — change those and this fails.
+      assert html =~ "A per-runner token rotates itself"
+      assert html =~ "90-day life, and at 60 days the runner exchanges it for a successor"
+      assert html =~ "keeps working for 24 hours after that swap"
+
+      # Never claim it unconditionally: a pre-rotation token has no expiry by
+      # design, and saying otherwise would promise expiry we do not enforce.
+      assert html =~ "needs a runner on 0.17.0 or newer"
+      assert html =~ "Nothing expires a runner that has no way to renew itself"
+
+      # The comparison table agreed the token never rotated and had no overlap.
+      # Both were wrong once enforcement landed.
+      assert html =~ "Automatic — the runner swaps itself onto a successor at 60 days"
+      assert html =~ "the outgoing token works for 24 hours after the swap"
+      refute html =~ "None — the new token replaces the cached one"
+    end
+
     test "credentials keeps the no-leaf-revocation limit visible", %{conn: conn} do
       html = conn |> get(~p"/docs/credentials") |> html_response(200)
 
@@ -2149,7 +2171,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # An enrollment key does not hold the fleet online.
       assert html =~ "It blocks new registrations"
-      assert html =~ "connected on its own long-lived token"
+      assert html =~ "connected on its own token"
 
       # A possibly-copied runner token is replaced, never paused and resumed.
       assert html =~ "disabling an identity keeps its token"

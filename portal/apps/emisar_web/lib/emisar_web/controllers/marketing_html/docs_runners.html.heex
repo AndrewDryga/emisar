@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runners"
-      updated="August 4, 2026"
+      updated="August 7, 2026"
       toc={[
         {"groups-labels", "Groups and labels"},
         {"enrollment-keys", "Enrollment keys"},
@@ -66,10 +66,15 @@
           <span>
             <strong class="text-zinc-200">Shown once, traded for a token.</strong>
             The raw key appears once, at creation. On first connect the runner trades it for its
-            own long-lived token
+            own token
             (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">rnrtok-…</code>, stored
             hashed cloud-side, mode-0600 on the host) — the key itself is never presented again
-            by that host, whichever model minted it.
+            by that host, whichever model minted it. That token expires after 90 days and the
+            runner refreshes it at 60, without anyone touching the machine; the schedule and its
+            one prerequisite are in <.link
+              navigate={~p"/docs/credentials"}
+              class="text-brand-300 hover:text-brand-200"
+            >rotate and revoke credentials</.link>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
