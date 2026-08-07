@@ -17,8 +17,11 @@ Run from the repository root:
 ./run gate mcp
 ```
 
-It checks formatting, module checksums, `go vet`, tidy-as-a-no-op, race tests,
-and the public `install-mcp.sh` shell and behavior harness. Use
+It checks client-module boundaries and formatting, module checksums, `go vet`,
+`staticcheck`, tidy-as-a-no-op plus the stdlib-only assertion (no `go.sum` may
+exist), attestation parity against the runner's copy, race tests, a cross-build
+of every published platform plus compile-only `windows/amd64`, and the public
+`install-mcp.sh` shell and behavior harness. Use
 `./run test mcp [go-test-args...]` for focused feedback; direct Go commands are
 diagnostic, not final verification.
 

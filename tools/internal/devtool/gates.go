@@ -41,6 +41,21 @@ const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
 // Keep this in step with the version any workflow installs directly.
 const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
 
+// The platforms each module must still compile for. The first four are what
+// runner-release.yml and mcp-release.yml publish; keep them in step, because a
+// target that ships without compiling here is a broken release.
+//
+// windows/amd64 is compile-only and bridge-only. The bridge is the binary an
+// operator runs beside their LLM client, so its Windows file-locking and
+// credential paths are real code kept from rotting until Windows is published.
+// The runner has no such case: it is server-side, and its Windows token cache
+// returns "unsupported", so `connect` — the verb the daemon exists for — cannot
+// work there at all.
+var releaseTargets = map[string][]string{
+	"runner": {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"},
+	"mcp":    {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"},
+}
+
 const (
 	checkUsage = `usage: ./run check <target>
 
@@ -52,6 +67,7 @@ const (
                              verify the registry deployment environment
   packs                      validate every pack and cross-language hash golden
   agent-setup                validate manuals, skills, tasks, hooks, and Coop verbs
+  deps [--base <git ref>]    enforce dependency release age and source policy
 `
 	testUsage = `usage: ./run test <target> [args]
 
@@ -69,12 +85,14 @@ const (
 `
 	gateUsage = `usage: ./run gate <target> [--coverage FILE]
 
-  portal                     compile, format, Credo, and clean-output tests
-  runner                     format, verify, vet, tidy-check, and race-test runner
-  mcp                        format, verify, vet, tidy-check, and race-test MCP
+  portal                     compile, format, Credo, audits, Sobelow, and tests
+  runner                     format, boundaries, vet, staticcheck, tidy, attest
+                             parity, race tests, cross-build, and the installer
+  mcp                        the runner phases, plus the stdlib-only assertion
   packs                      validate packs, hashes, catalog, and focused Portal tests
   infra                      format, initialize, validate, lint, and test templates
-  tooling                    gate the shared Go tooling, docs, shell, and agent setup
+  tooling                    the Go tooling phases, plus docs, workflow lint,
+                             agent setup, dependency age, and shell scripts
   review                     run canonical gates selected from Coop's pinned review base
   all                        run tooling, runner, MCP, packs, infra, and Portal gates
 
@@ -315,9 +333,30 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 		return err
 	}
 	if module == "runner" || module == "mcp" {
+		if err := a.crossBuildGate(ctx, module, dir); err != nil {
+			return err
+		}
 		return a.installerGate(ctx, module)
 	}
 	return nil
+}
+
+// crossBuildGate proves every published target still compiles. It is pure
+// CGO_ENABLED=0 cross-compilation, so a workstation can decide it — which is
+// why it belongs here rather than in a CI step a green local gate cannot see.
+// tools/ is never shipped, so it has no platform set to prove.
+func (a *App) crossBuildGate(ctx context.Context, module, dir string) error {
+	return a.gatePhase(module+" cross-platform build", func() error {
+		for _, target := range releaseTargets[module] {
+			goos, goarch, _ := strings.Cut(target, "/")
+			env := map[string]string{"CGO_ENABLED": "0", "GOOS": goos, "GOARCH": goarch}
+			if err := a.run(ctx, dir, env, "go", "build", "-trimpath", "-ldflags", "-s -w", "-o", os.DevNull, "."); err != nil {
+				return fmt.Errorf("%s does not build for %s: %w", module, target, err)
+			}
+			fmt.Fprintf(a.Out, "ok: %s\n", target)
+		}
+		return nil
+	})
 }
 
 func (a *App) installerGate(ctx context.Context, module string) error {
@@ -372,6 +411,10 @@ func (a *App) portalGate(ctx context.Context) error {
 		{"portal compile", []string{"compile", "--warnings-as-errors"}},
 		{"portal Credo", []string{"credo"}},
 		{"portal dependency audit", []string{"deps.audit"}},
+		// A different class from deps.audit: only hex.audit reports a package the
+		// MAINTAINER retired (yanked, deprecated, security-retired). Without it
+		// nothing here would notice a portal dependency being pulled.
+		{"portal retired dependencies", []string{"hex.audit"}},
 		{"portal Sobelow", []string{"sobelow", "--root", "apps/emisar_web", "--config"}},
 	} {
 		if err := a.gatePhase(check.label, func() error {

@@ -253,6 +253,15 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	}); err != nil {
 		return err
 	}
+	// dep-age is a required check, so it belongs here rather than only in a CI
+	// step: it already defaults its base to origin/main because it was written to
+	// run on a workstation, and it reads immutable publish dates, not a live
+	// advisory feed. As a CI-only step a green `./run gate all` still failed CI.
+	if err := a.gatePhase("tooling dependency age", func() error {
+		return a.depAgeCheck(ctx, nil)
+	}); err != nil {
+		return err
+	}
 	scripts, err := a.trackedShellFiles(ctx)
 	if err != nil {
 		return err
@@ -263,20 +272,18 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	if len(scripts) == 0 {
 		return fmt.Errorf("no tracked shell scripts matched the lint pathspec")
 	}
-	{
-		if err := a.gatePhase("tooling shell scripts", func() error {
-			if err := a.run(ctx, a.Root, nil, "shellcheck", scripts...); err != nil {
-				return err
-			}
-			for _, script := range scripts {
-				if err := a.run(ctx, a.Root, nil, "bash", "-n", script); err != nil {
-					return err
-				}
-			}
-			return nil
-		}); err != nil {
+	if err := a.gatePhase("tooling shell scripts", func() error {
+		if err := a.run(ctx, a.Root, nil, "shellcheck", scripts...); err != nil {
 			return err
 		}
+		for _, script := range scripts {
+			if err := a.run(ctx, a.Root, nil, "bash", "-n", script); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	fmt.Fprintln(a.Out, "development tooling checks passed")
 	return nil
@@ -365,7 +372,19 @@ func (a *App) check(ctx context.Context, args []string) error {
 			return usage("usage: ./run check agent-setup")
 		}
 		return a.agentSetupCheck(ctx, true)
+	case "deps":
+		return a.depAgeCheck(ctx, rest)
 	default:
 		return usage("%s", checkUsage)
 	}
+}
+
+// depAgeCheck enforces the dependency release-age and non-registry-source
+// rules. It diffs manifests against a base ref (--base, default origin/main)
+// and no-ops when none changed, so it is cheap on an unchanged tree; with no
+// resolvable base it skips rather than treating every existing dependency as
+// newly added.
+func (a *App) depAgeCheck(ctx context.Context, rest []string) error {
+	args := append([]string{"run", "./cmd/depgate", "check"}, rest...)
+	return a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", args...)
 }

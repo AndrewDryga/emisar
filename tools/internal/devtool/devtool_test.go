@@ -1497,10 +1497,17 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 		module + "|go|run " + staticcheckVersion + " ./...",
 		module + "|go|mod tidy -diff",
 		module + "|go|test -race -count=1 -coverprofile=coverage.out ./...",
-		filepath.Dir(module) + "|shellcheck|install.sh",
-		filepath.Dir(module) + "|bash|-n install.sh",
-		filepath.Dir(module) + "|go|run ./tools/cmd/installtest runner",
 	}
+	// One build per published platform, in order, so a dropped or added target
+	// is a visible diff here rather than a silent change in release coverage.
+	for range releaseTargets["runner"] {
+		want = append(want, module+"|go|build -trimpath -ldflags -s -w -o "+os.DevNull+" .")
+	}
+	want = append(want,
+		filepath.Dir(module)+"|shellcheck|install.sh",
+		filepath.Dir(module)+"|bash|-n install.sh",
+		filepath.Dir(module)+"|go|run ./tools/cmd/installtest runner",
+	)
 	got := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if !slices.Equal(got, want) {
 		t.Fatalf("commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
