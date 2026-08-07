@@ -230,6 +230,21 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}
 	})
 
+	// The corpus IS the parity check between the two hostile-JSON validators, so
+	// changing it has to run both suites.
+	t.Run("the shared JSON corpus selects both Go clients", func(t *testing.T) {
+		writeFixture(t, root, "dev/json-corpus/cases.json", "{}\n")
+		commitAll(t, root, "json corpus")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Runner || !selection.MCP {
+			t.Fatalf("corpus selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	// The bridge halves regressed once by naming a package that does not exist,
 	// which let attested-dispatch changes skip a required check.
 	t.Run("bridge signing seams select the signing scenario", func(t *testing.T) {

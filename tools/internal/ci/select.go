@@ -131,10 +131,14 @@ func (selection *Selection) include(file string) {
 		selection.Portal = true
 		selection.PortalRelease = true
 	}
-	if strings.HasPrefix(file, "runner/") || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
+	// dev/json-corpus is the golden both hostile-JSON validators must agree on;
+	// the module boundary forbids sharing their code, so the corpus IS the
+	// parity check and a change to it has to run both suites.
+	jsonCorpus := strings.HasPrefix(file, "dev/json-corpus/")
+	if strings.HasPrefix(file, "runner/") || jsonCorpus || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
 		selection.Runner = true
 	}
-	if strings.HasPrefix(file, "mcp/") || member(file, "install-mcp.sh", "go.work", "go.work.sum") {
+	if strings.HasPrefix(file, "mcp/") || jsonCorpus || member(file, "install-mcp.sh", "go.work", "go.work.sum") {
 		selection.MCP = true
 	}
 	if file == "server.json" {

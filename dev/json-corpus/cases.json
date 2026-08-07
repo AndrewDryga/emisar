@@ -1,0 +1,120 @@
+{
+  "_comment": "Golden corpus for the two hostile-JSON validators: runner/internal/jsonvalue and the bridge's strictJSONParser in mcp/protocol.go. They enforce the same four rules on untrusted frames through completely different machinery \u2014 a hand-written byte scanner versus an encoding/json token stream \u2014 and the module boundary forbids sharing code, because mcp must stay stdlib-only. runner/internal/attest and mcp/internal/attest are kept honest by byte parity; these two cannot be, so they are kept honest by agreeing on this. Inputs are base64 so a case can carry bytes that are not valid UTF-8.",
+  "max_depth": 64,
+  "cases": [
+    {
+      "name": "plain object",
+      "why": "the simplest frame",
+      "valid": true,
+      "base64": "eyJhIjoxfQ=="
+    },
+    {
+      "name": "nested",
+      "why": "objects and arrays interleaved",
+      "valid": true,
+      "base64": "eyJhIjp7ImIiOlsxLDIseyJjIjpudWxsfV19fQ=="
+    },
+    {
+      "name": "escapes",
+      "why": "quote, backslash and control escapes",
+      "valid": true,
+      "base64": "eyJhIjoicVwiYlxcY1xuZFx0ZSJ9"
+    },
+    {
+      "name": "valid surrogate pair",
+      "why": "an emoji is a paired high+low surrogate and is legal",
+      "valid": true,
+      "base64": "eyJhIjoiXHVkODNkXHVkZTAwIn0="
+    },
+    {
+      "name": "literal utf8",
+      "why": "multi-byte UTF-8 passes through",
+      "valid": true,
+      "base64": "eyJhIjoiY2Fmw6kg4pyTIn0="
+    },
+    {
+      "name": "numbers",
+      "why": "JSON number grammar incl. a bignum",
+      "valid": true,
+      "base64": "eyJhIjotMS41ZTEwLCJiIjowLCJjIjoxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTB9"
+    },
+    {
+      "name": "empty containers",
+      "why": "empty object and array",
+      "valid": true,
+      "base64": "eyJhIjp7fSwiYiI6W119"
+    },
+    {
+      "name": "nesting under the shared cap",
+      "why": "30 deep is under both limits",
+      "valid": true,
+      "base64": "eyJhIjpbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tdXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV19"
+    },
+    {
+      "name": "duplicate keys",
+      "why": "a duplicate key lets two readers disagree about the value",
+      "valid": false,
+      "base64": "eyJhIjoxLCJhIjoyfQ=="
+    },
+    {
+      "name": "duplicate keys nested",
+      "why": "the same, one level down",
+      "valid": false,
+      "base64": "eyJvIjp7ImEiOjEsImEiOjJ9fQ=="
+    },
+    {
+      "name": "unpaired high surrogate",
+      "why": "a high surrogate with no low half",
+      "valid": false,
+      "base64": "eyJhIjoiXHVkODNkIn0="
+    },
+    {
+      "name": "unpaired low surrogate",
+      "why": "a low surrogate with no high half",
+      "valid": false,
+      "base64": "eyJhIjoiXHVkZTAwIn0="
+    },
+    {
+      "name": "high surrogate then plain",
+      "why": "a high surrogate not followed by its pair",
+      "valid": false,
+      "base64": "eyJhIjoiXHVkODNkWiJ9"
+    },
+    {
+      "name": "invalid utf8",
+      "why": "bytes that are not valid UTF-8",
+      "valid": false,
+      "base64": "eyJhIjoi//4ifQ=="
+    },
+    {
+      "name": "bad hex escape",
+      "why": "a \\u escape whose hex is malformed",
+      "valid": false,
+      "base64": "eyJhIjoiXHUwMHp6In0="
+    },
+    {
+      "name": "trailing content",
+      "why": "a second value after the frame",
+      "valid": false,
+      "base64": "eyJhIjoxfSBqdW5r"
+    },
+    {
+      "name": "unterminated string",
+      "why": "the string never closes",
+      "valid": false,
+      "base64": "eyJhIjoieH0="
+    },
+    {
+      "name": "unterminated object",
+      "why": "the object never closes",
+      "valid": false,
+      "base64": "eyJhIjox"
+    },
+    {
+      "name": "nesting past the shared cap",
+      "why": "70 deep exceeds the 64 both sides cap at",
+      "valid": false,
+      "base64": "eyJhIjpbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXX0="
+    }
+  ]
+}
