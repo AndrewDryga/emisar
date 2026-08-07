@@ -281,8 +281,8 @@ containers, network, volumes, and temporary realm.
 ## Signing and runbooks end to end
 
 End-to-end coverage for **signed dispatch** and **staged runbooks** against the
-root demo stack. Two profile-gated `test` services, the normal demo runner, and
-the `./run e2e signing` driver:
+root demo stack. Profile-gated `test` services in `docker-compose.yml` and the
+`./run e2e signing` driver:
 
 - **`signing-init`** mints a CA + leaf key + certificate at stack-up via
   `emisar signing init` (run `init.sh`), into the shared `signing_material`
