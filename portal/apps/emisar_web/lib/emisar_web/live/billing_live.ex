@@ -1,6 +1,6 @@
 defmodule EmisarWeb.BillingLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Billing}
+  alias Emisar.Billing
   alias EmisarWeb.{MailTo, Permissions}
 
   @plan_order ["free", "team", "enterprise"]
@@ -17,7 +17,6 @@ defmodule EmisarWeb.BillingLive do
        socket
        |> assign(:plans, ordered_plans())
        |> assign(:summary, fetch_summary(account, subject))
-       |> assign(:member_count, member_count(socket))
        |> assign(:features, feature_states(account))
        |> assign_async(:invoices, fn -> fetch_invoices(account, subject) end)}
     else
@@ -159,17 +158,6 @@ defmodule EmisarWeb.BillingLive do
       def_map = Map.fetch!(all, key)
       Map.put(def_map, :key, key)
     end)
-  end
-
-  defp member_count(socket) do
-    case Accounts.list_memberships_for_account(
-           socket.assigns.current_account,
-           socket.assigns.current_subject,
-           page: [limit: 100]
-         ) do
-      {:ok, _list, %{count: count}} when is_integer(count) -> count
-      _ -> 0
-    end
   end
 
   defp limit_label(:unlimited), do: "Unlimited"
@@ -691,9 +679,9 @@ defmodule EmisarWeb.BillingLive do
                 />
                 <.usage_meter
                   label="Team members"
-                  count={@member_count}
+                  count={@summary.member_count}
                   limit_label={limit_label(@summary.member_limit)}
-                  pct={usage_pct(@member_count, @summary.member_limit)}
+                  pct={usage_pct(@summary.member_count, @summary.member_limit)}
                 />
                 <%!-- Audit retention is a plan cap too, but a duration not a
                      count — a plain key/value row in the same rail as the meters. --%>

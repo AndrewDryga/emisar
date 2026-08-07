@@ -15,14 +15,21 @@ defmodule EmisarWeb.AuditDetailLive do
     case Audit.fetch_event_by_id(id, socket.assigns.current_subject) do
       {:ok, event} ->
         refs = Audit.resolve_references([event])
+        # The event itself renders on the dead pass — it IS the page. The two
+        # cross-links behind it are subject-gated run fetches that only some
+        # target kinds even use, so they wait for the connected mount instead
+        # of being resolved twice per view.
+        subject = socket.assigns.current_subject
+        linked_runner = if connected?(socket), do: subject_runner(event, subject)
+        linked_run = if connected?(socket), do: target_run(event, subject)
 
         {:ok,
          socket
          |> assign(:page_title, "Audit · #{event.event_type}")
          |> assign(:event, event)
          |> assign(:refs, refs)
-         |> assign(:subject_runner, subject_runner(event, socket.assigns.current_subject))
-         |> assign(:target_run, target_run(event, socket.assigns.current_subject))}
+         |> assign(:subject_runner, linked_runner)
+         |> assign(:target_run, linked_run)}
 
       {:error, _} ->
         {:ok,

@@ -43,8 +43,25 @@ defmodule EmisarWeb.AuditLive do
      |> assign(:reload_scheduled?, false)}
   end
 
+  # IL-18: the dead render shows `<.loading_state />` for the trail, so the
+  # events page, its count, and the reference batch were paid twice per first
+  # paint. The filter bar IS part of that first paint (a deep-linked facet must
+  # render its labels), so its state still resolves on both passes.
   def handle_params(params, _uri, socket) do
-    {:noreply, load(socket, params)}
+    if connected?(socket) do
+      {:noreply, load(socket, params)}
+    else
+      {:noreply, prepare_disconnected(socket, params)}
+    end
+  end
+
+  defp prepare_disconnected(socket, params) do
+    socket
+    |> assign_filter_state(params)
+    |> assign(:events, [])
+    |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+    |> assign(:refs, %{})
+    |> assign(:load_error?, false)
   end
 
   def handle_info({:audit_event, _event}, socket), do: {:noreply, schedule_reload(socket)}
@@ -228,49 +245,16 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp load(socket, params) do
-    # Request ID + Sign-in method only apply to some event types — drop them
-    # when the selected Type can't carry them (or none is set), so the filter
-    # panel shows only filters that can actually narrow the log.
+    socket = assign_filter_state(socket, params)
     base_filters = Audit.applicable_event_filters(params["event_type"], params)
-
-    # Render each dynamic picker right after its kind filter (the dependent
-    # control belongs next to its trigger), not tacked on at the end.
-    # base_filters stays the opts source; the actor/target pickers are
-    # render-only — actor_id/target_id apply via the opts path below.
-    subject = socket.assigns.current_subject
-    actor_filter = actor_kind_filter(params, subject)
-    target_filter = target_kind_filter(params, subject)
-
-    filters =
-      Enum.flat_map(base_filters, fn
-        %{name: :actor_kind} = f -> [f | actor_filter]
-        %{name: :target_kind} = f -> [f | target_filter]
-        f -> [f]
-      end)
-
-    actor_id = blank_to_nil(params["actor_id"])
-    target_id = blank_to_nil(params["target_id"])
-
-    # actor_id rides as a URL param outside the form (set by clicking a row's
-    # actor); target_id is set by its dynamic picker. Both aren't in
-    # base_filters, so they're threaded into list_events directly. From/To are
-    # LiveTable datetime filters — params_to_opts applies them via :filter.
-    socket =
-      socket
-      |> assign(:filters, filters)
-      |> assign(:filter_params, params)
-      |> assign(:active_facet_count, LiveTable.count_active_filters(params, filters))
-      |> assign(
-        :active_facet_summary,
-        params |> LiveTable.active_filter_labels(filters) |> Enum.join(" · ")
-      )
-      |> assign(:actor_id, actor_id)
-      |> assign(:target_id, target_id)
 
     opts =
       params
       |> LiveTable.params_to_opts(base_filters)
-      |> Keyword.merge(actor_id: actor_id, target_id: target_id)
+      |> Keyword.merge(
+        actor_id: socket.assigns.actor_id,
+        target_id: socket.assigns.target_id
+      )
 
     case Audit.list_events(socket.assigns.current_subject, opts) do
       {:ok, events, meta} ->
@@ -294,6 +278,43 @@ defmodule EmisarWeb.AuditLive do
       {:error, _} ->
         load(socket, %{})
     end
+  end
+
+  defp assign_filter_state(socket, params) do
+    # Request ID + Sign-in method only apply to some event types — drop them
+    # when the selected Type can't carry them (or none is set), so the filter
+    # panel shows only filters that can actually narrow the log.
+    base_filters = Audit.applicable_event_filters(params["event_type"], params)
+
+    # Render each dynamic picker right after its kind filter (the dependent
+    # control belongs next to its trigger), not tacked on at the end.
+    # base_filters stays the opts source; the actor/target pickers are
+    # render-only — actor_id/target_id apply via the opts path in `load/2`.
+    subject = socket.assigns.current_subject
+    actor_filter = actor_kind_filter(params, subject)
+    target_filter = target_kind_filter(params, subject)
+
+    filters =
+      Enum.flat_map(base_filters, fn
+        %{name: :actor_kind} = f -> [f | actor_filter]
+        %{name: :target_kind} = f -> [f | target_filter]
+        f -> [f]
+      end)
+
+    # actor_id rides as a URL param outside the form (set by clicking a row's
+    # actor); target_id is set by its dynamic picker. Both aren't in
+    # base_filters, so they're threaded into list_events directly. From/To are
+    # LiveTable datetime filters — params_to_opts applies them via :filter.
+    socket
+    |> assign(:filters, filters)
+    |> assign(:filter_params, params)
+    |> assign(:active_facet_count, LiveTable.count_active_filters(params, filters))
+    |> assign(
+      :active_facet_summary,
+      params |> LiveTable.active_filter_labels(filters) |> Enum.join(" · ")
+    )
+    |> assign(:actor_id, blank_to_nil(params["actor_id"]))
+    |> assign(:target_id, blank_to_nil(params["target_id"]))
   end
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
@@ -571,6 +592,8 @@ defmodule EmisarWeb.AuditLive do
                state gets richer copy that names the surfaces that
                actually produce events. --%>
           <%= cond do %>
+            <% not connected?(@socket) -> %>
+              <.loading_state />
             <% @load_error? -> %>
               <.empty_state
                 tone={:danger}

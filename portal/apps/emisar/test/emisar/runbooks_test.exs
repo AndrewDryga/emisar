@@ -332,7 +332,7 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "risk_by_runbook_ids/2" do
+  describe "risk_by_runbooks/2" do
     test "maps each runbook to the worst risk across its steps" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
@@ -344,7 +344,7 @@ defmodule Emisar.RunbooksTest do
 
       calm = create_runbook(subject, definition: risk_definition(["linux.uptime"]))
 
-      assert Runbooks.risk_by_runbook_ids([mixed.id, calm.id], subject) ==
+      assert Runbooks.risk_by_runbooks([mixed, calm], subject) ==
                {:ok, %{mixed.id => :critical, calm.id => :low}}
     end
 
@@ -358,41 +358,39 @@ defmodule Emisar.RunbooksTest do
 
       # Nobody advertises linux.reboot — answering `critical` from the one step
       # we can resolve would understate a runbook whose rest is unknown.
-      assert Runbooks.risk_by_runbook_ids([partial.id], subject) == {:ok, %{partial.id => nil}}
+      assert Runbooks.risk_by_runbooks([partial], subject) == {:ok, %{partial.id => nil}}
     end
 
-    test "omits deleted, cross-account, and unknown ids" do
+    test "omits deleted and cross-account runbooks a caller still holds" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       deleted = create_runbook(subject) |> delete(subject)
       {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
       other = create_runbook(other_subject)
 
-      ids = [deleted.id, other.id, Ecto.UUID.generate(), "not-a-uuid"]
-
-      assert Runbooks.risk_by_runbook_ids(ids, subject) == {:ok, %{}}
+      assert Runbooks.risk_by_runbooks([deleted, other], subject) == {:ok, %{}}
     end
 
     test "denies a principal without view permission, including for an empty list" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
+      {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(other_subject)
 
-      assert Runbooks.risk_by_runbook_ids([], subject) == {:error, :unauthorized}
-
-      assert Runbooks.risk_by_runbook_ids([Ecto.UUID.generate()], subject) ==
-               {:error, :unauthorized}
+      assert Runbooks.risk_by_runbooks([], subject) == {:error, :unauthorized}
+      assert Runbooks.risk_by_runbooks([runbook], subject) == {:error, :unauthorized}
     end
 
     test "accepts a full batch and refuses anything larger or unbounded" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      id = Ecto.UUID.generate()
+      runbook = create_runbook(subject)
 
-      assert Runbooks.risk_by_runbook_ids(List.duplicate(id, 64), subject) == {:ok, %{}}
+      assert {:ok, _risks} = Runbooks.risk_by_runbooks(List.duplicate(runbook, 64), subject)
 
-      assert Runbooks.risk_by_runbook_ids(List.duplicate(id, 65), subject) ==
-               {:error, :too_many_runbook_ids}
+      assert Runbooks.risk_by_runbooks(List.duplicate(runbook, 65), subject) ==
+               {:error, :too_many_runbooks}
 
-      assert Runbooks.risk_by_runbook_ids(%{}, subject) == {:error, :too_many_runbook_ids}
+      assert Runbooks.risk_by_runbooks(%{}, subject) == {:error, :too_many_runbooks}
     end
   end
 

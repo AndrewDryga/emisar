@@ -193,25 +193,30 @@ defmodule Emisar.Runbooks do
 
   @doc """
   `%{runbook_id => most-severe step risk}` for at most #{@max_risk_runbook_ids}
-  runbook ids — the risk tier each list row shows, resolved for the whole page
-  in one catalog read rather than a query per row. Requires `view_runbooks`;
-  the rows are re-read by id under the caller's account, so a deleted or
-  cross-account runbook is simply absent from the map.
+  already-listed runbooks — the risk tier each list row shows, resolved for the
+  whole page in one catalog read rather than a query per row. Requires
+  `view_runbooks`; visibility is re-checked by id (a held struct cannot widen
+  it) without re-fetching the wide definition rows the caller just listed, so a
+  deleted or cross-account runbook is simply absent from the map.
 
   Every visible runbook IS a key: one whose steps include an action no runner
   the caller can reach advertises maps to `nil`, so the row shows no pill
   rather than the worst of the steps we happened to resolve. Returns
   `{:ok, %{runbook_id => risk | nil}}`, `{:error, :unauthorized}`, or
-  `{:error, :too_many_runbook_ids}`.
+  `{:error, :too_many_runbooks}`.
   """
-  def risk_by_runbook_ids(runbook_ids, %Subject{} = subject)
-      when is_list(runbook_ids) and length(runbook_ids) <= @max_risk_runbook_ids do
+  def risk_by_runbooks(runbooks, %Subject{} = subject)
+      when is_list(runbooks) and length(runbooks) <= @max_risk_runbook_ids do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
-      runbooks = list_visible_runbooks_by_ids(runbook_ids, subject)
+      visible_ids = visible_runbook_ids(Enum.map(runbooks, & &1.id), subject)
+      visible_runbooks = Enum.filter(runbooks, &MapSet.member?(visible_ids, &1.id))
 
       action_ids =
-        runbooks |> Enum.flat_map(&step_action_ids/1) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+        visible_runbooks
+        |> Enum.flat_map(&step_action_ids/1)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
 
       risk_by_action =
         case Catalog.risk_by_action_ids(action_ids, subject) do
@@ -219,19 +224,21 @@ defmodule Emisar.Runbooks do
           {:error, _reason} -> %{}
         end
 
-      {:ok, Map.new(runbooks, &{&1.id, runbook_risk(&1, risk_by_action)})}
+      {:ok, Map.new(visible_runbooks, &{&1.id, runbook_risk(&1, risk_by_action)})}
     end
   end
 
-  def risk_by_runbook_ids(_runbook_ids, %Subject{}), do: {:error, :too_many_runbook_ids}
+  def risk_by_runbooks(_runbooks, %Subject{}), do: {:error, :too_many_runbooks}
 
-  defp list_visible_runbooks_by_ids(runbook_ids, %Subject{} = subject) do
+  defp visible_runbook_ids(runbook_ids, %Subject{} = subject) do
     ids = Enum.filter(runbook_ids, &Repo.valid_uuid?/1)
 
     Runbook.Query.not_deleted()
     |> Runbook.Query.by_ids(ids)
     |> Authorizer.for_subject(subject)
+    |> Runbook.Query.select_ids()
     |> Repo.all()
+    |> MapSet.new()
   end
 
   defp runbook_risk(%Runbook{} = runbook, risk_by_action) do

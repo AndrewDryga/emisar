@@ -16,8 +16,27 @@ defmodule EmisarWeb.RunbooksLive do
     {:ok, assign(socket, :page_title, "Runbooks")}
   end
 
+  # IL-18: the dead render shows `<.loading_state />`, so the family list, its
+  # risk/target batches, and the recent-executions read were paid twice per
+  # first paint.
   def handle_params(params, _uri, socket) do
-    {:noreply, load(socket, params)}
+    if connected?(socket) do
+      {:noreply, load(socket, params)}
+    else
+      {:noreply, prepare_disconnected(socket, params)}
+    end
+  end
+
+  defp prepare_disconnected(socket, params) do
+    socket
+    |> assign(:runbooks, [])
+    |> assign(:runbook_risk, %{})
+    |> assign(:run_targets, %{})
+    |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+    |> assign(:filter_params, params)
+    |> assign(:filters, Runbooks.runbook_filters())
+    |> assign(:load_error?, false)
+    |> assign(:recent_executions, [])
   end
 
   def handle_event("filter", params, socket) do
@@ -77,7 +96,7 @@ defmodule EmisarWeb.RunbooksLive do
   # runbook with any step the catalog can't resolve is nil there, so its row
   # shows no pill rather than a false low.
   defp resolve_max_risks(runbooks, subject) do
-    case Runbooks.risk_by_runbook_ids(Enum.map(runbooks, & &1.id), subject) do
+    case Runbooks.risk_by_runbooks(runbooks, subject) do
       {:ok, risk_by_runbook} -> risk_by_runbook
       {:error, _reason} -> %{}
     end

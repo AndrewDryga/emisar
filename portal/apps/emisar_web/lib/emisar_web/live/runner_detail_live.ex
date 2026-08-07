@@ -117,8 +117,11 @@ defmodule EmisarWeb.RunnerDetailLive do
     end)
   end
 
+  # `count: false` — this is a fixed-size recent list with no pager, so the
+  # default total would COUNT every run this host has ever executed for a
+  # number nothing renders.
   defp recent_runs(runner, subject) do
-    case Runs.list_recent_runs_for_runner(runner.id, subject, page: [limit: 20]) do
+    case Runs.list_recent_runs_for_runner(runner.id, subject, page: [limit: 20], count: false) do
       {:ok, recent_runs, _} -> recent_runs
       {:error, _} -> []
     end

@@ -198,8 +198,17 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     refute html =~ "late-arriving request"
 
     request = pending_request!(account, user.id, "late-arriving request")
-    send(lv.pid, {:approval_updated, request.id})
 
+    # The broadcast only schedules the reload — a batch of decisions must not
+    # re-run this page's whole load once per request — so fire the debounce
+    # message the timer would deliver.
+    send(lv.pid, {:approval_updated, request.id})
+    send(lv.pid, :reload_approvals)
+    assert render(lv) =~ "late-arriving request"
+
+    # The badge hooks forward unrelated account-topic broadcasts — any other
+    # message shape is ignored, never a crash.
+    send(lv.pid, :totally_unrelated)
     assert render(lv) =~ "late-arriving request"
   end
 

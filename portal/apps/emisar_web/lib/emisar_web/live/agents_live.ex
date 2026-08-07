@@ -14,17 +14,21 @@ defmodule EmisarWeb.AgentsLive do
   status onto it (`ApiKeys.with_bridge_compatibility/2`) and renders the
   result — words, colors and countdowns only.
 
-  Every #{5} s a self-scheduled `:tick` polls only the visible keys' ids and
+  Every #{15} s a self-scheduled `:tick` polls only the visible keys' ids and
   `last_used_at`, then recomputes time-based facts in memory. Key lifecycle
   PubSub events still reload the full page, so membership, pagination, owner,
   and rotation changes reflow immediately without doing that work per tick.
+  The tick is the SLOW fallback, not how this page stays live: a key's first
+  use broadcasts, and `last_used_at` is itself only re-stamped once a minute,
+  so a faster poll could not observe anything sooner than the countdowns it
+  renders change.
   """
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Compat}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers}
   alias Phoenix.LiveView.JS
 
-  @refresh_ms 5_000
+  @refresh_ms 15_000
   @remote_client_ids ~w(claude_web chatgpt)
 
   def mount(_params, _session, socket) do

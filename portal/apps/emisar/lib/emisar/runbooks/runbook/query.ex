@@ -16,6 +16,9 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def by_ids(queryable, ids) when is_list(ids),
     do: where(queryable, [runbooks: r], r.id in ^ids)
 
+  def select_ids(queryable),
+    do: select(queryable, [runbooks: r], r.id)
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [runbooks: r], r.account_id == ^account_id)
 

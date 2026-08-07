@@ -18,16 +18,43 @@ defmodule EmisarWeb.ApprovalsLive do
   alias EmisarWeb.{LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
+  @reload_debounce_ms 500
+
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, :page_title, "Approvals")}
+    {:ok,
+     socket
+     |> assign(:page_title, "Approvals")
+     |> assign(:reload_scheduled?, false)}
   end
 
+  # IL-18: the dead render shows `<.loading_state />`, so paying the page's
+  # three list reads plus label/risk batches on it doubled every first paint.
   def handle_params(params, _uri, socket) do
-    {:noreply, load(socket, params)}
+    if connected?(socket) do
+      {:noreply, load(socket, params)}
+    else
+      {:noreply, assign(socket, :filter_params, params)}
+    end
   end
 
-  def handle_info({:approval_updated, _}, socket), do: {:noreply, reload(socket)}
+  # A runbook deciding a batch of approvals broadcasts once per request, and
+  # every open sockets pays the full page load per event — coalesce like the
+  # dashboard/runs feeds do.
+  def handle_info({:approval_updated, _}, socket), do: {:noreply, schedule_reload(socket)}
+
+  def handle_info(:reload_approvals, socket),
+    do: {:noreply, socket |> assign(:reload_scheduled?, false) |> reload()}
+
   def handle_info(_, socket), do: {:noreply, socket}
+
+  defp schedule_reload(socket) do
+    if socket.assigns.reload_scheduled? do
+      socket
+    else
+      Process.send_after(self(), :reload_approvals, @reload_debounce_ms)
+      assign(socket, :reload_scheduled?, true)
+    end
+  end
 
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
@@ -376,9 +403,10 @@ defmodule EmisarWeb.ApprovalsLive do
         <.doc_link href="/docs/policies-and-approvals">Approvals docs</.doc_link>
       </.page_intro>
 
+      <.loading_state :if={not connected?(@socket)} />
       <%!-- Three canvas sections need RHYTHM, not chrome: generous vertical
            air is what says "a new table starts here". --%>
-      <div class="space-y-12">
+      <div :if={connected?(@socket)} class="space-y-12">
         <%!-- 1. PENDING --%>
         <section class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
           <div class="min-w-0">
