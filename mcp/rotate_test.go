@@ -529,6 +529,68 @@ func TestAcknowledgeRotation_WrongAckIsIgnored(t *testing.T) {
 	}
 }
 
+func TestCredentialFastPath_SteadyStateSkipsDisk(t *testing.T) {
+	current := testAPIKey(44)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	b := newRotationTestBridge(store, current)
+	prefix, hash := b.rotationProposal()
+	if prefix == "" || hash == "" {
+		t.Fatal("initial proposal was not prepared")
+	}
+
+	reads := 0
+	readFile := store.ops.readFile
+	store.ops.readFile = func(path string) ([]byte, error) {
+		reads++
+		return readFile(path)
+	}
+	for range 5 {
+		if err := b.refreshCredentialState(); err != nil {
+			t.Fatalf("steady-state refresh: %v", err)
+		}
+		if p, h := b.rotationProposal(); p != prefix || h != hash {
+			t.Fatalf("steady-state proposal = %q/%q, want the original", p, h)
+		}
+	}
+	if reads != 0 {
+		t.Fatalf("steady state read the credential file %d times, want 0", reads)
+	}
+}
+
+func TestCredentialFastPath_PeerTransitionBreaksTheStamp(t *testing.T) {
+	current := testAPIKey(45)
+	promoted := testAPIKey(46)
+	dir := t.TempDir()
+	store := newCredentialStoreAt(dir, testEndpointOrigin, keyPrefix(current))
+	b := newRotationTestBridge(store, current)
+	if _, hash := b.rotationProposal(); hash == "" {
+		t.Fatal("initial proposal was not prepared")
+	}
+	if err := b.refreshCredentialState(); err != nil {
+		t.Fatalf("prime the stamp: %v", err)
+	}
+
+	// A peer process promotes a different key; the file the stamp shadows has
+	// been renamed over, so the next refresh must go back to disk and adopt.
+	peer := newCredentialStoreAt(dir, testEndpointOrigin, keyPrefix(current))
+	promotedState := credentialState{
+		Version:         credentialStateVersion,
+		EndpointOrigin:  testEndpointOrigin,
+		BootstrapPrefix: keyPrefix(current),
+		Current:         promoted,
+	}
+	if err := peer.persist(promotedState); err != nil {
+		t.Fatalf("peer promotion: %v", err)
+	}
+
+	if err := b.refreshCredentialState(); err != nil {
+		t.Fatalf("refresh after peer promotion: %v", err)
+	}
+	if b.apiKey != promoted || b.pendingKey != "" {
+		t.Fatalf("refresh kept %q/%q, want the peer-promoted key", b.apiKey, b.pendingKey)
+	}
+}
+
 func TestCredentialStore_DifferentPrefixesPersistConcurrently(t *testing.T) {
 	configDir := t.TempDir()
 	currentA := testAPIKey(13)

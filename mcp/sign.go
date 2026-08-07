@@ -127,12 +127,39 @@ func validateCertFieldNames(raw []byte) error {
 	return nil
 }
 
+// couldBeRunActionCall cheaply rules a frame out before signFrame pays
+// parseProtocolJSON's full strict re-validation for it. It mirrors the exact
+// per-key extraction the authoritative parse performs (envelope "method",
+// params "name"), so on a serve-validated frame the skip decision can never
+// disagree with it: any frame this rejects is one parseProtocolJSON would
+// answer with a non-run_action result or an error — both of which signFrame
+// already forwards unsigned for the portal's own validation.
+func couldBeRunActionCall(frame []byte) bool {
+	var envelope map[string]json.RawMessage
+	if json.Unmarshal(frame, &envelope) != nil || envelope == nil {
+		return false
+	}
+	method, err := exactJSONString(envelope, "method")
+	if err != nil || method != "tools/call" {
+		return false
+	}
+	var params map[string]json.RawMessage
+	if json.Unmarshal(envelope["params"], &params) != nil {
+		return false
+	}
+	name, err := exactJSONString(params, "name")
+	return err == nil && name == attest.Tool
+}
+
 // signFrame returns a private action-attestation header for one valid
 // tools/call name=run_action. It never changes frame. Invalid action input
 // returns no header so the portal can return its normal schema error. Once a
 // valid action reaches cryptographic signing, however, an internal failure is
 // returned and the request is not sent unsigned.
 func (s *signer) signFrame(frame []byte, operationID, portalOrigin string) (string, error) {
+	if !couldBeRunActionCall(frame) {
+		return "", nil
+	}
 	parsed, err := parseProtocolJSON(frame)
 	if err != nil || parsed.Method != "tools/call" || parsed.ToolName != attest.Tool {
 		return "", nil

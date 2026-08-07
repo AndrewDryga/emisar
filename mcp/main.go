@@ -114,7 +114,14 @@ const (
 // redirect refusal — the RPC endpoint never legitimately redirects, and
 // following a 3xx would chase the Bearer API key to an attacker-chosen host.
 func newHTTPClient() *http.Client {
+	// The default transport keeps only 2 idle connections per host, so an
+	// 8-way burst over HTTP/1.1 re-pays TCP+TLS for the rest on the next
+	// burst. Match the pool to the bridge's own concurrency cap; an h2
+	// endpoint multiplexes one connection regardless.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = maxConcurrentRequests
 	return &http.Client{
+		Transport:     transport,
 		Timeout:       httpTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
@@ -403,6 +410,10 @@ type bridge struct {
 	credentialStore    *credentialStore
 	credentialReadOnly bool
 	pendingKey         string
+	// credentialStamp fingerprints the last on-disk credential state this
+	// process synced; a match lets the per-request refresh/proposal skip the
+	// flock + read. Guarded by stateMu like the keys it shadows.
+	credentialStamp credentialStateStamp
 	// diagnostics receives operator-facing lines that stdout cannot carry —
 	// stdout is the JSON-RPC transcript, and a synthetic error frame is
 	// deliberately opaque. main() points it at stderr; nil keeps a bridge quiet.
@@ -1080,7 +1091,10 @@ func (b *bridge) forwardRequestContext(
 		operationID = toolCallOperationID(meta, headers.requestToken)
 	}
 	attestationValue := ""
-	if b.signer != nil {
+	// Only a tools/call frame can carry run_action; meta.method decodes the
+	// same envelope "method" bytes signFrame's exact parse would, so skipping
+	// here can never disagree with it on a serve-validated frame.
+	if b.signer != nil && meta.method == "tools/call" {
 		var signErr error
 		attestationValue, signErr = b.signer.signFrame(frame, operationID, b.portalOrigin)
 		if signErr != nil {
@@ -1230,9 +1244,8 @@ func (b *bridge) forwardAttempt(req *http.Request, meta requestMeta) (portalResp
 	if err != nil {
 		return result, err
 	}
-	if !utf8.Valid(body) {
-		return result, errors.New("control-plane response is not valid UTF-8")
-	}
+	// validateStrictJSON inside validateRPCResponse begins with the UTF-8
+	// scan, so a separate utf8.Valid pass here would read the body twice.
 	if err := validateRPCResponse(meta, resp.StatusCode, body); err != nil {
 		return result, err
 	}

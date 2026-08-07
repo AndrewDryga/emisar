@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const (
@@ -66,6 +67,32 @@ type credentialWriteAccessError struct {
 
 func (err *credentialWriteAccessError) Error() string { return err.err.Error() }
 func (err *credentialWriteAccessError) Unwrap() error { return err.err }
+
+// credentialStateStamp fingerprints the on-disk state this process last proved
+// durable (size + mtime of the atomically renamed file). A matching stamp lets
+// the per-request refresh/proposal skip the flock + read cycle entirely; every
+// peer transition renames a freshly written temp file into place, so it changes
+// the stamp. The one theoretical miss — two same-size rewrites inside a single
+// filesystem-timestamp quantum — self-heals through the 401 recovery path,
+// which always re-reads under the lock.
+type credentialStateStamp struct {
+	valid   bool
+	size    int64
+	modTime time.Time
+}
+
+func (stamp credentialStateStamp) matches(current credentialStateStamp) bool {
+	return stamp.valid && current.valid &&
+		stamp.size == current.size && stamp.modTime.Equal(current.modTime)
+}
+
+func (store *credentialStore) stamp() credentialStateStamp {
+	info, err := os.Lstat(store.path)
+	if err != nil || !info.Mode().IsRegular() {
+		return credentialStateStamp{}
+	}
+	return credentialStateStamp{valid: true, size: info.Size(), modTime: info.ModTime()}
+}
 
 func (store *credentialStore) withLock(fun func() error) error {
 	dir := filepath.Dir(store.path)
@@ -355,10 +382,28 @@ func (b *bridge) initializeCredentialState() (bool, error) {
 	return true, nil
 }
 
+// withSyncedStore wraps a locked credential-state transition and records the
+// resulting on-disk stamp while still under the flock, so the per-request fast
+// paths can skip disk while nothing changes. A failed transition invalidates
+// the stamp, forcing the next request back through the full locked cycle.
+// Callers hold b.stateMu.
+func (b *bridge) withSyncedStore(fun func() error) error {
+	return b.credentialStore.withLock(func() error {
+		if err := fun(); err != nil {
+			b.credentialStamp = credentialStateStamp{}
+			return err
+		}
+		b.credentialStamp = b.credentialStore.stamp()
+		return nil
+	})
+}
+
 // refreshCredentialState adopts a peer process's durable transition before the
 // next HTTP request. Re-persisting changed state proves the observed rename and
 // its parent-directory entry durable before a proposal depends on its pending
-// secret or first use can retire the predecessor on the portal.
+// secret or first use can retire the predecessor on the portal. In the steady
+// state — the file unchanged since this process last synced it — the stamp
+// check answers without the flock or a read.
 func (b *bridge) refreshCredentialState() error {
 	if b.credentialStore == nil {
 		return nil
@@ -367,14 +412,25 @@ func (b *bridge) refreshCredentialState() error {
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
 	if b.credentialReadOnly {
+		// Stamp captured before the read: racing a peer rename can only leave
+		// an older stamp, so staleness costs a reload, never a missed change.
+		stamp := b.credentialStore.stamp()
+		if b.credentialStamp.matches(stamp) {
+			return nil
+		}
 		_, err := b.credentialStore.load(b.apiKey)
 		if err != nil {
+			b.credentialStamp = credentialStateStamp{}
 			return err
 		}
 		b.pendingKey = ""
+		b.credentialStamp = stamp
 		return nil
 	}
-	return b.credentialStore.withLock(func() error {
+	if b.credentialStamp.matches(b.credentialStore.stamp()) {
+		return nil
+	}
+	return b.withSyncedStore(func() error {
 		state, err := b.credentialStore.load(b.apiKey)
 		if err != nil {
 			return err
@@ -415,7 +471,7 @@ func (b *bridge) credentialRecoveryKey(rejected string) (string, error) {
 	}
 
 	var alternate string
-	err := b.credentialStore.withLock(func() error {
+	err := b.withSyncedStore(func() error {
 		state, err := b.credentialStore.load(rejected)
 		if err != nil {
 			return err
@@ -456,7 +512,7 @@ func (b *bridge) adoptRecoveryKey(key string) error {
 		return nil
 	}
 
-	err := b.credentialStore.withLock(func() error {
+	err := b.withSyncedStore(func() error {
 		state, err := b.credentialStore.load(b.apiKey)
 		if err != nil {
 			return err
@@ -490,8 +546,13 @@ func (b *bridge) rotationProposal() (prefix, hash string) {
 	if b.credentialReadOnly {
 		return "", ""
 	}
+	// Steady state: this process already prepared a successor and the file has
+	// not moved since it last synced — re-offer the same proposal without disk.
+	if b.pendingKey != "" && b.credentialStamp.matches(b.credentialStore.stamp()) {
+		return keyPrefix(b.pendingKey), rotationHash(b.pendingKey)
+	}
 	activatedDurably := false
-	err := b.credentialStore.withLock(func() error {
+	err := b.withSyncedStore(func() error {
 		state, err := b.credentialStore.load(b.apiKey)
 		if err != nil {
 			return err
@@ -548,7 +609,7 @@ func (b *bridge) acknowledgeRotation(ack string) {
 	}
 
 	pending := b.pendingKey
-	err := b.credentialStore.withLock(func() error {
+	err := b.withSyncedStore(func() error {
 		state, err := b.credentialStore.load(b.apiKey)
 		if err != nil {
 			return err
