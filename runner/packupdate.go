@@ -38,6 +38,35 @@ type installedPack struct {
 	loadErr error
 }
 
+// packUpdateResult is one pack's outcome. Status is the machine-readable form
+// of the human line beside it: up_to_date, updated, repaired, update_available,
+// repair_available, not_in_registry, not_installed, or failed.
+type packUpdateResult struct {
+	ID     string `json:"id"`
+	From   string `json:"from,omitempty"`
+	To     string `json:"to,omitempty"`
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type packUpdateReport struct {
+	DryRun        bool               `json:"dry_run"`
+	Updated       int                `json:"updated"`
+	UpToDate      int                `json:"up_to_date"`
+	NotInRegistry int                `json:"not_in_registry"`
+	Failed        int                `json:"failed"`
+	Packs         []packUpdateResult `json:"packs"`
+}
+
+// report records an outcome and prints its human line, so the two can never
+// describe different things — the drift that let --json be accepted and ignored.
+func report(into *[]packUpdateResult, result packUpdateResult, format string, args ...any) {
+	*into = append(*into, result)
+	if !flagJSONOut {
+		fmt.Printf(format, args...)
+	}
+}
+
 func packUpdateCmd() *cobra.Command {
 	var (
 		registry string
@@ -90,6 +119,9 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 
 			seen := map[string]bool{}
 			var updated, current, skipped, failed int
+			// Non-nil so an empty sweep serializes as [] rather than null, which
+			// a `jq '.packs[]'` consumer would fail on.
+			results := []packUpdateResult{}
 
 			for _, dir := range dirs {
 				installed, err := inspectInstalledPacks(dir)
@@ -105,40 +137,48 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 					rp, inRegistry := index[p.id]
 					if !inRegistry {
 						if p.loadErr != nil {
-							fmt.Printf("  %-22s invalid and not in registry — left as-is: %v\n", p.id, p.loadErr)
+							report(&results, packUpdateResult{ID: p.id, From: p.version, Status: "failed", Reason: p.loadErr.Error()},
+								"  %-22s invalid and not in registry — left as-is: %v\n", p.id, p.loadErr)
 							failed++
 						} else {
-							fmt.Printf("  %-22s not in registry — left as-is\n", p.id)
+							report(&results, packUpdateResult{ID: p.id, From: p.version, Status: "not_in_registry"},
+								"  %-22s not in registry — left as-is\n", p.id)
 							skipped++
 						}
 						continue
 					}
 
 					if p.loadErr == nil && hashEqual(p.hash, rp.Hash) {
-						fmt.Printf("  %-22s up to date (v%s)\n", p.id, p.version)
+						report(&results, packUpdateResult{ID: p.id, From: p.version, Status: "up_to_date"},
+							"  %-22s up to date (v%s)\n", p.id, p.version)
 						current++
 						continue
 					}
 
 					if dryRun {
 						if p.loadErr != nil {
-							fmt.Printf("  %-22s invalid install → v%s (repair available)\n", p.id, rp.Version)
+							report(&results, packUpdateResult{ID: p.id, To: rp.Version, Status: "repair_available", Reason: p.loadErr.Error()},
+								"  %-22s invalid install → v%s (repair available)\n", p.id, rp.Version)
 						} else {
-							fmt.Printf("  %-22s v%s → v%s (update available)\n", p.id, p.version, rp.Version)
+							report(&results, packUpdateResult{ID: p.id, From: p.version, To: rp.Version, Status: "update_available"},
+								"  %-22s v%s → v%s (update available)\n", p.id, p.version, rp.Version)
 						}
 						updated++
 						continue
 					}
 
 					if err := updateOnePack(cmd.Context(), p.id, p.root, registry, rp); err != nil {
-						fmt.Printf("  %-22s update FAILED: %v\n", p.id, err)
+						report(&results, packUpdateResult{ID: p.id, From: p.version, To: rp.Version, Status: "failed", Reason: err.Error()},
+							"  %-22s update FAILED: %v\n", p.id, err)
 						failed++
 						continue
 					}
 					if p.loadErr != nil {
-						fmt.Printf("  %-22s invalid install → v%s repaired\n", p.id, rp.Version)
+						report(&results, packUpdateResult{ID: p.id, To: rp.Version, Status: "repaired"},
+							"  %-22s invalid install → v%s repaired\n", p.id, rp.Version)
 					} else {
-						fmt.Printf("  %-22s v%s → v%s updated\n", p.id, p.version, rp.Version)
+						report(&results, packUpdateResult{ID: p.id, From: p.version, To: rp.Version, Status: "updated"},
+							"  %-22s v%s → v%s updated\n", p.id, p.version, rp.Version)
 					}
 					updated++
 				}
@@ -148,21 +188,48 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 			// doesn't look like a silent no-op.
 			for id := range only {
 				if !seen[id] {
-					fmt.Printf("  %-22s not installed\n", id)
+					report(&results, packUpdateResult{ID: id, Status: "not_installed"},
+						"  %-22s not installed\n", id)
 				}
 			}
 
+			// The report goes out before any failure is returned, so a partly
+			// failed sweep is still machine-readable rather than only an exit code.
+			emit := func() error {
+				if !flagJSONOut {
+					return nil
+				}
+				return printJSON(packUpdateReport{
+					DryRun:        dryRun,
+					Updated:       updated,
+					UpToDate:      current,
+					NotInRegistry: skipped,
+					Failed:        failed,
+					Packs:         results,
+				})
+			}
+
 			if len(seen) == 0 {
+				if flagJSONOut {
+					return emit()
+				}
 				fmt.Printf("No packs installed in %s.\n", strings.Join(dirs, ", "))
 				return nil
 			}
 
-			fmt.Println()
+			if !flagJSONOut {
+				fmt.Println()
+			}
 			if dryRun {
-				fmt.Printf("%d to update, %d up to date, %d not in registry, %d failed.\n",
-					updated, current, skipped, failed)
-				if updated > 0 {
-					fmt.Println("Run without --dry-run to apply.")
+				if !flagJSONOut {
+					fmt.Printf("%d to update, %d up to date, %d not in registry, %d failed.\n",
+						updated, current, skipped, failed)
+					if updated > 0 {
+						fmt.Println("Run without --dry-run to apply.")
+					}
+				}
+				if err := emit(); err != nil {
+					return err
 				}
 				if failed > 0 {
 					return fmt.Errorf("%d pack(s) failed to update", failed)
@@ -171,17 +238,27 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 			}
 
 			if failed > 0 {
-				fmt.Printf("%d updated, %d up to date, %d not in registry, %d failed.\n",
-					updated, current, skipped, failed)
+				if !flagJSONOut {
+					fmt.Printf("%d updated, %d up to date, %d not in registry, %d failed.\n",
+						updated, current, skipped, failed)
+				}
+				if err := emit(); err != nil {
+					return err
+				}
 				return fmt.Errorf("%d pack(s) failed to update", failed)
 			}
 			if _, err := packs.LoadAll(dirs, packs.LoadOptions{}); err != nil {
 				return fmt.Errorf("validate installed packs after update: %w", err)
 			}
-			fmt.Printf("%d updated, %d up to date, %d not in registry, 0 failed.\n",
-				updated, current, skipped)
-			if updated > 0 {
-				announceReload(os.Stdout, nil, "Reload the runner to load the new versions: sudo systemctl reload emisar")
+			if err := emit(); err != nil {
+				return err
+			}
+			if !flagJSONOut {
+				fmt.Printf("%d updated, %d up to date, %d not in registry, 0 failed.\n",
+					updated, current, skipped)
+				if updated > 0 {
+					announceReload(os.Stdout, nil, "Reload the runner to load the new versions: sudo systemctl reload emisar")
+				}
 			}
 			return nil
 		},

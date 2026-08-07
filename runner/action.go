@@ -21,7 +21,7 @@ func actionCmd() *cobra.Command {
 		Args:    cobra.NoArgs,
 		RunE:    showHelp,
 	}
-	cmd.AddCommand(actionListCmd())
+	cmd.AddCommand(emitsJSON(actionListCmd()))
 	cmd.AddCommand(actionDescribeCmd())
 	cmd.AddCommand(actionRunCmd())
 	return cmd

@@ -302,9 +302,9 @@ the granular operations for CA rotation and routine cert renewal.`,
 		Args: cobra.NoArgs,
 		RunE: showHelp,
 	}
-	cmd.AddCommand(signingInitCmd())
-	cmd.AddCommand(signingNewCACmd())
-	cmd.AddCommand(signingNewCertCmd())
+	cmd.AddCommand(emitsJSON(signingInitCmd()))
+	cmd.AddCommand(emitsJSON(signingNewCACmd()))
+	cmd.AddCommand(emitsJSON(signingNewCertCmd()))
 	return cmd
 }
 

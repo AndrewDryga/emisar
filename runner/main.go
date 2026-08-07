@@ -20,6 +20,20 @@ var (
 	flagJSONOut  bool
 )
 
+// jsonOutputAnnotation marks a command whose output --json actually changes.
+// Set it with emitsJSON() at the point the command is built, so adding a JSON
+// branch and declaring it are the same edit.
+const jsonOutputAnnotation = "emisar.json_output"
+
+// emitsJSON declares that cmd honors --json.
+func emitsJSON(cmd *cobra.Command) *cobra.Command {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[jsonOutputAnnotation] = "yes"
+	return cmd
+}
+
 // Version is overridden via -ldflags at build time.
 var Version = "dev"
 
@@ -52,6 +66,18 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	root.PersistentFlags().StringSliceVar(&flagPacksDir, "packs-dir", nil, "extra pack search dirs (overrides config)")
 	root.PersistentFlags().BoolVar(&flagJSONOut, "json", false, "emit JSON output where applicable")
 
+	// --json is persistent so it can precede the subcommand, which means cobra
+	// accepts it everywhere — including on commands that emit no JSON at all.
+	// Refuse there instead of ignoring it: a `| jq` pipeline that silently gets
+	// human text is worse than one that fails, and this class already shipped
+	// once (see the note in packValidateCmd).
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if cmd.Flags().Changed("json") && cmd.Annotations[jsonOutputAnnotation] == "" {
+			return fmt.Errorf("%s does not emit JSON; --json is not supported here", cmd.CommandPath())
+		}
+		return nil
+	}
+
 	// Command groups so `emisar --help` reads by category, not one flat wall.
 	root.AddGroup(
 		&cobra.Group{ID: "serve", Title: "Serve:"},
@@ -66,13 +92,13 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	add("serve", connectCmd())
 	add("actions", actionCmd())
 	add("actions", packCmd())
-	add("diag", doctorCmd())
+	add("diag", emitsJSON(doctorCmd()))
 	add("diag", stateCmd())
 	add("diag", eventsCmd())
 	add("diag", auditCmd())
 	add("signing", signingCmd())
 	// version + the built-in help/completion stay ungrouped ("Additional Commands").
-	root.AddCommand(versionCmd())
+	root.AddCommand(emitsJSON(versionCmd()))
 
 	// The default help plus a Paths footer on the ROOT help only, so `emisar`
 	// on a fresh host says where its config, packs, token, and logs live.

@@ -1005,3 +1005,52 @@ func mutate(t *testing.T, path string, fn func(lines [][]byte) [][]byte) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+// --json is a persistent root flag, so cobra accepts it on every command. It
+// used to be silently ignored by the ones that emit no JSON, which meant a
+// `| jq` pipeline got human text and exit 0. Commands that emit JSON are
+// covered by TestCLI_JSONFlagPayloads; this covers the other half — the ones
+// that must refuse rather than accept and do nothing.
+func TestCLI_JSONFlagRefusedWhereUnsupported(t *testing.T) {
+	for _, args := range [][]string{{"connect"}, {"state"}, {"events"}, {"pack"}, {"audit"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			_, stderr, code := runCLI(t, append(args, "--json"), nil)
+			if code == 0 {
+				t.Fatalf("exit = 0, want non-zero: --json was accepted and ignored")
+			}
+			if !strings.Contains(stderr, "does not emit JSON") {
+				t.Fatalf("stderr = %q, want it to say the command emits no JSON", stderr)
+			}
+		})
+	}
+}
+
+// audit verify gained --json so a fleet sweep can collect chain verdicts. The
+// report must be emitted even when a chain is broken — otherwise the break is
+// only an exit code, which is the thing that made the flag useless before.
+func TestCLI_AuditVerifyJSONReportsABrokenChain(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+	line := `{"event_id":"a","prev_hash":""}` + "\n" + `{"event_id":"b","prev_hash":"deadbeef"}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, code := runCLI(t, []string{"audit", "verify", "--json", path}, nil)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 for a broken chain", code)
+	}
+	var report []struct {
+		Path   string `json:"path"`
+		Intact bool   `json:"intact"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("--json did not produce JSON: %v\nstdout=%q", err, stdout)
+	}
+	if len(report) != 1 || report[0].Intact || report[0].Path != path {
+		t.Fatalf("report = %+v, want one non-intact entry for %s", report, path)
+	}
+	if !strings.Contains(report[0].Error, "chain break at line 2") {
+		t.Fatalf("error = %q, want the chain-break reason", report[0].Error)
+	}
+}

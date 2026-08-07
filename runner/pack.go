@@ -55,13 +55,13 @@ https://emisar.dev/docs/pack-registry`,
 		c.GroupID = groupID
 		cmd.AddCommand(c)
 	}
-	add("install", packSuggestCmd())
+	add("install", emitsJSON(packSuggestCmd()))
 	add("install", packInstallCmd())
-	add("install", packUpdateCmd())
-	add("installed", packListCmd())
-	add("installed", packInfoCmd())
+	add("install", emitsJSON(packUpdateCmd()))
+	add("installed", emitsJSON(packListCmd()))
+	add("installed", emitsJSON(packInfoCmd()))
 	add("installed", packUninstallCmd())
-	add("author", packValidateCmd())
+	add("author", emitsJSON(packValidateCmd()))
 	return cmd
 }
 

@@ -32,7 +32,6 @@ cloud:
 
 paths:
   data_dir: "/var/lib/emisar"
-  work_dir: "/tmp/emisar"
   # linux-core ships in the library, so the cloud auto-trusts it on connect.
   # linux.uptime (a read-only action) is what the e2e dispatches.
   packs:

@@ -41,7 +41,6 @@ func Load(path string) (*Config, error) {
 		cfg.Paths.Packs[i] = relocate(p, base)
 	}
 	cfg.Paths.DataDir = relocate(cfg.Paths.DataDir, base)
-	cfg.Paths.WorkDir = relocate(cfg.Paths.WorkDir, base)
 	cfg.Cloud.TokenPath = relocate(cfg.Cloud.TokenPath, base)
 	cfg.Events.JSONLPath = relocate(cfg.Events.JSONLPath, base)
 

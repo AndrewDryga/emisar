@@ -24,8 +24,15 @@ operator did not replace or truncate the entire local journal.`,
 		Args: cobra.NoArgs,
 		RunE: showHelp,
 	}
-	cmd.AddCommand(auditVerifyCmd())
+	cmd.AddCommand(emitsJSON(auditVerifyCmd()))
 	return cmd
+}
+
+// auditVerifyResult is one file's verdict. Error is empty when Intact.
+type auditVerifyResult struct {
+	Path   string `json:"path"`
+	Intact bool   `json:"intact"`
+	Error  string `json:"error,omitempty"`
 }
 
 func auditVerifyCmd() *cobra.Command {
@@ -45,7 +52,10 @@ config. Pass a path to verify a specific (or rotated) file:
 
 Pass --all to walk every rotated sibling (.1, .2, ...) in the same
 directory in oldest-first order. Each file's chain is verified
-independently (the chain is per-file: rotation breaks it by design).`,
+independently (the chain is per-file: rotation breaks it by design).
+
+With --json, each file is reported as an object with "path", "intact",
+and, on a break, "error" — so a fleet sweep can collect verdicts.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			path, err := resolveAuditPath(args)
@@ -61,13 +71,20 @@ independently (the chain is per-file: rotation breaks it by design).`,
 			}
 
 			var firstBreak error
+			results := make([]auditVerifyResult, 0, len(paths))
 			for _, p := range paths {
 				if err := audit.VerifyChain(p); err == nil {
-					fmt.Fprintf(os.Stdout, "audit: chain intact: %s\n", p)
+					results = append(results, auditVerifyResult{Path: p, Intact: true})
+					if !flagJSONOut {
+						fmt.Fprintf(os.Stdout, "audit: chain intact: %s\n", p)
+					}
 				} else {
 					var ve *audit.VerifyError
 					if errors.As(err, &ve) {
-						fmt.Fprintf(os.Stderr, "audit: %s: %s\n", p, ve.Error())
+						results = append(results, auditVerifyResult{Path: p, Error: ve.Error()})
+						if !flagJSONOut {
+							fmt.Fprintf(os.Stderr, "audit: %s: %s\n", p, ve.Error())
+						}
 						if firstBreak == nil {
 							firstBreak = err
 						}
@@ -82,11 +99,21 @@ independently (the chain is per-file: rotation breaks it by design).`,
 						// oldest-first, so returning here skipped every later
 						// file INCLUDING the active log, which is the one that
 						// matters most on a forensic tool.
-						fmt.Fprintf(os.Stderr, "audit: %s: %v\n", p, err)
+						results = append(results, auditVerifyResult{Path: p, Error: err.Error()})
+						if !flagJSONOut {
+							fmt.Fprintf(os.Stderr, "audit: %s: %v\n", p, err)
+						}
 						if firstBreak == nil {
 							firstBreak = err
 						}
 					}
+				}
+			}
+			// Emit the report before returning the break, so a broken chain is
+			// still machine-readable rather than only an exit code.
+			if flagJSONOut {
+				if err := printJSON(results); err != nil {
+					return err
 				}
 			}
 			if firstBreak != nil {

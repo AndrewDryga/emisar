@@ -23,7 +23,6 @@ cloud:
 
 paths:
   data_dir: "/var/lib/emisar"
-  work_dir: "/tmp/emisar"
   # Database host: the postgres pack (read-only diagnostics + a couple of
   # high-risk write actions) + linux-core. The compose stack points this
   # runner at the dev `db` service (PG* env below), so the read-only postgres

@@ -629,7 +629,6 @@ cloud:
 
 paths:
   data_dir: ${DATA_DIR}
-  work_dir: ${DATA_DIR}/work
   packs:
     - ${ETC_DIR}/packs
 

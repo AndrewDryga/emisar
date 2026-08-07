@@ -21,7 +21,6 @@ paths:
   # Relative paths resolve from this file's directory. These keep development
   # state under runner/var and load the repository's root packs/.
   data_dir: ../var/lib/emisar
-  work_dir: ../var/lib/emisar/work
   packs:
     - ../../packs
 

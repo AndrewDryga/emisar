@@ -15,7 +15,6 @@ cloud:
 
 paths:
   data_dir: /tmp/emisar-test/data
-  work_dir: /tmp/emisar-test/work
   packs:
     - /packs
 

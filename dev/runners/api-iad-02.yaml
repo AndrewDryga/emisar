@@ -23,7 +23,6 @@ cloud:
 
 paths:
   data_dir: "/var/lib/emisar"
-  work_dir: "/tmp/emisar"
   # App/API host: deep systemd introspection + the linux-core basics. The
   # mounted systemctl/journalctl shims (dev/runner-fixtures) give these
   # believable output without a real systemd inside the container.

@@ -25,7 +25,6 @@ cloud:
 
 paths:
   data_dir: /var/lib/emisar
-  work_dir: /var/lib/emisar/work
   packs:
     - /opt/emisar/packs
 

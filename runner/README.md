@@ -82,7 +82,7 @@ The supervised installer uses these paths by default:
 | `/etc/emisar/config.yaml` | Host identity, control-plane URL, packs, admission, and execution settings |
 | `/etc/emisar/runner.env` | Mode-0600 enrollment key and pack credentials |
 | `/etc/emisar/packs/` | Installed action packs |
-| `/var/lib/emisar/` | Per-runner token, work files, and durable execution state |
+| `/var/lib/emisar/` | Per-runner token and durable execution state |
 | `/var/log/emisar/events.jsonl` | Hash-chained local security journal |
 
 The portal-generated install command writes the URL and enrollment key for you.
@@ -104,7 +104,6 @@ cloud:
 
 paths:
   data_dir: /var/lib/emisar
-  work_dir: /var/lib/emisar/work
   packs:
     - /etc/emisar/packs
 

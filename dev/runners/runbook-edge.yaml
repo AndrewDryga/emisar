@@ -23,7 +23,6 @@ cloud:
 
 paths:
   data_dir: "/var/lib/emisar"
-  work_dir: "/tmp/emisar"
   packs:
     - "/opt/emisar/packs/linux-core"
 

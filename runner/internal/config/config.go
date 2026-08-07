@@ -108,7 +108,12 @@ type Cloud struct {
 
 // Paths configures filesystem locations.
 type Paths struct {
-	DataDir string   `yaml:"data_dir"`
+	DataDir string `yaml:"data_dir"`
+	// WorkDir is accepted and ignored. Nothing has ever read it — an action's
+	// working directory comes from its own spec (execution.cwd) — but install.sh
+	// wrote it into every host's config, and the loader uses KnownFields(true),
+	// so removing the field would make those configs fail to parse. It is no
+	// longer emitted; keep accepting it until a release can drop it.
 	WorkDir string   `yaml:"work_dir,omitempty"`
 	Packs   []string `yaml:"packs"`
 }
