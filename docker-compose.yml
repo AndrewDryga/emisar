@@ -402,6 +402,19 @@ services:
       - runner_signed_data:/var/lib/emisar
       - signing_material:/signing:ro
 
+  # Copy the ordinary runbook runner's config into a named volume so it is
+  # root-owned on native Linux too. A direct bind mount inherits the host uid;
+  # the non-root runner correctly rejects a config owned by another user.
+  runner-runbook-init:
+    image: emisar/runner:dev
+    profiles: ["test"]
+    user: "root"
+    volumes:
+      - runner_runbook_config:/runbook-config
+      - ./dev/runners/runbook-edge.yaml:/templates/runbook-edge.yaml:ro
+    entrypoint: ["/bin/sh", "-c", "cp /templates/runbook-edge.yaml /runbook-config/config.yaml && chmod 0644 /runbook-config/config.yaml"]
+    restart: "no"
+
   # The signed-dispatch e2e's ordinary runbook target. Keep this SUT narrow:
   # the published runbook exercises only linux-core, while runner-1's broad
   # demo catalog belongs to the interactive stack and unrelated pack tests.
@@ -409,9 +422,15 @@ services:
     <<: *runner
     hostname: edge-fra-01.northstar.example
     profiles: ["test"]
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+      runner-runbook-init:
+        condition: service_completed_successfully
+    command: ["/usr/local/bin/emisar", "connect", "--config", "/runbook-config/config.yaml"]
     volumes:
       - runner_runbook_data:/var/lib/emisar
-      - ./dev/runners/runbook-edge.yaml:/etc/emisar/config.yaml:ro
+      - runner_runbook_config:/runbook-config:ro
 
   # ----------------------------------------------------------------
   # SSO e2e runs from the HOST, not as a compose service. The driver owns an
@@ -437,4 +456,5 @@ volumes:
   # cleared by `docker compose down -v`, which rotates the e2e keys).
   runner_signed_data:
   runner_runbook_data:
+  runner_runbook_config:
   signing_material:
