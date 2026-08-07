@@ -402,6 +402,17 @@ services:
       - runner_signed_data:/var/lib/emisar
       - signing_material:/signing:ro
 
+  # The signed-dispatch e2e's ordinary runbook target. Keep this SUT narrow:
+  # the published runbook exercises only linux-core, while runner-1's broad
+  # demo catalog belongs to the interactive stack and unrelated pack tests.
+  runner-runbook:
+    <<: *runner
+    hostname: edge-fra-01.northstar.example
+    profiles: ["test"]
+    volumes:
+      - runner_runbook_data:/var/lib/emisar
+      - ./dev/runners/runbook-edge.yaml:/etc/emisar/config.yaml:ro
+
   # ----------------------------------------------------------------
   # SSO e2e runs from the HOST, not as a compose service. The driver owns an
   # isolated Compose project and assigns matching Keycloak listener/published
@@ -425,4 +436,5 @@ volumes:
   # runner-signed's data dir + the generated signed-dispatch material (both
   # cleared by `docker compose down -v`, which rotates the e2e keys).
   runner_signed_data:
+  runner_runbook_data:
   signing_material:

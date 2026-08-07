@@ -1,0 +1,40 @@
+schema_version: 1
+
+# Minimal ordinary runner for the signed-dispatch e2e's published-runbook leg.
+# It adopts the seeded edge-fra-01 row, but advertises only the linux-core pack
+# that morning-edge-readiness actually executes. The interactive demo keeps its
+# broad edge host catalog in edge-fra-01.yaml. DEV ONLY.
+runner:
+  id: "edge-fra-01"
+  group: "edge-web"
+  labels:
+    env: prod
+    region: eu-central
+    role: edge
+
+cloud:
+  url: "http://portal:4000"
+  allow_insecure: true
+  enrollment_key_env: "EMISAR_ENROLLMENT_KEY"
+  token_path: "/var/lib/emisar/token.json"
+  heartbeat_every: "30s"
+  reconnect_min: "1s"
+  reconnect_max: "30s"
+
+paths:
+  data_dir: "/var/lib/emisar"
+  work_dir: "/tmp/emisar"
+  packs:
+    - "/opt/emisar/packs/linux-core"
+
+execution:
+  inherit_env: ["PATH", "LANG", "LC_ALL", "TERM"]
+  cancel_grace: "30s"
+
+events:
+  jsonl_path: "/var/log/emisar/events.jsonl"
+  max_size_bytes: 104857600
+  max_backups: 5
+
+redaction:
+  rules: []

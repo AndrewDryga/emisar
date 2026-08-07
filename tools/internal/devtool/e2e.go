@@ -181,7 +181,7 @@ func (a *App) e2eSigning(ctx context.Context) error {
 	if err := compose(ctx, "up", "-d", "--wait", "--wait-timeout", "120", "portal"); err != nil {
 		return err
 	}
-	if err := compose(ctx, "up", "-d", "--force-recreate", "signing-init", "runner-signed", "runner-1"); err != nil {
+	if err := compose(ctx, "up", "-d", "--force-recreate", "signing-init", "runner-signed", "runner-runbook"); err != nil {
 		return err
 	}
 	return a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/signing-e2e")
