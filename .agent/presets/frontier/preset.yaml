@@ -17,8 +17,8 @@ lead:
 
 roles:
   thinker:
-    # READ-ONLY deep-reasoning peer via coop-consult. Terra at xhigh: near-frontier
-    # thinking without burning the Sol/Fable quota the lead and signoff run on.
+    # READ-ONLY deep-reasoning peer via coop-consult. Sol at high: the consult is
+    # a second read on work the lead already understands, not a second author.
     mode: consult
     agent:  codex:gpt-5.6-sol/high
     # emisar is a security product — the thinker's docket leans hard on the
@@ -27,9 +27,14 @@ roles:
     prompt: roles/thinker.md
 
   critic:
-    # READ-ONLY second opinion from OUTSIDE the claude+codex pair doing the work —
-    # a third vendor's blind spots, for one-way doors: committed DB migrations,
+    # READ-ONLY second opinion for one-way doors: committed DB migrations,
     # wire/protocol formats, pack manifest semantics, billing/entitlements.
+    #
+    # Runs the SAME model as the thinker. It was grok — a third vendor outside the
+    # claude+codex pair — until 304eaf26 reassigned both consult roles to Sol. What
+    # separates them now is the DOCKET and the prompt, not the vendor, so tasking
+    # both on one question buys two lenses, not two independent judgments. Point a
+    # role back at another vendor if independence is what a decision needs.
     mode: consult
     agent: codex:gpt-5.6-sol/high
     when: [plan-review, tradeoffs, one-way-doors, security]

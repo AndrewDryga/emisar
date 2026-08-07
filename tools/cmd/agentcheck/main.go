@@ -168,8 +168,12 @@ func (c *checker) checkManualText() {
 	}
 }
 
+// The task README is scanned for retired slash commands alongside the skills,
+// not the manuals: the retired-command regex lives in staleSkillText, and this
+// file cites skills the same way a manual does. It went unscanned by either,
+// which is how six copies of it kept naming /spec and /sweep after the rename.
 func (c *checker) checkSkillText() {
-	findings := c.scan([]string{".claude/skills", "skills"}, staleSkillText)
+	findings := c.scan([]string{".claude/skills", "skills", ".agent/tasks/README.md"}, staleSkillText)
 	for _, finding := range findings {
 		fmt.Fprintln(c.errOut, finding)
 	}
@@ -238,7 +242,10 @@ func skipGeneratedDirectory(entry fs.DirEntry) bool {
 		return false
 	}
 	switch entry.Name() {
-	case ".git", "deps", "_build", "node_modules":
+	// .responder is coop's scratch state, and it caches CHECKOUTS OF OTHER
+	// REPOSITORIES. Walking into it judged coop's own KB by this repo's rule
+	// naming and reported 311 failures about files we neither own nor ship.
+	case ".git", "deps", "_build", "node_modules", ".responder":
 		return true
 	default:
 		return false

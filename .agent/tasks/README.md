@@ -42,7 +42,7 @@ archive is a manual, human step: `coop tasks rm --all-done`.
 `coop tasks add "<title>"` seeds **task.md + log.md + state.md**, each opening with a short
 HTML-comment header that explains the file (so it's self-documenting, yet renders clean once
 filled). `coop tasks block <id>` adds **decision.md**. You add `spec.md` yourself (or via
-`/spec`) only when the design is substantial. Every file is plain markdown. The templates below
+`/workflow-spec`) only when the design is substantial. Every file is plain markdown. The templates below
 are what those commands write (minus the header).
 
 ---
@@ -204,7 +204,7 @@ or do both at once with `coop tasks unblock <id> "<answer>"`.**
 
 For a task whose plan outgrows task.md's **Approach** (more than ~a screen). Put the durable
 design here — the shape, the trade-offs, the rejected alternatives — and keep task.md's Approach
-to a one-line pointer. Write it with `/spec`. Small tasks don't need one.
+to a one-line pointer. Write it with `/workflow-spec`. Small tasks don't need one.
 
 ## screenshots/ · artifacts/ · tmp/ (optional, git-ignored)
 
@@ -228,7 +228,7 @@ retaining to `artifacts/` first. All three directories are git-ignored, so they 
   finalizes its lifecycle fields and removes only disposable `tmp/`. A state write or cleanup
   failure fails completion loudly and an already-done retry finishes the work.
 - Pruning the archive is a manual, human step: `coop tasks rm --all-done` (or
-  `coop tasks rm <id>` for one). The loop and `/sweep` never do this.
+  `coop tasks rm <id>` for one). The loop and `/workflow-sweep` never do this.
 - A todo task must NOT carry a `decision.md` (that means it's blocked); a blocked one MUST.
 - Never add a `status:` field — the directory IS the status. `coop tasks lint` checks this.
 - Counts / subtask progress / the blocked list are DERIVED — `coop tasks`,

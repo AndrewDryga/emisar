@@ -4,9 +4,9 @@
 # Sections are in loop order: preflight (before) → work → between (after each task) → signoff (at the end).
 #
 # emisar runs the same two cross-vendor tiers as coop's dogfood loop: the FRONTIER pair
-# (Fable 5 ⇄ GPT-5.6 Sol) leads the work and the signoff; the FAST pair (GPT-5.6 Luna ⇄
-# Opus 4.8) audits each finished task between iterations. Grok 4.5 sits outside both as
-# the preset's critic — the second critical opinion.
+# (Fable 5 ⇄ GPT-5.6 Sol) leads the work and the signoff; the FAST pair audits each
+# finished task between iterations. The preset's thinker and critic both consult Sol —
+# see preset.yaml for why, and for what to change when a decision needs a third vendor.
 
 preflight:
   # The one-shot pre-loop queue tidy: coop itself returns blocked tasks whose decision.md
@@ -16,8 +16,8 @@ preflight:
   enabled: true
 
 work:
-  # One rung: the frontier preset already carries the failover pair — Fable 5/xhigh
-  # leading with GPT-5.6 Sol/xhigh as the cross-vendor twin — plus thinker/critic/fast.
+  # One rung: the frontier preset already carries the failover pair — Fable 5 leading
+  # with GPT-5.6 Sol as the cross-vendor twin — plus thinker/critic/fast.
   agent: [frontier]
 
 between:

@@ -111,23 +111,27 @@ When the loop is interrupted:
 ## Orchestration — spend the big model where it matters
 
 The repo's orchestration recipe is the **frontier preset** (`.agent/presets/frontier/preset.yaml`):
-a cross-vendor lead ladder (Fable 5 ⇄ GPT-5.6 Sol at max effort, failing over on rate limits) with
-three roles. Run it interactively (`coop frontier`) or unattended (`coop loop` — configured by
-`.agent/loop.yaml`: work under the preset, a fast-tier audit after each finished task, a cross-vendor
+a cross-vendor lead ladder (Fable 5 ⇄ GPT-5.6 Sol, failing over on rate limits) with three roles.
+Run it interactively (`coop frontier`) or unattended (`coop loop` — configured by
+`.agent/loop.yaml`: work under the preset, a fast-tier audit after each finished task, a
 signoff at the end). When you lead, you orchestrate: plan, decompose, synthesize, make the final
 calls, and keep your own context lean by routing:
 
-- **thinker** (consult, read-only — codex terra at xhigh) — architecture calls, intermittent bugs,
+- **thinker** (consult, read-only — codex Sol) — architecture calls, intermittent bugs,
   security, and a pre-commit review of trust-boundary changes. Self-contained prompt:
   `coop-consult thinker --fresh "…"`; it returns a conclusion, you act on it.
-- **critic** (consult, read-only — grok, the third vendor) — plan review, tradeoffs, one-way doors:
+- **critic** (consult, read-only — codex Sol) — plan review, tradeoffs, one-way doors:
   frozen migrations, wire/protocol formats, pack manifest semantics, billing.
   `coop-consult critic --fresh "…"`.
-- **fast** (delegate, write-capable — codex luna at xhigh) — mechanical, fully-specified work:
-  boilerplate, bulk edits, test scaffolding, repo surveys. `coop-delegate fast`; it never commits —
-  you review its diff, run the touched project's gate, and commit.
+- **fast** (delegate, write-capable — claude Opus, failing over to codex Luna) — mechanical,
+  fully-specified work: boilerplate, bulk edits, test scaffolding, repo surveys.
+  `coop-delegate fast`; it never commits — you review its diff, run the touched project's gate,
+  and commit.
 - **High-stakes decisions:** task the thinker AND the critic in parallel with the same neutral
   problem statement — never showing either the other's answer — then synthesize the best of both.
+  Both consult roles currently run the SAME model, so this buys two dockets and two prompts, not
+  two independent judgments; when a decision genuinely needs vendor independence, point one role
+  at another vendor first (`.agent/presets/frontier/preset.yaml`) rather than assuming you have it.
 - **In a box, NEVER end your turn while a background job is still running — a gate, a consult,
   anything.** Ending the turn ends the box, and every backgrounded job dies with it: the next
   iteration re-claims the task from scratch, and the loop stalls toward its give-up cap having
