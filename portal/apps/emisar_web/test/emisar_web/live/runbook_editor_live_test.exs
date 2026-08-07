@@ -1778,6 +1778,42 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
       assert has_element?(lv, ~s|button[phx-click="toggle_step"]|, "Hide")
     end
+
+    test "the lifecycle rail names the version that runs under an unpublished draft", %{
+      conn: conn,
+      user: owner,
+      account: account
+    } do
+      subject = owner_subject(owner, account)
+
+      {:ok, drafted} =
+        Runbooks.create_runbook(
+          %{
+            "title" => "Fleet health",
+            "slug" => "fleet-health",
+            "definition" => canonical_definition(valid_draft())
+          },
+          subject
+        )
+
+      published = Fixtures.Runbooks.publish_runbook(drafted)
+      {:ok, pending} = Runbooks.save_new_version(published, %{}, subject)
+
+      {:ok, editing_draft, _html} =
+        live(conn, ~p"/app/#{account}/runbooks/#{pending.id}/edit")
+
+      assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "Current")
+      assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "v2")
+      assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "Runs today")
+      assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "v1")
+
+      # The published head IS what runs, so naming it again would render the
+      # same fact twice.
+      {:ok, editing_published, _html} =
+        live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+
+      refute has_element?(editing_published, "#runbook-lifecycle-desktop", "Runs today")
+    end
   end
 
   describe "resource isolation" do

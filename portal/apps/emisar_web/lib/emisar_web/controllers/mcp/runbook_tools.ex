@@ -71,7 +71,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
     status = args["status"] || "published"
 
     with {:ok, runbook} <- fetch_runbook(conn, status, slug, version),
-         {:ok, public_runbook} <- project_runbook(status, runbook) do
+         {:ok, families} <- RunbookContract.families([slug], conn.assigns.current_subject),
+         {:ok, public_runbook} <- project_runbook(status, runbook, families[slug]) do
       {:ok, %{ok: true, runbook: public_runbook}}
     else
       {:error, :unauthorized} ->
@@ -90,8 +91,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
     Runbooks.fetch_model_draft_runbook_version(slug, version, conn.assigns.current_subject)
   end
 
-  defp project_runbook("published", runbook), do: RunbookContract.project(runbook)
-  defp project_runbook("draft", runbook), do: RunbookContract.project_draft(runbook)
+  defp project_runbook("published", runbook, family),
+    do: RunbookContract.project(runbook, family)
+
+  defp project_runbook("draft", runbook, family),
+    do: RunbookContract.project_draft(runbook, family)
 
   defp runbook_not_found("published"),
     do: error("runbook_not_found", "No published runbook has that exact ref.")
@@ -104,7 +108,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
     case create_or_replay_draft(conn, facts) do
       {:ok, _kind, runbook} ->
-        {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
+        draft_result(conn, runbook, operation_id)
 
       {:error, :operation_conflict} ->
         {:error,
@@ -147,7 +151,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
     case update_or_replay_draft(conn, facts) do
       {:ok, _kind, runbook} ->
-        {:ok, draft_payload(runbook, operation_id, conn.assigns.current_subject)}
+        draft_result(conn, runbook, operation_id)
 
       {:error, :operation_conflict} ->
         {:error,
@@ -362,7 +366,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp execution_projection(execution, runbook, projection, approval, mode) do
     %{
       runbook_execution_id: execution.id,
-      runbook_ref: runbook_ref(runbook),
+      runbook_ref: RunbookContract.runbook_ref(runbook),
       kind: to_string(execution.kind),
       definition_sha256: execution_definition_sha256(execution, runbook),
       status: to_string(projection.execution.status),
@@ -524,10 +528,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp published_summaries(conn, query) do
-    with {:ok, runbooks} <- Runbooks.list_model_visible_runbooks(conn.assigns.current_subject) do
+    with {:ok, runbooks} <- Runbooks.list_model_visible_runbooks(conn.assigns.current_subject),
+         {:ok, families} <- summary_families(conn, runbooks) do
       summaries =
         runbooks
-        |> Enum.flat_map(&projected_summary/1)
+        |> Enum.flat_map(&projected_summary(&1, families[&1.slug]))
         |> Enum.filter(&summary_matches?(&1, query))
         |> Enum.sort_by(& &1.runbook_ref)
 
@@ -538,10 +543,11 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp runbook_summaries(conn, "published", query), do: published_summaries(conn, query)
 
   defp runbook_summaries(conn, "draft", query) do
-    with {:ok, runbooks} <- Runbooks.list_model_draft_runbooks(conn.assigns.current_subject) do
+    with {:ok, runbooks} <- Runbooks.list_model_draft_runbooks(conn.assigns.current_subject),
+         {:ok, families} <- summary_families(conn, runbooks) do
       summaries =
         runbooks
-        |> Enum.flat_map(&projected_draft_summary/1)
+        |> Enum.flat_map(&projected_draft_summary(&1, families[&1.slug]))
         |> Enum.filter(&summary_matches?(&1, query))
         |> Enum.sort_by(& &1.runbook_ref)
 
@@ -549,15 +555,20 @@ defmodule EmisarWeb.MCP.RunbookTools do
     end
   end
 
-  defp projected_summary(runbook) do
-    case RunbookContract.project(runbook) do
+  defp summary_families(conn, runbooks) do
+    slugs = runbooks |> Enum.map(& &1.slug) |> Enum.uniq()
+    RunbookContract.families(slugs, conn.assigns.current_subject)
+  end
+
+  defp projected_summary(runbook, family) do
+    case RunbookContract.project(runbook, family) do
       {:ok, public_runbook} -> [runbook_summary(runbook, public_runbook)]
       {:error, :incomplete_contract} -> []
     end
   end
 
-  defp projected_draft_summary(runbook) do
-    case RunbookContract.project_draft(runbook) do
+  defp projected_draft_summary(runbook, family) do
+    case RunbookContract.project_draft(runbook, family) do
       {:ok, public_runbook} ->
         summary = runbook_summary(runbook, public_runbook)
         [Map.put(summary, :draft_id, public_runbook.draft_id)]
@@ -569,11 +580,12 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp runbook_summary(runbook, public_runbook) do
     %{
-      runbook_ref: runbook_ref(runbook),
+      runbook_ref: RunbookContract.runbook_ref(runbook),
       status: public_runbook.status,
       definition_sha256: public_runbook.definition_sha256,
       title: runbook.title,
       summary: text_summary(runbook.description),
+      family: public_runbook.family,
       input_count: public_runbook.summary.input_count,
       stage_count: public_runbook.summary.stage_count,
       step_count: public_runbook.summary.step_count
@@ -624,15 +636,30 @@ defmodule EmisarWeb.MCP.RunbookTools do
     |> encoded_size(Runbooks.definition_limit!(:max_definition_bytes) + 8_192)
   end
 
-  defp draft_payload(runbook, operation_id, subject) do
+  # The write succeeded, so the family pair is what the model still needs: the
+  # draft it just authored does not run, and this names the version that does.
+  defp draft_result(conn, runbook, operation_id) do
+    subject = conn.assigns.current_subject
+
+    case RunbookContract.families([runbook.slug], subject) do
+      {:ok, families} ->
+        {:ok, draft_payload(runbook, operation_id, subject, families[runbook.slug])}
+
+      {:error, :unauthorized} ->
+        {:error, error("not_allowed", "This key cannot read runbooks.")}
+    end
+  end
+
+  defp draft_payload(runbook, operation_id, subject, family) do
     %{
       ok: true,
       operation_id: operation_id,
       draft_id: runbook.id,
-      runbook_ref: runbook_ref(runbook),
+      runbook_ref: RunbookContract.runbook_ref(runbook),
       slug: runbook.slug,
       status: "draft",
       definition_sha256: Runbooks.definition_digest(runbook.definition),
+      family: family,
       review_url:
         "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
     }
@@ -646,7 +673,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp parse_runbook_ref(_value), do: {:error, :invalid_runbook_ref}
-  defp runbook_ref(runbook), do: "#{runbook.slug}@#{runbook.version}"
 
   defp encoded_size(args, max) do
     if byte_size(Jason.encode!(args)) <= max do

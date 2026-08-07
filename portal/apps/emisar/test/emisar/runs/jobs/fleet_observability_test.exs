@@ -14,6 +14,7 @@ defmodule Emisar.Runs.Jobs.FleetObservabilityTest do
   use Emisar.DataCase, async: false
   import ExUnit.CaptureLog
   alias Emisar.Fixtures
+  alias Emisar.Runners
   alias Emisar.Runs.Jobs.FleetObservability
 
   defmodule LogEventCapture do
@@ -41,20 +42,29 @@ defmodule Emisar.Runs.Jobs.FleetObservabilityTest do
     :ok
   end
 
+  # connected_runners comes from Phoenix.Presence, which lives outside the DB
+  # sandbox: entries other tests register are still there when this module runs,
+  # and `async: false` does not undo them. So the connected count is asserted as
+  # a DELTA against a baseline read immediately before the arrangement.
+  # pending_dispatch_depth is a plain DB count and stays absolute.
+
   # The emitter logs UNCONDITIONALLY every tick, including the zero state — the
   # fleet-drop alert needs a "connected_runners = 0" data point, which is
   # indistinguishable from a gap in logging if the line is only emitted when the
-  # fleet is up.
-  test "execute/1 emits zero counts for an empty fleet (the data point the drop alert needs)" do
+  # fleet is up. The keys must also hold integers: the GCP metrics parse them as
+  # JSON numbers, so a stringified count kills both alerts silently.
+  test "execute/1 emits every tick with integer counts, whatever the fleet size" do
     log = capture_log(fn -> assert :ok = FleetObservability.execute([]) end)
     assert log =~ "fleet.observability"
 
     assert_receive {:log_event, "fleet.observability", meta}
-    assert meta[:connected_runners] === 0
+    assert is_integer(meta[:connected_runners])
     assert meta[:pending_dispatch_depth] === 0
   end
 
   test "execute/1 emits the connected-runner count and pending-dispatch depth" do
+    baseline = Runners.connection_counts().connected
+
     # Each pending run creates its own runner, connected by fixture default.
     Fixtures.Runs.create_run(status: :pending)
     Fixtures.Runs.create_run(status: :pending)
@@ -63,7 +73,7 @@ defmodule Emisar.Runs.Jobs.FleetObservabilityTest do
     assert log =~ "fleet.observability"
 
     assert_receive {:log_event, "fleet.observability", meta}
-    assert meta[:connected_runners] === 2
+    assert meta[:connected_runners] === baseline + 2
     assert meta[:pending_dispatch_depth] === 2
   end
 end

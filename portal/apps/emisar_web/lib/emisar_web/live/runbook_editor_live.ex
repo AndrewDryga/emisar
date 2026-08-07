@@ -36,6 +36,7 @@ defmodule EmisarWeb.RunbookEditorLive do
      |> assign(:loaded?, false)
      |> assign(:page_title, "Runbook")
      |> assign(:runbook, nil)
+     |> assign(:live_version, nil)
      |> assign(:read_only?, true)
      |> assign(:draft, draft)
      |> assign(:baseline, RunbookDraft.fingerprint(draft))
@@ -56,6 +57,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       |> assign(:loaded?, true)
       |> assign(:page_title, "New runbook")
       |> assign(:runbook, nil)
+      |> assign(:live_version, nil)
       |> assign(
         :read_only?,
         not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
@@ -83,6 +85,7 @@ defmodule EmisarWeb.RunbookEditorLive do
           |> assign(:loaded?, true)
           |> assign(:page_title, "Edit #{runbook.title}")
           |> assign(:runbook, runbook)
+          |> assign(:live_version, live_version(runbook, socket.assigns.current_subject))
           |> assign(
             :read_only?,
             not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
@@ -110,6 +113,15 @@ defmodule EmisarWeb.RunbookEditorLive do
          socket
          |> put_flash(:error, "Runbook not found.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
+    end
+  end
+
+  # The family's newest published version — what Run and execute_runbook
+  # dispatch while this editor holds a draft or a superseded version.
+  defp live_version(runbook, subject) do
+    case Runbooks.latest_published_by_slugs([runbook.slug], subject) do
+      {:ok, published} -> published[runbook.slug]
+      {:error, _reason} -> nil
     end
   end
 

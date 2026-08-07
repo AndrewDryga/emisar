@@ -56,6 +56,28 @@
       "type": "string",
       "enum": ["published", "draft"]
     },
+    "runbook_family": {
+      "type": "object",
+      "description": "The slug family's two live facts, so reading either side tells you the other.",
+      "required": ["published_ref", "draft_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "published_ref": {
+          "description": "Newest published version of this slug — what execute_runbook runs by default. Null when the family has never been published.",
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/runbook_ref"}
+          ]
+        },
+        "draft_ref": {
+          "description": "The family head while it is still an unpublished draft, waiting on a human to publish it. Null when the head is already published. A draft never runs unless execute_runbook is called with allow_draft.",
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/runbook_ref"}
+          ]
+        }
+      }
+    },
     "cursor": {
       "type": "string",
       "minLength": 1,
@@ -1252,7 +1274,7 @@
                   },
                   {
                     "type": "object",
-                    "required": ["operation_id", "kind", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "review_url"],
+                    "required": ["operation_id", "kind", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "family", "review_url"],
                     "additionalProperties": false,
                     "properties": {
                       "operation_id": {"$ref": "#/$defs/operation_id"},
@@ -1262,6 +1284,7 @@
                       "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
                       "status": {"const": "draft"},
                       "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+                      "family": {"$ref": "#/$defs/runbook_family"},
                       "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
                     }
                   }
@@ -1375,6 +1398,7 @@
                     "definition_sha256",
                     "title",
                     "summary",
+                    "family",
                     "input_count",
                     "stage_count",
                     "step_count"
@@ -1387,6 +1411,7 @@
                     "draft_id": {"type": "string", "format": "uuid"},
                     "title": {"type": "string", "minLength": 1, "maxLength": 160},
                     "summary": {"type": "string", "maxLength": 512},
+                    "family": {"$ref": "#/$defs/runbook_family"},
                     "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
                     "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
                     "step_count": {"type": "integer", "minimum": 0, "maximum": 32}
@@ -1431,13 +1456,14 @@
               "runbook": {
                 "type": "object",
                 "x-maxEncodedUtf8Bytes": 73728,
-                "required": ["runbook_ref", "status", "definition_sha256", "title", "description", "definition", "summary"],
+                "required": ["runbook_ref", "status", "definition_sha256", "title", "description", "definition", "summary", "family"],
                 "additionalProperties": false,
                 "properties": {
                   "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
                   "status": {"$ref": "#/$defs/runbook_status"},
                   "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
                   "draft_id": {"type": "string", "format": "uuid"},
+                  "family": {"$ref": "#/$defs/runbook_family"},
                   "title": {"type": "string", "minLength": 1, "maxLength": 160},
                   "description": {
                     "oneOf": [
@@ -1550,7 +1576,7 @@
           {"$ref": "#/$defs/error_result"},
           {
             "type": "object",
-            "required": ["ok", "operation_id", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "review_url"],
+            "required": ["ok", "operation_id", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "family", "review_url"],
             "additionalProperties": false,
             "properties": {
               "ok": {"const": true},
@@ -1560,6 +1586,7 @@
               "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
               "status": {"const": "draft"},
               "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+              "family": {"$ref": "#/$defs/runbook_family"},
               "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
             }
           }
@@ -1594,7 +1621,7 @@
           {"$ref": "#/$defs/error_result"},
           {
             "type": "object",
-            "required": ["ok", "operation_id", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "review_url"],
+            "required": ["ok", "operation_id", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "family", "review_url"],
             "additionalProperties": false,
             "properties": {
               "ok": {"const": true},
@@ -1604,6 +1631,7 @@
               "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
               "status": {"const": "draft"},
               "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+              "family": {"$ref": "#/$defs/runbook_family"},
               "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
             }
           }

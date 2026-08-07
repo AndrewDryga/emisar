@@ -296,6 +296,42 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "draft_heads_by_slugs/2" do
+    test "maps each slug to its head only while that head is an unpublished draft" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      published = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
+      assert {:ok, pending} = Runbooks.save_new_version(published, %{}, subject)
+      create_runbook(subject, slug: "beta") |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, draft_by_slug} =
+               Runbooks.draft_heads_by_slugs(["alpha", "beta"], subject)
+
+      assert Map.keys(draft_by_slug) == ["alpha"]
+      assert draft_by_slug["alpha"].id == pending.id
+
+      Fixtures.Runbooks.publish_runbook(pending)
+
+      assert Runbooks.draft_heads_by_slugs(["alpha", "beta"], subject) == {:ok, %{}}
+    end
+
+    test "hides another account's draft head under the same slug" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      _mine = create_runbook(subject, slug: "cross") |> Fixtures.Runbooks.publish_runbook()
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      _theirs = create_runbook(other_subject, slug: "cross")
+
+      assert Runbooks.draft_heads_by_slugs(["cross"], subject) == {:ok, %{}}
+    end
+
+    test "denies a principal without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.draft_heads_by_slugs(["any"], Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
+    end
+  end
+
   describe "risk_by_runbook_ids/2" do
     test "maps each runbook to the worst risk across its steps" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -1490,6 +1526,34 @@ defmodule Emisar.RunbooksTest do
 
       assert Repo.aggregate(Runbooks.Runbook, :count) == 2
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+    end
+
+    test "revises a published head while that published version keeps running" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      subject = api_client_subject(account, owner, "draft revision")
+      runner = trusted_runner(account, owner)
+
+      published =
+        create_runbook(owner, slug: "health-review", definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      facts = mcp_draft_revision_facts(published, title: "Health review revised")
+
+      assert {:ok, :created, revised} =
+               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+
+      assert revised.slug == published.slug
+      assert revised.version == 2
+      assert revised.status == :draft
+      assert Repo.reload!(published) == published
+
+      assert {:ok, live} =
+               Runbooks.fetch_model_visible_runbook_version("health-review", 1, subject)
+
+      assert live.id == published.id
+
+      assert Runbooks.fetch_model_visible_runbook_version("health-review", 2, subject) ==
+               {:error, :not_found}
     end
 
     test "rolls back stale hashes and hides cross-account sources" do

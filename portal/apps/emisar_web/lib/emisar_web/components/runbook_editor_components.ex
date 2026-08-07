@@ -194,6 +194,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           id="runbook-lifecycle-mobile"
           class="xl:hidden"
           runbook={@runbook}
+          live_version={@live_version}
           dirty?={@dirty?}
           read_only?={@read_only?}
         />
@@ -254,6 +255,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               id="runbook-lifecycle-desktop"
               class="hidden xl:block"
               runbook={@runbook}
+              live_version={@live_version}
               dirty?={@dirty?}
               read_only?={@read_only?}
             />
@@ -329,6 +331,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
   attr :id, :string, required: true
   attr :class, :string, default: nil
   attr :runbook, :any, required: true
+  attr :live_version, :any, default: nil
   attr :dirty?, :boolean, required: true
   attr :read_only?, :boolean, required: true
 
@@ -337,6 +340,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
     <dl id={@id} class={["space-y-2 text-xs text-zinc-400", @class]}>
       <.kv label="Current">v{@runbook.version}</.kv>
       <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
+      <%!-- Editing a draft or a superseded version says nothing about what a Run
+            dispatches right now, so name the published head separately. When the
+            version in the editor IS that head, the row would repeat "Current". --%>
+      <.kv :if={@live_version && @live_version.id != @runbook.id} label="Runs today">
+        v{@live_version.version}
+      </.kv>
       <.kv :if={@dirty? and not @read_only?} label="Next">v{@runbook.version + 1}</.kv>
     </dl>
     """

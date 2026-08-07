@@ -162,6 +162,51 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert combined["error"]["details"]["issues"] == [%{"path" => "$", "code" => "conflict"}]
   end
 
+  test "revising a published runbook names both sides of the family everywhere", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "db-primary")
+    runbook = publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
+    settled = %{"published_ref" => "database-health@1", "draft_ref" => nil}
+    revised = %{"published_ref" => "database-health@1", "draft_ref" => "database-health@2"}
+
+    assert call(conn, "get_runbook", %{"runbook_ref" => "database-health@1"})["runbook"]["family"] ==
+             settled
+
+    draft =
+      call(conn, "update_runbook_draft", %{
+        "runbook_ref" => "database-health@1",
+        "definition_sha256" => Runbooks.definition_digest(runbook.definition),
+        "title" => "Database health revised",
+        "description" => nil,
+        "definition" => runbook.definition
+      })
+
+    assert draft["runbook_ref"] == "database-health@2"
+    assert draft["family"] == revised
+
+    # The published side is what discovery still returns and what
+    # execute_runbook still dispatches — but it now names the draft above it,
+    # so a model cannot read its own revision as live.
+    assert [published] = call(conn, "list_runbooks", %{})["runbooks"]
+    assert published["runbook_ref"] == "database-health@1"
+    assert published["family"] == revised
+
+    assert [drafted] = call(conn, "list_runbooks", %{"status" => "draft"})["runbooks"]
+    assert drafted["runbook_ref"] == "database-health@2"
+    assert drafted["family"] == revised
+
+    fetched =
+      call(conn, "get_runbook", %{"runbook_ref" => "database-health@2", "status" => "draft"})
+
+    assert fetched["runbook"]["family"] == revised
+
+    recovered = call(conn, "get_operation", %{"operation_id" => draft["operation_id"]})
+    assert recovered["operation"]["family"] == revised
+  end
+
   test "native runbook mutations, recovery, and immediate waits share one contract", %{
     conn: conn,
     account: account,

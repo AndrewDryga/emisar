@@ -8,7 +8,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   alias Emisar.{MCPOperations, Runbooks, Runs}
   alias EmisarWeb.MCP.{Cancellation, CancellationRegistry, CatalogCursor, OutputCursor}
-  alias EmisarWeb.MCP.{ResponseBudget, RunbookTools, Service, WaitLimiter}
+  alias EmisarWeb.MCP.{ResponseBudget, RunbookContract, RunbookTools, Service, WaitLimiter}
 
   @recheck_ms 2_000
 
@@ -77,25 +77,29 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     end
   end
 
+  # Recovering a lost mutation response must tell the model exactly what the
+  # response would have — including which version actually runs.
   defp operation_projection(conn, %{tool: tool} = operation)
        when tool in [:create_runbook_draft, :update_runbook_draft] do
-    case Runbooks.fetch_runbook_by_id(operation.resource_id, conn.assigns.current_subject) do
-      {:ok, runbook} ->
-        {:ok,
-         %{
-           operation_id: operation.operation_id,
-           kind: "runbook_draft",
-           draft_id: runbook.id,
-           runbook_ref: "#{runbook.slug}@#{runbook.version}",
-           slug: runbook.slug,
-           status: "draft",
-           definition_sha256: Runbooks.definition_digest(runbook.definition),
-           review_url:
-             "#{EmisarWeb.Endpoint.url()}/app/#{conn.assigns.current_subject.account.slug}/runbooks/#{runbook.id}/edit"
-         }}
+    subject = conn.assigns.current_subject
 
-      _ ->
-        {:error, :operation_resource_missing}
+    with {:ok, runbook} <- Runbooks.fetch_runbook_by_id(operation.resource_id, subject),
+         {:ok, families} <- RunbookContract.families([runbook.slug], subject) do
+      {:ok,
+       %{
+         operation_id: operation.operation_id,
+         kind: "runbook_draft",
+         draft_id: runbook.id,
+         runbook_ref: RunbookContract.runbook_ref(runbook),
+         slug: runbook.slug,
+         status: "draft",
+         definition_sha256: Runbooks.definition_digest(runbook.definition),
+         family: families[runbook.slug],
+         review_url:
+           "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runbooks/#{runbook.id}/edit"
+       }}
+    else
+      _unreadable -> {:error, :operation_resource_missing}
     end
   end
 

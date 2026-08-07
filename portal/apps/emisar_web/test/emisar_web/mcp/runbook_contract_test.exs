@@ -3,7 +3,9 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
   alias Emisar.Runbooks
   alias EmisarWeb.MCP.RunbookContract
 
-  describe "project/1" do
+  @family %{published_ref: "inspect-fleet@3", draft_ref: "inspect-fleet@4"}
+
+  describe "project/2" do
     test "keeps metadata separate and projects the canonical definition losslessly" do
       definition = valid_definition()
 
@@ -15,7 +17,7 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
         definition: definition
       }
 
-      assert {:ok, projection} = RunbookContract.project(runbook)
+      assert {:ok, projection} = RunbookContract.project(runbook, @family)
 
       assert projection == %{
                runbook_ref: "inspect-fleet@3",
@@ -24,7 +26,8 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
                title: "Inspect fleet",
                description: "Confirm the fleet is ready.",
                definition: definition,
-               summary: %{input_count: 1, stage_count: 1, step_count: 1}
+               summary: %{input_count: 1, stage_count: 1, step_count: 1},
+               family: @family
              }
     end
 
@@ -37,7 +40,7 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
         definition: valid_definition()
       }
 
-      assert {:ok, %{description: nil}} = RunbookContract.project(runbook)
+      assert {:ok, %{description: nil}} = RunbookContract.project(runbook, @family)
     end
 
     test "fails closed when the stored definition is not canonical" do
@@ -48,11 +51,11 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
         definition: %{"steps" => []}
       }
 
-      assert RunbookContract.project(runbook) == {:error, :incomplete_contract}
+      assert RunbookContract.project(runbook, @family) == {:error, :incomplete_contract}
     end
   end
 
-  describe "project_draft/1" do
+  describe "project_draft/2" do
     test "adds the exact immutable draft and definition identities" do
       definition = valid_definition()
 
@@ -65,8 +68,9 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
         definition: definition
       }
 
-      assert {:ok, projection} = RunbookContract.project_draft(runbook)
+      assert {:ok, projection} = RunbookContract.project_draft(runbook, @family)
       assert projection.draft_id == runbook.id
+      assert projection.family == @family
       assert projection.runbook_ref == "inspect-fleet@4"
       assert projection.status == "draft"
       assert projection.definition_sha256 == Runbooks.definition_digest(definition)

@@ -170,6 +170,28 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
+  Maps each slug to its family head when that head is a DRAFT, for the listed
+  slugs — the pending revision waiting on a human above whatever version
+  currently runs. Requires `view_runbooks`; scoped to the subject's account.
+  Returns `{:ok, %{slug => runbook}}` (a family whose head is already published
+  is absent) or `{:error, :unauthorized}`.
+  """
+  def draft_heads_by_slugs(slugs, %Subject{} = subject) when is_list(slugs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      runbooks =
+        Runbook.Query.not_deleted()
+        |> Runbook.Query.by_slugs(slugs)
+        |> Runbook.Query.latest_version_per_slug()
+        |> Runbook.Query.draft()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, Map.new(runbooks, &{&1.slug, &1})}
+    end
+  end
+
+  @doc """
   `%{runbook_id => most-severe step risk}` for at most #{@max_risk_runbook_ids}
   runbook ids — the risk tier each list row shows, resolved for the whole page
   in one catalog read rather than a query per row. Requires `view_runbooks`;
