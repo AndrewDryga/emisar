@@ -67,7 +67,7 @@ defmodule EmisarWeb.MixProject do
       {:gettext, "~> 1.0"},
       {:emisar, in_umbrella: true},
       {:jason, "~> 1.4"},
-      {:bandit, "1.12.1"},
+      {:bandit, "~> 1.12"},
       {:websock_adapter, "~> 0.5"}
     ]
   end
