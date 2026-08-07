@@ -50,13 +50,23 @@ Compare the split that WAS done in the same sweep,
 domain shared **zero** helpers with another group and auth shared one. That is
 what a real seam measures like.
 
-**What to do instead, if the length becomes the problem again.** Move the SCIM
-implementation into a submodule of the SAME context (`Emisar.SSO.SCIM`) with
-`Emisar.SSO` still the public boundary the web calls. That halves the file
-without inventing a boundary the code does not have, and needs no new
-authorizer, no cross-context calls, and no controller change. Measure first: if
-the shared-helper count has genuinely fallen, the full split may have become
-right.
+**What was done instead.** The SCIM implementation moved into submodules of the
+SAME context, with `Emisar.SSO` still the public boundary the web calls:
 
-**How it is enforced.** Review. Do not re-propose the extraction from the line
-count alone — bring the shared-helper measurement.
+* `Emisar.SSO.SCIM` — the SCIM 2.0 wire surface and the 52 helpers only it
+  reaches. `Emisar.SSO` keeps the fourteen public functions the SCIM
+  controllers call and forwards to it, so no controller changed.
+* `Emisar.SSO.Provisioning` — the twenty shared helpers, which turned out to be
+  one coherent thing: resolving a synced member's role and runner access from
+  the groups their provider reports. That is precisely why the context split
+  did not work, and precisely why these belong together.
+
+`sso.ex` 4,033 → 2,575 lines. No new authorizer, no cross-context calls, and
+exactly one call back into `SSO` (`recompute_role_for_identity/2`, now
+qualified). The public surface is byte-for-byte what it was.
+
+If the remaining 2,575 lines become the problem, the OIDC sign-in half is the
+next seam to measure — not to assume.
+
+**How it is enforced.** Review. Do not re-propose the CONTEXT extraction from
+the line count alone — bring the shared-helper measurement.
