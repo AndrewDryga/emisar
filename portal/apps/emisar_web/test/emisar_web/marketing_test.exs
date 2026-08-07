@@ -595,6 +595,44 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
+  # Emisar.Billing owns what a plan grants — billing_live renders plan.features
+  # straight from it — while /pricing types the same list by hand. They had
+  # already drifted: Team's "Audit export (CSV + SIEM)" shipped in the product
+  # and appeared in the console and in /docs/billing, but not on the page where
+  # someone decides to buy.
+  #
+  # The page may say MORE than the contract: an uptime target and automated
+  # invoices are marketing's to promise and are not plan entitlements. It may
+  # not say less.
+  describe "pricing reflects the plan contract" do
+    test "every feature Billing grants a plan appears on that plan's card", %{conn: conn} do
+      html = conn |> get(~p"/pricing") |> html_response(200)
+
+      missing =
+        for {_id, plan} <- Emisar.Billing.plans(),
+            feature <- plan.features,
+            # Enterprise's "Everything in Team" is a reference to another card,
+            # not a feature line of its own.
+            feature != "Everything in Team",
+            not String.contains?(html, feature),
+            do: "#{plan.name}: #{feature}"
+
+      assert missing == [],
+             "/pricing omits plan features Emisar.Billing grants: #{inspect(missing)}"
+    end
+
+    test "the limits Billing enforces are the limits the page advertises", %{conn: conn} do
+      html = conn |> get(~p"/pricing") |> html_response(200)
+      free = Emisar.Billing.plan("free")
+      team = Emisar.Billing.plan("team")
+
+      assert html =~ "#{free.runners_limit} runners"
+      assert html =~ "#{free.audit_retention_days}-day audit retention"
+      assert html =~ "#{team.runners_limit} runners"
+      assert html =~ "#{team.audit_retention_days}-day audit retention"
+    end
+  end
+
   describe "marketing nav" do
     test "ships a hamburger button + drawer for mobile viewports", %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
