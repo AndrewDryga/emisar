@@ -34,6 +34,16 @@
 set -Eeuo pipefail
 
 REPO="${EMISAR_REPO:-andrewdryga/emisar}"
+# Matched literally against the signing certificate's SubjectAlternativeName,
+# which carries GitHub's canonical owner casing (AndrewDryga) — NOT the
+# lowercase spelling REPO uses. Deriving this from REPO reads as obviously
+# correct and fails every verification, so it is written out. A fork gets no
+# default: pinning ours would fail their install, so they set their own or the
+# checksum stands alone.
+ATTESTATION_WORKFLOW="${EMISAR_ATTESTATION_WORKFLOW:-}"
+if [ -z "${ATTESTATION_WORKFLOW}" ] && [ "${REPO}" = "andrewdryga/emisar" ]; then
+  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/mcp-release.yml"
+fi
 # The portal this bridge talks to. A self-hosted or dev portal's install
 # command overrides it (the client configs written below carry it).
 EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
@@ -956,8 +966,40 @@ fi
   grep -E "  ${TARBALL}\$" SHA256SUMS-MCP | sha_check
 ) || die "checksum verification failed for ${TARBALL}"
 
+# The checksum proves the tarball matches SHA256SUMS-MCP; it says nothing about
+# who produced either, since both come from the same release. The Sigstore build
+# provenance does: it binds these bytes to a run of our release workflow on a
+# GitHub-hosted runner. Pinning the signer workflow is what makes that a real
+# check — without it, any attestation from any workflow in the repo passes.
+#
+# Verification runs only when a verifier is installed. Requiring one would break
+# installing on a bare machine, which is the common case, so a missing verifier
+# warns and continues on the checksum alone. A verifier that IS present and says
+# no fails the install.
+if [ -z "${ATTESTATION_WORKFLOW}" ]; then
+  warn "no attestation workflow configured for ${REPO} — skipping provenance check"
+elif ! command -v gh >/dev/null 2>&1; then
+  warn "gh not installed — skipping release attestation check"
+  warn "verify it yourself: gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
+# gh refuses the attestation API unauthenticated — it exits 4 telling you to run
+# `gh auth login` without checking anything. Treating that as a failed
+# verification would make a GitHub login a prerequisite for installing the
+# bridge, so an unauthenticated CLI skips exactly like a missing one.
+elif ! gh auth status >/dev/null 2>&1; then
+  warn "gh is not authenticated — skipping release attestation check"
+  warn "verify it yourself: gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
+else
+  log "verifying release attestation"
+  gh attestation verify "${tmp}/${TARBALL}" --repo "${REPO}" \
+    --signer-workflow "${ATTESTATION_WORKFLOW}" >/dev/null 2>&1 \
+    || die "release attestation for ${TARBALL} did not verify against ${ATTESTATION_WORKFLOW} — refusing to install"
+  log "attestation verified  ${ATTESTATION_WORKFLOW}"
+fi
+
 log "extracting"
-tar -C "${tmp}" -xzf "${tmp}/${TARBALL}"
+# --no-same-owner/--no-same-permissions: the archive's recorded uid/gid and mode
+# bits are not a trust input; the install path sets what it needs explicitly.
+tar -C "${tmp}" --no-same-owner --no-same-permissions -xzf "${tmp}/${TARBALL}"
 
 # ---------------------------------------------------------------------
 # Install
