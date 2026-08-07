@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS -X POST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/logging\""
+      - "curl -fsS --globoff --proto =http,https -X POST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/logging\""
   timeout: 15s
 output:
   parser: text

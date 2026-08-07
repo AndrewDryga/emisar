@@ -21,7 +21,7 @@ args:
 execution:
   command:
     binary: curl
-    argv: ["-sSfX", "POST", "{{ args.target }}/api/v1/admin/tsdb/clean_tombstones"]
+    argv: ["-sSfX", "POST", "--globoff", "--proto", "=http,https", "{{ args.target }}/api/v1/admin/tsdb/clean_tombstones"]
   timeout: 120s
 output:
   parser: text

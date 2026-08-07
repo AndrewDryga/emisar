@@ -19,7 +19,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS -XPOST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/logging?level={{ args.level }}\""
+      - "curl -fsS --globoff --proto =http,https -XPOST \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/logging?level={{ args.level }}\""
   timeout: 15s
 output:
   parser: text

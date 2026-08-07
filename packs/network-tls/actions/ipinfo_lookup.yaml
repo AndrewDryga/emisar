@@ -21,6 +21,11 @@ execution:
     binary: curl
     argv:
       - "-sfL"
+      - "--globoff"
+      - "--proto"
+      - "=https"
+      - "--proto-redir"
+      - "=https"
       - "--max-time"
       - "10"
       - "https://ipinfo.io/{{ args.ip }}/json"

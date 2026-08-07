@@ -2,7 +2,7 @@ schema_version: 1
 
 id: consul
 name: HashiCorp Consul operations
-version: 0.2.25
+version: 0.2.26
 # The kv reads returned secret-bearing values at a tier the default policy
 # auto-runs; every version below fails closed rather than skipping approval.
 retired_below: 0.2.25

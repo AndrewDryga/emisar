@@ -42,7 +42,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -sS "$@" -o /dev/null --max-time "$MAX_TIME" -w "http_code=%{http_code}\nlookup=%{time_namelookup}\nconnect=%{time_connect}\nappconnect=%{time_appconnect}\nstarttransfer=%{time_starttransfer}\ntotal=%{time_total}\nsize=%{size_download}\n" "$URL"'
+      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -sS --globoff --proto =http,https "$@" -o /dev/null --max-time "$MAX_TIME" -w "http_code=%{http_code}\nlookup=%{time_namelookup}\nconnect=%{time_connect}\nappconnect=%{time_appconnect}\nstarttransfer=%{time_starttransfer}\ntotal=%{time_total}\nsize=%{size_download}\n" "$URL"'
   env:
     URL: "{{ args.url }}"
     MAX_TIME: "{{ args.max_time }}"

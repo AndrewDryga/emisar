@@ -22,7 +22,7 @@ args:
 execution:
   command:
     binary: curl
-    argv: ["-sSfX", "POST", "{{ args.admin }}/healthcheck/fail"]
+    argv: ["-sSfX", "POST", "--globoff", "--proto", "=http,https", "{{ args.admin }}/healthcheck/fail"]
   timeout: 10s
 output:
   parser: text

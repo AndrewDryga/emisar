@@ -22,7 +22,7 @@ args:
 execution:
   command:
     binary: curl
-    argv: ["-sSfX", "POST", "{{ args.target }}/-/reload"]
+    argv: ["-sSfX", "POST", "--globoff", "--proto", "=http,https", "{{ args.target }}/-/reload"]
   timeout: 30s
 output:
   parser: text

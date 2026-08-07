@@ -22,7 +22,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS \"https://api.cloudflare.com/client/v4/zones/${1}/rulesets/phases/http_request_firewall_custom/entrypoint\" -H @-"
+      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS --globoff --proto =http,https \"https://api.cloudflare.com/client/v4/zones/${1}/rulesets/phases/http_request_firewall_custom/entrypoint\" -H @-"
       - "emisar"
       - "{{ args.zone_id }}"
   timeout: 30s

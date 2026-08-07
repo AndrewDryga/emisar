@@ -60,14 +60,21 @@ host the response chose; the URL is also visible to every process on the box
 while the transfer runs.
 
 **Sweep.** Any curl invocation — an inline `execution.command` shell program
-or a referenced `scripts/*.sh` — whose URL argument contains a variable
-expansion and whose flags lack `--globoff` (short form `-g`). The catalog is
-clean today; the gap this rule closes is the next pack that fetches a
-response-supplied URL.
+or a referenced `scripts/*.sh` — lacking `--globoff` (short form `-g`) or
+`--proto`, or following redirects (`-L`) without `--proto-redir`.
 
-**Enforced.** Convention only, for now. The sweep signal is mechanical the
-same way the response-error lint is (`tools/internal/devtool`, reached through
-`./run check packs` and the packs gate): flag a curl invocation whose URL term
-carries a variable expansion without `--globoff` in the same command. That
-sibling check is the graduation path; it is deliberately not built as part of
-recording this rule.
+**Enforced.** `validatePackCurlURLSafety` in
+`tools/internal/devtool/pack_curl.go`, reached through `./run check packs` and
+the packs gate, beside the response-error, pipeline, and jq lints.
+
+Both flags are required of **every** curl invocation, not only the ones whose
+URL is visibly response-supplied. Deciding that from the YAML means reasoning
+about env defaults, argument interpolation, and redirect targets — and that
+judgment is exactly what let the convention drift: when the check was written,
+94 call sites across nine packs passed neither flag while sibling packs
+building the same URL shape passed both. A fixed-URL call loses nothing by
+carrying them.
+
+The scanner folds `\`-continued lines before reading an invocation, and falls
+back to judging the whole script when the flags arrive indirectly (`curl "$@"`
+after a `set --`, or `"${curl_args[@]}"`).

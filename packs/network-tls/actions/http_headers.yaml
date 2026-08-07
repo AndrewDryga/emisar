@@ -27,7 +27,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -sIL "$@" --max-time 10 "$URL"'
+      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -sIL --globoff --proto =http,https --proto-redir =http,https "$@" --max-time 10 "$URL"'
   env:
     URL: "{{ args.url }}"
     INSECURE: "{{ args.insecure }}"

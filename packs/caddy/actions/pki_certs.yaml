@@ -18,7 +18,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS \"${CADDY_ADMIN:-http://127.0.0.1:2019}/pki/ca/${1}/certificates\""
+      - "curl -fsS --globoff --proto =http,https \"${CADDY_ADMIN:-http://127.0.0.1:2019}/pki/ca/${1}/certificates\""
       - "emisar"
       - "{{ args.ca }}"
   timeout: 15s

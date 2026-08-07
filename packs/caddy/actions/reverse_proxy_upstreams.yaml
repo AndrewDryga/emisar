@@ -14,7 +14,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS \"${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy/upstreams\""
+      - "curl -fsS --globoff --proto =http,https \"${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy/upstreams\""
   timeout: 15s
 output:
   parser: json

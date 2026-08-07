@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS \"${PHP_FPM_PING_URL:-http://127.0.0.1/fpm-ping}\""
+      - "curl -fsS --globoff --proto =http,https \"${PHP_FPM_PING_URL:-http://127.0.0.1/fpm-ping}\""
   timeout: 10s
 output:
   parser: text

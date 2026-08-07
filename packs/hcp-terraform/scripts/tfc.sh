@@ -56,7 +56,8 @@ api_get() {
 # is what we want: the redirect target is already presigned.
 api_get_following_redirect() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl --globoff --proto "$(api_protocols)" --fail-with-body -sSL -H @- "$(api_base)$1"
+    curl --globoff --proto "$(api_protocols)" --proto-redir "$(api_protocols)" \
+      --fail-with-body -sSL -H @- "$(api_base)$1"
 }
 
 api_post() {

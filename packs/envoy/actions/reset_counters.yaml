@@ -22,7 +22,7 @@ args:
 execution:
   command:
     binary: curl
-    argv: ["-sSfX", "POST", "{{ args.admin }}/reset_counters"]
+    argv: ["-sSfX", "POST", "--globoff", "--proto", "=http,https", "{{ args.admin }}/reset_counters"]
   timeout: 10s
 output:
   parser: text

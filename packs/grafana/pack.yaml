@@ -2,7 +2,7 @@ schema_version: 1
 
 id: grafana
 name: Grafana
-version: 0.1.12
+version: 0.1.13
 description: >
   Grafana admin-API ops — datasource health, dashboard listings, alert
   state, user list, version, settings. Read-only. Auth via a bearer token

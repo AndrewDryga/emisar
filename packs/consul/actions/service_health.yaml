@@ -22,7 +22,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/health/service/${1}\" -H @-"
+      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/health/service/${1}\" -H @-"
       - "emisar"
       - "{{ args.service }}"
   timeout: 30s

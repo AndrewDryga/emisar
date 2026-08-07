@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS -o /dev/null -w '%{http_code}\\n' \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/ready\""
+      - "curl -fsS --globoff --proto =http,https -o /dev/null -w '%{http_code}\\n' \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/ready\""
   timeout: 10s
 output:
   parser: text

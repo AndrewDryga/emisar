@@ -94,7 +94,10 @@ func curlSourceAcceptsHTTPFailures(source string) bool {
 
 func curlInvocations(source string) [][]string {
 	var invocations [][]string
-	for _, line := range strings.Split(source, "\n") {
+	// Fold `\`-continued lines first: scanning line by line otherwise sees only
+	// the flags before the break, so a readably-wrapped invocation looks like it
+	// is missing every flag on its later lines.
+	for _, line := range strings.Split(joinShellContinuations(source), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

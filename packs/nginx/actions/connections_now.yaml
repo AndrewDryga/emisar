@@ -26,6 +26,9 @@ execution:
     binary: curl
     argv:
       - "-fsS"
+      - "--globoff"
+      - "--proto"
+      - "=http,https"
       - "--max-time"
       - "5"
       - "{{ args.url }}"

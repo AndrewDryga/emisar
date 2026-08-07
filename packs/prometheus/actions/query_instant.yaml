@@ -19,7 +19,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS -G --data-urlencode \"query=$Q\" \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/query\""
+      - "curl -fsS --globoff --proto =http,https -G --data-urlencode \"query=$Q\" \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/query\""
   env:
     Q: "{{ args.query }}"
   timeout: 60s
