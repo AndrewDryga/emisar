@@ -235,9 +235,21 @@ reload the runner. Either way every host runs identical, reviewed bytes.
 HTTPS; anything that serves files can be one. It moves bytes only — the portal
 still decides trust per account (step 6).
 
-1. Get `packctl` on the publishing workstation or CI job (never fleet hosts):
-   `go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest`
-   (requires a Go toolchain; check `packctl --version`).
+1. Get `packctl` on the publishing workstation or CI job (never fleet hosts).
+   Build it from the same signed release tag your runners were installed from,
+   so the tool that hashes a pack is the one whose loader will enforce that
+   hash. Do not reach for `go install …@latest`: it pins nothing and builds
+   whatever the default branch points at that minute.
+
+   ```sh
+   git clone --depth 1 --branch runner-v<version> \
+     https://github.com/andrewdryga/emisar.git emisar-src
+   cd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl
+   ```
+
+   Release tags are signed annotated tags, so `git verify-tag runner-v<version>`
+   confirms the checkout before you build if you hold the signing key. Requires
+   a Go toolchain; check `packctl --version`.
 2. Build the tree. `--base-url` is wherever you will host it:
 
    ```sh
