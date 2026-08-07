@@ -1,17 +1,17 @@
 schema_version: 1
 id: grafana.users
 title: GET /api/org/users (org admin)
-kind: exec
+kind: script
 risk: low
 description: List all users in the current org. Requires an Admin-scoped token.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "if [ -n \"$GRAFANA_USER\" ]; then curl -fsS -u \"$GRAFANA_USER:$GRAFANA_PASSWORD\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/org/users\"; else curl -fsS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/org/users\"; fi"
+  script:
+    path: scripts/grafana_api.sh
+    interpreter: /bin/sh
+  argv:
+    - users
   timeout: 30s
 output:
   parser: json

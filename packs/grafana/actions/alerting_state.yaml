@@ -1,17 +1,17 @@
 schema_version: 1
 id: grafana.alerting_state
 title: GET /api/alertmanager/grafana/api/v2/alerts
-kind: exec
+kind: script
 risk: low
 description: List currently-firing alerts known to Grafana's alertmanager.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "if [ -n \"$GRAFANA_USER\" ]; then curl -fsS -u \"$GRAFANA_USER:$GRAFANA_PASSWORD\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/alertmanager/grafana/api/v2/alerts\"; else curl -fsS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/alertmanager/grafana/api/v2/alerts\"; fi"
+  script:
+    path: scripts/grafana_api.sh
+    interpreter: /bin/sh
+  argv:
+    - alerting-state
   timeout: 30s
 output:
   parser: json

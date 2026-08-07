@@ -1,7 +1,7 @@
 schema_version: 1
 id: grafana.health
 title: GET /api/health
-kind: exec
+kind: script
 risk: low
 description: Show liveness + DB-ok state.
 side_effects: ["One API call.", "Read-only."]
@@ -9,11 +9,11 @@ search_terms:
   - grafana down
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "if [ -n \"$GRAFANA_USER\" ]; then curl -fsS -u \"$GRAFANA_USER:$GRAFANA_PASSWORD\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/health\"; else curl -fsS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/health\"; fi"
+  script:
+    path: scripts/grafana_api.sh
+    interpreter: /bin/sh
+  argv:
+    - health
   timeout: 15s
 output:
   parser: json

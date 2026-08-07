@@ -603,7 +603,7 @@ defmodule EmisarWeb.AgentsLive do
     %{
       kind: :local,
       location: "~/.cursor/mcp.json",
-      body: mcp_json_snippet(url, key, "emisar-mcp", "cursor"),
+      body: mcp_json_snippet(url, key, "/usr/local/bin/emisar-mcp", "cursor"),
       # Cursor has no per-server allowlist in mcp.json — auto-run is a global
       # agent toggle (Settings → set tool approval to auto-run / "Yolo").
       # Honest pointer rather than an invented config key.

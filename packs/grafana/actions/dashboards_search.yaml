@@ -1,7 +1,7 @@
 schema_version: 1
 id: grafana.dashboards_search
 title: GET /api/search
-kind: exec
+kind: script
 risk: low
 description: Search dashboards (default returns all dashboards).
 side_effects: ["One API call.", "Read-only."]
@@ -14,13 +14,12 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9 _.\\-]{0,128}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "if [ -n \"$GRAFANA_USER\" ]; then curl -fsS -u \"$GRAFANA_USER:$GRAFANA_PASSWORD\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/search?type=dash-db&query=${1}\"; else curl -fsS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/search?type=dash-db&query=${1}\"; fi"
-      - "emisar"
-      - "{{ args.query }}"
+  script:
+    path: scripts/grafana_api.sh
+    interpreter: /bin/sh
+  argv:
+    - dashboards-search
+    - "{{ args.query }}"
   timeout: 30s
 output:
   parser: json

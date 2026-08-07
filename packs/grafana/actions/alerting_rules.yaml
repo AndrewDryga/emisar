@@ -1,17 +1,17 @@
 schema_version: 1
 id: grafana.alerting_rules
 title: GET /api/prometheus/grafana/api/v1/rules
-kind: exec
+kind: script
 risk: low
 description: List all Grafana-managed alert rules with last evaluation state.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "if [ -n \"$GRAFANA_USER\" ]; then curl -fsS -u \"$GRAFANA_USER:$GRAFANA_PASSWORD\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/prometheus/grafana/api/v1/rules\"; else curl -fsS -H \"Authorization: Bearer $GRAFANA_TOKEN\" \"${GRAFANA_URL:-http://127.0.0.1:3000}/api/prometheus/grafana/api/v1/rules\"; fi"
+  script:
+    path: scripts/grafana_api.sh
+    interpreter: /bin/sh
+  argv:
+    - alerting-rules
   timeout: 30s
 output:
   parser: json
