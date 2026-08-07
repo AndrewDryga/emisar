@@ -4,30 +4,10 @@
 // Both live in the Enterprise applications area rather than App registrations, and
 // neither needs a provisioning configuration — which is why they are reachable
 // where the Test-connection and attribute-mapping screens were not.
-import { chromium } from '/tmp/pw/node_modules/playwright/index.mjs'
-import { createHmac } from 'node:crypto'
-import { readFileSync, mkdirSync } from 'node:fs'
+import { launchChromium, loadEnv, totp } from './entra-env.mjs'
+import { mkdirSync } from 'node:fs'
 
-const env = Object.fromEntries(
-  readFileSync('/Users/andrewdryga/Projects/os/emisar/portal/.agent/secrets/entra-trial.env', 'utf8')
-    .split('\n')
-    .filter(l => l && !l.startsWith('#') && l.includes('='))
-    .map(l => {
-      const [k, ...rest] = l.split('=')
-      return [k.trim(), rest.join('=').trim().replace(/^['"]|['"]$/g, '')]
-    })
-)
-
-const totp = secret => {
-  const b32 = secret.toUpperCase().replace(/\s|=/g, '')
-  const bits = [...b32].map(c => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(c).toString(2).padStart(5, '0')).join('')
-  const key = Buffer.from(bits.match(/.{8}/g).map(b => parseInt(b, 2)))
-  const counter = Buffer.alloc(8)
-  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)))
-  const mac = createHmac('sha1', key).update(counter).digest()
-  const off = mac[mac.length - 1] & 0x0f
-  return String((mac.readUInt32BE(off) & 0x7fffffff) % 1e6).padStart(6, '0')
-}
+const env = loadEnv()
 
 // Ring the control a step names. A row's outline paints under its cells'
 // backgrounds, so a table row is ringed cell by cell instead.
@@ -90,7 +70,7 @@ const outline = async (page, label, { exact = true } = {}) => {
 
 mkdirSync('/tmp/entra', { recursive: true })
 
-const browser = await chromium.launch({ headless: true })
+const browser = await launchChromium({ headless: true })
 // An EXPLICIT context, because the second capture needs a second page in the same
 // signed-in session and browser.newPage() creates a context that refuses one.
 // `viewport`, not `viewportSize` — newContext ignores the latter, so every shot

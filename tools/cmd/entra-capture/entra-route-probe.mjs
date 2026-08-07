@@ -1,31 +1,9 @@
-// Capture the Entra-side screens chromedp could not reach: the app Overview
-// (client id) and Certificates & secrets. Playwright drives the Azure portal
-// where chromedp only ever rendered its home page.
-import { chromium } from '/tmp/pw/node_modules/playwright/index.mjs'
-import { createHmac } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+// Probe which Entra admin-centre routes are reachable for a session, capturing
+// the home page and the navigation that leads to the app blades. Used to find a
+// working path when a deep link stops resolving, not to produce guide images.
+import { launchChromium, loadEnv, totp } from './entra-env.mjs'
 
-const env = Object.fromEntries(
-  readFileSync('/Users/andrewdryga/Projects/os/emisar/portal/.agent/secrets/entra-trial.env', 'utf8')
-    .split('\n')
-    .filter(l => l && !l.startsWith('#') && l.includes('='))
-    .map(l => {
-      const [k, ...rest] = l.split('=')
-      return [k.trim(), rest.join('=').trim().replace(/^['"]|['"]$/g, '')]
-    })
-)
-
-// RFC 6238 TOTP, so no phone is in the loop.
-const totp = secret => {
-  const b32 = secret.toUpperCase().replace(/\s|=/g, '')
-  const bits = [...b32].map(c => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(c).toString(2).padStart(5, '0')).join('')
-  const key = Buffer.from(bits.match(/.{8}/g).map(b => parseInt(b, 2)))
-  const counter = Buffer.alloc(8)
-  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)))
-  const mac = createHmac('sha1', key).update(counter).digest()
-  const off = mac[mac.length - 1] & 0x0f
-  return String((mac.readUInt32BE(off) & 0x7fffffff) % 1e6).padStart(6, '0')
-}
+const env = loadEnv()
 
 const outline = async (page, text) => {
   await page.evaluate(label => {
@@ -57,7 +35,7 @@ const outline = async (page, text) => {
   await page.waitForTimeout(600)
 }
 
-const browser = await chromium.launch({ headless: true })
+const browser = await launchChromium({ headless: true })
 const page = await browser.newPage({ viewportSize: { width: 1440, height: 1000 } })
 
 await page.goto('https://portal.azure.com/', { waitUntil: 'domcontentloaded' })
