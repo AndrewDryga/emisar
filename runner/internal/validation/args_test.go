@@ -20,7 +20,7 @@ func ptrDur(d time.Duration) *actionspec.Duration {
 
 func TestValidate_UnknownArg(t *testing.T) {
 	schema := []actionspec.Arg{{Name: "x", Type: actionspec.ArgString}}
-	_, err := Validate(schema, map[string]any{"y": "foo"})
+	_, err := Validate(schema, map[string]any{"y": "foo"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unknown argument") {
 		t.Fatalf("expected unknown arg error, got %v", err)
 	}
@@ -28,7 +28,7 @@ func TestValidate_UnknownArg(t *testing.T) {
 
 func TestValidate_RequiredMissing(t *testing.T) {
 	schema := []actionspec.Arg{{Name: "x", Type: actionspec.ArgString, Required: true}}
-	_, err := Validate(schema, nil)
+	_, err := Validate(schema, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "required") {
 		t.Fatalf("expected required error, got %v", err)
 	}
@@ -36,7 +36,7 @@ func TestValidate_RequiredMissing(t *testing.T) {
 
 func TestValidate_DefaultApplied(t *testing.T) {
 	schema := []actionspec.Arg{{Name: "x", Type: actionspec.ArgString, Default: "fallback"}}
-	out, err := Validate(schema, nil)
+	out, err := Validate(schema, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,10 +50,10 @@ func TestValidate_Enum(t *testing.T) {
 		Name: "x", Type: actionspec.ArgString,
 		Validation: &actionspec.Validation{Enum: []any{"a", "b"}},
 	}}
-	if _, err := Validate(schema, map[string]any{"x": "a"}); err != nil {
+	if _, err := Validate(schema, map[string]any{"x": "a"}, nil); err != nil {
 		t.Fatalf("a should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"x": "c"}); err == nil {
+	if _, err := Validate(schema, map[string]any{"x": "c"}, nil); err == nil {
 		t.Fatal("c should fail enum")
 	}
 }
@@ -63,10 +63,10 @@ func TestValidate_Pattern(t *testing.T) {
 		Name: "x", Type: actionspec.ArgString,
 		Validation: &actionspec.Validation{Pattern: "^[a-z]+$"},
 	}}
-	if _, err := Validate(schema, map[string]any{"x": "abc"}); err != nil {
+	if _, err := Validate(schema, map[string]any{"x": "abc"}, nil); err != nil {
 		t.Fatalf("abc should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"x": "abc1"}); err == nil {
+	if _, err := Validate(schema, map[string]any{"x": "abc1"}, nil); err == nil {
 		t.Fatal("abc1 should fail pattern")
 	}
 }
@@ -76,10 +76,10 @@ func TestValidate_MaxLength(t *testing.T) {
 		Name: "x", Type: actionspec.ArgString,
 		Validation: &actionspec.Validation{MaxLength: ptrInt(5)},
 	}}
-	if _, err := Validate(schema, map[string]any{"x": "abcde"}); err != nil {
+	if _, err := Validate(schema, map[string]any{"x": "abcde"}, nil); err != nil {
 		t.Fatalf("5 bytes should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"x": "abcdef"}); err == nil {
+	if _, err := Validate(schema, map[string]any{"x": "abcdef"}, nil); err == nil {
 		t.Fatal("6 bytes should fail max_length")
 	}
 
@@ -88,10 +88,10 @@ func TestValidate_MaxLength(t *testing.T) {
 		Name: "xs", Type: actionspec.ArgStringArray,
 		Validation: &actionspec.Validation{MaxLength: ptrInt(3)},
 	}}
-	if _, err := Validate(arr, map[string]any{"xs": []any{"ok", "yes"}}); err != nil {
+	if _, err := Validate(arr, map[string]any{"xs": []any{"ok", "yes"}}, nil); err != nil {
 		t.Fatalf("short elements should pass: %v", err)
 	}
-	if _, err := Validate(arr, map[string]any{"xs": []any{"ok", "toolong"}}); err == nil {
+	if _, err := Validate(arr, map[string]any{"xs": []any{"ok", "toolong"}}, nil); err == nil {
 		t.Fatal("a 7-byte element should fail max_length")
 	}
 }
@@ -101,13 +101,13 @@ func TestValidate_MinMax(t *testing.T) {
 		Name: "x", Type: actionspec.ArgInteger,
 		Validation: &actionspec.Validation{Min: ptrFloat(1), Max: ptrFloat(10)},
 	}}
-	if _, err := Validate(schema, map[string]any{"x": 5}); err != nil {
+	if _, err := Validate(schema, map[string]any{"x": 5}, nil); err != nil {
 		t.Fatalf("5 should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"x": 0}); err == nil {
+	if _, err := Validate(schema, map[string]any{"x": 0}, nil); err == nil {
 		t.Fatal("0 should fail min")
 	}
-	if _, err := Validate(schema, map[string]any{"x": 11}); err == nil {
+	if _, err := Validate(schema, map[string]any{"x": 11}, nil); err == nil {
 		t.Fatal("11 should fail max")
 	}
 }
@@ -123,13 +123,13 @@ func TestValidate_AllowedPathsDenied(t *testing.T) {
 			DeniedPaths:     []string{"/var/secrets-no-such-file"},
 		},
 	}}
-	if _, err := Validate(schema, map[string]any{"p": "/var/log/no-such-file"}); err != nil {
+	if _, err := Validate(schema, map[string]any{"p": "/var/log/no-such-file"}, nil); err != nil {
 		t.Fatalf("/var/log/no-such-file should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"p": "/etc/passwd"}); err == nil {
+	if _, err := Validate(schema, map[string]any{"p": "/etc/passwd"}, nil); err == nil {
 		t.Fatal("/etc/passwd should fail allowed_prefixes")
 	}
-	if _, err := Validate(schema, map[string]any{"p": "/var/secrets-no-such-file"}); err == nil {
+	if _, err := Validate(schema, map[string]any{"p": "/var/secrets-no-such-file"}, nil); err == nil {
 		t.Fatal("/var/secrets-no-such-file should fail denied_paths")
 	}
 }
@@ -144,7 +144,7 @@ func TestValidate_RootPrefix(t *testing.T) {
 		Name: "p", Type: actionspec.ArgPath,
 		Validation: &actionspec.Validation{AllowedPrefixes: []string{"/"}},
 	}}
-	if _, err := Validate(allowed, map[string]any{"p": "/etc/no-such-file"}); err != nil {
+	if _, err := Validate(allowed, map[string]any{"p": "/etc/no-such-file"}, nil); err != nil {
 		t.Fatalf(`allowed_prefixes:["/"] should admit /etc/no-such-file: %v`, err)
 	}
 
@@ -152,7 +152,7 @@ func TestValidate_RootPrefix(t *testing.T) {
 		Name: "p", Type: actionspec.ArgPath,
 		Validation: &actionspec.Validation{DeniedPrefixes: []string{"/"}},
 	}}
-	if _, err := Validate(denied, map[string]any{"p": "/anything-no-such-file"}); err == nil {
+	if _, err := Validate(denied, map[string]any{"p": "/anything-no-such-file"}, nil); err == nil {
 		t.Fatal(`denied_prefixes:["/"] should deny /anything-no-such-file`)
 	}
 }
@@ -183,7 +183,7 @@ func TestValidate_SymlinkEscapeRejected(t *testing.T) {
 	// A path under `allowed` that is actually `outside` via the symlink
 	// must be rejected. Resolved path will be outside, which doesn't
 	// share the allowed prefix.
-	if _, err := Validate(schema, map[string]any{"p": escape}); err == nil {
+	if _, err := Validate(schema, map[string]any{"p": escape}, nil); err == nil {
 		t.Fatal("symlinked path should be rejected after EvalSymlinks")
 	}
 }
@@ -193,13 +193,13 @@ func TestValidate_StringArrayItems(t *testing.T) {
 		Name: "xs", Type: actionspec.ArgStringArray,
 		Validation: &actionspec.Validation{MaxItems: ptrInt(2)},
 	}}
-	if _, err := Validate(schema, map[string]any{"xs": []any{"a", "b"}}); err != nil {
+	if _, err := Validate(schema, map[string]any{"xs": []any{"a", "b"}}, nil); err != nil {
 		t.Fatalf("2 items should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"xs": []any{"a", "b", "c"}}); err == nil {
+	if _, err := Validate(schema, map[string]any{"xs": []any{"a", "b", "c"}}, nil); err == nil {
 		t.Fatal("3 items should fail max_items")
 	}
-	if _, err := Validate(schema, map[string]any{"xs": []any{1, "b"}}); err == nil {
+	if _, err := Validate(schema, map[string]any{"xs": []any{1, "b"}}, nil); err == nil {
 		t.Fatal("non-string element should fail")
 	}
 }
@@ -212,10 +212,10 @@ func TestValidate_StringArrayElementPattern(t *testing.T) {
 			MaxItems: ptrInt(4),
 		},
 	}}
-	if _, err := Validate(schema, map[string]any{"tags": []any{"alpha", "beta"}}); err != nil {
+	if _, err := Validate(schema, map[string]any{"tags": []any{"alpha", "beta"}}, nil); err != nil {
 		t.Fatalf("valid tags should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"tags": []any{"alpha", "BAD1"}}); err == nil {
+	if _, err := Validate(schema, map[string]any{"tags": []any{"alpha", "BAD1"}}, nil); err == nil {
 		t.Fatal("element BAD1 should fail pattern")
 	}
 }
@@ -227,10 +227,10 @@ func TestValidate_StringArrayElementEnum(t *testing.T) {
 			Enum: []any{"fast", "slow"},
 		},
 	}}
-	if _, err := Validate(schema, map[string]any{"modes": []any{"fast", "slow"}}); err != nil {
+	if _, err := Validate(schema, map[string]any{"modes": []any{"fast", "slow"}}, nil); err != nil {
 		t.Fatalf("valid modes should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"modes": []any{"fast", "lol"}}); err == nil {
+	if _, err := Validate(schema, map[string]any{"modes": []any{"fast", "lol"}}, nil); err == nil {
 		t.Fatal("element lol should fail enum")
 	}
 }
@@ -243,10 +243,10 @@ func TestValidate_IntegerArrayElementMinMax(t *testing.T) {
 			Max: ptrFloat(65535),
 		},
 	}}
-	if _, err := Validate(schema, map[string]any{"ports": []any{80, 443}}); err != nil {
+	if _, err := Validate(schema, map[string]any{"ports": []any{80, 443}}, nil); err != nil {
 		t.Fatalf("valid ports should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"ports": []any{80, 99999}}); err == nil {
+	if _, err := Validate(schema, map[string]any{"ports": []any{80, 99999}}, nil); err == nil {
 		t.Fatal("element 99999 should fail max")
 	}
 }
@@ -256,10 +256,10 @@ func TestValidate_DurationMax(t *testing.T) {
 		Name: "since", Type: actionspec.ArgDuration,
 		Validation: &actionspec.Validation{MaxDuration: ptrDur(2 * time.Hour)},
 	}}
-	if _, err := Validate(schema, map[string]any{"since": "1h"}); err != nil {
+	if _, err := Validate(schema, map[string]any{"since": "1h"}, nil); err != nil {
 		t.Fatalf("1h should pass: %v", err)
 	}
-	if _, err := Validate(schema, map[string]any{"since": "3h"}); err == nil {
+	if _, err := Validate(schema, map[string]any{"since": "3h"}, nil); err == nil {
 		t.Fatal("3h should fail max_duration")
 	}
 }
@@ -274,7 +274,7 @@ func TestValidate_DefaultsBeforePolicy(t *testing.T) {
 			Allowed: []any{7199},
 		},
 	}}
-	out, err := Validate(schema, nil)
+	out, err := Validate(schema, nil, nil)
 	if err != nil {
 		t.Fatalf("default 7199 should validate: %v", err)
 	}
@@ -295,11 +295,11 @@ func TestValidate_NumberLiteralIsLengthBounded(t *testing.T) {
 	}}
 
 	padded := json.Number("1." + strings.Repeat("0", 30000) + "1")
-	if _, err := Validate(schema, map[string]any{"x": padded}); err == nil {
+	if _, err := Validate(schema, map[string]any{"x": padded}, nil); err == nil {
 		t.Fatal("a 30 KB number literal must be rejected even though it satisfies min/max")
 	}
 
-	if _, err := Validate(schema, map[string]any{"x": json.Number("1.5")}); err != nil {
+	if _, err := Validate(schema, map[string]any{"x": json.Number("1.5")}, nil); err != nil {
 		t.Fatalf("an ordinary number must still pass: %v", err)
 	}
 }
@@ -313,12 +313,12 @@ func TestValidate_ArrayHasABackstopWithoutMaxItems(t *testing.T) {
 	for i := range many {
 		many[i] = "v"
 	}
-	if _, err := Validate(schema, map[string]any{"x": many}); err == nil {
+	if _, err := Validate(schema, map[string]any{"x": many}, nil); err == nil {
 		t.Fatalf("an array of %d elements must be rejected without max_items", len(many))
 	}
 
 	ordinary := []any{"a", "b", "c"}
-	if _, err := Validate(schema, map[string]any{"x": ordinary}); err != nil {
+	if _, err := Validate(schema, map[string]any{"x": ordinary}, nil); err != nil {
 		t.Fatalf("an ordinary array must still pass: %v", err)
 	}
 }
@@ -329,7 +329,7 @@ func TestValidate_AuthorMaxItemsStillApplies(t *testing.T) {
 		Name: "x", Type: actionspec.ArgStringArray,
 		Validation: &actionspec.Validation{MaxItems: ptrInt(2)},
 	}}
-	if _, err := Validate(schema, map[string]any{"x": []any{"a", "b", "c"}}); err == nil {
+	if _, err := Validate(schema, map[string]any{"x": []any{"a", "b", "c"}}, nil); err == nil {
 		t.Fatal("three elements must fail a max_items of 2")
 	}
 }

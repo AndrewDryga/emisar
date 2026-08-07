@@ -144,14 +144,15 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 	}
 
 	eng := engine.New(engine.Config{
-		Registry:     registry,
-		Executor:     exec,
-		Journal:      journal,
-		Redactor:     redact.New(globalRules),
-		PreviewBytes: cfg.Events.MaxPreviewBytes,
-		CancelGrace:  cfg.Execution.CancelGrace.Std(),
-		PackDirs:     packDirs,
-		Admission:    admit,
+		Registry:       registry,
+		Executor:       exec,
+		Journal:        journal,
+		Redactor:       redact.New(globalRules),
+		PreviewBytes:   cfg.Events.MaxPreviewBytes,
+		CancelGrace:    cfg.Execution.CancelGrace.Std(),
+		PackDirs:       packDirs,
+		Admission:      admit,
+		ProtectedPaths: protectedPaths(cfg),
 	})
 
 	return &runtime{
@@ -162,6 +163,39 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 		engine:     eng,
 		admission:  admit,
 	}, nil
+}
+
+// protectedPaths lists the roots holding this runner's own credentials, which
+// no action argument may name: the config directory — config.yaml sits beside
+// runner.env, which carries the enrollment key and every pack credential the
+// operator exported — and the state directory, which holds the control-plane
+// bearer token. install.sh relocates both (--etc-dir, --data-dir), so they are
+// read from the loaded config rather than hardcoded into a pack's denylist.
+func protectedPaths(cfg *config.Config) []string {
+	candidates := []string{cfg.Paths.DataDir}
+	if cfg.Source != "" {
+		candidates = append(candidates, filepath.Dir(cfg.Source))
+	}
+	if cfg.Cloud.TokenPath != "" {
+		candidates = append(candidates, filepath.Dir(cfg.Cloud.TokenPath))
+	}
+	out := make([]string, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, p := range candidates {
+		clean := filepath.Clean(strings.TrimSpace(p))
+		// A relative root can't be compared against the absolute path the
+		// executor uses, and "/" would refuse every path arg on the host
+		// rather than the runner's own state. Neither is a real install.
+		if !filepath.IsAbs(clean) || clean == string(filepath.Separator) {
+			continue
+		}
+		if _, dup := seen[clean]; dup {
+			continue
+		}
+		seen[clean] = struct{}{}
+		out = append(out, clean)
+	}
+	return out
 }
 
 // parseArgFlag turns a list of "key=value" flags into a typed map. JSON

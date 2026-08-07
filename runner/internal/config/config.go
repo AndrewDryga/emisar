@@ -33,6 +33,13 @@ const SchemaVersion = 1
 type Config struct {
 	SchemaVersion int `yaml:"schema_version"`
 
+	// Source is the absolute path Load read this config from. Its directory
+	// is the install's config root — runner.env and the operator's pack
+	// credentials sit beside config.yaml — so callers protecting the runner's
+	// own state need it, and no relative path in the file identifies it.
+	// Never decoded: KnownFields rejects a `source:` key in the document.
+	Source string `yaml:"-"`
+
 	Runner    Runner    `yaml:"runner"`
 	Cloud     Cloud     `yaml:"cloud"`
 	Paths     Paths     `yaml:"paths"`

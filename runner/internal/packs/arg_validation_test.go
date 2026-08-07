@@ -36,7 +36,7 @@ func dispatchValidate(t *testing.T, reg *Registry, actionID string, raw map[stri
 	if !ok {
 		t.Fatalf("action %q not found in the real library (id drifted?)", actionID)
 	}
-	_, err := validation.Validate(act.Args, raw)
+	_, err := validation.Validate(act.Args, raw, nil)
 	return err
 }
 

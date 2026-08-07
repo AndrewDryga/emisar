@@ -33,7 +33,8 @@ func TestPath_UnreadableExistingComponentRejected(t *testing.T) {
 	}}
 	_, err := Validate(schema, map[string]any{
 		"path": filepath.Join(blocked, "new.log"),
-	})
+	}, nil)
+
 	if err == nil {
 		t.Fatal("path below unreadable component must fail closed")
 	}
@@ -59,11 +60,11 @@ func TestPath_UnreadableDenyRuleDoesNotPoisonBenignPaths(t *testing.T) {
 		Name: "path", Type: actionspec.ArgPath, Required: true,
 		Validation: &actionspec.Validation{DeniedPrefixes: []string{denied}},
 	}}
-	if _, err := Validate(schema, map[string]any{"path": filepath.Join(dir, "public.log")}); err != nil {
+	if _, err := Validate(schema, map[string]any{"path": filepath.Join(dir, "public.log")}, nil); err != nil {
 		t.Fatalf("an unreadable deny rule must not reject a benign path: %v", err)
 	}
 
-	_, err := Validate(schema, map[string]any{"path": filepath.Join(denied, "key")})
+	_, err := Validate(schema, map[string]any{"path": filepath.Join(denied, "key")}, nil)
 	var validationErr *Error
 	if !errors.As(err, &validationErr) || validationErr.Code != "denied_prefixes" {
 		t.Fatalf("direct path below unreadable deny rule = %v, want denied_prefixes", err)

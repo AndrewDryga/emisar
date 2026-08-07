@@ -29,7 +29,10 @@ const maxNumberLiteralBytes = 64
 // what the envelope alone allowed.
 const defaultMaxItems = 256
 
-func Validate(schema []actionspec.Arg, raw map[string]any) (map[string]any, error) {
+// protected lists absolute roots no action argument may name, whatever the
+// pack declares. Callers outside the dispatch path (the authoring-time lints)
+// pass nil: they validate example values against a schema, not a real host.
+func Validate(schema []actionspec.Arg, raw map[string]any, protected []string) (map[string]any, error) {
 	if raw == nil {
 		raw = map[string]any{}
 	}
@@ -61,6 +64,9 @@ func Validate(schema []actionspec.Arg, raw map[string]any) (map[string]any, erro
 		}
 		validated, err := applyValidation(a, coerced)
 		if err != nil {
+			return nil, err
+		}
+		if err := refuseProtectedPaths(a, validated, protected); err != nil {
 			return nil, err
 		}
 		out[a.Name] = validated
@@ -368,6 +374,72 @@ func applyPathValidation(a actionspec.Arg, val *actionspec.Validation, v any) (a
 		return resolvedValues, nil
 	}
 	return resolvedValues[0], nil
+}
+
+// refuseProtectedPaths keeps an action argument from naming the runner's own
+// state, whatever its pack declared. A pack's denied_prefixes cannot do this
+// job: the operator picks these directories at install time (--etc-dir,
+// --data-dir), long after the catalog was authored, and every path arg in
+// every pack would have to repeat them. The runner knows where they are, so
+// the runner refuses them.
+//
+// The stakes are the whole runner identity, not one file: the config dir holds
+// runner.env — the enrollment key plus every pack credential the operator
+// exported (NOMAD_TOKEN, PGPASSWORD, ...) — and the data dir holds the bearer
+// token that authenticates this runner to the control plane. Reading either
+// impersonates the runner, so it must not depend on a pack getting its
+// denylist right.
+func refuseProtectedPaths(a actionspec.Arg, v any, protected []string) error {
+	if len(protected) == 0 || !carriesPaths(a) {
+		return nil
+	}
+	values, err := stringsFor(a, v)
+	if err != nil {
+		return err
+	}
+	// Resolve the roots the same way declared rules are resolved, so a host
+	// where /var is a symlink still compares like with like.
+	resolved, err := resolveManyRules(protected)
+	if err != nil {
+		return newError(a.Name, "path", "cannot safely resolve protected paths: %v", err)
+	}
+	lexical := cleanMany(protected)
+	for _, s := range values {
+		// Lexically first: the store is normally unreadable to the service
+		// user, but a direct or dot-dot path into it is still an exact refusal.
+		if prefixInList(filepath.Clean(s), lexical) {
+			return protectedPathError(a, s)
+		}
+		target, err := resolveForCheck(s)
+		if err != nil {
+			return newError(a.Name, "path", "cannot safely resolve path %s: %v", s, err)
+		}
+		if prefixInList(target, resolved) {
+			return protectedPathError(a, target)
+		}
+	}
+	return nil
+}
+
+func protectedPathError(a actionspec.Arg, path string) error {
+	return newError(a.Name, "protected_path",
+		"path %s is inside the runner's own configuration or state", path)
+}
+
+// carriesPaths reports whether an arg's value is a filesystem path the
+// executor will hand to a command. A declared path rule is the same signal
+// applyPathValidation keys on, so a string/string_array arg carrying paths is
+// covered too — but a `path` arg counts even with no validation block, which
+// is exactly the case that would otherwise skip every path check.
+func carriesPaths(a actionspec.Arg) bool {
+	if a.Type == actionspec.ArgPath {
+		return true
+	}
+	if a.Validation == nil {
+		return false
+	}
+	return len(a.Validation.AllowedPaths) > 0 || len(a.Validation.DeniedPaths) > 0 ||
+		len(a.Validation.AllowedPrefixes) > 0 || len(a.Validation.DeniedPrefixes) > 0
 }
 
 func cleanMany(in []string) []string {

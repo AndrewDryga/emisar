@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/andrewdryga/emisar/runner/internal/config"
 )
 
 // captureStdout runs fn with os.Stdout redirected to a pipe and returns
@@ -326,5 +328,65 @@ func TestBoot_AdmissionCompileErrorWrapped(t *testing.T) {
 	}
 	if !contains(err.Error(), "admission") {
 		t.Fatalf("the error should be wrapped as an admission failure, got %q", err)
+	}
+}
+
+func TestProtectedPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want []string
+	}{
+		{
+			name: "config dir, data dir, and token dir",
+			cfg: &config.Config{
+				Source: "/etc/emisar/config.yaml",
+				Paths:  config.Paths{DataDir: "/var/lib/emisar"},
+				Cloud:  config.Cloud{TokenPath: "/var/lib/emisar/token"},
+			},
+			want: []string{"/var/lib/emisar", "/etc/emisar"},
+		},
+		{
+			name: "a token stored away from the data dir is protected too",
+			cfg: &config.Config{
+				Source: "/opt/emisar/config.yaml",
+				Paths:  config.Paths{DataDir: "/opt/emisar/state"},
+				Cloud:  config.Cloud{TokenPath: "/var/secrets/emisar/token"},
+			},
+			want: []string{"/opt/emisar/state", "/opt/emisar", "/var/secrets/emisar"},
+		},
+		{
+			// "/" would refuse every path arg on the host instead of the
+			// runner's own state, and a relative root never matches the
+			// absolute path the executor runs. Neither is a real install.
+			name: "root and relative values are dropped",
+			cfg: &config.Config{
+				Source: "config.yaml",
+				Paths:  config.Paths{DataDir: "/"},
+				Cloud:  config.Cloud{TokenPath: "state/token"},
+			},
+			want: []string{},
+		},
+		{
+			name: "an unset data dir contributes nothing",
+			cfg: &config.Config{
+				Source: "/etc/emisar/config.yaml",
+			},
+			want: []string{"/etc/emisar"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := protectedPaths(tt.cfg)
+			if len(got) != len(tt.want) {
+				t.Fatalf("protectedPaths = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("protectedPaths = %v, want %v", got, tt.want)
+				}
+			}
+		})
 	}
 }

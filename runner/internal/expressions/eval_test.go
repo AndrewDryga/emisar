@@ -111,6 +111,7 @@ func TestRenderArgv_PreservesJSONNumber(t *testing.T) {
 	args, err := validation.Validate(
 		[]actionspec.Arg{{Name: "ratio", Type: actionspec.ArgNumber, Required: true}},
 		map[string]any{"ratio": json.Number(number)},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Validate: %v", err)

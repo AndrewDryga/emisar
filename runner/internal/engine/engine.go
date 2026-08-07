@@ -148,6 +148,11 @@ type Engine struct {
 	// on top of cloud policy: every Run call passes through Admit before
 	// the registry lookup. Nil means "admit everything" (default).
 	Admission *admission.Policy
+	// ProtectedPaths are the runner's own configuration and state roots.
+	// No action argument may name a path inside them, whatever its pack
+	// declared — they hold the enrollment key, the operator's pack
+	// credentials, and this runner's bearer token.
+	ProtectedPaths []string
 	// Logger is used for journal-write failures and other operational
 	// signals. Defaults to slog.Default.
 	Logger *slog.Logger
@@ -155,15 +160,16 @@ type Engine struct {
 
 // Config bundles the construction-time dependencies for New.
 type Config struct {
-	Registry     *packs.Registry
-	Executor     *executor.Executor
-	Journal      *audit.Journal
-	Redactor     *redact.Engine
-	PreviewBytes int
-	CancelGrace  time.Duration
-	PackDirs     []string
-	Admission    *admission.Policy
-	Logger       *slog.Logger
+	Registry       *packs.Registry
+	Executor       *executor.Executor
+	Journal        *audit.Journal
+	Redactor       *redact.Engine
+	PreviewBytes   int
+	CancelGrace    time.Duration
+	PackDirs       []string
+	Admission      *admission.Policy
+	ProtectedPaths []string
+	Logger         *slog.Logger
 }
 
 // New returns an Engine. PreviewBytes defaults to 4 KiB; Logger defaults
@@ -176,14 +182,15 @@ func New(cfg Config) *Engine {
 		cfg.Logger = slog.Default()
 	}
 	e := &Engine{
-		Executor:     cfg.Executor,
-		Journal:      cfg.Journal,
-		Redactor:     cfg.Redactor,
-		PreviewBytes: cfg.PreviewBytes,
-		CancelGrace:  cfg.CancelGrace,
-		PackDirs:     cfg.PackDirs,
-		Admission:    cfg.Admission,
-		Logger:       cfg.Logger,
+		Executor:       cfg.Executor,
+		Journal:        cfg.Journal,
+		Redactor:       cfg.Redactor,
+		PreviewBytes:   cfg.PreviewBytes,
+		CancelGrace:    cfg.CancelGrace,
+		PackDirs:       cfg.PackDirs,
+		Admission:      cfg.Admission,
+		ProtectedPaths: cfg.ProtectedPaths,
+		Logger:         cfg.Logger,
 	}
 	e.registry.Store(cfg.Registry)
 	return e
@@ -352,7 +359,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		}, nil
 	}
 
-	cleanArgs, err := validation.Validate(act.Args, req.Args)
+	cleanArgs, err := validation.Validate(act.Args, req.Args, e.ProtectedPaths)
 	if err != nil {
 		detail := validationFailureDetail(err, req.Args, act.Args)
 		ev := e.baseEvent(req, audit.EventValidationFailed, now)

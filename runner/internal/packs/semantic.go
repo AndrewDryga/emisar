@@ -19,12 +19,12 @@ func validateActionSemantics(action *actionspec.Action) error {
 		if arg.Default == nil {
 			continue
 		}
-		if _, err := validation.Validate(portableSchema([]actionspec.Arg{arg}), nil); err != nil {
+		if _, err := validation.Validate(portableSchema([]actionspec.Arg{arg}), nil, nil); err != nil {
 			return fmt.Errorf("action %s: arg %s: invalid default: %w", action.ID, arg.Name, err)
 		}
 	}
 	for _, example := range action.Examples {
-		if _, err := validation.Validate(portableSchema(action.Args), example.Args); err != nil {
+		if _, err := validation.Validate(portableSchema(action.Args), example.Args, nil); err != nil {
 			return fmt.Errorf("action %s: example %q has invalid args: %w", action.ID, example.Title, err)
 		}
 	}

@@ -39,7 +39,7 @@ func TestSymlink_NonexistentTargetThroughSymlinkedParent(t *testing.T) {
 	}
 
 	// Honest read inside allowed area: passes.
-	if _, err := Validate(schema, map[string]any{"p": filepath.Join(allowed, "ok.log")}); err != nil {
+	if _, err := Validate(schema, map[string]any{"p": filepath.Join(allowed, "ok.log")}, nil); err != nil {
 		t.Fatalf("honest path should pass: %v", err)
 	}
 
@@ -49,7 +49,8 @@ func TestSymlink_NonexistentTargetThroughSymlinkedParent(t *testing.T) {
 	// under the allowed prefix.
 	_, err := Validate(schema, map[string]any{
 		"p": filepath.Join(allowed, "escape", "new.log"),
-	})
+	}, nil)
+
 	if err == nil {
 		t.Fatal("expected validation to reject path through symlinked parent")
 	}
@@ -71,7 +72,7 @@ func TestSymlink_UnresolvableExistingComponentRejected(t *testing.T) {
 		if err := os.Symlink(filepath.Join(dir, "missing-outside"), escape); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Validate(schema, map[string]any{"p": filepath.Join(escape, "new.log")}); err == nil {
+		if _, err := Validate(schema, map[string]any{"p": filepath.Join(escape, "new.log")}, nil); err == nil {
 			t.Fatal("path through dangling symlink must fail closed")
 		}
 	})
@@ -85,7 +86,7 @@ func TestSymlink_UnresolvableExistingComponentRejected(t *testing.T) {
 		if err := os.Symlink(left, right); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Validate(schema, map[string]any{"p": filepath.Join(left, "new.log")}); err == nil {
+		if _, err := Validate(schema, map[string]any{"p": filepath.Join(left, "new.log")}, nil); err == nil {
 			t.Fatal("path through symlink loop must fail closed")
 		}
 	})
@@ -116,7 +117,8 @@ func TestPathValidation_ReturnsCanonicalCheckedTargets(t *testing.T) {
 	validated, err := Validate(schema, map[string]any{
 		"single": input,
 		"many":   []string{input},
-	})
+	}, nil)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,12 +149,12 @@ func TestPath_RelativeValueRejectedUnderPathRules(t *testing.T) {
 		},
 	}
 	// The absolute form is denied by the /etc rule...
-	if _, err := Validate(deny, map[string]any{"p": "/etc/shadow"}); err == nil {
+	if _, err := Validate(deny, map[string]any{"p": "/etc/shadow"}, nil); err == nil {
 		t.Fatal("expected /etc/shadow to be denied")
 	}
 	// ...and the relative form, which resolves to the same file under CWD "/",
 	// must be rejected too rather than slipping past the deny list.
-	if _, err := Validate(deny, map[string]any{"p": "etc/shadow"}); err == nil {
+	if _, err := Validate(deny, map[string]any{"p": "etc/shadow"}, nil); err == nil {
 		t.Fatal("expected relative etc/shadow to be rejected under denied_prefixes")
 	}
 
@@ -163,10 +165,10 @@ func TestPath_RelativeValueRejectedUnderPathRules(t *testing.T) {
 			Validation: &actionspec.Validation{AllowedPrefixes: []string{"/var/log"}},
 		},
 	}
-	if _, err := Validate(allow, map[string]any{"p": "var/log/app.log"}); err == nil {
+	if _, err := Validate(allow, map[string]any{"p": "var/log/app.log"}, nil); err == nil {
 		t.Fatal("expected relative var/log/app.log to be rejected under allowed_prefixes")
 	}
-	if _, err := Validate(allow, map[string]any{"p": "/var/log/app.log"}); err != nil {
+	if _, err := Validate(allow, map[string]any{"p": "/var/log/app.log"}, nil); err != nil {
 		t.Fatalf("absolute path under allowed prefix should pass: %v", err)
 	}
 }

@@ -36,6 +36,7 @@ func Load(path string) (*Config, error) {
 		}
 		return nil, fmt.Errorf("config: parse %s: %w", abs, err)
 	}
+	cfg.Source = abs
 	base := filepath.Dir(abs)
 	for i, p := range cfg.Paths.Packs {
 		cfg.Paths.Packs[i] = relocate(p, base)
