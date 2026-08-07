@@ -23,7 +23,18 @@ config :emisar, Emisar.Repo,
   port: db_port,
   database: "emisar_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+  pool_size: System.schedulers_online() * 2,
+  # Every process in a test shares its owner's ONE sandbox connection, so a test
+  # that deliberately races N callers — proving concurrent identical attempts
+  # still create exactly one row — queues all N transactions on that connection
+  # by design. DBConnection's load-shedding heuristic is built for a real pool
+  # under pressure, and it reads that queue as an outage: past `queue_target` for
+  # a whole `queue_interval` it starts dropping the tail with "connection not
+  # available", failing the run on a slow machine rather than on a defect. The
+  # queueing is the test's premise and cannot be removed without removing the
+  # concurrency, so give the heuristic a ceiling no legitimate test reaches.
+  queue_target: 5_000,
+  queue_interval: 10_000
 
 # The advertised origin pins port 80 explicitly — without it Phoenix would
 # infer the URL port from the (unused, server: false) listen port 4002 and
