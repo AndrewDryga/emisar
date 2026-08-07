@@ -16,10 +16,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/base32"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -33,25 +29,9 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-)
 
-// totpCode computes the current RFC 6238 code. The admin console enforces
-// step-up MFA even with a valid org session, so a run can't get in without it.
-func totpCode(secret string) (string, error) {
-	normalized := strings.ToUpper(strings.NewReplacer(" ", "", "-", "").Replace(secret))
-	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(normalized)
-	if err != nil {
-		return "", fmt.Errorf("decoding TOTP secret: %w", err)
-	}
-	mac := hmac.New(sha1.New, key)
-	if err := binary.Write(mac, binary.BigEndian, uint64(time.Now().Unix()/30)); err != nil {
-		return "", err
-	}
-	sum := mac.Sum(nil)
-	offset := sum[len(sum)-1] & 0x0F
-	value := binary.BigEndian.Uint32(sum[offset:offset+4]) & 0x7FFFFFFF
-	return fmt.Sprintf("%06d", value%1000000), nil
-}
+	"github.com/andrewdryga/emisar/tools/internal/capture"
+)
 
 // pickGoogleAuthenticator clicks the "Select" beside Google Authenticator on the
 // challenge chooser. Okta's widget markup carries no stable hook for the row, so
@@ -414,7 +394,7 @@ func clearMFA(ctx context.Context, env map[string]string) error {
 	// Codes roll every 30s; a fresh one is generated per attempt so a rollover
 	// mid-run retries rather than failing the whole capture.
 	for attempt := 0; attempt < 3; attempt++ {
-		code, err := totpCode(env["OKTA_TOTP_SECRET"])
+		code, err := capture.TOTPCode(env["OKTA_TOTP_SECRET"])
 		if err != nil {
 			return err
 		}

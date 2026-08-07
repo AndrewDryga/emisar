@@ -8,10 +8,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/base32"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -26,6 +22,8 @@ import (
 
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
+
+	capturekit "github.com/andrewdryga/emisar/tools/internal/capture"
 )
 
 const (
@@ -428,7 +426,7 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 					return err
 				}
 			}
-			code, err := totpCode(env["GOOGLE_TEST_TOTP_SECRET"])
+			code, err := capturekit.TOTPCode(env["GOOGLE_TEST_TOTP_SECRET"])
 			if err != nil {
 				return err
 			}
@@ -1789,22 +1787,6 @@ func totpField(ctx context.Context) string {
 		}
 	}
 	return ""
-}
-
-func totpCode(secret string) (string, error) {
-	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).
-		DecodeString(strings.ToUpper(strings.NewReplacer(" ", "", "-", "").Replace(secret)))
-	if err != nil {
-		return "", fmt.Errorf("decode TOTP secret: %w", err)
-	}
-	counter := make([]byte, 8)
-	binary.BigEndian.PutUint64(counter, uint64(time.Now().Unix()/30))
-	mac := hmac.New(sha1.New, key)
-	_, _ = mac.Write(counter)
-	sum := mac.Sum(nil)
-	offset := sum[len(sum)-1] & 0x0f
-	value := binary.BigEndian.Uint32(sum[offset:offset+4]) & 0x7fffffff
-	return fmt.Sprintf("%06d", value%1_000_000), nil
 }
 
 func screenshot(ctx context.Context, outDir, name string) error {

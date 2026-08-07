@@ -10,10 +10,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/base32"
-	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -23,6 +19,8 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+
+	"github.com/andrewdryga/emisar/tools/internal/capture"
 )
 
 func main() {
@@ -200,7 +198,7 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 		}
 	}
 
-	code, err := totpCode(secret)
+	code, err := capture.TOTPCode(secret)
 	if err != nil {
 		return err
 	}
@@ -210,28 +208,6 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 		chromedp.Click(`input[type="submit"]`, chromedp.ByQuery),
 		chromedp.Sleep(6*time.Second),
 	)
-}
-
-// totpCode is RFC 6238 TOTP-SHA1, 6 digits, 30s step — what an authenticator app
-// computes. Keeping it in-process means the secret never leaves this machine and
-// no phone is in the loop.
-func totpCode(secret string) (string, error) {
-	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).
-		DecodeString(strings.ToUpper(strings.ReplaceAll(secret, " ", "")))
-	if err != nil {
-		return "", fmt.Errorf("decode TOTP secret: %w", err)
-	}
-
-	counter := make([]byte, 8)
-	binary.BigEndian.PutUint64(counter, uint64(time.Now().Unix()/30))
-
-	mac := hmac.New(sha1.New, key)
-	mac.Write(counter)
-	sum := mac.Sum(nil)
-
-	offset := sum[len(sum)-1] & 0x0f
-	value := binary.BigEndian.Uint32(sum[offset:offset+4]) & 0x7fffffff
-	return fmt.Sprintf("%06d", value%1_000_000), nil
 }
 
 func screenshot(ctx context.Context, outDir, name string) error {
