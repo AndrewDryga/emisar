@@ -212,6 +212,19 @@ resource "google_project_iam_custom_role" "terraform_iap_policy" {
 
 }
 
+# Project-scoped rather than bound to the Livebook backend, because a
+# resource-level IAP binding can only be created by an identity that already
+# holds iap.webServices.setIamPolicy on that backend — which is the permission
+# this grants. Project IAM admin does not cover it; IAP resource policies are
+# the separate family the comment above names. So the narrower binding cannot
+# bootstrap itself.
+#
+# Blast radius equals intent only while Livebook is the sole IAP backend: this
+# authorizes policy writes on ANY IAP web backend in the project. Adding a
+# second one silently widens what the apply identity can reach, with no diff
+# that says so. If that happens, revisit here — either an IAM condition on
+# resource.name, if IAP honors resource attributes in conditions by then, or a
+# separately bootstrapped resource-level binding.
 resource "google_project_iam_member" "terraform_iap_policy" {
   count = var.livebook_enabled ? 1 : 0
 
