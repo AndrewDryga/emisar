@@ -1,0 +1,8 @@
+# Shutting a BGP neighbour changes the host's routing session with a real
+# peer.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    frr.bgp_neighbor_shutdown: requires_privileged_host

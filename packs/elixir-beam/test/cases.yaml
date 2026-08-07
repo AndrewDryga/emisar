@@ -1,0 +1,8 @@
+# recon_trace_calls attaches a tracer to a running BEAM node's processes; it
+# needs a real node under load, not a fixture.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    beam.recon_trace_calls: requires_privileged_host

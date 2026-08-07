@@ -1,0 +1,13 @@
+# Every one of these drives the podman service, which means handing the
+# harness a container runtime socket — root on the host by another name, in
+# a rig whose whole point is an unprivileged SUT.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    podman.inspect: requires_privileged_host
+    podman.kill: requires_privileged_host
+    podman.restart: requires_privileged_host
+    podman.stop: requires_privileged_host
+    podman.system_prune: requires_privileged_host

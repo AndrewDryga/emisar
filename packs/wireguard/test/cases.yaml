@@ -1,0 +1,10 @@
+# Bringing a tunnel up or down and removing a peer write the host's network
+# namespace and need NET_ADMIN.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    wg.quick_down: requires_privileged_host
+    wg.quick_up: requires_privileged_host
+    wg.set_peer_remove: requires_privileged_host

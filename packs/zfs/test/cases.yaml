@@ -1,0 +1,11 @@
+# Rolling back a dataset, destroying a snapshot, clearing pool errors and
+# starting a scrub act on a real ZFS pool; there is no pool in the SUT.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    zfs.clear_pool_errors: requires_privileged_host
+    zfs.dataset_rollback: requires_privileged_host
+    zfs.snapshot_destroy: requires_privileged_host
+    zfs.start_scrub: requires_privileged_host

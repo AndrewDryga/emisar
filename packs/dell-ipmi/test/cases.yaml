@@ -1,0 +1,10 @@
+# IPMI talks to a Dell BMC over the management interface. There is no
+# baseboard controller in a container.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    ipmi.bootdev: requires_hardware
+    ipmi.power_control: requires_hardware
+    ipmi.sel_clear: requires_hardware

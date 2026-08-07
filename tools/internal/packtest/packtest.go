@@ -95,6 +95,14 @@ type Plan struct {
 	Cases              []Case             `yaml:"cases"`
 }
 
+// DeclarationOnly reports whether this plan exists solely to record risk
+// exceptions: no cases, no services, no SUT images. Such a pack's risky actions
+// change the host itself or reach a service the harness deliberately will not
+// stand up, so the honest artifact is the reason, not a fixture.
+func (plan Plan) DeclarationOnly() bool {
+	return len(plan.Cases) == 0 && len(plan.Services) == 0 && len(plan.Versions) == 0
+}
+
 type CaseRef struct {
 	ID         string
 	Action     string
@@ -201,6 +209,11 @@ func Discover(packsDir, pattern string, names ...string) ([]PlanRef, error) {
 		plan, err := loadPlan(path)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		// Declaration-only plans carry risk exceptions, not cases; there is
+		// nothing for the harness to schedule.
+		if plan.DeclarationOnly() {
+			continue
 		}
 		if err := validateVersions(plan.Versions); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
@@ -402,6 +415,9 @@ func Validate(plans []PlanRef) error {
 		if err := validatePlan(ref.Name, plan, actions); err != nil {
 			return fmt.Errorf("%s: %w", ref.Name, err)
 		}
+		if plan.DeclarationOnly() {
+			continue
+		}
 		composePath := filepath.Join(filepath.Dir(ref.Path), "compose.yaml")
 		compose, err := os.ReadFile(composePath)
 		if err != nil {
@@ -409,6 +425,38 @@ func Validate(plans []PlanRef) error {
 		}
 		if err := validateFixturePlan(ref.Name, plan, compose); err != nil {
 			return fmt.Errorf("%s: %w", ref.Name, err)
+		}
+	}
+	return nil
+}
+
+// ValidateDeclarations checks the declaration-only plans, which Discover
+// deliberately leaves out of the runnable set. They still have to be judged:
+// otherwise a pack could name a risk exception for an action that does not
+// exist, is not risky, or omit an action entirely under mode: complete, and
+// nothing would say so.
+func ValidateDeclarations(packsDir string) error {
+	paths, err := filepath.Glob(filepath.Join(packsDir, "*", "test", "cases.yaml"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		plan, err := loadPlan(path)
+		if err != nil {
+			return err
+		}
+		if !plan.DeclarationOnly() {
+			continue
+		}
+		packDir := filepath.Dir(filepath.Dir(path))
+		actions, err := loadActions(packDir)
+		if err != nil {
+			return err
+		}
+		name := filepath.Base(packDir)
+		if err := validatePlan(name, plan, actions); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
 		}
 	}
 	return nil
@@ -584,6 +632,15 @@ func loadActions(packDir string) (map[string]actionDefinition, error) {
 }
 
 func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) error {
+	// A declaration-only plan records why a pack's risky actions have no
+	// behavior case, for packs whose actions change the host itself or reach a
+	// service the harness will not stand up. It describes no SUT, so demanding
+	// an image, a Compose service and a case just to state that would be
+	// backwards — and demanding them is why 78 risky actions across 22 packs
+	// were silently uncovered instead of declared.
+	if plan.DeclarationOnly() {
+		return validateRiskAccountability(plan.RiskAccountability, actions, map[string]bool{})
+	}
 	if err := validateVersions(plan.Versions); err != nil {
 		return err
 	}

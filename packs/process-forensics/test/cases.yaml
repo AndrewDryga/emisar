@@ -1,0 +1,10 @@
+# strace and gdb attach with ptrace to a process the harness does not own;
+# the SUT drops that capability deliberately.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    forensics.gdb_backtrace: requires_privileged_host
+    forensics.strace_pid_short: requires_privileged_host
+    forensics.strace_summary: requires_privileged_host

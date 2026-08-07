@@ -1,0 +1,15 @@
+# Masking, killing, reloading and restarting units change the host's service
+# manager.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    systemd.unit_kill: requires_privileged_host
+    systemd.unit_mask: requires_privileged_host
+    systemd.unit_reload: requires_privileged_host
+    systemd.unit_restart: requires_privileged_host
+    systemd.unit_show: requires_privileged_host
+    systemd.unit_start: requires_privileged_host
+    systemd.unit_stop: requires_privileged_host
+    systemd.vacuum_journal: requires_privileged_host

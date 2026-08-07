@@ -1,0 +1,12 @@
+# Dropping the page cache, setting a sysctl, signalling an arbitrary pid,
+# and reading another process's environ all need privileges the harness
+# deliberately withholds.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    debugging.drop_caches: requires_privileged_host
+    debugging.kill_pid: requires_privileged_host
+    debugging.pid_environ: requires_privileged_host
+    debugging.sysctl_set: requires_privileged_host

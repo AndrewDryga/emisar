@@ -1,0 +1,10 @@
+# Rebooting the firewall, restarting a service, and flushing the state table
+# act on a pfSense appliance over its API.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    pfsense.flush_states: requires_privileged_host
+    pfsense.reboot: requires_privileged_host
+    pfsense.restart_service: requires_privileged_host

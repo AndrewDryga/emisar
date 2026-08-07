@@ -1,0 +1,17 @@
+# Rebooting, enabling/disabling/starting/stopping units, and reading every
+# user's crontab all change or inspect the host itself. The SUT is
+# unprivileged and disposable on purpose.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    linux.cron_recent: requires_privileged_host
+    linux.crontab_all: requires_privileged_host
+    linux.reboot_host: requires_privileged_host
+    linux.systemctl_disable: requires_privileged_host
+    linux.systemctl_enable: requires_privileged_host
+    linux.systemctl_reload: requires_privileged_host
+    linux.systemctl_restart: requires_privileged_host
+    linux.systemctl_start: requires_privileged_host
+    linux.systemctl_stop: requires_privileged_host

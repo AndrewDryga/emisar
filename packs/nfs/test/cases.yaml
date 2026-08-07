@@ -1,0 +1,8 @@
+# Re-exporting and unexporting write the host's NFS export table.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    nfs.exportfs_r: requires_privileged_host
+    nfs.exportfs_unexport_path: requires_privileged_host

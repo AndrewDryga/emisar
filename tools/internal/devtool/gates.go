@@ -502,6 +502,11 @@ func (a *App) validatePacks(ctx context.Context) error {
 	if err := packtest.Validate(plans); err != nil {
 		return fmt.Errorf("pack behavior authoring: %w", err)
 	}
+	// Declaration-only plans are not in `plans` — they schedule nothing — but
+	// their risk exceptions still have to be judged.
+	if err := packtest.ValidateDeclarations(filepath.Join(a.Root, "packs")); err != nil {
+		return fmt.Errorf("pack risk accountability: %w", err)
+	}
 	if _, err := packtest.Mirrors(
 		filepath.Join(a.Root, "packs"),
 		filepath.Join(a.Root, "dev", "test-packs", "mirrors.yaml"),

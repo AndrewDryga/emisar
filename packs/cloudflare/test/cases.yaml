@@ -1,0 +1,11 @@
+# Purging a zone's cache or flipping development mode acts on Cloudflare's
+# edge through an authenticated account. There is no local SUT for someone
+# else's CDN.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    cf.dev_mode_on: requires_external_service
+    cf.purge_all_cache: requires_external_service
+    cf.purge_url: requires_external_service

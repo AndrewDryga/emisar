@@ -1,0 +1,11 @@
+# dnf install/remove/upgrade/autoremove write the host's RPM database. The
+# SUT is unprivileged and disposable.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    dnf.autoremove: requires_privileged_host
+    rpm.dnf_install: requires_privileged_host
+    rpm.dnf_remove: requires_privileged_host
+    dnf.upgrade_pkg: requires_privileged_host

@@ -1,0 +1,9 @@
+# Stepping the clock and toggling NTP change the host's time, which the
+# harness shares with every other running case.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    time.chronyc_makestep: requires_privileged_host
+    time.timedatectl_set_ntp: requires_privileged_host

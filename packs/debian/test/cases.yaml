@@ -1,0 +1,11 @@
+# apt install/remove/autoremove write the host's package database and dpkg
+# state. The SUT is unprivileged and disposable, and a package set it
+# mutated would not be the host's.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    debian.apt_autoremove: requires_privileged_host
+    debian.apt_install: requires_privileged_host
+    debian.apt_remove: requires_privileged_host

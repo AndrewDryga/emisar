@@ -705,3 +705,60 @@ func TestWorkersTakesTheSmallestPlanCap(t *testing.T) {
 		t.Fatalf("a plan cannot raise the cap, got %d", got)
 	}
 }
+
+// A pack whose risky actions all change the host itself, or reach a service the
+// harness deliberately will not stand up, records WHY instead of a fixture. The
+// schema used to demand a SUT image, a Compose service and a case even to say
+// that, which is why 78 risky actions across 22 packs were silently uncovered
+// rather than declared.
+func TestDeclarationOnlyPlanRecordsRiskWithoutASUT(t *testing.T) {
+	packs := t.TempDir()
+	pack := filepath.Join(packs, "hostpack")
+	if err := os.MkdirAll(filepath.Join(pack, "actions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(pack, "test"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	action := "schema_version: 1\nid: host.reboot\nkind: exec\nrisk: critical\n"
+	if err := os.WriteFile(filepath.Join(pack, "actions", "reboot.yaml"), []byte(action), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(pack, "test", "cases.yaml")
+
+	declared := "risk_accountability:\n  mode: complete\n  exceptions:\n    host.reboot: requires_privileged_host\n"
+	if err := os.WriteFile(plan, []byte(declared), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// It validates with no versions, no services, no cases and no compose.yaml.
+	if err := ValidateDeclarations(packs); err != nil {
+		t.Fatalf("declaration-only plan rejected: %v", err)
+	}
+
+	// And it is not a runnable plan: nothing for the harness to schedule.
+	plans, err := Discover(packs, "")
+	if err == nil && len(plans) != 0 {
+		t.Fatalf("declaration-only plan was scheduled: %+v", plans)
+	}
+
+	// Omitting a risky action under mode: complete is the failure it exists for.
+	silent := "risk_accountability:\n  mode: complete\n  exceptions: {}\n"
+	if err := os.WriteFile(plan, []byte(silent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateDeclarations(packs)
+	if err == nil || !strings.Contains(err.Error(), "host.reboot") {
+		t.Fatalf("error = %v, want it to name the undeclared risky action", err)
+	}
+
+	// So is naming a reason the tooling does not recognize.
+	bogus := "risk_accountability:\n  mode: complete\n  exceptions:\n    host.reboot: because_i_said_so\n"
+	if err := os.WriteFile(plan, []byte(bogus), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateDeclarations(packs)
+	if err == nil || !strings.Contains(err.Error(), "unknown reason") {
+		t.Fatalf("error = %v, want an unknown-reason rejection", err)
+	}
+}

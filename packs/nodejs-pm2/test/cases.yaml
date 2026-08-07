@@ -1,0 +1,11 @@
+# Restarting, reloading, scaling and stopping act on a pm2 daemon owned by
+# the application user on the host.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    pm2.reload: requires_privileged_host
+    pm2.restart: requires_privileged_host
+    pm2.scale: requires_privileged_host
+    pm2.stop: requires_privileged_host

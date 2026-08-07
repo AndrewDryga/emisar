@@ -1,0 +1,9 @@
+# A heap dump and the VM property read attach to a running JVM as its user,
+# which the unprivileged SUT is not.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    jvm.heap_dump: requires_privileged_host
+    jvm.vm_system_properties: requires_privileged_host

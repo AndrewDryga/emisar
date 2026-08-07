@@ -1,0 +1,8 @@
+# Banning an IP writes the host's netfilter tables through fail2ban, which
+# needs NET_ADMIN.
+# Declared rather than left silently uncovered, so the gap is a decision in
+# the plan instead of an absence nobody sees.
+risk_accountability:
+  mode: complete
+  exceptions:
+    f2b.banip: requires_privileged_host
