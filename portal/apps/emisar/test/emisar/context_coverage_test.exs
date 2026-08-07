@@ -26,17 +26,56 @@ defmodule Emisar.ContextCoverageTest do
 
   @otp_lifecycle_callbacks MapSet.new([{"init", 1}, {"start_link", 1}])
 
-  # Every function name covered by a `describe "name/arity …"` across the WHOLE
-  # test tree (both apps) — a context's functions may be tested in sibling files.
+  # Every `describe "name/arity …"` across both test trees, kept with the module
+  # names its file mentions.
+  #
+  # A context's functions may legitimately be tested in a sibling file — the
+  # runner-scope and invitation suites are topical, and a web controller test
+  # drives the context function behind it — so this cannot be narrowed to one
+  # file per context. But matching on the describe NAME alone let any context
+  # borrow another's coverage: the suite's only `describe "refresh/2"` is in the
+  # pack-registry cache test, which never mentions OAuth, and it was the thing
+  # marking `Emisar.OAuth.refresh/2` covered. Deleting every OAuth test would
+  # not have failed this check.
+  #
+  # So a describe counts for a context only if its file actually references that
+  # context — the weakest binding that still rules out an unrelated namesake.
   defp described_functions do
     [Path.join(__DIR__, ".."), Path.join([__DIR__, "..", "..", "..", "emisar_web", "test"])]
     |> Enum.flat_map(&Path.wildcard(Path.join(&1, "**/*.exs")))
     |> Enum.flat_map(fn file ->
+      source = File.read!(file)
+
       ~r/describe\s+"([a-z_][a-z_0-9]*[!?]?)\/(\d+)/
-      |> Regex.scan(File.read!(file))
-      |> Enum.map(fn [_match, name, arity] -> {name, String.to_integer(arity)} end)
+      |> Regex.scan(source)
+      |> Enum.map(fn [_match, name, arity] ->
+        {{name, String.to_integer(arity)}, referenced_contexts(source)}
+      end)
+    end)
+    |> Enum.reduce(%{}, fn {key, contexts}, acc ->
+      Map.update(acc, key, contexts, &MapSet.union(&1, contexts))
+    end)
+  end
+
+  defp referenced_contexts(source) do
+    @contexts
+    |> Enum.filter(fn context ->
+      module = context_module(context)
+      String.contains?(source, "Emisar.#{module}") or String.contains?(source, "#{module}.")
     end)
     |> MapSet.new()
+  end
+
+  # Read the module name from the context's own source rather than camelizing
+  # its filename: the acronym contexts are Emisar.SSO, Emisar.OAuth and
+  # Emisar.MCPOperations, which Macro.camelize/1 renders Sso, Oauth and
+  # McpOperations — three names that appear nowhere.
+  defp context_module(context) do
+    [__DIR__, "..", "..", "lib", "emisar", "#{context}.ex"]
+    |> Path.join()
+    |> File.read!()
+    |> then(&Regex.run(~r/^defmodule\s+Emisar\.([A-Za-z0-9_.]+)\s+do/m, &1))
+    |> Enum.at(1)
   end
 
   defp public_functions(context_name) do
@@ -79,17 +118,19 @@ defmodule Emisar.ContextCoverageTest do
     @context_name context_name
     test "Emisar.#{context_name |> Atom.to_string() |> Macro.camelize()} — every public function has a describe",
          %{described: described} do
+      covered? = &MapSet.member?(Map.get(described, &1, MapSet.new()), @context_name)
+
       gap =
         @context_name
         |> public_functions()
-        |> MapSet.difference(described)
+        |> Enum.reject(covered?)
         |> Enum.sort()
         |> Enum.map(&format_function/1)
 
       assert gap == [],
-             "#{@context_name}.ex has PUBLIC functions with no `describe` anywhere in the suite: " <>
-               "#{inspect(gap)}. Add `describe \"<fun>/<arity>\"` (with real tests, in module " <>
-               "order) to test/emisar/#{@context_name}_test.exs."
+             "#{@context_name}.ex has PUBLIC functions with no `describe` in a file that " <>
+               "references this context: #{inspect(gap)}. Add `describe \"<fun>/<arity>\"` " <>
+               "(with real tests, in module order) to test/emisar/#{@context_name}_test.exs."
     end
   end
 end
