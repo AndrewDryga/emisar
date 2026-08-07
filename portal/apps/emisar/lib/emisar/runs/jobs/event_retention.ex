@@ -1,10 +1,12 @@
 defmodule Emisar.Runs.Jobs.EventRetention do
   @moduledoc """
-  Periodic sweep that prunes run progress events past account retention.
+  Daily sweep that prunes run progress events past account retention.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,
-    every: :timer.hours(1),
+    # Retention is promised in days, so the sweep matches that precision —
+    # hourly ticks paid an every-account pass 24x for a day-grained cutoff.
+    every: :timer.hours(24),
     initial_delay: :timer.minutes(5),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
