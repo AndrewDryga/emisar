@@ -4136,16 +4136,6 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "list_grants_for_account/2" do
-    test "applies every preload and the include_expired filter (an empty account is fine)" do
-      subject = operator_subject(Fixtures.Accounts.create_account())
-
-      assert {:ok, [], _meta} =
-               Approvals.list_grants_for_account(subject,
-                 include_expired: true,
-                 preload: [:api_key, :runner, :granted_by, :revoked_by, :approval_request_run]
-               )
-    end
-
     test "an operator (no manage_grants) is refused with :unauthorized" do
       {_user, account, _owner} = Fixtures.Subjects.owner_subject()
 

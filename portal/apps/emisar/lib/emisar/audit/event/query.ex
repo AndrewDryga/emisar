@@ -443,12 +443,6 @@ defmodule Emisar.Audit.Event.Query do
   def by_event_type(queryable, type),
     do: where(queryable, [events: e], e.event_type == ^type)
 
-  def by_actor_kind(queryable, kind),
-    do: where(queryable, [events: e], e.actor_kind == ^kind)
-
-  def by_target_kind(queryable, kind),
-    do: where(queryable, [events: e], e.target_kind == ^kind)
-
   @doc """
   Drops every runner-targeted event whose runner is outside the member's scope.
 
@@ -543,11 +537,6 @@ defmodule Emisar.Audit.Event.Query do
       fun: fn queryable, ids -> {queryable, dynamic([events: e], e.target_id in ^ids)} end
     }
   end
-
-  # The audit page's From/To window goes through the inclusive `:from`/`:to`
-  # filters above.
-  def occurred_before(queryable, ts),
-    do: where(queryable, [events: e], e.occurred_at < ^ts)
 
   # Retention: a row is prunable once it reaches its stamped `retain_until`.
   # A null horizon (only pre-migration edge rows) never matches, so it is never

@@ -48,9 +48,6 @@ defmodule Emisar.Accounts.Membership.Query do
     |> where([memberships: m], m.account_id == ^account_id and m.user_id == ^user_id)
   end
 
-  def by_directory_provider_id(queryable, provider_id),
-    do: where(queryable, [memberships: m], m.directory_provider_id == ^provider_id)
-
   def by_directory_provider_or_unmanaged(queryable, provider_id) do
     where(
       queryable,

@@ -41,12 +41,6 @@ defmodule Emisar.Runbooks.ExecutionItem.Query do
   def pending(queryable \\ all()),
     do: by_status(queryable, :pending)
 
-  def due_waits(queryable \\ all(), now) do
-    queryable
-    |> by_status(:waiting)
-    |> where([runbook_execution_items: i], i.next_attempt_at <= ^now)
-  end
-
   def waiting_recovery_stats(queryable \\ all(), now) do
     queryable
     |> by_status(:waiting)

@@ -145,38 +145,6 @@ defmodule Emisar.Approvals.Grant.Query do
     |> preload([runner: runner], runner: runner)
   end
 
-  @doc "Left-join + preload the (non-deleted) granting user, idempotently."
-  def with_preloaded_granted_by(queryable) do
-    queryable
-    |> with_named_binding(:granted_by, fn queryable, binding ->
-      join(
-        queryable,
-        :left,
-        [grants: g],
-        granted_by in ^Emisar.Users.User.Query.not_deleted(),
-        on: g.granted_by_id == granted_by.id,
-        as: ^binding
-      )
-    end)
-    |> preload([granted_by: granted_by], granted_by: granted_by)
-  end
-
-  @doc "Left-join + preload the (non-deleted) revoking user, idempotently."
-  def with_preloaded_revoked_by(queryable) do
-    queryable
-    |> with_named_binding(:revoked_by, fn queryable, binding ->
-      join(
-        queryable,
-        :left,
-        [grants: g],
-        revoked_by in ^Emisar.Users.User.Query.not_deleted(),
-        on: g.revoked_by_id == revoked_by.id,
-        as: ^binding
-      )
-    end)
-    |> preload([revoked_by: revoked_by], revoked_by: revoked_by)
-  end
-
   @doc """
   Left-join + preload the grant's approval request together with that
   request's run (neither is soft-deleted), idempotently.

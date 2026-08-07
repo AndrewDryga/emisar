@@ -148,8 +148,6 @@ defmodule Emisar.Repo.Paginator do
   # Load limit+1 to know whether there's another page.
   defp limit_page_size(queryable, %{limit: limit}), do: Ecto.Query.limit(queryable, ^(limit + 1))
 
-  def empty_metadata, do: %Metadata{limit: @default_limit}
-
   def metadata([], %{limit: limit}), do: {[], %Metadata{limit: limit}}
 
   def metadata(results, %{direction: :before, cursor_fields: cf, limit: limit})

@@ -133,12 +133,6 @@ defmodule Emisar.Runbooks.ExecutionItem.Changeset do
     )
   end
 
-  def scrub_raw_payloads(%ExecutionItem{} = item) do
-    change(item, args_raw: nil, outputs_raw: nil)
-    |> check_constraint(:args_raw, name: :runbook_execution_items_args_identity_check)
-    |> check_constraint(:outputs_raw, name: :runbook_execution_items_outputs_identity_check)
-  end
-
   defp validate_terminal(changeset) do
     changeset
     |> validate_length(:terminal_code, min: 1, max: 80)

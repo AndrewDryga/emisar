@@ -18,9 +18,6 @@ defmodule Emisar.Runners.Runner.Query do
   def by_id(queryable, id),
     do: where(queryable, [runners: r], r.id == ^id)
 
-  def by_connection_generation(queryable, generation),
-    do: where(queryable, [runners: r], r.connection_generation == ^generation)
-
   def by_connection_lease(queryable, generation, lease_id) do
     where(
       queryable,

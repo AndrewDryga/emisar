@@ -2028,12 +2028,8 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
-  Lists active (un-revoked) grants for an account. `opts[:include_expired]`
-  defaults to false. Grants are returned with `api_key`, `runner`,
-  `granted_by` and `approval_request: :run` preloaded so the LV table can
-  render labels — and the exact arguments the grant is locked to (the
-  grant stores only the hash; the raw args live on the originating run) —
-  without an N+1.
+  Lists active (un-revoked, un-expired) grants for an account. Preloads are the
+  caller's: pass `preload:` for the associations the page renders.
   """
   def list_grants_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -2041,13 +2037,11 @@ defmodule Emisar.Approvals do
              subject,
              Authorizer.manage_grants_permission()
            ) do
-      {include_expired, opts} = Keyword.pop(opts, :include_expired, false)
-
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
       Grant.Query.not_revoked()
       |> Grant.Query.ordered_by_recent()
-      |> maybe_filter_expired(include_expired)
+      |> Grant.Query.not_expired()
       |> apply_grant_preloads(preloads)
       |> scope_grants_to_subject(subject)
       |> Authorizer.for_subject(subject)
@@ -2065,19 +2059,10 @@ defmodule Emisar.Approvals do
       :runner, queryable ->
         Grant.Query.with_preloaded_runner(queryable)
 
-      :granted_by, queryable ->
-        Grant.Query.with_preloaded_granted_by(queryable)
-
-      :revoked_by, queryable ->
-        Grant.Query.with_preloaded_revoked_by(queryable)
-
       :approval_request_run, queryable ->
         Grant.Query.with_preloaded_approval_request_run(queryable)
     end)
   end
-
-  defp maybe_filter_expired(query, true), do: query
-  defp maybe_filter_expired(query, false), do: Grant.Query.not_expired(query)
 
   def fetch_grant_by_id(id, %Subject{} = subject, opts \\ []) do
     with :ok <-

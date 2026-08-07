@@ -86,22 +86,6 @@ defmodule Emisar.Repo.Changeset do
     end
   end
 
-  @doc "Adds an error when a decoded JSON field exceeds structural limits."
-  def validate_json_structure(%Ecto.Changeset{} = changeset, field, max_depth, max_nodes) do
-    case get_change(changeset, field) do
-      nil ->
-        changeset
-
-      value ->
-        case Emisar.JSONValue.validate(value, max_depth: max_depth, max_nodes: max_nodes) do
-          :ok -> changeset
-          {:error, :too_deep} -> add_error(changeset, field, "is nested too deeply")
-          {:error, :too_many_nodes} -> add_error(changeset, field, "has too many values")
-          {:error, :invalid_value} -> add_error(changeset, field, "must contain JSON values")
-        end
-    end
-  end
-
   @doc "Validates structure before serializing a decoded JSON field for its byte bound."
   def validate_json_value(%Ecto.Changeset{} = changeset, field, opts) do
     max_bytes = Keyword.fetch!(opts, :max_bytes)

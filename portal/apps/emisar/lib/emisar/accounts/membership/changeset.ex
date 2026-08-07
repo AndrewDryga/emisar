@@ -80,23 +80,6 @@ defmodule Emisar.Accounts.Membership.Changeset do
     )
   end
 
-  def mark_authorization_pending(%Membership{} = membership, provider_id, version) do
-    change(membership,
-      directory_provider_id: provider_id,
-      directory_authorization_pending_version: version
-    )
-  end
-
-  # Return role control to operators — SCIM disabled for the provider.
-  def clear_directory_managed(%Membership{} = membership) do
-    change(membership,
-      directory_managed: false,
-      runner_access_directory_managed: false,
-      directory_provider_id: nil,
-      directory_authorization_pending_version: nil
-    )
-  end
-
   def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
 
   def suspend(%Membership{} = membership), do: change(membership, disabled_at: DateTime.utc_now())

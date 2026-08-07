@@ -6,9 +6,6 @@ defmodule Emisar.OAuth.Client.Query do
 
   def by_id(queryable \\ all(), id), do: where(queryable, [clients: c], c.id == ^id)
 
-  def by_metadata_url(queryable \\ all(), url),
-    do: where(queryable, [clients: c], c.client_id_metadata_url == ^url)
-
   @doc """
   Row lock for the consent mint's authoritative re-read (`FOR NO KEY UPDATE`).
   The registration the consent screen rendered is a request snapshot; issuance
