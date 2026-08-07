@@ -153,6 +153,10 @@ resource "google_sql_user" "database_operator" {
   type           = "CLOUD_IAM_USER"
   database_roles = ["emisar_owner"]
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [
     google_project_iam_member.database_operator_cloudsql,
     google_project_iam_member.database_operator_studio,

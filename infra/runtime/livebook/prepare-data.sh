@@ -24,9 +24,17 @@ case "$filesystem" in
     ;;
 esac
 
+# noexec: this is the one writable persistent path a notebook reaches, and the
+# container's tmpfs layout already denies execution everywhere except the home
+# tmpfs Mix.install needs. Without it a notebook could drop a binary here and
+# run it, which is the exact escape the rest of the layout is built to prevent.
+# Notebooks persist sources and outputs on this disk, never executables.
+# A remount converges a VM whose disk was already mounted without the option.
 install -d -m 0750 "$mountpoint"
-if ! mountpoint -q "$mountpoint"; then
-  mount -o rw,nosuid,nodev "$device" "$mountpoint"
+if mountpoint -q "$mountpoint"; then
+  mount -o remount,rw,nosuid,nodev,noexec "$mountpoint"
+else
+  mount -o rw,nosuid,nodev,noexec "$device" "$mountpoint"
 fi
 
 chown 1000:1000 "$mountpoint"
