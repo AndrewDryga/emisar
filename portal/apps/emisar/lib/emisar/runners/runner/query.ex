@@ -189,6 +189,36 @@ defmodule Emisar.Runners.Runner.Query do
     })
   end
 
+  @doc """
+  The fleet-wide connection tally as ONE pass, mirroring the `connected/1`,
+  `disconnected/1`, `never_connected/1`, and `disabled/1` predicates. Those
+  four states are disjoint over live rows, so counting them as four separate
+  aggregates scanned `runners` four times for one telemetry sample.
+
+  The caller supplies the not-deleted scope; disabled is counted across it
+  while the other three exclude disabled rows, exactly as the separate
+  queries did (`disabled` beats a live socket, per `connection_state/1`).
+  """
+  def connection_counts(queryable \\ not_deleted()) do
+    select(queryable, [runners: r], %{
+      disabled: filter(count(r.id), not is_nil(r.disabled_at)),
+      never_connected: filter(count(r.id), is_nil(r.last_connected_at) and is_nil(r.disabled_at)),
+      connected:
+        filter(
+          count(r.id),
+          not is_nil(r.last_connected_at) and
+            (is_nil(r.last_disconnected_at) or r.last_connected_at > r.last_disconnected_at) and
+            is_nil(r.disabled_at)
+        ),
+      disconnected:
+        filter(
+          count(r.id),
+          not is_nil(r.last_connected_at) and not is_nil(r.last_disconnected_at) and
+            r.last_disconnected_at >= r.last_connected_at and is_nil(r.disabled_at)
+        )
+    })
+  end
+
   @doc "Audit label-lookup helper. See Users.User.Query.select_labels/3."
   def select_labels(queryable, ids, field) do
     queryable

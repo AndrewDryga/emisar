@@ -21,19 +21,39 @@ defmodule Emisar.Catalog.RunnerAction.Query do
 
   def by_deployments(queryable, []), do: none(queryable)
 
+  @doc """
+  Restrict to an exact set of `{runner_id, pack_id, pack_version, pack_hash}`
+  deployments. Matching is a row comparison against the four parallel arrays,
+  NOT one OR branch per deployment: a fleet advertising R runners x P packs
+  produces R*P tuples, and the OR form made every scanned row evaluate all of
+  them (a 30x12 fleet planned a 70 KB predicate and filtered ~11x more
+  expensively than the tuple form, growing linearly with the fleet).
+
+  Semantics are unchanged: a row matches only when all four columns equal one
+  supplied tuple, and a NULL in any column matches nothing either way.
+  """
   def by_deployments(queryable, deployments) when is_list(deployments) do
-    predicate =
-      Enum.reduce(deployments, dynamic(false), fn {runner_id, pack_id, version, hash},
-                                                  predicate ->
-        dynamic(
-          [runner_actions: action],
-          ^predicate or
-            (action.runner_id == ^runner_id and action.pack_id == ^pack_id and
-               action.pack_version == ^version and action.pack_hash == ^hash)
-        )
+    {runner_ids, pack_ids, versions, hashes} =
+      Enum.reduce(deployments, {[], [], [], []}, fn {runner_id, pack_id, version, hash},
+                                                    {runner_ids, pack_ids, versions, hashes} ->
+        {[runner_id | runner_ids], [pack_id | pack_ids], [version | versions], [hash | hashes]}
       end)
 
-    where(queryable, ^predicate)
+    where(
+      queryable,
+      [runner_actions: a],
+      fragment(
+        "(?, ?, ?, ?) IN (SELECT * FROM unnest(?::uuid[], ?::varchar[], ?::varchar[], ?::varchar[]))",
+        a.runner_id,
+        a.pack_id,
+        a.pack_version,
+        a.pack_hash,
+        type(^runner_ids, {:array, Ecto.UUID}),
+        ^pack_ids,
+        ^versions,
+        ^hashes
+      )
+    )
   end
 
   def by_action_id(queryable, action_id),

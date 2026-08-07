@@ -629,15 +629,9 @@ defmodule Emisar.Runners do
           disabled: non_neg_integer()
         }
   def connection_counts do
-    active = Runner.Query.not_deleted() |> Runner.Query.not_disabled()
-
-    %{
-      connected: active |> Runner.Query.connected() |> Repo.aggregate(:count, :id),
-      disconnected: active |> Runner.Query.disconnected() |> Repo.aggregate(:count, :id),
-      never_connected: active |> Runner.Query.never_connected() |> Repo.aggregate(:count, :id),
-      disabled:
-        Runner.Query.not_deleted() |> Runner.Query.disabled() |> Repo.aggregate(:count, :id)
-    }
+    Runner.Query.not_deleted()
+    |> Runner.Query.connection_counts()
+    |> Repo.one()
   end
 
   @doc """
