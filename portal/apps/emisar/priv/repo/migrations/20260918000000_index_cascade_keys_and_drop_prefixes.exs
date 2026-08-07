@@ -1,6 +1,11 @@
 defmodule Emisar.Repo.Migrations.IndexCascadeKeysAndDropPrefixes do
   use Ecto.Migration
 
+  # Re-timestamped from 20260807063154 for the same reason as its sibling:
+  # several of the wider indexes it drops a prefix of are created by later
+  # migrations (runner_tokens by 20260914000000, runbook_executions by
+  # 20260901000000), so a wall-clock timestamp put this before them.
+
   # Built CONCURRENTLY: bin/migrate runs before an instance serves, so an
   # ordinary CREATE INDEX on a populated table holds a write lock for as long as
   # the build takes. Concurrent builds cannot run inside a transaction.

@@ -1,6 +1,11 @@
 defmodule Emisar.Repo.Migrations.DropScheduledRunSource do
   use Ecto.Migration
 
+  # Re-timestamped from 20260807055343 before this ever left the machine: the
+  # constraint it drops is created by 20260816000002, so at a wall-clock
+  # timestamp this ran BEFORE the thing it edits and aborted every fresh
+  # database. Migrations here are sequential, not wall-clock.
+
   # `:scheduled` was declared in the ActionRun source enum at MVP and no code
   # path ever produced it — the runbook scheduler writes `source: :runbook`.
   # It survived as an operator filter option that always returned zero rows,
