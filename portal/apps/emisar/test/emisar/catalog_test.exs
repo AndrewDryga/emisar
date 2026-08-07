@@ -614,12 +614,30 @@ defmodule Emisar.CatalogTest do
       assert {:error, :connection_superseded} =
                Catalog.observe_state_from_connection(
                  runner.id,
-                 state_payload(hostname: "stale"),
+                 state_payload(
+                   hostname: "stale",
+                   packs: %{"stale-pack" => %{"version" => "1.0.0", "hash" => "sha256:stale"}},
+                   actions: [action("stale.read", pack_id: "stale-pack")]
+                 ),
                  runner.connection_generation,
                  Ecto.UUID.generate()
                )
 
       assert Repo.reload!(runner).hostname == "owned"
+
+      # Pack pinning and action ingestion commit separately, so BOTH phases
+      # must refuse a superseded socket — a stale host may not leave a pin
+      # behind for the live one, nor advertise an action under it.
+      account = Repo.preload(runner, :account).account
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+
+      assert {:ok, pack_versions, _metadata} = Catalog.list_pack_versions(subject)
+      refute Enum.any?(pack_versions, &(&1.pack_id == "stale-pack"))
+
+      assert {:ok, actions, _actions_metadata} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+
+      refute Enum.any?(actions, &(&1.action_id == "stale.read"))
     end
   end
 

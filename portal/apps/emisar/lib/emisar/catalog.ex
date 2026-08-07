@@ -204,8 +204,8 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # One transaction for the catalog facts: pin/refresh every advertised
-  # pack, upsert the advertised actions, prune the vanished ones.
+  # The catalog facts in TWO transactions: pin/refresh every advertised pack,
+  # then upsert this runner's advertised actions and prune the vanished ones.
   # Returns {:ok, pending_changed?} — whether this advertisement opened or
   # resolved a pending pack decision (drives the badge and open Packs pages).
   #
@@ -215,25 +215,54 @@ defmodule Emisar.Catalog do
   defp sync_catalog(%Runners.Runner{} = runner, packs, actions, connection) do
     now = DateTime.utc_now()
 
+    with {:ok, pending_changed?} <- pin_advertised_packs(runner, packs, connection, now),
+         {:ok, _seen_ids} <- sync_advertised_actions(runner, actions, packs, connection, now) do
+      {:ok, pending_changed?}
+    end
+  rescue
+    error -> {:error, error}
+  end
+
+  # Pack pins are the SHARED rows: every runner advertising the same
+  # pack@version upserts the same `pack_versions` row, and that row stays
+  # locked until its transaction commits. Holding it through the advertising
+  # runner's whole action upsert + prune made a fleet-wide reconnect serialize
+  # — each host waiting out the previous host's entire sync. Committing the
+  # pins on their own keeps that contention proportional to the pins.
+  defp pin_advertised_packs(%Runners.Runner{} = runner, packs, connection, now) do
     Repo.transaction(fn ->
       case fetch_catalog_connection_owner(runner, connection) do
         {:ok, _active_runner} ->
-          pending_changed? =
-            packs
-            |> Enum.map(&observe_pack(runner.account_id, &1, now))
-            |> Enum.any?(&(&1 == :pending_changed))
-
-          seen_ids = observe_actions(runner, actions, packs, now)
-
-          _ = prune_missing_actions(runner.id, actions, seen_ids)
-          pending_changed?
+          packs
+          |> Enum.map(&observe_pack(runner.account_id, &1, now))
+          |> Enum.any?(&(&1 == :pending_changed))
 
         {:error, :not_found} ->
           Repo.rollback(connection_reason(connection))
       end
     end)
-  rescue
-    error -> {:error, error}
+  end
+
+  # This runner's OWN rows (`catalog_runner_actions` is keyed by runner_id), so
+  # nothing here contends with a peer. The connection owner is re-checked
+  # because a socket superseded between the two commits must not write, and
+  # the runner-row lock it takes is per-runner.
+  #
+  # A pin committed without its actions is the same fail-closed state the
+  # runner-facts commit already produces ahead of this sync: the advertised
+  # deployment has no matching descriptors, so it compares as a mismatch and
+  # is not executable. It never reads as trusted-and-runnable.
+  defp sync_advertised_actions(%Runners.Runner{} = runner, actions, packs, connection, now) do
+    Repo.transaction(fn ->
+      case fetch_catalog_connection_owner(runner, connection) do
+        {:ok, _active_runner} ->
+          seen_ids = observe_actions(runner, actions, packs, now)
+          prune_missing_actions(runner.id, actions, seen_ids)
+
+        {:error, :not_found} ->
+          Repo.rollback(connection_reason(connection))
+      end
+    end)
   end
 
   defp validate_catalog_payload(payload) do
