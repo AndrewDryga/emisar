@@ -163,6 +163,43 @@ func TestStreamRedactor_EmitsBeforeFlush(t *testing.T) {
 	}
 }
 
+// TestStreamRedactor_CommitsAreBatched — the commit gate redacts the buffer
+// twice, so it must not run once per line. Past the hold window a line-at-a-
+// time producer commits in batches, and every byte still comes out exactly
+// once, in order.
+//
+// The hold here is a realistic multiple of the line length, as production's
+// 16 KiB window is: a commit retains the hold PLUS the partial line the cut
+// lands in, so batching needs the quarter-window to exceed that remainder. A
+// single line over a quarter of the window defeats it — at 16 KiB that means
+// a >4 KiB line, which carries its own scan cost anyway.
+func TestStreamRedactor_CommitsAreBatched(t *testing.T) {
+	eng := defaultEngine(t)
+	sr := newSR(eng, 1024)
+
+	line := "INFO heartbeat ok, nothing to redact on this line\n"
+	const lines = 120
+	commits := 0
+	var streamed strings.Builder
+	for range lines {
+		out := sr.Write([]byte(line))
+		if len(out) > 0 {
+			commits++
+			streamed.Write(out)
+		}
+	}
+	streamed.Write(sr.Flush())
+
+	// Committing per line past the hold would be ~99 of them; a quarter of a
+	// 1 KiB window carries five 49-byte lines per commit.
+	if commits == 0 || commits > lines/4 {
+		t.Fatalf("committed %d times over %d lines, want batched commits", commits, lines)
+	}
+	if got, want := streamed.String(), strings.Repeat(line, lines); got != want {
+		t.Fatalf("batched commits changed the stream: got %d bytes, want %d", len(got), len(want))
+	}
+}
+
 // TestStreamRedactor_Hits — cumulative hit counts across commits and the flush
 // must equal a single whole-buffer Apply over the same input.
 func TestStreamRedactor_Hits(t *testing.T) {

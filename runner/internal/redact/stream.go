@@ -81,7 +81,14 @@ func (s *StreamRedactor) commit(flush bool) []byte {
 	// time a line becomes eligible to emit, enough following bytes have
 	// arrived that any multi-line match no longer than `hold` which started
 	// at or before that line has already closed inside the buffer.
-	if len(s.pending) <= s.hold {
+	//
+	// Wait for a quarter-window of new input beyond that before attempting a
+	// commit: the gate below runs the whole rule set over the buffer TWICE,
+	// so attempting one per line made a chatty action re-scan its entire hold
+	// window for every line it printed (tens of GB of regex scanning on a
+	// multi-megabyte stdout). Emission still cuts down to `hold`, so this
+	// only ever holds MORE context than the guarantee needs — never less.
+	if len(s.pending) <= s.hold+s.hold/4 {
 		return nil
 	}
 	// Cut on a line boundary within the committable region. Emitting partial
