@@ -621,45 +621,7 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  defp error_message(:unauthorized), do: "Only owners and admins can manage memberships."
-
-  defp error_message(:insufficient_privileges),
-    do: "You can only assign or change roles whose permissions you already hold."
-
-  defp error_message(:last_owner),
-    do: "Can't remove or demote the last owner. Promote someone else first."
-
-  defp error_message(:cannot_self_promote),
-    do: "Promote someone else first — you can't promote yourself."
-
-  defp error_message(:cannot_modify_self),
-    do: "You can't change your own membership from here. Use Profile."
-
-  defp error_message(:not_found), do: "User no longer exists."
-
-  defp error_message(:directory_managed_profile),
-    do: "This member's name is managed by your identity provider — change it there."
-
-  defp error_message(:role_managed_by_directory),
-    do: "That member's role is set by their identity provider."
-
-  defp error_message(:runner_access_managed_by_directory),
-    do: "That member's runner access is set by their identity provider."
-
-  defp error_message(:runner_access_exceeds_subject),
-    do: "You can only grant runner access that you currently have."
-
-  defp error_message(:mfa_enrollment_required),
-    do: "Enable 2FA on your own profile first — otherwise you'd lock yourself out."
-
-  defp error_message(:deactivated_in_idp),
-    do: "That member is deactivated in your identity provider — reactivate them there first."
-
-  defp error_message(%Ecto.Changeset{}),
-    do: "That change wasn't valid. Refresh to see the member's current state, then try again."
-
-  defp error_message(_),
-    do: "That change didn't apply. Refresh to see the member's current state, then try again."
+  defp error_message(reason), do: EmisarWeb.MemberErrors.message(reason)
 
   defp do_invite(socket, params) do
     case Accounts.invite_user_to_account_and_deliver(

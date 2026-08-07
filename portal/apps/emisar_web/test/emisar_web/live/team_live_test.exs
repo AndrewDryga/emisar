@@ -501,7 +501,7 @@ defmodule EmisarWeb.TeamLiveTest do
           "role" => "admin"
         })
 
-      assert html =~ "Only owners and admins can manage memberships."
+      assert html =~ "Only owners and admins can manage members."
       assert Emisar.Repo.reload!(target_membership).role == :operator
     end
 
@@ -511,7 +511,7 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       html = render_click(lv, "remove", %{"membership_id" => target_membership.id})
 
-      assert html =~ "Only owners and admins can manage memberships."
+      assert html =~ "Only owners and admins can manage members."
       refute Emisar.Repo.reload!(target_membership).deleted_at
     end
 
@@ -521,7 +521,7 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       html = render_click(lv, "suspend", %{"membership_id" => target_membership.id})
 
-      assert html =~ "Only owners and admins can manage memberships."
+      assert html =~ "Only owners and admins can manage members."
       refute Emisar.Repo.reload!(target_membership).disabled_at
     end
 
@@ -538,14 +538,14 @@ defmodule EmisarWeb.TeamLiveTest do
           "user" => %{"full_name" => "Hijacked Name"}
         })
 
-      assert html =~ "Only owners and admins can manage memberships."
+      assert html =~ "Only owners and admins can manage members."
       assert Emisar.Repo.reload!(target).full_name == target.full_name
     end
 
     test "end_sessions is refused", %{lv: lv, target_membership: target_membership} do
       html = render_click(lv, "end_sessions", %{"membership_id" => target_membership.id})
 
-      assert html =~ "Only owners and admins can manage memberships."
+      assert html =~ "Only owners and admins can manage members."
     end
 
     test "reset_mfa is refused server-side even if the event is forged", %{
@@ -587,7 +587,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       # The Accounts context denies with :unauthorized; the LV maps it to the same
       # membership-management flash, and access is unchanged.
-      assert html =~ "Only owners and admins can manage memberships."
+      assert html =~ "Only owners and admins can manage members."
 
       assert Emisar.Accounts.runner_access_for_membership(
                target_membership.account_id,

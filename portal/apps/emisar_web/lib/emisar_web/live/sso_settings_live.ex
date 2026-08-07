@@ -1294,33 +1294,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # Member-lifecycle errors from Accounts (change role / suspend / reinstate) —
   # kept separate from the SSO-config error_message/1 so each reads for its surface.
-  defp member_error(:unauthorized), do: "Only owners and admins can manage members."
-
-  defp member_error(:insufficient_privileges),
-    do: "You can't manage a member whose role is equal to or above yours."
-
-  defp member_error(:last_owner) do
-    "This is the account's last owner — promote someone else before demoting or suspending them."
-  end
-
-  defp member_error(reason) when reason in [:cannot_self_promote, :cannot_modify_self],
-    do: "You can't change your own membership here — use Profile."
-
-  defp member_error(:not_found), do: "That member no longer exists."
-
-  defp member_error(:role_managed_by_directory) do
-    "Roles for directory-synced members come from your identity provider — change them in Role mapping."
-  end
-
-  defp member_error(:deactivated_in_idp) do
-    "This member is deactivated in your identity provider — reactivate them there first."
-  end
-
-  defp member_error(%Ecto.Changeset{}),
-    do: "That change wasn't valid. Refresh to see the member's current state, then try again."
-
-  defp member_error(_),
-    do: "That didn't complete. Refresh to see the member's current state, then try again."
+  defp member_error(reason), do: EmisarWeb.MemberErrors.message(reason)
 
   # The create form and any open inline edit form coexist in the DOM, so each
   # gets its own `id` — otherwise their inputs collide on `provider_<field>`.
