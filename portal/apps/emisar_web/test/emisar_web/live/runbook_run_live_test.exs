@@ -372,6 +372,11 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert has_element?(lv, "#current-runbook-plan", runner.name)
       refute has_element?(lv, "#current-runbook-plan", "→")
 
+      # The step id rides with the action it runs, as it does in the editor —
+      # it is identity a later step binds to, not part of the target line.
+      assert has_element?(lv, ~s(#current-runbook-plan span[class*="font-mono"]), "inspect")
+      refute has_element?(lv, "#current-runbook-plan p", "inspect")
+
       assert has_element?(
                lv,
                "#runbook-run-form[phx-submit=start] button[type=submit]:not([disabled])"
@@ -549,6 +554,12 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       refute html =~ @hash
       refute html =~ "1 attempt"
       assert has_element?(lv, "[id^=execution-item-] a", "View")
+
+      # One target line across all three surfaces: the step id rides with the
+      # action, the runner name stands alone, and no glyph leads either.
+      assert has_element?(lv, ~s([id^=execution-item-] span[class*="font-mono"]), "inspect")
+      refute has_element?(lv, "[id^=execution-item-] p", "inspect")
+      refute has_element?(lv, "[id^=execution-item-]", "→")
 
       {:ok, _reloaded, reloaded_html} =
         live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
