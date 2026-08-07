@@ -981,7 +981,7 @@
     },
     "list_runners": {
       "title": "List runners",
-      "description": "Inspect in-scope runners, connectivity, and compatibility issues for currently trusted packs and actions. Use the exact returned runner_ref values for dispatch.",
+      "description": "Inspect in-scope runners, connectivity, and compatibility issues for currently trusted packs and actions. Use the exact returned runner_ref values for dispatch. Runner group values are runbook targets: prefer `group:<group_name>` refs over per-runner refs.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",

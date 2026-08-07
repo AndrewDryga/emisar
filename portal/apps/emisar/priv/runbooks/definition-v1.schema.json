@@ -185,9 +185,13 @@
       "required": ["selection", "refs"],
       "additionalProperties": false,
       "properties": {
-        "selection": {"enum": ["all", "random_one"]},
+        "selection": {
+          "enum": ["all", "random_one"],
+          "description": "`all` runs on every resolved runner; `random_one` takes exactly one group ref and freezes one online member at execution start."
+        },
         "refs": {
           "type": "array",
+          "description": "`group:<group_name>` targets the group's online membership, resolved at execution start; prefer it over enumerating `runner:<runner_ref>` refs.",
           "minItems": 1,
           "maxItems": 16,
           "uniqueItems": true,

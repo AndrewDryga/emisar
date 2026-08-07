@@ -46,7 +46,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert byte_size(encoded) <= ResponseBudget.max_frame_bytes()
   end
 
-  test "pins model-facing descriptions for reasons, waits, and pack availability" do
+  test "pins model-facing descriptions for reasons, waits, pack availability, and runbook targets" do
     list_packs = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "list_packs"))
     run_action = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "run_action"))
     wait_for_run = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "wait_for_run"))
@@ -86,6 +86,30 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
              "description"
            ]) ==
              "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."
+
+    # Group targeting is invisible to a model unless the served contract teaches
+    # it: an LLM that only ever sees runner_ref values enumerates hosts instead
+    # of using `group:` refs, so these annotations are load-bearing.
+    list_runners = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "list_runners"))
+
+    assert list_runners["description"] ==
+             "Inspect in-scope runners, connectivity, and compatibility issues for currently trusted packs and actions. Use the exact returned runner_ref values for dispatch. Runner group values are runbook targets: prefer `group:<group_name>` refs over per-runner refs."
+
+    create_draft = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "create_runbook_draft"))
+
+    targets =
+      get_in(create_draft, [
+        "inputSchema",
+        "$defs",
+        "runbook_definition_v1_targets",
+        "properties"
+      ])
+
+    assert targets["selection"]["description"] ==
+             "`all` runs on every resolved runner; `random_one` takes exactly one group ref and freezes one online member at execution start."
+
+    assert targets["refs"]["description"] ==
+             "`group:<group_name>` targets the group's online membership, resolved at execution start; prefer it over enumerating `runner:<runner_ref>` refs."
   end
 
   test "omitted typed output requires one immediate wait continuation" do
