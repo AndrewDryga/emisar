@@ -8,6 +8,17 @@ services:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-1.15.8}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-terraform-readonly-tools:latest
+    # Terraform's local backend reads `terraform.tfstate` by that exact name and
+    # candidate_file only accepts a `.tfstate` basename, so the state fixtures
+    # are stored under names an agent box won't shadow as secrets and mounted
+    # back to the canonical ones the action actually has to handle.
+    volumes:
+      - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/live/main.tf:/fixture/live/main.tf:ro
+      - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/live/state.fixture:/fixture/live/terraform.tfstate:ro
+      - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/older.fixture:/fixture/candidates/older.tfstate:ro
+      - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/newer.fixture:/fixture/candidates/newer.tfstate:ro
+      - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/equal.fixture:/fixture/candidates/equal.tfstate:ro
+      - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/mismatch.fixture:/fixture/candidates/mismatch.tfstate:ro
 
   terraform:
     image: hashicorp/terraform:${PACKTEST_VERSION:-1.15.8}${PACKTEST_DIGEST-}

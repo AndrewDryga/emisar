@@ -5,8 +5,8 @@ versions:
     default: true
 secret_env: []
 env:
-  TF_DIR: /packs/terraform-readonly/test/fixtures/live
-  TF_STATE_CANDIDATE_DIR: /packs/terraform-readonly/test/fixtures/candidates
+  TF_DIR: /fixture/live
+  TF_STATE_CANDIDATE_DIR: /fixture/candidates
 cases:
   - action: tf.state_metadata
     expect:

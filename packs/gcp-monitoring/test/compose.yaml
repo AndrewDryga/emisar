@@ -15,7 +15,7 @@ services:
     volumes:
       - ${EMISAR_ROOT}/packs/gcp-monitoring/test/fixtures/server.py:/fixture/server.py:ro
       - ${EMISAR_ROOT}/packs/gcp-monitoring/test/fixtures/server.crt:/fixture/server.crt:ro
-      - ${EMISAR_ROOT}/packs/gcp-monitoring/test/fixtures/server.key:/fixture/server.key:ro
+      - ${EMISAR_ROOT}/packs/gcp-monitoring/test/fixtures/server-key.fixture:/fixture/server.key:ro
     healthcheck:
       test: [CMD, python3, -c, "import ssl, urllib.request; urllib.request.urlopen('https://localhost:8443/health', context=ssl._create_unverified_context())"]
       interval: 2s
