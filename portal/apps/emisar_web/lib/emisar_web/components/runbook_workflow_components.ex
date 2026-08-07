@@ -859,11 +859,14 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     end)
   end
 
+  # The group reads exactly as it was named — the picker, the roster, and the run
+  # surface all show `edge-web`, so upcasing it here spelled one identifier two
+  # ways, in a caps-at-body-size texture that matched no other label on the card.
   defp target_scope(_catalog, "group:" <> group, "random_one"),
-    do: {:group_one, String.upcase(group), "One random runner in group #{group}"}
+    do: {:group_one, group, "One random runner in group #{group}"}
 
   defp target_scope(_catalog, "group:" <> group, _selection),
-    do: {:group_all, String.upcase(group), "Every runner in group #{group}"}
+    do: {:group_all, group, "Every runner in group #{group}"}
 
   defp target_scope(catalog, ref, selection) do
     name = RunbookEditorCatalog.target_label(catalog, ref, selection)
@@ -1309,10 +1312,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   end
 
   defp target_preview_label(_catalog, "group:" <> group, "random_one"),
-    do: "#{String.upcase(group)} · one"
+    do: "#{group} · one"
 
   defp target_preview_label(_catalog, "group:" <> group, _selection),
-    do: "#{String.upcase(group)} · all"
+    do: "#{group} · all"
 
   defp target_preview_label(catalog, ref, selection),
     do: RunbookEditorCatalog.target_label(catalog, ref, selection)

@@ -411,6 +411,18 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     timestamps in one middot-separated metadata sentence. Sweep: result counts and
     no-match/search summaries inside meta strips, detail fact lines, or other entity
     metadata instead of adjacent to their result collection.
+37. **Casing is a style, never a value transform.** An entity identifier — a runner
+    name, a runner group, a slug, a pack id — renders exactly as it was authored, in
+    the house identity treatment (sans `font-medium`, mono only where that surface's
+    peers are mono). Uppercase is reached for as a CSS `uppercase` class at eyebrow
+    metrics (`text-[10px]`/`text-[11px] font-semibold tracking-wider`), which is what
+    makes small caps legible; at body size and regular weight it reads as a foreign
+    typeface, and a `String.upcase/1` in Elixir additionally spells one identifier two
+    ways across surfaces that all show the authored form. Upcasing input is a
+    different job and stays legal: a case-insensitive secret or entry code normalized
+    to its canonical minted spelling (device-flow code, magic-link code). Sweep:
+    `String.upcase`/`String.downcase` on a value that reaches a template, and
+    `uppercase` on any element above the eyebrow tier.
 
 ### 7.1 Create-flow footer + the ONE back affordance (design-review R1)
 

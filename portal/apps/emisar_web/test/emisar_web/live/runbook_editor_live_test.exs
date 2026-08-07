@@ -274,7 +274,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "DEFAULT · all · 1 unavailable"
+               "default · all · 1 unavailable"
              )
 
       assert has_element?(
@@ -793,7 +793,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "DEFAULT · all"
+               "default · all"
              )
 
       lv
@@ -812,7 +812,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "DEFAULT · all"
+               "default · all"
              )
 
       assert has_element?(
@@ -898,7 +898,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "DEFAULT · one"
+               "default · one"
              )
 
       assert has_element?(
@@ -927,7 +927,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "DEFAULT · one"
+               "default · one"
              )
 
       assert has_element?(
@@ -1153,7 +1153,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-stage-0-step-0-target-trigger",
-               "DEFAULT · all"
+               "default · all"
              )
 
       assert has_element?(
@@ -1593,7 +1593,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # stage's own marker, an action · target head, then the fact groups.
       assert has_element?(lv, ~s|#runbook-stage-0 ol [data-steps-marker="parallel"]|)
       assert has_element?(lv, summary, "linux.uptime")
-      assert has_element?(lv, summary, "DEFAULT")
+      assert has_element?(lv, summary, "default")
 
       # The dots say how many runners the ref reaches, and name themselves.
       assert has_element?(lv, ~s|#{summary} [data-target-scope-icon="group_all"]|)
