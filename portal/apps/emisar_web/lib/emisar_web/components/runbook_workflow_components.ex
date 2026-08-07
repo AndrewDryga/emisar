@@ -178,19 +178,21 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
+              <%!-- The step's own name rides with the action it runs, as it does
+                    in the editor: a later step binds to `<id>.<output>`, so it is
+                    identity, not addressing. --%>
+              <span :if={item["step_id"]} class="text-zinc-500">·</span>
+              <span :if={item["step_id"]} class="font-mono text-xs text-zinc-500">
+                {item["step_id"]}
+              </span>
               <.risk_pill :if={item["risk"]} risk={item["risk"]} />
             </div>
             <%!-- No leading glyph, matching the editor's target line: a runner
                   name says what it is, so an arrow would label nothing. --%>
-            <p class="mt-1 text-xs text-zinc-400">
-              <span class="font-medium text-zinc-300">
-                {runner_name(item["runner_ref"])}
-              </span>
+            <p class="mt-1 text-xs text-zinc-300">
+              {runner_name(item["runner_ref"])}
               <span :if={item["target_group"]} class="text-zinc-500">
                 · selected from {item["target_group"]}
-              </span>
-              <span :if={item["step_id"]} class="font-mono text-zinc-500">
-                · {item["step_id"]}
               </span>
             </p>
             <.argument_list
