@@ -26,10 +26,20 @@ defmodule Emisar.Catalog.MCPProjection do
   @max_label_key_length 80
   @max_label_value_length 256
 
-  @doc "Build a deterministic trusted catalog snapshot from already-authorized rows."
-  @spec build([PackVersion.t()], [RunnerAction.t()], [Runners.Runner.t()]) :: map()
-  def build(pack_versions, runner_actions, runners)
+  @doc """
+  Build a deterministic trusted catalog snapshot from already-authorized rows.
+
+  `:only_pack_ref` restricts the snapshot to one exact deployment reference so
+  a caller resolving a single action does not have to read, project, and
+  descriptor-compare the account's entire catalog. Every per-pack judgment —
+  trust, manifest match, compatibility — is computed from that pack's own rows,
+  so the restricted pack projects identically to its whole-catalog form.
+  """
+  @spec build([PackVersion.t()], [RunnerAction.t()], [Runners.Runner.t()], keyword()) :: map()
+  def build(pack_versions, runner_actions, runners, opts \\ [])
       when is_list(pack_versions) and is_list(runner_actions) and is_list(runners) do
+    only_pack_ref = Keyword.get(opts, :only_pack_ref)
+
     projected_runners =
       runners |> Enum.flat_map(&project_runner/1) |> Enum.sort_by(& &1.runner_ref)
 
@@ -45,6 +55,7 @@ defmodule Emisar.Catalog.MCPProjection do
     deployments =
       projected_runners
       |> Enum.flat_map(&runner_deployments/1)
+      |> Enum.filter(&(is_nil(only_pack_ref) or &1.pack_ref == only_pack_ref))
       |> Enum.group_by(& &1.pack_ref)
 
     packs =

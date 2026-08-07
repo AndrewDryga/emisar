@@ -356,6 +356,54 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     refute compatible_by_name["unsigned"]["enforce_signatures"]
   end
 
+  test "get_action resolves one pack out of several without disturbing the others", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    other_hash = "sha256:" <> String.duplicate("b", 64)
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "multi-pack")
+
+    observe!(
+      runner,
+      %{
+        "demo" => %{"version" => "1.0.0", "hash" => @hash},
+        "other" => %{"version" => "2.0.0", "hash" => other_hash}
+      },
+      [action("demo.read", "demo"), action("other.read", "other")]
+    )
+
+    trust_all!(subject)
+
+    # Resolving one deployment reads only that deployment's rows; the answer
+    # must still carry that pack's own ref, action, and compatible runner.
+    detail =
+      call(conn, "get_action", %{
+        "action_id" => "other.read",
+        "pack_ref" => "other@2.0.0/#{other_hash}"
+      })
+
+    assert detail["action"]["action_id"] == "other.read"
+    assert detail["action"]["pack_ref"] == "other@2.0.0/#{other_hash}"
+    assert Enum.map(detail["compatible_runners"], & &1["name"]) == ["multi-pack"]
+
+    # The sibling pack resolves independently, and neither answer leaks the other.
+    sibling =
+      call(conn, "get_action", %{"action_id" => "demo.read", "pack_ref" => "demo@1.0.0/#{@hash}"})
+
+    assert sibling["action"]["action_id"] == "demo.read"
+    assert sibling["action"]["pack_ref"] == "demo@1.0.0/#{@hash}"
+
+    # An action_id that belongs to the OTHER pack is not resolvable under this ref.
+    crossed =
+      call(conn, "get_action", %{
+        "action_id" => "demo.read",
+        "pack_ref" => "other@2.0.0/#{other_hash}"
+      })
+
+    assert crossed["error"]["code"] == "action_unavailable"
+  end
+
   test "missing primary executable removes only that action from a matching pack", %{
     conn: conn,
     account: account,

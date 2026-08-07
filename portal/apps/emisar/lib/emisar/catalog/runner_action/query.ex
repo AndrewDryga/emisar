@@ -119,6 +119,9 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def by_pack_ids(queryable, pack_ids) when is_list(pack_ids),
     do: where(queryable, [runner_actions: a], a.pack_id in ^pack_ids)
 
+  def by_pack_version(queryable, pack_version),
+    do: where(queryable, [runner_actions: a], a.pack_version == ^pack_version)
+
   def by_pack_hash(queryable, pack_hash),
     do: where(queryable, [runner_actions: a], a.pack_hash == ^pack_hash)
 

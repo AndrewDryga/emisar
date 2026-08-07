@@ -1767,7 +1767,8 @@ defmodule Emisar.Catalog do
       when is_list(runner_refs) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()),
-         {:ok, snapshot} <- model_snapshot(subject),
+         {:ok, deployment} <- MCPProjection.parse_pack_ref(pack_ref),
+         {:ok, snapshot} <- model_snapshot(subject, deployment),
          %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == pack_ref)),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == action_id)),
          {:ok, runners} <- compatible_model_runners(snapshot.runners, action, runner_refs) do
@@ -1780,7 +1781,12 @@ defmodule Emisar.Catalog do
 
   # The fleet read carries live membership + API-key runner scope, so it — not
   # the account — decides which advertisements may reach a model at all.
-  defp model_snapshot(%Subject{} = subject) do
+  #
+  # `deployment` narrows both reads to one exact {pack_id, version, hash}. A
+  # descriptor comparison needs every advertised field, so a catalog LISTING
+  # legitimately reads the whole catalog; resolving ONE action does not, and
+  # an account's catalog is runners x packs x actions of jsonb.
+  defp model_snapshot(%Subject{} = subject, deployment \\ nil) do
     with {:ok, runners} <-
            Runners.list_all_runners_for_account(subject, preload: [:online?]) do
       runner_ids = Enum.map(runners, & &1.id)
@@ -1788,6 +1794,7 @@ defmodule Emisar.Catalog do
       actions =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_ids(runner_ids)
+        |> scope_actions_to_deployment(deployment)
         |> RunnerAction.Query.ordered_by_action_seen()
         |> scope_actions_to_pack_access(subject)
         |> Authorizer.for_subject(subject)
@@ -1795,11 +1802,36 @@ defmodule Emisar.Catalog do
 
       pack_versions =
         PackVersion.Query.all()
+        |> scope_pack_versions_to_deployment(deployment)
         |> PackVersion.Query.ordered_by_pack()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, MCPProjection.build(pack_versions, actions, runners)}
+      {:ok,
+       MCPProjection.build(pack_versions, actions, runners, only_pack_ref: pack_ref(deployment))}
+    end
+  end
+
+  defp scope_actions_to_deployment(queryable, nil), do: queryable
+
+  defp scope_actions_to_deployment(queryable, {pack_id, version, hash}) do
+    queryable
+    |> RunnerAction.Query.by_pack_id(pack_id)
+    |> RunnerAction.Query.by_pack_version(version)
+    |> RunnerAction.Query.by_pack_hash(hash)
+  end
+
+  defp scope_pack_versions_to_deployment(queryable, nil), do: queryable
+
+  defp scope_pack_versions_to_deployment(queryable, {pack_id, version, _hash}),
+    do: PackVersion.Query.by_pack_id_and_version(queryable, pack_id, version)
+
+  defp pack_ref(nil), do: nil
+
+  defp pack_ref({pack_id, version, hash}) do
+    case MCPProjection.pack_ref(pack_id, version, hash) do
+      {:ok, pack_ref} -> pack_ref
+      {:error, :invalid_pack_ref} -> nil
     end
   end
 
