@@ -177,19 +177,19 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     end
   end
 
-  test "an email over 160 chars inline-errors on the length cap", %{conn: conn} do
-    # the email changeset caps length at 160; a 161-char
-    # (otherwise well-formed) address re-renders with the inline max error.
+  test "an email past the RFC 5321 maximum inline-errors on the length cap", %{conn: conn} do
+    # the shared address validator caps length at 254; a 255-char (otherwise
+    # well-formed) address re-renders with the inline max error.
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
-    long_email = String.duplicate("a", 161 - length(~c"@example.com")) <> "@example.com"
-    assert String.length(long_email) == 161
+    long_email = String.duplicate("a", 255 - length(~c"@example.com")) <> "@example.com"
+    assert String.length(long_email) == 255
 
     html =
       lv
       |> form("#registration_form", sign_up_params(%{"user" => %{"email" => long_email}}))
       |> render_change()
 
-    assert html =~ "should be at most 160 character"
+    assert html =~ "should be at most 254 character"
   end
 
   test "the validate (phx-change) path writes nothing to the DB", %{conn: conn} do

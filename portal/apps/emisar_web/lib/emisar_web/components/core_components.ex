@@ -2437,7 +2437,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :source, :any,
     required: true,
-    doc: "the run's `source` enum — :operator/:mcp/:runbook/:scheduled"
+    doc: "the run's `source` enum — :operator/:mcp/:runbook"
 
   attr :label, :string,
     required: true,
@@ -2464,12 +2464,10 @@ defmodule EmisarWeb.CoreComponents do
 
   defp source_icon(:mcp), do: "hero-bolt"
   defp source_icon(:runbook), do: "hero-book-open"
-  defp source_icon(:scheduled), do: "hero-clock"
   defp source_icon(_operator), do: "hero-user"
 
   defp source_tooltip(:mcp), do: "Dispatched via MCP"
   defp source_tooltip(:runbook), do: "Dispatched by a runbook"
-  defp source_tooltip(:scheduled), do: "Dispatched by a schedule"
   defp source_tooltip(_operator), do: "Dispatched by an operator"
 
   @doc """

@@ -30,7 +30,7 @@ defmodule Emisar.Runs.ActionRun do
     # Stable bridge-owned identity for one public MCP mutation. Fan-out creates
     # one row per runner under the same operation id; retries reuse those rows.
     field :operation_id, :string
-    field :source, Ecto.Enum, values: [:operator, :runbook, :mcp, :scheduled], default: :operator
+    field :source, Ecto.Enum, values: [:operator, :runbook, :mcp], default: :operator
     # The dispatch justification. `reason` is what/why; `evidence` and `expected`
     # are the optional, unenforced justification chain an MCP caller may add —
     # what it already observed (prior findings / run ids) and the outcome it

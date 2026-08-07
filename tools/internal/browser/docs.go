@@ -156,11 +156,6 @@ var docsShots = []shot{
 	{Name: "team-page", Path: "/app/demo/settings/team", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 820, Output: "screenshots/team-page.webp"},
 	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, Output: "screenshots/runs.webp"},
 	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, Output: "screenshots/agents.webp"},
-	// Connect form: click a cloud client to reveal the connector fields, then crop
-	// to the form panel — #connect-panel excludes the how-keys-work rail beside it.
-	{Name: "connect-llm-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude.ai")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-llm-agents.webp"},
-	// Same connect panel with a LOCAL/CLI client selected — the bridge + key setup.
-	{Name: "connect-cli-agents", Path: "/app/demo/agents/connect", Clicks: []string{clickText("Claude Code")}, Anchor: Anchor{Selector: "#connect-panel"}, Width: docsWidth, Output: "screenshots/connect-cli-agents.webp"},
 	// Runbooks use one production-shaped seeded procedure across the complete
 	// guide. Content-addressed navigation avoids whichever audit draft happens to
 	// sort first, while the narrow anchors keep each image about the step beside

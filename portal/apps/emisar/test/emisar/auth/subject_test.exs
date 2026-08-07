@@ -106,11 +106,6 @@ defmodule Emisar.Auth.SubjectTest do
     test "returns an empty set for unknown roles" do
       assert MapSet.size(Emisar.Auth.Permissions.for_role(:nope)) == 0
     end
-
-    test "returns the same set on every call (purity)" do
-      assert Emisar.Auth.Permissions.for_role(:owner) ==
-               Emisar.Auth.Permissions.for_role(:owner)
-    end
   end
 
   describe "Authorizer.ensure_has_permissions/2" do

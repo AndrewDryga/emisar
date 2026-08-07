@@ -8,7 +8,7 @@ defmodule Emisar.Runs.RunEvent do
 
   schema "action_run_events" do
     field :seq, :integer
-    field :kind, Ecto.Enum, values: [:progress, :transition, :error, :redaction_summary]
+    field :kind, Ecto.Enum, values: [:progress, :transition, :error]
     field :stream, :string
     field :payload, :map, default: %{}
 

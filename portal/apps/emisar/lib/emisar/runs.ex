@@ -180,7 +180,6 @@ defmodule Emisar.Runs do
 
   defp run_via(%ActionRun{source: :mcp}), do: "LLM agent"
   defp run_via(%ActionRun{source: :runbook}), do: "runbook"
-  defp run_via(%ActionRun{source: :scheduled}), do: "schedule"
   defp run_via(%ActionRun{}), do: nil
 
   @doc "The MCP client version snapshotted on a run, if any (e.g. \"1.2.3\"). Pure."

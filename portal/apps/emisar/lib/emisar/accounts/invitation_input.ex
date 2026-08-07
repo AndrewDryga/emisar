@@ -44,7 +44,7 @@ defmodule Emisar.Accounts.InvitationInput do
     |> cast(attrs, @fields)
     |> update_change(:email, &String.trim/1)
     |> validate_required([:email])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must have the @ sign and no spaces")
+    |> Emisar.EmailAddress.validate(:email)
     |> validate_inclusion(:role, roles())
     |> validate_inclusion(:runner_access_mode, modes())
     |> validate_inclusion(:pack_access_mode, pack_modes())

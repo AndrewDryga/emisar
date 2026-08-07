@@ -9,8 +9,7 @@ defmodule Emisar.Marketing.Signup.Changeset do
     |> cast(attrs, @fields)
     |> update_change(:email, &String.trim/1)
     |> validate_required([:email])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must have the @ sign and no spaces")
-    |> validate_length(:email, max: 254)
+    |> Emisar.EmailAddress.validate(:email)
     |> validate_length(:source, max: 100)
     |> unique_constraint(:email)
   end

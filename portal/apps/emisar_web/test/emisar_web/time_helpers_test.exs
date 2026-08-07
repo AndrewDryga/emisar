@@ -79,7 +79,6 @@ defmodule EmisarWeb.TimeHelpersTest do
     test "humanizes the run-source enum" do
       assert format_source(:mcp) == "LLM agent"
       assert format_source(:runbook) == "Runbook"
-      assert format_source(:scheduled) == "Scheduled"
       assert format_source(:from_the_future) == "—"
     end
   end

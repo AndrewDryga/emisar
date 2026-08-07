@@ -53,10 +53,7 @@ defmodule Emisar.Users.User.Changeset do
   defp validate_optional_email(changeset) do
     if get_change(changeset, :email) do
       changeset
-      |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/,
-        message: "must have the @ sign and no spaces"
-      )
-      |> validate_length(:email, max: 160)
+      |> Emisar.EmailAddress.validate(:email)
       |> unique_constraint(:email)
     else
       changeset
@@ -110,8 +107,7 @@ defmodule Emisar.Users.User.Changeset do
   defp validate_email_field(changeset) do
     changeset
     |> validate_required([:email])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must have the @ sign and no spaces")
-    |> validate_length(:email, max: 160)
+    |> Emisar.EmailAddress.validate(:email)
     |> unique_constraint(:email)
   end
 end

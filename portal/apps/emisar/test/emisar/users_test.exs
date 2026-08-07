@@ -68,15 +68,14 @@ defmodule Emisar.UsersTest do
       assert {:ok, %User{}} = Users.register_user(%{email: email, full_name: "Edge"})
     end
 
-    # one char over the 160 cap is rejected and nothing is
-    # written.
-    test "rejects an email over 160 chars with no user written" do
-      email = String.duplicate("a", 161 - String.length("@example.test")) <> "@example.test"
-      assert String.length(email) == 161
+    # one char over the RFC 5321 maximum is rejected and nothing is written.
+    test "rejects an email past the RFC 5321 maximum with no user written" do
+      email = String.duplicate("a", 255 - String.length("@example.test")) <> "@example.test"
+      assert String.length(email) == 255
 
       assert {:error, changeset} = Users.register_user(%{email: email, full_name: "TooLong"})
 
-      assert "should be at most 160 character(s)" in errors_on(changeset).email
+      assert "should be at most 254 character(s)" in errors_on(changeset).email
       assert {:error, :not_found} = Users.fetch_user_by_email(email)
     end
 
@@ -264,14 +263,22 @@ defmodule Emisar.UsersTest do
       assert updated.email == email
     end
 
-    test "rejects an email of 161 characters (over the max)", %{user: user, subject: subject} do
-      email = "#{String.duplicate("a", 148)}@example.test"
-      assert String.length(email) == 161
+    test "rejects an email past the RFC 5321 maximum", %{user: user, subject: subject} do
+      email = "#{String.duplicate("a", 242)}@example.test"
+      assert String.length(email) == 255
 
       assert {:error, changeset} = Users.update_user_email(email, subject)
-      assert "should be at most 160 character(s)" in errors_on(changeset).email
+      assert "should be at most 254 character(s)" in errors_on(changeset).email
       # Nothing was written — the original email stands.
       assert Repo.reload!(user).email == user.email
+    end
+
+    test "accepts an address at the maximum", %{subject: subject} do
+      email = "#{String.duplicate("a", 241)}@example.test"
+      assert String.length(email) == 254
+
+      assert {:ok, updated} = Users.update_user_email(email, subject)
+      assert updated.email == email
     end
   end
 

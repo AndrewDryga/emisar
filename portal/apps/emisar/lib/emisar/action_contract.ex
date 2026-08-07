@@ -48,13 +48,12 @@ defmodule Emisar.ActionContract do
     }
   end
 
-  @doc "Stable SHA-256 identity for a normalized action-contract snapshot."
-  def digest(snapshot) when is_map(snapshot) do
-    snapshot
-    |> canonical_json()
-    |> Jason.encode!()
-    |> Emisar.Crypto.hash_hex()
-  end
+  @doc """
+  Stable SHA-256 identity for a normalized action-contract snapshot. Shares one
+  canonical encoding with the runbook definition hash, because a client compares
+  this value to decide `target_contract_changed`.
+  """
+  def digest(snapshot) when is_map(snapshot), do: Emisar.CanonicalJSON.digest(snapshot)
 
   @doc "Validate one action argument map against its trusted manifest descriptor."
   @spec validate(map(), map()) :: :ok | {:error, issue()}
@@ -107,16 +106,6 @@ defmodule Emisar.ActionContract do
   end
 
   def cast_form(_raw, _action), do: {:error, [arg_issue("args", "type", "expected object")]}
-
-  defp canonical_json(%{} = value) do
-    value
-    |> Enum.sort_by(&elem(&1, 0))
-    |> Enum.map(fn {key, child} -> {key, canonical_json(child)} end)
-    |> Jason.OrderedObject.new()
-  end
-
-  defp canonical_json(value) when is_list(value), do: Enum.map(value, &canonical_json/1)
-  defp canonical_json(value), do: value
 
   defp validate_specs(specs, args) do
     Enum.reduce_while(specs, :ok, fn spec, :ok ->

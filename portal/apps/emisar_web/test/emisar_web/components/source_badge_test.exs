@@ -16,7 +16,6 @@ defmodule EmisarWeb.Components.SourceBadgeTest do
       sources = [
         {:mcp, "hero-bolt", "Dispatched via MCP"},
         {:runbook, "hero-book-open", "Dispatched by a runbook"},
-        {:scheduled, "hero-clock", "Dispatched by a schedule"},
         {:operator, "hero-user", "Dispatched by an operator"}
       ]
 

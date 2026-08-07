@@ -407,8 +407,7 @@ defmodule Emisar.Runs.ActionRun.Query do
         values: [
           {"operator", "Operator"},
           {"mcp", "LLM agent"},
-          {"runbook", "Runbook"},
-          {"scheduled", "Scheduled"}
+          {"runbook", "Runbook"}
         ],
         fun: fn queryable, sources -> {queryable, dynamic([runs: r], r.source in ^sources)} end
       },

@@ -238,6 +238,5 @@ defmodule EmisarWeb.TimeHelpers do
   def format_source(:operator), do: "Operator"
   def format_source(:mcp), do: "LLM agent"
   def format_source(:runbook), do: "Runbook"
-  def format_source(:scheduled), do: "Scheduled"
   def format_source(_), do: "—"
 end

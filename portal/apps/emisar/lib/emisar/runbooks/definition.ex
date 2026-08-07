@@ -178,24 +178,12 @@ defmodule Emisar.Runbooks.Definition do
   @spec valid?(term()) :: boolean()
   def valid?(definition), do: match?({:ok, _definition}, validate(definition))
 
-  @doc "Stable SHA-256 identity for one JSON-compatible runbook definition."
+  @doc """
+  Stable SHA-256 identity for one JSON-compatible runbook definition. Shares one
+  canonical encoding with the action-contract hash.
+  """
   @spec digest(map()) :: String.t()
-  def digest(definition) when is_map(definition) do
-    definition
-    |> canonical_json()
-    |> Jason.encode!()
-    |> Emisar.Crypto.hash_hex()
-  end
-
-  defp canonical_json(%{} = value) do
-    value
-    |> Enum.sort_by(&elem(&1, 0))
-    |> Enum.map(fn {key, child} -> {key, canonical_json(child)} end)
-    |> Jason.OrderedObject.new()
-  end
-
-  defp canonical_json(value) when is_list(value), do: Enum.map(value, &canonical_json/1)
-  defp canonical_json(value), do: value
+  def digest(definition) when is_map(definition), do: Emisar.CanonicalJSON.digest(definition)
 
   defp validate_json_value(definition) do
     case Emisar.JSONValue.validate(definition,

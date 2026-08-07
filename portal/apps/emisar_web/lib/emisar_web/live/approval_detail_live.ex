@@ -600,7 +600,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # is the one that matters, an autonomous LLM agent reaching the gate.
   defp dispatch_source_title(:mcp), do: "Dispatched by an LLM agent over the MCP API"
   defp dispatch_source_title(:runbook), do: "Dispatched as a step in a runbook run"
-  defp dispatch_source_title(:scheduled), do: "Dispatched by a schedule"
   defp dispatch_source_title(_), do: nil
 
   # The dispatch channel qualifier comes from Runs' attribution projection, so
