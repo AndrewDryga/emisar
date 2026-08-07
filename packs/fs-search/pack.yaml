@@ -26,6 +26,8 @@ setup:
     arguments.
   notes:
     - "The runner sees only what its uid can read; reaching root-owned or otherwise restricted paths requires running as root."
+    - "The runner refuses any path inside its own configuration and state directories (/etc/emisar and /var/lib/emisar by default, or wherever --etc-dir/--data-dir put them) for every action, whatever a pack declares. Those hold the enrollment key, the pack credentials you exported, and this runner's bearer token."
+    - "The content-returning reads — fs.head_file, fs.tail_file, fs.grep_file, fs.grep_recursive — are low risk, so under the shipped default policy they run with no approval and an operator or agent can read a log without a round trip. They return whatever the file holds. A fleet that wants a human in that loop adds a policy override (action fs.*_file or fs.grep_*, decision require_approval) instead of the tier changing for everyone."
   verify: fs.stat_path
 
 actions:
