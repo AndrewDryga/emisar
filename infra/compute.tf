@@ -1,7 +1,7 @@
 locals {
   cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.23.0@sha256:54e23cad9aeeedbf88ab75f993146631b878035f702b31c51885a932e0c7286c"
   gcloud_image          = "gcr.io/google.com/cloudsdktool/google-cloud-cli:578.0.0-stable@sha256:39f4c48c083fb1d8d182eedc7de97545980afb646b1afdfec61a3f560969bc96"
-  admin_runner_version  = "0.17.1"
+  admin_runner_version  = "0.17.2"
   # The verified runner bundle is the offline bootstrap; these immutable
   # registry refs are the authoritative set reconciled on every service start.
   admin_runner_public_packs = {

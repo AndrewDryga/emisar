@@ -404,6 +404,11 @@ jobs:
         run: |
           set -euo pipefail
           runner/release/verify-image.sh "${IMAGE}@${DIGEST}" "$VERSION" linux/amd64
+          # Docker caches the selected child manifest under the parent digest
+          # ref and refuses to replace it with the other platform. The first
+          # smoke has stopped every container, so discard that local record
+          # before resolving the same published digest for arm64.
+          docker image rm "${IMAGE}@${DIGEST}"
           runner/release/verify-image.sh "${IMAGE}@${DIGEST}" "$VERSION" linux/arm64
 
       - name: Attest image provenance
