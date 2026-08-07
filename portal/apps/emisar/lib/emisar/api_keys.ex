@@ -37,6 +37,14 @@ defmodule Emisar.ApiKeys do
   # 4 chars for "emk-" + 8 random chars => 12-char prefix.
   @prefix_size 12
 
+  # last_used_at is a coarse activity indicator, not an audit record — audit
+  # rows carry the exact trail. Rewriting it on every authenticated MCP call
+  # (up to the 300/min rate cap) was pure WAL and dead-tuple churn on the
+  # hottest request path, so a stamp fresher than this window is left alone.
+  # First use (nil) always writes: promotion, retirement, and the connect
+  # flow's "agent connected" flip all key off that transition.
+  @usage_stamp_interval_seconds 60
+
   # Keys minted within this window are protected from eviction even
   # when the ring is full — buffer for the "user copied the snippet →
   # LLM makes its first MCP call" gap.
@@ -938,7 +946,7 @@ defmodule Emisar.ApiKeys do
             {:error, :not_found} -> {:error, :invalid}
           end
         end)
-        |> Multi.update(:key, fn %{candidate: key} -> ApiKey.Changeset.usage(key) end)
+        |> Multi.run(:key, fn repo, %{candidate: key} -> record_usage(repo, key) end)
         |> Multi.run(:audit, &insert_bound_audit/2)
         |> Multi.run(:retired, &retire_on_first_use/2)
 
@@ -983,6 +991,19 @@ defmodule Emisar.ApiKeys do
       _ -> {:error, :invalid}
     end
   end
+
+  # Skips the write while the stamp is fresh (see @usage_stamp_interval_seconds);
+  # the row stays locked either way, so revocation still serializes with use.
+  defp record_usage(repo, %ApiKey{last_used_at: %DateTime{} = at} = key) do
+    if DateTime.diff(DateTime.utc_now(), at, :second) < @usage_stamp_interval_seconds do
+      {:ok, key}
+    else
+      repo.update(ApiKey.Changeset.usage(key))
+    end
+  end
+
+  defp record_usage(repo, %ApiKey{last_used_at: nil} = key),
+    do: repo.update(ApiKey.Changeset.usage(key))
 
   defp insert_bound_audit(repo, %{candidate: candidate, key: updated}) do
     if ApiKey.auto_unused?(candidate) do

@@ -125,6 +125,9 @@ defmodule Emisar.Runs.ActionRun.Query do
   def status_in(queryable, statuses),
     do: where(queryable, [runs: r], r.status in ^statuses)
 
+  def status_not_in(queryable, statuses),
+    do: where(queryable, [runs: r], r.status not in ^statuses)
+
   def inserted_after(queryable, %DateTime{} = ts),
     do: where(queryable, [runs: r], r.inserted_at >= ^ts)
 

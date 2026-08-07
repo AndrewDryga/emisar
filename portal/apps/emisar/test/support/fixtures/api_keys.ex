@@ -76,6 +76,15 @@ defmodule Emisar.Fixtures.ApiKeys do
   end
 
   @doc """
+  Backdates a key's usage stamp past the rewrite window, so a test can prove
+  the next authenticated call re-stamps it (a fresh stamp is left alone).
+  """
+  def backdate_api_key_usage(%ApiKeys.ApiKey{} = key, last_used_at \\ nil) do
+    last_used_at = last_used_at || DateTime.add(DateTime.utc_now(), -120, :second)
+    key |> Ecto.Changeset.change(last_used_at: last_used_at) |> Repo.update!()
+  end
+
+  @doc """
   Forges a rotation back-link directly on the row — the production paths can
   only mint same-account links, so tests use this to prove the retirement
   sweep's own scoping holds even against a corrupted link.

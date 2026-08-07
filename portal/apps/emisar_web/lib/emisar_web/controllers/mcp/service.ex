@@ -74,7 +74,18 @@ defmodule EmisarWeb.MCP.Service do
       tail_scope: Keyword.get(opts, :tail_scope)
     ]
 
-    Enum.map(runs, &fixed_run_summary(&1, subject, summary_opts))
+    # One windowed query + one visibility check for the whole page — a
+    # per-summary fetch here was a 4-queries-per-row N+1 on the two
+    # fastest-growing tables.
+    events_by_run = run_events_by_id(runs, subject)
+
+    Enum.map(runs, fn run ->
+      fixed_run_summary(
+        run,
+        subject,
+        [events: Map.get(events_by_run, run.id, [])] ++ summary_opts
+      )
+    end)
   end
 
   @doc """
@@ -86,7 +97,14 @@ defmodule EmisarWeb.MCP.Service do
     stream_cap = Keyword.get(opts, :stream_cap, 16_384)
     structured_output_cap = Keyword.get(opts, :structured_output_cap, 8_192)
     tail_scope = Keyword.get(opts, :tail_scope)
-    output_preview = run_output_preview(run, subject, stream_cap)
+
+    events =
+      case Keyword.fetch(opts, :events) do
+        {:ok, events} -> events
+        :error -> Map.get(run_events_by_id([run], subject), run.id, [])
+      end
+
+    output_preview = run_output_preview(run, events, stream_cap)
     structured_output = structured_output_summary(run.structured_output, structured_output_cap)
 
     {next, drain_vanished?} =
@@ -505,7 +523,15 @@ defmodule EmisarWeb.MCP.Service do
   end
 
   defp await_all_terminal(subject, ids, deadline, cancellation_topic) do
-    remaining = Enum.reject(ids, &run_terminal?(&1, subject))
+    # One batched status check per wake — a scoped per-run fetch here fanned
+    # out N queries every recheck during a multi-runner settle window. A run
+    # that left the subject's scope drops out of the wait; the caller's
+    # terminal re-read still fails closed on the gap.
+    remaining =
+      case Runs.list_unsettled_run_ids(ids, subject) do
+        {:ok, unsettled} -> unsettled
+        {:error, _} -> []
+      end
 
     if remaining == [] do
       :ok
@@ -524,13 +550,6 @@ defmodule EmisarWeb.MCP.Service do
         :timeout ->
           :ok
       end
-    end
-  end
-
-  defp run_terminal?(run_id, subject) do
-    case Runs.fetch_run_by_id(run_id, subject) do
-      {:ok, %{status: status}} -> Runs.terminal_status?(status)
-      _ -> false
     end
   end
 
@@ -569,8 +588,17 @@ defmodule EmisarWeb.MCP.Service do
     end
   end
 
-  defp run_output_preview(run, subject, stream_cap) do
-    {:ok, events} = Runs.list_recent_events_for_run(run.id, @max_output_events + 1, subject)
+  # The whole visible-set gate applies to a render's runs at once; a page that
+  # narrowed underneath the caller mid-render fails closed exactly as the old
+  # per-run fetch did.
+  defp run_events_by_id(runs, subject) do
+    {:ok, events_by_run} =
+      Runs.list_recent_events_for_runs(Enum.map(runs, & &1.id), @max_output_events + 1, subject)
+
+    events_by_run
+  end
+
+  defp run_output_preview(run, events, stream_cap) do
     {events, output_events_truncated?} = output_tail(events)
 
     {{stdout, stdout_truncated?}, {stderr, stderr_truncated?}} =

@@ -2946,6 +2946,32 @@ defmodule Emisar.RunsTest do
     end
   end
 
+  describe "list_unsettled_run_ids/2" do
+    test "returns only visible non-terminal ids in one query" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      pending_run =
+        Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, status: :pending)
+
+      settled_run =
+        Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, status: :success)
+
+      {_other_owner, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
+      other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
+
+      foreign_run =
+        Fixtures.Runs.create_run(
+          account_id: other_account.id,
+          runner_id: other_runner.id,
+          status: :pending
+        )
+
+      ids = [pending_run.id, settled_run.id, foreign_run.id]
+      assert Runs.list_unsettled_run_ids(ids, subject) == {:ok, [pending_run.id]}
+    end
+  end
+
   describe "recheck_runbook_attempt/2" do
     test "fails closed for malformed and cross-account frozen targets" do
       account = Fixtures.Accounts.create_account()
@@ -5493,10 +5519,10 @@ defmodule Emisar.RunsTest do
 
       # Last 3 progress chunks, oldest→newest (the DESC+limit page reversed).
       assert {:ok, [%RunEvent{seq: 3}, %RunEvent{seq: 4}, %RunEvent{seq: 5}]} =
-               Runs.list_recent_events_for_run(run.id, 3, subject)
+               Runs.list_recent_events_for_run(run, 3, subject)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.list_recent_events_for_run(run.id, 3, subject_b)
+      assert {:error, :not_found} = Runs.list_recent_events_for_run(run, 3, subject_b)
     end
   end
 

@@ -1740,6 +1740,32 @@ defmodule Emisar.Runs do
     end
   end
 
+  @doc """
+  The subset of `run_ids` still visible to the subject and not yet in a
+  terminal status — the ids a settle-wait must keep waiting on. One query for
+  the whole set, so a fan-out poll never pays a scoped fetch per run. A run
+  that disappeared from the subject's scope is deliberately absent (nothing
+  left to wait for); the caller's terminal re-read fails closed on the gap.
+  """
+  def list_unsettled_run_ids(run_ids, %Subject{} = subject) when is_list(run_ids) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runs_permission()
+           ) do
+      unsettled =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_ids(run_ids)
+        |> ActionRun.Query.status_not_in(ActionRun.terminal_statuses())
+        |> scope_runs_to_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> ActionRun.Query.select_ids()
+        |> Repo.all()
+
+      {:ok, unsettled}
+    end
+  end
+
   # Snapshot the dispatcher's source ip/ua + self-reported MCP client metadata
   # from the request context onto the run attrs, so every run-lifecycle audit
   # event — including the terminal one logged from the runner socket — attributes
@@ -3577,16 +3603,20 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  The most recent `limit` progress chunks for a run, in chronological
-  (`seq`-ASC) order — a tail preview of a finished run's output. The run is
-  fetched via `fetch_run_by_id/3` first so the subject's account scope and
-  permission gate apply. Returns `{:ok, [event]}`.
+  The most recent `limit` progress chunks for an already-fetched run, in
+  chronological (`seq`-ASC) order — a tail preview of a finished run's output.
+  The subject's permission gate and row scope are re-checked against the run's
+  id (a held struct cannot widen visibility), without re-fetching the wide run
+  row the caller already holds. Returns `{:ok, [event]}`.
   """
-  def list_recent_events_for_run(run_id, limit, %Subject{} = subject) when is_integer(limit) do
-    with {:ok, _run} <- fetch_run_by_id(run_id, subject) do
+  def list_recent_events_for_run(%ActionRun{} = run, limit, %Subject{} = subject)
+      when is_integer(limit) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runs_permission()),
+         :ok <- ensure_all_runs_visible([run.id], subject) do
       events =
         RunEvent.Query.all()
-        |> RunEvent.Query.by_run_id(run_id)
+        |> RunEvent.Query.by_run_id(run.id)
         |> RunEvent.Query.by_kind(:progress)
         |> RunEvent.Query.recent_by_seq(limit)
         |> Repo.all()
@@ -3602,7 +3632,7 @@ defmodule Emisar.Runs do
   """
   def list_recent_events_for_runs(run_ids, limit, %Subject{} = subject)
       when is_list(run_ids) and length(run_ids) <= 256 and is_integer(limit) and limit >= 1 and
-             limit <= 20 do
+             limit <= 64 do
     run_ids = Enum.uniq(run_ids)
 
     with :ok <- validate_run_ids(run_ids),

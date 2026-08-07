@@ -50,7 +50,7 @@ defmodule EmisarWeb.RunDetailLive do
             # A transient read failure between the run fetch above and this one
             # must not raise inside mount — that leaves the run page unable to
             # render at all. Degrade to an empty window; the live stream fills it.
-            case Runs.list_recent_events_for_run(run.id, event_window(), subject) do
+            case Runs.list_recent_events_for_run(run, event_window(), subject) do
               {:ok, evts} -> evts
               {:error, _} -> []
             end

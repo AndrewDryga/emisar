@@ -1503,6 +1503,19 @@ defmodule Emisar.ApiKeysTest do
       assert %DateTime{} = ts
     end
 
+    test "leaves a fresh usage stamp alone and rewrites a stale one" do
+      {raw, key} = Fixtures.ApiKeys.create_api_key()
+
+      assert %ApiKey{last_used_at: %DateTime{} = stamped} = ApiKeys.peek_api_key_by_secret(raw)
+      assert %ApiKey{last_used_at: ^stamped} = ApiKeys.peek_api_key_by_secret(raw)
+      assert Repo.reload!(key).last_used_at == stamped
+
+      stale = Fixtures.ApiKeys.backdate_api_key_usage(Repo.reload!(key))
+
+      assert %ApiKey{last_used_at: %DateTime{} = restamped} = ApiKeys.peek_api_key_by_secret(raw)
+      assert DateTime.compare(restamped, stale.last_used_at) == :gt
+    end
+
     test "returns nil for garbage" do
       refute ApiKeys.peek_api_key_by_secret("not-a-key")
       refute ApiKeys.peek_api_key_by_secret("")
