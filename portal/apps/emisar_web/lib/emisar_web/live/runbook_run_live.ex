@@ -479,17 +479,18 @@ defmodule EmisarWeb.RunbookRunLive do
     assign(socket, :subscribed_execution_id, execution_id)
   end
 
-  defp unsubscribe_execution(%{assigns: %{subscribed_execution_id: nil}} = socket), do: socket
-
-  defp unsubscribe_execution(socket) do
-    :ok =
-      Runbooks.unsubscribe_execution(
-        socket.assigns.current_account.id,
-        socket.assigns.subscribed_execution_id
-      )
+  defp unsubscribe_execution(%{assigns: %{subscribed_execution_id: execution_id}} = socket)
+       when not is_nil(execution_id) do
+    :ok = Runbooks.unsubscribe_execution(socket.assigns.current_account.id, execution_id)
 
     assign(socket, :subscribed_execution_id, nil)
   end
+
+  # Nothing subscribed, including the case this clause exists for: mounting a
+  # draft runbook or a missing one redirects before any of the execution assigns
+  # are set, so `terminate/2` arrives here with the key ABSENT rather than nil.
+  # Matching a nil value alone crashed the view on its way out.
+  defp unsubscribe_execution(socket), do: socket
 
   # The domain owns the canonical form values, so a first paint and a reset both
   # render the declared defaults it stringifies — a blank form is not an error
