@@ -1293,8 +1293,9 @@ defmodule EmisarWeb.RunbookRunLive do
           <span class="font-mono text-sm text-zinc-100">{@item.action_id}</span>
           <.risk_pill :if={@item.risk} risk={@item.risk} />
         </div>
+        <%!-- No leading glyph, matching the plan and the editor: a runner name
+              says what it is, so an arrow would label nothing. --%>
         <p class="mt-1 text-xs text-zinc-400">
-          <span class="text-zinc-500">→</span>
           <span class="font-medium text-zinc-300">
             {RunbookWorkflowComponents.runner_name(@item.runner_ref)}
           </span>

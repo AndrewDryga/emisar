@@ -367,6 +367,11 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert has_element?(lv, ~s([data-steps-marker="parallel"] .hero-arrows-right-left))
       assert has_element?(lv, ~s([data-steps-marker="number"]), "1")
 
+      # The plan names the resolved runner with no glyph in front of it, the same
+      # target line the editor renders one state earlier.
+      assert has_element?(lv, "#current-runbook-plan", runner.name)
+      refute has_element?(lv, "#current-runbook-plan", "→")
+
       assert has_element?(
                lv,
                "#runbook-run-form[phx-submit=start] button[type=submit]:not([disabled])"

@@ -1593,14 +1593,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       # stage's own marker, an action · target head, then the fact groups.
       assert has_element?(lv, ~s|#runbook-stage-0 ol [data-steps-marker="parallel"]|)
       assert has_element?(lv, summary, "linux.uptime")
-      assert has_element?(lv, summary, "default")
 
-      # The dots say how many runners the ref reaches, and name themselves.
-      assert has_element?(lv, ~s|#{summary} [data-target-scope-icon="group_all"]|)
-      assert has_element?(lv, "#{summary} [role='tooltip']", "Every runner in group default")
-      refute has_element?(lv, summary, "every runner)")
+      # How far the ref reaches is spelled out, not encoded in scope dots that
+      # need a tooltip to say the same thing.
+      assert has_element?(lv, summary, "Every runner in default")
+      refute has_element?(lv, ~s|#{summary} [data-target-scope-icon]|)
 
-      # The name says what it is, so no glyph labels it.
+      # The phrase says what it is, so no glyph labels it.
       refute has_element?(lv, summary, "→")
       assert has_element?(lv, summary, "uptime")
       assert has_element?(lv, details, "from run-time input")

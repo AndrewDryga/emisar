@@ -180,8 +180,9 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
               <.risk_pill :if={item["risk"]} risk={item["risk"]} />
             </div>
+            <%!-- No leading glyph, matching the editor's target line: a runner
+                  name says what it is, so an arrow would label nothing. --%>
             <p class="mt-1 text-xs text-zinc-400">
-              <span class="text-zinc-500">→</span>
               <span class="font-medium text-zinc-300">
                 {runner_name(item["runner_ref"])}
               </span>
@@ -697,27 +698,15 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             Flex gaps, not markup whitespace: HEEx turns the newline between two
             spans into a rendered space, which stacked with the separator's own
             space into a visible gutter. --%>
-      <p class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span
-          :for={target <- @targets}
-          class={[
-            "inline-flex items-center gap-1.5",
-            if(target.available?, do: "text-zinc-300", else: "text-rose-300")
-          ]}
-        >
-          <%!-- The dots are the only thing saying how many runners this reaches,
-                so they carry their own name for hover, focus, and a reader. --%>
-          <.tooltip
-            :if={target.kind}
-            id={"runbook-stage-#{@stage_index}-step-#{@step_index}-scope-#{target.index}"}
-            text={target.scope}
-          >
-            <.target_scope_icon
-              kind={target.kind}
-              tone={if target.available?, do: :brand, else: :rose}
-            />
-          </.tooltip>
-          {target.label}
+      <p class="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+        <span :for={target <- @targets} class="inline-flex items-center gap-1.5">
+          <%!-- Between phrases, not before the first: two sentences sharing a
+                line need a separator, but a glyph at the head would label a
+                phrase that already names itself. --%>
+          <span :if={target.index > 0} class="text-zinc-500">·</span>
+          <span class={if(target.available?, do: "text-zinc-300", else: "text-rose-300")}>
+            {target.label}
+          </span>
         </span>
       </p>
     </div>
@@ -827,19 +816,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp step_issue?(_path, _base), do: false
 
-  # Each ref carries the picker's own scope icon, the name, and whether it still
-  # resolves — a per-ref fact a trailing count cannot give. The dots say how many
-  # runners this reaches, so the words no longer repeat it.
+  # Each ref says in words how far it reaches and whether it still resolves — a
+  # per-ref fact a trailing count cannot give. Scope dots said the same thing in
+  # four accent pips, which read as decoration next to the phrase they replaced.
   defp summary_targets(catalog, [], _selection) do
-    [
-      %{
-        index: 0,
-        kind: nil,
-        label: empty_target_selection_label(catalog),
-        available?: true,
-        scope: nil
-      }
-    ]
+    [%{index: 0, label: empty_target_selection_label(catalog), available?: true}]
   end
 
   defp summary_targets(catalog, refs, selection) do
@@ -847,14 +828,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     |> Enum.with_index()
     |> Enum.map(fn {ref, index} ->
       available? = RunbookEditorCatalog.target_available?(catalog, ref)
-      {kind, name, scope} = target_scope(catalog, ref, selection)
+      phrase = target_phrase(catalog, ref, selection)
 
       %{
         index: index,
-        kind: kind,
-        label: if(available?, do: name, else: "#{name} (unavailable)"),
-        available?: available?,
-        scope: if(available?, do: scope, else: "#{scope} — unavailable")
+        label: if(available?, do: phrase, else: "#{phrase} (unavailable)"),
+        available?: available?
       }
     end)
   end
@@ -862,17 +841,17 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   # The group reads exactly as it was named — the picker, the roster, and the run
   # surface all show `edge-web`, so upcasing it here spelled one identifier two
   # ways, in a caps-at-body-size texture that matched no other label on the card.
-  defp target_scope(_catalog, "group:" <> group, "random_one"),
-    do: {:group_one, group, "One random runner in group #{group}"}
+  #
+  # An exact runner needs no phrase: its name already says it reaches one host,
+  # and `Runner web-01` would only restate the column it sits in.
+  defp target_phrase(_catalog, "group:" <> group, "random_one"),
+    do: "One random runner in #{group}"
 
-  defp target_scope(_catalog, "group:" <> group, _selection),
-    do: {:group_all, group, "Every runner in group #{group}"}
+  defp target_phrase(_catalog, "group:" <> group, _selection),
+    do: "Every runner in #{group}"
 
-  defp target_scope(catalog, ref, selection) do
-    name = RunbookEditorCatalog.target_label(catalog, ref, selection)
-
-    {:runner, name, "Runner #{name}"}
-  end
+  defp target_phrase(catalog, ref, selection),
+    do: RunbookEditorCatalog.target_label(catalog, ref, selection)
 
   defp summary_argument_rows(step) do
     step["args"]
@@ -1239,11 +1218,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   attr :kind, :atom, required: true, values: [:group_all, :group_one, :runner]
 
-  attr :tone, :atom,
-    default: :brand,
-    values: [:brand, :rose],
-    doc: "rose when the ref no longer resolves, so the dots don't read as fine"
-
+  # Picker rows only. The step summary spells its scope out instead, so the
+  # unavailable (rose) tone this once carried has no caller left.
   defp target_scope_icon(assigns) do
     {accent_dots, neutral_dots} =
       case assigns.kind do
@@ -1276,8 +1252,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         :for={dot <- @dots}
         class={[
           "h-1.5 w-1.5 rounded-full",
-          dot == :accent && @tone == :brand && "bg-brand-400",
-          dot == :accent && @tone == :rose && "bg-rose-400",
+          dot == :accent && "bg-brand-400",
           dot == :neutral && "bg-zinc-600"
         ]}
       ></span>
