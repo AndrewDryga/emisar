@@ -54,6 +54,14 @@ func (a *App) portalTestOutput(ctx context.Context, env map[string]string) error
 	if err := a.warmPortalTestDependencies(ctx, testEnv); err != nil {
 		return err
 	}
+	// Taken after the warm-up, which touches no database, and held across the
+	// migration and both suites — the whole window in which another run's DDL
+	// could cancel these queries.
+	lock, err := a.portalTestLock(testEnv)
+	if err != nil {
+		return err
+	}
+	defer releasePortalTestLock(lock)
 	if err := a.ensurePortalTestDatabase(ctx, testEnv); err != nil {
 		return err
 	}
@@ -216,6 +224,14 @@ func (a *App) portalTests(ctx context.Context, env map[string]string, args []str
 		testEnv[key] = value
 	}
 	testEnv["MIX_ENV"] = "test"
+	// A focused run is the usual victim rather than the cause — it holds no
+	// migration of its own, and a gate migrating alongside it is what cancels
+	// its queries. Same lock, so the two cannot overlap either way round.
+	lock, err := a.portalTestLock(testEnv)
+	if err != nil {
+		return err
+	}
+	defer releasePortalTestLock(lock)
 	return a.run(ctx, dir, testEnv, "mix", testArgs...)
 }
 

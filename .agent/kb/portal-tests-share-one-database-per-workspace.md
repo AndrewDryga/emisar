@@ -52,7 +52,13 @@ migrating, not at a sync point in the tests it named. One test that keeps reappe
 real thing, and `AGENTS.md` §7 already covers it: flush the LiveView after asserting its
 broadcast, so queued `handle_info` work finishes while the sandbox owner is still alive.
 
-While the runs share a database, a single portal suite at a time in a workspace is the only
-arrangement that produces trustworthy output. Isolating them is queued as its own task; the
-honest options are a per-run `MIX_TEST_PARTITION` (full isolation, but each run re-migrates
-from scratch) and a lock that serializes the phase against one warm database.
+The runs still share a database; what changed is that they no longer overlap on it.
+`./run gate portal` and `./run test portal` both take one exclusive lock — keyed by the
+database `portal/config/test.exs` resolves, so unrelated databases run freely — held across
+the migration and the suites. A second run prints `waiting: another portal test run holds
+<database>` and starts when the first finishes. Per-run `MIX_TEST_PARTITION` was the other
+option and was not taken: it isolates completely but makes every run re-migrate from scratch,
+and waiting out one suite is cheaper than that on every single run.
+
+The lock is per user and per database, so it does not help across machines or containers —
+CI is unaffected either way, since each job already has its own database.
