@@ -621,7 +621,24 @@ defmodule EmisarWeb.RunnerSocket do
     %{state | heartbeat_ref: schedule_heartbeat_timeout()}
   end
 
-  defp reset_heartbeat_timeout(state) do
-    if ref = state[:heartbeat_ref], do: Process.cancel_timer(ref)
+  # Cancel AND flush. `Process.cancel_timer/1` returns false when the timer
+  # already fired, and by then `:heartbeat_timeout` is sitting in our mailbox —
+  # frames and timer messages share it, so a heartbeat that arrived while we were
+  # busy (persisting the previous one) got processed first, refreshed the timer,
+  # and then the stale timeout closed a socket whose runner was answering. The
+  # selective receive drops that message; `after 0` keeps it non-blocking, since
+  # a genuinely-cancelled timer has nothing to flush.
+  defp reset_heartbeat_timeout(%{heartbeat_ref: ref}) when is_reference(ref) do
+    unless Process.cancel_timer(ref) do
+      receive do
+        :heartbeat_timeout -> :ok
+      after
+        0 -> :ok
+      end
+    end
+
+    :ok
   end
+
+  defp reset_heartbeat_timeout(_state), do: :ok
 end
