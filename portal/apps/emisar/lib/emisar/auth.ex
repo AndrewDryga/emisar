@@ -247,21 +247,22 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Live-session terminator for "user must lose access RIGHT NOW" paths
-  (admin suspend, force-password-reset, account-wide password change).
-  Captures every active LiveView topic, deletes the underlying token rows,
-  then broadcasts the captured topics — so a socket that subscribes during
-  revocation still receives its disconnect after its credential is dead.
+  Internal — capture a user's live-socket topics so a caller that DELETES those
+  session rows inside a transaction can still disconnect the sockets afterwards.
 
-  Pair with the standard `delete_all_session_tokens/1` for the auth
-  cookie invalidation; the broadcast is best-effort and idempotent.
+  A topic is derived from its `user_tokens` row, so reading it after the delete
+  yields nothing: `broadcast_disconnect_for_user/2` called from an `after_commit`
+  that deleted the rows disconnects no one. Capture inside the transaction, then
+  hand the result to `disconnect_live_socket_topics/1` after it commits.
   """
-  def disconnect_and_revoke_all_sessions(%Users.User{} = user) do
-    topics = live_socket_topics_for_user(user)
-    {:ok, count} = delete_all_session_tokens(user)
-    if count > 0, do: disconnect_live_sessions(topics)
-    :ok
-  end
+  def capture_live_socket_topics(%Users.User{} = user), do: live_socket_topics_for_user(user)
+
+  @doc """
+  Internal — broadcast a disconnect to topics captured by
+  `capture_live_socket_topics/1`. Best-effort and idempotent.
+  """
+  def disconnect_live_socket_topics(topics) when is_list(topics),
+    do: disconnect_live_sessions(topics)
 
   @doc """
   "Sign out everywhere except this device" — kills every session except

@@ -97,8 +97,8 @@ defmodule EmisarWeb.UserAuth do
     # `live_socket_id` is derived from the digest (NOT the raw token)
     # so the server can re-derive the per-session disconnect topic
     # without the cookie value — see `Emisar.Auth.live_socket_topic/1`.
-    # If we keyed on the raw token, `Auth.disconnect_and_revoke_all_sessions`
-    # couldn't broadcast to a session whose cookie it doesn't hold.
+    # If we keyed on the raw token, an admin-side revocation could not
+    # broadcast to a session whose cookie it doesn't hold.
     conn
     |> put_session(:user_token, token)
     |> put_session(:live_socket_id, Auth.live_socket_topic_for_session(token))

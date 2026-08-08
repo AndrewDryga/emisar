@@ -2839,10 +2839,18 @@ defmodule Emisar.Accounts do
       # it shares the snapshot with the delete (which Auth owns — token
       # internals stay private to it). The PubSub disconnect broadcast is a
       # side effect that fires only after the rows commit.
+      #
+      # The socket topics are CAPTURED before the delete: each one is derived
+      # from its `user_tokens` row, so an after-commit lookup finds nothing and
+      # silently disconnects no one — the member's cookie dies while their open
+      # LiveView keeps working.
       Multi.new()
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
         Users.fetch_user_by_id(loaded_membership.user_id)
+      end)
+      |> Multi.run(:socket_topics, fn _repo, %{user: user} ->
+        {:ok, Emisar.Auth.capture_live_socket_topics(user)}
       end)
       |> Multi.run(:tokens, fn _repo, %{user: user} ->
         Emisar.Auth.delete_all_session_tokens(user)
@@ -2851,8 +2859,8 @@ defmodule Emisar.Accounts do
         Audit.Events.user_sessions_revoked(subject, loaded_membership, user)
       end)
       |> Repo.commit_multi(
-        after_commit: fn %{user: user} ->
-          Emisar.Auth.broadcast_disconnect_for_user(user)
+        after_commit: fn %{socket_topics: socket_topics} ->
+          Emisar.Auth.disconnect_live_socket_topics(socket_topics)
           :ok
         end
       )

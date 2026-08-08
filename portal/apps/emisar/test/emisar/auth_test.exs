@@ -412,17 +412,40 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "disconnect_and_revoke_all_sessions/1" do
-    test "revokes every session for the user (and best-effort disconnects sockets)" do
+  describe "capture_live_socket_topics/1" do
+    test "captures a topic per live session, and still resolves them after the rows are gone" do
       user = Fixtures.Users.create_user()
-      t1 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      t2 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token_one = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token_two = Fixtures.Auth.create_session_token!(user, :magic_link, false)
 
-      assert :ok = Auth.disconnect_and_revoke_all_sessions(user)
+      captured = Auth.capture_live_socket_topics(user)
 
-      # Both cookies are now dead — the DB rows are gone.
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(t1)
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(t2)
+      expected = Enum.map([token_one, token_two], &Auth.live_socket_topic(Crypto.hash(&1)))
+      assert Enum.sort(captured) == Enum.sort(expected)
+
+      # The point of capturing: once the rows are deleted the topics can no
+      # longer be derived, so a caller that deletes them in a transaction must
+      # hold this list to disconnect anyone at all.
+      {:ok, 2} = Auth.delete_all_session_tokens(user)
+      assert Auth.capture_live_socket_topics(user) == []
+    end
+  end
+
+  describe "disconnect_live_socket_topics/1" do
+    # In the `:emisar`-only test process the `:session_disconnect_handler`
+    # (which lives in `emisar_web`) isn't configured, so this is a pure,
+    # best-effort no-op that must not raise or touch token rows. That the
+    # broadcast actually reaches the socket is proven end-to-end in
+    # `EmisarWeb.EndAllSessionsDisconnectTest`.
+    test "is a best-effort :ok that deletes no token rows" do
+      user = Fixtures.Users.create_user()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      captured = Auth.capture_live_socket_topics(user)
+
+      assert :ok = Auth.disconnect_live_socket_topics(captured)
+      assert :ok = Auth.disconnect_live_socket_topics([])
+
+      assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(token)
     end
   end
 
