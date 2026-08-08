@@ -187,9 +187,20 @@ defmodule EmisarWeb.BillingLive do
 
   defp current_plan?(%{key: key}, %{plan: current}), do: key == current
 
-  # Tier position in @plan_order so a card can tell an upgrade from a downgrade
-  # (an unknown/legacy plan ranks last so a card never mislabels it an "upgrade").
-  defp plan_rank(key) when is_binary(key), do: Enum.find_index(@plan_order, &(&1 == key)) || -1
+  # Tier position in @plan_order so a card can tell an upgrade from a downgrade.
+  # An unknown plan ranks ABOVE every known one: the only way to hold one is a
+  # slug minted in Paddle for a custom deal, which `billing_summary` already
+  # treats as custom pricing rather than free's $0. Ranking it -1 put it *below*
+  # free and inverted every comparison, so an enterprise customer was offered
+  # "Upgrade to Free".
+  defp plan_rank(key) when is_binary(key),
+    do: Enum.find_index(@plan_order, &(&1 == key)) || length(@plan_order)
+
+  # A plan with no self-serve path off it: Enterprise, and any slug this build
+  # doesn't know — the only way to hold one is a custom deal minted in Paddle,
+  # which is sales-led by definition. Both send the operator to support rather
+  # than offering a checkout that `start_checkout` would refuse anyway.
+  defp sales_led_plan?(plan) when is_binary(plan), do: plan_rank(plan) >= plan_rank("enterprise")
 
   # Formats a total in the currency's minor unit. Paddle bills in the customer's
   # local currency, so both the subscription summary and each invoice carry their
@@ -515,7 +526,7 @@ defmodule EmisarWeb.BillingLive do
                marks it a standing posture note; the action is the aside's
                "Contact support". --%>
             <.event_block
-              :if={@summary.plan == "enterprise"}
+              :if={sales_led_plan?(@summary.plan)}
               icon="hero-lifebuoy"
               tone={:neutral}
               title="Custom Enterprise plan"
@@ -616,8 +627,9 @@ defmodule EmisarWeb.BillingLive do
                         <p class="py-2 text-center text-xs font-medium text-zinc-400">
                           Owner or billing manager only
                         </p>
-                      <% @summary.plan == "enterprise" -> %>
-                        <%!-- On a custom Enterprise plan every other tier is a downgrade,
+                      <% sales_led_plan?(@summary.plan) -> %>
+                        <%!-- On a custom Enterprise plan (or any Paddle-minted slug
+                         this build doesn't know) every other tier is a downgrade,
                          and there's no self-serve path off it — the note above
                          carries the one real action (contact support). --%>
                         <.button

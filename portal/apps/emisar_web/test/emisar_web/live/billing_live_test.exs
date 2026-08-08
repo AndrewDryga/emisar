@@ -238,6 +238,27 @@ defmodule EmisarWeb.BillingLiveTest do
       refute html =~ "Payment past due"
     end
 
+    test "an unknown plan name is treated as sales-led, not as below Free", %{
+      conn: conn
+    } do
+      # The only way to hold a slug this build doesn't know is a custom deal minted
+      # in Paddle, so it ranks ABOVE the self-serve tiers. Ranking it below Free
+      # inverted every card comparison: the highest-value customer we have was
+      # offered "Upgrade to Free" and shown Team's upsell chip.
+      {conn, _user, account} = register_and_log_in(conn)
+      insert_subscription_with(account, %{plan: "enterprise-trial", status: "active"})
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      refute html =~ "Upgrade to Free"
+      refute html =~ "Upgrade to Team"
+      refute html =~ "most popular"
+
+      # Same treatment the literal "enterprise" plan gets: the one real action.
+      assert html =~ "Custom Enterprise plan"
+      assert html =~ "Contact support to switch"
+    end
+
     test "an enterprise account shows a Custom total and Unlimited meters", %{conn: conn} do
       # Enterprise has no self-serve price → period_total_cents nil →
       # period_price_label renders bare "Custom" (no "/mo" or "/yr" suffix, which
