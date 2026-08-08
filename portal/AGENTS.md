@@ -524,11 +524,23 @@ Worked example + the dev-DB rollback gotcha: `.agent/kb/rules/elixir-migrations-
 
 Two layers — mechanical rules run by machines, judgment rules by review:
 
-1. **Credo is the single mechanical source of truth.** The Iron-Law and
-   house-rule checks are custom AST checks in `credo/checks/`
+1. **Credo is the single mechanical source of truth *for Elixir AST*.** The
+   Iron-Law and house-rule checks are custom AST checks in `credo/checks/`
    (`Emisar.Checks.*`), wired into `.credo.exs` alongside the stock checks
    (including `UnsafeToAtom` for IL-14 and `StrictModuleLayout` for the
-   directive order). Run it twice — there is no hook doing this for you:
+   directive order).
+
+   **Credo cannot parse `.heex`** — it reports the file as unparseable and drops
+   it, and `.credo.exs`'s directory globs expand to `**/*.{ex,exs}` anyway. So a
+   markup rule decidable from template SOURCE TEXT belongs in
+   `EmisarWeb.TemplateHygieneTest` (which walks `.heex` and `.ex` alike and runs
+   inside `mix test`, hence inside the gate), not in a Credo check that would
+   silently cover only the `~H` sigils embedded in `.ex`. The anchor-glue rule
+   shipped 8 violations while documented-but-unrun, 6 of them in `.heex`.
+   **Routing: Elixir AST → `Emisar.Checks.*`; template source text →
+   `EmisarWeb.TemplateHygieneTest`.**
+
+   Run Credo twice — there is no hook doing this for you:
    - **after every edit** — when you change a portal `.ex`/`.exs`, run
      `mix credo <file>` from `portal/` (~0.6s) before moving on, and fix
      every finding immediately. Editing without re-checking is how the
