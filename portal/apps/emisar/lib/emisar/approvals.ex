@@ -534,19 +534,6 @@ defmodule Emisar.Approvals do
     )
   end
 
-  @doc "Return one execution gate's durable decision inside the caller transaction."
-  def runbook_execution_approval_status(repo, execution_id) when is_binary(execution_id) do
-    request =
-      Request.Query.all()
-      |> Request.Query.by_runbook_execution_id(execution_id)
-      |> repo.one()
-
-    case request do
-      %Request{status: status} -> status
-      nil -> :missing
-    end
-  end
-
   @doc "Internal — whether the exact execution has its finalized whole-plan consent."
   def runbook_execution_approved?(execution_id, account_id)
       when is_binary(execution_id) and is_binary(account_id) do
@@ -1657,9 +1644,6 @@ defmodule Emisar.Approvals do
   """
   def subscribe_request(account_id, request_id),
     do: Emisar.PubSub.subscribe(request_topic(account_id, request_id))
-
-  def unsubscribe_request(account_id, request_id),
-    do: Emisar.PubSub.unsubscribe(request_topic(account_id, request_id))
 
   defp account_approvals_topic(account_id), do: "account:#{account_id}:approvals"
   defp request_topic(account_id, request_id), do: "account:#{account_id}:approval:#{request_id}"

@@ -401,44 +401,6 @@ defmodule Emisar.RunnersTest do
     end
   end
 
-  describe "resolve_runbook_targets/2" do
-    test "resolves every authored reference through current account scope" do
-      {account, _user, subject} = account_with_owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
-
-      assert {:ok,
-              %{
-                selection: "all",
-                refs: ["group:database"],
-                runners: [%{id: runner_id, runner_ref: runner_ref}]
-              }} =
-               Runners.resolve_runbook_targets(
-                 %{"selection" => "all", "refs" => ["group:database"]},
-                 subject
-               )
-
-      assert runner_id == runner.id
-      assert is_binary(runner_ref)
-
-      assert Runners.resolve_runbook_targets(
-               %{"selection" => "all", "refs" => ["group:missing"]},
-               subject
-             ) == {:error, :unknown_target}
-
-      _offline =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          group: "offline-only",
-          connected?: false
-        )
-
-      assert Runners.resolve_runbook_targets(
-               %{"selection" => "random_one", "refs" => ["group:offline-only"]},
-               subject
-             ) == {:error, :unknown_target}
-    end
-  end
-
   describe "resolve_runbook_target_sets/2" do
     test "preserves target order and reports the first unresolved target index" do
       {account, _user, subject} = account_with_owner_subject()
@@ -797,70 +759,6 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.runner_enforces_signatures?(runner.id, runner.account_id)
       refute Runners.runner_enforces_signatures?(runner.id, account_b.id)
-    end
-  end
-
-  describe "list_active_runners_in_groups/2" do
-    test "returns active runners in the groups, name-ordered" do
-      account = Fixtures.Accounts.create_account()
-
-      _b =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          group: "web",
-          name: "bravo",
-          connected?: false
-        )
-
-      _a =
-        Fixtures.Runners.create_runner(
-          account_id: account.id,
-          group: "web",
-          name: "alpha",
-          connected?: false
-        )
-
-      _other =
-        Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
-
-      names =
-        Runners.list_active_runners_in_groups(account.id, ["web"]) |> Enum.map(& &1.name)
-
-      assert names == ["alpha", "bravo"]
-    end
-
-    test "an empty group list short-circuits to []" do
-      assert Runners.list_active_runners_in_groups(Ecto.UUID.generate(), []) == []
-    end
-
-    test "excludes disabled and soft-deleted runners" do
-      {account, _user, subject} = account_with_owner_subject()
-
-      live =
-        Fixtures.Runners.create_runner(account_id: account.id, group: "web", connected?: false)
-
-      disabled =
-        Fixtures.Runners.create_runner(account_id: account.id, group: "web", connected?: false)
-
-      {:ok, _} = Runners.disable_runner(disabled, subject)
-
-      deleted =
-        Fixtures.Runners.create_runner(account_id: account.id, group: "web", connected?: false)
-
-      {:ok, _} = Runners.delete_runner(deleted, subject)
-
-      ids = Runners.list_active_runners_in_groups(account.id, ["web"]) |> Enum.map(& &1.id)
-      assert ids == [live.id]
-    end
-
-    test "is account-scoped — another account's same-group runner is excluded" do
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-
-      _ =
-        Fixtures.Runners.create_runner(account_id: account_b.id, group: "web", connected?: false)
-
-      assert Runners.list_active_runners_in_groups(account_a.id, ["web"]) == []
     end
   end
 
@@ -1482,34 +1380,6 @@ defmodule Emisar.RunnersTest do
     test "returns 0 and writes no marker when nothing matches", %{account: account} do
       assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
       assert retention_markers(account.id) == []
-    end
-  end
-
-  describe "list_connected_runners_for_account/2" do
-    setup do
-      {account, _user, _subject} = account_with_owner_subject()
-      %{account: account}
-    end
-
-    test "lists only the account's enabled, durably-connected runners", %{account: account} do
-      connected_runner = Fixtures.Runners.create_runner(account_id: account.id)
-      _pending_runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      _offline_runner = offline_runner(account, 1)
-      _other_account_runner = Fixtures.Runners.create_runner()
-
-      # Disabled/deleted while their connection-record columns still read
-      # connected — the connection columns alone must not qualify them.
-      disabled_runner = Fixtures.Runners.create_runner(account_id: account.id)
-      Fixtures.Runners.disable_runner(disabled_runner)
-      deleted_runner = Fixtures.Runners.create_runner(account_id: account.id)
-      Fixtures.Runners.mark_deleted(deleted_runner)
-
-      connected_ids =
-        account.id
-        |> Runners.list_connected_runners_for_account()
-        |> Enum.map(& &1.id)
-
-      assert connected_ids == [connected_runner.id]
     end
   end
 
@@ -2681,51 +2551,6 @@ defmodule Emisar.RunnersTest do
 
     test "rejects a subject with no account" do
       assert Runners.fetch_fleet_status(%Subject{}) == {:error, :unauthorized}
-    end
-  end
-
-  describe "fleet_all_offline?/1" do
-    setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      %{account: account, subject: subject}
-    end
-
-    test "true when there are billable runners and every one is offline", %{
-      account: account,
-      subject: subject
-    } do
-      _r1 = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      _r2 = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-
-      assert Runners.fleet_all_offline?(subject)
-    end
-
-    test "false when at least one runner is online", %{account: account, subject: subject} do
-      _offline = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      online = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      {:ok, _} = Runners.connect_runner(online)
-
-      refute Runners.fleet_all_offline?(subject)
-    end
-
-    test "false when the account has no billable runners (nothing to alert on)", %{
-      subject: subject
-    } do
-      refute Runners.fleet_all_offline?(subject)
-    end
-
-    test "false (no badge) for a subject without view_runners", %{account: account} do
-      _r = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      # An in-account subject that holds no permissions — exercises the gate's
-      # deny branch directly (no membership role actually lacks view_runners, so
-      # the realistic no-badge caller is a runner/system subject, not a UI user).
-      no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
-
-      refute Runners.fleet_all_offline?(no_view)
-    end
-
-    test "false for a subject with no account" do
-      refute Runners.fleet_all_offline?(%Subject{})
     end
   end
 

@@ -1260,12 +1260,6 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "runbook_execution_approval_status/2" do
-    test "returns missing when no durable execution request exists" do
-      assert Approvals.runbook_execution_approval_status(Repo, Ecto.UUID.generate()) == :missing
-    end
-  end
-
   describe "runbook_execution_approved?/2" do
     test "requires an approved request for the exact execution and account" do
       {requester, account, _subject} = Fixtures.Subjects.owner_subject()
@@ -3214,18 +3208,6 @@ defmodule Emisar.ApprovalsTest do
 
       assert :ok = Approvals.subscribe_request(account_b.id, request_a.id)
       assert {:ok, _} = Approvals.deny_request(request_a, operator_subject(account_a), "no")
-      refute_receive {:approval_request_updated, _}, 100
-    end
-  end
-
-  describe "unsubscribe_request/2" do
-    test "stops delivery from the exact request topic" do
-      {account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
-
-      assert :ok = Approvals.subscribe_request(account.id, request.id)
-      assert :ok = Approvals.unsubscribe_request(account.id, request.id)
-      assert {:ok, _} = Approvals.deny_request(request, operator_subject(account), "no")
       refute_receive {:approval_request_updated, _}, 100
     end
   end

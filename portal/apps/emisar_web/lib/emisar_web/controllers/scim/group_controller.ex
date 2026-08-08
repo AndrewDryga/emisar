@@ -11,7 +11,7 @@ defmodule EmisarWeb.SCIM.GroupController do
   an operator on the SSO settings page; this endpoint only syncs the group's
   membership. A pushed group whose externalId has no mapping is still tracked
   (so a later-added mapping recomputes correctly) — `scim_upsert_group` /
-  `scim_patch_group_members` own that.
+  `scim_patch_group` own that.
 
   The SCIM resource `id` is the IdP's externalId (see `SCIM.Resource.to_group/1`),
   so `:id` here is the externalId the domain keys on. The domain has no SCIM

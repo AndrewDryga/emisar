@@ -520,63 +520,6 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "list_runs_by_operation/3" do
-    test "returns only the credential's operation rows in target creation order" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      runner_a = Fixtures.Runners.create_runner(account_id: account.id)
-      runner_b = Fixtures.Runners.create_runner(account_id: account.id)
-      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
-      operation_id = "op_724NN9NMDZ1T76NARWCKM5A0D6"
-
-      {:ok, first} =
-        Runs.create_run(
-          base_attrs(account.id, runner_a.id, %{
-            source: "mcp",
-            api_key_id: key.id,
-            operation_id: operation_id
-          })
-        )
-
-      {:ok, second} =
-        Runs.create_run(
-          base_attrs(account.id, runner_b.id, %{
-            source: "mcp",
-            api_key_id: key.id,
-            operation_id: operation_id
-          })
-        )
-
-      assert {:ok, runs} = Runs.list_runs_by_operation(operation_id, key.id, subject)
-      assert Enum.map(runs, & &1.id) == [first.id, second.id]
-      assert Enum.all?(runs, &Ecto.assoc_loaded?(&1.runner))
-    end
-
-    test "applies permission and cross-account boundaries" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
-      operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
-
-      {:ok, run} =
-        Runs.create_run(
-          base_attrs(account.id, runner.id, %{
-            source: "mcp",
-            api_key_id: key.id,
-            operation_id: operation_id
-          })
-        )
-
-      assert {:ok, [listed]} = Runs.list_runs_by_operation(operation_id, key.id, subject)
-      assert listed.id == run.id
-
-      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
-      assert {:ok, []} = Runs.list_runs_by_operation(operation_id, key.id, other_subject)
-
-      assert {:error, :unauthorized} =
-               Runs.list_runs_by_operation(operation_id, key.id, no_permissions_subject(account))
-    end
-  end
-
   describe "list_runs_by_runbook_execution/2" do
     test "returns only the subject's execution rows with runners preloaded" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -5477,30 +5420,6 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "list_events_for_run/3" do
-    setup do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      %{account: account, runner: runner, subject: subject}
-    end
-
-    test "returns seq-ordered events and refuses cross-account", %{
-      account: account,
-      runner: runner,
-      subject: subject
-    } do
-      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "a"}})
-      {:ok, _} = Runs.append_event(run, %{seq: 2, kind: "progress", payload: %{"line" => "b"}})
-
-      assert {:ok, [%RunEvent{seq: 1}, %RunEvent{seq: 2}], _} =
-               Runs.list_events_for_run(run.id, subject)
-
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.list_events_for_run(run.id, subject_b)
-    end
-  end
-
   describe "list_recent_events_for_run/3" do
     setup do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
@@ -5844,18 +5763,6 @@ defmodule Emisar.RunsTest do
       assert_receive {:run_updated, run_id}, 500
       assert run_id == run.id
       assert {:error, :not_found} = Runs.fetch_run_by_id(run_id, restricted_subject)
-    end
-  end
-
-  describe "unsubscribe_account_runs/1" do
-    test "stops delivery from the account feed" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      assert :ok = Runs.subscribe_account_runs(account.id)
-      assert :ok = Runs.unsubscribe_account_runs(account.id)
-      assert {:ok, _run} = Runs.create_run(base_attrs(account.id, runner.id))
-      refute_receive {:run_updated, _}, 100
     end
   end
 

@@ -605,33 +605,6 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "fetch_published_runbook/2" do
-    test "resolves the latest published version by slug or exact id" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "health-check") |> Fixtures.Runbooks.publish_runbook()
-
-      assert {:ok, second_draft} =
-               Runbooks.save_new_version(first, %{"description" => "new"}, subject)
-
-      second = Fixtures.Runbooks.publish_runbook(second_draft)
-
-      assert {:ok, by_slug} = Runbooks.fetch_published_runbook("health-check", subject)
-      assert by_slug.id == second.id
-      assert {:ok, by_id} = Runbooks.fetch_published_runbook(first.id, subject)
-      assert by_id.id == first.id
-    end
-
-    test "hides drafts and rows from another account" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      draft = create_runbook(subject, slug: "draft-only")
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      other = create_runbook(other_subject, slug: "other") |> Fixtures.Runbooks.publish_runbook()
-
-      assert Runbooks.fetch_published_runbook(draft.id, subject) == {:error, :not_found}
-      assert Runbooks.fetch_published_runbook(other.id, subject) == {:error, :not_found}
-    end
-  end
-
   describe "fetch_published_runbook_version/3" do
     test "returns only the exact visible published version" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
@@ -1041,29 +1014,6 @@ defmodule Emisar.RunbooksTest do
       failed_result = projected_result(stages: [%{stage | items: [failed]}])
       assert [%{items: [settled]}] = Runbooks.execution_projection(failed_result).stages
       assert Enum.map(settled.evidence, & &1.status) == ["failed", "pending"]
-    end
-  end
-
-  describe "fetch_latest_execution_for_runbook/2" do
-    test "returns the newest execution only while its complete runner set remains visible" do
-      fixture = mcp_execution_fixture()
-
-      assert {:ok, result} =
-               Runbooks.fetch_latest_execution_for_runbook(
-                 fixture.runbook,
-                 fixture.subject
-               )
-
-      assert result.execution.id == fixture.execution_id
-
-      fixture.account.id
-      |> Fixtures.Memberships.fetch_membership(fixture.owner.actor.id)
-      |> Fixtures.Memberships.force_runner_access(Emisar.Accounts.RunnerAccess.none())
-
-      assert Runbooks.fetch_latest_execution_for_runbook(
-               fixture.runbook,
-               fixture.subject
-             ) == {:error, :not_found}
     end
   end
 

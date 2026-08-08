@@ -1734,31 +1734,6 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  Every advertised catalog action for the subject's account — the
-  COMPLETE set, deliberately un-paginated.
-
-  This is the MCP path. `tools/list` and dispatch resolution must see
-  the whole catalog, not a page: a single runner with a handful of
-  packs advertises hundreds of actions. Same `view_catalog` gate +
-  account scoping; returns `{:ok, actions}` — there is no cursor.
-  """
-  def list_all_actions_for_account(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_catalog_permission()
-           ) do
-      actions =
-        RunnerAction.Query.all()
-        |> RunnerAction.Query.ordered_by_action_seen()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      {:ok, actions}
-    end
-  end
-
-  @doc """
   The model-facing catalog snapshot for the subject's account: every exact
   trusted pack ref projected onto the fleet the subject may reach, as
   `%{packs: [...], runners: [...]}`.
@@ -2381,27 +2356,6 @@ defmodule Emisar.Catalog do
         tier -> {:cont, most_severe(worst, tier)}
       end
     end)
-  end
-
-  @doc """
-  The account's advertised catalog as `%{action_id => risk}` — DISTINCT actions,
-  most-severe risk winning when one action is advertised at mixed risk across
-  runners. The policy page derives BOTH the risk breakdown (`risk_breakdown_of/1`)
-  and the live policy outcome (`Policies.simulate_outcome/2`) from it. Inherits
-  `list_all_actions_for_account/1`'s `view_catalog` gate + account scope;
-  `{:ok, %{action_id => risk}}`.
-  """
-  def action_risks_for_account(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      rows =
-        RunnerAction.Query.all()
-        |> RunnerAction.Query.select_action_risk_rows()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      {:ok, most_severe_risk_by_action_rows(rows)}
-    end
   end
 
   @doc """

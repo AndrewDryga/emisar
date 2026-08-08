@@ -134,36 +134,6 @@ defmodule Emisar.Runners.ConnectionChangeTest do
     end
   end
 
-  describe "project_allowed_online_ids/3" do
-    test "applies joins and leaves inside the allowed scope" do
-      change =
-        presence_diff(%{"joined" => metas(%{})}, %{"left" => metas(%{})})
-        |> Runners.normalize_connection_change()
-
-      online_ids = MapSet.new(["left"])
-      allowed_ids = MapSet.new(["joined", "left"])
-
-      assert Runners.project_allowed_online_ids(online_ids, change, allowed_ids) ==
-               MapSet.new(["joined"])
-    end
-
-    test "ignores a runner outside the allowed scope" do
-      change = Runners.normalize_connection_change(presence_diff(%{"other" => metas(%{})}, %{}))
-      allowed_ids = MapSet.new(["runner"])
-
-      assert Runners.project_allowed_online_ids(MapSet.new(), change, allowed_ids) == MapSet.new()
-    end
-
-    test "drops an already-online runner that is no longer allowed" do
-      change = Runners.normalize_connection_change(presence_diff(%{"runner" => metas(%{})}, %{}))
-      online_ids = MapSet.new(["runner", "revoked"])
-      allowed_ids = MapSet.new(["runner"])
-
-      assert Runners.project_allowed_online_ids(online_ids, change, allowed_ids) ==
-               MapSet.new(["runner"])
-    end
-  end
-
   describe "preload_runners_presence/1" do
     test "hydrates each runner from its own account's Presence topic" do
       account_a = Ecto.UUID.generate()

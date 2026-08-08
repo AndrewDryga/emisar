@@ -1905,17 +1905,6 @@ defmodule Emisar.SSO do
 
   # -- Manual link requests (Subject-gated) ----------------------------
 
-  @doc "List a provider's pending manual-link requests. `manage_sso` + Team or Enterprise; account-scoped."
-  def list_link_requests(%IdentityProvider{id: provider_id}, %Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_manage_sso(subject) do
-      LinkRequest.Query.all()
-      |> LinkRequest.Query.by_provider_id(provider_id)
-      |> LinkRequest.Query.ordered_by_recent()
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(LinkRequest.Query, opts)
-    end
-  end
-
   @doc "List pending manual-link requests across ALL the account's connections — for the SSO overview's needs-attention block. `manage_sso` + Team or Enterprise; account-scoped."
   def list_pending_link_requests_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <- ensure_can_manage_sso(subject) do

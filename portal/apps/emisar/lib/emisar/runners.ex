@@ -287,24 +287,6 @@ defmodule Emisar.Runners do
     end
   end
 
-  @doc """
-  Resolves one strict runbook target against the caller's complete current
-  runner scope. Every returned runner is enabled and online; every authored ref
-  must resolve, so a partial target never silently shrinks the blast radius.
-  """
-  def resolve_runbook_targets(
-        %{"selection" => selection, "refs" => refs},
-        %Subject{} = subject
-      )
-      when selection in ["all", "random_one"] and is_list(refs) do
-    case resolve_runbook_target_sets([%{"selection" => selection, "refs" => refs}], subject) do
-      {:ok, [selected]} -> {:ok, selected}
-      {:error, {:unknown_target, 0}} -> {:error, :unknown_target}
-    end
-  end
-
-  def resolve_runbook_targets(_targets, %Subject{}), do: {:error, :unknown_target}
-
   @doc "Resolves several strict targets through one bounded, scoped fleet read."
   def resolve_runbook_target_sets(targets, %Subject{} = subject) when is_list(targets) do
     with {:ok, runners} <- list_all_runners_for_account(subject, preload: [:online?]) do
@@ -583,22 +565,6 @@ defmodule Emisar.Runners do
     |> Runner.Query.by_account_id(account_id)
     |> Runner.Query.enforcing()
     |> Repo.exists?()
-  end
-
-  @doc """
-  Internal — the runbook engine's group-target resolution: active (not
-  deleted, not disabled) runners in `groups`, ordered by name so the
-  engine's work list is stable across continuation recomputes.
-  """
-  def list_active_runners_in_groups(_account_id, []), do: []
-
-  def list_active_runners_in_groups(account_id, groups) when is_list(groups) do
-    Runner.Query.not_deleted()
-    |> Runner.Query.not_disabled()
-    |> Runner.Query.by_account_id(account_id)
-    |> Runner.Query.by_groups(Enum.uniq(groups))
-    |> Runner.Query.ordered_by_group_name()
-    |> Repo.all()
   end
 
   @doc """
@@ -959,22 +925,6 @@ defmodule Emisar.Runners do
     do: scope_to_subject_membership(queryable, subject)
 
   defp scope_sweep_to_subject(queryable, nil), do: queryable
-
-  @doc """
-  Internal — the account's enabled, durably-connected, non-deleted runners
-  (connection-record columns, not live Presence). The pack-retention sweep
-  reads them inside its own transaction (pass `repo:`) so versions a live
-  runner still advertises are never swept as unseen.
-  """
-  def list_connected_runners_for_account(account_id, opts \\ []) when is_binary(account_id) do
-    repo = Keyword.get(opts, :repo, Repo)
-
-    Runner.Query.not_deleted()
-    |> Runner.Query.not_disabled()
-    |> Runner.Query.connected()
-    |> Runner.Query.by_account_id(account_id)
-    |> repo.all()
-  end
 
   @doc """
   Internal — every runner whose advertised packs still matter, for pack
@@ -1584,20 +1534,6 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Whether the account's whole active fleet is offline — there's at least one
-  active (non-disabled) runner and every one of them is currently disconnected.
-  Drives the "all runners offline" nav alert (Option B). Requires
-  `view_runners`; returns `false` for a subject with no account or without the
-  permission — i.e. no badge. A bare boolean, matching the sidebar count badges.
-  """
-  def fleet_all_offline?(%Subject{} = subject) do
-    case fetch_fleet_status(subject) do
-      {:ok, status} -> :no_runners_online in status.reasons
-      {:error, _reason} -> false
-    end
-  end
-
-  @doc """
   Whether the subject can see ANY active runner — sequences fleet-dependent
   nudges. An existence check, not a fleet projection: it stops at the first
   matching row and never touches Presence. Fails closed without `view_runners`.
@@ -1644,13 +1580,6 @@ defmodule Emisar.Runners do
   @doc "Applies a change to one runner's local connection atom, or keeps the current one."
   def project_connection(current, runner_id, change),
     do: ConnectionChange.project_connection(current, runner_id, change)
-
-  @doc """
-  Applies a change to a set of online runner ids, scoped to `allowed_ids` — ids
-  outside the caller's current scope neither enter nor survive in the result.
-  """
-  def project_allowed_online_ids(online_ids, change, allowed_ids),
-    do: ConnectionChange.project_allowed_online_ids(online_ids, change, allowed_ids)
 
   @doc "Internal — virtual `:online?` preload callback for runner reads."
   def preload_runners_presence([]), do: []

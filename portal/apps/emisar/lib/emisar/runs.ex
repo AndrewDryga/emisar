@@ -614,28 +614,6 @@ defmodule Emisar.Runs do
     end
   end
 
-  @doc "Lists one API credential's runs for an exact MCP operation identity."
-  def list_runs_by_operation(operation_id, api_key_id, %Subject{} = subject)
-      when is_binary(operation_id) and is_binary(api_key_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
-      runs =
-        ActionRun.Query.all()
-        |> ActionRun.Query.by_operation_id(operation_id)
-        |> ActionRun.Query.by_api_key_id(api_key_id)
-        |> scope_runs_to_membership(subject)
-        |> ActionRun.Query.with_preloaded_runner()
-        |> Authorizer.for_subject(subject)
-        |> ActionRun.Query.ordered_by_oldest()
-        |> Repo.all()
-
-      {:ok, runs}
-    end
-  end
-
   @doc "Lists every run in one runbook execution through the caller's account scope."
   def list_runs_by_runbook_execution(execution_id, %Subject{} = subject)
       when is_binary(execution_id) do
@@ -3584,25 +3562,6 @@ defmodule Emisar.Runs do
     do: {:error, :missing_request_id}
 
   @doc """
-  Progress events for a run, ordered by `seq`. Returns
-  `{:ok, [event], %Paginator.Metadata{}}` per the standard `list_*`
-  contract; the run is fetched via `fetch_run_by_id/3` first so the
-  subject's account scope and permission gate apply.
-
-  Accepts the same `:filter`/`:page` opts as `Emisar.Repo.list/3`; the
-  caller may pass `page: [limit: n]` to bound the result for callers
-  (run-detail render, MCP /events) that want all events on one page.
-  """
-  def list_events_for_run(run_id, %Subject{} = subject, opts \\ []) do
-    with {:ok, _run} <- fetch_run_by_id(run_id, subject) do
-      RunEvent.Query.all()
-      |> RunEvent.Query.by_run_id(run_id)
-      |> RunEvent.Query.ordered_by_seq()
-      |> Repo.list(RunEvent.Query, opts)
-    end
-  end
-
-  @doc """
   The most recent `limit` progress chunks for an already-fetched run, in
   chronological (`seq`-ASC) order — a tail preview of a finished run's output.
   The subject's permission gate and row scope are re-checked against the run's
@@ -3854,9 +3813,6 @@ defmodule Emisar.Runs do
   @doc "Subscribe the caller to the account's run create/transition feed (`{:run_updated, run_id}`)."
   def subscribe_account_runs(account_id),
     do: Emisar.PubSub.subscribe(account_runs_topic(account_id))
-
-  def unsubscribe_account_runs(account_id),
-    do: Emisar.PubSub.unsubscribe(account_runs_topic(account_id))
 
   @doc """
   Subscribe to one run's live updates — `{:run_updated, run}` transitions

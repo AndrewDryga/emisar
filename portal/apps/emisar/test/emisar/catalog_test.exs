@@ -3081,31 +3081,6 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  describe "list_all_actions_for_account/1" do
-    test "returns the COMPLETE catalog — no pagination cap — scoped to the account" do
-      {account, subject} = account_with_owner()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      # 40 actions — past the paginator's 35-row default page.
-      advertised = for n <- 1..40, do: action("pack.act_#{n}")
-      {:ok, _} = Catalog.observe_state(runner, state_payload(actions: advertised))
-
-      {:ok, all} = Catalog.list_all_actions_for_account(subject)
-      assert length(all) == 40
-
-      # Another account sees none of them.
-      {_account, other_subject} = account_with_owner()
-      assert {:ok, []} = Catalog.list_all_actions_for_account(other_subject)
-    end
-
-    test "rejects a subject without view_catalog permission" do
-      account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.build_subject(account: account, role: :runner)
-
-      assert Catalog.list_all_actions_for_account(subject) == {:error, :unauthorized}
-    end
-  end
-
   describe "model_catalog/1" do
     test "projects the trusted pack onto the connected runner that can execute it" do
       {account, subject} = account_with_owner()
@@ -3875,70 +3850,6 @@ defmodule Emisar.CatalogTest do
       assert Catalog.max_risk([:low, nil, :high]) == nil
       assert Catalog.max_risk([:critical, "bogus"]) == nil
       assert Catalog.max_risk([nil, nil]) == nil
-    end
-  end
-
-  describe "action_risks_for_account/1" do
-    setup do
-      {account, subject} = account_with_owner()
-      %{account: account, subject: subject}
-    end
-
-    test "distinct action => risk, worst risk winning across runners", %{
-      account: account,
-      subject: subject
-    } do
-      r1 = Fixtures.Runners.create_runner(account_id: account.id)
-      r2 = Fixtures.Runners.create_runner(account_id: account.id)
-
-      {:ok, _} =
-        Catalog.observe_state(
-          r1,
-          state_payload(
-            actions: [
-              action("linux.uptime", risk: "low"),
-              action("nginx.reload", risk: "medium"),
-              # low here, critical on r2 below → the worst wins.
-              action("docker.stop", risk: "low")
-            ]
-          )
-        )
-
-      {:ok, _} =
-        Catalog.observe_state(
-          r2,
-          state_payload(actions: [action("docker.stop", risk: "critical")])
-        )
-
-      assert {:ok, risks} = Catalog.action_risks_for_account(subject)
-
-      assert risks == %{
-               "linux.uptime" => :low,
-               "nginx.reload" => :medium,
-               "docker.stop" => :critical
-             }
-    end
-
-    test "is empty for a fresh account", %{subject: subject} do
-      assert {:ok, %{}} = Catalog.action_risks_for_account(subject)
-    end
-
-    test "is account-scoped — another account's actions don't leak", %{account: account} do
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      {:ok, _} =
-        Catalog.observe_state(
-          runner,
-          state_payload(actions: [action("secret.op", risk: "critical")])
-        )
-
-      {_other_account, other_subject} = account_with_owner()
-      assert {:ok, %{}} = Catalog.action_risks_for_account(other_subject)
-    end
-
-    test "a subject without view_catalog is denied", %{account: account} do
-      no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
-      assert {:error, :unauthorized} = Catalog.action_risks_for_account(no_view)
     end
   end
 

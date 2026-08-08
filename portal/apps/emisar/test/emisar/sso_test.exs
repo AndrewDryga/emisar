@@ -4976,32 +4976,6 @@ defmodule Emisar.SSOTest do
 
   # -- list_link_requests/3 --------------------------------------------
 
-  describe "list_link_requests/3" do
-    setup do
-      {_owner, account, subject} = enterprise_owner()
-      provider = provider_fixture(account, provisioner: :manual, default_role: :operator)
-      %{account: account, subject: subject, provider: provider}
-    end
-
-    test "returns the account's pending requests", %{subject: subject, provider: provider} do
-      _ = capture_request(provider, %{"sub" => "okta|a", "email" => "a@acme.test"})
-
-      assert {:ok, [%LinkRequest{provider_identifier: "okta|a"}], _meta} =
-               SSO.list_link_requests(provider, subject)
-    end
-
-    test "denies a viewer (no manage_sso)", %{account: account, provider: provider} do
-      assert {:error, :unauthorized} = SSO.list_link_requests(provider, viewer_in(account))
-    end
-
-    test "is account-scoped — B cannot see A's requests", %{provider: provider} do
-      {_ub, _account_b, sb} = enterprise_owner()
-      _ = capture_request(provider, %{"sub" => "okta|a", "email" => "a@acme.test"})
-
-      assert {:ok, [], _meta} = SSO.list_link_requests(provider, sb)
-    end
-  end
-
   describe "list_pending_link_requests_for_account/2" do
     setup do
       {_owner, account, subject} = enterprise_owner()

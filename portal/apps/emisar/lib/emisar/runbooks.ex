@@ -410,24 +410,6 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  @doc """
-  Resolves the latest PUBLISHED runbook a caller may execute, by slug first
-  (newest version of that slug) then, failing that, by a runbook row id.
-  Requires `view_runbooks`; scoped to the subject's account. Returns
-  `{:ok, runbook}` or `{:error, :not_found | :unauthorized}`. Drafts and
-  cross-account rows read as `:not_found` — this is the resolver behind the
-  MCP `execute_runbook` tool, which then dispatches through `dispatch_runbook/4`.
-  """
-  def fetch_published_runbook(slug_or_id, %Subject{} = subject) when is_binary(slug_or_id) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
-      case fetch_latest_published_by_slug(slug_or_id, subject) do
-        {:error, :not_found} -> fetch_published_by_id(slug_or_id, subject)
-        result -> result
-      end
-    end
-  end
-
   @doc "Fetches one exact immutable published runbook version by slug and version."
   def fetch_published_runbook_version(slug, version, %Subject{} = subject)
       when is_binary(slug) and is_integer(version) and version > 0 do
@@ -520,27 +502,6 @@ defmodule Emisar.Runbooks do
       |> Runbook.Query.by_id(execution.runbook_id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Runbook.Query)
-    end
-  end
-
-  defp fetch_latest_published_by_slug(slug, %Subject{} = subject) do
-    Runbook.Query.not_deleted()
-    |> Runbook.Query.published()
-    |> Runbook.Query.by_slug(slug)
-    |> Runbook.Query.latest_version()
-    |> Authorizer.for_subject(subject)
-    |> Repo.fetch(Runbook.Query)
-  end
-
-  defp fetch_published_by_id(id, %Subject{} = subject) do
-    if Repo.valid_uuid?(id) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.published()
-      |> Runbook.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(Runbook.Query)
-    else
-      {:error, :not_found}
     end
   end
 
@@ -1486,21 +1447,6 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  @doc "Returns the newest execution for an already-visible runbook."
-  def fetch_latest_execution_for_runbook(%Runbook{} = runbook, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         :ok <- Subject.ensure_in_account(subject, runbook.account_id),
-         access = Accounts.runner_access_for_subject(subject),
-         %RunbookExecution{id: execution_id} <-
-           peek_latest_scoped_execution(runbook.id, access, subject) do
-      fetch_execution_result(execution_id, subject)
-    else
-      nil -> {:error, :not_found}
-      other -> other
-    end
-  end
-
   @doc "Lists a bounded recent execution history for one already-visible runbook."
   def list_recent_executions_for_runbook(
         %Runbook{} = runbook,
@@ -1627,15 +1573,6 @@ defmodule Emisar.Runbooks do
   end
 
   defp maybe_with_execution_result(query, false), do: query
-
-  defp peek_latest_scoped_execution(runbook_id, access, subject) do
-    RunbookExecution.Query.by_runbook_id(runbook_id)
-    |> RunbookExecution.Query.by_runner_access(access)
-    |> RunbookExecution.Query.ordered_by_recent()
-    |> RunbookExecution.Query.limit_to(1)
-    |> Authorizer.for_subject(subject)
-    |> Repo.peek()
-  end
 
   defp authoring_preview_inputs(%{"inputs" => inputs}) do
     inputs
