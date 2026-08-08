@@ -23,6 +23,12 @@ defmodule EmisarWeb.TemplateHygieneTest do
   # tags (`}>text</.link>.`) is what the formatter then preserves.
   @anchor_glue ~r{^\s*</\.?(?:link|a|external_link)>[.,;:!?]}
 
+  # A `:for` concatenates its elements with no whitespace between them and each
+  # is `whitespace-nowrap`, so an inline run has no soft-wrap opportunity and
+  # becomes one unbreakable line that overflows once the list is long enough.
+  # Only visible at real data volumes — a fleet advertising dozens of runners.
+  @repeated_inline ~r{^\s*<\.(?:chip|badge|identity_tag)\s+:for[=\s]}
+
   defp template_sources do
     [
       Path.wildcard(Path.join(@web_lib, "**/*.heex")),
@@ -37,6 +43,55 @@ defmodule EmisarWeb.TemplateHygieneTest do
         {line, line_no} <- Enum.with_index(String.split(source, "\n"), 1),
         Regex.match?(pattern, line),
         do: "#{file}:#{line_no}"
+  end
+
+  # The formatter normalizes HEEx indentation, so the nearest preceding line at a
+  # strictly smaller indent that opens an element IS the enclosing element. Its
+  # attributes may wrap, so read forward to the line that closes the open tag.
+  defp enclosing_open_tag(lines, index) do
+    indent = leading_spaces(Enum.at(lines, index))
+
+    lines
+    |> Enum.take(index)
+    |> Enum.with_index()
+    |> Enum.reverse()
+    |> Enum.find_value("", fn {line, line_index} ->
+      trimmed = String.trim_leading(line)
+
+      if String.starts_with?(trimmed, "<") and not String.starts_with?(trimmed, "</") and
+           leading_spaces(line) < indent do
+        lines |> Enum.slice(line_index..index) |> Enum.join(" ")
+      end
+    end)
+  end
+
+  defp leading_spaces(nil), do: 0
+  defp leading_spaces(line), do: String.length(line) - String.length(String.trim_leading(line))
+
+  test "a repeated inline element rendered by a comprehension sits in a flex-wrap container" do
+    offenders =
+      for {file, source} <- template_sources(),
+          lines = String.split(source, "\n"),
+          {line, index} <- Enum.with_index(lines),
+          Regex.match?(@repeated_inline, line),
+          parent = enclosing_open_tag(lines, index),
+          not (String.contains?(parent, "flex-wrap") and String.contains?(parent, "flex")),
+          do: "#{file}:#{index + 1}"
+
+    assert offenders == [],
+           """
+           A repeated inline element rendered by `:for` sits in a parent that is not a
+           flex-wrap container. The comprehension emits the elements with no whitespace
+           between them and each is `whitespace-nowrap`, so the run has no soft-wrap
+           opportunity and overflows the page once the list is long enough.
+
+           Put the lead-in prose in its own element and the repeated elements in a
+           sibling `flex flex-wrap gap-*`; the container's gap replaces any per-item
+           `ml-*`. Verify at the widest list, not a two-item demo.
+
+           Offending lines (relative to apps/emisar_web/lib):
+           #{Enum.map_join(offenders, "\n", &"  #{&1}")}
+           """
   end
 
   test "inline anchor text is glued to its closing tag when punctuation follows" do
