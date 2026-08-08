@@ -33,6 +33,7 @@ defmodule EmisarWeb.Changelog do
         {"Runner",
          [
            "Action children start with no_new_privs, one symlink-containment walk covers every path the runner opens, and an action argument naming the runner's own state is refused before it reaches a shell.",
+           "Upgrade note: because no_new_privs applies to the whole process tree, a setuid or setgid helper no longer elevates. If a non-root runner reached a resource through one — postqueue is setgid postdrop, which is how mailq reads the Postfix queue — give that runner user direct access instead, such as membership in the postdrop group.",
            "Every pack's curl is confined to an explicit protocol with globbing off, so a URL that arrives in an API response cannot expand into extra transfers or carry a credential to a host that response chose.",
            "An official multi-architecture container image is published at ghcr.io/andrewdryga/emisar-runner, with build provenance and an SBOM."
          ]},
