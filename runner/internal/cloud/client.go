@@ -153,6 +153,16 @@ type runState struct {
 	dropped  int              // progress chunks discarded because pending was full
 	started  bool             // signature and pack gates passed; Engine.Run entered
 	finished bool             // terminal outcome has been produced
+	// progressSeq is the number of progress MESSAGES minted for this run, and
+	// the seq carried by the last one. Output lines merge into that message
+	// while it is still queued, so this is also the count the cloud should
+	// have stored — it reports it as ProgressChunks, and the cloud compares
+	// that against its own event count to judge whether output was omitted.
+	progressSeq int
+	// attempted counts leading pending messages already handed to a failed
+	// Send. The cloud may hold them and deduplicates on (request_id, seq), so
+	// their bytes must never change; merging never touches this prefix.
+	attempted int
 }
 
 // NewClient constructs a Client. Defaults: heartbeat 30s, reconnect 1-60s,
@@ -829,19 +839,8 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 	}
 	c.markRunStarted(s)
 
-	seq := 0
 	progress := func(stream executor.Stream, line []byte) {
-		seq++
-		c.enqueue(s, ActionProgressMsg{
-			Envelope: Envelope{
-				Type:            MsgActionProgress,
-				ProtocolVersion: ProtocolVersion,
-				RequestID:       m.RequestID,
-			},
-			Seq:    seq,
-			Stream: string(stream),
-			Chunk:  string(line),
-		}, dropOldestProgress)
+		c.enqueueProgress(s, m.RequestID, string(stream), string(line))
 	}
 
 	req := requestForDispatch(m, registry, progress)
@@ -849,6 +848,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 
 	s.mu.Lock()
 	dropped := s.dropped
+	progressChunks := s.progressSeq
 	s.mu.Unlock()
 
 	if err != nil {
@@ -889,7 +889,7 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			EmittedStderrSHA256:      res.StderrSHA256,
 			EmittedStdoutBytes:       res.StdoutBytes,
 			EmittedStderrBytes:       res.StderrBytes,
-			ProgressChunks:           seq,
+			ProgressChunks:           progressChunks,
 			DroppedProgressChunks:    dropped,
 			TruncatedOut:             res.TruncatedOut,
 			TruncatedErr:             res.TruncatedErr,
@@ -1098,6 +1098,53 @@ func requestForDispatch(m RunActionMsg, registry *packs.Registry, progress engin
 	return req
 }
 
+// maxProgressChunkBytes bounds one progress message's chunk. It matches the
+// executor's stream buffer, so a merged chunk is never larger than the largest
+// single line the runner could already have sent on its own.
+const maxProgressChunkBytes = 64 * 1024
+
+// enqueueProgress queues one output line, merging it into the run's last
+// pending progress message when that message is still waiting to go out.
+//
+// The cloud takes a row lock, inserts an event, and bumps the run's counters
+// for every progress message it receives, so a line-at-a-time action turned
+// each line into its own write transaction. A line can only merge while an
+// earlier message is undrained — that is, while output is arriving faster than
+// the socket ships it — so a runner keeping up still sends every line
+// immediately and live output is unchanged.
+//
+// seq counts MESSAGES, not lines: it is the run's ProgressChunks, which the
+// cloud compares against the events it stored to decide whether output went
+// missing. Merging into a message therefore does not advance it.
+func (c *Client) enqueueProgress(s *runState, requestID, stream, chunk string) {
+	s.mu.Lock()
+	if last := len(s.pending) - 1; last >= s.attempted {
+		if previous, ok := s.pending[last].(ActionProgressMsg); ok &&
+			previous.Stream == stream &&
+			len(previous.Chunk)+len(chunk) <= maxProgressChunkBytes {
+			previous.Chunk += chunk
+			s.pending[last] = previous
+			s.mu.Unlock()
+			c.signalSend()
+			return
+		}
+	}
+	s.progressSeq++
+	msg := ActionProgressMsg{
+		Envelope: Envelope{
+			Type:            MsgActionProgress,
+			ProtocolVersion: ProtocolVersion,
+			RequestID:       requestID,
+		},
+		Seq:    s.progressSeq,
+		Stream: stream,
+		Chunk:  chunk,
+	}
+	s.mu.Unlock()
+
+	c.enqueue(s, msg, dropOldestProgress)
+}
+
 // dropPolicy controls what happens when the per-run buffer is full.
 type dropPolicy int
 
@@ -1176,13 +1223,19 @@ func (c *Client) drainOnce(ctx context.Context, conn Conn) error {
 		s.mu.Lock()
 		msgs := s.pending
 		s.pending = nil
+		s.attempted = 0
 		s.mu.Unlock()
 		for i, msg := range msgs {
 			if err := conn.Send(ctx, msg); err != nil {
 				// Requeue everything we haven't yet sent so the next
-				// session picks up where we left off.
+				// session picks up where we left off. msgs[i] was already
+				// handed to Send, so the cloud may hold it — mark the
+				// requeued prefix untouchable, or a later line merging into
+				// it would change the bytes behind a seq the cloud
+				// deduplicates on and the difference would be dropped.
 				s.mu.Lock()
 				s.pending = append(msgs[i:], s.pending...)
+				s.attempted = len(msgs) - i
 				s.mu.Unlock()
 				return err
 			}

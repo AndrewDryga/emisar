@@ -272,6 +272,17 @@ already-redacted, valid-UTF-8 output chunk. The runner normalizes invalid bytes
 after redaction and before progress emission, parsing, audit hashing, or byte
 counting, so every downstream representation uses one byte stream.
 
+**`seq` counts messages, not output lines.** A chunk holds as many consecutive
+same-stream lines as accumulated while an earlier message was still waiting to
+go out, bounded at 64 KiB — so a runner whose socket keeps up still sends each
+line on its own, and one that falls behind ships the backlog together instead
+of making the portal write a row per line. The portal stores one event per
+message and compares its count against the result's `progress_chunks`, which
+counts the same messages; a merged chunk therefore never reads as omitted
+output. Because the portal deduplicates a replayed message on
+`(request_id, seq)`, the bytes behind a seq never change once that message has
+been handed to the transport.
+
 `action_result` is emitted after the process exits or the runner refuses the
 call, and is replayed across reconnects until the portal returns `ack_result`.
 If the portal's own persistence fails after it received the result, it sends a
