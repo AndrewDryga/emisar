@@ -31,7 +31,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("mcpeval", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	provider := flags.String("provider", "claude", "agent to evaluate: claude, codex, gemini, or grok")
+	provider := flags.String("provider", "claude", "agent to evaluate: claude or codex")
 	scenarioPath := flags.String("scenarios", "tools/mcpeval/scenarios.json", "scenario corpus")
 	scenarioID := flags.String("scenario", "read-only-host-health", "scenario ID")
 	portalURL := flags.String("portal", "http://localhost:4010", "local Emisar portal URL")

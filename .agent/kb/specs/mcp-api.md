@@ -1961,9 +1961,8 @@ exact candidate Emisar bridge with:
 - Claude CLI;
 - Codex CLI.
 
-Gemini CLI and Grok CLI remain available as optional local development
-evaluators. Their support does not make either provider required release
-evidence.
+These are the only evaluators the harness drives. Certifying against a client
+nobody gates on cost real maintenance for evidence no release ever read.
 
 The certification job builds the bridge from the candidate commit, pins each
 client version, gives every client only a short-lived loopback credential, and

@@ -13,8 +13,6 @@ func parseTokenUsage(provider, raw string) tokenUsage {
 	switch provider {
 	case "codex":
 		return parseCodexUsage(raw)
-	case "gemini":
-		return parseGeminiUsage(raw)
 	default:
 		return parseDirectUsage(raw)
 	}
@@ -54,26 +52,6 @@ func parseCodexUsage(raw string) tokenUsage {
 		if result.TotalTokens == 0 {
 			result.TotalTokens = result.InputTokens + result.OutputTokens
 		}
-	}
-	return result
-}
-
-func parseGeminiUsage(raw string) tokenUsage {
-	payload := decodeObject(raw)
-	stats, _ := payload["stats"].(map[string]any)
-	models, _ := stats["models"].(map[string]any)
-	var result tokenUsage
-	for _, value := range models {
-		model, _ := value.(map[string]any)
-		tokens, _ := model["tokens"].(map[string]any)
-		result.InputTokens += number(tokens, "input", "prompt")
-		result.CachedTokens += number(tokens, "cached")
-		result.OutputTokens += number(tokens, "candidates")
-		result.ReasoningTokens += number(tokens, "thoughts")
-		result.TotalTokens += number(tokens, "total")
-	}
-	if result.TotalTokens == 0 {
-		result.TotalTokens = result.InputTokens + result.CachedTokens + result.OutputTokens
 	}
 	return result
 }

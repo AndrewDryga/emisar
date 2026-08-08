@@ -2,8 +2,8 @@
 
 `mcpeval` proves that a real headless client can use the candidate
 `emisar-mcp` bridge correctly against an Emisar fixture stack. It supports
-Claude Code, Codex CLI, Gemini CLI, and Grok CLI. The scorer reads recorded
-tool behavior, not the model's final prose.
+Claude Code and Codex CLI — the two clients a release is certified against.
+The scorer reads recorded tool behavior, not the model's final prose.
 
 The candidate bridge connects only to a loopback relay. That relay alone holds
 the real `EMISAR_API_KEY`; the client and bridge receive a short-lived local
@@ -48,8 +48,8 @@ export ANTHROPIC_API_KEY="..."
 ```
 
 Set the provider credential expected by the selected client:
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `XAI_API_KEY`.
-Use `-provider claude|codex|gemini|grok`; `-model` pins a provider model.
+`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. Use `-provider claude|codex`;
+`-model` pins a provider model.
 Each run uses a fresh temporary project and a stripped environment.
 
 Headless Codex requires `-codex-bypass-sandbox` to dispatch annotation-gated
@@ -129,9 +129,7 @@ workflow commit, boot three fixture runners, and run every case independently
 through Claude and Codex. Release qualification also requires an explicit model
 ID for both clients. Missing credentials or models, a missing held-out corpus,
 an invalid corpus, one failed case, or one failed client lane fails the job.
-Success requires Claude and Codex to pass the same corpus. Gemini and Grok
-remain available for optional local development runs, but are not release
-gates.
+Success requires Claude and Codex to pass the same corpus.
 
 The qualification artifact names the candidate commit and includes one JSON
 report per client and case. It contains the corpus digest and opaque IDs, but

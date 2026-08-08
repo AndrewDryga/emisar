@@ -33,12 +33,8 @@ func buildInvocation(
 		return claudeInvocation(cfg, item, relayOrigin, relayCredential, workspace)
 	case "codex":
 		return codexInvocation(cfg, item, relayOrigin, relayCredential, workspace)
-	case "gemini":
-		return geminiInvocation(cfg, item, relayOrigin, relayCredential, workspace)
-	case "grok":
-		return grokInvocation(cfg, item, relayOrigin, relayCredential, workspace)
 	default:
-		return invocation{}, fmt.Errorf("unknown provider %q (want claude, codex, gemini, or grok)", cfg.Provider)
+		return invocation{}, fmt.Errorf("unknown provider %q (want claude or codex)", cfg.Provider)
 	}
 }
 
@@ -153,105 +149,6 @@ func codexInvocation(
 	return invocation{binary: cfg.Binary, args: args, env: childEnv("OPENAI_API_KEY"), dir: workspace}, nil
 }
 
-// geminiInvocation runs Gemini CLI headless with a project-local settings file.
-// Flags and the stdio MCP shape are verified against Gemini CLI 0.50.0. An
-// explicit empty core-tool list leaves only MCP meta-tools available.
-func geminiInvocation(
-	cfg runConfig,
-	item scenario,
-	relayOrigin, relayCredential, workspace string,
-) (invocation, error) {
-	if err := writeGeminiConfig(cfg, workspace, relayOrigin, relayCredential); err != nil {
-		return invocation{}, err
-	}
-	args := []string{
-		"-p", item.Prompt,
-		"--output-format", "json",
-		"--skip-trust",
-		"--approval-mode", "yolo",
-		"--allowed-mcp-server-names", "emisar_eval",
-	}
-	if cfg.Model != "" {
-		args = append(args, "--model", cfg.Model)
-	}
-	return invocation{
-		binary: cfg.Binary,
-		args:   args,
-		env:    isolatedChildEnv("GEMINI_API_KEY", workspace),
-		dir:    workspace,
-	}, nil
-}
-
-func writeGeminiConfig(
-	cfg runConfig,
-	workspace, relayOrigin, relayCredential string,
-) error {
-	config, err := json.Marshal(map[string]any{
-		"tools": map[string]any{"core": []string{}},
-		"mcpServers": map[string]any{
-			"emisar_eval": map[string]any{
-				"command": cfg.BridgeBinary,
-				"args":    []string{},
-				"env":     bridgeEnv(relayOrigin, relayCredential, cfg.Provider),
-				"trust":   true,
-			},
-		},
-	})
-	if err != nil {
-		return err
-	}
-	dir := filepath.Join(workspace, ".gemini")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "settings.json"), append(config, '\n'), 0o600)
-}
-
-// grokInvocation runs Grok Build headless. Flags and the project MCP TOML are
-// verified against Grok 0.2.101. `--tools ""` removes built-ins while Grok's
-// documented always-on MCP meta-tools remain available.
-func grokInvocation(
-	cfg runConfig,
-	item scenario,
-	relayOrigin, relayCredential, workspace string,
-) (invocation, error) {
-	if err := writeGrokConfig(cfg, workspace, relayOrigin, relayCredential); err != nil {
-		return invocation{}, err
-	}
-	args := []string{
-		"-p", item.Prompt,
-		"--output-format", "json",
-		"--yolo",
-		"--tools", "",
-		"--no-subagents",
-		"--no-memory",
-		"--disable-web-search",
-		"--no-auto-update",
-	}
-	if cfg.Model != "" {
-		args = append(args, "--model", cfg.Model)
-	}
-	env := isolatedChildEnv("XAI_API_KEY", workspace)
-	env = replaceEnv(env, "GROK_HOME", filepath.Join(workspace, ".grok-home"))
-	return invocation{binary: cfg.Binary, args: args, env: env, dir: workspace}, nil
-}
-
-func writeGrokConfig(
-	cfg runConfig,
-	workspace, relayOrigin, relayCredential string,
-) error {
-	dir := filepath.Join(workspace, ".grok")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	content := "[mcp_servers.emisar_eval]\n" +
-		"command = " + strconv.Quote(cfg.BridgeBinary) + "\n" +
-		"args = []\n" +
-		"env = " + tomlInlineTable(bridgeEnv(relayOrigin, relayCredential, cfg.Provider)) + "\n" +
-		"enabled = true\n"
-	return os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o600)
-}
-
 func bridgeEnv(relayOrigin, relayCredential, provider string) map[string]string {
 	return map[string]string{
 		"EMISAR_URL":     relayOrigin,
@@ -272,6 +169,10 @@ func tomlInlineTable(values map[string]string) string {
 // childEnv strips every Emisar and provider credential from the inherited
 // environment, then re-adds only the one key the launched agent itself needs.
 // The Emisar API key stays relay-side: the agent process can never read it.
+//
+// The list covers providers this harness no longer drives on purpose: it is a
+// strip list, not a driver list, and a stray GEMINI_API_KEY in the operator's
+// shell is exactly the credential a certified client should never be handed.
 func childEnv(keep string) []string {
 	keepValue := ""
 	env := make([]string, 0, len(os.Environ()))
@@ -300,10 +201,6 @@ func childEnv(keep string) []string {
 		env = append(env, keep+"="+keepValue)
 	}
 	return env
-}
-
-func isolatedChildEnv(keep, workspace string) []string {
-	return replaceEnv(childEnv(keep), "HOME", filepath.Join(workspace, "home"))
 }
 
 func replaceEnv(env []string, key, value string) []string {
