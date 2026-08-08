@@ -755,10 +755,16 @@ defmodule Emisar.Runners do
         |> Runner.Query.by_id(runner.id)
         |> scope_to_subject_membership(subject)
         |> Authorizer.for_subject(subject)
-        |> Repo.fetch_and_update(Runner.Query,
-          with: &Runner.Changeset.enable/1,
-          audit: &Audit.Events.runner_enabled(subject, &1)
-        )
+        |> Repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.enable/1)
+      end)
+      # The audit row belongs to the OUTER multi, not the nested
+      # fetch_and_update's `:audit`: a nested call joins this transaction and
+      # returns before it commits, so its broadcast would announce
+      # `runner.enabled` to subscribers even when this commit later fails.
+      # Inserted here it commits with the enable, and commit_multi broadcasts it
+      # once — after the only commit there is.
+      |> Multi.insert(:audit, fn %{runner: enabled} ->
+        Audit.Events.runner_enabled(subject, enabled)
       end)
       |> Repo.commit_multi()
       |> case do

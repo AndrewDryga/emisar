@@ -132,6 +132,15 @@ defmodule Emisar.Repo do
               "Repo.commit_multi(after_commit: …) instead"
     end
 
+    # Unlike :after_commit, `:audit` stays legal nested — composing an audited
+    # fetch_and_update into an outer Multi is the intended shape, and the audit
+    # ROW is transactional either way. Its BROADCAST is not, so it is the one
+    # piece that must wait: nested, we return before the outer commit, and a
+    # rollback would leave subscribers holding an event that never landed. The
+    # row is still there to read on the next load; announcing one that rolled
+    # back is a lie about the audit trail, which is worse than announcing late.
+    nested? = in_transaction?()
+
     queryable = Ecto.Query.lock(queryable, "FOR NO KEY UPDATE")
 
     with {:ok, queryable} <- Filter.filter(queryable, query_module, filter) do
@@ -139,7 +148,7 @@ defmodule Emisar.Repo do
       |> transaction(repo_opts)
       |> case do
         {:ok, {{:ok, schema}, changeset, audit_event}} ->
-          :ok = broadcast_committed_rows(%{audit: audit_event})
+          unless nested?, do: :ok = broadcast_committed_rows(%{audit: audit_event})
           :ok = execute_after_commit(schema, changeset, after_commit)
           {schema, ecto_preloads} = Preloader.preload(schema, preload, query_module)
           {:ok, __MODULE__.preload(schema, ecto_preloads)}
@@ -271,9 +280,14 @@ defmodule Emisar.Repo do
               "the side effects to its Repo.commit_multi(after_commit: …) instead"
     end
 
+    # Same reason the audited fetch_and_update holds its broadcast when nested:
+    # the rows commit with the outer transaction, but announcing them now would
+    # survive an outer rollback.
+    nested? = in_transaction?()
+
     case transaction(multi, repo_opts) do
       {:ok, changes} ->
-        :ok = broadcast_committed_rows(changes)
+        unless nested?, do: :ok = broadcast_committed_rows(changes)
         :ok = execute_changes_after_commit(changes, after_commit)
         {:ok, changes}
 
