@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.Runbooks do
   """
 
   alias Emisar.{Fixtures, Repo}
-  alias Emisar.Runbooks.Runbook
+  alias Emisar.Runbooks.{Runbook, RunbookExecution}
 
   @default_definition %{
     "schema_version" => 1,
@@ -69,6 +69,54 @@ defmodule Emisar.Fixtures.Runbooks do
   def mark_runbook_as_deleted(%Runbook{} = runbook) do
     {:ok, deleted} = runbook |> Runbook.Changeset.delete() |> Repo.update()
     deleted
+  end
+
+  @doc """
+  A persisted runbook execution. Pass `:completed_at` to arrange a settled
+  execution of a given age — retention keys on that stamp, not on insertion.
+  """
+  def create_execution(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    runbook = attrs[:runbook] || create_runbook(account_id: attrs[:account_id])
+    account_id = attrs[:account_id] || runbook.account_id
+
+    membership_id =
+      attrs[:initiating_membership_id] ||
+        Fixtures.Memberships.create_membership(account_id: account_id).id
+
+    {:ok, execution} =
+      RunbookExecution.Changeset.create(%{
+        id: Repo.generate_id(),
+        account_id: account_id,
+        runbook_id: runbook.id,
+        initiating_membership_id: membership_id,
+        reason: attrs[:reason] || "execution fixture",
+        frozen_plan: attrs[:frozen_plan] || %{},
+        inputs_raw: attrs[:inputs_raw] || "{}",
+        inputs_sha256: String.duplicate("a", 64),
+        definition_sha256: String.duplicate("b", 64),
+        kind: attrs[:kind] || :published
+      })
+      |> Repo.insert()
+
+    case attrs[:completed_at] do
+      nil -> execution
+      completed_at -> settle_execution(execution, completed_at)
+    end
+  end
+
+  @doc """
+  Marks a persisted execution succeeded at an exact instant — arrangement
+  state, so a retention test can place it either side of the window without
+  driving the scheduler.
+  """
+  def settle_execution(%RunbookExecution{} = execution, completed_at) do
+    {:ok, settled} =
+      execution
+      |> RunbookExecution.Changeset.succeed(completed_at)
+      |> Repo.update()
+
+    settled
   end
 
   @doc "Returns a fresh canonical minimal v1 definition for context tests."

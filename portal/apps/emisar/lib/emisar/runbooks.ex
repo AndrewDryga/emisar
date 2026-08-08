@@ -41,7 +41,7 @@ defmodule Emisar.Runbooks do
 
   @impl Supervisor
   def init(_opts) do
-    children = [job_module("AdvanceExecutions")]
+    children = [job_module("AdvanceExecutions"), job_module("ExecutionRetention")]
 
     Supervisor.init(children, strategy: :one_for_one)
   end

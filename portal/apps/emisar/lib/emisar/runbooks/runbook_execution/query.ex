@@ -154,6 +154,28 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
   def older_than(queryable \\ all(), cutoff),
     do: where(queryable, [runbook_executions: r], r.inserted_at <= ^cutoff)
 
+  @doc """
+  A bounded page of execution ids that completed before `cutoff`, scoped to
+  `account_id`. Keyed on `completed_at` — which every terminal transition
+  stamps — rather than `inserted_at`, because deleting an execution cascades
+  through its stages and items to the action runs beneath them: a long-running
+  execution started before the cutoff can own runs that finished after it, and
+  those runs answer to their own retention.
+  """
+  def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
+    all()
+    |> by_account_id(account_id)
+    |> where(
+      [runbook_executions: r],
+      not is_nil(r.completed_at) and r.completed_at < ^cutoff
+    )
+    |> limit(^limit)
+    |> select([runbook_executions: r], r.id)
+  end
+
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [runbook_executions: r], r.id in ^ids)
+
   def ordered_by_oldest(queryable \\ all()),
     do: order_by(queryable, [runbook_executions: r], asc: r.inserted_at, asc: r.id)
 
