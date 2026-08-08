@@ -258,6 +258,27 @@ services:
   # produce believable output inside this stack (no systemd, no real
   # nginx/postgres logs). Everything in this runner setup is a development
   # fixture under dev/.
+  # Copy the demo runners' configs into a named volume so they are root-owned on
+  # native Linux too. A direct bind mount inherits the HOST's uid — on CI that is
+  # the job user — and the runner correctly refuses a config owned by someone who
+  # is neither root nor itself. Docker Desktop remaps bind-mount ownership to the
+  # container user, so a workstation never sees this and only Linux CI can judge
+  # it: the three runners crash-looped through an entire MCP certification run
+  # while `./run smoke` looked healthy. Same treatment runner-runbook-init gives
+  # its own config, which is why the profile-gated runners already survived.
+  runner-config-init:
+    image: emisar/runner:dev
+    user: "root"
+    volumes:
+      - runner_configs:/configs
+      - ./dev/runners:/templates:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - cp /templates/edge-fra-01.yaml /templates/api-iad-02.yaml /templates/pg-primary-iad.yaml /configs/
+        && chmod 0644 /configs/*.yaml
+    restart: "no"
+
   runner-1: &runner
     # Build context is the REPO ROOT (matching the portal) — dev/runner/Dockerfile
     # COPYs both `packs/` (now at the repo root) and `runner/...`, so it can't build
@@ -273,12 +294,15 @@ services:
     depends_on:
       seeder:
         condition: service_completed_successfully
+      runner-config-init:
+        condition: service_completed_successfully
     environment:
       EMISAR_URL: "http://portal:4000"
       EMISAR_ENROLLMENT_KEY: "emkey-enroll-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+    command: ["/usr/local/bin/emisar", "connect", "--config", "/configs/edge-fra-01.yaml"]
     volumes:
       - runner_1_data:/var/lib/emisar
-      - ./dev/runners/edge-fra-01.yaml:/etc/emisar/config.yaml:ro
+      - runner_configs:/configs:ro
       - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
       - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
       # The edge host serves the caddy demo pack; the stub makes reload/validate
@@ -293,9 +317,10 @@ services:
   runner-2:
     <<: *runner
     hostname: api-iad-02.northstar.example
+    command: ["/usr/local/bin/emisar", "connect", "--config", "/configs/api-iad-02.yaml"]
     volumes:
       - runner_2_data:/var/lib/emisar
-      - ./dev/runners/api-iad-02.yaml:/etc/emisar/config.yaml:ro
+      - runner_configs:/configs:ro
       - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
       - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
       - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
@@ -316,9 +341,10 @@ services:
       PGUSER: "postgres"
       PGPASSWORD: "postgres"
       PGDATABASE: "emisar_dev"
+    command: ["/usr/local/bin/emisar", "connect", "--config", "/configs/pg-primary-iad.yaml"]
     volumes:
       - runner_3_data:/var/lib/emisar
-      - ./dev/runners/pg-primary-iad.yaml:/etc/emisar/config.yaml:ro
+      - runner_configs:/configs:ro
       - ./dev/runner-fixtures/bin/systemctl:/usr/bin/systemctl:ro
       - ./dev/runner-fixtures/bin/journalctl:/usr/bin/journalctl:ro
       - ./dev/runner-fixtures/var-log/syslog:/var/log/syslog:ro
@@ -448,6 +474,7 @@ services:
 
 volumes:
   pg_data:
+  runner_configs:
   runner_1_data:
   runner_2_data:
   runner_3_data:
