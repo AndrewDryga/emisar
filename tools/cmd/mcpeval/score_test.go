@@ -57,7 +57,7 @@ func TestScoreRequiresPositiveRecallAtFive(t *testing.T) {
 	}
 }
 
-func TestScoreNoActionRequiresEmptySearchResults(t *testing.T) {
+func TestScoreNoActionCountsSearchNoiseAndFailsOnlyWhenActedOn(t *testing.T) {
 	item := scenario{
 		ExpectedOutcome: outcomeNoAction,
 		AllowedTools:    []string{"find_actions"},
@@ -67,13 +67,28 @@ func TestScoreNoActionRequiresEmptySearchResults(t *testing.T) {
 	if got := scoreReport(item, calls, agentResult{}); !got.Passed {
 		t.Fatalf("empty no-action result failed: %#v", got)
 	}
+
+	// Our own search matching something irrelevant is its recall, not the
+	// client's judgment — counted and reported, never a verdict on the client.
 	calls[0].SearchCandidates = []searchCandidate{{
 		ActionID: "linux.uptime",
 		PackRef:  "linux-core@1/sha256:abc",
 	}}
 	got := scoreReport(item, calls, agentResult{})
-	if got.Passed || got.NoActionCandidateCalls != 1 {
-		t.Fatalf("overmatching no-action result passed: %#v", got)
+	if !got.Passed || got.NoActionCandidateCalls != 1 {
+		t.Fatalf("searching once and stopping should pass despite noise: %#v", got)
+	}
+
+	// What the scenario actually refuses: acting on one of those candidates. It
+	// declares no mutation tool, so the relay blocks the attempt and that is the
+	// hard failure.
+	acted := append(calls, callRecord{
+		Tool:            "run_action",
+		BlockedByPolicy: true,
+		ResponseCode:    "tool_not_allowed",
+	})
+	if got := scoreReport(item, acted, agentResult{}); got.Passed {
+		t.Fatalf("acting on a no_action candidate passed: %#v", got)
 	}
 }
 

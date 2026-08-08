@@ -59,9 +59,17 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 			succeededTools[call.Tool] = true
 		}
 		if call.Tool == "find_actions" && !call.ResponseError {
+			// Measured, never enforced. Whether a no_action query matched anything
+			// is the catalog search's recall, not the client's judgment. The
+			// scenario's real assertion — do not act on a capability that is not
+			// there — is already enforced by the relay: a no_action scenario
+			// declares no mutation tool, so the first run_action is blocked and
+			// fails the case. Failing on the candidate list instead punished a
+			// client that searched once, saw noise, and correctly reported the
+			// missing capability, and it read identically to a genuine client
+			// failure in the output.
 			if item.ExpectedOutcome == outcomeNoAction && len(call.SearchCandidates) > 0 {
 				result.NoActionCandidateCalls++
-				result.fail("a no_action search returned candidates instead of reporting the missing capability")
 			}
 			allowedPackRefs := stringSet(item.AllowedPackRefs)
 			for _, candidate := range call.SearchCandidates {
