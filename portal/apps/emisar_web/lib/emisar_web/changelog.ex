@@ -17,6 +17,46 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-08-08],
+      slug: "self-rotating-credentials-and-a-harder-execution-boundary",
+      title: "Self-rotating runner credentials and a harder execution boundary",
+      tag: "v0.37.0",
+      summary:
+        "A runner token now carries a 90-day life and refreshes itself two thirds of the way through, over the connection it already holds, so rotating a fleet credential no longer means going back to the host — and a token presented after its expiry is refused. The execution boundary tightened to match. Action children start with no_new_privs, so nothing a pack runs can pick up setuid or file-capability privileges the runner does not already hold, and an argument that resolves into the runner's own credential or state directory is refused before it reaches a shell. Reads that can hand back credentials wait for an approval now instead of being classified low risk, and signed dispatch signs the exact narrative a human approver reads.",
+      details: [
+        {"Security",
+         [
+           "Every runner token has a bounded life, including the ones minted before rotation existed. A token past its expiry is refused at connect, and the refresh happens over the existing connection with no host access.",
+           "Reads that can return credentials are approval-gated rather than low risk, and the runner masks a run's sensitive values in a single pass, so one match cannot rewrite another's marker.",
+           "MFA enrollment and recovery-code regeneration both require proof of the current inbox, and credential step-up codes are rate limited across the cluster rather than per node."
+         ]},
+        {"Runner",
+         [
+           "Action children start with no_new_privs, one symlink-containment walk covers every path the runner opens, and an action argument naming the runner's own state is refused before it reaches a shell.",
+           "Every pack's curl is confined to an explicit protocol with globbing off, so a URL that arrives in an API response cannot expand into extra transfers or carry a credential to a host that response chose.",
+           "An official multi-architecture container image is published at ghcr.io/andrewdryga/emisar-runner, with build provenance and an SBOM."
+         ]},
+        {"MCP",
+         [
+           "Signed dispatch signs the narrative a human approver actually reads (attestation v5), and the bridge verifies that narrative rather than a reconstruction of it. The signing key comes from a pinned credential directory instead of the environment.",
+           "Runbook targets can name a runner group in the model contract, and an agent can revise and test a draft before a human publishes it."
+         ]},
+        {"Packs",
+         [
+           "The catalog now carries 95 packs and 1,498 actions, adding Apache Airflow, Spark, Google Cloud billing, and BunnyCDN.",
+           "Every risky action in a modeled pack is now either proven by a behavior case against a real service or carries a declared reason it cannot be, and each pack's structured output is bounded to fit the runner's cap at its own advertised worst case."
+         ]},
+        {"Console",
+         [
+           "Runbook target selection scales to a real fleet: one stable trigger that names the chosen targets, a searchable roster of dense one-line rows, and scope icons that encode cardinality instead of infrastructure nouns."
+         ]},
+        {"Platform",
+         [
+           "The reads behind agent and console traffic got measurably cheaper. An action resolves from its own pack instead of the whole catalog, a catalog listing compares a stored descriptor digest instead of every descriptor column, and the keyset pages have the indexes their cursors need."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-07-31],
       slug: "staged-runbooks-and-hardened-enterprise-identity",
       title: "Staged runbooks and hardened enterprise identity",
