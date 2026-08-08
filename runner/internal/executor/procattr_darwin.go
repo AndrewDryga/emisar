@@ -18,6 +18,12 @@ func applyProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = attr
 }
 
+// startCommand has no no_new_privs equivalent to set here; Linux carries the
+// privilege-escalation guard, and this platform is development-only.
+func startCommand(cmd *exec.Cmd) error {
+	return cmd.Start()
+}
+
 func killGroup(pid int, sig syscall.Signal) error {
 	return syscall.Kill(-pid, sig)
 }

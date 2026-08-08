@@ -166,7 +166,7 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 		}
 		return res, nil
 	}
-	if err := cmd.Start(); err != nil {
+	if err := startCommand(cmd); err != nil {
 		_ = stdoutRelay.Close()
 		_ = stderrRelay.Close()
 		_ = stdoutPipe.Close()
