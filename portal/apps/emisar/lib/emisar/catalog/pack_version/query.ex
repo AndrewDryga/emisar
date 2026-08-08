@@ -51,6 +51,20 @@ defmodule Emisar.Catalog.PackVersion.Query do
     )
   end
 
+  @doc """
+  Load only the columns a retirement decision turns on. The verdict needs a
+  baseline comparison this query can't express, so the rows still come back —
+  but every console page's nav badge counts them, and the full row carries the
+  pack's whole trusted manifest.
+  """
+  def select_decision_fields(queryable) do
+    select(
+      queryable,
+      [packs: p],
+      struct(p, [:id, :trust_state, :retirement_overridden_at, :pack_id, :version])
+    )
+  end
+
   def by_pack_ids(queryable \\ all(), pack_ids),
     do: where(queryable, [packs: p], p.pack_id in ^pack_ids)
 

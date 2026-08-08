@@ -1819,13 +1819,17 @@ defmodule Emisar.Catalog do
     with {:ok, runners} <-
            Runners.list_all_runners_for_account(subject, preload: [:online?]) do
       runner_ids = Enum.map(runners, & &1.id)
+      # Resolved once for this snapshot: the fleet read above already re-read
+      # the membership, and a second read microseconds later in the same
+      # operation cannot observe a change the first one missed.
+      access = Accounts.runner_access_for_subject(subject)
 
       actions =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_ids(runner_ids)
         |> scope_actions_to_deployment(deployment)
         |> RunnerAction.Query.ordered_by_action_seen()
-        |> scope_actions_to_pack_access(subject)
+        |> scope_actions_to_packs(access)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -3026,6 +3030,7 @@ defmodule Emisar.Catalog do
     queryable =
       PackVersion.Query.trusted_unoverridden()
       |> PackVersion.Query.by_pack_ids(watermarked_pack_ids)
+      |> PackVersion.Query.select_decision_fields()
       |> Authorizer.for_subject(subject)
 
     queryable
