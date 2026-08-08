@@ -147,6 +147,48 @@ defmodule Emisar.Policies do
 
   def shadowed_overrides(_rules), do: []
 
+  @doc """
+  The overrides in `rules` whose glob matches no action in `action_risks`.
+
+  An override that matches nothing is not invalid — an operator may write a rule
+  before installing the pack it targets — so this is advisory, never a
+  validation error. It exists because a rule that silently does nothing looks
+  exactly like a rule that works: the glob grammar treats every character except
+  `*` as a literal, so a regex-flavored `cassandra\\.drop_*` reads as protection
+  and can never match an action id. A `deny` is the case that matters — the
+  operator believes the fleet is covered.
+
+  Uses the same `Glob` matcher dispatch uses. Pure (no Subject / Repo, like
+  `shadowed_overrides/1`). Returns `[%{index: i}]` in row order, and nothing at
+  all for an empty catalog, where every override would look unmatched.
+  """
+  def unmatched_overrides(rules, action_risks) when is_map(rules) and is_map(action_risks) do
+    action_ids = Map.keys(action_risks)
+
+    if action_ids == [] do
+      []
+    else
+      for {override, index} <- Enum.with_index(overrides_for(rules)),
+          unmatched_override?(override, action_ids),
+          do: %{index: index}
+    end
+  end
+
+  def unmatched_overrides(_rules, _action_risks), do: []
+
+  # A blank glob is the editor's half-filled row, which owns its own required
+  # error — reporting it as unmatched too would just double up on that row.
+  defp unmatched_override?(override, action_ids) do
+    case override_action(override) do
+      glob when is_binary(glob) and glob != "" ->
+        matcher = Glob.compile(glob)
+        not Enum.any?(action_ids, &Glob.match_compiled?(matcher, &1))
+
+      _blank ->
+        false
+    end
+  end
+
   # Index of the first earlier override whose glob subsumes `glob` (skipping
   # blank-glob earlier rows, which can't subsume anything), or nil.
   defp first_subsumer(globs, glob, i) do

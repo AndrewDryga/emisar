@@ -176,6 +176,61 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
+  describe "unmatched_overrides/2" do
+    @catalog %{"nginx.reload" => :medium, "nginx.error_tail" => :low, "linux.uptime" => :low}
+
+    test "a glob that matches an action is not reported" do
+      rules = %{"overrides" => [%{"action" => "nginx.*", "decision" => "deny"}]}
+
+      assert Policies.unmatched_overrides(rules, @catalog) == []
+    end
+
+    test "a regex-flavored glob matches nothing and is reported" do
+      # The grammar treats every character except `*` as a literal, so the
+      # escaped dot can only match an action id containing a real backslash.
+      # This reads as protection and denies nothing.
+      rules = %{"overrides" => [%{"action" => "nginx\\.reload", "decision" => "deny"}]}
+
+      assert Policies.unmatched_overrides(rules, @catalog) == [%{index: 0}]
+    end
+
+    test "reports every unmatched row in order and leaves matching rows alone" do
+      rules = %{
+        "overrides" => [
+          %{"action" => "cassandra.*", "decision" => "deny"},
+          %{"action" => "linux.uptime", "decision" => "allow"},
+          %{"action" => "postgres.*", "decision" => "deny"}
+        ]
+      }
+
+      assert Policies.unmatched_overrides(rules, @catalog) == [%{index: 0}, %{index: 2}]
+    end
+
+    test "matching stays case-insensitive, exactly as dispatch matches" do
+      rules = %{"overrides" => [%{"action" => "NGINX.RELOAD", "decision" => "deny"}]}
+
+      assert Policies.unmatched_overrides(rules, @catalog) == []
+    end
+
+    test "a blank row is the editor's half-filled state and owns its own error" do
+      rules = %{"overrides" => [%{"action" => "", "decision" => "deny"}]}
+
+      assert Policies.unmatched_overrides(rules, @catalog) == []
+    end
+
+    test "an empty catalog reports nothing — everything would look unmatched" do
+      rules = %{"overrides" => [%{"action" => "cassandra.*", "decision" => "deny"}]}
+
+      assert Policies.unmatched_overrides(rules, %{}) == []
+    end
+
+    test "empty / missing overrides → []" do
+      assert Policies.unmatched_overrides(%{"overrides" => []}, @catalog) == []
+      assert Policies.unmatched_overrides(%{}, @catalog) == []
+      assert Policies.unmatched_overrides(nil, @catalog) == []
+    end
+  end
+
   describe "editor_input/1" do
     test "the default rules become a complete, valid editor input" do
       assert Policies.editor_input(Policies.default_rules()) == %{

@@ -687,6 +687,7 @@ defmodule EmisarWeb.PoliciesLive do
                 editor_id="account"
                 defaults={@account.defaults}
                 overrides={@account.overrides}
+                catalog={@account.catalog}
                 approval={@account.approval}
                 rules_errors={@account.rules_errors}
                 show_override_errors={@account.show_override_errors?}
@@ -971,6 +972,7 @@ defmodule EmisarWeb.PoliciesLive do
           editor_id={@ruleset.uid}
           defaults={@ruleset.defaults}
           overrides={@ruleset.overrides}
+          catalog={@ruleset.catalog}
           approval={@ruleset.approval}
           approval_weakenings={approval_weakenings(@ruleset.approval, @account_approval)}
           rules_errors={@ruleset.rules_errors}
@@ -1000,6 +1002,11 @@ defmodule EmisarWeb.PoliciesLive do
   attr :editor_id, :string, required: true
   attr :defaults, :map, required: true
   attr :overrides, :list, required: true
+
+  attr :catalog, :map,
+    required: true,
+    doc: "the target's `%{action_id => risk}` index — what an override glob is checked against"
+
   attr :approval, :map, required: true
 
   attr :approval_weakenings, :list,
@@ -1023,6 +1030,7 @@ defmodule EmisarWeb.PoliciesLive do
     assigns =
       assign(assigns,
         shadowed_overrides: shadowed_overrides_by_index(assigns.overrides),
+        unmatched_overrides: unmatched_overrides_by_index(assigns.overrides, assigns.catalog),
         single_reviewer?: single_reviewer_gate?(assigns.approval)
       )
 
@@ -1088,6 +1096,7 @@ defmodule EmisarWeb.PoliciesLive do
               override={override}
               index={idx}
               shadowed_by={Map.get(@shadowed_overrides, idx)}
+              unmatched={MapSet.member?(@unmatched_overrides, idx)}
               show_error={@show_override_errors}
               can_manage={@can_manage}
             />
@@ -1298,6 +1307,11 @@ defmodule EmisarWeb.PoliciesLive do
   attr :override, :map, required: true
   attr :index, :integer, required: true
   attr :shadowed_by, :integer, required: true
+
+  attr :unmatched, :boolean,
+    required: true,
+    doc: "no action in the target's catalog matches this glob — advisory, never blocking"
+
   attr :show_error, :boolean, required: true
   attr :can_manage, :boolean, required: true
 
@@ -1380,6 +1394,25 @@ defmodule EmisarWeb.PoliciesLive do
         Shadowed by rule {@shadowed_by + 1} above — this rule never applies (first match wins).
       </span>
     </p>
+
+    <%!-- A glob that matches nothing today. Not an error: the pack may simply
+         not be installed yet. Shown only when the row isn't already shadowed,
+         so one row carries one diagnosis. Sharpened for a deny, where the
+         operator believes the fleet is covered and it isn't. --%>
+    <p
+      :if={@unmatched and @shadowed_by == nil}
+      class="mt-2 flex items-start gap-1.5 text-xs text-amber-300"
+    >
+      <.icon name="hero-exclamation-triangle-mini" class="mt-0.5 h-3.5 w-3.5 flex-none" />
+      <span :if={@override["decision"] == "deny"}>
+        Matches no action on this target — this <strong>deny</strong>
+        blocks nothing today. Check the glob, or ignore this if the pack isn't installed yet.
+      </span>
+      <span :if={@override["decision"] != "deny"}>
+        Matches no action on this target. Check the glob, or ignore this if the pack isn't
+        installed yet.
+      </span>
+    </p>
     """
   end
 
@@ -1402,6 +1435,15 @@ defmodule EmisarWeb.PoliciesLive do
     %{"overrides" => overrides}
     |> Policies.shadowed_overrides()
     |> Map.new(fn %{index: index, shadowed_by: shadowed_by} -> {index, shadowed_by} end)
+  end
+
+  # Rows whose glob matches nothing in the target's catalog. Same live rows and
+  # same matcher dispatch uses, so what the editor warns about is what the fleet
+  # would actually do. Empty while the catalog is still empty.
+  defp unmatched_overrides_by_index(overrides, catalog) do
+    %{"overrides" => overrides}
+    |> Policies.unmatched_overrides(catalog)
+    |> MapSet.new(& &1.index)
   end
 
   # The rank below which a tier's decision can't drop: 0 for `low` (anything

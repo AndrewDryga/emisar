@@ -428,6 +428,57 @@ defmodule EmisarWeb.PoliciesLiveTest do
       refute html =~ "Shadowed by rule"
     end
 
+    test "warns when an override glob matches no action on the target (deny copy)", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "nginx.reload", risk: "medium")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      lv |> render_click("add_override", %{"editor" => "account"})
+
+      # Regex-flavored: the escaped dot is a literal here, so this denies
+      # nothing while reading exactly like a rule that protects the fleet.
+      html =
+        lv
+        |> form("#policy-form-account", %{
+          "policy" => %{
+            "overrides" => %{
+              "0" => %{
+                "name" => "block-reload",
+                "action" => "nginx\\.reload",
+                "decision" => "deny"
+              }
+            }
+          }
+        })
+        |> render_change()
+
+      assert html =~ "Matches no action on this target"
+      assert html =~ "this <strong>deny</strong>"
+    end
+
+    test "no unmatched warning once the glob actually matches an action", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, action_id: "nginx.reload", risk: "medium")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      lv |> render_click("add_override", %{"editor" => "account"})
+
+      html =
+        lv
+        |> form("#policy-form-account", %{
+          "policy" => %{
+            "overrides" => %{
+              "0" => %{"name" => "block-reload", "action" => "nginx.*", "decision" => "deny"}
+            }
+          }
+        })
+        |> render_change()
+
+      refute html =~ "Matches no action on this target"
+    end
+
     test "a valid edit saves cleanly — the rules error is a defensive inline net, never a flash",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
