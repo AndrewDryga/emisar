@@ -91,6 +91,19 @@ defmodule Emisar.SSOGroupsTest do
   defp overlong_scim_id, do: String.duplicate("g", @scim_string_limit + 1)
   defp too_many_member_external_ids, do: for(n <- 1..(@max_group_member_ids + 1), do: "okta|#{n}")
 
+  # The RFC 7644 PatchOp an IdP actually sends for a membership delta — what
+  # `scim_patch_group/3` reduces. Written here rather than assumed, so these
+  # tests drive the same entry point the SCIM Groups endpoint does.
+  defp member_ops(add, remove) do
+    Enum.concat(
+      if(add == [], do: [], else: [members_op("add", add)]),
+      if(remove == [], do: [], else: [members_op("remove", remove)])
+    )
+  end
+
+  defp members_op(verb, ids),
+    do: %{"op" => verb, "path" => "members", "value" => Enum.map(ids, &%{"value" => &1})}
+
   # -- Sync: role from groups ------------------------------------------
 
   describe "scim_upsert_group / role recompute" do
@@ -222,8 +235,8 @@ defmodule Emisar.SSOGroupsTest do
       # Patch the member OUT of their only mapped group. With no mapped group
       # left, sync demotes them to the provider's default_role (least-privilege
       # on directory removal — provider default is :viewer).
-      assert {:ok, %{removed: 1}} =
-               SSO.scim_patch_group_members(provider, "grp-adm", [], ["okta|patch"])
+      assert {:ok, _group} =
+               SSO.scim_patch_group(provider, "grp-adm", member_ops([], ["okta|patch"]))
 
       assert role_of(account.id, identity.user_id) == :viewer
     end
@@ -272,7 +285,7 @@ defmodule Emisar.SSOGroupsTest do
                })
 
       assert {:error, :invalid_scim_group} =
-               SSO.scim_patch_group_members(provider, "grp-valid", [overlong], [])
+               SSO.scim_patch_group(provider, "grp-valid", member_ops([overlong], []))
     end
 
     test "rejects oversized group member batches before querying", %{provider: provider} do
@@ -285,7 +298,7 @@ defmodule Emisar.SSOGroupsTest do
                })
 
       assert {:error, :invalid_scim_group} =
-               SSO.scim_patch_group_members(provider, "grp-too-large", too_many, [])
+               SSO.scim_patch_group(provider, "grp-too-large", member_ops(too_many, []))
     end
 
     @tag capture_log: true
@@ -341,7 +354,7 @@ defmodule Emisar.SSOGroupsTest do
                SSO.scim_rename_group(in_flight, "grp-late", "Too Late")
 
       assert {:error, :directory_sync_disabled} =
-               SSO.scim_patch_group_members(in_flight, "grp-late", [], [])
+               SSO.scim_patch_group(in_flight, "grp-late", member_ops([], ["okta|late"]))
     end
   end
 

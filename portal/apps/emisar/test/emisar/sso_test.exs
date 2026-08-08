@@ -3428,7 +3428,9 @@ defmodule Emisar.SSOTest do
         })
 
       {:ok, _group} =
-        SSO.scim_patch_group_members(provider, "grp-unmapped", ["okta|joiner"], [])
+        SSO.scim_patch_group(provider, "grp-unmapped", [
+          %{"op" => "add", "path" => "members", "value" => [%{"value" => "okta|joiner"}]}
+        ])
 
       assert {:ok, [%{display: "Security Review", member_external_ids: members}], 1} =
                SSO.scim_list_groups(provider)
@@ -3615,8 +3617,6 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- scim_patch_group_members/4 (provider-scoped) --------------------
-
   describe "ensure_identity_provider_enabled/2" do
     test "refuses a session for an identity whose connection has been disabled" do
       # Auth calls this INSIDE the session transaction, holding the provider lock
@@ -3651,56 +3651,6 @@ defmodule Emisar.SSOTest do
     test "refuses what a group write would refuse" do
       assert {:error, _} = SSO.validate_scim_group_display(String.duplicate("n", 300))
       assert {:error, _} = SSO.validate_scim_group_display(123)
-    end
-  end
-
-  describe "scim_patch_group_members/5" do
-    setup do
-      scim_provider()
-    end
-
-    test "adds members to a group and recomputes their role to the mapped role", %{
-      provider: provider,
-      subject: subject,
-      account: account
-    } do
-      %{identity: identity} = provision(provider, "okta|add")
-
-      {:ok, _} =
-        SSO.create_group_mapping(
-          provider,
-          %{external_group_id: "grp-ops", role: :operator},
-          subject
-        )
-
-      assert {:ok, %{external_group_id: "grp-ops", added: 1, removed: 0}} =
-               SSO.scim_patch_group_members(provider, "grp-ops", ["okta|add"], [])
-
-      assert role_of(account.id, identity.user_id) == :operator
-    end
-
-    test "removing a member from their only mapped group resets them to default_role (#3)", %{
-      provider: provider,
-      subject: subject,
-      account: account
-    } do
-      %{identity: identity} = provision(provider, "okta|patch")
-
-      {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
-
-      {:ok, _} =
-        SSO.scim_upsert_group(provider, %{
-          external_id: "grp-adm",
-          member_external_ids: ["okta|patch"]
-        })
-
-      assert role_of(account.id, identity.user_id) == :admin
-
-      assert {:ok, %{added: 0, removed: 1}} =
-               SSO.scim_patch_group_members(provider, "grp-adm", [], ["okta|patch"])
-
-      assert role_of(account.id, identity.user_id) == :viewer
     end
   end
 

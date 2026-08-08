@@ -14,13 +14,13 @@ defmodule Emisar.ContextCoverageTest do
   `<ctx>_test.exs`, in module-function order — not by editing this file.
 
   **And the counterpart: every public context function has a CALLER in `lib/`.**
-  Requiring a test without requiring a caller is what let 34 public functions
-  accumulate with no production consumer — each one green, each one carrying a
-  describe that existed only to satisfy the rule above. A superseded function
-  keeps its tests passing forever, so tests alone cannot tell live surface from
-  dead surface. `SSO.scim_patch_group_members/5` sat that way after
+  Requiring a test without requiring a caller is what let dozens of public
+  functions accumulate with no production consumer — each one green, each one
+  carrying a describe that existed only to satisfy the rule above. A superseded
+  function keeps its tests passing forever, so tests alone cannot tell live
+  surface from dead surface. `SSO.scim_patch_group_members/5` sat that way after
   `scim_patch_group/3` replaced it, still cited as the live path in the SCIM
-  group controller's moduledoc.
+  group controller's moduledoc, until this check surfaced it.
 
   Both checks share the same weakness and accept it: they match on NAME, so a
   same-named function in an unrelated module can mask a gap. That is a floor,
@@ -51,33 +51,37 @@ defmodule Emisar.ContextCoverageTest do
   # added jobs, defeating the test.
   @inspection_surface MapSet.new([{:admin, {"job_modules", 0}}])
 
-  # DEBT, not approval. Public functions with no `lib/` caller that were NOT
-  # deleted with the rest of the dead surface, because deleting each would
-  # destroy coverage rather than remove weight. Two reasons, both real:
+  # Intended API surface: Subject-gated reads and operator actions kept
+  # deliberately, decided 2026-08-08. Each is a capability the product owns, and
+  # each carries denial + cross-account tests that are genuine security coverage
+  # — that coverage only exists against a Subject-gated context function, so
+  # moving these to `test/support` would delete it rather than relocate it
+  # (`list_pack_versions/2` alone backs 99 call sites).
   #
-  #   * Subject-gated reads whose denial + cross-account tests are genuine
-  #     security coverage that only exists against a Subject-gated context
-  #     function — moving them to `test/support` would delete it, and
-  #     `list_pack_versions/2` alone backs 99 call sites.
-  #   * internal seams a LIVE function's tests need to assert state no public
-  #     API expresses (`compose_dispatch_batch_in_multi/5` builds the `changes`
-  #     that `after_composed_dispatches_committed/1` consumes;
-  #     `peek_enrollment_key_by_secret/1` proves a single-use key was consumed
-  #     while re-registration of the original identity still succeeds).
+  # `peek_enrollment_key_by_secret/1` is the read-only inspector for "is this
+  # enrollment secret currently usable?" — registration deliberately does NOT
+  # use it, claiming the key transactionally instead (see its @doc).
   #
-  # Whether each becomes real product surface or goes away is a product call,
-  # tracked as its own task. Do NOT add to this list to silence a new failure —
-  # a newly uncalled function is dead on arrival and should not be written.
-  @uncalled_pending_product_decision MapSet.new([
-                                       {:accounts, {"list_memberships_for_account", 3}},
-                                       {:approvals, {"revoke_all_grants", 1}},
-                                       {:catalog, {"check_pack_trusted", 1}},
-                                       {:catalog, {"list_pack_versions", 2}},
-                                       {:runners, {"peek_enrollment_key_by_secret", 1}},
-                                       {:runs, {"compose_dispatch_batch_in_multi", 5}},
-                                       {:runs, {"list_runs_by_runbook_execution", 2}},
-                                       {:sso, {"scim_patch_group_members", 5}}
-                                     ])
+  # `compose_dispatch_batch_in_multi/5` stays because it is the only way to
+  # assert the post-commit contract of the LIVE
+  # `after_composed_dispatches_committed/1`: that composing a batch does NOT
+  # deliver or broadcast until its outer transaction commits. The runbook
+  # sibling cannot express it (it demands a full execution-item graph whose
+  # identity guard the fixture would have to fake), and the MCP path commits
+  # and fires the side effects in one step, so neither can prove the negative.
+  #
+  # Do NOT add to this list to silence a new failure. A newly written function
+  # with no caller is dead on arrival; this list is a decision that was made
+  # once, about surface that already existed.
+  @intended_api_surface MapSet.new([
+                          {:accounts, {"list_memberships_for_account", 3}},
+                          {:approvals, {"revoke_all_grants", 1}},
+                          {:catalog, {"check_pack_trusted", 1}},
+                          {:catalog, {"list_pack_versions", 2}},
+                          {:runners, {"peek_enrollment_key_by_secret", 1}},
+                          {:runs, {"compose_dispatch_batch_in_multi", 5}},
+                          {:runs, {"list_runs_by_runbook_execution", 2}}
+                        ])
 
   # Every `describe "name/arity …"` across both test trees, kept with the module
   # names its file mentions.
@@ -232,7 +236,7 @@ defmodule Emisar.ContextCoverageTest do
           key = {@context_name, function}
 
           MapSet.member?(@inspection_surface, key) or
-            MapSet.member?(@uncalled_pending_product_decision, key) or
+            MapSet.member?(@intended_api_surface, key) or
             called?(sources, definer, function)
         end)
         |> Enum.sort()
