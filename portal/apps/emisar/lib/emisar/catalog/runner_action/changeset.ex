@@ -9,11 +9,6 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
     first_seen_at last_seen_at
   ]a
 
-  # Re-advertisement of an already-seen action: refresh every field but the
-  # immutable first_seen_at. Same validations as insert so an invalid
-  # kind/risk in a later advertisement can't force-write past the whitelist.
-  @update_fields @fields -- [:first_seen_at]
-
   # Generous caps on the runner-advertised descriptor. A frame is bounded to
   # ~1 MB by the socket, but a hostile authenticated runner could advertise
   # many fat actions to grow its account's catalog (and every UI/MCP render of
@@ -53,15 +48,13 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   @max_search_terms 16
   @max_search_term_length 80
 
+  # The only write: a re-advertisement lands through the observe upsert's
+  # ON CONFLICT replace list, which refreshes every field but the immutable
+  # first_seen_at, so an invalid kind/risk in a later advertisement still cannot
+  # force-write past this whitelist.
   def upsert(attrs) do
     %RunnerAction{}
     |> cast(attrs, @fields)
-    |> shared()
-  end
-
-  def update(%RunnerAction{} = action, attrs) do
-    action
-    |> cast(attrs, @update_fields)
     |> shared()
   end
 
