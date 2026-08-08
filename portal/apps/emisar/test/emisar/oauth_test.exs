@@ -99,6 +99,38 @@ defmodule Emisar.OAuthTest do
       assert "must be none" in errors_on(changeset).token_endpoint_auth_method
     end
 
+    test "rejects a null byte in any stored string, rather than raising at the INSERT" do
+      # Registration is public and unauthenticated, and JSON can carry ` `,
+      # which decodes to a real NUL that String.valid?/1 still accepts. Postgres
+      # refuses it (22021), so an unvalidated one raised Postgrex.Error past the
+      # controller's changeset-only error branch: a 500 with database internals in
+      # it for any anonymous caller.
+      assert {:error, changeset} =
+               OAuth.register_client(%{
+                 "client_name" => "Test\0Client",
+                 "redirect_uris" => [@redirect]
+               })
+
+      assert "must not contain null bytes" in errors_on(changeset).client_name
+
+      assert {:error, changeset} =
+               OAuth.register_client(%{
+                 "client_name" => "Fine",
+                 "scope" => "mcp\0offline_access",
+                 "redirect_uris" => [@redirect]
+               })
+
+      assert "must not contain null bytes" in errors_on(changeset).scope
+
+      assert {:error, changeset} =
+               OAuth.register_client(%{
+                 "client_name" => "Fine",
+                 "redirect_uris" => [@redirect <> "\0"]
+               })
+
+      assert "must not contain null bytes" in errors_on(changeset).redirect_uris
+    end
+
     test "rejects a non-https / non-localhost redirect uri" do
       assert {:error, changeset} =
                OAuth.register_client(%{"redirect_uris" => ["http://evil.example/cb"]})

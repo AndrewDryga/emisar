@@ -22,6 +22,7 @@ defmodule Emisar.OAuth.Client.Changeset do
     %Client{}
     |> cast(attrs, @cast_fields)
     |> validate_length(:client_name, max: 200)
+    |> validate_storable_text()
     |> validate_public_auth_method(attrs)
     |> validate_subset(:grant_types, @supported_grant_types, message: "unsupported grant_type")
     |> validate_subset(:response_types, @supported_response_types,
@@ -53,6 +54,7 @@ defmodule Emisar.OAuth.Client.Changeset do
     )
     |> validate_required([:client_id_metadata_url])
     |> validate_length(:client_name, max: 200)
+    |> validate_storable_text()
     |> validate_public_auth_method(document)
     |> validate_subset(:grant_types, @supported_grant_types, message: "unsupported grant_type")
     |> validate_subset(:response_types, @supported_response_types,
@@ -66,6 +68,39 @@ defmodule Emisar.OAuth.Client.Changeset do
   @doc "Stamp the client as authorized (an operator completed consent)."
   def mark_authorized(%Client{} = client, %DateTime{} = at),
     do: change(client, last_authorized_at: at)
+
+  # Registration is a PUBLIC, unauthenticated endpoint, and JSON can carry
+  # `\u0000` — which `Jason.decode/1` hands back as a real NUL byte that
+  # `String.valid?/1` still calls valid UTF-8. Postgres refuses a NUL in a text
+  # value (22021 character_not_in_repertoire), so an unvalidated one reached the
+  # INSERT and raised `Postgrex.Error` past the controller's changeset-only error
+  # branch: a 500 with database internals in it, for any anonymous caller. Reject
+  # it here, as the rest of the codebase already does at its own edges.
+  defp validate_storable_text(changeset) do
+    changeset
+    |> validate_no_null_bytes(:client_name)
+    |> validate_no_null_bytes(:scope)
+    |> validate_uri_list_no_null_bytes(:redirect_uris)
+  end
+
+  defp validate_no_null_bytes(changeset, field) do
+    validate_change(changeset, field, fn ^field, value ->
+      if storable_text?(value), do: [], else: [{field, "must not contain null bytes"}]
+    end)
+  end
+
+  defp validate_uri_list_no_null_bytes(changeset, field) do
+    validate_change(changeset, field, fn ^field, uris ->
+      if Enum.all?(List.wrap(uris), &storable_text?/1),
+        do: [],
+        else: [{field, "must not contain null bytes"}]
+    end)
+  end
+
+  defp storable_text?(value) when is_binary(value),
+    do: String.valid?(value) and not String.contains?(value, <<0>>)
+
+  defp storable_text?(_value), do: true
 
   defp metadata_from_document(%{"application_type" => application_type})
        when is_binary(application_type),
