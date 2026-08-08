@@ -1921,6 +1921,59 @@ defmodule Emisar.RunnersTest do
                claimed.connection_lease_expires_at
              ) in [:eq, :gt]
     end
+
+    test "leaves a fresh lease alone and renews one at half its life" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {:ok, claimed} = Runners.connect_runner(runner)
+
+      heartbeat = fn ->
+        Runners.record_heartbeat(
+          runner.account_id,
+          runner.id,
+          claimed.connection_generation,
+          claimed.connection_lease_id,
+          1
+        )
+      end
+
+      # A beat arrives every 30s against a 120s lease; the row must not be
+      # rewritten while the value it carries is nowhere near lapsing.
+      assert {:ok, _presence_ref} = heartbeat.()
+
+      assert Repo.reload!(claimed).connection_lease_expires_at ==
+               claimed.connection_lease_expires_at
+
+      # At half life the lease is renewed, so it can never lapse under a live
+      # socket that keeps beating.
+      half_spent =
+        put_connection(claimed,
+          connection_lease_expires_at: DateTime.add(DateTime.utc_now(), 30, :second)
+        )
+
+      assert {:ok, _presence_ref} = heartbeat.()
+      renewed = Repo.reload!(claimed)
+
+      assert DateTime.compare(
+               renewed.connection_lease_expires_at,
+               half_spent.connection_lease_expires_at
+             ) == :gt
+    end
+
+    test "refuses a superseded socket without touching the lease" do
+      runner = Fixtures.Runners.create_runner(connected?: false)
+      {:ok, claimed} = Runners.connect_runner(runner)
+
+      assert Runners.record_heartbeat(
+               runner.account_id,
+               runner.id,
+               claimed.connection_generation,
+               Ecto.UUID.generate(),
+               1
+             ) == {:error, :not_found}
+
+      assert Repo.reload!(claimed).connection_lease_expires_at ==
+               claimed.connection_lease_expires_at
+    end
   end
 
   describe "connection_owner?/4" do

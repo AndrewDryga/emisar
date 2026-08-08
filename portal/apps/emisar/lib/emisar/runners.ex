@@ -1197,19 +1197,14 @@ defmodule Emisar.Runners do
   metadata. A superseded socket gets `{:error, :not_found}` and must close.
   """
   def record_heartbeat(account_id, runner_id, generation, lease_id, action_load) do
-    lease_expires_at = DateTime.add(DateTime.utc_now(), @connection_lease_seconds, :second)
-
-    result =
+    queryable =
       Runner.Query.not_deleted()
       |> Runner.Query.not_disabled()
       |> Runner.Query.by_account_id(account_id)
       |> Runner.Query.by_id(runner_id)
       |> Runner.Query.by_connection_lease(generation, lease_id)
-      |> Repo.fetch_and_update(Runner.Query,
-        with: &Runner.Changeset.renew_connection(&1, lease_expires_at)
-      )
 
-    with {:ok, _runner} <- result do
+    with {:ok, _runner} <- renew_connection_lease(queryable) do
       Presence.update(self(), Presence.topic(account_id), runner_id, fn meta ->
         %{
           meta
@@ -1219,6 +1214,38 @@ defmodule Emisar.Runners do
       end)
     end
   end
+
+  # A heartbeat arrives every 30s against a 120s lease, so writing a fresh
+  # expiry on each one re-locked and rewrote the runner row twice a minute per
+  # connected host — the standing write load on an otherwise idle deployment,
+  # for a value that was not close to lapsing. The lease is renewed once it
+  # reaches half its life, which still leaves two whole heartbeat intervals of
+  # slack before it could expire; earlier beats only re-read the row to confirm
+  # this socket still owns the identity, taking no lock and writing nothing.
+  defp renew_connection_lease(queryable) do
+    now = DateTime.utc_now()
+
+    case Repo.peek(queryable) do
+      nil ->
+        {:error, :not_found}
+
+      %Runner{} = runner ->
+        if lease_renewal_due?(runner, now) do
+          lease_expires_at = DateTime.add(now, @connection_lease_seconds, :second)
+
+          Repo.fetch_and_update(queryable, Runner.Query,
+            with: &Runner.Changeset.renew_connection(&1, lease_expires_at)
+          )
+        else
+          {:ok, runner}
+        end
+    end
+  end
+
+  defp lease_renewal_due?(%Runner{connection_lease_expires_at: %DateTime{} = expires_at}, now),
+    do: DateTime.diff(expires_at, now, :second) <= div(@connection_lease_seconds, 2)
+
+  defp lease_renewal_due?(%Runner{}, _now), do: true
 
   @doc "Internal — true only while the supplied socket still owns this runner identity."
   def connection_owner?(account_id, runner_id, generation, lease_id) do
