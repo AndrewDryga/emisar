@@ -7,6 +7,13 @@ risk_accountability:
   mode: complete
 cases:
   - action: postfix.mailq
+    runner_user: root
+    runner_reason: >-
+      Postfix keeps the showq socket under a postdrop-group directory, and
+      postqueue reaches it by being setgid postdrop. The runner sets
+      no_new_privs on every action child, so that bit no longer elevates —
+      exactly as the pack's own note requires, the runner user must own the
+      queue or be a postdrop member, and this fixture's uid is neither.
     expect:
       stdout_contains: [Mail queue is empty]
   - action: postfix.qshape
