@@ -734,20 +734,40 @@ func redactedInvocation(redactor *redact.Engine, binary string, argv []string, c
 	return redactedArgv, strings.Join(parts, " ")
 }
 
+// `redactor` is the action's combined redactor, which ALREADY carries the
+// sensitive-argument set (combinedRedactor synthesizes it from the same args and
+// schema). Masking those values here first as well was not belt-and-braces but a
+// second pass over text the first had already masked: a value that is a
+// substring of the marker ("ED" in "[REDACTED]") matched inside the marker the
+// first pass wrote and rewrote it to "[R[REDACTED]ACT[REDACTED]]". So mask once,
+// through the redactor, and fall back to the values alone only when there is no
+// redactor to carry them.
 func redactInvocationValue(redactor *redact.Engine, value string, args map[string]any, schema []actionspec.Arg) string {
-	value = redactSensitiveValues(value, args, schema)
 	if redactor == nil {
-		return value
+		return redactSensitiveValues(value, args, schema)
 	}
 	masked, _ := redactor.Apply(value)
 	return masked
 }
 
+// The one rule name for the whole sensitive-argument set. A pack may legally
+// declare a rule with this name; the two sets are compiled separately so it is
+// never deduped away.
+const sensitiveArgsRule = "sensitive-args"
+
+// Masks through the same single-pass set the output path uses, so the recorded
+// command and the command's output hide a value identically — and so a secret
+// that is a substring of the marker ("ED" in "[REDACTED]") cannot rewrite a
+// marker an earlier secret left behind. This is also what the cloud's
+// CommandPreview does for the same line.
 func redactSensitiveValues(value string, args map[string]any, schema []actionspec.Arg) string {
-	for _, secret := range sensitiveValues(args, schema) {
-		value = strings.ReplaceAll(value, secret, "[REDACTED]")
+	secrets := sensitiveValues(args, schema)
+	if len(secrets) == 0 {
+		return value
 	}
-	return value
+	rule := redact.LiteralSet(sensitiveArgsRule, secrets, "[REDACTED]")
+	masked, _ := redact.New([]redact.Rule{rule}).Apply(value)
+	return masked
 }
 
 func validationFailureDetail(err error, args map[string]any, schema []actionspec.Arg) string {
@@ -853,47 +873,42 @@ func verifyScriptSHA(si packs.ScriptInfo) error {
 // the action and global rules. Sensitive values may be echoed by a child
 // process, so argv masking alone is not a complete confidentiality boundary.
 func (e *Engine) combinedRedactor(act *actionspec.Action, cleanArgs map[string]any) *redact.Engine {
-	sensitive := make([]actionspec.RedactionRule, 0, len(act.Args))
-	for index, value := range sensitiveValues(cleanArgs, act.Args) {
-		sensitive = append(sensitive, actionspec.RedactionRule{
-			Name:        fmt.Sprintf("sensitive-arg-%d", index+1),
-			Type:        "literal",
-			Literal:     value,
-			Replacement: "[REDACTED]",
-		})
-	}
-	if len(sensitive) == 0 && len(act.Output.Redact) == 0 {
+	secrets := sensitiveValues(cleanArgs, act.Args)
+	if len(secrets) == 0 && len(act.Output.Redact) == 0 {
 		if e.Redactor == nil {
 			return redact.Empty()
 		}
 		return e.Redactor
 	}
-	// Compiled as two independent sets. CompileAll drops later duplicates by
-	// name — which is how an author overrides a rule deliberately — so merging
-	// these first meant a pack rule named "sensitive-arg-1" was silently
-	// discarded whenever the action also had a sensitive argument, taking
-	// whatever else that rule masked down with it. The two sets have no override
-	// relationship; both must apply.
-	rules, err := redact.CompileAll(sensitive)
-	if err == nil {
-		var authored []redact.Rule
-		authored, err = redact.CompileAll(act.Output.Redact)
-		rules = append(rules, authored...)
+
+	// ONE rule for the whole sensitive set, masking in a single pass. As one
+	// literal rule per value they ran in sequence, so a value that is a substring
+	// of the marker rewrote the marker an earlier value left behind —
+	// "[R[REDACTED]ACT[REDACTED]]" in the journal and in what the portal shows.
+	// A pack may declare a rule named the same thing, and CompileAll drops later
+	// duplicates by name (how an author overrides a rule deliberately), so the
+	// authored set is compiled separately and appended; the two have no override
+	// relationship and both must apply.
+	var rules []redact.Rule
+	if len(secrets) > 0 {
+		rules = append(rules, redact.LiteralSet(sensitiveArgsRule, secrets, "[REDACTED]"))
 	}
+
+	authored, err := redact.CompileAll(act.Output.Redact)
 	if err != nil {
-		// Falling back to the globals silently would quietly widen what reaches
-		// the journal and the portal. Unreachable today (both sets are validated
-		// at pack load), so this is about the next caller, not this one.
+		// Never drop the sensitive set because an AUTHORED rule failed to compile:
+		// that would widen what reaches the journal and the portal for a reason
+		// that has nothing to do with the arguments. Synthesizing the set cannot
+		// fail, so it still applies. Unreachable today (authored rules are
+		// validated at pack load) — this is about the next caller.
 		e.Logger.Warn("redact.compile_failed",
 			"action", act.ID,
 			"error", err,
-			"fallback", "global rules only")
-		if e.Redactor == nil {
-			return redact.Empty()
-		}
-		return e.Redactor
+			"fallback", "sensitive arguments and global rules only")
+		return e.Redactor.Extend(rules)
 	}
-	return e.Redactor.Extend(rules)
+
+	return e.Redactor.Extend(append(rules, authored...))
 }
 
 func (e *Engine) executionInfo(r *executor.Result, redactedStdout, redactedStderr, scriptSHA string, plan executor.Plan, auditArgv []string) *audit.ExecutionInfo {

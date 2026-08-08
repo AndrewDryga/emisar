@@ -282,3 +282,111 @@ func TestDefaultRules_FamiliesPresentAndCompile(t *testing.T) {
 		t.Fatalf("default rules must all compile: %v", err)
 	}
 }
+
+// LiteralSet is the masking primitive for values that arrive with a run rather
+// than from a reviewed pack. One rule, one pass — because as one rule per value
+// they were applied in sequence, and a value that is a substring of the
+// replacement then rewrote the marker an earlier value had left behind.
+func TestLiteralSet_MasksInOnePass(t *testing.T) {
+	tests := []struct {
+		name      string
+		literals  []string
+		in        string
+		want      string
+		wantCount int
+	}{
+		{
+			name:      "a literal inside the marker does not corrupt it",
+			literals:  []string{"s3cr3t-alpha", "ED"},
+			in:        "token=s3cr3t-alpha mode=ED",
+			want:      "token=[REDACTED] mode=[REDACTED]",
+			wantCount: 2,
+		},
+		{
+			name:      "every substring of the marker stays inert",
+			literals:  []string{"s3cr3t-alpha", "RED", "ACT", "REDACTED"},
+			in:        "token=s3cr3t-alpha",
+			want:      "token=[REDACTED]",
+			wantCount: 1,
+		},
+		{
+			name:      "an overlapping literal masks whole, longest first",
+			literals:  []string{"abc", "abc123"},
+			in:        "x abc123 y abc z",
+			want:      "x [REDACTED] y [REDACTED] z",
+			wantCount: 2,
+		},
+		{
+			name:      "order of the input literals does not matter",
+			literals:  []string{"abc123", "abc"},
+			in:        "x abc123 y",
+			want:      "x [REDACTED] y",
+			wantCount: 1,
+		},
+		{
+			name:      "repeated occurrences all mask",
+			literals:  []string{"tok"},
+			in:        "tok tok tok",
+			want:      "[REDACTED] [REDACTED] [REDACTED]",
+			wantCount: 3,
+		},
+		{
+			name:      "no match leaves the text and count alone",
+			literals:  []string{"absent"},
+			in:        "nothing to see",
+			want:      "nothing to see",
+			wantCount: 0,
+		},
+		{
+			name:      "a multi-byte literal masks and leaves its neighbours intact",
+			literals:  []string{"café"},
+			in:        "café and caffeine — naïve",
+			want:      "[REDACTED] and caffeine — naïve",
+			wantCount: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := LiteralSet("sensitive-args", tc.literals, "[REDACTED]")
+			got, hits := New([]Rule{rule}).Apply(tc.in)
+
+			if got != tc.want {
+				t.Fatalf("Apply() = %q, want %q", got, tc.want)
+			}
+			count := 0
+			for _, hit := range hits {
+				count += hit.Count
+			}
+			if count != tc.wantCount {
+				t.Fatalf("Apply() hit count = %d, want %d", count, tc.wantCount)
+			}
+		})
+	}
+}
+
+func TestLiteralSet_IgnoresEmptyAndDuplicateLiterals(t *testing.T) {
+	rule := LiteralSet("sensitive-args", []string{"", "tok", "tok", ""}, "[REDACTED]")
+
+	got, hits := New([]Rule{rule}).Apply("tok and tok")
+	if want := "[REDACTED] and [REDACTED]"; got != want {
+		t.Fatalf("Apply() = %q, want %q", got, want)
+	}
+	if len(hits) != 1 || hits[0].Count != 2 {
+		t.Fatalf("Apply() hits = %+v, want one hit with count 2", hits)
+	}
+}
+
+// An empty set must not mask everything (an empty literal would otherwise match
+// at every position).
+func TestLiteralSet_EmptySetIsANoOp(t *testing.T) {
+	rule := LiteralSet("sensitive-args", []string{""}, "[REDACTED]")
+
+	got, hits := New([]Rule{rule}).Apply("untouched")
+	if got != "untouched" {
+		t.Fatalf("Apply() = %q, want %q", got, "untouched")
+	}
+	if len(hits) != 0 {
+		t.Fatalf("Apply() hits = %+v, want none", hits)
+	}
+}

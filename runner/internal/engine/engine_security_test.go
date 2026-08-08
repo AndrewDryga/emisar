@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -382,17 +384,17 @@ func TestEngine_UnflaggedCredentialMaskedInExecutedCommand(t *testing.T) {
 	}
 }
 
-// A pack may legally name a redaction rule "sensitive-arg-1". Compiled in one
-// batch with the synthesized per-argument rules, CompileAll's first-wins
-// dedupe silently dropped the pack's rule — and with it whatever else that rule
-// masked, which then reached the journal and the portal in the clear.
+// A pack may legally name a redaction rule the same thing the synthesized
+// sensitive-argument set is named. Compiled in one batch with it, CompileAll's
+// first-wins dedupe silently dropped the pack's rule — and with it whatever else
+// that rule masked, which then reached the journal and the portal in the clear.
 func TestEngine_PackRuleNamedLikeASynthesizedOneStillApplies(t *testing.T) {
 	act := &actionspec.Action{
 		ID:   "test.collide",
 		Args: []actionspec.Arg{{Name: "token", Sensitive: true}},
 		Output: actionspec.Output{
 			Redact: []actionspec.RedactionRule{{
-				Name:        "sensitive-arg-1",
+				Name:        sensitiveArgsRule,
 				Type:        "literal",
 				Literal:     "unrelated-secret",
 				Replacement: "[REDACTED]",
@@ -408,5 +410,76 @@ func TestEngine_PackRuleNamedLikeASynthesizedOneStillApplies(t *testing.T) {
 		if strings.Contains(got, secret) {
 			t.Fatalf("redactor leaked %q: %s", secret, got)
 		}
+	}
+}
+
+// A sensitive value that is a substring of the redaction marker itself must not
+// rewrite a marker an earlier secret already left behind. Masking per-secret in
+// a loop produced "[R[REDACTED]ACTED]", which mangles the command an operator
+// approves against and encodes which substring the value was.
+func TestEngine_SecretInsideMarkerDoesNotCorruptRedaction(t *testing.T) {
+	schema := []actionspec.Arg{
+		{Name: "token", Sensitive: true},
+		{Name: "mode", Sensitive: true},
+	}
+	args := map[string]any{"token": "s3cr3t-alpha", "mode": "ED"}
+
+	_, got := redactedInvocation(nil, "tool", []string{"--token=s3cr3t-alpha", "--mode=ED"}, args, schema)
+	if want := `tool '--token=[REDACTED]' '--mode=[REDACTED]'`; got != want {
+		t.Fatalf("redactedInvocation() command = %q, want %q", got, want)
+	}
+}
+
+// The same value through the combined redactor the real action path builds. Its
+// synthesized rules run over the command a SECOND time and over the command's
+// OUTPUT, so masking had to become one pass there too — per-value rules in
+// sequence corrupted the marker in the journal and in what the portal shows.
+func TestEngine_SecretInsideMarkerSurvivesCombinedRedactor(t *testing.T) {
+	act := &actionspec.Action{
+		ID: "p.deploy",
+		Args: []actionspec.Arg{
+			{Name: "token", Sensitive: true},
+			{Name: "mode", Sensitive: true},
+		},
+	}
+	args := map[string]any{"token": "s3cr3t-alpha", "mode": "ED"}
+	engine := &Engine{}
+	redactor := engine.combinedRedactor(act, args)
+
+	_, command := redactedInvocation(redactor, "tool", []string{"--token=s3cr3t-alpha", "--mode=ED"}, args, act.Args)
+	if want := `tool '--token=[REDACTED]' '--mode=[REDACTED]'`; command != want {
+		t.Fatalf("redactedInvocation() command = %q, want %q", command, want)
+	}
+
+	// The output path is the one argv masking cannot cover: a child process that
+	// echoes the value.
+	output, _ := redactor.Apply("connecting with s3cr3t-alpha in ED mode")
+	if want := "connecting with [REDACTED] in [REDACTED] mode"; output != want {
+		t.Fatalf("redactor.Apply() = %q, want %q", output, want)
+	}
+}
+
+// An authored rule that fails to compile must not take the sensitive-argument
+// masking down with it — the arguments have nothing to do with the pack's
+// mistake, and dropping them widens what reaches the journal and the portal.
+func TestEngine_AuthoredRuleCompileFailureKeepsSensitiveMasking(t *testing.T) {
+	act := &actionspec.Action{
+		ID:   "test.badrule",
+		Args: []actionspec.Arg{{Name: "token", Sensitive: true}},
+		Output: actionspec.Output{
+			Redact: []actionspec.RedactionRule{{
+				Name:    "broken",
+				Type:    "regex",
+				Pattern: "([unclosed",
+			}},
+		},
+	}
+
+	engine := &Engine{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	redactor := engine.combinedRedactor(act, map[string]any{"token": "arg-secret"})
+
+	got, _ := redactor.Apply("saw arg-secret")
+	if strings.Contains(got, "arg-secret") {
+		t.Fatalf("a broken authored rule dropped sensitive-argument masking: %s", got)
 	}
 }

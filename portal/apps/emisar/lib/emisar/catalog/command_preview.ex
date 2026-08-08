@@ -277,11 +277,13 @@ defmodule Emisar.Catalog.CommandPreview do
       else: decimal
   end
 
-  # Every string form of every sensitive value, longest first so an overlapping
-  # secret can't be half-masked (`abc` inside `abc123`). A list arg expands into
-  # separate argv tokens, so each element is its own secret — masking only the
-  # whole form would leave the elements in the line. The run's own snapshot
-  # masks values the action stopped declaring sensitive.
+  # Every string form of every sensitive value, longest first. `mask/2` already
+  # matches leftmost-longest, so the order is not what keeps an overlapping
+  # secret (`abc` inside `abc123`) whole — it keeps this list shaped like the
+  # runner's, whose `strings.Replacer` resolves a tie by argument order. A list
+  # arg expands into separate argv tokens, so each element is its own secret —
+  # masking only the whole form would leave the elements in the line. The run's
+  # own snapshot masks values the action stopped declaring sensitive.
   defp sensitive_values(args, specs, extra_names) do
     specs
     |> declared_sensitive_names()
@@ -309,9 +311,14 @@ defmodule Emisar.Catalog.CommandPreview do
     |> Enum.map_join(" ", fn part -> part |> mask(secrets) |> shell_quote() end)
   end
 
-  defp mask(string, secrets) do
-    Enum.reduce(secrets, string, &String.replace(&2, &1, @redacted))
-  end
+  # ONE pass over the token, never a fold of per-secret replacements: a fold
+  # re-scans the text it has already masked, so a secret that is a substring of
+  # the marker itself ("ED", "RED") rewrites the marker a previous secret left
+  # behind — `[R[REDACTED]ACTED]`, which both mangles the line the operator
+  # approves against and spells out which substring the value was.
+  # `String.replace/3` with the list matches leftmost-longest in a single scan,
+  # so an overlapping secret still masks whole.
+  defp mask(string, secrets), do: String.replace(string, secrets, @redacted)
 
   # Bare when it's plain, single-quoted (embedded quotes escaped) otherwise —
   # the runner's shellQuote, so the preview reads identically to the recorded

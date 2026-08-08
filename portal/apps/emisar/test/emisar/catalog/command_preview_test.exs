@@ -243,6 +243,21 @@ defmodule Emisar.Catalog.CommandPreviewTest do
                {:ok, "tool '--token=[REDACTED]'"}
     end
 
+    # Mirrors engine.TestEngine_SecretInsideMarkerDoesNotCorruptRedaction: a
+    # per-secret fold re-scans text it already masked, so a secret that is a
+    # substring of the marker rewrote the marker to "[R[REDACTED]ACTED]" —
+    # mangling the line an operator approves against and spelling out the value.
+    test "a secret that is a substring of the marker does not corrupt it" do
+      action =
+        exec_action("tool", ["--token={{ args.token }}", "--mode={{ args.mode }}"], [
+          %{"name" => "token", "sensitive" => true},
+          %{"name" => "mode", "sensitive" => true}
+        ])
+
+      assert CommandPreview.render(action, %{"token" => "s3cr3t-alpha", "mode" => "ED"}) ==
+               {:ok, "tool '--token=[REDACTED]' '--mode=[REDACTED]'"}
+    end
+
     test "masks a value only the run's snapshot marks sensitive" do
       action = exec_action("cloud-init", ["single", "--name={{ args.module }}"])
 

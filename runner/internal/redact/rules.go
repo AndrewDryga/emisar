@@ -6,6 +6,7 @@ package redact
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
@@ -21,8 +22,46 @@ type Rule struct {
 	Name        string
 	Replacement string
 
-	regex   *regexp.Regexp
-	literal string
+	regex    *regexp.Regexp
+	literal  string
+	literals []string
+}
+
+// LiteralSet compiles the values of ONE masking concern — today an action's
+// sensitive arguments — into a single rule that masks them all in one pass.
+//
+// It exists because those values arrive with a run rather than from a reviewed
+// pack, which makes them the untrusted end of the rule set: as one rule per
+// value they were applied in sequence, so a value that happened to be a
+// substring of the replacement ("ED" inside "[REDACTED]") rewrote the marker an
+// earlier value had left behind. Authored rules keep the ordered-pipeline
+// semantics they are written against; a set masks atomically.
+//
+// Synthesized only — deliberately not reachable from `actionspec.RedactionRule`,
+// so this cannot widen the pack-authored schema.
+func LiteralSet(name string, literals []string, replacement string) Rule {
+	if replacement == "" {
+		replacement = "[REDACTED]"
+	}
+
+	seen := make(map[string]struct{}, len(literals))
+	unique := make([]string, 0, len(literals))
+	for _, literal := range literals {
+		if literal == "" {
+			continue
+		}
+		if _, ok := seen[literal]; ok {
+			continue
+		}
+		seen[literal] = struct{}{}
+		unique = append(unique, literal)
+	}
+
+	// Longest first, once, so the single pass can take the first match at a
+	// position and know it is the longest ("abc" inside "abc123").
+	sort.SliceStable(unique, func(i, j int) bool { return len(unique[i]) > len(unique[j]) })
+
+	return Rule{Name: name, Replacement: replacement, literals: unique}
 }
 
 // CompileRule turns a YAML redaction rule into a runtime Rule.
@@ -238,5 +277,57 @@ func (r Rule) apply(s string) (string, int) {
 		}
 		return strings.ReplaceAll(s, r.literal, r.Replacement), count
 	}
+	if len(r.literals) > 0 {
+		return maskAll(s, r.literals, r.Replacement)
+	}
 	return s, 0
+}
+
+// maskAll replaces every occurrence of any literal in ONE left-to-right pass,
+// taking the longest literal that matches at each position, and reports how many
+// replacements it made. `literals` must already be ordered longest-first.
+//
+// One pass is the whole point: replacing literal-by-literal re-reads text an
+// earlier literal already masked, which is how a literal that is a substring of
+// the replacement corrupts the marker instead of hiding behind it.
+func maskAll(s string, literals []string, replacement string) (string, int) {
+	if !containsAny(s, literals) {
+		return s, 0
+	}
+
+	var out strings.Builder
+	out.Grow(len(s))
+	count := 0
+
+	for i := 0; i < len(s); {
+		matched := 0
+		for _, literal := range literals {
+			if len(literal) <= len(s)-i && s[i:i+len(literal)] == literal {
+				matched = len(literal)
+				break
+			}
+		}
+		if matched == 0 {
+			// Advancing a byte cannot split a rune into a false match: a valid
+			// UTF-8 literal never begins with a continuation byte.
+			out.WriteByte(s[i])
+			i++
+			continue
+		}
+		out.WriteString(replacement)
+		i += matched
+		count++
+	}
+
+	return out.String(), count
+}
+
+// Keeps the common no-match line allocation-free.
+func containsAny(s string, literals []string) bool {
+	for _, literal := range literals {
+		if strings.Contains(s, literal) {
+			return true
+		}
+	}
+	return false
 }
