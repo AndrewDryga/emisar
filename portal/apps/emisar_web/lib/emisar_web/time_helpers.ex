@@ -27,43 +27,49 @@ defmodule EmisarWeb.TimeHelpers do
   def relative_time(nil, opts), do: Keyword.get(opts, :placeholder, "—")
 
   def relative_time(%DateTime{} = datetime, _opts) do
-    diff = DateTime.diff(DateTime.utc_now(), datetime, :second)
+    # One `now` for both the diff and the year comparison — reading the clock
+    # twice can straddle midnight on New Year's Eve and print the wrong form.
+    now = DateTime.utc_now()
+    diff = DateTime.diff(now, datetime, :second)
 
     cond do
       diff >= -5 and diff < 5 -> "just now"
-      diff >= 0 -> past_label(diff, datetime)
-      true -> future_label(-diff, datetime)
+      diff >= 0 -> past_label(diff, datetime, now)
+      true -> future_label(-diff, datetime, now)
     end
   end
 
   def relative_time(%NaiveDateTime{} = ndt, opts),
     do: ndt |> DateTime.from_naive!("Etc/UTC") |> relative_time(opts)
 
-  # Beyond a week it's an absolute date; within the year "Jul 2", older than a
-  # year "Jul 2, 2024" — a bare "Jul 2" from a previous year reads as this one.
-  @one_year_seconds 31_536_000
-
-  defp past_label(diff, datetime) do
+  # Beyond a week it's an absolute date, and the year is what makes it readable:
+  # a bare "Jul 2" from a previous year reads as this one. The test is the
+  # CALENDAR year, not an elapsed-days threshold — a 365-day window kept the year
+  # off "Dec 20" viewed in January, which is exactly the case the year is for.
+  defp past_label(diff, datetime, now) do
     cond do
       diff < 60 -> "#{diff}s ago"
       diff < 3_600 -> "#{div(diff, 60)}m ago"
       diff < 86_400 -> "#{div(diff, 3_600)}h ago"
       diff < 604_800 -> "#{div(diff, 86_400)}d ago"
-      diff < @one_year_seconds -> Calendar.strftime(datetime, "%b %-d")
-      true -> Calendar.strftime(datetime, "%b %-d, %Y")
+      true -> absolute_date(datetime, now)
     end
   end
 
-  defp future_label(diff, datetime) do
+  defp future_label(diff, datetime, now) do
     cond do
       diff < 60 -> "in #{diff}s"
       diff < 3_600 -> "in #{div(diff, 60)}m"
       diff < 86_400 -> "in #{div(diff, 3_600)}h"
       diff < 604_800 -> "in #{div(diff, 86_400)}d"
-      diff < @one_year_seconds -> Calendar.strftime(datetime, "%b %-d")
-      true -> Calendar.strftime(datetime, "%b %-d, %Y")
+      true -> absolute_date(datetime, now)
     end
   end
+
+  defp absolute_date(%DateTime{year: year} = datetime, %DateTime{year: year}),
+    do: Calendar.strftime(datetime, "%b %-d")
+
+  defp absolute_date(datetime, _now), do: Calendar.strftime(datetime, "%b %-d, %Y")
 
   @doc """
   Absolute UTC timestamp, "May 21, 14:03 UTC" style.

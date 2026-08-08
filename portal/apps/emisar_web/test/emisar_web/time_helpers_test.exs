@@ -15,6 +15,16 @@ defmodule EmisarWeb.TimeHelpersTest do
       assert relative_time(DateTime.add(now, -30 * 86_400, :second)) =~ ~r/^[A-Z][a-z]{2} \d/
     end
 
+    test "an absolute date from a previous calendar year names the year" do
+      # The year is what stops "Dec 20" reading as this December. The decision is
+      # the calendar year, not elapsed days: a 365-day threshold left the year off
+      # a December date viewed the following January — the one case it exists for.
+      now = DateTime.utc_now()
+      last_year = DateTime.new!(Date.new!(now.year - 1, 12, 20), ~T[12:00:00])
+
+      assert relative_time(last_year) == "Dec 20, #{now.year - 1}"
+    end
+
     test "buckets future offsets (expiries)" do
       now = DateTime.utc_now()
 

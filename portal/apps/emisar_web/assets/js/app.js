@@ -225,9 +225,14 @@ function formatRelative(dt, now, sameYear) {
   return formatAbsolute(dt, sameYear, /*short*/ true)
 }
 
+// `short` drops the time of day, never the year: a bare "Dec 20" seen in
+// January reads as this December. Mirrors TimeHelpers.absolute_date/2, which
+// picks the form off the calendar year rather than an elapsed-days threshold.
 function formatAbsolute(dt, sameYear, short = false) {
   const opts = short
-    ? { month: "short", day: "numeric" }
+    ? sameYear
+      ? { month: "short", day: "numeric" }
+      : { year: "numeric", month: "short", day: "numeric" }
     : sameYear
       ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
       : { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
