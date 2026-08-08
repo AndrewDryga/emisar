@@ -16,7 +16,7 @@ same product contract.
 
 Before 1.0, a normal product feature is a minor bump and a release hotfix is a
 patch bump. Pre-1.0 releases do not promise long-lived compatibility between
-components. The current release snapshot is product `v0.37.0`, runner
+components. The current release snapshot is product `v0.38.0`, runner
 `0.18.0`, and `emisar-mcp` `0.7.0`. Those component versions are release tips;
 unstamped local builds report `dev`.
 

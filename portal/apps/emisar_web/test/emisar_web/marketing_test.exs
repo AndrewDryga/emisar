@@ -1227,6 +1227,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Runner identity by hostname and pack behavior proven on real services"
       assert html =~ "Staged runbooks and hardened enterprise identity"
       assert html =~ "Self-rotating runner credentials and a harder execution boundary"
+
+      assert html =~
+               "A vanished runbook, a deny that matched nothing, and a session that would not end"
+
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).
       assert html =~ "v0.1.0"

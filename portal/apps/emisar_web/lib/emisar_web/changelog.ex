@@ -18,6 +18,28 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-08-08],
+      slug: "a-vanished-runbook-a-deny-that-matched-nothing",
+      title: "A vanished runbook, a deny that matched nothing, and a session that would not end",
+      tag: "v0.38.0",
+      summary:
+        "A runbook too large to project answered as if it did not exist. That answer is reserved for an untrusted pack or a runner outside your scope, which have to stay indistinguishable from absence — but size is not that kind of fact, and folding it in meant list_runbooks quietly dropped the runbook while get_runbook denied one sitting in the operator's own console. It was reachable rather than theoretical. The budget is counted in bytes while the title and description limits counted characters, and a description at the documented 4,096-character limit encodes to 12,288 bytes in Japanese: writing your description in your own language was enough to make your runbook vanish. A size failure now reports its size, and those character limits carry byte bounds derived from the budget instead of assumed against it.",
+      details: [
+        {"Security",
+         [
+           "Ending a member's sessions now disconnects the session they are looking at, not just the cookie behind it. The disconnect asked for the addresses of sessions the same transaction had already deleted, found none, and left an open console working until the next navigation."
+         ]},
+        {"Console",
+         [
+           "A policy override that cannot match anything is flagged while you write it. The glob grammar treats every character except * as a literal, so an override written out of regex habit — cassandra\\.drop_* — validates, saves, and matches no action id that can exist. For a deny rule, that reads as protection the fleet does not have. The warning is advisory and never blocks: an override may legitimately name a pack you have not installed yet."
+         ]},
+        {"Website",
+         [
+           "Eight documentation and marketing links no longer render a stray space before the punctuation that follows them."
+         ]}
+      ]
+    },
+    %{
+      date: ~D[2026-08-08],
       slug: "self-rotating-credentials-and-a-harder-execution-boundary",
       title: "Self-rotating runner credentials and a harder execution boundary",
       tag: "v0.37.0",
