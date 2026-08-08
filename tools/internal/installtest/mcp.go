@@ -99,8 +99,12 @@ func installMCP(h *harness, bin string) (string, error) {
 	if err := h.mkdir(bin); err != nil {
 		return "", err
 	}
-	if _, err := h.successful(h.root, map[string]string{"HOME": h.path("home")},
-		"bash", h.repoPath("install-mcp.sh"), "--yes", "--install-dir", bin); err != nil {
+	installed, err := h.successful(h.root, map[string]string{"HOME": h.path("home")},
+		"bash", h.repoPath("install-mcp.sh"), "--yes", "--install-dir", bin)
+	if err != nil {
+		return "", err
+	}
+	if err := h.requireAttestationOutcome(map[string]string{"HOME": h.path("home")}, installed); err != nil {
 		return "", err
 	}
 	output, err := h.successful(h.root, nil, filepath.Join(bin, "emisar-mcp"), "--version")

@@ -468,6 +468,12 @@ jobs:
           # The runner and MCP gates exercise their public installers. The token
           # avoids anonymous GitHub API limits without entering curl argv.
           EMISAR_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # gh reads GH_TOKEN. Without it the installers' Sigstore provenance
+          # check has no authenticated verifier and degrades to a warning, so CI
+          # would only ever exercise the skip branch — the branch a broken
+          # signer pin hides in, since failing to check looks like nothing to
+          # check. Read-only, and the harness asserts which branch ran.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           target="${{ matrix.module }}"
           if [ "$target" = tools ]; then

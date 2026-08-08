@@ -144,6 +144,40 @@ func environment(overrides map[string]string) []string {
 	return env
 }
 
+// requireAttestationOutcome holds the installers to one of two stated outcomes
+// for the release provenance check, so it can never pass by doing nothing.
+//
+// Which one is correct depends on the machine: with an authenticated gh the
+// release must verify, and without one the installer must say why it skipped.
+// A contributor's laptop usually takes the skip branch and CI takes the verify
+// branch, so asserting only one of them would leave the other unguarded — and
+// the skip branch is exactly where a broken signer pin hides, because a failure
+// to check looks identical to nothing to check.
+func (h *harness) requireAttestationOutcome(env map[string]string, output []byte) error {
+	text := string(output)
+	if h.attestationVerifierReady(env) {
+		if !strings.Contains(text, "attestation verified") {
+			return fmt.Errorf("an authenticated gh is available but the installer did not verify the release attestation:\n%s", text)
+		}
+		return nil
+	}
+	if !strings.Contains(text, "skipping release attestation check") &&
+		!strings.Contains(text, "skipping provenance check") {
+		return fmt.Errorf("the installer neither verified the release attestation nor explained skipping it:\n%s", text)
+	}
+	return nil
+}
+
+// attestationVerifierReady answers the installers' own gate — gh present AND
+// authenticated — in the environment the installer will actually run in, not
+// this process's. The MCP check hands the installer a throwaway HOME, so a gh
+// that authenticates from the real user's config is unauthenticated there while
+// one holding GH_TOKEN in the inherited environment, as CI does, is not.
+// Asking on our own behalf gets the answer wrong in exactly that case.
+func (h *harness) attestationVerifierReady(env map[string]string) bool {
+	return h.command(h.root, env, "gh", "auth", "status").err == nil
+}
+
 type commandResult struct {
 	output []byte
 	err    error

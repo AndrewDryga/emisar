@@ -255,7 +255,11 @@ func runnerInstallRollback(h *harness) error {
 		h.repoPath("install.sh"), "--yes", "--no-service",
 		"--bin-dir", bin, "--etc-dir", etc, "--data-dir", data, "--log-dir", logDir,
 	}
-	if _, err := h.successful(h.root, map[string]string{"EMISAR_PACKS": ""}, "bash", args...); err != nil {
+	installed, err := h.successful(h.root, map[string]string{"EMISAR_PACKS": ""}, "bash", args...)
+	if err != nil {
+		return err
+	}
+	if err := h.requireAttestationOutcome(map[string]string{"EMISAR_PACKS": ""}, installed); err != nil {
 		return err
 	}
 	versionOutput, err := h.successful(h.root, nil, filepath.Join(bin, "emisar"), "--version")
