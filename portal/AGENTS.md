@@ -462,7 +462,7 @@ end
 - LiveView mount + handle_params **assigns the Subject once** via `on_mount(:require_authenticated_user)` (already wired in `UserAuth`).
 - Every context call uses `socket.assigns.current_subject` — never re-derive role inside the LV. (IL-15: still re-check permission semantics in each `handle_event` — the context call does this for you when you pass the subject.)
 - **"Can this subject do X?" is a domain question.** Each context exposes `subject_can_<verb>?(%Subject{})` predicates (e.g. `Billing.subject_can_manage_billing?/1`, `Runs.subject_can_dispatch_run?/1`) — one-liners over `Auth.Authorizer.has_permission?/2`. The web calls them directly: templates do `:if={Runs.subject_can_dispatch_run?(@current_subject)}`, handlers wrap them in `EmisarWeb.Permissions.gated(socket, <predicate>, fun)` (a thin flash-on-denial helper, no authz of its own). The web never maps a UI action to a permission and never branches on `current_role` / `current_membership.role` for authorization (`role == :owner ->` is the smell); rendering the role *label* is fine.
-- **The web is an adapter — it calls the top-level context and nothing below it.** `apps/emisar_web` calls `Emisar.Catalog` / `Emisar.Accounts` / `Emisar.Runbooks` / `Emisar.Mail` / `Emisar.Runs`, never a module beneath one (`Catalog.PublishedRegistry`, `Accounts.RunnerAccess`, `Runbooks.Authoring`, `Runs.RunnerError`, any `<Schema>.Query` / `<Schema>.Changeset`), and never builds or mutates an `Ecto.Changeset`. Domain behaviour the web needs gets a facade function on the owning context, named for what the caller wants (`Accounts.create_account_with_owner_from_name/2`). Three carriers stay legal because they are data, not behaviour: a remote `t/0` reference inside a type attribute, a struct literal/pattern, and `Emisar.Auth.Subject` (the web authentication boundary mints Subjects). **Credo-enforced** (`Emisar.Checks.WebNoNestedDomainCalls`, `Emisar.Checks.WebNoChangesetConstruction`), with `Emisar.WebBoundaryChecksTest` pinning both checks' ordinary, captured, and HEEx behavior. Worked example: `.agent/kb/rules/elixir-web-is-an-adapter.md`.
+- **The web is an adapter — it calls the top-level context and nothing below it.** Stated in full as a house opinion above; behaviour the web needs becomes a facade function on the owning context, named for what the caller wants (`Accounts.create_account_with_owner_from_name/2`). The legal carriers, the Credo checks, and `Emisar.WebBoundaryChecksTest` are in `.agent/kb/rules/elixir-web-is-an-adapter.md`.
 - **Forms are a web concern.** A context exposes plain `change_*(struct, attrs)` changeset builders (the Phoenix convention — `change_user`, `change_account`, `change_password`); it never has a `*_form` function or a changeset doc'd "for the LiveView form." The form *orchestration* — `to_form`, `phx-change`, `Map.put(:action, :validate)`, rendering inline field errors, and read-only inspection (`get_field`, `traverse_errors`) — lives in the LiveView, built on top of those `change_*` builders.
 - **Typed confirmation inputs submit on Enter; plain confirmation modals do not.** A `<.confirm_dialog>` with a non-nil `confirm_token` is a real form whose disabled/enabled Confirm button is its submitter, so Enter after an exact token match runs the same `on_confirm` command as a click. A plain dialog has no confirmation input and stays click-only — never give it a form-level Enter binding. Sweep: typed-confirm forms whose `phx-submit` only re-stores the token, submit buttons not associated with their confirmation form, and plain dialogs that bind submit. Enforced by `confirm_dialog_test.exs`.
 - **A form's own submission error is shown INLINE at the form, never via a redirect + top-of-page flash.** An error the operator can fix by editing what they just typed — a wrong code, a rejected field — renders at the input (a field-level `<.error>`, the `code_input` `error` attr, or a form-level error region beside the inputs), so the *what-went-wrong* sits where the *what-to-fix* is. If the value is only knowable after a server check, verify it in a LiveView `handle_event` and `assign` the error — do NOT round-trip a controller that `put_flash(:error, …) |> redirect(…)`, which throws the error to the top of a reloaded page, far from the field, where a flash auto-dismiss then eats it. `put_flash(:error, …) |> redirect(…)` is right only for what ISN'T a fixable form error and has no input to return to — an auth denial, a dead / rate-limited link, a cross-account 404. The smell (what the magic-link code path did before it moved into `MagicLinkLive`): type into a field → submit → the error appears far away and vanishes on the reload. Worked example: `.agent/kb/rules/elixir-inline-form-errors.md`.
@@ -548,34 +548,12 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    - **at the gate** — the full `mix credo` is part of the IL-20 verify
      loop and must report zero before any commit.
 
-   Covered mechanically: IL-1, IL-2, IL-6, IL-7, IL-8, IL-12 (schemas AND
-   migrations), IL-14, plus the house rules —
-   with/case/for-head pipes, preloads smuggled into Repo opts,
-   cross-context deep aliases (path-aware), capture syntax for
-   single-call closures, clause heads over if-on-arg-field, `q`/`cs`
-   bindings, per-event broadcast functions (inline `PubSub.broadcast` AND
-   event-strings-as-data), `Repo.exists?` over count-compares, the
-   `Emisar.Crypto` boundary, `DateTime.truncate` no-ops, no
-   `Process.sleep` in tests, the audit request-metadata
-   `%RequestContext{}` rule (no `Process.put` ambient state in `lib/`),
-   the no-`Application.put_env`/`delete_env` rule in `lib`/`test`
-   (`NoApplicationPutEnv` — override runtime config through the
-   test-scoped `Emisar.Config` seam), the multi-line `, do:` block-form
-   rule (`MultilineDoColon`), the
-   module-header directive order, and its no-blank-between-directives
-   contiguity (`NoBlankBetweenDirectives`). Plus the **layer boundaries**:
-   the web layer never calls `Repo`, never writes audit (`Audit.log*` /
-   `Audit.Events.*`), never calls a nested domain module
-   (`WebNoNestedDomainCalls` — top-level contexts only; remote `t/0` types,
-   struct references, and `Emisar.Auth.Subject` are the carrier exceptions),
-   and never builds or mutates a changeset (`WebNoChangesetConstruction` —
-   fails closed on every `Ecto.Changeset` call outside the read-only
-   inspection list); one context never
-   reaches another's `.Query`/`.Changeset` (the call-site companion to the
-   deep-alias check); and IL-3's subject rule — a `Repo`-touching public
-   context fn takes a `%Subject{}` unless it's `@doc "Internal …"` (an
-   already-authorized helper) or threads a `%RequestContext{}` (a pre-auth
-   path).
+   **What is covered mechanically is `.credo.exs` — read it there, not here.**
+   The rules with a check say so at the rule (**Credo-enforced**
+   (`Emisar.Checks.<Name>`)), each check's own `explanations:` block states the
+   why with ✅/❌ examples, and `mix credo explain` prints it. A prose list in
+   this file is a fourth copy that drifts the moment a check is added — this
+   paragraph had already gone stale against three of them.
 
    A documented exception gets `# credo:disable-for-next-line
    Emisar.Checks.<Name>` (or `-for-lines:<n>`) directly under its
