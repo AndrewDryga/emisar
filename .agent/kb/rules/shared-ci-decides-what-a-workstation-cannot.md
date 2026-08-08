@@ -13,6 +13,7 @@ Surfaces where a workstation returns a false pass:
 | `packs/*/test/` | uid ownership and AppArmor (Docker Desktop's VM masks both), and any startup race a machine with spare cores wins |
 | `.github/workflows/` | the runner's toolchain and the state actions leave behind — a buildx driver selected for the rest of the job has its own image store |
 | `dev/test-packs/` | both of the above, for every pack at once |
+| `docker-compose.yml` | who owns a bind-mounted file. Desktop remaps it to the container user; on CI it stays the job user, and anything that validates ownership refuses it. Every runner config now reaches its container by being copied into a named volume as root (`runner-config-init`, `runner-runbook-init`, `signing-init`) — a config a runner reads directly from `./dev/...` is the sweep signal |
 
 **Why.** Three fixtures shipped broken in one change because a green local run
 read as a verdict. rabbitmq's health check raced the entrypoint writing
