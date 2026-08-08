@@ -46,6 +46,9 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def not_revoked(queryable \\ all()),
     do: where(queryable, [api_keys: k], is_nil(k.revoked_at))
 
+  def not_expired(queryable \\ all(), %DateTime{} = now),
+    do: where(queryable, [api_keys: k], is_nil(k.expires_at) or k.expires_at > ^now)
+
   def not_rotated(queryable \\ all()),
     do: where(queryable, [api_keys: k], is_nil(k.rotated_to_id))
 

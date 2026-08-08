@@ -1930,6 +1930,19 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.no_agents?(subject)
     end
 
+    test "an expired key stops counting as an agent (the nudge returns)" do
+      # "Live" has to mean what `key_usable?/2` and the Agents page mean by it,
+      # expiry included. Counting an expired key as an agent left the nav silent
+      # while the Agents page itself showed "Connect an agent".
+      {_user, account, subject} = owner_subject_pair()
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      refute ApiKeys.no_agents?(subject)
+
+      Fixtures.ApiKeys.backdate_api_key_expiry(key)
+      assert ApiKeys.no_agents?(subject)
+    end
+
     test "is account-scoped — another account's key doesn't clear this account's nudge" do
       {_user_a, _account_a, subject_a} = owner_subject_pair()
       account_b = Fixtures.Accounts.create_account()

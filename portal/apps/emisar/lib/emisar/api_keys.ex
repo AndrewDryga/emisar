@@ -1244,11 +1244,16 @@ defmodule Emisar.ApiKeys do
   def no_agents?(%Subject{account: %{id: account_id}} = subject) do
     case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_api_keys_permission()) do
       :ok ->
+        # "Live" here must mean the same thing it means on the Agents page, which
+        # counts `key_usable?/2` keys — expiry included. Without the expiry filter
+        # an account holding only expired keys got no nudge while that page showed
+        # its own "Connect an agent" panel: two surfaces contradicting each other.
         queryable =
           ApiKey.Query.visible_to_operators()
           |> ApiKey.Query.by_account_id(account_id)
           |> ApiKey.Query.by_kind(:mcp)
           |> ApiKey.Query.not_revoked()
+          |> ApiKey.Query.not_expired(DateTime.utc_now())
 
         not Repo.exists?(queryable)
 
