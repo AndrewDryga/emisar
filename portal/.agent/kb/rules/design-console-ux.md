@@ -434,6 +434,134 @@ The danger reads from the icon + the button + the consequence copy — the surfa
   Never a boxed "← Back to X" button in `:actions`, never an in-body ghost arrow link.
   The shell title is the page's JOB ("Invite a member", "Connect a runner"), not the
   parent section's name; a panel below it never re-titles the page with a near-synonym.
+38. **Third-party marks inherit the surface's visual system, not a vendor tile.** Keep the
+    recognizable silhouette and an accessible adjacent name, but render small decorative
+    navigation/index marks with the same accent, optical size, and hover behavior as sibling
+    first-party icons. Do not place mixed full-color logos on isolated white tiles inside
+    dark Emisar chrome unless logo fidelity is the content itself (for example, a provider-
+    console screenshot). Sweep: small provider or integration marks beside first-party icons
+    that introduce their own bright tile, color system, or interaction treatment.
+39. **Continuous framed grids keep one track system.** When adjacent rows share borders and one
+    enclosure, their dividers must align. If the row semantics need different column counts,
+    reuse the parent tracks with column spans, use a truly divider-free full-width band, or
+    create a separate surface; never stack mismatched tracks or add a short divider that
+    implies a new off-track column.
+40. **Scrollable form controls own dark scrollbar chrome.** Every shared textarea carries
+    `.scrollbar-control`: a transparent track, inset zinc thumb, dark native color scheme,
+    and explicit Firefox plus WebKit styling. Never rely on the OS default inside a dark
+    control; it becomes a bright seam on Windows and always-visible-scrollbar systems.
+    Sweep: direct `<textarea>` elements, textarea component branches without the shared
+    class, and light scrollbar tracks or corners inside console forms.
+41. **Compact verdict labels in fixed tracks do not wrap, and peer verdicts share one width.**
+    Keep the words readable, delay the compact grid until there is room, and reduce
+    horizontal padding before shrinking type. When verdict chips occupy one visual column,
+    give them the same fixed, non-shrinking width so both edges align despite different
+    label lengths. `whitespace-nowrap` is not a fix by itself: verify alignment plus label
+    and page overflow at the narrowest grid breakpoint.
+42. **Informative content wears a neutral tone; amber/rose is reserved for a warning or a
+    decision.** A runner identity, a content hash, an ID, a version, or any metadata an
+    operator merely reads is neutral `zinc` — never tint it amber/rose as if it were the
+    problem (the packs page's amber runner tags and amber advertised-hash were the
+    correction; the surrounding retired/pending context already carries the concern). A
+    compound identity (group + name, key + value) renders through the shared `<.identity_tag
+    category= value=>` — the category muted on one side, the specific value brighter on the
+    other, split by a divider — never a single tinted chip carrying the pair as prose
+    (`<.chip>Group: x</.chip>` was the correction, and the tag had been sitting private in
+    `packs_live` where nobody could reuse it). A single-value label stays a `<.chip>`.
+    **Corollary — one status per fact, at one level:** when each item already shows its own
+    status (a per-version trust badge), a rolled-up status on the container (a "pending"
+    badge on the pack header) is a redundant, conflicting second label — drop it. Sweep:
+    amber/rose on identity/hash/metadata, chips whose text is `"<Category>: <value>"`,
+    private per-page copies of a two-half tag, and a container status that duplicates its
+    items'.
+43. **A label:value detail row earns its place only when the value carries information — render
+    it conditionally, never as an empty placeholder.** A `trusted: — (none yet)` row on a
+    never-trusted version, a comparison with nothing to compare, a field that's blank in
+    this state — these are noise that dilutes the rows that matter. Show the row only when
+    populated (`:if={not is_nil(v.hash)}`), and when the state genuinely differs (a first-
+    seen version has bytes but no trusted baseline), render the reduced shape that fits it
+    (`on the runner: <hash>`, not `trusted: (none yet)` + `advertising: <hash>`). A one-line
+    command or copyable value uses the shared `code_line` (with its label + Copy), never a
+    hand-rolled `bg + ring` box or a bare mono line — and it sits a type-step BELOW its
+    block title, never above. Sweep: `— (none yet)`/`—`/`n/a` placeholder values, and inline
+    `rounded bg-* ring-*` command boxes.
+44. **A command snippet shows only what the operator must actually type — verify the CLI before
+    you write the copy.** Omit a flag that defaults (`--dest` resolves to the runner's
+    configured packs dir), drop a step the tool does itself (`emisar pack install` SIGHUP-
+    reloads a running daemon — no `sudo systemctl reload`), and pin an integrity hash IN the
+    command's `--hash` rather than a separate row the reader must reconcile against it. Read
+    the runner's actual flags/behavior (`runner/pack.go`, `runner/reload.go`) — a snippet is
+    instructions someone will paste on a prod host, so a stale flag or a phantom step is a
+    real defect. Sweep: install/CLI snippets carrying default-valued flags, manual steps the
+    tool automates, or a hash shown twice (in the command and beside it).
+45. **Onboarding completion is capability-based, not connection-based.** A connected integration
+    counts as usable only when it exposes the capability the next step depends on. When a
+    runner advertises no actions, replace the downstream run prompt with the missing catalog
+    installation/configuration step, show the exact discovery command, and link the catalog;
+    publishing is an author workflow, not a prerequisite for using a public pack. Never
+    direct an operator into an action that cannot succeed. Sweep: onboarding checklists that
+    mark a connection done while rendering a next step with no available actions behind it.
+46. **Page-level attention has one slot, one surface, and one spine grammar per issue.** On list
+    pages, render actionable notices together immediately after the intro and before summary
+    counters, filters, and data. Operational alerts use the shared icon-capped vertical
+    spine, never a tinted or dashed box; the shell-wide `:strip` is the one banner
+    exception. **Row-level operational alerts obey the same grammar** — a version's
+    retired/pending notice, a row's blocked state — render through `<.event_block>`, never a
+    hand-tinted wash box under the row (the packs page's rose/amber boxes were the
+    correction). A notice that prescribes a command or other next-step artifact owns that
+    payload inside the same spine, never in a sibling box. Multiple notices keep 24px
+    between them, while the attention stack leaves a larger 40px exit gutter after whichever
+    notice renders last; do not put the same margin on every notice and accidentally make
+    inter-alert and post-alert rhythm identical. The same remedy uses the same tone across
+    pages; reserve a stronger tone for a different operational consequence, not merely a
+    stricter version label. Sweep: boxed/dashed amber or rose alert markup, alert copy
+    separated from its code or action, and page-level notice groups without distinct
+    internal and exit spacing.
+47. **Per-row admin verbs: 1-2 = small bordered buttons; 3+ = the Actions menu. Visible buttons
+    always wear a bordered face.** One or two rare verbs render as `size={:sm}` bordered
+    `:secondary` buttons opening per-row plain `<.confirm_dialog>`s (the LLM-agents/packs
+    grammar) — a dropdown hiding one item is ceremony, and repeated `Actions ▾` triggers
+    carry no information. Three-plus verbs earn the team-style labeled menu (`Actions ▾`,
+    bordered trigger — never an icon-only `⋯`, which matches nothing else). Either way a
+    VISIBLE action button wears a bordered face (`:primary`/`:secondary`) — the borderless
+    `:ghost` face is for menu rows and inline cancel/dismiss affordances only; "buttons need
+    to look like buttons." Sweep: `variant={:ghost}` action buttons repeated per row in a
+    list, icon-only dropdown triggers, and single-item dropdowns.
+48. **`whitespace-pre-wrap` content glues to its tags via a one-line inner span.** Template
+    indentation inside a pre-wrap element renders as REAL leading whitespace (a stray blank
+    + indent before the value). Never put `whitespace-pre-wrap` on a multiline-formatted
+    element wrapping an interpolation; keep the established idiom — outer element carries
+    the type/color classes, value rides a glued `<span class="whitespace-pre-
+    wrap">{@value}</span>` (run_detail's reason_text/error_message rows). Sweep:
+    `whitespace-pre-wrap` on an element whose interpolated child sits on its own indented
+    line.
+49. **Every attention spine starts with a visible, semantically exact icon.** `<.event_block>`
+    requires a valid `hero-*` name and `<.callout>` supplies a tone default when no override
+    is given; never render a bare vertical line or accept an empty icon. Match the glyph to
+    the operator action: version installation uses download semantics, while `arrow-path` is
+    reserved for refresh, retry, or work in progress. A new icon is not verified merely
+    because its span exists — run the asset build or inspect its computed mask in the
+    browser so a missing generated Heroicon class cannot ship as an invisible glyph. Sweep:
+    spine roots without a `hero-*` child, icons whose metaphor disagrees with the prescribed
+    action, and icon spans whose computed `mask-image` is `none`.
+50. **A note that instructs the operator wears the callout spine; the naked `status_note` is
+    only for a passive posture fact.** Setup guidance, do-this/leave-that copy, and anything
+    the operator acts on inside a flow is an actionable interruption — render it through
+    `<.callout>` (tone-default icon capping the event_block spine), never the spine-less
+    `<.status_note>`, which is reserved for a passive fact ABOUT the surface (a runner's
+    signing posture, a reach statement). Sweep: `<.status_note` whose title or body reads as
+    an imperative, or that sits inside a steps/setup flow.
+51. **"Managed by <provider>" is stated once at the row, never repeated per attribute.** When a
+    row already carries a provisioning badge (the sync badge saying the member is
+    directory/IdP-provisioned) plus a lock on each *inline-editable* control the directory
+    owns (the role dropdown becomes a locked `hero-lock-closed` chip + a tooltip pointing to
+    the provider), do NOT also print a passive `· managed by identity provider` FYI beside a
+    *read-only* value — the roster runner-access line was the correction. A read-only value
+    has no inline control to lock, so the note only re-says the badge; reserve the "change
+    it in your identity provider" wording for the actionable edit-rejection flash, and the
+    lock for the control it replaces. Sweep: per-attribute `managed by <provider>` / `synced
+    from` prose on a row that already shows a provisioning badge.
+
 
 ## 8. The kit is the contract
 
