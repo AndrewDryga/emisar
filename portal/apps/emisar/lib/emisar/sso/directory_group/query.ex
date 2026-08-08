@@ -18,12 +18,26 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
   def by_external_group_id(queryable, external_group_id),
     do: where(queryable, [groups: g], g.external_group_id == ^external_group_id)
 
-  @doc "The `displayName eq` probe Entra sends before every push, matched case-insensitively."
+  @doc """
+  The `displayName eq` probe Entra sends before every push, matched
+  case-insensitively.
+
+  `nullif(display, '')` before the fallback because SCIM treats `displayName` as
+  optional, so clearing it stores an empty string — and SQL `coalesce` counts
+  `''` as a value, which left the group answering to `''` instead of the id the
+  IdP addresses it by. The probe then missed, and Entra re-POSTed the group as a
+  duplicate on every sync.
+  """
   def by_display(queryable, display) when is_binary(display) do
     where(
       queryable,
       [groups: g],
-      fragment("lower(coalesce(?, ?)) = lower(?)", g.display, g.external_group_id, ^display)
+      fragment(
+        "lower(coalesce(nullif(?, ''), ?)) = lower(?)",
+        g.display,
+        g.external_group_id,
+        ^display
+      )
     )
   end
 

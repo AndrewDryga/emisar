@@ -3370,6 +3370,17 @@ defmodule Emisar.SSOTest do
                SSO.scim_list_groups(provider, display_name: "grp-unmapped")
     end
 
+    test "a group whose display was cleared still answers on its id", %{provider: provider} do
+      # SCIM treats displayName as optional, so clearing it stores an empty string
+      # — and SQL coalesce counts '' as a value, so the fallback to the external id
+      # never happened. Entra's existence probe missed and it re-POSTed the group
+      # as a duplicate on every sync.
+      {:ok, %{display: ""}} = SSO.scim_rename_group(provider, "grp-empty", "")
+
+      assert {:ok, [%{external_group_id: "grp-empty"}], 1} =
+               SSO.scim_list_groups(provider, display_name: "grp-empty")
+    end
+
     test "an unmapped group keeps the display its directory pushed", %{provider: provider} do
       _ = provision(provider, "okta|member")
 
