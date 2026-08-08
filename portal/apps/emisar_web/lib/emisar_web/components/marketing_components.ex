@@ -329,9 +329,7 @@ defmodule EmisarWeb.MarketingComponents do
           Works in Claude Code, Codex, or any agent that reads Markdown skills — <.external_link
             href={"https://github.com/andrewdryga/emisar/tree/main/skills/" <> @skill}
             class="font-medium text-brand-300/90 hover:text-brand-200"
-          >
-          read the skill first
-        </.external_link>.
+          >read the skill first</.external_link>.
         </p>
       </div>
     </details>

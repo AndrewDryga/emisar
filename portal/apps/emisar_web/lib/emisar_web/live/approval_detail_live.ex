@@ -1257,9 +1257,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     Grants are reviewable + revocable on the <.link
                       navigate={~p"/app/#{@current_account}/approvals"}
                       class="text-brand-400 hover:text-brand-300"
-                    >
-                    approvals page
-                  </.link>.
+                    >approvals page</.link>.
                   </p>
                 </div>
               </div>
