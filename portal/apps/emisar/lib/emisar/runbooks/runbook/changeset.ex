@@ -7,6 +7,20 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   # `publish`), so a client-supplied status is ignored everywhere.
   @fields ~w[id slug title description definition]a
 
+  # Character counts are the operator's promise; byte ceilings are what the MCP
+  # projection budget is derived from. Both are needed: `validate_length/3`
+  # counts graphemes, and a grapheme cluster carries no byte bound at all, so a
+  # character-only limit let a runbook whose description was well within 4,096
+  # characters overflow a budget sized as if it were 4,096 bytes.
+  @max_title_bytes 320
+  @max_description_bytes 8_192
+
+  @doc "The stored-byte ceiling for a runbook title."
+  def max_title_bytes, do: @max_title_bytes
+
+  @doc "The stored-byte ceiling for a runbook description."
+  def max_description_bytes, do: @max_description_bytes
+
   @doc """
   Validation-only metadata changeset for the structured editor. The definition
   is validated separately when a draft is saved or published.
@@ -17,6 +31,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> update_change(:slug, &nilify_blank/1)
     |> validate_required([:title])
     |> validate_length(:title, min: 1, max: 80)
+    |> validate_length(:title, max: @max_title_bytes, count: :bytes)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
   end
 
@@ -101,7 +116,9 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> validate_required([:account_id, :name, :slug, :title, :definition])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_length(:title, min: 1, max: 80)
+    |> validate_length(:title, max: @max_title_bytes, count: :bytes)
     |> validate_length(:description, max: 4_096)
+    |> validate_length(:description, max: @max_description_bytes, count: :bytes)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
     |> validate_definition()
     |> unique_constraint([:account_id, :slug, :version])

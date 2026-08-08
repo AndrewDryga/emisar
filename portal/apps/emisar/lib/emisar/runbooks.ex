@@ -59,6 +59,16 @@ defmodule Emisar.Runbooks do
   def definition_limit!(name) when is_atom(name), do: Definition.limit!(name)
 
   @doc """
+  One stored-byte ceiling for a runbook's row metadata, by its atom name.
+
+  A projection budget can only be derived from bounds measured in the same unit
+  it spends, so the metadata columns publish bytes rather than characters.
+  """
+  @spec metadata_limit!(:title_bytes | :description_bytes) :: pos_integer()
+  def metadata_limit!(:title_bytes), do: Runbook.Changeset.max_title_bytes()
+  def metadata_limit!(:description_bytes), do: Runbook.Changeset.max_description_bytes()
+
+  @doc """
   Decodes and strictly validates one bounded canonical v1 JSON document.
   Returns `{:ok, definition} | {:error, [definition_issue()]}`.
   """

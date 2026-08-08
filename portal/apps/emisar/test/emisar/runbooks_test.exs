@@ -28,6 +28,13 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "metadata_limit!/1" do
+    test "publishes the row metadata ceilings in bytes, the unit a budget can be derived from" do
+      assert Runbooks.metadata_limit!(:title_bytes) == 320
+      assert Runbooks.metadata_limit!(:description_bytes) == 8_192
+    end
+  end
+
   describe "decode_definition_json/1" do
     test "round-trips one canonical definition" do
       definition = definition()

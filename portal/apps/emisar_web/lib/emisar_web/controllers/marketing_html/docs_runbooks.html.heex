@@ -499,7 +499,15 @@
         parallel stage can run 1 through 16 attempts at once — 5 unless the definition sets it. Each
         step can retain 16 outputs and evaluate 16 success conditions. A wait polls every 5 seconds
         to 1 hour and makes 2 to 100 attempts. The frozen execution plan is at most 1 MiB. An
-        execution, including waits, ends within 24 hours.
+        execution, including waits, ends within 24 hours. A title is at most 80 characters and 320
+        bytes; a description at most 4,096 characters and 8 KiB.
+      </p>
+      <p class="mt-5 text-base text-zinc-400">
+        These are the only limits you need to track. An agent reads a runbook through a single MCP
+        response, and that budget is derived from the limits above, so anything you can save and
+        publish is anything an agent can read and run. If a runbook ever does exceed it, the agent
+        is told the runbook is too large and to open it in the console — it is never told the
+        runbook does not exist.
       </p>
       <p class="mt-5 text-base text-zinc-400">
         See the

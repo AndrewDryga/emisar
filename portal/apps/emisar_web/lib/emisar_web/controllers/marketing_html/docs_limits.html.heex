@@ -127,9 +127,13 @@
                 64 KiB definition; 32 inputs, 16 stages, 32 steps, 16 target refs per step, and 256
                 resolved items. A wait polls every 5 seconds to 1 hour for 2 to 100 attempts; a
                 parallel stage runs 1 through 16 attempts at once, 5 unless the definition sets it.
+                A title is at most 80 characters and 320 bytes, a description 4,096 characters and
+                8 KiB.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Authoring or preflight rejects the definition before an execution is created.
+                Authoring or preflight rejects the definition before an execution is created. The
+                MCP read budget is derived from these limits, so a saved runbook always fits one
+                response.
               </td>
             </tr>
             <tr>

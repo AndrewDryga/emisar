@@ -1436,12 +1436,20 @@ slug and immutable ref.
       "summary": "Checks replication, restarts the primary, then verifies recovery.",
       "input_count": 1,
       "stage_count": 3,
-      "step_count": 3
+      "step_count": 3,
+      "available": true
     }
   ],
   "next_cursor": null
 }
 ```
+
+Every entry carries `available`. It is false only when the runbook cannot be
+returned in one MCP response; `unavailable_reason` then states the size and
+directs the operator to the console, and `get_runbook` answers
+`runbook_too_large`. A runbook is never dropped from this list for its size:
+size is a mechanical limit the caller may be told, unlike the resource
+resolution failures below, which must stay indistinguishable from absence.
 
 The readable immutable ref is:
 
@@ -1552,10 +1560,17 @@ incomplete. Publication and explicit draft execution apply the complete
 definition contract before any action can run.
 
 One definition is at most 64 KiB and contains at most 32 inputs, 16 stages, 32
-steps total, 16 target refs per step, and 256 resolved logical items. The
-complete `get_runbook` object is at most 72 KiB. `list_runbooks`,
-`get_runbook`, `execute_runbook`, MCP draft creation, and the console use these
-same canonical definition limits.
+steps total, 16 target refs per step, and 256 resolved logical items. A title is
+at most 80 characters and 320 bytes; a description at most 4,096 characters and
+8 KiB. `list_runbooks`, `get_runbook`, `execute_runbook`, MCP draft creation,
+and the console use these same canonical limits.
+
+The complete `get_runbook` object is bounded by a budget DERIVED from those
+limits — definition, title, description, and a fixed envelope — so a runbook the
+authoring path accepts always fits one response. The budget is not a second
+limit an operator has to track. It is still measured rather than assumed,
+because JSON escaping can expand a value past its stored bytes; an object that
+overflows is reported as `runbook_too_large` with its size.
 
 ### `execute_runbook`
 
@@ -1863,6 +1878,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `operation_not_found` | Exact operation is absent or belongs to another credential lineage. | Keep ambiguous mutations unresolved. |
 | `run_not_found` | Exact visible run or execution is absent. | Check the ID; do not probe other scopes. |
 | `runbook_not_found` | Exact visible published ref is absent. | List runbooks; do not substitute a slug. |
+| `runbook_too_large` | The runbook exists but does not fit one MCP response. | Open it in the console; do not retry or substitute another runbook. |
 | `signature_required` | A selected runner requires a customer-CA action attestation; `details.runner_refs` names the enforcing runners. | Use a signing-enabled bridge or select only non-enforcing runners. |
 | `signed_runbook_unsupported` | Runbook includes enforcing runners. | Use signed actions or await plan signing. |
 | `target_contract_changed` | The selected runner's exact pack/action contract is stale or invalid. | Call the supplied `get_action`, inspect the new result, then retry once. |

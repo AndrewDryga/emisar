@@ -1401,7 +1401,8 @@
                     "family",
                     "input_count",
                     "stage_count",
-                    "step_count"
+                    "step_count",
+                    "available"
                   ],
                   "additionalProperties": false,
                   "properties": {
@@ -1414,7 +1415,12 @@
                     "family": {"$ref": "#/$defs/runbook_family"},
                     "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
                     "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
-                    "step_count": {"type": "integer", "minimum": 0, "maximum": 32}
+                    "step_count": {"type": "integer", "minimum": 0, "maximum": 32},
+                    "available": {
+                      "type": "boolean",
+                      "description": "False when this runbook cannot be returned or executed over MCP and must be opened in the console. get_runbook then answers runbook_too_large."
+                    },
+                    "unavailable_reason": {"type": "string", "minLength": 1, "maxLength": 512}
                   },
                   "allOf": [
                     {

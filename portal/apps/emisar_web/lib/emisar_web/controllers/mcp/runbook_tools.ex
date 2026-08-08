@@ -78,6 +78,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
       {:error, :unauthorized} ->
         {:error, error("not_allowed", "This key cannot read runbooks.")}
 
+      {:error, {:runbook_too_large, bytes}} ->
+        {:error, runbook_too_large(bytes)}
+
       {:error, reason} when reason in [:not_found, :incomplete_contract] ->
         {:error, runbook_not_found(status)}
     end
@@ -102,6 +105,16 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp runbook_not_found("draft"),
     do: error("draft_not_found", "No current runbook draft has that exact ref.")
+
+  # Size is a mechanical limit, not a resolution failure, so it is named rather
+  # than folded into "no such runbook" — the runbook exists, it is in the
+  # console, and answering that it does not is simply false.
+  defp runbook_too_large(bytes) do
+    error(
+      "runbook_too_large",
+      "This runbook projects to #{bytes} bytes, over the #{RunbookContract.max_projection_bytes()} byte limit for one MCP response. Open it in the console to read or run it."
+    )
+  end
 
   defp create_draft(conn, args, operation_id) do
     facts = draft_facts(args, operation_id)
@@ -560,42 +573,22 @@ defmodule EmisarWeb.MCP.RunbookTools do
     RunbookContract.families(slugs, conn.assigns.current_subject)
   end
 
+  # A runbook too large to project stays LISTED and says so. Only the
+  # resolution failures — an unresolvable pack, runner, or action — are hidden,
+  # because those would leak the existence of infrastructure out of scope.
   defp projected_summary(runbook, family) do
-    case RunbookContract.project(runbook, family) do
-      {:ok, public_runbook} -> [runbook_summary(runbook, public_runbook)]
+    case RunbookContract.summarize(runbook, family, "published") do
+      {:ok, summary} -> [summary]
       {:error, :incomplete_contract} -> []
     end
   end
 
   defp projected_draft_summary(runbook, family) do
-    case RunbookContract.project_draft(runbook, family) do
-      {:ok, public_runbook} ->
-        summary = runbook_summary(runbook, public_runbook)
-        [Map.put(summary, :draft_id, public_runbook.draft_id)]
-
-      {:error, :incomplete_contract} ->
-        []
+    case RunbookContract.summarize(runbook, family, "draft") do
+      {:ok, summary} -> [summary]
+      {:error, :incomplete_contract} -> []
     end
   end
-
-  defp runbook_summary(runbook, public_runbook) do
-    %{
-      runbook_ref: RunbookContract.runbook_ref(runbook),
-      status: public_runbook.status,
-      definition_sha256: public_runbook.definition_sha256,
-      title: runbook.title,
-      summary: text_summary(runbook.description),
-      family: public_runbook.family,
-      input_count: public_runbook.summary.input_count,
-      stage_count: public_runbook.summary.stage_count,
-      step_count: public_runbook.summary.step_count
-    }
-  end
-
-  defp text_summary(value) when is_binary(value),
-    do: value |> String.replace(~r/\s+/, " ") |> String.slice(0, 512)
-
-  defp text_summary(_value), do: ""
 
   defp summary_matches?(_summary, nil), do: true
 

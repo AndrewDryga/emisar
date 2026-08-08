@@ -65,6 +65,21 @@ defmodule Emisar.Fixtures.Runbooks do
     published
   end
 
+  @doc """
+  Grows a persisted runbook's description past a byte budget — arrangement state
+  the authoring path deliberately refuses, so the column is written directly.
+  Exercises the projection's own size backstop, which exists for values whose
+  JSON escaping outgrows the bytes the changeset measured.
+  """
+  def oversize_runbook_description(%Runbook{} = runbook, bytes) do
+    {:ok, oversized} =
+      runbook
+      |> Ecto.Changeset.change(description: String.duplicate("a", bytes))
+      |> Repo.update()
+
+    oversized
+  end
+
   @doc "Soft-deletes a persisted runbook so a test can arrange a vanished family."
   def mark_runbook_as_deleted(%Runbook{} = runbook) do
     {:ok, deleted} = runbook |> Runbook.Changeset.delete() |> Repo.update()

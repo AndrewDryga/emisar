@@ -5,7 +5,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   alias Emisar.MCPOperations.Operation
   alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Runbook, RunbookExecution}
   alias Emisar.Runs.ActionRun
-  alias EmisarWeb.MCP.{ResponseBudget, RunbookTools, SchemaRegistry}
+  alias EmisarWeb.MCP.{ResponseBudget, RunbookContract, RunbookTools, SchemaRegistry}
 
   @hash "sha256:" <> String.duplicate("b", 64)
   @pack_ref "operations@1.0.0/#{@hash}"
@@ -205,6 +205,36 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     recovered = call(conn, "get_operation", %{"operation_id" => draft["operation_id"]})
     assert recovered["operation"]["family"] == revised
+  end
+
+  test "an oversized runbook stays listed and is named oversized, never missing", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "db-primary")
+    runbook = publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
+
+    Emisar.Fixtures.Runbooks.oversize_runbook_description(
+      runbook,
+      RunbookContract.max_projection_bytes()
+    )
+
+    # Discovery keeps it: a size limit is not a reason to hide that the runbook
+    # exists, and dropping it left the operator's own published runbook absent
+    # from the list with nothing said.
+    assert [listed] = call(conn, "list_runbooks", %{})["runbooks"]
+    assert listed["runbook_ref"] == "database-health@1"
+    assert listed["available"] == false
+    assert listed["unavailable_reason"] =~ "console"
+    assert listed["step_count"] == 1
+
+    # And fetching it says what is actually wrong, instead of denying it exists.
+    fetched = call(conn, "get_runbook", %{"runbook_ref" => "database-health@1"})
+
+    assert fetched["error"]["code"] == "runbook_too_large"
+    assert fetched["error"]["message"] =~ "#{RunbookContract.max_projection_bytes()} byte limit"
+    refute fetched["error"]["message"] =~ "No published runbook"
   end
 
   test "native runbook mutations, recovery, and immediate waits share one contract", %{
