@@ -1,6 +1,6 @@
 defmodule Emisar.Catalog.RunnerAction.Changeset do
   use Emisar, :changeset
-  alias Emisar.Catalog.RunnerAction
+  alias Emisar.Catalog.{RunnerAction, TrustedManifest}
 
   @fields ~w[
     account_id runner_id action_id pack_id pack_version pack_hash title kind risk
@@ -95,6 +95,20 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
       name: :missing_executable_requires_unavailable,
       message: "is only valid for an unavailable primary executable"
     )
+    |> put_descriptor_digest()
+  end
+
+  # Derived, never cast: the digest is the catalog's own summary of what the
+  # runner advertised, and a runner that could supply it directly would be
+  # supplying its own manifest-match verdict. Written on every transition so a
+  # re-advertisement can't leave a stale digest describing the previous
+  # descriptor. Skipped when the changeset is already rejected — nothing writes
+  # that row, and its applied fields are the ones validation just refused.
+  defp put_descriptor_digest(%Ecto.Changeset{valid?: false} = changeset), do: changeset
+
+  defp put_descriptor_digest(changeset) do
+    digest = changeset |> apply_changes() |> TrustedManifest.runner_action_digest()
+    put_change(changeset, :descriptor_digest, digest)
   end
 
   # The same invariant as the DB check constraint, decided in Elixir. An

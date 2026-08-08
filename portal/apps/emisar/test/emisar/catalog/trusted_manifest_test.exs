@@ -1,6 +1,7 @@
 defmodule Emisar.Catalog.TrustedManifestTest do
   use ExUnit.Case, async: true
   alias Emisar.Catalog.{RunnerAction, TrustedManifest}
+  alias Emisar.Crypto
 
   test "rejects manifests whose complete compact pack cannot fit one MCP item" do
     actions =
@@ -169,5 +170,94 @@ defmodule Emisar.Catalog.TrustedManifestTest do
                  Map.put(base, "output_schema", schema)
                ])
     end
+  end
+
+  test "a runner advertising an unusable output contract builds no manifest" do
+    assert {:ok, _manifest} =
+             TrustedManifest.from_runner_actions([
+               runner_action(output_schema: %{"type" => "object", "properties" => %{}})
+             ])
+
+    for schema <- [%{"type" => "array"}, %{"type" => "object", "$id" => "urn:other"}, "object"] do
+      assert {:error, :invalid_manifest} =
+               TrustedManifest.from_runner_actions([runner_action(output_schema: schema)]),
+             "expected #{inspect(schema)} to be refused"
+    end
+  end
+
+  test "the digest is sha256 over a recursively key-sorted encoding" do
+    descriptor = %{"b" => [%{"y" => 2, "x" => 1}], "a" => "one"}
+    canonical = ~s([["a","one"],["b",[[["x",1],["y",2]]]]])
+
+    assert TrustedManifest.descriptor_digest(descriptor) == Crypto.hash_hex(canonical)
+  end
+
+  test "a runner row digests to its own trusted manifest descriptor" do
+    action = runner_action()
+
+    assert {:ok, manifest} = TrustedManifest.from_runner_actions([action])
+    assert {:ok, %{"custom.inspect" => descriptor}} = TrustedManifest.actions(manifest)
+
+    assert TrustedManifest.runner_action_digest(action) ==
+             TrustedManifest.descriptor_digest(descriptor)
+  end
+
+  test "every descriptor field moves the digest" do
+    action = runner_action()
+    digest = TrustedManifest.runner_action_digest(action)
+
+    drifts = [
+      [title: "Inspect harder"],
+      [summary: "Inspects state, quietly."],
+      [description: "Inspect state differently."],
+      [kind: :script],
+      [risk: :high],
+      [side_effects: ["writes /tmp"]],
+      [args_schema: %{"args" => [%{"name" => "path"}]}],
+      [examples: [%{"args" => %{}}]],
+      [search_terms: ["inspect"]],
+      [output_schema: %{"type" => "object", "properties" => %{"ok" => %{"type" => "boolean"}}}]
+    ]
+
+    for drift <- drifts do
+      drifted = struct!(action, drift)
+
+      refute TrustedManifest.runner_action_digest(drifted) == digest,
+             "expected #{inspect(drift)} to change the descriptor digest"
+    end
+  end
+
+  test "kind and risk digest the same whether they arrive as atoms or as stored strings" do
+    typed = runner_action()
+    as_stored = struct!(typed, kind: "exec", risk: "low")
+
+    assert TrustedManifest.runner_action_digest(as_stored) ==
+             TrustedManifest.runner_action_digest(typed)
+  end
+
+  test "an absent summary digests as the one the manifest derives from the description" do
+    action = runner_action(summary: nil)
+    derived = runner_action(summary: "Inspect state.")
+
+    assert TrustedManifest.runner_action_digest(action) ==
+             TrustedManifest.runner_action_digest(derived)
+  end
+
+  defp runner_action(overrides \\ []) do
+    struct!(
+      %RunnerAction{
+        action_id: "custom.inspect",
+        title: "Inspect",
+        summary: "Inspect state.",
+        description: "Inspect state.",
+        kind: :exec,
+        risk: :low,
+        side_effects: [],
+        args_schema: %{"args" => []},
+        examples: [],
+        search_terms: []
+      },
+      overrides
+    )
   end
 end

@@ -92,7 +92,7 @@ defmodule Emisar.Catalog.MCPProjectionTest do
         last_connected_at: DateTime.add(DateTime.utc_now(), -60, :second)
     }
 
-    drifted_action = %{action | title: "Runner-supplied drift"}
+    drifted_action = readvertise(action, title: "Runner-supplied drift")
     snapshot = MCPProjection.build([trusted], [drifted_action], [disconnected])
 
     assert [%{availability: "unavailable", issues: pack_issues}] = snapshot.packs
@@ -127,6 +127,37 @@ defmodule Emisar.Catalog.MCPProjectionTest do
     assert Enum.any?(issues, &(&1.code == "partially_deployed"))
   end
 
+  test "projects identically from a row that carries no descriptor columns" do
+    {trusted, action, runner} = deployment("custom", "1.0.0", @hash)
+
+    # What the listing reads: the manifest-match columns, and none of the
+    # descriptor jsonb the digest already answers for.
+    narrow =
+      struct!(RunnerAction,
+        id: action.id,
+        runner_id: action.runner_id,
+        action_id: action.action_id,
+        pack_id: action.pack_id,
+        pack_version: action.pack_version,
+        pack_hash: action.pack_hash,
+        primary_executable_available: action.primary_executable_available,
+        descriptor_digest: action.descriptor_digest
+      )
+
+    assert MCPProjection.build([trusted], [narrow], [runner]) ==
+             MCPProjection.build([trusted], [action], [runner])
+  end
+
+  test "a row with no digest is never compatible" do
+    {trusted, action, runner} = deployment("custom", "1.0.0", @hash)
+    unjudgeable = %{action | descriptor_digest: nil}
+
+    assert [%{availability: "unavailable", issues: issues}] =
+             MCPProjection.build([trusted], [unjudgeable], [runner]).packs
+
+    assert "descriptor_mismatch" in Enum.map(issues, & &1.code)
+  end
+
   defp deployment(pack_id, version, hash) do
     runner_id = Ecto.UUID.generate()
 
@@ -149,6 +180,7 @@ defmodule Emisar.Catalog.MCPProjectionTest do
     }
 
     {:ok, manifest} = TrustedManifest.from_runner_actions([action])
+    action = with_descriptor_digest(action)
 
     pack_version = %PackVersion{
       account_id: action.account_id,
@@ -179,4 +211,13 @@ defmodule Emisar.Catalog.MCPProjectionTest do
   defp runner_with_pack(runner, pack_id, version, hash) do
     %{runner | packs: %{pack_id => %{"version" => version, "hash" => hash}}}
   end
+
+  # A runner re-advertising changed descriptor bytes, stored the way the ingest
+  # stores them: the row's digest moves with the descriptor, so it can never be
+  # left describing the bytes the runner used to send.
+  defp readvertise(%RunnerAction{} = action, changes),
+    do: action |> struct!(changes) |> with_descriptor_digest()
+
+  defp with_descriptor_digest(%RunnerAction{} = action),
+    do: %{action | descriptor_digest: TrustedManifest.runner_action_digest(action)}
 end

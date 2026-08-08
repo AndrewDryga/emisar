@@ -1,7 +1,7 @@
 defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
   use ExUnit.Case, async: true
   import Emisar.DataCase, only: [errors_on: 1]
-  alias Emisar.Catalog.RunnerAction
+  alias Emisar.Catalog.{RunnerAction, TrustedManifest}
 
   @valid_pack_hash "sha256:" <> String.duplicate("a", 64)
 
@@ -190,5 +190,44 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       assert "has invalid format" in errors.pack_version
       assert "has invalid format" in errors.pack_hash
     end
+  end
+
+  describe "upsert/1 descriptor digest" do
+    test "digests what the row will store" do
+      changeset = RunnerAction.Changeset.upsert(base_attrs(%{description: "Show uptime."}))
+
+      assert changeset.valid?
+
+      assert changeset.changes.descriptor_digest ==
+               changeset
+               |> Ecto.Changeset.apply_changes()
+               |> TrustedManifest.runner_action_digest()
+    end
+
+    test "a re-advertised descriptor field moves the digest" do
+      digest = descriptor_digest(%{description: "Show uptime."})
+
+      refute descriptor_digest(%{description: "Show uptime and load."}) == digest
+    end
+
+    test "the runner cannot supply its own digest" do
+      forged = String.duplicate("f", 64)
+      changeset = RunnerAction.Changeset.upsert(base_attrs(%{descriptor_digest: forged}))
+
+      assert changeset.valid?
+      refute changeset.changes.descriptor_digest == forged
+    end
+
+    test "a rejected advertisement carries no digest to write" do
+      changeset = RunnerAction.Changeset.upsert(base_attrs(%{action_id: "unprefixed"}))
+
+      refute changeset.valid?
+      refute Map.has_key?(changeset.changes, :descriptor_digest)
+    end
+  end
+
+  defp descriptor_digest(extra) do
+    changeset = extra |> base_attrs() |> RunnerAction.Changeset.upsert()
+    changeset.changes.descriptor_digest
   end
 end

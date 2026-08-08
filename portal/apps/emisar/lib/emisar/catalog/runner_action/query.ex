@@ -103,6 +103,19 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def select_action_risk_rows(queryable),
     do: select(queryable, [runner_actions: a], {a.runner_id, a.action_id, a.risk})
 
+  # Everything `Catalog.MCPProjection` reads off an advertised action and
+  # nothing else. The descriptor itself is answered by `descriptor_digest`, so a
+  # whole-catalog listing no longer loads `args_schema`, `output_schema`,
+  # `examples`, `description`, and `search_terms` for actions it only has to
+  # compare — the jsonb the projection never renders.
+  @manifest_match_columns ~w[
+    id runner_id action_id pack_id pack_version pack_hash
+    primary_executable_available descriptor_digest
+  ]a
+
+  def select_manifest_match_columns(queryable),
+    do: select(queryable, [runner_actions: a], struct(a, ^@manifest_match_columns))
+
   def by_pack(queryable, pack_id, pack_version) do
     where(
       queryable,

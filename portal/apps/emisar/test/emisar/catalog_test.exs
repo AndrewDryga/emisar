@@ -1,7 +1,7 @@
 defmodule Emisar.CatalogTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Catalog, Repo, Runners}
-  alias Emisar.Catalog.{PackVersion, PublishedRegistry, RunnerAction}
+  alias Emisar.Catalog.{PackVersion, PublishedRegistry, RunnerAction, TrustedManifest}
   alias Emisar.Fixtures
 
   @dispatch_hash "sha256:" <> String.duplicate("d", 64)
@@ -305,6 +305,36 @@ defmodule Emisar.CatalogTest do
       assert length(actions) == 2
       assert Enum.any?(actions, &(&1.action_id == "linux.uptime" and &1.risk == :low))
       assert Enum.any?(actions, &(&1.action_id == "linux.df" and &1.risk == :medium))
+    end
+
+    test "stores a descriptor digest that survives the round trip through the database", %{
+      runner: runner,
+      subject: subject
+    } do
+      typed =
+        action("linux.uptime")
+        |> Map.put("output_schema", %{
+          "type" => "object",
+          "properties" => %{"seconds" => %{"type" => "number"}}
+        })
+        |> Map.put("search_terms", ["uptime"])
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, state_payload(actions: [typed]))
+      assert {:ok, [loaded], _} = Catalog.list_actions_for_runner(runner.id, subject)
+
+      # jsonb, enums, and arrays all come back through Ecto's loaders, and the
+      # backfill reads the same columns straight from SQL — a digest that did
+      # not survive that round trip would read as drift on every listing.
+      assert loaded.descriptor_digest == TrustedManifest.runner_action_digest(loaded)
+
+      readvertised = Map.put(typed, "title", "Uptime, restated")
+
+      assert {:ok, _runner} =
+               Catalog.observe_state(runner, state_payload(actions: [readvertised]))
+
+      assert {:ok, [updated], _} = Catalog.list_actions_for_runner(runner.id, subject)
+
+      refute updated.descriptor_digest == loaded.descriptor_digest
     end
 
     test "persists primary executable readiness and clears it for an older runner", %{
@@ -3094,6 +3124,27 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, runner_ref} = Runners.public_ref(runner)
       assert [%{runner_ref: ^runner_ref, status: "connected"}] = snapshot.runners
+    end
+
+    test "the same hash re-advertised with a changed descriptor stops being executable" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(runner, "demo")
+      trust_advertised_packs(subject)
+
+      advertise_pack(runner, "demo", title: "Inspect, but different")
+
+      assert {:ok, snapshot} = Catalog.model_catalog(subject)
+
+      assert [%{availability: "unavailable", issues: issues, actions: [descriptor]}] =
+               snapshot.packs
+
+      assert "descriptor_mismatch" in Enum.map(issues, & &1.code)
+
+      # The model still sees the descriptor an operator trusted, never the one
+      # the runner just swapped in under the same hash.
+      assert descriptor["title"] == "Inspect"
+      assert descriptor.compatible_runner_ids == []
     end
 
     test "rejects a subject without view_catalog permission" do

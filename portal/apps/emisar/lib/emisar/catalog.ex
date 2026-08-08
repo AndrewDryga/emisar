@@ -70,7 +70,7 @@ defmodule Emisar.Catalog do
   # list, so an existing action's row is brought fully up to date.
   @upsert_replace_fields ~w[
     action_id pack_id pack_version pack_hash title summary kind risk description
-    side_effects args_schema output_schema examples search_terms
+    side_effects args_schema output_schema examples search_terms descriptor_digest
     primary_executable_available missing_executable last_seen_at updated_at
   ]a
 
@@ -1811,10 +1811,11 @@ defmodule Emisar.Catalog do
   # The fleet read carries live membership + API-key runner scope, so it — not
   # the account — decides which advertisements may reach a model at all.
   #
-  # `deployment` narrows both reads to one exact {pack_id, version, hash}. A
-  # descriptor comparison needs every advertised field, so a catalog LISTING
-  # legitimately reads the whole catalog; resolving ONE action does not, and
-  # an account's catalog is runners x packs x actions of jsonb.
+  # `deployment` narrows both reads to one exact {pack_id, version, hash} when
+  # the caller is resolving ONE action; a listing still spans the account. Either
+  # way the actions come back as manifest-match columns only — the descriptors a
+  # model sees are the trusted manifest's, and the row's own copy is now compared
+  # through its stored digest.
   defp model_snapshot(%Subject{} = subject, deployment \\ nil) do
     with {:ok, runners} <-
            Runners.list_all_runners_for_account(subject, preload: [:online?]) do
@@ -1829,6 +1830,7 @@ defmodule Emisar.Catalog do
         |> RunnerAction.Query.by_runner_ids(runner_ids)
         |> scope_actions_to_deployment(deployment)
         |> RunnerAction.Query.ordered_by_action_seen()
+        |> RunnerAction.Query.select_manifest_match_columns()
         |> scope_actions_to_packs(access)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -2131,6 +2133,7 @@ defmodule Emisar.Catalog do
     actions =
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_deployments(deployments)
+      |> RunnerAction.Query.select_manifest_match_columns()
       |> scope_actions_to_pack_access(subject)
       |> Authorizer.for_subject(subject)
       |> RunnerAction.Query.limit_to(max_actions + 1)

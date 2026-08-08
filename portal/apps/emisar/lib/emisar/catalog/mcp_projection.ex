@@ -188,6 +188,13 @@ defmodule Emisar.Catalog.MCPProjection do
 
     case trusted_actions(pack_version, hash) do
       {:ok, trusted_actions} ->
+        # Once per pack, not once per runner: every deployment of the pack is
+        # judged against the same manifest.
+        trusted_digests =
+          Map.new(trusted_actions, fn {action_id, descriptor} ->
+            {action_id, TrustedManifest.descriptor_digest(descriptor)}
+          end)
+
         compatibility =
           Map.new(deployments, fn deployment ->
             rows =
@@ -197,7 +204,7 @@ defmodule Emisar.Catalog.MCPProjection do
                 []
               )
 
-            {deployment.runner_id, deployment_compatibility(deployment, rows, trusted_actions)}
+            {deployment.runner_id, deployment_compatibility(deployment, rows, trusted_digests)}
           end)
 
         actions =
@@ -272,14 +279,17 @@ defmodule Emisar.Catalog.MCPProjection do
   defp trusted_actions(%PackVersion{}, _hash), do: :hidden
   defp trusted_actions(nil, _hash), do: :hidden
 
-  defp deployment_compatibility(deployment, rows, trusted_actions) do
-    expected_action_ids = trusted_actions |> Map.keys() |> MapSet.new()
+  defp deployment_compatibility(deployment, rows, trusted_digests) do
+    expected_action_ids = trusted_digests |> Map.keys() |> MapSet.new()
 
     matching_action_ids =
       rows
       |> Enum.filter(fn row ->
-        case Map.fetch(trusted_actions, row.action_id) do
-          {:ok, descriptor} -> runner_descriptor(row) == descriptor
+        # `descriptor_digest` is nullable, so a row that somehow carries none
+        # equals no manifest digest and stays out of dispatch — an
+        # advertisement we cannot judge is not one we can execute.
+        case Map.fetch(trusted_digests, row.action_id) do
+          {:ok, digest} -> row.descriptor_digest == digest
           :error -> false
         end
       end)
@@ -353,38 +363,6 @@ defmodule Emisar.Catalog.MCPProjection do
 
     "Primary executables are missing for #{length(ids)} action(s): #{shown}#{suffix}."
   end
-
-  defp runner_descriptor(%RunnerAction{} = action) do
-    descriptor = %{
-      "title" => action.title,
-      "summary" => action.summary || summary(action.description),
-      "description" => action.description,
-      "kind" => to_string(action.kind),
-      "risk" => to_string(action.risk),
-      "side_effects" => action.side_effects || [],
-      "args_schema" => action.args_schema || %{},
-      "examples" => action.examples || [],
-      "search_terms" => action.search_terms || []
-    }
-
-    # Trusted descriptors omit the key for untyped actions, so the advertised
-    # side must too or every typed action reads as a permanent mismatch.
-    put_output_schema(descriptor, action.output_schema)
-  end
-
-  defp put_output_schema(descriptor, nil), do: descriptor
-
-  defp put_output_schema(descriptor, %{} = schema),
-    do: Map.put(descriptor, "output_schema", schema)
-
-  defp summary(description) when is_binary(description) do
-    description
-    |> String.split()
-    |> Enum.join(" ")
-    |> String.slice(0, 512)
-  end
-
-  defp summary(_description), do: nil
 
   defp pack_issues_by_runner(packs) do
     Enum.reduce(packs, %{}, fn pack, issues_by_runner ->

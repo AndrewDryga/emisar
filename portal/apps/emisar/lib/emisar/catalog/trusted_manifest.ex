@@ -8,8 +8,8 @@ defmodule Emisar.Catalog.TrustedManifest do
   deliberately incomplete for static/MCP reads; they are never upgraded from
   mutable runner advertisements.
   """
-
   alias Emisar.Catalog.RunnerAction
+  alias Emisar.Crypto
 
   @schema_version 1
   @manifest_fields ~w(actions schema_version)
@@ -110,6 +110,42 @@ defmodule Emisar.Catalog.TrustedManifest do
   @spec descriptor_fields() :: [String.t()]
   def descriptor_fields, do: @descriptor_fields
 
+  @doc """
+  Content digest of one complete descriptor — what a catalog listing compares
+  instead of re-reading every descriptor column of every advertised action.
+
+  Equality of digests is equality of descriptors: the digest covers the same
+  map `from_runner_actions/1` builds, so a drifted field changes it.
+  """
+  @spec descriptor_digest(map()) :: String.t()
+  def descriptor_digest(%{} = descriptor),
+    do: descriptor |> canonical() |> Jason.encode!() |> Crypto.hash_hex()
+
+  @doc """
+  Digest of what a runner advertised for one action, in the manifest's own
+  descriptor shape — the value the catalog stores per row.
+
+  Computed here rather than at the call site so the ingest and the manifest
+  comparison can never disagree about which fields the descriptor is.
+  """
+  @spec runner_action_digest(RunnerAction.t()) :: String.t()
+  def runner_action_digest(%RunnerAction{} = action),
+    do: action |> advertised_descriptor() |> descriptor_digest()
+
+  # A descriptor's identity is its field VALUES, not their storage order, and a
+  # map holding more than 32 keys iterates in an order Erlang does not promise
+  # across releases. So the digest is taken over a recursively key-sorted
+  # encoding — never over a raw map, which would digest the same descriptor two
+  # ways and read as permanent drift.
+  defp canonical(value) when is_map(value) do
+    value
+    |> Enum.sort_by(fn {key, _value} -> key end)
+    |> Enum.map(fn {key, value} -> [key, canonical(value)] end)
+  end
+
+  defp canonical(value) when is_list(value), do: Enum.map(value, &canonical/1)
+  defp canonical(value), do: value
+
   defp build(actions, descriptor_fun) do
     with {:ok, descriptors} <- build_descriptors(actions, descriptor_fun),
          manifest = %{"schema_version" => @schema_version, "actions" => descriptors},
@@ -164,7 +200,15 @@ defmodule Emisar.Catalog.TrustedManifest do
 
   defp catalog_descriptor(_action), do: {:error, :invalid_manifest}
 
-  defp runner_descriptor(%RunnerAction{} = action) do
+  defp runner_descriptor(%RunnerAction{} = action),
+    do: {:ok, action.action_id, advertised_descriptor(action)}
+
+  defp runner_descriptor(_action), do: {:error, :invalid_manifest}
+
+  # The advertised descriptor is assembled without judging it — `validate/1`
+  # owns that — because the digest has to cover exactly the bytes the manifest
+  # comparison would see, including a schema the manifest will go on to reject.
+  defp advertised_descriptor(%RunnerAction{} = action) do
     descriptor = %{
       "title" => action.title,
       "summary" => action.summary || summary(action.description),
@@ -177,12 +221,15 @@ defmodule Emisar.Catalog.TrustedManifest do
       "search_terms" => action.search_terms || []
     }
 
-    with {:ok, descriptor} <- put_output_schema(descriptor, action.output_schema) do
-      {:ok, action.action_id, descriptor}
-    end
+    put_advertised_output_schema(descriptor, action.output_schema)
   end
 
-  defp runner_descriptor(_action), do: {:error, :invalid_manifest}
+  # Trusted descriptors omit the key for untyped actions, so the advertised side
+  # must too, or every typed action reads as a permanent mismatch.
+  defp put_advertised_output_schema(descriptor, nil), do: descriptor
+
+  defp put_advertised_output_schema(descriptor, schema),
+    do: Map.put(descriptor, "output_schema", schema)
 
   defp put_output_schema(descriptor, nil), do: {:ok, descriptor}
 

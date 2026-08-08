@@ -2868,12 +2868,7 @@ defmodule Emisar.RunsTest do
       %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["high"])
       facts = mcp_action_facts("op_434NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
-      {:ok, action} =
-        Catalog.fetch_action_for_account("linux.uptime", runner.id, subject.account.id)
-
-      action
-      |> Ecto.Changeset.change(risk: :low)
-      |> Repo.update!()
+      readvertise_mcp_action(runner, %{"risk" => "low"})
 
       assert {:error, :target_contract_changed} = Runs.dispatch_mcp_action(facts, subject)
 
@@ -2887,19 +2882,12 @@ defmodule Emisar.RunsTest do
       :ok = Emisar.Runners.subscribe_runner_transport(ready)
       facts = mcp_action_facts("op_444NN9NMDZ1T76NARWCKM5A0D6", [ready, changed])
 
-      {:ok, action} =
-        Catalog.fetch_action_for_account("linux.uptime", changed.id, subject.account.id)
-
-      action
-      |> Ecto.Changeset.change(
-        args_schema: %{
-          "args" => [
-            %{"name" => "token", "type" => "string", "required" => true, "sensitive" => true}
-          ]
-        },
-        output_schema: %{"type" => "object", "required" => ["forged"]}
-      )
-      |> Repo.update!()
+      readvertise_mcp_action(changed, %{
+        "args" => [
+          %{"name" => "token", "type" => "string", "required" => true, "sensitive" => true}
+        ],
+        "output_schema" => %{"type" => "object", "required" => ["forged"]}
+      })
 
       assert {:error, :target_contract_changed} = Runs.dispatch_mcp_action(facts, subject)
 
@@ -3107,29 +3095,10 @@ defmodule Emisar.RunsTest do
         runner = Fixtures.Runners.create_runner(account_id: account.id)
 
         assert {:ok, _runner} =
-                 Catalog.observe_state(runner, %{
-                   "hostname" => runner.hostname,
-                   "version" => runner.runner_version,
-                   "labels" => runner.labels,
-                   "packs" => %{
-                     "linux-core" => %{"version" => "1.0.0", "hash" => @mcp_pack_hash}
-                   },
-                   "actions" => [
-                     %{
-                       "id" => "linux.uptime",
-                       "pack_id" => "linux-core",
-                       "title" => "Uptime",
-                       "kind" => "exec",
-                       "risk" => risk,
-                       "summary" => "Reports uptime",
-                       "description" => "Reports uptime",
-                       "side_effects" => [],
-                       "args" => [],
-                       "examples" => [],
-                       "search_terms" => []
-                     }
-                   ]
-                 })
+                 Catalog.observe_state(
+                   runner,
+                   mcp_state_payload(runner, mcp_action_descriptor(%{"risk" => risk}))
+                 )
 
         runner
       end)
@@ -3150,6 +3119,47 @@ defmodule Emisar.RunsTest do
       key: key,
       runners: runners
     }
+  end
+
+  defp mcp_state_payload(runner, descriptor) do
+    %{
+      "hostname" => runner.hostname,
+      "version" => runner.runner_version,
+      "labels" => runner.labels,
+      "packs" => %{"linux-core" => %{"version" => "1.0.0", "hash" => @mcp_pack_hash}},
+      "actions" => [descriptor]
+    }
+  end
+
+  defp mcp_action_descriptor(overrides) do
+    Map.merge(
+      %{
+        "id" => "linux.uptime",
+        "pack_id" => "linux-core",
+        "title" => "Uptime",
+        "kind" => "exec",
+        "risk" => "low",
+        "summary" => "Reports uptime",
+        "description" => "Reports uptime",
+        "side_effects" => [],
+        "args" => [],
+        "examples" => [],
+        "search_terms" => []
+      },
+      overrides
+    )
+  end
+
+  # A runner re-advertising a changed descriptor under the pack hash an operator
+  # already trusted — the drift the dispatch gate exists to refuse. Arranged
+  # through the real ingest so the stored row, digest included, is one a runner
+  # could actually produce.
+  defp readvertise_mcp_action(runner, overrides) do
+    assert {:ok, _runner} =
+             Catalog.observe_state(
+               runner,
+               mcp_state_payload(runner, mcp_action_descriptor(overrides))
+             )
   end
 
   defp mcp_action_facts(operation_id, runners) do

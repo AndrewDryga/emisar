@@ -21,6 +21,9 @@ defmodule Emisar.Catalog.RunnerAction do
     field :output_schema, :map
     field :examples, {:array, :map}, default: []
     field :search_terms, {:array, :string}, default: []
+    # Server-computed over the fields above, so a catalog listing can judge
+    # trusted-manifest match without reading a single descriptor column.
+    field :descriptor_digest, :string
     # Mutable host evidence. Nil means an older runner did not advertise this
     # fact; false can only remove this action from otherwise trusted targets.
     field :primary_executable_available, :boolean
