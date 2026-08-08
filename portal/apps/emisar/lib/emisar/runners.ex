@@ -1969,8 +1969,17 @@ defmodule Emisar.Runners do
   deleted/expired/single-use exhausted). Constant-time hash comparison.
   `peek_*` per AGENTS.md §1.1 — nil-or-struct credential lookup.
 
-  Internal — only called from the runner-register controller before
-  any Subject exists. The presented raw secret IS the auth.
+  **Registration does NOT go through this.** `register_via_enrollment_key/3`
+  resolves the secret with the same prefix+hash lookup and then claims a use
+  *inside its transaction* (`EnrollmentKey.Query.consumable_by_id/2` +
+  `consume_one/1`, a single guarded `update_all`), so the usability test is
+  made by the database at the moment of the claim rather than read into memory
+  first. That is the race-free order; the `EnrollmentKey.usable?/1` check here
+  is the same question asked without the lock, and can go stale between the
+  read and any write that follows it.
+
+  So this is a read-only inspector: correct for answering "is this secret
+  currently usable?", never a gate to act on.
   """
   def peek_enrollment_key_by_secret(raw) when is_binary(raw) do
     if String.length(raw) < @enrollment_key_prefix_size do
