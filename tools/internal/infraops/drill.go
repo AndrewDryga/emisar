@@ -48,7 +48,14 @@ for _ in $(seq 1 60); do
   if PGOPTIONS='-c role=emisar_owner' psql -v ON_ERROR_STOP=1 \
     -h 127.0.0.1 -U '{{IAM_USER}}' -d emisar -c 'SELECT 1;'; then
     denied=0
-  elif kill -0 "$proxy_pid" && pg_isready -h 127.0.0.1 -p 5432 >/dev/null; then
+  elif ! kill -0 "$proxy_pid" 2>/dev/null; then
+    # A dead proxy makes every psql fail for a reason that has nothing to do
+    # with IAM. Without this branch the loop just ran out its five minutes and
+    # blamed revocation, sending the operator to debug the wrong subsystem.
+    echo 'cloud-sql-proxy crashed during revocation verification' >&2
+    tail -n 50 /var/log/cloud-sql-proxy.log >&2 || true
+    exit 1
+  elif pg_isready -h 127.0.0.1 -p 5432 >/dev/null; then
     denied=$((denied + 1))
     if [[ $denied -ge 3 ]]; then
       echo EMISAR_DRILL_REVOCATION_OK
