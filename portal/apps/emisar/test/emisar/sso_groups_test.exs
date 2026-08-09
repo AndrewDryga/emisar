@@ -106,6 +106,68 @@ defmodule Emisar.SSOGroupsTest do
 
   # -- Sync: role from groups ------------------------------------------
 
+  # A synced group used to BE its member rows, so one with nobody in it had no row
+  # anywhere: absent from GET /Groups, unmatched by a displayName filter, and its
+  # name stored nowhere. The IdP flow that hits it is ordinary — create the group
+  # empty, then PATCH members in — and each PATCH-added row carried no display, so
+  # the group resurfaced nameless and the IdP re-pushed it forever.
+  #
+  # `sso_directory_groups` made the group its own row. These pin the three things
+  # that were broken, in the order an IdP does them.
+  describe "an empty synced group" do
+    setup do
+      scim_provider()
+    end
+
+    test "is listed, is found by a displayName filter, and keeps its name when members arrive",
+         %{provider: provider, account: account} do
+      assert {:ok, %{external_group_id: "grp-empty"}} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: "grp-empty",
+                 display: "Platform Engineers",
+                 member_external_ids: []
+               })
+
+      assert {:ok, [%{external_group_id: "grp-empty", display: "Platform Engineers"}], 1} =
+               SSO.scim_list_groups(provider)
+
+      # Entra probes with this filter before every push; an unmatched probe is
+      # what made it re-create a group it had already synced.
+      assert {:ok, [%{external_group_id: "grp-empty"}], 1} =
+               SSO.scim_list_groups(provider, display_name: "Platform Engineers")
+
+      # A member op carries no displayName, so the group's name has to survive
+      # from its own row rather than being re-derived from the arriving members.
+      %{identity: identity} = provision(provider, "okta|joins-later")
+
+      assert {:ok, _group} =
+               SSO.scim_patch_group(provider, "grp-empty", member_ops(["okta|joins-later"], []))
+
+      assert {:ok, [%{display: "Platform Engineers", member_external_ids: members}], 1} =
+               SSO.scim_list_groups(provider)
+
+      assert members == ["okta|joins-later"]
+      assert role_of(account.id, identity.user_id) == :viewer
+    end
+
+    test "keeps its name after its last member leaves", %{provider: provider} do
+      %{identity: _identity} = provision(provider, "okta|leaver")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-emptied",
+          display: "Release Managers",
+          member_external_ids: ["okta|leaver"]
+        })
+
+      assert {:ok, _group} =
+               SSO.scim_patch_group(provider, "grp-emptied", member_ops([], ["okta|leaver"]))
+
+      assert {:ok, [%{display: "Release Managers", member_external_ids: []}], 1} =
+               SSO.scim_list_groups(provider)
+    end
+  end
+
   describe "scim_upsert_group / role recompute" do
     setup do
       scim_provider()

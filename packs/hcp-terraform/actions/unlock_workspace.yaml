@@ -1,0 +1,90 @@
+schema_version: 1
+id: tfc.unlock_workspace
+title: POST /workspaces/<id>/actions/unlock
+kind: script
+risk: medium
+description: >
+  Unlock a workspace so pending runs can proceed again. Releases a lock the
+  token's own user placed; a lock held by a run or by a different user answers
+  409 and takes tfc.force_unlock_workspace instead. A 503 means HCP Terraform
+  is still finalizing the latest state version — retry the unlock rather than
+  escalating to force. Returns the workspace's lock state afterwards.
+side_effects:
+  - Pending runs proceed; on an auto-apply workspace an apply can start without further review.
+  - Cannot release a lock held by a run or a different user; that answers 409.
+  - Requires a user or team token with the workspace's lock/unlock permission.
+search_terms:
+  - unfreeze a workspace
+  - release the workspace lock
+args:
+  - name: workspace_id
+    type: string
+    required: true
+    description: Workspace to unlock (ws-…).
+    validation:
+      pattern: "^ws-[A-Za-z0-9]{1,32}$"
+      max_length: 35
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [unlock, "{{ args.workspace_id }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [workspace]
+    properties:
+      workspace:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+          - name
+          - execution_mode
+          - terraform_version
+          - auto_apply
+          - locked
+          - locked_reason
+          - locked_by
+          - current_run_id
+          - vcs_repo
+          - working_directory
+          - resource_count
+          - updated_at
+        properties:
+          id: {type: string}
+          name: {type: string, maxLength: 90}
+          execution_mode: {type: string}
+          terraform_version: {type: string, maxLength: 64}
+          auto_apply: {type: boolean}
+          locked: {type: boolean}
+          locked_reason: {type: string, maxLength: 160}
+          locked_by:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [type, id]
+            properties:
+              type: {type: string, maxLength: 24}
+              id: {type: string, maxLength: 48}
+          current_run_id: {type: [string, "null"]}
+          vcs_repo:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [identifier, branch]
+            properties:
+              identifier: {type: string, maxLength: 120}
+              branch: {type: string, maxLength: 80}
+          working_directory: {type: string, maxLength: 120}
+          resource_count: {type: integer}
+          updated_at: {type: string}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: End a maintenance freeze
+    args:
+      workspace_id: ws-8Rp2nKcQvWxYzA1b

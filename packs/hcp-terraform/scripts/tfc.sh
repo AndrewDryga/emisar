@@ -60,11 +60,14 @@ api_get_following_redirect() {
       --fail-with-body -sSL -H @- "$(api_base)$1"
 }
 
+# The unlock and force-unlock endpoints take no request body — their documented
+# calls POST with an empty body — so the data argument is optional.
 api_post() {
+  local args=(--globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
+    -H 'Content-Type: application/vnd.api+json')
+  (($# < 2)) || args+=(--data "$2")
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
-      -H 'Content-Type: application/vnd.api+json' \
-      --data "$2" "$(api_base)$1"
+    curl "${args[@]}" "$(api_base)$1"
 }
 
 request() {
@@ -137,6 +140,44 @@ def run_of($run):
       created_at: ($a["created-at"] // ""),
       workspace_id: ($run.relationships.workspace.data.id // ""),
       actions: actions_of($a)
+    };
+'
+
+# One workspace, centered on its lock: who or what holds it — the locked-by
+# relationship names a user, a team, or a run — and why. The relationship is
+# relayed as its raw {type, id} pair so the projection never has to guess the
+# holder kinds HCP may add. Worst case the projected object costs ~1.7 KiB of
+# byte-bound strings (name 180 + version 128 + reason 320 + holder 72 + repo
+# 400 + directory 240 + fixed fields), ~3.4 KiB after the runner's canonical
+# re-encode doubles every one — well inside the 8 KiB structured-result cap;
+# the worst-case behavior case is the proof.
+readonly workspace_projection='
+def workspace_of($ws):
+  $ws.attributes as $a
+  | {
+      id: $ws.id,
+      name: ($a.name | clipped(90; 180)),
+      execution_mode: ($a["execution-mode"] // ""),
+      terraform_version: ($a["terraform-version"] | clipped(64; 128)),
+      auto_apply: ($a["auto-apply"] == true),
+      locked: ($a.locked == true),
+      locked_reason: ($a["locked-reason"] | clipped(160; 320)),
+      locked_by: (
+        $ws.relationships["locked-by"].data // null
+        | if . == null then null
+          else {"type": (.type | clipped(24; 24)), "id": (.id | clipped(48; 48))}
+          end
+      ),
+      current_run_id: ($ws.relationships["current-run"].data.id // null),
+      vcs_repo: (
+        $a["vcs-repo"] // null
+        | if . == null then null
+          else {identifier: (.identifier | clipped(120; 240)), branch: (.branch | clipped(80; 160))}
+          end
+      ),
+      working_directory: ($a["working-directory"] | clipped(120; 240)),
+      resource_count: ($a["resource-count"] // 0),
+      updated_at: ($a["updated-at"] // "")
     };
 '
 
@@ -411,6 +452,7 @@ retry_run() {
       "$pagination"'{run: run_of(.data), source_run_id: $source, configuration_version_id: $configuration_version}'
 }
 
+
 list_organizations() {
   request api_get "/organizations?page%5Bsize%5D=$1&page%5Bnumber%5D=$2" |
     jq -ce "$pagination"'
@@ -444,6 +486,34 @@ list_workspaces() {
         ],
         next_page: next_page
       }'
+}
+
+# The two lookups the API offers behave identically; the by-name form is the
+# one an operator can actually answer with, and the projected id is what the
+# lock and run actions take from here. The name charset is enforced by the
+# action's validation, so it cannot splice the URL.
+workspace_details() {
+  local organization=$1 name=$2
+  request api_get "/organizations/$organization/workspaces/$name" |
+    jq -ce "$pagination$workspace_projection"'{workspace: workspace_of(.data)}'
+}
+
+# The lock endpoints answer 200 with the resulting workspace document — unlike
+# the run actions' bodyless 202 — so the projection reads the state the API
+# reported rather than re-fetching it.
+lock_workspace() {
+  local workspace_id=$1 reason=$2 body
+  require_id "workspace_id" "$workspace_id" "ws-"
+  body=$(jq -nc --arg reason "$reason" 'if $reason == "" then {} else {reason: $reason} end')
+  request api_post "/workspaces/$workspace_id/actions/lock" "$body" |
+    jq -ce "$pagination$workspace_projection"'{workspace: workspace_of(.data)}'
+}
+
+unlock_workspace() {
+  local verb=$1 workspace_id=$2
+  require_id "workspace_id" "$workspace_id" "ws-"
+  request api_post "/workspaces/$workspace_id/actions/$verb" |
+    jq -ce "$pagination$workspace_projection"'{workspace: workspace_of(.data)}'
 }
 
 list_runs() {
@@ -528,6 +598,15 @@ case "$mode" in
     ;;
   list_workspaces)
     list_workspaces "$2" "$3" "$4"
+    ;;
+  workspace_details)
+    workspace_details "$2" "$3"
+    ;;
+  lock)
+    lock_workspace "$2" "$3"
+    ;;
+  unlock | force-unlock)
+    unlock_workspace "$mode" "$2"
     ;;
   list_runs)
     list_runs "$2" "$3" "$4"
