@@ -97,16 +97,40 @@
         pair is the contract for a no-TTY install — without it the installer refuses to run rather
         than guess:
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The key is the one value that does <em>not</em>
+        go on the command line. Anything before
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash</code>
+        becomes part of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>'s command
+        line, and on Linux
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/proc/&lt;pid&gt;/cmdline</code>
+        is world-readable (mode 0444) — any local user on that instance can read it while the
+        install runs. The process environment is not:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/proc/&lt;pid&gt;/environ</code>
+        is mode 0400, readable only by the process owner. So export the key and let
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo -E</code>
+        carry it across the privilege change:
+      </p>
       <.docs_code
         phx-no-format
         label="emisar-boot.sh"
-        copy_text="curl -sSL https://emisar.dev/install.sh | sudo EMISAR_URL=https://emisar.dev EMISAR_ENROLLMENT_KEY=emkey-enroll-… RUNNER_GROUP=web bash -s -- --yes --packs linux-core"
+        copy_text="export EMISAR_ENROLLMENT_KEY=&quot;$(your-secret-tool read emisar/enrollment-key)&quot;
+curl -sSL https://emisar.dev/install.sh | sudo -E env EMISAR_URL=https://emisar.dev RUNNER_GROUP=web bash -s -- --yes --packs linux-core"
       ><span class="text-zinc-500">#!/usr/bin/env bash</span>
+<span class="text-zinc-500"># the key reaches the environment, never argv</span>
+export EMISAR_ENROLLMENT_KEY="<span class="text-brand-300">$(your-secret-tool read emisar/enrollment-key)</span>"
+
 curl -sSL https://emisar.dev/install.sh \
-  | sudo EMISAR_URL=https://emisar.dev \
-      EMISAR_ENROLLMENT_KEY=<span class="text-brand-300">emkey-enroll-…</span> \
+  | sudo -E env EMISAR_URL=https://emisar.dev \
       RUNNER_GROUP=<span class="text-brand-300">web</span> \
       bash -s -- --yes --packs linux-core</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo -E</code>
+        keeps your environment across the privilege change, so only the non-secret values sit on the
+        command line. This narrows who can read the key from every local user to root alone — it
+        does not hide it from the host itself, and on a cloud instance the key still passes through
+        whatever delivered your boot script.
+      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
         skips the prompts a host install would show;
