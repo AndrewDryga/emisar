@@ -4,7 +4,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
   `Emisar.Catalog.PublishedRegistry.Pack` structs plus the trust snapshot
   `Emisar.Catalog.PackBaseline` judges runner advertisements against.
 
-  The catalog is produced out-of-band by `emisar pack catalog build`
+  The catalog is produced out-of-band by `packctl catalog build`
   (the runner's loader is the single source of the content hash, so the
   portal, the runner, and the catalog agree byte-for-byte). This module
   is the portal's trust boundary for that artifact: it is a public,

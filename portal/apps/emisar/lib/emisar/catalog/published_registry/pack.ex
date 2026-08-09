@@ -31,7 +31,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Pack do
     :requires_os,
     :requires_binaries,
     # content_hash is the runner's content-addressable pack hash
-    # ("sha256:..."), computed by `emisar pack catalog build` over the
+    # ("sha256:..."), computed by `packctl catalog build` over the
     # same byte set and algorithm the Go runner uses. Drives the `--hash`
     # pin shown in the install snippet so an operator's `emisar pack
     # install` rejects a tampered or drifted copy.

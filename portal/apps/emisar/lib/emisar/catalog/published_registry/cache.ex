@@ -5,7 +5,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
 
   Boot is **independent of live GCS**: `init/1` loads the bundled
   `priv/packs/catalog.json` (shipped in the release, regenerated from the
-  packs tree by `emisar pack catalog build`) so the registry is always
+  packs tree by `packctl catalog build`) so the registry is always
   populated before the Endpoint accepts a request. When a published
   catalog URL is configured, the cache then refreshes from it on a timer
   and keeps the **last good** catalog on any fetch or validation failure —
@@ -236,7 +236,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Cache do
     end
   end
 
-  # Detection, not enforcement. `emisar pack catalog build` refuses to lower or
+  # Detection, not enforcement. `packctl catalog build` refuses to lower or
   # drop a published retirement watermark, so a refresh that does means the
   # build regressed or someone wrote to the bucket directly. A portal-side
   # floor would be per-instance and lost on restart — the split brain that made
