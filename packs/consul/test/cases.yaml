@@ -6,7 +6,6 @@ versions:
 risk_accountability:
   mode: complete
   exceptions:
-    consul.destroy_session: requires_dynamic_fixture
     consul.raft_remove_peer: requires_cluster
 env:
   CONSUL_HTTP_ADDR: "http://consul:8500"
@@ -68,6 +67,18 @@ cases:
       - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-service","Name":"packtest-service"}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
     probes:
       - argv: [/bin/sh, -c, '! curl -fsS "$CONSUL_HTTP_ADDR/v1/agent/services" | grep -q packtest-service && echo absent']
+        expect:
+          stdout_contains: [absent]
+  - action: consul.destroy_session
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"Name":"packtest-session"}'' "$CONSUL_HTTP_ADDR/v1/session/create"']
+    resolve_args:
+      session_id:
+        argv: [/bin/sh, -c, 'curl -fsS "$CONSUL_HTTP_ADDR/v1/session/list" | jq -r ''.[] | select(.Name == "packtest-session") | .ID''']
+    expect:
+      stdout_contains: ["true"]
+    probes:
+      - argv: [/bin/sh, -c, '! curl -fsS "$CONSUL_HTTP_ADDR/v1/session/list" | grep -q packtest-session && echo absent']
         expect:
           stdout_contains: [absent]
   - action: consul.force_check_fail
