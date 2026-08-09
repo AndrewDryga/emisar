@@ -154,9 +154,9 @@ func TestWrite_ObjectSetAndImmutability(t *testing.T) {
 
 	// Schemas immutable.
 	for _, name := range []string{
-		"catalog.v3.schema.json",
-		"pack.v3.schema.json",
-		"action.v3.schema.json",
+		"catalog.v4.schema.json",
+		"pack.v4.schema.json",
+		"action.v4.schema.json",
 	} {
 		path := "v1/schemas/" + name
 		o, ok := byPath[path]

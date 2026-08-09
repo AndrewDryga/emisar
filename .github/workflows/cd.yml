@@ -224,7 +224,7 @@ jobs:
           }
           case "$status" in
             200)
-              jq -e '.schema_version == 1 and (.packs | length > 0)' /tmp/domain-catalog.json >/dev/null ||
+              /tmp/packctl catalog validate /tmp/domain-catalog.json >/dev/null 2>&1 ||
                 echo "::warning::live catalog at registry.emisar.dev is malformed; this publication repairs it"
               ;;
             404)
@@ -251,7 +251,11 @@ jobs:
               # from the committed catalog exactly like the empty-registry
               # bootstrap below (immutable content-addressed objects stay
               # protected by publish's if-generation-match:0 either way).
-              if jq -e '.schema_version == 1 and (.packs | length > 0)' /tmp/previous.json >/dev/null; then
+              # The SAME check `catalog build --previous` applies, so this
+              # decision and packctl's acceptance cannot drift. A jq predicate
+              # here accepted catalogs packctl would carry forward with an
+              # amputated history.
+              if /tmp/packctl catalog validate /tmp/previous.json >/dev/null; then
                 echo "using published catalog history from generation $(jq -r .generation /tmp/catalog-metadata.json)"
               else
                 echo "::warning::published catalog is malformed; repairing its history from the committed catalog"

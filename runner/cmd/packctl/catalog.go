@@ -46,6 +46,7 @@ immutable object.`,
 	}
 	cmd.AddCommand(packCatalogBuildCmd())
 	cmd.AddCommand(packCatalogPublishCmd())
+	cmd.AddCommand(packCatalogValidateCmd())
 	return cmd
 }
 
@@ -189,9 +190,52 @@ func loadPreviousCatalog(path string) (*catalog.Catalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read previous catalog %s: %w", path, err)
 	}
+	// Validate against the published schema BEFORE unmarshalling into the
+	// struct. A subtly corrupt catalog — packs dropped, previous_versions
+	// truncated — still unmarshals cleanly, and carryForward then hands the
+	// missing packs an empty history while checkDrift permits versions to
+	// vanish. The result is a silently amputated version window.
+	if err := catalog.ValidateCatalogDocument(data); err != nil {
+		return nil, fmt.Errorf("previous catalog %s: %w", path, err)
+	}
+
 	var prev catalog.Catalog
 	if err := json.Unmarshal(data, &prev); err != nil {
 		return nil, fmt.Errorf("parse previous catalog %s: %w", path, err)
 	}
 	return &prev, nil
+}
+
+// packCatalogValidateCmd exists so CI can ask the SAME question 'build
+// --previous' asks. Before it, cd.yml decided whether a downloaded catalog was
+// usable with a jq predicate (schema_version == 1 and a non-empty packs array)
+// while packctl accepted anything that unmarshalled. Two different answers to
+// one question is how a corrupt-but-parseable catalog gets carried forward:
+// the workflow judges it good enough to pass as --previous, and packctl agrees
+// because it barely looks.
+func packCatalogValidateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate <catalog.json>",
+		Short: "Check a catalog document against the published catalog schema",
+		Long: `Validate a catalog.json against the schema published alongside it — the
+same check 'build --previous' applies before accepting a history.
+
+Use it in automation to decide whether a downloaded catalog is usable before
+passing it as --previous. Exits non-zero with the schema violation on stderr.
+
+This is a structural check, not a trust decision: pack authenticity remains the
+content hash over pack bytes.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := os.ReadFile(args[0])
+			if err != nil {
+				return fmt.Errorf("read catalog %s: %w", args[0], err)
+			}
+			if err := catalog.ValidateCatalogDocument(data); err != nil {
+				return fmt.Errorf("%s: %w", args[0], err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s matches the published catalog schema\n", args[0])
+			return nil
+		},
+	}
 }
