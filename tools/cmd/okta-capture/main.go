@@ -24,10 +24,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
 	"github.com/chromedp/chromedp"
 
 	"github.com/andrewdryga/emisar/tools/internal/capture"
@@ -580,7 +580,7 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 		if err := clearMFA(ctx, env); err != nil {
 			return err
 		}
-		return screenshot(ctx, outDir, name)
+		return idpcapture.Screenshot(ctx, outDir, name)
 	}
 	settle := func(seconds int) error {
 		return chromedp.Run(ctx, chromedp.Sleep(time.Duration(seconds)*time.Second))
@@ -1073,20 +1073,6 @@ func lifecycleFlow(
 }
 
 // clickRadio selects the radio whose label starts with the given text.
-func clickRadio(ctx context.Context, label string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const radio = [...document.querySelectorAll('input[type=radio]')].filter(visible).find(el =>
-    (el.labels && [...el.labels].some(l => l.textContent.trim().startsWith(%q))));
-  if (!radio) return false;
-  radio.scrollIntoView({block: 'center'});
-  radio.click();
-  return true;
-})()`, label)
-	var clicked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
-	return clicked, err
-}
 
 // tickInSection checks the box belonging to a named setting. Approach from the
 // HEADING down, not the checkbox up: find the smallest node carrying the setting
@@ -1459,7 +1445,7 @@ func oidcFlow(
 	// Radios, not links: clicking the label text leaves the input unselected and
 	// Next silently refuses. The application-type choice only renders once a
 	// sign-in method is picked.
-	if picked, err := clickRadio(ctx, "OIDC - OpenID Connect"); err != nil {
+	if picked, err := idpcapture.ClickRadio(ctx, "OIDC - OpenID Connect"); err != nil {
 		return err
 	} else if !picked {
 		return fmt.Errorf("sign-in method OIDC not offered")
@@ -1467,7 +1453,7 @@ func oidcFlow(
 	if err := settle(3); err != nil {
 		return err
 	}
-	if picked, err := clickRadio(ctx, "Web Application"); err != nil {
+	if picked, err := idpcapture.ClickRadio(ctx, "Web Application"); err != nil {
 		return err
 	} else if !picked {
 		return fmt.Errorf("application type Web Application not offered")
@@ -1512,7 +1498,7 @@ func oidcFlow(
 	}
 	// Assignment is emisar's job via group→role mapping, so don't grant the whole
 	// org here.
-	if picked, err := clickRadio(ctx, "Skip group assignment for now"); err != nil {
+	if picked, err := idpcapture.ClickRadio(ctx, "Skip group assignment for now"); err != nil {
 		return err
 	} else if !picked {
 		fmt.Println("  (no group-assignment radio; leaving default)")
@@ -1616,18 +1602,5 @@ func focusField(ctx context.Context, hint string) error {
 	if !focused {
 		return fmt.Errorf("no field matching %q to focus", hint)
 	}
-	return nil
-}
-
-func screenshot(ctx context.Context, outDir, name string) error {
-	var buffer []byte
-	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&buffer, 90)); err != nil {
-		return err
-	}
-	path := filepath.Join(outDir, name+".png")
-	if err := os.WriteFile(path, buffer, 0o644); err != nil {
-		return err
-	}
-	fmt.Println("  shot", name)
 	return nil
 }

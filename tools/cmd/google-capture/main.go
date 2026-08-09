@@ -16,10 +16,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 
@@ -142,7 +142,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 		return err
 	}
 	if err := signIn(ctx, env, acceptCloudTOS); err != nil {
-		_ = screenshot(ctx, outDir, "google-failed")
+		_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
 		_ = describePage(ctx, env)
 		return err
 	}
@@ -163,7 +163,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	}
 	if freshProject != "" {
 		if err := createProject(ctx, freshProject, outDir); err != nil {
-			_ = screenshot(ctx, outDir, "google-failed")
+			_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
 			_ = describePage(ctx, env)
 			return err
 		}
@@ -185,14 +185,14 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 	}
 	if certifyRedirect != "" {
 		if err := certifyClientFlow(ctx, env, outDir, certifyRedirect); err != nil {
-			_ = screenshot(ctx, outDir, "google-failed")
+			_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
 			_ = describePage(ctx, env)
 			return err
 		}
 		return nil
 	}
 	if err := authPlatformFlow(ctx, env, outDir); err != nil {
-		_ = screenshot(ctx, outDir, "google-failed")
+		_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
 		_ = describePage(ctx, env)
 		return err
 	}
@@ -360,7 +360,7 @@ func createProject(ctx context.Context, name, outDir string) error {
 	deadline := time.Now().Add(4 * time.Minute)
 	for {
 		if time.Now().After(deadline) {
-			_ = screenshot(ctx, outDir, "google-project-never-ready")
+			_ = idpcapture.Screenshot(ctx, outDir, "google-project-never-ready")
 			return fmt.Errorf("project %s never became usable", projectID)
 		}
 		if err := chromedp.Run(ctx, chromedp.Navigate(platform), chromedp.Sleep(8*time.Second)); err != nil {
@@ -731,7 +731,7 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 		chromedp.Evaluate(deepTextScript, &body)); err != nil {
 		return err
 	}
-	_ = screenshot(ctx, outDir, "google-certify-login")
+	_ = idpcapture.Screenshot(ctx, outDir, "google-certify-login")
 	fmt.Printf("  landed on %s\n", location)
 	fmt.Printf("  page says: %s\n", firstLine(body))
 
@@ -1074,7 +1074,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 			return err
 		}
 		if !pressed {
-			_ = screenshot(ctx, outDir, "google-cleanup-no-delete-button")
+			_ = idpcapture.Screenshot(ctx, outDir, "google-cleanup-no-delete-button")
 			return errors.New("the delete dialog has no enabled Delete button")
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
@@ -1097,7 +1097,7 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 			return err
 		}
 		if after >= before {
-			_ = screenshot(ctx, outDir, "google-cleanup-stuck")
+			_ = idpcapture.Screenshot(ctx, outDir, "google-cleanup-stuck")
 			_ = describePage(ctx, env)
 			return fmt.Errorf("clicked delete but %d capture client(s) remain", after)
 		}
@@ -1492,7 +1492,7 @@ func capture(ctx context.Context, env map[string]string, outDir, name string, ma
 	if err := chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond)); err != nil {
 		return err
 	}
-	return screenshot(ctx, outDir, name)
+	return idpcapture.Screenshot(ctx, outDir, name)
 }
 
 func deidentify(ctx context.Context, env map[string]string) error {
@@ -1787,19 +1787,6 @@ func totpField(ctx context.Context) string {
 		}
 	}
 	return ""
-}
-
-func screenshot(ctx context.Context, outDir, name string) error {
-	var buffer []byte
-	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&buffer, 90)); err != nil {
-		return err
-	}
-	path := filepath.Join(outDir, name+".png")
-	if err := os.WriteFile(path, buffer, 0o644); err != nil {
-		return err
-	}
-	fmt.Println("  shot", name)
-	return nil
 }
 
 func describePage(ctx context.Context, env map[string]string) error {

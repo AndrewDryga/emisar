@@ -14,10 +14,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
 	"github.com/chromedp/chromedp"
 
 	"github.com/andrewdryga/emisar/tools/internal/capture"
@@ -83,12 +83,12 @@ func run(env map[string]string, outDir string, headless bool) error {
 	defer cancelTimeout()
 
 	if err := signIn(ctx, env, outDir); err != nil {
-		_ = screenshot(ctx, outDir, "en-login-failed")
+		_ = idpcapture.Screenshot(ctx, outDir, "en-login-failed")
 		_ = describePage(ctx)
 		return err
 	}
 	fmt.Println("  signed in")
-	if err := screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
+	if err := idpcapture.Screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
 		return err
 	}
 	return appRegistrationFlow(ctx, env, outDir)
@@ -210,19 +210,6 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 	)
 }
 
-func screenshot(ctx context.Context, outDir, name string) error {
-	var buffer []byte
-	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&buffer, 90)); err != nil {
-		return err
-	}
-	path := filepath.Join(outDir, name+".png")
-	if err := os.WriteFile(path, buffer, 0o644); err != nil {
-		return err
-	}
-	fmt.Println("  shot", name)
-	return nil
-}
-
 // describePage dumps what the SPA is actually showing, so a failed step is
 // diagnosed from the real screen rather than a guess about it.
 func describePage(ctx context.Context) error {
@@ -265,7 +252,7 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := describePage(ctx); err != nil {
 		return err
 	}
-	if err := screenshot(ctx, outDir, "en-03-new-registration-blank"); err != nil {
+	if err := idpcapture.Screenshot(ctx, outDir, "en-03-new-registration-blank"); err != nil {
 		return err
 	}
 
@@ -280,11 +267,11 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 	// The redirect URI is inert until a platform is chosen — leaving it unset
 	// fails with "Platform is required", which is why the docs say to pick Web.
 	if err := selectPlatform(ctx, "Web"); err != nil {
-		_ = screenshot(ctx, outDir, "en-04-platform-failed")
+		_ = idpcapture.Screenshot(ctx, outDir, "en-04-platform-failed")
 		return err
 	}
 	_ = highlight(ctx, "Redirect URI")
-	if err := screenshot(ctx, outDir, "en-04-new-registration-filled"); err != nil {
+	if err := idpcapture.Screenshot(ctx, outDir, "en-04-new-registration-filled"); err != nil {
 		return err
 	}
 
@@ -308,11 +295,11 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 		return fmt.Errorf("ENTRA_CLIENT_ID is empty — register the app first")
 	}
 	if err := openService(ctx, "App registrations", "Display name"); err != nil {
-		_ = screenshot(ctx, outDir, "en-05-overview-failed")
+		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return err
 	}
 	if err := clickTextAtCentre(ctx, "emisar"); err != nil {
-		_ = screenshot(ctx, outDir, "en-05-app-not-listed")
+		_ = idpcapture.Screenshot(ctx, outDir, "en-05-app-not-listed")
 		return fmt.Errorf("open the emisar app: %w", err)
 	}
 	if err := chromedp.Run(ctx, chromedp.Sleep(15*time.Second)); err != nil {
@@ -320,11 +307,11 @@ func openRegisteredApp(ctx context.Context, env map[string]string, outDir string
 	}
 	dismissOverlays(ctx)
 	if err := waitForText(ctx, "Application (client) ID", 90*time.Second); err != nil {
-		_ = screenshot(ctx, outDir, "en-05-overview-failed")
+		_ = idpcapture.Screenshot(ctx, outDir, "en-05-overview-failed")
 		return fmt.Errorf("app overview never rendered: %w", err)
 	}
 	_ = highlight(ctx, "Application (client) ID")
-	return screenshot(ctx, outDir, "en-05-app-overview")
+	return idpcapture.Screenshot(ctx, outDir, "en-05-app-overview")
 }
 
 // openService reaches a portal service from the home page's Azure services tiles.
