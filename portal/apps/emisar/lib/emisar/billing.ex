@@ -875,13 +875,39 @@ defmodule Emisar.Billing do
   upsert changeset keeps only its failing field names (never `.changes`, which
   echo mirrored subscription values); any other reason passes through.
   """
-  def redacted_paddle_error({:http, status, _body}), do: {:http, status}
+  def redacted_paddle_error({:http, status, body}) do
+    case paddle_error_code(body) do
+      nil -> {:http, status}
+      code -> {:http, status, code}
+    end
+  end
 
   def redacted_paddle_error(%Ecto.Changeset{errors: errors}) do
     {:invalid_changeset, errors |> Keyword.keys() |> Enum.uniq()}
   end
 
   def redacted_paddle_error(reason), do: reason
+
+  # Paddle's error envelope carries a stable machine code —
+  # `{"error": {"code": "customer_already_exists", ...}}` — which names WHICH
+  # conflict occurred and contains no payload values, unlike `detail`, which
+  # quotes the offending field back. Keeping just the code is what makes a
+  # repeating 409 diagnosable: the status alone says a conflict happened, and
+  # every conflict Paddle has looks identical in the log.
+  #
+  # Bounded and shape-checked because it is a remote value: anything that is not
+  # a short snake_case token is dropped rather than logged.
+  defp paddle_error_code(body) when is_binary(body) do
+    with {:ok, %{"error" => %{"code" => code}}} <- Jason.decode(body),
+         true <- is_binary(code) and byte_size(code) <= 64,
+         true <- Regex.match?(~r/\A[a-z][a-z0-9_]*\z/, code) do
+      code
+    else
+      _ -> nil
+    end
+  end
+
+  defp paddle_error_code(_body), do: nil
 
   @doc """
   Internal — the unauthenticated Paddle webhook ingress. `payload` is the RAW

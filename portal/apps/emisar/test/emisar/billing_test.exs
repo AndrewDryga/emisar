@@ -1034,6 +1034,34 @@ defmodule Emisar.BillingTest do
                {:http, 500}
     end
 
+    test "keeps Paddle's machine error code, which names WHICH conflict occurred" do
+      body =
+        ~s({"error":{"type":"request_error","code":"customer_already_exists","detail":"customer with email a@b.test already exists"}})
+
+      assert Billing.redacted_paddle_error({:http, 409, body}) ==
+               {:http, 409, "customer_already_exists"}
+    end
+
+    test "drops the detail, which quotes the offending value back" do
+      body =
+        ~s({"error":{"code":"customer_already_exists","detail":"email owner@acme.test already exists"}})
+
+      {:http, _status, code} = Billing.redacted_paddle_error({:http, 409, body})
+
+      refute code =~ "owner@acme.test"
+    end
+
+    test "drops a code that is not a short snake_case token" do
+      for bad <- [
+            ~s({"error":{"code":"ctm_01j9 secret value"}}),
+            ~s({"error":{"code":123}}),
+            ~s({"error":{"detail":"no code here"}}),
+            "not json at all"
+          ] do
+        assert Billing.redacted_paddle_error({:http, 409, bad}) == {:http, 409}
+      end
+    end
+
     test "summarizes a changeset by its failing field NAMES, never its .changes" do
       changeset = Subscription.Changeset.upsert(%{status: "active"})
 
