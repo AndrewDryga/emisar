@@ -1,0 +1,36 @@
+schema_version: 1
+id: pfsense.dhcp_static_mappings
+title: GET /api/v2/services/dhcp_server/static_mappings
+kind: script
+risk: low
+description: >
+  List the DHCP static mappings on one interface — each mapping's id, MAC,
+  reserved address, hostname, description, and whether it also gets a static
+  ARP entry. This is the read that names the object every static-mapping write
+  acts on: the delete takes the id this returns.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args:
+  - name: interface
+    type: string
+    required: true
+    description: 'Interface the DHCP server runs on, as pfSense names it (lan, opt1, …).'
+    validation:
+      pattern: '^[a-zA-Z0-9_]{1,32}$'
+execution:
+  script:
+    path: scripts/pfproject.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v2/services/dhcp_server/static_mappings?parent_id={{ args.interface }}"
+    - ".data = [(.data // [])[] | {id, parent_id, mac, ipaddr, hostname, descr, arp_table_static_entry}]"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Static mappings on LAN
+    args:
+      interface: "lan"

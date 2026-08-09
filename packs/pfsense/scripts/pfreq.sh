@@ -18,6 +18,13 @@
 # streamed to curl over stdin (-H @-), so it never lands in argv, a `ps`
 # listing, or the audit log.
 #
+# Content-Type is what tells this API where to read parameters from. With
+# application/json it decodes the request BODY and never looks at the query
+# string, so declaring it on a GET or DELETE silently drops every ?name=/?id=
+# the action put there. It is sent only for the methods that carry a body; the
+# API then falls back to form encoding, which reads the query string first and
+# the body second.
+#
 # TLS is verified by default. pfSense ships a self-signed GUI certificate, so
 # set PFSENSE_INSECURE=true to skip verification, or point curl at a CA with
 # the standard CURL_CA_BUNDLE env var to verify properly.
@@ -26,11 +33,15 @@ method=$1
 path=$2
 shift 2
 
+case $method in
+POST | PUT | PATCH) set -- -H "Content-Type: application/json" "$@" ;;
+esac
+
 [ "${PFSENSE_INSECURE:-}" = "true" ] && set -- -k "$@"
 
 if [ -n "${PFSENSE_API_KEY:-}" ]; then
 	printf 'X-API-Key: %s\n' "$PFSENSE_API_KEY" |
-		curl --globoff --proto '=http,https' -fsS -H @- -X "$method" -H "Content-Type: application/json" "$@" "$PFSENSE_URL$path"
+		curl --globoff --proto '=http,https' -fsS -H @- -X "$method" "$@" "$PFSENSE_URL$path"
 else
-	curl --globoff --proto '=http,https' -fsS -X "$method" -H "Content-Type: application/json" "$@" "$PFSENSE_URL$path"
+	curl --globoff --proto '=http,https' -fsS -X "$method" "$@" "$PFSENSE_URL$path"
 fi

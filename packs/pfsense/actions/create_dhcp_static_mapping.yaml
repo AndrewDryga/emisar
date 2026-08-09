@@ -1,0 +1,71 @@
+schema_version: 1
+id: pfsense.create_dhcp_static_mapping
+title: POST /api/v2/services/dhcp_server/static_mapping
+kind: script
+risk: medium
+description: >
+  Reserve one DHCP address for one MAC on one interface — the "give this host a
+  stable address" edit. Creates a single mapping; it never touches an existing
+  one and never edits a pool. The change is STAGED: dhcpd keeps serving the old
+  configuration until pfsense.apply_dhcp_server runs, so the operator chooses
+  when the DHCP server reloads.
+side_effects:
+  - Adds one static mapping to the named interface's DHCP server.
+  - Staged only — dhcpd is not reloaded, so nothing changes for clients yet.
+  - The reserved address must be outside the interface's DHCP pool range; the
+    API rejects the write otherwise.
+args:
+  - name: interface
+    type: string
+    required: true
+    description: 'Interface the DHCP server runs on, as pfSense names it (lan, opt1, …).'
+    validation:
+      pattern: '^[a-zA-Z0-9_]{1,32}$'
+  - name: mac
+    type: string
+    required: true
+    description: 'MAC address of the client, colon-separated.'
+    validation:
+      pattern: '^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$'
+  - name: ipaddr
+    type: string
+    required: true
+    description: 'IPv4 address to reserve. Must be in the interface subnet and outside its pool.'
+    validation:
+      pattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+  - name: hostname
+    type: string
+    required: false
+    default: ""
+    description: 'Hostname to hand the client. Empty leaves it unset.'
+    validation:
+      pattern: '^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)?$'
+  - name: description
+    type: string
+    required: false
+    default: ""
+    description: 'Free-text note stored with the mapping.'
+    validation:
+      pattern: '^[A-Za-z0-9 ._@()-]{0,128}$'
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "POST"
+    - "/api/v2/services/dhcp_server/static_mapping"
+    - "--data-raw"
+    - "{\"parent_id\":\"{{ args.interface }}\",\"mac\":\"{{ args.mac }}\",\"ipaddr\":\"{{ args.ipaddr }}\",\"hostname\":\"{{ args.hostname }}\",\"descr\":\"{{ args.description }}\"}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Reserve an address for a printer
+    args:
+      interface: "lan"
+      mac: "00:1b:44:11:3a:b7"
+      ipaddr: "192.168.1.20"
+      hostname: "printer"
+      description: "Floor 2 printer"

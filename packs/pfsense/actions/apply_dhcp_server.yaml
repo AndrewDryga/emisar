@@ -1,0 +1,31 @@
+schema_version: 1
+id: pfsense.apply_dhcp_server
+title: POST /api/v2/services/dhcp_server/apply
+kind: script
+risk: medium
+description: >
+  Apply staged DHCP server changes — reloads dhcpd so pending static-mapping or
+  pool edits take effect. This is the separate step the static-mapping writes
+  deliberately leave to the operator; it pushes whatever is currently staged,
+  not only the change you just made.
+side_effects:
+  - Reloads the DHCP server (brief).
+  - Applies any staged DHCP configuration changes, including ones staged by
+    someone else.
+  - Existing leases are kept; clients pick up changes on renewal.
+args: []
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "POST"
+    - "/api/v2/services/dhcp_server/apply"
+  timeout: 60s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Apply staged DHCP changes
+    args: {}

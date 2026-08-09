@@ -1,0 +1,48 @@
+schema_version: 1
+id: pfsense.delete_dhcp_static_mapping
+title: DELETE /api/v2/services/dhcp_server/static_mapping
+kind: script
+risk: medium
+description: >
+  Remove one DHCP static mapping, named by the interface and the id that
+  pfsense.dhcp_static_mappings returns for it. Deletes exactly that one mapping
+  — there is no wildcard form and no "delete all" here. The client falls back to
+  a pool address on its next lease. The change is STAGED: dhcpd keeps serving
+  the old configuration until pfsense.apply_dhcp_server runs.
+side_effects:
+  - Removes one static mapping from the named interface's DHCP server.
+  - Staged only — dhcpd is not reloaded, so the client keeps its current lease.
+  - The host loses its reserved address and takes a pool address on renewal.
+args:
+  - name: interface
+    type: string
+    required: true
+    description: 'Interface the DHCP server runs on, as pfSense names it (lan, opt1, …).'
+    validation:
+      pattern: '^[a-zA-Z0-9_]{1,32}$'
+  - name: id
+    type: integer
+    required: true
+    description: 'The mapping id from pfsense.dhcp_static_mappings on this interface.'
+    validation:
+      min: 0
+      max: 65535
+execution:
+  script:
+    path: scripts/pfreq.sh
+    interpreter: /bin/sh
+  argv:
+    - "DELETE"
+    # The API applies on delete only when the request asks it to; this one never
+    # sends that field, so the removal stays staged like the create.
+    - "/api/v2/services/dhcp_server/static_mapping?parent_id={{ args.interface }}&id={{ args.id }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop the mapping listed as id 3 on LAN
+    args:
+      interface: "lan"
+      id: 3

@@ -57,3 +57,7 @@ cases:
     expect:
       stdout_contains: [packtest-peer, allowedips]
       stdout_not_contains: [packtest-canary-pfsense-wgpsk-8a47]
+  - action: pfsense.dhcp_static_mappings
+    args: {interface: lan}
+    expect:
+      stdout_contains: [packtest-printer, arp_table_static_entry]
