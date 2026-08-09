@@ -810,7 +810,25 @@ advertise = fn runner, actions ->
     "actions" => actions
   }
 
-  {:ok, _} = Catalog.observe_state(runner, payload)
+  # A runner that is CONNECTED right now owns its own advertisement, and it sends
+  # the real pack descriptors — side effects, examples, the lot. These fixtures
+  # are thin by comparison, so advertising over a live runner on a warm
+  # `compose up` replaces rich rows with poor ones. The catalog then disagrees
+  # with the trusted manifest until the runner re-advertises, and for that window
+  # `list_packs` comes back empty and `get_action` answers action_unavailable.
+  #
+  # Seeds exist to furnish an EMPTY environment, so skip any runner that already
+  # has an advertisement. A fresh stack still gets the full demo catalog.
+  already_advertised? =
+    Catalog.RunnerAction.Query.all()
+    |> Catalog.RunnerAction.Query.by_runner_id(runner.id)
+    |> Repo.exists?()
+
+  if already_advertised? do
+    :ok
+  else
+    {:ok, _} = Catalog.observe_state(runner, payload)
+  end
 end
 
 Enum.each(runners, fn r ->
