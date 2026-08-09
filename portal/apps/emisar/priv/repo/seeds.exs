@@ -783,14 +783,18 @@ postgres_actions = [
   })
 ]
 
-# The demo fleet runs one version behind on postgres (0.2.9, below the shipped
-# current), so the packs page shows the quiet pack-level "update available"
-# nudge. Only the data-postgres runner advertises postgres, and 0.2.9 is
-# baseline-trusted with no retirement watermark, so it dispatches fine — the hint
-# is a convenience, not a block. Every other pack advertises at its current
-# shipped version. Keep the fleet strictly behind (no runner on the current
-# version) or the nudge correctly suppresses — you already have the latest.
-pack_version_overrides = %{"postgres" => "0.2.9"}
+# The demo fleet runs one version behind on postgres so the packs page shows the
+# quiet pack-level "update available" nudge. DERIVED, not pinned: the literal
+# that used to sit here would have broken the seed the day its version left the
+# trust window ("missing shipped-pack baseline"). Only the data-postgres runner
+# advertises postgres, and a windowed previous version is baseline-trusted with
+# no retirement watermark, so it dispatches fine — the hint is a convenience, not
+# a block. Every other pack advertises at its current shipped version. Keep the
+# fleet strictly behind or the nudge correctly suppresses: you have the latest.
+#
+# nil (a pack whose window holds only the current version) falls through to the
+# current version in pack_descriptor, which simply means no nudge that run.
+pack_version_overrides = %{"postgres" => PackBaseline.previous_version("postgres")}
 
 advertise = fn runner, actions ->
   packs =

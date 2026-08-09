@@ -96,6 +96,45 @@ defmodule Emisar.Catalog.PackBaseline do
   def current_version(_), do: nil
 
   @doc """
+  The newest trusted version strictly BELOW the pack's current one, or `nil`
+  when the trust window holds only the current version.
+
+  The inverse of `newer_version/2`, and the one a caller needs to stand
+  something deliberately one version behind — the demo seeds advertise a pack
+  here so the console's "update available" nudge has something to point at.
+  Deriving it keeps that fixture alive as the window rolls; a pinned literal
+  breaks the moment its version leaves the baseline.
+  """
+  @spec previous_version(String.t()) :: String.t() | nil
+  def previous_version(pack_id) when is_binary(pack_id) do
+    with current when is_binary(current) <- current_version(pack_id),
+         {:ok, current_parsed} <- Version.parse(current) do
+      Cache.trust_snapshot().baseline
+      |> Enum.flat_map(fn
+        {{^pack_id, version}, _hash} ->
+          case Version.parse(version) do
+            {:ok, parsed} ->
+              if Version.compare(parsed, current_parsed) == :lt, do: [parsed], else: []
+
+            :error ->
+              []
+          end
+
+        _other ->
+          []
+      end)
+      |> case do
+        [] -> nil
+        older -> older |> Enum.max(Version) |> to_string()
+      end
+    else
+      _ -> nil
+    end
+  end
+
+  def previous_version(_), do: nil
+
+  @doc """
   The strictly-newer published version an operator could update `(pack_id,
   version)` to — `current_version/1` when it is strictly ahead of `version` — or
   `nil` when we don't publish the pack, `version` already is (or is ahead of) the
