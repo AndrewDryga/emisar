@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.Runbooks do
   """
 
   alias Emisar.{Fixtures, Repo}
-  alias Emisar.Runbooks.{Runbook, RunbookExecution}
+  alias Emisar.Runbooks.{Definition, Release, Runbook, RunbookExecution}
 
   @default_definition %{
     "schema_version" => 1,
@@ -33,35 +33,65 @@ defmodule Emisar.Fixtures.Runbooks do
   }
 
   @doc """
-  Persists a draft runbook. Caller supplies `:account_id` (or the helper makes
-  a fresh account) and may override `:title`/`:created_by_id`.
+  Valid create attrs for one runbook, with per-key overrides.
+  """
+  def runbook_attrs(overrides \\ %{}) do
+    overrides = Map.new(overrides)
+
+    %{
+      "slug" => overrides[:slug] || "runbook-#{Fixtures.Random.unique_int()}",
+      "title" => overrides[:title] || "Runbook #{Fixtures.Random.unique_int()}",
+      "description" => overrides[:description],
+      "draft_definition" => overrides[:definition] || @default_definition
+    }
+  end
+
+  @doc """
+  Persists a runbook carrying only its first draft — nothing live. Caller
+  supplies `:account_id` (or the helper makes a fresh account) and may override
+  `:slug`/`:title`/`:description`/`:definition`/`:created_by_id`.
   """
   def create_runbook(attrs \\ %{}) do
     attrs = Map.new(attrs)
     account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
     created_by_id = attrs[:created_by_id] || Fixtures.Users.create_user().id
-    title = attrs[:title] || "Runbook #{Fixtures.Random.unique_int()}"
 
     {:ok, runbook} =
       account_id
-      |> Runbook.Changeset.create(created_by_id, %{
-        name: attrs[:name] || "runbook-#{Fixtures.Random.unique_int()}",
-        slug: attrs[:slug] || "runbook-#{Fixtures.Random.unique_int()}",
-        title: title,
-        definition: attrs[:definition] || @default_definition
-      })
+      |> Runbook.Changeset.create(created_by_id, runbook_attrs(attrs))
       |> Repo.insert()
 
     runbook
   end
 
   @doc """
-  Marks a persisted runbook published directly — arrangement state, bypassing
-  the context's current-state publication readiness (which needs a live
-  trusted catalog). The definition must still satisfy the strict contract.
+  Mints the next release of a persisted runbook and promotes its draft —
+  arrangement state, bypassing the context's current-state publication
+  readiness (which needs a live trusted catalog). The draft must still satisfy
+  the strict contract.
   """
   def publish_runbook(%Runbook{} = runbook) do
-    {:ok, published} = runbook |> Runbook.Changeset.publish() |> Repo.update()
+    definition = runbook.draft_definition || runbook.definition
+    version = (runbook.live_version || 0) + 1
+
+    {:ok, _release} =
+      Release.Changeset.create(%{
+        account_id: runbook.account_id,
+        runbook_id: runbook.id,
+        version: version,
+        title: runbook.title,
+        description: runbook.description,
+        definition: definition,
+        definition_sha256: Definition.digest(definition),
+        published_by_id: runbook.created_by_id
+      })
+      |> Repo.insert()
+
+    {:ok, published} =
+      runbook
+      |> Runbook.Changeset.publish(definition, version)
+      |> Repo.update()
+
     published
   end
 
@@ -94,6 +124,7 @@ defmodule Emisar.Fixtures.Runbooks do
     attrs = Map.new(attrs)
     runbook = attrs[:runbook] || create_runbook(account_id: attrs[:account_id])
     account_id = attrs[:account_id] || runbook.account_id
+    definition = runbook.definition || runbook.draft_definition
 
     membership_id =
       attrs[:initiating_membership_id] ||
@@ -104,11 +135,13 @@ defmodule Emisar.Fixtures.Runbooks do
         id: Repo.generate_id(),
         account_id: account_id,
         runbook_id: runbook.id,
+        runbook_version: runbook.live_version,
         initiating_membership_id: membership_id,
         reason: attrs[:reason] || "execution fixture",
         frozen_plan: attrs[:frozen_plan] || %{},
         inputs_raw: attrs[:inputs_raw] || "{}",
         inputs_sha256: String.duplicate("a", 64),
+        definition: attrs[:definition] || definition,
         definition_sha256: String.duplicate("b", 64),
         kind: attrs[:kind] || :published
       })

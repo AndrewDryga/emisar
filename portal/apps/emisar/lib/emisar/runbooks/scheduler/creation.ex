@@ -56,16 +56,18 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
     items = build_item_rows(runbook, compiled, execution_id, stage_ids)
 
     kind = Keyword.get(opts, :kind, :published)
+    runbook_version = dispatched_version(runbook, kind)
 
     approval =
       compiled.items
       |> approval_posture()
-      |> with_runbook_metadata(runbook, kind)
+      |> with_runbook_metadata(runbook, compiled, runbook_version, kind)
 
     execution_attrs = %{
       id: execution_id,
       account_id: runbook.account_id,
       runbook_id: runbook.id,
+      runbook_version: runbook_version,
       initiating_membership_id: subject.membership_id,
       requested_by_id: Subject.user_id(subject),
       api_key_id: Subject.api_key_id(subject),
@@ -76,7 +78,9 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
       frozen_plan: compiled.plan,
       inputs_raw: compiled.inputs_raw,
       inputs_sha256: compiled.inputs_sha256,
-      definition_sha256: Definition.digest(runbook.definition),
+      # What ran, not what the runbook row says now — publishing moves that row.
+      definition: compiled.definition,
+      definition_sha256: Definition.digest(compiled.definition),
       sensitive_input_names: compiled.sensitive_input_names,
       status: if(approval, do: :pending_approval, else: :active)
     }
@@ -224,16 +228,20 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
     end
   end
 
-  defp with_runbook_metadata(nil, _runbook, _kind), do: nil
+  # A draft test has no release number to name; its digest is the identity.
+  defp dispatched_version(%Runbook{} = runbook, :published), do: runbook.live_version
+  defp dispatched_version(%Runbook{}, :draft_test), do: nil
 
-  defp with_runbook_metadata(approval, runbook, kind) do
+  defp with_runbook_metadata(nil, _runbook, _compiled, _version, _kind), do: nil
+
+  defp with_runbook_metadata(approval, runbook, compiled, version, kind) do
     approval
     |> Map.put(:execution_kind, Atom.to_string(kind))
     |> Map.put(:runbook, %{
       "id" => runbook.id,
       "title" => runbook.title,
-      "version" => runbook.version,
-      "definition_sha256" => Definition.digest(runbook.definition)
+      "version" => version,
+      "definition_sha256" => Definition.digest(compiled.definition)
     })
   end
 

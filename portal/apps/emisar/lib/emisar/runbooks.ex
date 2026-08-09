@@ -14,8 +14,8 @@ defmodule Emisar.Runbooks do
   alias Emisar.Auth.Subject
   alias Emisar.{Catalog, Runners}
   alias Emisar.Runbooks.{Authoring, Authorizer, Compiler, Definition, DefinitionDiff}
-  alias Emisar.Runbooks.{EditorProjection, ExecutionItem, ExecutionProjection, Naming, Runbook}
-  alias Emisar.Runbooks.{RunbookExecution, Scheduler}
+  alias Emisar.Runbooks.{EditorProjection, ExecutionItem, ExecutionProjection, Naming, Release}
+  alias Emisar.Runbooks.{Runbook, RunbookExecution, Scheduler}
   alias Emisar.Users
 
   # One runbook list page is 35 rows; 64 bounds the batch without capping the
@@ -119,78 +119,17 @@ defmodule Emisar.Runbooks do
   def runbook_filters, do: Runbook.Query.filters()
 
   @doc """
-  Lists one row per runbook slug family — the newest non-deleted version, whose
-  status and version number lead the console list (versions are dense, so the
-  head's version IS the family's version count). Filters judge that head row.
-  Requires `view_runbooks`; scoped to the subject's account. Returns
+  Lists one row per runbook. Requires `view_runbooks`; scoped to the subject's
+  account. Returns
   `{:ok, [runbook], %Metadata{}} | {:error, :unauthorized | :invalid_cursor}`.
   """
   def list_runbooks(%Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
       Runbook.Query.not_deleted()
-      |> Runbook.Query.latest_version_per_slug()
-      |> Runbook.Query.ordered_by_title_version()
+      |> Runbook.Query.ordered_by_title()
       |> Authorizer.for_subject(subject)
       |> Repo.list(Runbook.Query, opts)
-    end
-  end
-
-  @doc """
-  Lists every immutable version of one runbook slug family, newest first.
-  Requires `view_runbooks`; scoped to the subject's account. Returns
-  `{:ok, [runbook], %Metadata{}} | {:error, :unauthorized | :invalid_cursor}`.
-  """
-  def list_runbook_versions(slug, %Subject{} = subject, opts \\ []) when is_binary(slug) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
-      # Versions of one family are ordered by version alone — titles may vary
-      # across versions, so the default title-led cursor fields would shuffle
-      # them. The prepend keeps the keyset in step with the rendered order.
-      opts = Keyword.put(opts, :order_by, [{:runbooks, :desc, :version}])
-
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_slug(slug)
-      |> Authorizer.for_subject(subject)
-      |> Repo.list(Runbook.Query, opts)
-    end
-  end
-
-  @doc """
-  Fetches the newest version of one slug family, draft or published — the only
-  row a lifecycle mutation may start from. Requires `view_runbooks`; scoped to
-  the subject's account. Returns `{:ok, runbook} | {:error, :not_found | :unauthorized}`.
-  """
-  def fetch_runbook_family_head(slug, %Subject{} = subject) when is_binary(slug) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_slug(slug)
-      |> Runbook.Query.latest_version()
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(Runbook.Query)
-    end
-  end
-
-  @doc """
-  Fetches the version immediately below `runbook` in its own family.
-
-  Requires `view_runbooks`. A family's first version has no predecessor, and a
-  runbook outside the subject's account is refused before the read — both answer
-  `{:error, :not_found}`, so a foreign family stays indistinguishable from one
-  that never existed and can never resolve to the caller's own same-slug row.
-  Returns `{:ok, runbook}`, `{:error, :not_found | :unauthorized}`.
-  """
-  def fetch_previous_version(%Runbook{} = runbook, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_slug(runbook.slug)
-      |> Runbook.Query.before_version(runbook.version)
-      |> Runbook.Query.latest_version()
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(Runbook.Query)
     end
   end
 
@@ -203,51 +142,6 @@ defmodule Emisar.Runbooks do
   def definition_diff(previous_definition, definition)
       when is_map(previous_definition) and is_map(definition),
       do: DefinitionDiff.build(previous_definition, definition)
-
-  @doc """
-  Maps each slug to its newest non-deleted PUBLISHED version, for the listed
-  slugs — the list page's Run target, which stays reachable when a family's
-  head is a draft sitting on an older published version. Requires
-  `view_runbooks`; scoped to the subject's account. Returns
-  `{:ok, %{slug => runbook}}` (families with no published version are absent)
-  or `{:error, :unauthorized}`.
-  """
-  def latest_published_by_slugs(slugs, %Subject{} = subject) when is_list(slugs) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
-      runbooks =
-        Runbook.Query.not_deleted()
-        |> Runbook.Query.published()
-        |> Runbook.Query.by_slugs(slugs)
-        |> Runbook.Query.distinct_latest_per_slug()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      {:ok, Map.new(runbooks, &{&1.slug, &1})}
-    end
-  end
-
-  @doc """
-  Maps each slug to its family head when that head is a DRAFT, for the listed
-  slugs — the pending revision waiting on a human above whatever version
-  currently runs. Requires `view_runbooks`; scoped to the subject's account.
-  Returns `{:ok, %{slug => runbook}}` (a family whose head is already published
-  is absent) or `{:error, :unauthorized}`.
-  """
-  def draft_heads_by_slugs(slugs, %Subject{} = subject) when is_list(slugs) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
-      runbooks =
-        Runbook.Query.not_deleted()
-        |> Runbook.Query.by_slugs(slugs)
-        |> Runbook.Query.latest_version_per_slug()
-        |> Runbook.Query.draft()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      {:ok, Map.new(runbooks, &{&1.slug, &1})}
-    end
-  end
 
   @doc """
   `%{runbook_id => most-severe step risk}` for at most #{@max_risk_runbook_ids}
@@ -316,10 +210,9 @@ defmodule Emisar.Runbooks do
   defp step_action_id(_step), do: nil
 
   @doc """
-  Lists the newest published version of each slug family a model may discover —
-  a newer draft never suppresses the published version behind it. Requires
-  `view_runbooks`; scoped to the subject's account, then narrowed to the rows
-  whose CURRENT execution contract is still available. Returns
+  Lists every live runbook a model may discover. Requires `view_runbooks`;
+  scoped to the subject's account, then narrowed to the rows whose CURRENT
+  execution contract is still available. Returns
   `{:ok, [runbook]} | {:error, :unauthorized}`.
   """
   def list_model_visible_runbooks(%Subject{} = subject) do
@@ -327,8 +220,7 @@ defmodule Emisar.Runbooks do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
       runbooks =
         Runbook.Query.not_deleted()
-        |> Runbook.Query.published()
-        |> Runbook.Query.distinct_latest_per_slug()
+        |> Runbook.Query.live()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -337,9 +229,9 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
-  Lists the current draft head of each runbook family a model may revise.
+  Lists every runbook carrying an unpublished change a model may revise.
 
-  Unlike published discovery, draft discovery does not require current target
+  Unlike live discovery, draft discovery does not require current target
   availability: an unavailable draft must remain reachable so its author can
   repair it. Requires `view_runbooks`; scoped to the subject's account.
   """
@@ -348,8 +240,7 @@ defmodule Emisar.Runbooks do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
       runbooks =
         Runbook.Query.not_deleted()
-        |> Runbook.Query.latest_version_per_slug()
-        |> Runbook.Query.draft()
+        |> Runbook.Query.has_draft()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -358,46 +249,42 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
-  Fetches the one exact published `slug@version` a model may read. Requires
+  Fetches the live runbook one slug names, for a model to read. Requires
   `view_runbooks`; scoped to the subject's account. Returns
-  `{:ok, runbook} | {:error, :not_found | :unauthorized}` — a draft,
-  cross-account, missing, or currently unavailable version is all `:not_found`,
+  `{:ok, runbook} | {:error, :not_found | :unauthorized}` — a never-published,
+  cross-account, missing, or currently unavailable runbook is all `:not_found`,
   so discovery never confirms a runbook the caller may not execute.
   """
-  def fetch_model_visible_runbook_version(slug, version, %Subject{} = subject)
-      when is_binary(slug) and is_integer(version) and version > 0 do
+  def fetch_model_visible_runbook(slug, %Subject{} = subject) when is_binary(slug) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         {:ok, runbook} <- fetch_model_published_version(slug, version, subject) do
+         {:ok, runbook} <- fetch_live_runbook_by_slug(slug, subject) do
       if model_visible?(runbook, subject), do: {:ok, runbook}, else: {:error, :not_found}
     end
   end
 
   @doc """
-  Fetches one exact current draft head by immutable `slug@version`.
+  Fetches the unpublished change one slug carries.
 
-  A superseded draft, published row, deleted family, or foreign-account row is
-  `:not_found`. Current runner and catalog availability is deliberately not a
-  read gate because the caller may be inspecting the draft to repair it.
+  A runbook with nothing unpublished, a deleted one, and a foreign-account one
+  are all `:not_found`. Current runner and catalog availability is deliberately
+  not a read gate because the caller may be inspecting the draft to repair it.
   """
-  def fetch_model_draft_runbook_version(slug, version, %Subject{} = subject)
-      when is_binary(slug) and is_integer(version) and version > 0 do
+  def fetch_model_runbook_draft(slug, %Subject{} = subject) when is_binary(slug) do
     with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         {:ok, runbook} <- fetch_exact_runbook_version(slug, version, subject, status: :draft),
-         :ok <- ensure_family_head(runbook, subject) do
-      {:ok, runbook}
-    else
-      {:error, :draft_changed} -> {:error, :not_found}
-      other -> other
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_slug(slug)
+      |> Runbook.Query.has_draft()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runbook.Query)
     end
   end
 
-  defp fetch_model_published_version(slug, version, %Subject{} = subject) do
+  defp fetch_live_runbook_by_slug(slug, %Subject{} = subject) do
     Runbook.Query.not_deleted()
-    |> Runbook.Query.published()
     |> Runbook.Query.by_slug(slug)
-    |> Runbook.Query.by_version(version)
+    |> Runbook.Query.live()
     |> Authorizer.for_subject(subject)
     |> Repo.fetch(Runbook.Query)
   end
@@ -407,53 +294,6 @@ defmodule Emisar.Runbooks do
   # contract) is the same answer to a model: it isn't there.
   defp model_visible?(%Runbook{} = runbook, %Subject{} = subject),
     do: Compiler.validate_availability(runbook.definition, subject) == :ok
-
-  defp fetch_exact_runbook_version(slug, version, %Subject{} = subject, opts) do
-    repo = Keyword.get(opts, :repo, Repo)
-
-    queryable =
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_slug(slug)
-      |> Runbook.Query.by_version(version)
-      |> maybe_filter_runbook_status(opts[:status])
-      |> maybe_lock_runbook(opts[:lock])
-      |> Authorizer.for_subject(subject)
-
-    repo.fetch(queryable, Runbook.Query)
-  end
-
-  defp maybe_filter_runbook_status(queryable, :draft), do: Runbook.Query.draft(queryable)
-  defp maybe_filter_runbook_status(queryable, :published), do: Runbook.Query.published(queryable)
-  defp maybe_filter_runbook_status(queryable, nil), do: queryable
-
-  defp maybe_lock_runbook(queryable, true), do: Runbook.Query.lock_for_update(queryable)
-  defp maybe_lock_runbook(queryable, _lock), do: queryable
-
-  defp ensure_family_head(%Runbook{} = runbook, %Subject{} = subject, opts \\ []) do
-    repo = Keyword.get(opts, :repo, Repo)
-
-    Runbook.Query.not_deleted()
-    |> Runbook.Query.by_slug(runbook.slug)
-    |> Runbook.Query.latest_version()
-    |> Authorizer.for_subject(subject)
-    |> repo.fetch(Runbook.Query)
-    |> case do
-      {:ok, %{id: id}} when id == runbook.id -> :ok
-      {:ok, %Runbook{}} -> {:error, :draft_changed}
-      other -> other
-    end
-  end
-
-  # `Multi.run` needs a tagged tuple; both version-save transactions refuse a
-  # superseded source through this same step.
-  defp ensure_family_head_step(%Runbook{} = runbook, %Subject{} = subject) do
-    fn repo, _changes ->
-      case ensure_family_head(runbook, subject, repo: repo) do
-        :ok -> {:ok, runbook}
-        {:error, reason} -> {:error, reason}
-      end
-    end
-  end
 
   def fetch_runbook_by_id(id, %Subject{} = subject) do
     with :ok <-
@@ -466,20 +306,6 @@ defmodule Emisar.Runbooks do
     else
       false -> {:error, :not_found}
       other -> other
-    end
-  end
-
-  @doc "Fetches one exact immutable published runbook version by slug and version."
-  def fetch_published_runbook_version(slug, version, %Subject{} = subject)
-      when is_binary(slug) and is_integer(version) and version > 0 do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.published()
-      |> Runbook.Query.by_slug(slug)
-      |> Runbook.Query.by_version(version)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(Runbook.Query)
     end
   end
 
@@ -552,7 +378,12 @@ defmodule Emisar.Runbooks do
   def execution_projection(%{execution: %RunbookExecution{}} = result),
     do: ExecutionProjection.build(result)
 
-  @doc "Fetches the immutable runbook row retained by an execution, including soft-deleted families."
+  @doc """
+  Fetches the runbook row an execution belongs to, including soft-deleted ones.
+
+  Identity only — title and slug for navigation. What the execution actually ran
+  is its own `definition` snapshot, because the runbook row moves on at publish.
+  """
   def fetch_runbook_for_execution(%RunbookExecution{} = execution, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
@@ -567,18 +398,19 @@ defmodule Emisar.Runbooks do
   @doc """
   Changeset for the runbook editor's metadata form (title/slug/description).
   Drives `phx-change` validation + inline field errors in the LiveView; the
-  row itself is persisted by `create_runbook/2` / `save_new_version/3`, which
-  also validate the structured `definition`.
+  row itself is persisted by `create_runbook/2` / `save_draft/4`, which also
+  validate the structured definition.
   """
   def change_runbook(attrs \\ %{}), do: Runbook.Changeset.form(attrs)
 
   # -- Mutations -------------------------------------------------------
 
   @doc """
-  Creates a bounded runbook, always born `:draft` — incomplete canonical
-  definitions may be saved, while publication remains strict.
-  `Runbook.Changeset.create/3` never casts `:status`, so a client-supplied
-  status is ignored. Requires manage or draft permission; returns
+  Creates a runbook whose whole content is its first, never-published draft.
+
+  Nothing is live until someone publishes: `live_version` and `definition` stay
+  null, so an incomplete canonical definition may be saved while publication
+  remains strict. Requires manage or draft permission; returns
   `{:ok, runbook} | {:error, changeset | :unauthorized}`.
   """
   def create_runbook(attrs, %Subject{account: account} = subject) do
@@ -595,8 +427,8 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
-  Imports one strictly valid canonical v1 JSON definition as a draft in the
-  subject's account. Requires manage or draft permission; returns
+  Imports one strictly valid canonical v1 JSON definition as a new runbook's
+  first draft. Requires manage or draft permission; returns
   `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :unauthorized}`.
   """
   def import_runbook(title, encoded_definition, %Subject{account: account} = subject)
@@ -612,45 +444,12 @@ defmodule Emisar.Runbooks do
         "title" => title,
         "slug" => "",
         "description" => "",
-        "definition" => definition
+        "draft_definition" => definition
       }
 
       account.id
       |> Runbook.Changeset.create(Subject.user_id(subject), attrs)
       |> insert_runbook(subject)
-    end
-  end
-
-  @doc """
-  Creates a runbook born `:published` — the editor's one-click publish-from-new.
-  Requires `manage_runbooks`; the status is decided by this named transition,
-  never cast from client attrs, and publication readiness is rechecked against
-  current domain state inside the transaction, so no caller can mint a
-  published runbook the current-state preflight would refuse. Returns
-  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :unauthorized}`.
-  """
-  def create_published_runbook(attrs, %Subject{account: account} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runbooks_permission()
-           ) do
-      changeset = Runbook.Changeset.create_published(account.id, Subject.user_id(subject), attrs)
-      definition = Ecto.Changeset.get_field(changeset, :definition)
-
-      Multi.new()
-      |> Multi.run(:publication_readiness, fn _repo, _changes ->
-        publication_readiness(definition, subject)
-      end)
-      |> Multi.insert(:runbook, changeset)
-      |> Multi.insert(:audit, fn %{runbook: runbook} ->
-        Audit.Events.runbook_created(subject, runbook)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_runbook_created(&1.runbook))
-      |> case do
-        {:ok, %{runbook: runbook}} -> {:ok, runbook}
-        {:error, reason} -> {:error, reason}
-      end
     end
   end
 
@@ -752,7 +551,7 @@ defmodule Emisar.Runbooks do
       "title" => facts.title,
       "slug" => facts.slug,
       "description" => facts.description,
-      "definition" => definition
+      "draft_definition" => definition
     }
   end
 
@@ -771,14 +570,20 @@ defmodule Emisar.Runbooks do
   defp after_mcp_draft_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
 
   @doc """
-  Creates or replays the next immutable draft revision of one runbook family.
+  Updates or replays one runbook's single draft under its operation identity.
 
-  The exact source ref and definition hash form an optimistic authoring lock.
-  Only the current family head may be revised, its slug is preserved, and the
-  resulting row is always a draft. Publishing remains a separate human-only
-  transition.
+  `facts` carries the model's exact authoring intent: `:operation_id`, the
+  `:slug` it read, the `:definition_sha256` it read (the optimistic authoring
+  lock), `:title`, `:description`, and `:definition`. The runbook itself owns
+  the operation's resource identity, so a replay re-reads the same row.
+
+  Requires manage or draft runbooks. Publishing remains a separate human-only
+  transition. Returns `{:ok, :created | :replay, runbook}`,
+  `{:error, :draft_changed}`, `{:error, :not_found}`,
+  `{:error, :operation_conflict}`, `{:error, :operation_incomplete}`, the
+  ordered definition issues, or `{:error, :unauthorized}`.
   """
-  def create_or_replay_mcp_draft_revision(
+  def create_or_replay_mcp_draft_update(
         %{operation_id: operation_id} = facts,
         %Subject{actor: %ApiKeys.ApiKey{}} = subject
       )
@@ -788,19 +593,19 @@ defmodule Emisar.Runbooks do
              subject,
              {:one_of,
               [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
-           ) do
-      id = MCPOperations.resource_id(operation_id, :update_runbook_draft, subject)
-      attrs = mcp_draft_revision_operation_attrs(facts, id)
-      commit_mcp_draft_revision(facts, id, attrs, subject)
+           ),
+         {:ok, runbook} <- fetch_runbook_by_slug(facts.slug, subject) do
+      attrs = mcp_draft_update_operation_attrs(facts, runbook.id)
+      commit_mcp_draft_update(facts, runbook.id, attrs, subject)
     end
   end
 
-  def create_or_replay_mcp_draft_revision(_facts, %Subject{}), do: {:error, :unauthorized}
+  def create_or_replay_mcp_draft_update(_facts, %Subject{}), do: {:error, :unauthorized}
 
-  defp mcp_draft_revision_operation_attrs(facts, id) do
+  defp mcp_draft_update_operation_attrs(facts, id) do
     fingerprint =
       MCPOperations.mutation_fingerprint("update_runbook_draft", %{
-        "runbook_ref" => facts.runbook_ref,
+        "slug" => facts.slug,
         "definition_sha256" => facts.definition_sha256,
         "title" => facts.title,
         "description" => facts.description,
@@ -812,11 +617,11 @@ defmodule Emisar.Runbooks do
       tool: :update_runbook_draft,
       fingerprint: fingerprint,
       resource_id: id,
-      resource_ref: facts.runbook_ref
+      resource_ref: facts.slug
     }
   end
 
-  defp commit_mcp_draft_revision(facts, id, operation_attrs, %Subject{} = subject) do
+  defp commit_mcp_draft_update(facts, id, operation_attrs, %Subject{} = subject) do
     with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
       multi =
         Multi.merge(multi, fn
@@ -824,72 +629,232 @@ defmodule Emisar.Runbooks do
             Multi.new()
 
           %{mcp_operation: %{fresh?: true}} ->
-            compose_fresh_mcp_draft_revision(facts, id, subject)
+            compose_fresh_mcp_draft_update(facts, id, subject)
         end)
 
       with {:ok, %{mcp_operation: reservation}} <-
-             Repo.commit_multi(multi, after_commit: &after_mcp_draft_revision_committed/1),
+             Repo.commit_multi(multi, after_commit: &after_mcp_draft_update_committed/1),
            {:ok, runbook} <- fetch_mcp_draft(id, subject) do
         {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
-      else
-        {:error, %Ecto.Changeset{} = changeset} -> normalize_draft_revision_error(changeset)
-        other -> other
       end
     end
   end
 
-  defp compose_fresh_mcp_draft_revision(facts, id, %Subject{} = subject) do
+  defp compose_fresh_mcp_draft_update(facts, id, %Subject{} = subject) do
     Multi.new()
     |> Multi.run(:source_runbook, fn repo, _changes ->
-      fetch_locked_revision_source(facts, subject, repo)
+      fetch_locked_draft_source(facts, id, subject, repo)
     end)
     |> Multi.run(:definition, fn _repo, _changes ->
       Definition.validate_draft(facts.definition)
     end)
-    |> Multi.insert(:runbook, fn %{source_runbook: source, definition: definition} ->
+    |> Multi.update(:runbook, fn %{source_runbook: source, definition: definition} ->
       attrs = %{
-        "id" => id,
         "title" => facts.title,
         "description" => facts.description,
-        "definition" => definition
+        "draft_definition" => definition
       }
 
-      Runbook.Changeset.new_version(source, Subject.user_id(subject), attrs)
+      Runbook.Changeset.draft(source, attrs)
     end)
     |> Multi.insert(:audit, fn %{source_runbook: source, runbook: runbook} ->
       Audit.Events.runbook_updated(subject, source, runbook)
     end)
   end
 
-  defp fetch_locked_revision_source(facts, %Subject{} = subject, repo) do
-    with {:ok, {slug, version}} <- parse_runbook_ref(facts.runbook_ref),
-         {:ok, runbook} <-
-           fetch_exact_runbook_version(slug, version, subject, repo: repo, lock: true),
-         :ok <- ensure_family_head(runbook, subject, repo: repo),
-         true <- Definition.digest(runbook.definition) == facts.definition_sha256 do
+  defp fetch_locked_draft_source(facts, id, %Subject{} = subject, repo) do
+    queryable =
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(id)
+      |> Runbook.Query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+
+    with {:ok, runbook} <- repo.fetch(queryable, Runbook.Query),
+         true <- editing_digest(runbook) == facts.definition_sha256 do
       {:ok, runbook}
     else
       false -> {:error, :draft_changed}
-      {:error, :invalid_runbook_ref} -> {:error, :invalid_runbook_ref}
-      {:error, :not_found} -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp normalize_draft_revision_error(changeset) do
-    if changeset.errors[:slug] || changeset.errors[:version],
-      do: {:error, :draft_changed},
-      else: {:error, changeset}
-  end
-
-  defp after_mcp_draft_revision_committed(%{
-         mcp_operation: %{fresh?: true},
-         runbook: runbook
-       }) do
+  defp after_mcp_draft_update_committed(%{mcp_operation: %{fresh?: true}, runbook: runbook}) do
     broadcast_runbook_updated(runbook)
   end
 
-  defp after_mcp_draft_revision_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
+  defp after_mcp_draft_update_committed(%{mcp_operation: %{fresh?: false}}), do: :ok
+
+  @doc """
+  Saves the runbook's single mutable draft, along with its title and description.
+
+  `base_sha` is the digest of what the editing surface read — the unpublished
+  change when there was one, otherwise the live release. It is compared against
+  the locked row inside the transaction, so an edit written on top of someone
+  else's is refused as `{:error, :draft_changed}` rather than silently
+  overwriting it. The slug is frozen once a release exists.
+
+  Requires `manage_runbooks` and that the subject owns the runbook's account.
+  Returns
+  `{:ok, runbook} | {:error, changeset | :draft_changed | :unauthorized | :not_found}`.
+  """
+  def save_draft(%Runbook{} = runbook, attrs, base_sha, %Subject{} = subject)
+      when is_binary(base_sha) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(runbook.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runbook.Query,
+        with: &save_draft_when_current(&1, attrs, base_sha),
+        audit: &Audit.Events.runbook_updated(subject, &2.data, &1),
+        after_commit: &broadcast_runbook_updated/1
+      )
+    end
+  end
+
+  defp save_draft_when_current(%Runbook{} = loaded_runbook, attrs, base_sha) do
+    if editing_digest(loaded_runbook) == base_sha,
+      do: Runbook.Changeset.draft(loaded_runbook, attrs),
+      else: :draft_changed
+  end
+
+  @doc """
+  Publishes the runbook's draft as its next release.
+
+  Mints release N = the previous `live_version` + 1 into the append-only log,
+  promotes the draft to what is live, and clears it. Readiness is rechecked
+  inside the transaction against the locked row's own draft — never a
+  caller-held snapshot — so a stale editor preview cannot publish what current
+  state refuses. Requires `manage_runbooks` and that the subject owns the
+  runbook's account. Returns
+  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :no_draft | :unauthorized | :not_found}`.
+  """
+  def publish_draft(%Runbook{} = runbook, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
+      Multi.new()
+      |> Multi.run(:locked_runbook, fn repo, _changes ->
+        fetch_locked_runbook(runbook.id, subject, repo)
+      end)
+      |> Multi.run(:definition, fn _repo, %{locked_runbook: loaded_runbook} ->
+        publishable_draft(loaded_runbook, subject)
+      end)
+      |> Multi.insert(:release, &release_changeset(&1, subject))
+      |> Multi.update(:runbook, fn changes ->
+        %{locked_runbook: loaded_runbook, definition: definition, release: release} = changes
+        Runbook.Changeset.publish(loaded_runbook, definition, release.version)
+      end)
+      |> Multi.insert(:audit, fn %{runbook: published, release: release} ->
+        Audit.Events.runbook_published(subject, published, release)
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_runbook_published(&1.runbook))
+      |> case do
+        {:ok, %{runbook: published}} -> {:ok, published}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp publishable_draft(%Runbook{draft_definition: nil}, %Subject{}), do: {:error, :no_draft}
+
+  defp publishable_draft(%Runbook{} = loaded_runbook, %Subject{} = subject),
+    do: publication_readiness(loaded_runbook.draft_definition, subject)
+
+  defp release_changeset(%{locked_runbook: loaded_runbook, definition: definition}, subject) do
+    Release.Changeset.create(%{
+      account_id: loaded_runbook.account_id,
+      runbook_id: loaded_runbook.id,
+      version: (loaded_runbook.live_version || 0) + 1,
+      title: loaded_runbook.title,
+      description: loaded_runbook.description,
+      definition: definition,
+      definition_sha256: Definition.digest(definition),
+      published_by_id: Subject.user_id(subject)
+    })
+  end
+
+  # The authoritative publish gate — the same rule the editor's preview
+  # proxies: the strict definition contract plus a full current-state compile
+  # (targets, trust, contracts, bindings, policy) using deterministic
+  # authoring-preview inputs. Runs inside the publishing transaction so its
+  # catalog reads share the commit's snapshot.
+  defp publication_readiness(definition, %Subject{} = subject) do
+    with {:ok, definition} <- Definition.validate(definition),
+         {:ok, _compiled} <-
+           Compiler.compile(
+             definition,
+             authoring_preview_inputs(definition),
+             new_target_selection_seed(),
+             subject
+           ) do
+      {:ok, definition}
+    end
+  end
+
+  @doc """
+  Drops the runbook's unpublished change, leaving the live release running.
+
+  A runbook that has never been published is all draft, so there is nothing to
+  fall back to: it answers `{:error, :never_published}` and stays editable.
+  Requires `manage_runbooks` and that the subject owns the runbook's account.
+  Returns
+  `{:ok, runbook} | {:error, :never_published | :no_draft | :unauthorized | :not_found}`.
+  """
+  def discard_draft(%Runbook{} = runbook, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(runbook.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runbook.Query,
+        with: &discard_draft_when_live/1,
+        audit: &Audit.Events.runbook_updated(subject, &2.data, &1),
+        after_commit: &broadcast_runbook_updated/1
+      )
+    end
+  end
+
+  defp discard_draft_when_live(%Runbook{live_version: nil}), do: :never_published
+  defp discard_draft_when_live(%Runbook{draft_definition: nil}), do: :no_draft
+
+  defp discard_draft_when_live(%Runbook{} = loaded_runbook),
+    do: Runbook.Changeset.discard_draft(loaded_runbook)
+
+  @doc """
+  Soft-deletes a runbook. Its releases are retained — they are the record of
+  what the approved procedure was while it existed. Requires `manage_runbooks`
+  and that the subject owns the runbook's account. Returns
+  `{:ok, runbook}` or `{:error, :unauthorized | :not_found}`.
+  """
+  def delete_runbook(%Runbook{} = runbook, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.manage_runbooks_permission()
+           ),
+         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(runbook.id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch_and_update(Runbook.Query,
+        with: &Runbook.Changeset.delete/1,
+        audit: &Audit.Events.runbook_deleted(subject, &1),
+        after_commit: &broadcast_runbook_deleted/1
+      )
+    end
+  end
 
   # -- PubSub ----------------------------------------------------------
 
@@ -950,179 +915,22 @@ defmodule Emisar.Runbooks do
     )
   end
 
-  @doc """
-  Saves the next immutable version of a runbook family, always born a draft —
-  publication only happens through `publish/2` or `save_published_version/3`.
-  Only the family head may be extended — a superseded `old` is refused inside
-  the transaction as `{:error, :draft_changed}`. Requires `manage_runbooks` and
-  that the subject owns the runbook's account. Returns
-  `{:ok, runbook} | {:error, changeset | :draft_changed | :unauthorized | :not_found}`.
-  """
-  def save_new_version(%Runbook{} = old, attrs, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runbooks_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, old.account_id) do
-      user_id = Subject.user_id(subject)
-
-      Multi.new()
-      |> Multi.run(:family_head, ensure_family_head_step(old, subject))
-      |> Multi.insert(:runbook, Runbook.Changeset.new_version(old, user_id, attrs))
-      |> Multi.insert(:audit, fn %{runbook: runbook} ->
-        Audit.Events.runbook_updated(subject, old, runbook)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_runbook_updated(&1.runbook))
-      |> case do
-        {:ok, %{runbook: runbook}} -> {:ok, runbook}
-        {:error, reason} -> {:error, reason}
-      end
-    end
-  end
-
-  @doc """
-  Saves the next immutable version born `:published` — the editor's
-  save-and-publish, as one transaction: publication readiness is rechecked
-  against current domain state and the new version commits published or not at
-  all, auditing both the content update and the publication. Only the family
-  head may be extended — a superseded `old` is refused inside the transaction
-  as `{:error, :draft_changed}`. Requires `manage_runbooks` and that the
-  subject owns the runbook's account. Returns
-  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :draft_changed | :unauthorized | :not_found}`.
-  """
-  def save_published_version(%Runbook{} = old, attrs, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runbooks_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, old.account_id) do
-      user_id = Subject.user_id(subject)
-      changeset = Runbook.Changeset.new_published_version(old, user_id, attrs)
-      definition = Ecto.Changeset.get_field(changeset, :definition)
-
-      Multi.new()
-      |> Multi.run(:family_head, ensure_family_head_step(old, subject))
-      |> Multi.run(:publication_readiness, fn _repo, _changes ->
-        publication_readiness(definition, subject)
-      end)
-      |> Multi.insert(:runbook, changeset)
-      |> Multi.insert(:updated_audit, fn %{runbook: runbook} ->
-        Audit.Events.runbook_updated(subject, old, runbook)
-      end)
-      |> Multi.insert(:published_audit, fn %{runbook: runbook} ->
-        Audit.Events.runbook_published(subject, runbook)
-      end)
-      |> Repo.commit_multi(after_commit: &broadcast_runbook_published(&1.runbook))
-      |> case do
-        {:ok, %{runbook: runbook}} -> {:ok, runbook}
-        {:error, reason} -> {:error, reason}
-      end
-    end
-  end
-
-  @doc """
-  Publishes an existing draft version in place. Readiness and family-head-ness
-  are rechecked inside the transaction on the locked, freshly-read row — never
-  on a caller-held snapshot — so a stale editor preview, a superseded draft, or
-  a direct context caller cannot publish what current state refuses. Requires
-  `manage_runbooks`; scoped to the subject's account. Returns
-  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :draft_changed | :unauthorized | :not_found}`.
-  """
-  def publish(%Runbook{} = runbook, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runbooks_permission()
-           ) do
-      Runbook.Query.not_deleted()
-      |> Runbook.Query.by_id(runbook.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runbook.Query,
-        with: &publish_when_ready(&1, subject),
-        audit: &Audit.Events.runbook_published(subject, &1),
-        after_commit: &broadcast_runbook_published/1
-      )
-    end
-  end
-
-  # Publishing in place from a superseded draft would silently flip the LIVE
-  # version to old content, so head-ness is judged here, on the locked row,
-  # inside the same transaction.
-  defp publish_when_ready(%Runbook{} = loaded_runbook, %Subject{} = subject) do
-    with :ok <- ensure_family_head(loaded_runbook, subject),
-         {:ok, _definition} <- publication_readiness(loaded_runbook.definition, subject) do
-      Runbook.Changeset.publish(loaded_runbook)
-    else
-      {:error, reason} -> reason
-    end
-  end
-
-  # The authoritative publish gate — the same rule the editor's preview
-  # proxies: the strict definition contract plus a full current-state compile
-  # (targets, trust, contracts, bindings, policy) using deterministic
-  # authoring-preview inputs. Runs inside the publishing transaction so its
-  # catalog reads share the commit's snapshot.
-  defp publication_readiness(definition, %Subject{} = subject) do
-    with {:ok, definition} <- Definition.validate(definition),
-         {:ok, _compiled} <-
-           Compiler.compile(
-             definition,
-             authoring_preview_inputs(definition),
-             new_target_selection_seed(),
-             subject
-           ) do
-      {:ok, definition}
-    end
-  end
-
-  @doc """
-  Soft-deletes a runbook and ALL its versions (they share a slug within the
-  account). Requires `manage_runbooks` and that the subject owns the runbook's
-  account. Returns `{:ok, runbook}` or `{:error, :unauthorized | :not_found}`.
-  """
-  def delete_runbook(%Runbook{} = runbook, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_runbooks_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
-      # Tombstone the whole family — a per-row delete would strand older
-      # versions (each version is its own not-deleted row) in the list.
-      queryable =
-        Runbook.Query.not_deleted()
-        |> Runbook.Query.by_account_id(runbook.account_id)
-        |> Runbook.Query.by_slug(runbook.slug)
-        |> Authorizer.for_subject(subject)
-
-      Multi.new()
-      |> Multi.update_all(:runbooks, queryable, set: [deleted_at: DateTime.utc_now()])
-      |> Multi.insert(:audit, Audit.Events.runbook_deleted(subject, runbook))
-      |> Repo.commit_multi(after_commit: fn _ -> broadcast_runbook_deleted(runbook) end)
-      |> case do
-        {:ok, _} -> {:ok, runbook}
-        {:error, reason} -> {:error, reason}
-      end
-    end
-  end
-
   # -- Execution -------------------------------------------------------
 
   @doc """
   Expand a runbook into the ordered list of step descriptors that the
   cloud's executor will dispatch.
-  """
-  def expand(%Runbook{definition: %{"stages" => stages}}) when is_list(stages),
-    do: Enum.flat_map(stages, & &1["steps"])
 
-  def expand(_), do: []
+  Reads the live release, falling back to the draft while nothing is live yet.
+  """
+  def expand(%Runbook{} = runbook), do: runbook |> current_definition() |> expand_definition()
 
   @doc """
-  Compiles and dispatches a published runbook through the durable stage scheduler.
+  Compiles and dispatches a runbook's live release through the durable stage
+  scheduler.
 
-  A draft stays private and unexecutable — it returns `{:error, :not_published}`.
+  A runbook with nothing published stays unexecutable — it returns
+  `{:error, :not_live}`.
 
   The compiler resolves typed inputs, runner fan-out, current trusted packs,
   and action contracts before any execution row is created. The resulting plan
@@ -1140,7 +948,7 @@ defmodule Emisar.Runbooks do
              Emisar.Runs.Authorizer.dispatch_run_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id),
-         :ok <- ensure_published(runbook),
+         :ok <- ensure_live(runbook),
          :ok <- ensure_membership(subject),
          :ok <- ensure_reason(reason),
          {:ok, compiled} <-
@@ -1152,19 +960,23 @@ defmodule Emisar.Runbooks do
   @doc """
   Creates or replays one MCP runbook execution under its operation identity.
 
-  `facts` carries the model's exact call: `:operation_id`, the exact
-  `:runbook_ref`, `:reason`, `:input_values`, and `:allow_draft`.
-  Published execution requires dispatch permission. Explicit draft execution
-  also requires draft-authoring permission and accepts only the current family
-  head.
+  `facts` carries the model's exact call: `:operation_id`, `:reason`,
+  `:input_values`, and either the `:runbook_ref` it means to run or, with
+  `allow_draft: true`, the `:slug` plus the `:definition_sha256` of the exact
+  draft content it consents to.
 
-  The operation is reserved first; only the fresh winner resolves the current
-  exact published runbook or explicitly allowed current draft, rechecks
-  membership, reason, and current scope, seeds target selection, compiles the
-  immutable plan, and composes the execution in the same transaction — so a
-  rejected preflight rolls the reservation back with it. An exact replay
-  re-reads the committed execution without touching current runbook or catalog
-  state. Returns
+  Published execution requires dispatch permission and the ref MUST name the
+  live release — an older number is `{:error, :not_live}`, never a silent
+  redirect to current content. Explicit draft execution also requires
+  draft-authoring permission and runs only the draft whose digest the caller
+  named.
+
+  The operation is reserved first; only the fresh winner resolves the runbook,
+  rechecks membership, reason, and current scope, seeds target selection,
+  compiles the immutable plan, and composes the execution in the same
+  transaction — so a rejected preflight rolls the reservation back with it. An
+  exact replay re-reads the committed execution without touching current
+  runbook or catalog state. Returns
   `{:ok, :created | :replay, execution}`, `{:error, :operation_conflict}`,
   `{:error, :operation_incomplete}`, or the first rejection.
   """
@@ -1202,10 +1014,13 @@ defmodule Emisar.Runbooks do
   end
 
   defp mcp_execution_operation_attrs(facts, execution_id, kind) do
+    ref = mcp_execution_ref(facts, kind)
+
     fingerprint =
       MCPOperations.mutation_fingerprint("execute_runbook", %{
-        "runbook_ref" => facts.runbook_ref,
+        "runbook_ref" => ref,
         "allow_draft" => kind == :draft_test,
+        "definition_sha256" => facts[:definition_sha256],
         "reason" => facts.reason,
         "input_values" => facts.input_values
       })
@@ -1215,9 +1030,14 @@ defmodule Emisar.Runbooks do
       tool: :execute_runbook,
       fingerprint: fingerprint,
       resource_id: execution_id,
-      resource_ref: facts.runbook_ref
+      resource_ref: ref
     }
   end
+
+  # A draft has no release number to name, so its consent is the slug plus the
+  # exact content digest carried in the fingerprint beside it.
+  defp mcp_execution_ref(facts, :draft_test), do: facts.slug
+  defp mcp_execution_ref(facts, :published), do: facts.runbook_ref
 
   defp commit_mcp_execution(
          facts,
@@ -1245,16 +1065,18 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  # Every mutable fact an execution freezes — the published version behind the
-  # ref, membership scope, the compiled plan — is resolved by the fresh winner
-  # only, inside the reservation's own transaction.
+  # Every mutable fact an execution freezes — which release the ref still names,
+  # the exact draft content consented to, membership scope, the compiled plan —
+  # is resolved by the fresh winner only, inside the reservation's own
+  # transaction.
   defp compose_fresh_mcp_execution(facts, execution_id, operation, kind, subject) do
     with {:ok, runbook} <- fetch_runbook_for_mcp_execution(facts, kind, subject),
          :ok <- ensure_membership(subject),
          :ok <- ensure_reason(facts.reason),
+         definition = dispatched_definition(runbook, kind),
          {:ok, compiled} <-
            Compiler.compile(
-             runbook.definition,
+             definition,
              facts.input_values,
              new_target_selection_seed(),
              subject
@@ -1275,26 +1097,33 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  # An older release number is refused rather than redirected: a model that
+  # asked for slug@2 must be told 3 is live, not silently handed 3's content.
   defp fetch_runbook_for_mcp_execution(%{runbook_ref: runbook_ref}, :published, subject) do
-    case parse_runbook_ref(runbook_ref) do
-      {:ok, {slug, version}} -> fetch_published_runbook_version(slug, version, subject)
-      {:error, :invalid_runbook_ref} -> {:error, :invalid_runbook_ref}
+    with {:ok, {slug, version}} <- parse_runbook_ref(runbook_ref),
+         {:ok, runbook} <- fetch_live_runbook_by_slug(slug, subject),
+         true <- runbook.live_version == version do
+      {:ok, runbook}
+    else
+      false -> {:error, :not_live}
+      {:error, reason} -> {:error, reason}
     end
   end
 
   defp fetch_runbook_for_mcp_execution(facts, :draft_test, subject) do
-    with {:ok, {slug, version}} <- parse_runbook_ref(facts.runbook_ref),
-         {:ok, runbook} <-
-           fetch_exact_runbook_version(slug, version, subject,
-             status: :draft,
-             repo: Repo,
-             lock: true
-           ),
-         :ok <- ensure_family_head(runbook, subject) do
+    queryable =
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_slug(facts.slug)
+      |> Runbook.Query.has_draft()
+      |> Runbook.Query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+
+    with {:ok, runbook} <- Repo.fetch(queryable, Runbook.Query),
+         true <- Definition.digest(runbook.draft_definition) == facts.definition_sha256 do
       {:ok, runbook}
     else
+      false -> {:error, :draft_changed}
       {:error, :not_found} -> {:error, :draft_not_found}
-      {:error, :draft_changed} -> {:error, :draft_changed}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -1791,8 +1620,8 @@ defmodule Emisar.Runbooks do
   def subject_can_cancel_execution?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Emisar.Runs.Authorizer.cancel_run_permission())
 
-  defp ensure_published(%Runbook{status: :published}), do: :ok
-  defp ensure_published(%Runbook{}), do: {:error, :not_published}
+  defp ensure_live(%Runbook{live_version: nil}), do: {:error, :not_live}
+  defp ensure_live(%Runbook{}), do: :ok
 
   defp ensure_membership(%Subject{membership_id: id}) when is_binary(id), do: :ok
   defp ensure_membership(_), do: {:error, :membership_required}
@@ -1800,4 +1629,43 @@ defmodule Emisar.Runbooks do
   defp ensure_reason(reason) when is_binary(reason) do
     if String.trim(reason) == "", do: {:error, :reason_required}, else: :ok
   end
+
+  defp fetch_runbook_by_slug(slug, %Subject{} = subject) when is_binary(slug) do
+    Runbook.Query.not_deleted()
+    |> Runbook.Query.by_slug(slug)
+    |> Authorizer.for_subject(subject)
+    |> Repo.fetch(Runbook.Query)
+  end
+
+  defp fetch_locked_runbook(id, %Subject{} = subject, repo) do
+    queryable =
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_id(id)
+      |> Runbook.Query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+
+    repo.fetch(queryable, Runbook.Query)
+  end
+
+  # What the runbook currently RUNS, falling back to the draft while nothing has
+  # been published — the definition a list row reports risk over and `expand/1`
+  # walks.
+  defp current_definition(%Runbook{definition: nil} = runbook), do: runbook.draft_definition
+  defp current_definition(%Runbook{} = runbook), do: runbook.definition
+
+  # What an editing surface last read, and therefore what its next save's base
+  # digest is taken over: the unpublished change when there is one, else the
+  # live release.
+  defp editing_digest(%Runbook{draft_definition: nil} = runbook),
+    do: Definition.digest(runbook.definition)
+
+  defp editing_digest(%Runbook{} = runbook), do: Definition.digest(runbook.draft_definition)
+
+  defp dispatched_definition(%Runbook{} = runbook, :published), do: runbook.definition
+  defp dispatched_definition(%Runbook{} = runbook, :draft_test), do: runbook.draft_definition
+
+  defp expand_definition(%{"stages" => stages}) when is_list(stages),
+    do: Enum.flat_map(stages, & &1["steps"])
+
+  defp expand_definition(_definition), do: []
 end

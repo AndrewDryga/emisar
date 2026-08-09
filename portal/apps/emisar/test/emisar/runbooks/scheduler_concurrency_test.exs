@@ -297,7 +297,7 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
 
     assert {:ok, runbook} =
              Runbooks.create_runbook(
-               %{"title" => title, "slug" => title, "definition" => definition},
+               %{"title" => title, "slug" => title, "draft_definition" => definition},
                subject
              )
 

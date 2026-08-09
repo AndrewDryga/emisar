@@ -43,39 +43,91 @@
       "format": "uuid",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
+    "runbook_slug": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[a-z][a-z0-9_-]{0,79}$"
+    },
     "runbook_ref": {
       "type": "string",
       "maxLength": 96,
       "pattern": "^[a-z][a-z0-9_-]{0,79}@[1-9][0-9]{0,8}$"
     },
+    "nullable_runbook_ref": {
+      "oneOf": [
+        {"$ref": "#/$defs/runbook_ref"},
+        {"type": "null"}
+      ]
+    },
+    "runbook_execution_ref": {
+      "description": "What this execution ran: the release ref `slug@release`, or the bare slug for a draft test — a draft has no release number, so definition_sha256 names the exact content instead.",
+      "oneOf": [
+        {"$ref": "#/$defs/runbook_ref"},
+        {"$ref": "#/$defs/runbook_slug"}
+      ]
+    },
     "definition_sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
-    "runbook_status": {
-      "type": "string",
-      "enum": ["published", "draft"]
+    "nullable_definition_sha256": {
+      "oneOf": [
+        {"$ref": "#/$defs/definition_sha256"},
+        {"type": "null"}
+      ]
     },
-    "runbook_family": {
+    "runbook_counts": {
       "type": "object",
-      "description": "The slug family's two live facts, so reading either side tells you the other.",
-      "required": ["published_ref", "draft_ref"],
+      "required": ["input_count", "stage_count", "step_count"],
       "additionalProperties": false,
       "properties": {
-        "published_ref": {
-          "description": "Newest published version of this slug — what execute_runbook runs by default. Null when the family has never been published.",
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/runbook_ref"}
-          ]
-        },
-        "draft_ref": {
-          "description": "The family head while it is still an unpublished draft, waiting on a human to publish it. Null when the head is already published. A draft never runs unless execute_runbook is called with allow_draft.",
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/runbook_ref"}
-          ]
+        "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
+        "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
+        "step_count": {"type": "integer", "minimum": 0, "maximum": 32}
+      }
+    },
+    "runbook_live_side": {
+      "description": "The release this runbook executes today, or null when nothing has been published yet.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["runbook_ref", "definition_sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+            "definition_sha256": {"$ref": "#/$defs/definition_sha256"}
+          }
         }
+      ]
+    },
+    "runbook_draft_side": {
+      "description": "The unpublished change waiting on a human to publish it, or null when there is none. Pass its definition_sha256 to update_runbook_draft to edit it, or to execute_runbook with allow_draft to test it.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["definition_sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "definition_sha256": {"$ref": "#/$defs/definition_sha256"}
+          }
+        }
+      ]
+    },
+    "runbook_draft_result": {
+      "type": "object",
+      "required": ["ok", "operation_id", "draft_id", "slug", "status", "definition_sha256", "live_ref", "review_url"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {"const": true},
+        "operation_id": {"$ref": "#/$defs/operation_id"},
+        "draft_id": {"type": "string", "format": "uuid"},
+        "slug": {"$ref": "#/$defs/runbook_slug"},
+        "status": {"const": "draft"},
+        "definition_sha256": {"$ref": "#/$defs/definition_sha256", "description": "The hash of the unpublished change just written. Pass it back to edit or test the same content."},
+        "live_ref": {"$ref": "#/$defs/nullable_runbook_ref", "description": "The release still executing while this change waits, or null when the runbook has never been published."},
+        "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
       }
     },
     "cursor": {
@@ -929,14 +981,9 @@
       "additionalProperties": false,
       "properties": {
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
-        "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+        "runbook_ref": {"$ref": "#/$defs/runbook_execution_ref"},
         "kind": {"type": "string", "enum": ["published", "draft_test"]},
-        "definition_sha256": {
-          "oneOf": [
-            {"$ref": "#/$defs/definition_sha256"},
-            {"type": "null"}
-          ]
-        },
+        "definition_sha256": {"$ref": "#/$defs/nullable_definition_sha256"},
         "status": {"$ref": "#/$defs/runbook_execution_status"},
         "blocking": {"$ref": "#/$defs/runbook_execution_error"},
         "stages": {
@@ -1267,24 +1314,23 @@
                       "operation_id": {"$ref": "#/$defs/operation_id"},
                       "kind": {"const": "runbook_draft_test"},
                       "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
-                      "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+                      "runbook_ref": {"$ref": "#/$defs/runbook_execution_ref"},
                       "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
                       "next": {"$ref": "#/$defs/next_wait"}
                     }
                   },
                   {
                     "type": "object",
-                    "required": ["operation_id", "kind", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "family", "review_url"],
+                    "required": ["operation_id", "kind", "draft_id", "slug", "status", "definition_sha256", "live_ref", "review_url"],
                     "additionalProperties": false,
                     "properties": {
                       "operation_id": {"$ref": "#/$defs/operation_id"},
                       "kind": {"const": "runbook_draft"},
-                      "draft_id": {"type": "string", "minLength": 1, "maxLength": 80},
-                      "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
-                      "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
+                      "draft_id": {"type": "string", "format": "uuid"},
+                      "slug": {"$ref": "#/$defs/runbook_slug"},
                       "status": {"const": "draft"},
                       "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
-                      "family": {"$ref": "#/$defs/runbook_family"},
+                      "live_ref": {"$ref": "#/$defs/nullable_runbook_ref"},
                       "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
                     }
                   }
@@ -1364,14 +1410,13 @@
     },
     "list_runbooks": {
       "title": "List runbooks",
-      "description": "List visible immutable runbooks by lifecycle. Published is the default; request draft explicitly to inspect the current working revision of each family.",
+      "description": "List every visible runbook with the release that executes today and the unpublished change waiting on a human. Counts describe the live release, or the unpublished change when nothing is live yet.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "query": {"type": "string", "minLength": 1, "maxLength": 256},
-          "status": {"type": "string", "enum": ["published", "draft"], "default": "published"},
           "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 15},
           "cursor": {"$ref": "#/$defs/cursor"}
         }
@@ -1393,12 +1438,11 @@
                 "items": {
                   "type": "object",
                   "required": [
-                    "runbook_ref",
-                    "status",
-                    "definition_sha256",
+                    "slug",
                     "title",
                     "summary",
-                    "family",
+                    "live",
+                    "draft",
                     "input_count",
                     "stage_count",
                     "step_count",
@@ -1406,13 +1450,11 @@
                   ],
                   "additionalProperties": false,
                   "properties": {
-                    "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
-                    "status": {"$ref": "#/$defs/runbook_status"},
-                    "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
-                    "draft_id": {"type": "string", "format": "uuid"},
+                    "slug": {"$ref": "#/$defs/runbook_slug"},
                     "title": {"type": "string", "minLength": 1, "maxLength": 160},
                     "summary": {"type": "string", "maxLength": 512},
-                    "family": {"$ref": "#/$defs/runbook_family"},
+                    "live": {"$ref": "#/$defs/runbook_live_side"},
+                    "draft": {"$ref": "#/$defs/runbook_draft_side"},
                     "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
                     "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
                     "step_count": {"type": "integer", "minimum": 0, "maximum": 32},
@@ -1421,13 +1463,7 @@
                       "description": "False when this runbook cannot be returned or executed over MCP and must be opened in the console. get_runbook then answers runbook_too_large."
                     },
                     "unavailable_reason": {"type": "string", "minLength": 1, "maxLength": 512}
-                  },
-                  "allOf": [
-                    {
-                      "if": {"properties": {"status": {"const": "draft"}}},
-                      "then": {"required": ["draft_id"]}
-                    }
-                  ]
+                  }
                 }
               },
               "next_cursor": {"$ref": "#/$defs/next_cursor"}
@@ -1438,14 +1474,14 @@
     },
     "get_runbook": {
       "title": "Get runbook",
-      "description": "Get one exact immutable runbook by runbook_ref. Published is the default; request draft explicitly to inspect its definition hash before updating or testing it.",
+      "description": "Read one runbook by slug. The default is its live release — the exact content execute_runbook runs. Request status=draft to read the unpublished change and the definition_sha256 needed to update or test it.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
-        "required": ["runbook_ref"],
+        "required": ["slug"],
         "additionalProperties": false,
         "properties": {
-          "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+          "slug": {"$ref": "#/$defs/runbook_slug"},
           "status": {"type": "string", "enum": ["published", "draft"], "default": "published"}
         }
       },
@@ -1462,37 +1498,47 @@
               "runbook": {
                 "type": "object",
                 "x-maxEncodedUtf8Bytes": 73728,
-                "required": ["runbook_ref", "status", "definition_sha256", "title", "description", "definition", "summary", "family"],
-                "additionalProperties": false,
-                "properties": {
-                  "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
-                  "status": {"$ref": "#/$defs/runbook_status"},
-                  "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
-                  "draft_id": {"type": "string", "format": "uuid"},
-                  "family": {"$ref": "#/$defs/runbook_family"},
-                  "title": {"type": "string", "minLength": 1, "maxLength": 160},
-                  "description": {
-                    "oneOf": [
-                      {"type": "null"},
-                      {"type": "string", "maxLength": 4096}
-                    ]
-                  },
-                  "definition": {"type": "object"},
-                  "summary": {
+                "oneOf": [
+                  {
                     "type": "object",
-                    "required": ["input_count", "stage_count", "step_count"],
+                    "required": ["runbook_ref", "status", "definition_sha256", "title", "description", "definition", "summary", "draft_definition_sha256"],
                     "additionalProperties": false,
                     "properties": {
-                      "input_count": {"type": "integer", "minimum": 0, "maximum": 32},
-                      "stage_count": {"type": "integer", "minimum": 0, "maximum": 16},
-                      "step_count": {"type": "integer", "minimum": 0, "maximum": 32}
+                      "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+                      "status": {"const": "published"},
+                      "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+                      "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                      "description": {
+                        "oneOf": [
+                          {"type": "null"},
+                          {"type": "string", "maxLength": 4096}
+                        ]
+                      },
+                      "definition": {"type": "object"},
+                      "summary": {"$ref": "#/$defs/runbook_counts"},
+                      "draft_definition_sha256": {"$ref": "#/$defs/nullable_definition_sha256", "description": "The hash of the unpublished change waiting on this runbook, or null when there is none. Reading it here saves a second call before update_runbook_draft."}
                     }
-                  }
-                },
-                "allOf": [
+                  },
                   {
-                    "if": {"properties": {"status": {"const": "draft"}}},
-                    "then": {"required": ["draft_id"]}
+                    "type": "object",
+                    "required": ["slug", "draft_id", "status", "definition_sha256", "title", "description", "definition", "summary", "live_ref"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "slug": {"$ref": "#/$defs/runbook_slug"},
+                      "draft_id": {"type": "string", "format": "uuid"},
+                      "status": {"const": "draft"},
+                      "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
+                      "title": {"type": "string", "minLength": 1, "maxLength": 160},
+                      "description": {
+                        "oneOf": [
+                          {"type": "null"},
+                          {"type": "string", "maxLength": 4096}
+                        ]
+                      },
+                      "definition": {"type": "object"},
+                      "summary": {"$ref": "#/$defs/runbook_counts"},
+                      "live_ref": {"$ref": "#/$defs/nullable_runbook_ref", "description": "The release still executing while this change waits, or null when the runbook has never been published."}
+                    }
                   }
                 ]
               }
@@ -1503,26 +1549,41 @@
     },
     "execute_runbook": {
       "title": "Execute runbook",
-      "description": "Execute one exact runbook_ref through Emisar scope, policy, approval, and audit. Published runbooks are the default; set allow_draft only to deliberately execute the exact current draft. A runbook may contain destructive steps; inspect it with get_runbook first. Emisar evaluates policy and handles any required human approval.",
+      "description": "Execute one runbook through Emisar scope, policy, approval, and audit. Name the live release as runbook_ref; an older one answers not_live instead of silently running current content. To test an unpublished change, pass its slug with allow_draft plus the definition_sha256 you read — a mismatch answers draft_changed rather than running whatever is there now. A runbook may contain destructive steps; inspect it with get_runbook first. Emisar evaluates policy and handles any required human approval.",
       "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": true},
       "inputSchema": {
         "type": "object",
-        "required": ["runbook_ref", "reason"],
+        "required": ["reason"],
         "additionalProperties": false,
         "properties": {
           "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+          "slug": {"$ref": "#/$defs/runbook_slug"},
           "allow_draft": {
             "type": "boolean",
             "default": false,
-            "description": "Set true only to execute the exact current draft. Draft execution also requires draft-authoring permission and is recorded as a draft test."
+            "description": "Set true only to execute the exact unpublished change named by slug and definition_sha256. It also requires draft-authoring permission and is recorded as a draft test."
           },
+          "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
           "reason": {"$ref": "#/$defs/reason"},
           "input_values": {
             "type": "object",
             "default": {},
             "x-maxEncodedUtf8Bytes": 32768
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {"required": ["allow_draft"], "properties": {"allow_draft": {"const": true}}},
+            "then": {
+              "required": ["slug", "definition_sha256"],
+              "not": {"required": ["runbook_ref"]}
+            },
+            "else": {
+              "required": ["runbook_ref"],
+              "not": {"anyOf": [{"required": ["slug"]}, {"required": ["definition_sha256"]}]}
+            }
+          }
+        ]
       },
       "outputSchema": {
         "type": "object",
@@ -1543,7 +1604,7 @@
     },
     "create_runbook_draft": {
       "title": "Create runbook draft",
-      "description": "Validate and save a proposed runbook draft for human review. Invalid definitions return exact issue paths and are not persisted. This neither publishes the runbook nor executes any action.",
+      "description": "Create a new runbook as an unpublished change awaiting human review. Invalid definitions return exact issue paths and are not persisted; nothing is published and no action runs.",
       "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -1580,36 +1641,21 @@
         "type": "object",
         "oneOf": [
           {"$ref": "#/$defs/error_result"},
-          {
-            "type": "object",
-            "required": ["ok", "operation_id", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "family", "review_url"],
-            "additionalProperties": false,
-            "properties": {
-              "ok": {"const": true},
-              "operation_id": {"$ref": "#/$defs/operation_id"},
-              "draft_id": {"type": "string", "minLength": 1, "maxLength": 80},
-              "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
-              "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
-              "status": {"const": "draft"},
-              "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
-              "family": {"$ref": "#/$defs/runbook_family"},
-              "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
-            }
-          }
+          {"$ref": "#/$defs/runbook_draft_result"}
         ]
       }
     },
     "update_runbook_draft": {
       "title": "Update runbook draft",
-      "description": "Create the next immutable draft revision in an existing runbook family. The exact current runbook_ref and server-issued definition hash prevent stale edits; the family slug is preserved and the result is never published.",
+      "description": "Replace one runbook's single unpublished change in place. Pass the definition_sha256 you read — the unpublished change's, or the live release's when there is none — so a concurrent edit answers draft_changed instead of being overwritten. The slug never changes, and publishing stays human-only, so the result does not execute.",
       "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
         "x-maxEncodedUtf8Bytes": 73728,
-        "required": ["runbook_ref", "definition_sha256", "title", "description", "definition"],
+        "required": ["slug", "definition_sha256", "title", "description", "definition"],
         "additionalProperties": false,
         "properties": {
-          "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
+          "slug": {"$ref": "#/$defs/runbook_slug"},
           "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
           "title": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S"},
           "description": {
@@ -1625,22 +1671,7 @@
         "type": "object",
         "oneOf": [
           {"$ref": "#/$defs/error_result"},
-          {
-            "type": "object",
-            "required": ["ok", "operation_id", "draft_id", "runbook_ref", "slug", "status", "definition_sha256", "family", "review_url"],
-            "additionalProperties": false,
-            "properties": {
-              "ok": {"const": true},
-              "operation_id": {"$ref": "#/$defs/operation_id"},
-              "draft_id": {"type": "string", "format": "uuid"},
-              "runbook_ref": {"$ref": "#/$defs/runbook_ref"},
-              "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,79}$"},
-              "status": {"const": "draft"},
-              "definition_sha256": {"$ref": "#/$defs/definition_sha256"},
-              "family": {"$ref": "#/$defs/runbook_family"},
-              "review_url": {"type": "string", "format": "uri", "maxLength": 2048}
-            }
-          }
+          {"$ref": "#/$defs/runbook_draft_result"}
         ]
       }
     }

@@ -147,10 +147,9 @@ defmodule Emisar.AuthorizationTest do
       assert {:ok, _rb} =
                Emisar.Runbooks.create_runbook(
                  %{
-                   name: "smoke",
                    slug: "smoke",
                    title: "Smoke test",
-                   definition: Fixtures.Runbooks.default_definition()
+                   draft_definition: Fixtures.Runbooks.default_definition()
                  },
                  subject
                )
@@ -160,21 +159,19 @@ defmodule Emisar.AuthorizationTest do
       subject = subject_with_role(account, :admin)
 
       # The LiveView form submits string keys; the context must not merge an
-      # atom :version into them — that produced a mixed-key map and crashed cast.
+      # atom key into them — that produced a mixed-key map and crashed cast.
       assert {:ok, runbook} =
                Emisar.Runbooks.create_runbook(
                  %{
-                   "name" => "from-form",
                    "slug" => "from-form",
                    "title" => "From the form",
                    "description" => "",
-                   "status" => "published",
-                   "definition" => Fixtures.Runbooks.default_definition()
+                   "draft_definition" => Fixtures.Runbooks.default_definition()
                  },
                  subject
                )
 
-      assert runbook.version == 1
+      assert runbook.live_version == nil
     end
   end
 
@@ -185,11 +182,10 @@ defmodule Emisar.AuthorizationTest do
       {:ok, runbook_b} =
         Emisar.Runbooks.create_runbook(
           %{
-            name: "ops-#{System.unique_integer()}",
             slug: "ops-#{System.unique_integer()}",
             title: "Restart",
             description: "b's runbook",
-            definition: Fixtures.Runbooks.default_definition()
+            draft_definition: Fixtures.Runbooks.default_definition()
           },
           subject_b
         )
@@ -198,10 +194,17 @@ defmodule Emisar.AuthorizationTest do
       %{runbook_b: runbook_b, subject_a: subject_with_role(account_a, :owner)}
     end
 
-    test "an owner of A can't save a new version of B's runbook (permission held, account not)",
+    test "an owner of A can't save a draft on B's runbook (permission held, account not)",
          %{runbook_b: runbook_b, subject_a: subject_a} do
+      base_sha = Emisar.Runbooks.definition_digest(runbook_b.draft_definition)
+
       assert {:error, :not_found} =
-               Emisar.Runbooks.save_new_version(runbook_b, %{description: "hijacked"}, subject_a)
+               Emisar.Runbooks.save_draft(
+                 runbook_b,
+                 %{description: "hijacked"},
+                 base_sha,
+                 subject_a
+               )
     end
 
     test "an owner of A can't dispatch B's runbook", %{

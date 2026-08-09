@@ -35,6 +35,9 @@ defmodule Emisar.Runbooks.Compiler do
          {:ok, plan} <- build_plan(definition, inputs, items) do
       {:ok,
        %{
+         # The exact definition this plan came from — an execution snapshots it,
+         # because the runbook row it was read from moves on at the next publish.
+         definition: definition,
          plan: plan,
          items: items,
          inputs_raw: inputs.raw,

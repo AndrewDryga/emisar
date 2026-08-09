@@ -95,7 +95,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
                "type" => "boolean",
                "default" => false,
                "description" =>
-                 "Set true only to execute the exact current draft. Draft execution also requires draft-authoring permission and is recorded as a draft test."
+                 "Set true only to execute the exact unpublished change named by slug and definition_sha256. It also requires draft-authoring permission and is recorded as a draft test."
              }
 
     assert by_name["create_runbook_draft"]["annotations"] == %{

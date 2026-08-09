@@ -21,7 +21,7 @@ alias Emisar.Catalog.{PackBaseline, PackVersion}
 alias Emisar.Policies
 alias Emisar.Repo
 alias Emisar.Runbooks
-alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Runbook, RunbookExecution}
+alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, Release, Runbook, RunbookExecution}
 alias Emisar.Runbooks.Extractor
 alias Emisar.Runners
 alias Emisar.Runners.Runner
@@ -273,8 +273,6 @@ end
 
 {:ok, legacy_runbooks, _metadata} = Runbooks.list_runbooks(owner_subject)
 
-# The list is one head row per slug family; delete_runbook tombstones the
-# whole family, so older versions can't resurface as the next head.
 legacy_runbooks
 |> Enum.filter(&(&1.slug == "nightly-edge-health"))
 |> Enum.each(fn runbook ->
@@ -406,37 +404,86 @@ morning_definition = %{
 }
 
 morning_attrs = %{
-  name: "morning-edge-readiness",
   slug: "morning-edge-readiness",
   title: "Morning edge readiness",
   description:
     "08:00 UTC check across the edge-web group before the EU traffic peak: " <>
       "host load, disk pressure, and memory health.",
-  definition: morning_definition
+  draft_definition: morning_definition
 }
 
-_morning_runbook =
-  case Enum.find(runbooks, &(&1.slug == "morning-edge-readiness")) do
-    nil ->
-      # Direct changeset insert: the demo runners this runbook targets are
-      # seeded further down, so the context's current-state publication
-      # readiness cannot pass yet.
-      {:ok, runbook} =
-        account.id
-        |> Runbook.Changeset.create_published(user.id, morning_attrs)
-        |> Repo.insert()
+# The unpublished change the console demos: the same checks, run one at a time
+# so a failure stops the sweep. Small on purpose — the publish diff has to be
+# readable in a screenshot.
+morning_draft_definition =
+  put_in(morning_definition, ["stages", Access.at(0), "max_parallel"], 1)
+  |> Map.put(
+    "context_markdown",
+    "## Before you run\n\n- Confirm the morning readiness window.\n" <>
+      "- Escalate any failed check before shifting traffic.\n" <>
+      "- Checks run one at a time so the first failure stops the sweep."
+  )
 
-      IO.puts(IO.ANSI.cyan() <> "✓ Seeded empty-history sample runbook" <> IO.ANSI.reset())
-      runbook
+# Publication is arranged at the changeset level: the demo runners these
+# runbooks target are seeded further down, so the context's current-state
+# publication readiness cannot pass yet.
+publish_seeded_runbook = fn %Runbook{} = runbook ->
+  definition = runbook.draft_definition
+  version = (runbook.live_version || 0) + 1
 
-    runbook ->
-      {:ok, runbook} =
-        runbook
-        |> Runbook.Changeset.update(morning_attrs)
-        |> Repo.update()
+  {:ok, _release} =
+    Release.Changeset.create(%{
+      account_id: runbook.account_id,
+      runbook_id: runbook.id,
+      version: version,
+      title: runbook.title,
+      description: runbook.description,
+      definition: definition,
+      definition_sha256: Runbooks.definition_digest(definition),
+      published_by_id: runbook.created_by_id
+    })
+    |> Repo.insert()
 
-      runbook
+  {:ok, published} =
+    runbook
+    |> Runbook.Changeset.publish(definition, version)
+    |> Repo.update()
+
+  published
+end
+
+seed_live_runbook = fn slug, attrs ->
+  runbook =
+    case Enum.find(runbooks, &(&1.slug == slug)) do
+      nil ->
+        {:ok, created} = account.id |> Runbook.Changeset.create(user.id, attrs) |> Repo.insert()
+        created
+
+      existing ->
+        {:ok, updated} = existing |> Runbook.Changeset.draft(attrs) |> Repo.update()
+        updated
+    end
+
+  # Republish only when the seeded definition actually moved; a plain reseed
+  # keeps v1 rather than minting a release nobody authored.
+  if runbook.draft_definition == runbook.definition do
+    {:ok, unchanged} = runbook |> Runbook.Changeset.discard_draft() |> Repo.update()
+    unchanged
+  else
+    publish_seeded_runbook.(runbook)
   end
+end
+
+morning_runbook = seed_live_runbook.("morning-edge-readiness", morning_attrs)
+
+# The list's amber "Unpublished changes" chip and the editor's publish diff both
+# need a runbook mid-edit, so this one keeps a draft above its live release.
+{:ok, _morning_draft} =
+  morning_runbook
+  |> Runbook.Changeset.draft(%{draft_definition: morning_draft_definition})
+  |> Repo.update()
+
+IO.puts(IO.ANSI.cyan() <> "✓ Seeded empty-history sample runbook" <> IO.ANSI.reset())
 
 approval_definition = %{
   "schema_version" => 1,
@@ -524,37 +571,17 @@ approval_definition = %{
 }
 
 approval_attrs = %{
-  name: "edge-configuration-rollout",
   slug: "edge-configuration-rollout",
   title: "Edge configuration rollout",
   description:
     "Reload a validated Caddy configuration across the edge fleet, " <>
       "then verify the running version and upstream health.",
-  definition: approval_definition
+  draft_definition: approval_definition
 }
 
-approval_runbook =
-  case Enum.find(runbooks, &(&1.slug == "edge-configuration-rollout")) do
-    nil ->
-      # Same as the morning runbook: seeded before its target runners exist,
-      # so it bypasses the context's publication readiness by construction.
-      {:ok, runbook} =
-        account.id
-        |> Runbook.Changeset.create_published(user.id, approval_attrs)
-        |> Repo.insert()
+approval_runbook = seed_live_runbook.("edge-configuration-rollout", approval_attrs)
 
-      IO.puts(IO.ANSI.cyan() <> "✓ Seeded edge configuration rollout runbook" <> IO.ANSI.reset())
-
-      runbook
-
-    runbook ->
-      {:ok, runbook} =
-        runbook
-        |> Runbook.Changeset.update(approval_attrs)
-        |> Repo.update()
-
-      runbook
-  end
+IO.puts(IO.ANSI.cyan() <> "✓ Seeded edge configuration rollout runbook" <> IO.ANSI.reset())
 
 # -- Runners ----------------------------------------------------------
 #

@@ -144,9 +144,8 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
       Runbooks.create_runbook(
         %{
           "title" => String.replace(slug, "-", " "),
-          "name" => slug,
           "slug" => slug,
-          "definition" => %{
+          "draft_definition" => %{
             "schema_version" => 1,
             "context_markdown" => "Verify the selected fleet.",
             "inputs" => [],
@@ -175,7 +174,7 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
         subject
       )
 
-    Emisar.Fixtures.Runbooks.publish_runbook(draft)
+    Fixtures.Runbooks.publish_runbook(draft)
   end
 
   defp action do

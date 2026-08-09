@@ -111,12 +111,18 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       result = RunbookTools.execution_failure(reason)
 
       assert result.error.code == "runbook_not_found"
-      assert result.error.message == "No published runbook has that exact ref."
+      assert result.error.message == "No live runbook has that exact ref."
 
       if reason in [:pack_untrusted, :pack_retired] do
         refute Jason.encode!(result) =~ Atom.to_string(reason)
       end
     end
+
+    # A superseded release is not a hidden reason: the runbook exists, the
+    # caller may read it, and naming the live one is the whole remedy.
+    superseded = RunbookTools.execution_failure(:not_live)
+    assert superseded.error.code == "not_live"
+    assert superseded.error.message =~ "list_runbooks shows what is"
 
     generic = RunbookTools.execution_failure(:unexpected_internal_reason)
     assert generic.error.code == "execution_failed"
@@ -162,49 +168,60 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert combined["error"]["details"]["issues"] == [%{"path" => "$", "code" => "conflict"}]
   end
 
-  test "revising a published runbook names both sides of the family everywhere", %{
+  test "an unpublished change names the release it does not replace yet, everywhere", %{
     conn: conn,
     account: account,
     subject: subject
   } do
     runner = setup_runner!(account, subject, "db-primary")
     runbook = publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
-    settled = %{"published_ref" => "database-health@1", "draft_ref" => nil}
-    revised = %{"published_ref" => "database-health@1", "draft_ref" => "database-health@2"}
+    live_sha = Runbooks.definition_digest(runbook.definition)
 
-    assert call(conn, "get_runbook", %{"runbook_ref" => "database-health@1"})["runbook"]["family"] ==
-             settled
+    settled = call(conn, "get_runbook", %{"slug" => "database-health"})["runbook"]
+    assert settled["runbook_ref"] == "database-health@1"
+    assert settled["draft_definition_sha256"] == nil
+
+    revised_definition = Map.put(runbook.definition, "context_markdown", "Revised.")
 
     draft =
       call(conn, "update_runbook_draft", %{
-        "runbook_ref" => "database-health@1",
-        "definition_sha256" => Runbooks.definition_digest(runbook.definition),
+        "slug" => "database-health",
+        "definition_sha256" => live_sha,
         "title" => "Database health revised",
         "description" => nil,
-        "definition" => runbook.definition
+        "definition" => revised_definition
       })
 
-    assert draft["runbook_ref"] == "database-health@2"
-    assert draft["family"] == revised
+    draft_sha = Runbooks.definition_digest(revised_definition)
+    assert draft["slug"] == "database-health"
+    assert draft["definition_sha256"] == draft_sha
+    assert draft["live_ref"] == "database-health@1"
 
-    # The published side is what discovery still returns and what
-    # execute_runbook still dispatches — but it now names the draft above it,
-    # so a model cannot read its own revision as live.
-    assert [published] = call(conn, "list_runbooks", %{})["runbooks"]
-    assert published["runbook_ref"] == "database-health@1"
-    assert published["family"] == revised
+    # One entry per runbook now carries both sides, so a model cannot read its
+    # own unpublished change as what production runs.
+    assert [listed] = call(conn, "list_runbooks", %{})["runbooks"]
+    assert listed["slug"] == "database-health"
 
-    assert [drafted] = call(conn, "list_runbooks", %{"status" => "draft"})["runbooks"]
-    assert drafted["runbook_ref"] == "database-health@2"
-    assert drafted["family"] == revised
+    assert listed["live"] == %{
+             "runbook_ref" => "database-health@1",
+             "definition_sha256" => live_sha
+           }
+
+    assert listed["draft"] == %{"definition_sha256" => draft_sha}
+
+    live = call(conn, "get_runbook", %{"slug" => "database-health"})["runbook"]
+    assert live["definition_sha256"] == live_sha
+    assert live["draft_definition_sha256"] == draft_sha
 
     fetched =
-      call(conn, "get_runbook", %{"runbook_ref" => "database-health@2", "status" => "draft"})
+      call(conn, "get_runbook", %{"slug" => "database-health", "status" => "draft"})["runbook"]
 
-    assert fetched["runbook"]["family"] == revised
+    assert fetched["definition_sha256"] == draft_sha
+    assert fetched["live_ref"] == "database-health@1"
 
     recovered = call(conn, "get_operation", %{"operation_id" => draft["operation_id"]})
-    assert recovered["operation"]["family"] == revised
+    assert recovered["operation"]["live_ref"] == "database-health@1"
+    assert recovered["operation"]["definition_sha256"] == draft_sha
   end
 
   test "an oversized runbook stays listed and is named oversized, never missing", %{
@@ -215,26 +232,27 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runner = setup_runner!(account, subject, "db-primary")
     runbook = publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
 
-    Emisar.Fixtures.Runbooks.oversize_runbook_description(
+    Fixtures.Runbooks.oversize_runbook_description(
       runbook,
       RunbookContract.max_projection_bytes()
     )
 
     # Discovery keeps it: a size limit is not a reason to hide that the runbook
-    # exists, and dropping it left the operator's own published runbook absent
-    # from the list with nothing said.
+    # exists, and dropping it left the operator's own live runbook absent from
+    # the list with nothing said.
     assert [listed] = call(conn, "list_runbooks", %{})["runbooks"]
-    assert listed["runbook_ref"] == "database-health@1"
+    assert listed["slug"] == "database-health"
+    assert listed["live"]["runbook_ref"] == "database-health@1"
     assert listed["available"] == false
     assert listed["unavailable_reason"] =~ "console"
     assert listed["step_count"] == 1
 
     # And fetching it says what is actually wrong, instead of denying it exists.
-    fetched = call(conn, "get_runbook", %{"runbook_ref" => "database-health@1"})
+    fetched = call(conn, "get_runbook", %{"slug" => "database-health"})
 
     assert fetched["error"]["code"] == "runbook_too_large"
     assert fetched["error"]["message"] =~ "#{RunbookContract.max_projection_bytes()} byte limit"
-    refute fetched["error"]["message"] =~ "No published runbook"
+    refute fetched["error"]["message"] =~ "No live runbook"
   end
 
   test "native runbook mutations, recovery, and immediate waits share one contract", %{
@@ -248,9 +266,17 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runbook = publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
 
     listed = call(conn, "list_runbooks", %{})
-    assert [%{"runbook_ref" => "database-health@1", "step_count" => 1}] = listed["runbooks"]
 
-    fetched = call(conn, "get_runbook", %{"runbook_ref" => "database-health@1"})
+    assert [
+             %{
+               "slug" => "database-health",
+               "step_count" => 1,
+               "live" => %{"runbook_ref" => "database-health@1"},
+               "draft" => nil
+             }
+           ] = listed["runbooks"]
+
+    fetched = call(conn, "get_runbook", %{"slug" => "database-health"})
 
     assert %{
              "id" => "check",
@@ -290,7 +316,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         conn,
         "execute_runbook",
         %{
-          "runbook_ref" => "#{runbook.slug}@#{runbook.version}",
+          "runbook_ref" => "#{runbook.slug}@#{runbook.live_version}",
           "reason" => "Verify database health"
         }
       )
@@ -382,7 +408,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Repo.aggregate(Operation, :count) == 2
   end
 
-  test "runbook drafts are discoverable only when a caller asks for them", %{
+  test "one list names every runbook, and only the live side is readable by default", %{
     conn: conn,
     account: account,
     subject: subject
@@ -390,47 +416,49 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runner = setup_runner!(account, subject, "db-primary")
     published = publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
     draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
-    draft_hash = Runbooks.definition_digest(draft.definition)
-    published_ref = "#{published.slug}@#{published.version}"
+    draft_hash = Runbooks.definition_digest(draft.draft_definition)
+    live_hash = Runbooks.definition_digest(published.definition)
 
-    listed = call(conn, "list_runbooks", %{})
-
-    assert [%{"runbook_ref" => ^published_ref, "status" => "published"}] = listed["runbooks"]
-
-    drafts = call(conn, "list_runbooks", %{"status" => "draft"})
+    listed = call(conn, "list_runbooks", %{})["runbooks"]
 
     assert [
              %{
-               "runbook_ref" => "cache-health@1",
-               "status" => "draft",
-               "definition_sha256" => ^draft_hash,
-               "draft_id" => draft_id
+               "slug" => "cache-health",
+               "live" => nil,
+               "draft" => %{"definition_sha256" => ^draft_hash}
+             },
+             %{
+               "slug" => "database-health",
+               "live" => %{
+                 "runbook_ref" => "database-health@1",
+                 "definition_sha256" => ^live_hash
+               },
+               "draft" => nil
              }
-           ] = drafts["runbooks"]
+           ] = listed
 
-    assert draft_id == draft.id
-
-    hidden = call(conn, "get_runbook", %{"runbook_ref" => "cache-health@1"})
+    hidden = call(conn, "get_runbook", %{"slug" => "cache-health"})
     assert hidden["error"]["code"] == "runbook_not_found"
 
-    fetched = call(conn, "get_runbook", %{"runbook_ref" => "cache-health@1", "status" => "draft"})
+    fetched = call(conn, "get_runbook", %{"slug" => "cache-health", "status" => "draft"})
 
     assert fetched["runbook"]["status"] == "draft"
     assert fetched["runbook"]["draft_id"] == draft.id
     assert fetched["runbook"]["definition_sha256"] == draft_hash
+    assert fetched["runbook"]["live_ref"] == nil
 
-    as_draft = call(conn, "get_runbook", %{"runbook_ref" => published_ref, "status" => "draft"})
+    as_draft = call(conn, "get_runbook", %{"slug" => "database-health", "status" => "draft"})
     assert as_draft["error"]["code"] == "draft_not_found"
   end
 
-  test "update_runbook_draft advances the family head and refuses stale edits", %{
+  test "update_runbook_draft rewrites the one draft in place and refuses stale edits", %{
     conn: conn,
     account: account,
     subject: subject
   } do
     runner = setup_runner!(account, subject, "db-primary")
     draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
-    first_hash = Runbooks.definition_digest(draft.definition)
+    first_hash = Runbooks.definition_digest(draft.draft_definition)
 
     revised_definition =
       subject
@@ -439,7 +467,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       |> Map.put("context_markdown", "Verify the cache fleet.")
 
     revision_args = %{
-      "runbook_ref" => "cache-health@1",
+      "slug" => "cache-health",
       "definition_sha256" => first_hash,
       "title" => "Cache health revised",
       "description" => nil,
@@ -457,10 +485,11 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     revised = call(conn, "update_runbook_draft", revision_args)
 
-    assert revised["runbook_ref"] == "cache-health@2"
     assert revised["slug"] == "cache-health"
     assert revised["status"] == "draft"
-    assert revised["draft_id"] != draft.id
+    assert revised["live_ref"] == nil
+    # The runbook itself is the draft, so editing it never mints a second row.
+    assert revised["draft_id"] == draft.id
 
     assert revised["definition_sha256"] == Runbooks.definition_digest(revised_definition)
 
@@ -469,17 +498,17 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     recovered = call(conn, "get_operation", %{"operation_id" => revised["operation_id"]})
 
     assert recovered["operation"]["kind"] == "runbook_draft"
-    assert recovered["operation"]["runbook_ref"] == "cache-health@2"
+    assert recovered["operation"]["slug"] == "cache-health"
     assert recovered["operation"]["definition_sha256"] == revised["definition_sha256"]
 
-    # The same source ref and hash are now one revision behind the head.
-    stale_head = call(conn, "update_runbook_draft", Map.put(revision_args, "title", "Stale edit"))
+    # The hash the first edit was written against is now what someone else read.
+    stale_base = call(conn, "update_runbook_draft", Map.put(revision_args, "title", "Stale edit"))
 
-    assert stale_head["error"]["code"] == "draft_changed"
-    assert Repo.aggregate(Runbook, :count) == 2
+    assert stale_base["error"]["code"] == "draft_changed"
+    assert Repo.aggregate(Runbook, :count) == 1
   end
 
-  test "execute_runbook explicitly executes the current draft and recovers by operation", %{
+  test "execute_runbook tests the exact draft it consented to and recovers by operation", %{
     conn: conn,
     account: account,
     subject: subject
@@ -487,20 +516,27 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runner = setup_runner!(account, subject, "db-primary")
     :ok = Runners.subscribe_runner_transport(runner)
     draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
-    draft_hash = Runbooks.definition_digest(draft.definition)
+    draft_hash = Runbooks.definition_digest(draft.draft_definition)
 
     args = %{
-      "runbook_ref" => "cache-health@1",
+      "slug" => "cache-health",
       "allow_draft" => true,
+      "definition_sha256" => draft_hash,
       "reason" => "Verify the draft before publishing"
     }
+
+    stale =
+      call(conn, "execute_runbook", Map.put(args, "definition_sha256", String.duplicate("0", 64)))
+
+    assert stale["error"]["code"] == "draft_changed"
 
     tested = call(conn, "execute_runbook", args)
     execution_id = tested["execution"]["runbook_execution_id"]
 
     assert tested["execution"]["kind"] == "draft_test"
     assert tested["execution"]["definition_sha256"] == draft_hash
-    assert tested["execution"]["runbook_ref"] == "cache-health@1"
+    # A draft never became a release, so the slug alone names what ran.
+    assert tested["execution"]["runbook_ref"] == "cache-health"
     assert_receive {:cloud_to_runner, _generation, _payload}, 500
 
     replayed = call(conn, "execute_runbook", args)
@@ -512,7 +548,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert recovered["operation"]["kind"] == "runbook_draft_test"
     assert recovered["operation"]["runbook_execution_id"] == execution_id
     assert recovered["operation"]["definition_sha256"] == draft_hash
-    assert recovered["operation"]["runbook_ref"] == "cache-health@1"
+    assert recovered["operation"]["runbook_ref"] == "cache-health"
 
     assert Repo.aggregate(RunbookExecution, :count) == 1
   end
@@ -523,20 +559,22 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     subject: subject
   } do
     runner = setup_runner!(account, subject, "db-primary")
-    _draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
+    draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
+    draft_hash = Runbooks.definition_digest(draft.draft_definition)
     foreign_conn = foreign_key_conn()
 
-    assert call(foreign_conn, "list_runbooks", %{"status" => "draft"})["runbooks"] == []
+    assert call(foreign_conn, "list_runbooks", %{})["runbooks"] == []
 
     foreign_read =
-      call(foreign_conn, "get_runbook", %{"runbook_ref" => "cache-health@1", "status" => "draft"})
+      call(foreign_conn, "get_runbook", %{"slug" => "cache-health", "status" => "draft"})
 
     assert foreign_read["error"]["code"] == "draft_not_found"
 
     foreign_test =
       call(foreign_conn, "execute_runbook", %{
-        "runbook_ref" => "cache-health@1",
+        "slug" => "cache-health",
         "allow_draft" => true,
+        "definition_sha256" => draft_hash,
         "reason" => "Borrow another tenant's draft"
       })
 
@@ -544,8 +582,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Repo.exists?(RunbookExecution)
 
     # The owning account still sees its own draft.
-    assert [%{"runbook_ref" => "cache-health@1"}] =
-             call(conn, "list_runbooks", %{"status" => "draft"})["runbooks"]
+    assert [%{"slug" => "cache-health", "draft" => %{"definition_sha256" => ^draft_hash}}] =
+             call(conn, "list_runbooks", %{})["runbooks"]
   end
 
   test "no runbook publish or delete tool is exposed", %{conn: conn} do
@@ -561,7 +599,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     end)
   end
 
-  test "models revise one runbook family and explicitly test its current draft", %{
+  test "models revise one runbook in place and explicitly test its unpublished change", %{
     conn: conn,
     account: account,
     subject: subject
@@ -573,16 +611,16 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     published =
       publish_runbook!(subject, "database-health", %{"runner_id" => [runner.id]})
 
-    fetched = call(conn, "get_runbook", %{"runbook_ref" => "database-health@1"})
-    published_hash = fetched["runbook"]["definition_sha256"]
+    fetched = call(conn, "get_runbook", %{"slug" => "database-health"})
+    live_hash = fetched["runbook"]["definition_sha256"]
 
     revised_definition =
       runbook_definition(%{"selection" => "all", "refs" => ["runner:" <> runner_ref]})
       |> Map.put("context_markdown", "Inspect the database fleet, then report the evidence.")
 
     revision_args = %{
-      "runbook_ref" => "database-health@1",
-      "definition_sha256" => published_hash,
+      "slug" => "database-health",
+      "definition_sha256" => live_hash,
       "title" => "Database health review",
       "description" => "Working revision",
       "definition" => revised_definition
@@ -596,30 +634,26 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "op_424NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert revised["runbook_ref"] == "database-health@2"
     assert revised["slug"] == published.slug
     assert revised["status"] == "draft"
+    assert revised["live_ref"] == "database-health@1"
     draft_hash = revised["definition_sha256"]
 
     assert call(conn, "update_runbook_draft", revision_args, "op_424NN9NMDZ1T76NARWCKM5A0D6") ==
              revised
 
-    assert [%{"runbook_ref" => "database-health@1", "status" => "published"}] =
-             call(conn, "list_runbooks", %{})["runbooks"]
-
     assert [
              %{
-               "runbook_ref" => "database-health@2",
-               "status" => "draft",
-               "definition_sha256" => ^draft_hash
+               "slug" => "database-health",
+               "live" => %{
+                 "runbook_ref" => "database-health@1",
+                 "definition_sha256" => ^live_hash
+               },
+               "draft" => %{"definition_sha256" => ^draft_hash}
              }
-           ] = call(conn, "list_runbooks", %{"status" => "draft"})["runbooks"]
+           ] = call(conn, "list_runbooks", %{})["runbooks"]
 
-    inspected =
-      call(conn, "get_runbook", %{
-        "runbook_ref" => "database-health@2",
-        "status" => "draft"
-      })
+    inspected = call(conn, "get_runbook", %{"slug" => "database-health", "status" => "draft"})
 
     assert inspected["runbook"]["draft_id"] == revised["draft_id"]
     assert inspected["runbook"]["definition_sha256"] == draft_hash
@@ -634,19 +668,24 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert stale_revision["error"]["code"] == "draft_changed"
 
-    ordinary_execution =
+    # The live side still runs release 1's content; the unpublished change is
+    # reachable only through explicit consent.
+    live_execution =
       call(
         conn,
         "execute_runbook",
-        %{"runbook_ref" => "database-health@2", "reason" => "Do not run drafts implicitly"},
+        %{"runbook_ref" => "database-health@1", "reason" => "Run what is published"},
         "op_624NN9NMDZ1T76NARWCKM5A0D6"
       )
 
-    assert ordinary_execution["error"]["code"] == "runbook_not_found"
+    assert live_execution["execution"]["kind"] == "published"
+    assert live_execution["execution"]["definition_sha256"] == live_hash
+    assert_receive {:cloud_to_runner, _generation, _payload}, 500
 
     test_args = %{
-      "runbook_ref" => "database-health@2",
+      "slug" => "database-health",
       "allow_draft" => true,
+      "definition_sha256" => draft_hash,
       "reason" => "Validate the working revision"
     }
 
@@ -675,12 +714,39 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       call(
         conn,
         "execute_runbook",
-        %{test_args | "allow_draft" => false},
+        %{"runbook_ref" => "database-health@1", "reason" => "Validate the working revision"},
         "op_724NN9NMDZ1T76NARWCKM5A0D6"
       )
 
     assert conflicting_retry["error"]["code"] == "operation_conflict"
-    assert Repo.aggregate(Operation, :count) == 2
+    assert Repo.aggregate(Operation, :count) == 3
+  end
+
+  test "an older release is refused by name rather than redirected to current content", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "release-history")
+
+    republished =
+      subject
+      |> publish_runbook!("database-health", %{"runner_id" => [runner.id]})
+      |> Fixtures.Runbooks.publish_runbook()
+
+    assert republished.live_version == 2
+
+    superseded =
+      call(
+        conn,
+        "execute_runbook",
+        %{"runbook_ref" => "database-health@1", "reason" => "Run the old release"},
+        "op_524NN9NMDZ1T76NARWCKM5A0D6"
+      )
+
+    assert superseded["error"]["code"] == "not_live"
+    assert superseded["error"]["message"] =~ "list_runbooks shows what is"
+    refute Repo.exists?(RunbookExecution)
   end
 
   test "typed input values bind safely and participate in replay identity", %{
@@ -719,7 +785,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     secret = "billing-api"
 
     args = %{
-      "runbook_ref" => "#{runbook.slug}@#{runbook.version}",
+      "runbook_ref" => "#{runbook.slug}@#{runbook.live_version}",
       "reason" => "Verify one service",
       "input_values" => %{"service" => secret}
     }
@@ -990,7 +1056,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     _runbook = publish_runbook!(subject, "partial-fleet", %{"group" => ["fleet"]})
 
     listed = call(conn, "list_runbooks", %{})
-    assert Enum.any?(listed["runbooks"], &(&1["runbook_ref"] == "partial-fleet@1"))
+    assert Enum.any?(listed["runbooks"], &(&1["live"]["runbook_ref"] == "partial-fleet@1"))
   end
 
   test "draft creation derives an absent slug through the shared runbook rule", %{conn: conn} do
@@ -1110,9 +1176,9 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     _runbook = publish_runbook!(subject, "wide-book", %{"group" => ["wide"]})
 
     listed = call(conn, "list_runbooks", %{})
-    assert Enum.any?(listed["runbooks"], &(&1["runbook_ref"] == "wide-book@1"))
+    assert Enum.any?(listed["runbooks"], &(&1["live"]["runbook_ref"] == "wide-book@1"))
 
-    fetched = call(conn, "get_runbook", %{"runbook_ref" => "wide-book@1"})
+    fetched = call(conn, "get_runbook", %{"slug" => "wide-book"})
     assert fetched["runbook"]["summary"]["stage_count"] == 1
 
     assert get_in(fetched, ["runbook", "definition", "stages", Access.at(0), "max_parallel"]) ==
@@ -1129,7 +1195,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runner = setup_runner!(account, subject, "revoked-pack-host")
     _runbook = publish_runbook!(subject, "revoked-pack-book", %{"runner_id" => [runner.id]})
 
-    assert [%{"runbook_ref" => "revoked-pack-book@1"}] =
+    assert [%{"live" => %{"runbook_ref" => "revoked-pack-book@1"}}] =
              call(conn, "list_runbooks", %{})["runbooks"]
 
     {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
@@ -1137,7 +1203,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert call(conn, "list_runbooks", %{})["runbooks"] == []
 
-    fetched = call(conn, "get_runbook", %{"runbook_ref" => "revoked-pack-book@1"})
+    fetched = call(conn, "get_runbook", %{"slug" => "revoked-pack-book"})
     assert fetched["error"]["code"] == "runbook_not_found"
 
     draft =
@@ -1187,9 +1253,9 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     Fixtures.Memberships.force_runner_access(membership, db_access)
 
     listed = call(conn, "list_runbooks", %{})
-    assert Enum.map(listed["runbooks"], & &1["runbook_ref"]) == ["visible-book@1"]
+    assert Enum.map(listed["runbooks"], & &1["slug"]) == ["visible-book"]
 
-    hidden = call(conn, "get_runbook", %{"runbook_ref" => "hidden-book@1"})
+    hidden = call(conn, "get_runbook", %{"slug" => "hidden-book"})
     assert hidden["error"]["code"] == "runbook_not_found"
 
     Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
@@ -2334,7 +2400,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     execution =
       call(conn, "execute_runbook", %{
-        "runbook_ref" => "#{runbook.slug}@#{runbook.version}",
+        "runbook_ref" => "#{runbook.slug}@#{runbook.live_version}",
         "reason" => "Check the gated fleet"
       })
 
@@ -2509,6 +2575,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     execution = %RunbookExecution{
       id: Ecto.UUID.generate(),
+      runbook_version: 1,
       status: Keyword.get(opts, :status, :active),
       stages: [%{stage | items: [item]}],
       items: [item]
@@ -2516,7 +2583,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     %{
       execution: execution,
-      runbook: %Runbook{slug: "database-health", version: 1},
+      runbook: %Runbook{slug: "database-health", live_version: 1},
       latest_attempts: []
     }
   end
@@ -2579,7 +2646,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   defp publish_runbook!(subject, slug, selector, opts \\ []) do
     subject
     |> draft_runbook!(slug, selector, opts)
-    |> Emisar.Fixtures.Runbooks.publish_runbook()
+    |> Fixtures.Runbooks.publish_runbook()
   end
 
   defp draft_runbook!(subject, slug, selector, opts \\ []) do
@@ -2587,9 +2654,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       Runbooks.create_runbook(
         %{
           "title" => String.replace(slug, "-", " "),
-          "name" => slug,
           "slug" => slug,
-          "definition" => runbook_definition(target_refs(subject, selector), opts)
+          "draft_definition" => runbook_definition(target_refs(subject, selector), opts)
         },
         subject
       )

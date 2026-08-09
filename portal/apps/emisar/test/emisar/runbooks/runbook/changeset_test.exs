@@ -10,7 +10,7 @@ defmodule Emisar.Runbooks.Runbook.ChangesetTest do
         slug: "inspect-fleet",
         title: "Inspect fleet",
         description: "Confirm the fleet is ready.",
-        definition: valid_definition()
+        draft_definition: valid_definition()
       },
       extra
     )

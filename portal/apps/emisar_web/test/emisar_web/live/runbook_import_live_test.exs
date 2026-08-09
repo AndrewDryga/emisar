@@ -30,8 +30,10 @@ defmodule EmisarWeb.RunbookImportLiveTest do
              Runbooks.list_runbooks(owner_subject(user, account), page: [limit: 10])
 
     assert runbook.title == "Imported readiness"
-    assert runbook.status == :draft
-    assert runbook.definition == definition
+    # An import lands as the unpublished change, never as something live.
+    assert runbook.live_version == nil
+    assert runbook.definition == nil
+    assert runbook.draft_definition == definition
   end
 
   test "uploads or drops one bounded JSON file and derives a useful title", %{conn: conn} do
@@ -65,7 +67,8 @@ defmodule EmisarWeb.RunbookImportLiveTest do
              Runbooks.list_runbooks(owner_subject(user, account), page: [limit: 10])
 
     assert runbook.title == "Maintenance window"
-    assert runbook.status == :draft
+    assert runbook.live_version == nil
+    assert runbook.draft_definition == Fixtures.Runbooks.default_definition()
   end
 
   test "keeps pasted input and shows actionable inline errors", %{conn: conn} do

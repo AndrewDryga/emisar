@@ -33,8 +33,11 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     assert tools == Enum.map(SchemaRegistry.contracts(), &Map.delete(&1, "outputSchema"))
 
     # The wire catalog stays lean: response schemas live in the internal
-    # contracts, never in tools/list.
-    assert byte_size(Jason.encode!(tools)) <= 32_768
+    # contracts, never in tools/list. Every session pays for this in tokens, so
+    # the ceiling moves only when a tool gains real capability — it last moved
+    # for execute_runbook's draft mode, which added a second way to name what
+    # runs (slug plus content hash) and the rule that separates the two.
+    assert byte_size(Jason.encode!(tools)) <= 33_792
 
     frame = %{
       jsonrpc: "2.0",

@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunbookEditorLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Catalog, Fixtures, Repo, Runbooks}
-  alias Emisar.Runbooks.Runbook
+  alias Emisar.Runbooks.{Release, Runbook}
   alias EmisarWeb.RunbookDraft
 
   defp valid_draft(attrs \\ %{}) do
@@ -1184,13 +1184,19 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert {:error, {:live_redirect, %{to: ^destination}}} = render_click(lv, "save", %{})
 
       assert %Runbook{} = runbook = Repo.one!(Runbook)
-      assert runbook.status == :draft
-      assert runbook.definition == canonical_definition(draft)
+      assert runbook.live_version == nil
+      assert runbook.definition == nil
+      assert runbook.draft_definition == canonical_definition(draft)
 
-      assert get_in(runbook.definition, ["stages", Access.at(0), "steps", Access.at(0), "pack"]) ==
-               %{"id" => "linux-core"}
+      assert get_in(runbook.draft_definition, [
+               "stages",
+               Access.at(0),
+               "steps",
+               Access.at(0),
+               "pack"
+             ]) == %{"id" => "linux-core"}
 
-      refute Map.has_key?(runbook.definition, "steps")
+      refute Map.has_key?(runbook.draft_definition, "steps")
     end
 
     test "publishing is gated by the real current-state preflight", %{
@@ -1232,12 +1238,21 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       refute has_element?(lv, "#runbook-actions-desktop-publish-reason")
 
+      # Publishing is a confirmed step: the button opens the review, and only
+      # its confirm mints the release.
+      html = render_click(lv, "review_publish", %{})
+      assert html =~ "First release — publishing creates v1"
+      refute Repo.exists?(Runbook)
+
       destination = ~p"/app/#{account}/runbooks"
 
       assert {:error, {:live_redirect, %{to: ^destination}}} =
                render_click(lv, "publish", %{})
 
-      assert Repo.one!(Runbook).status == :published
+      assert %Runbook{} = runbook = Repo.one!(Runbook)
+      assert runbook.live_version == 1
+      assert runbook.draft_definition == nil
+      assert Repo.one!(Release).version == 1
     end
 
     test "a stale ready preview cannot publish once current state breaks", %{
@@ -1251,14 +1266,23 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       change(lv, valid_draft())
       send(lv.pid, {:runbook_preview, 1})
       assert render(lv) =~ "Ready to publish"
+      render_click(lv, "review_publish", %{})
 
-      # The catalog the preview judged is gone by the time the operator clicks.
+      # The catalog the preview judged is gone by the time the operator confirms.
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
 
       html = render_click(lv, "publish", %{})
       assert html =~ "Current preflight must pass before publishing."
       refute html =~ "Ready to publish"
-      refute Repo.exists?(Runbook)
+
+      # The refused publication takes its review panel with it, so the issues
+      # are what the operator reads next.
+      refute html =~ "First release — publishing creates v1"
+
+      # Publishing is save-then-publish, so the work is kept — only the release
+      # is refused.
+      assert %Runbook{live_version: nil, definition: nil} = Repo.one!(Runbook)
+      refute Repo.exists?(Release)
     end
 
     test "save-and-publish of an edited runbook commits nothing when readiness fails", %{
@@ -1267,29 +1291,254 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       account: account
     } do
       runner = arrange_current_action(account, user)
-      subject = owner_subject(user, account)
 
-      {:ok, draft} =
-        Runbooks.create_runbook(
-          %{
-            "title" => "Fleet health",
-            "slug" => "fleet-health",
-            "definition" => canonical_definition(valid_draft())
-          },
-          subject
+      runbook =
+        Fixtures.Runbooks.create_runbook(
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(valid_draft())
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{draft.id}/edit")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/edit")
 
       change(lv, valid_draft(title: "Fleet health v2"))
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
+      render_click(lv, "review_publish", %{})
 
       html = render_click(lv, "publish", %{})
       assert html =~ "Current preflight must pass before publishing."
 
-      # One committed row: the original draft — no orphaned v2 from the
-      # failed save-and-publish.
-      assert [%Runbook{version: 1, status: :draft}] = Repo.all(Runbook)
+      # The save that preceded the refused publish stands; nothing went live.
+      assert %Runbook{} = saved = Repo.one!(Runbook)
+      assert saved.title == "Fleet health v2"
+      assert saved.live_version == nil
+      assert saved.definition == nil
+      refute Repo.exists?(Release)
+    end
+
+    test "an edit to a live runbook saves as its unpublished change", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+
+      published =
+        [
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(valid_draft())
+        ]
+        |> Fixtures.Runbooks.create_runbook()
+        |> Fixtures.Runbooks.publish_runbook()
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "Live")
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "v1")
+      refute has_element?(lv, "#runbook-lifecycle-desktop", "Unpublished changes")
+      refute html =~ "Discard changes"
+
+      edited = valid_draft(title: "Fleet health", inputs: [RunbookDraft.input()])
+      change(lv, edited)
+
+      destination = ~p"/app/#{account}/runbooks"
+      assert {:error, {:live_redirect, %{to: ^destination}}} = render_click(lv, "save", %{})
+
+      assert %Runbook{} = saved = Repo.one!(Runbook)
+      assert saved.live_version == 1
+      assert saved.definition == canonical_definition(valid_draft())
+      assert saved.draft_definition == canonical_definition(edited)
+
+      # The unpublished change is what the editor reopens, and the release it
+      # would replace is still named beside it.
+      {:ok, reopened, _html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+
+      assert has_element?(reopened, "#runbook-lifecycle-desktop", "Unpublished changes")
+      assert has_element?(reopened, "#discard-runbook-draft")
+    end
+
+    test "an unpublished change written elsewhere is refused, not overwritten", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+      subject = owner_subject(user, account)
+
+      runbook =
+        Fixtures.Runbooks.create_runbook(
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(valid_draft())
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/edit")
+
+      # A second session saves over the same draft while this editor holds the
+      # digest it opened.
+      elsewhere = canonical_definition(valid_draft(inputs: [RunbookDraft.input()]))
+      base_sha = Runbooks.definition_digest(runbook.draft_definition)
+      attrs = %{"title" => "Fleet health", "draft_definition" => elsewhere}
+      assert {:ok, _runbook} = Runbooks.save_draft(runbook, attrs, base_sha, subject)
+
+      change(lv, valid_draft(title: "Fleet health rewritten"))
+      html = render_click(lv, "save", %{})
+
+      assert html =~ "Changed elsewhere since you opened it"
+      assert Repo.one!(Runbook).draft_definition == elsewhere
+    end
+
+    test "the publish review shows what changes before the release is minted", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+
+      published =
+        [
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(valid_draft())
+        ]
+        |> Fixtures.Runbooks.create_runbook()
+        |> Fixtures.Runbooks.publish_runbook()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+
+      input =
+        RunbookDraft.input()
+        |> Map.merge(%{"id" => "incident_id", "description" => "Incident being worked"})
+
+      change(lv, valid_draft(inputs: [input]))
+      html = render_click(lv, "review_publish", %{})
+
+      assert html =~ "These lines replace what runs today."
+      assert has_element?(lv, "#runbook-actions-desktop-review", "incident_id")
+      assert has_element?(lv, "#runbook-actions-desktop-review-confirm", "Publish v2")
+      refute html =~ "First release"
+
+      # Reviewing changes nothing; the confirm is what publishes.
+      assert Repo.one!(Runbook).live_version == 1
+
+      destination = ~p"/app/#{account}/runbooks"
+
+      assert {:error, {:live_redirect, %{to: ^destination}}} =
+               render_click(lv, "publish", %{})
+
+      assert %Runbook{} = live_runbook = Repo.one!(Runbook)
+      assert live_runbook.live_version == 2
+      assert live_runbook.draft_definition == nil
+
+      releases = Repo.all(Release)
+      published_versions = releases |> Enum.map(& &1.version) |> Enum.sort()
+
+      assert published_versions == [1, 2]
+      assert %Release{} = release = Enum.max_by(releases, & &1.version)
+      assert release.definition == live_runbook.definition
+    end
+
+    test "cancelling the publish review leaves the unpublished change alone", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+
+      published =
+        [
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(valid_draft())
+        ]
+        |> Fixtures.Runbooks.create_runbook()
+        |> Fixtures.Runbooks.publish_runbook()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+
+      change(lv, valid_draft(inputs: [RunbookDraft.input()]))
+      render_click(lv, "review_publish", %{})
+
+      html = render_click(lv, "cancel_publish", %{})
+
+      refute html =~ "These lines replace what runs today."
+      assert has_element?(lv, "#runbook-actions-desktop-publish", "Publish")
+      assert Repo.one!(Runbook).live_version == 1
+    end
+
+    test "discarding the unpublished change returns the editor to the live release", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      arrange_current_action(account, user)
+      live_definition = canonical_definition(valid_draft())
+
+      published =
+        [
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: live_definition
+        ]
+        |> Fixtures.Runbooks.create_runbook()
+        |> Fixtures.Runbooks.publish_runbook()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+
+      change(lv, valid_draft(inputs: [Map.put(RunbookDraft.input(), "id", "incident_id")]))
+      render_click(lv, "save", %{})
+
+      {:ok, editing, html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
+      assert html =~ "incident_id"
+
+      html = render_click(editing, "discard_draft", %{})
+
+      assert html =~ "Unpublished changes discarded."
+      refute html =~ "incident_id"
+      refute has_element?(editing, "#discard-runbook-draft")
+
+      assert %Runbook{} = runbook = Repo.one!(Runbook)
+      assert runbook.draft_definition == nil
+      assert runbook.definition == live_definition
+    end
+
+    test "a never-published runbook offers no way to discard back to a release", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runbook =
+        Fixtures.Runbooks.create_runbook(
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(valid_draft())
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/edit")
+
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "Never published")
+      refute has_element?(lv, "#discard-runbook-draft")
+
+      # The domain refuses it too, so a crafted event cannot empty the editor.
+      html = render_click(lv, "discard_draft", %{})
+
+      assert html =~ "Could not discard these changes."
+      assert Repo.one!(Runbook).draft_definition == canonical_definition(valid_draft())
     end
 
     test "saves incomplete work as a draft while strict validation blocks publication", %{
@@ -1337,7 +1586,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       destination = ~p"/app/#{account}/runbooks"
       assert {:error, {:live_redirect, %{to: ^destination}}} = render_click(lv, "save", %{})
 
-      assert %Runbook{status: :draft} = Repo.one!(Runbook)
+      assert %Runbook{live_version: nil, definition: nil} = Repo.one!(Runbook)
     end
 
     test "a crafted composite scalar becomes draft text instead of crashing the editor", %{
@@ -1549,8 +1798,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         args: [%{"name" => "path", "type" => "path", "required" => true, "sensitive" => false}]
       )
 
-      subject = owner_subject(user, account)
-
       input =
         RunbookDraft.input()
         |> Map.merge(%{"id" => "config_path", "description" => "Config file"})
@@ -1576,14 +1823,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         |> put_in(step ++ ["success"], [condition])
         |> put_in(step ++ ["wait", "enabled"], "true")
 
-      {:ok, runbook} =
-        Runbooks.create_runbook(
-          %{
-            "title" => "Fleet health",
-            "slug" => "fleet-health",
-            "definition" => canonical_definition(draft)
-          },
-          subject
+      runbook =
+        Fixtures.Runbooks.create_runbook(
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(draft)
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/edit")
@@ -1725,8 +1971,6 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       user: owner,
       account: account
     } do
-      subject = owner_subject(owner, account)
-
       input =
         RunbookDraft.input()
         |> Map.merge(%{
@@ -1736,15 +1980,16 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           "enum_values" => [%{"value" => "database"}]
         })
 
-      {:ok, runbook} =
-        Runbooks.create_runbook(
-          %{
-            "title" => "Fleet health",
-            "slug" => "fleet-health",
-            "definition" => canonical_definition(valid_draft(inputs: [input]))
-          },
-          subject
-        )
+      runbook =
+        [
+          account_id: account.id,
+          created_by_id: owner.id,
+          title: "Fleet health",
+          slug: "fleet-health",
+          definition: canonical_definition(valid_draft(inputs: [input]))
+        ]
+        |> Fixtures.Runbooks.create_runbook()
+        |> Fixtures.Runbooks.publish_runbook()
 
       viewer = Fixtures.Users.create_user()
 
@@ -1762,16 +2007,17 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert html =~ "Read-only runbook"
       assert html =~ "Inspect"
       assert html =~ "linux.uptime"
-      assert has_element?(lv, "#runbook-lifecycle-desktop", "Current")
+      assert has_element?(lv, "#runbook-lifecycle-desktop", "Live")
       assert has_element?(lv, "#runbook-lifecycle-desktop", "v1")
-      assert has_element?(lv, "#runbook-lifecycle-desktop", "draft")
 
       assert :binary.match(html, ~s(id="runbook-lifecycle-desktop")) <
                :binary.match(html, ~s(name="draft[title]"))
 
       assert has_element?(lv, "#runbook-editor-form input[disabled]")
       refute has_element?(lv, "button", "Save draft")
+      refute has_element?(lv, "button", "Publish")
       refute has_element?(lv, "#delete-runbook")
+      refute has_element?(lv, "#discard-runbook-draft")
       refute has_element?(lv, "button", "Add input")
       refute has_element?(lv, ~s(button[aria-label="Remove input"]))
 
@@ -1779,95 +2025,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(lv, ~s|button[phx-click="toggle_step"]|, "Show")
       render_click(lv, "toggle_step", %{"stage" => "0", "step" => "0"})
       assert has_element?(lv, ~s|button[phx-click="toggle_step"]|, "Hide")
-    end
 
-    test "the lifecycle rail names the version that runs under an unpublished draft", %{
-      conn: conn,
-      user: owner,
-      account: account
-    } do
-      subject = owner_subject(owner, account)
+      # The hidden controls are not the gate: a crafted event is refused too.
+      for event <- ["save", "review_publish", "publish", "discard_draft", "delete"] do
+        assert render_click(lv, event, %{}) =~ "You don&#39;t have permission to do that."
+      end
 
-      {:ok, drafted} =
-        Runbooks.create_runbook(
-          %{
-            "title" => "Fleet health",
-            "slug" => "fleet-health",
-            "definition" => canonical_definition(valid_draft())
-          },
-          subject
-        )
-
-      published = Fixtures.Runbooks.publish_runbook(drafted)
-      {:ok, pending} = Runbooks.save_new_version(published, %{}, subject)
-
-      {:ok, editing_draft, _html} =
-        live(conn, ~p"/app/#{account}/runbooks/#{pending.id}/edit")
-
-      assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "Current")
-      assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "v2")
-      assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "Runs today")
-      assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "v1")
-
-      # Naming the live version raises "what changed?", so it links to the one
-      # surface that answers it.
-      assert has_element?(
-               editing_draft,
-               "#runbook-lifecycle-desktop a[href='#{~p"/app/#{account}/runbooks/fleet-health/versions"}']",
-               "v1"
-             )
-
-      # The published head IS what runs, so naming it again would render the
-      # same fact twice.
-      {:ok, editing_published, _html} =
-        live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
-
-      refute has_element?(editing_published, "#runbook-lifecycle-desktop", "Runs today")
-    end
-
-    test "a superseded version is read-only history, and a crafted publish is refused", %{
-      conn: conn,
-      user: owner,
-      account: account
-    } do
-      subject = owner_subject(owner, account)
-
-      {:ok, old_draft} =
-        Runbooks.create_runbook(
-          %{
-            "title" => "Fleet health",
-            "slug" => "fleet-health",
-            "definition" => canonical_definition(valid_draft())
-          },
-          subject
-        )
-
-      {:ok, head} = Runbooks.save_new_version(old_draft, %{}, subject)
-
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{old_draft.id}/edit")
-
-      assert html =~ "Superseded — version 2 is current"
-      refute html =~ "Read-only runbook"
-
-      # The state rides the identity line as an amber chip, not only a notice
-      # that drowns on a tall page.
-      assert has_element?(lv, "span.uppercase", "Superseded")
-      assert has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks/#{head.id}/edit"}']")
-
-      assert has_element?(
-               lv,
-               "a[href='#{~p"/app/#{account}/runbooks/fleet-health/versions"}']",
-               "Versions"
-             )
-
-      refute has_element?(lv, "button", "Save draft")
-      refute has_element?(lv, "button", "Publish")
-
-      # An owner's crafted publish event bypasses the hidden buttons; the
-      # DOMAIN refuses it, so v1 can never flip the live version from history.
-      render_click(lv, "publish", %{})
-      assert render(lv) =~ "A newer version of this runbook exists."
-      assert Repo.reload!(old_draft).status == :draft
+      assert %Runbook{live_version: 1, deleted_at: nil} = Repo.one!(Runbook)
     end
   end
 

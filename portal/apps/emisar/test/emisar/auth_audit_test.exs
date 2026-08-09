@@ -436,16 +436,15 @@ defmodule Emisar.AuthAuditTest do
       %{account: account, subject: subject}
     end
 
-    test "create_runbook audits runbook.created with name + version", %{
+    test "create_runbook audits runbook.created with its name", %{
       account: account,
       subject: subject
     } do
       attrs = %{
-        name: "ops-#{System.unique_integer()}",
         slug: "ops-#{System.unique_integer()}",
         title: "Restart ops",
         description: "Restart the ops services",
-        definition: Fixtures.Runbooks.default_definition()
+        draft_definition: Fixtures.Runbooks.default_definition()
       }
 
       {:ok, runbook} = Emisar.Runbooks.create_runbook(attrs, subject)
@@ -453,59 +452,59 @@ defmodule Emisar.AuthAuditTest do
       assert [event] = events_of(account, "runbook.created")
       assert event.target_id == runbook.id
       assert event.payload["name"] == attrs.title
-      assert event.payload["version"] == 1
     end
 
-    test "save_new_version audits runbook.updated with version bump", %{
+    test "save_draft audits runbook.updated on the same row", %{
       account: account,
       subject: subject
     } do
       {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
-            name: "ops-#{System.unique_integer()}",
             slug: "ops-#{System.unique_integer()}",
             title: "Restart",
             description: "first cut",
-            definition: Fixtures.Runbooks.default_definition()
+            draft_definition: Fixtures.Runbooks.default_definition()
           },
           subject
         )
 
-      {:ok, v2} =
-        Emisar.Runbooks.save_new_version(runbook, %{description: "tweaked"}, subject)
+      base_sha = Emisar.Runbooks.definition_digest(runbook.draft_definition)
+
+      {:ok, saved} =
+        Emisar.Runbooks.save_draft(runbook, %{description: "tweaked"}, base_sha, subject)
 
       assert [event] = events_of(account, "runbook.updated")
-      assert event.target_id == v2.id
-      assert event.payload["from_version"] == 1
-      assert event.payload["to_version"] == 2
+      assert event.target_id == saved.id
+      assert event.payload["from_title"] == "Restart"
+      assert event.payload["version"] == nil
     end
 
-    test "save_new_version accepts string-keyed form params", %{subject: subject} do
+    test "save_draft accepts string-keyed form params", %{subject: subject} do
       {:ok, runbook} =
         Emisar.Runbooks.create_runbook(
           %{
-            name: "ops-#{System.unique_integer()}",
             slug: "ops-#{System.unique_integer()}",
             title: "Restart",
-            definition: Fixtures.Runbooks.default_definition()
+            draft_definition: Fixtures.Runbooks.default_definition()
           },
           subject
         )
 
-      # String keys from the editor form must not collide with the
-      # programmatic version bump (this combination crashed cast on mixed keys).
-      assert {:ok, v2} =
-               Emisar.Runbooks.save_new_version(
+      base_sha = Emisar.Runbooks.definition_digest(runbook.draft_definition)
+
+      assert {:ok, saved} =
+               Emisar.Runbooks.save_draft(
                  runbook,
                  %{
                    "description" => "tweaked",
-                   "definition" => Fixtures.Runbooks.default_definition()
+                   "draft_definition" => Fixtures.Runbooks.default_definition()
                  },
+                 base_sha,
                  subject
                )
 
-      assert v2.version == 2
+      assert saved.description == "tweaked"
     end
   end
 

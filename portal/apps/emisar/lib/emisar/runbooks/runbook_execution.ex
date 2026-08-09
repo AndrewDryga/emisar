@@ -24,7 +24,12 @@ defmodule Emisar.Runbooks.RunbookExecution do
     field :frozen_plan, :map, default: %{}
     field :inputs_raw, :binary
     field :inputs_sha256, :string
+    # The exact definition dispatched. The runbook row now mutates on publish,
+    # so it can no longer answer what this execution actually ran.
+    field :definition, :map
     field :definition_sha256, :string
+    # The release this ran, null for a draft test.
+    field :runbook_version, :integer
     field :sensitive_input_names, {:array, :string}, default: []
 
     field :api_key_id, Ecto.UUID

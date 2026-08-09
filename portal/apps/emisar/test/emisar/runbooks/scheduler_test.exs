@@ -925,7 +925,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
                %{
                  "title" => title,
                  "slug" => title,
-                 "definition" => definition
+                 "draft_definition" => definition
                },
                subject
              )

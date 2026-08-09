@@ -47,7 +47,9 @@ defmodule EmisarWeb.MCP.ValidationError do
   @reject_reasons ~w(target_contract_changed not_allowed rate_limited)
   @action_id ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
   @pack_ref ~r|\A[a-z][a-z0-9_-]*@[0-9]+(\.[0-9]+)*/sha256:[0-9a-f]{64}\z|
-  @runbook_ref ~r/\A[a-z][a-z0-9_-]{0,79}@[1-9][0-9]{0,8}\z/
+  # The release number is optional because a draft run names its runbook by slug
+  # alone; dropping the identifier would leave that rejection unattributable.
+  @runbook_ref ~r/\A[a-z][a-z0-9_-]{0,79}(@[1-9][0-9]{0,8})?\z/
   @max_issues 8
   @max_message_chars 512
   @path_segment ~r/\A[A-Za-z_][A-Za-z0-9_-]{0,63}\z/

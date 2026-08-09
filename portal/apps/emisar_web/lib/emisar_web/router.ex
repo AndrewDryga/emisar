@@ -405,7 +405,6 @@ defmodule EmisarWeb.Router do
         live "/runbooks/:id/edit", RunbookEditorLive, :edit
         live "/runbooks/:id/runs/:execution_id", RunbookRunLive, :show
         live "/runbooks/:id/run", RunbookRunLive, :new
-        live "/runbooks/:slug/versions", RunbookVersionsLive, :index
 
         live "/policies", PoliciesLive, :index
 

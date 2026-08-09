@@ -151,69 +151,63 @@ defmodule Emisar.RunbooksTest do
 
   describe "runbook_filters/0" do
     test "carries the Runbooks table's filters" do
-      assert Enum.map(Runbooks.runbook_filters(), & &1.name) == [:status]
+      assert Enum.map(Runbooks.runbook_filters(), & &1.name) == [:state]
     end
   end
 
   describe "list_runbooks/2" do
-    test "lists only visible runbooks and applies filters" do
+    test "lists one row per runbook and applies filters" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      draft = create_runbook(subject, title: "Draft")
+      never_published = create_runbook(subject, title: "Draft")
 
-      published =
-        create_runbook(subject, title: "Published") |> Fixtures.Runbooks.publish_runbook()
+      live =
+        subject |> create_runbook(title: "Published") |> Fixtures.Runbooks.publish_runbook()
 
       {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
       _other = create_runbook(other_subject, title: "Other")
 
       assert {:ok, runbooks, _metadata} =
-               Runbooks.list_runbooks(subject, filter: [status: ["published"]])
+               Runbooks.list_runbooks(subject, filter: [state: ["live"]])
 
-      assert Enum.map(runbooks, & &1.id) == [published.id]
-      refute draft.id in Enum.map(runbooks, & &1.id)
+      assert Enum.map(runbooks, & &1.id) == [live.id]
+      refute never_published.id in Enum.map(runbooks, & &1.id)
     end
 
-    test "shows one row per slug family, led by its newest version" do
+    test "a runbook carrying unpublished changes over a live release matches both states" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      first =
-        create_runbook(subject, slug: "alpha", title: "Alpha")
-        |> Fixtures.Runbooks.publish_runbook()
+      live = subject |> create_runbook(slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
+      revised = put_in(definition(), ["context_markdown"], "Inspect twice.")
+      assert {:ok, edited} = save_draft(live, %{"draft_definition" => revised}, subject)
 
-      assert {:ok, second} = Runbooks.save_new_version(first, %{}, subject)
-      single = create_runbook(subject, slug: "beta", title: "Beta")
+      assert {:ok, [matched_live], _metadata} =
+               Runbooks.list_runbooks(subject, filter: [state: ["live"]])
+
+      assert {:ok, [matched_draft], _metadata} =
+               Runbooks.list_runbooks(subject, filter: [state: ["draft"]])
+
+      assert matched_live.id == edited.id
+      assert matched_draft.id == edited.id
+    end
+
+    test "lists every runbook in the account, ordered by title" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      beta = create_runbook(subject, slug: "beta", title: "Beta")
+      alpha = create_runbook(subject, slug: "alpha", title: "Alpha")
 
       assert {:ok, runbooks, metadata} = Runbooks.list_runbooks(subject)
-      assert Enum.map(runbooks, & &1.id) == [second.id, single.id]
-      assert Enum.map(runbooks, & &1.status) == [:draft, :draft]
+      assert Enum.map(runbooks, & &1.id) == [alpha.id, beta.id]
       assert metadata.count == 2
     end
 
-    test "another account's higher version of the same slug doesn't suppress the family head" do
+    test "another account's runbook with the same slug stays out of the list" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       mine = create_runbook(subject, slug: "shared")
       {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      other_first = create_runbook(other_subject, slug: "shared")
-
-      assert {:ok, _other_second} =
-               Runbooks.save_new_version(other_first, %{}, other_subject)
+      _theirs = create_runbook(other_subject, slug: "shared")
 
       assert {:ok, runbooks, _metadata} = Runbooks.list_runbooks(subject)
       assert Enum.map(runbooks, & &1.id) == [mine.id]
-    end
-
-    test "filters judge the family's newest version" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
-      assert {:ok, second} = Runbooks.save_new_version(first, %{}, subject)
-
-      assert {:ok, [], _metadata} =
-               Runbooks.list_runbooks(subject, filter: [status: ["published"]])
-
-      assert {:ok, drafts, _metadata} =
-               Runbooks.list_runbooks(subject, filter: [status: ["draft"]])
-
-      assert Enum.map(drafts, & &1.id) == [second.id]
     end
 
     test "denies a principal without view permission" do
@@ -221,120 +215,6 @@ defmodule Emisar.RunbooksTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert Runbooks.list_runbooks(Subject.for_runner(runner, account)) ==
-               {:error, :unauthorized}
-    end
-  end
-
-  describe "list_runbook_versions/3" do
-    test "lists every version of one family newest first, other families excluded" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
-      assert {:ok, second} = Runbooks.save_new_version(first, %{}, subject)
-      _other_family = create_runbook(subject, slug: "beta")
-
-      assert {:ok, versions, metadata} = Runbooks.list_runbook_versions("alpha", subject)
-      assert Enum.map(versions, & &1.id) == [second.id, first.id]
-      assert Enum.map(versions, & &1.version) == [2, 1]
-      assert metadata.count == 2
-    end
-
-    test "hides another account's family" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      _other = create_runbook(other_subject, slug: "cross")
-
-      assert {:ok, [], metadata} = Runbooks.list_runbook_versions("cross", subject)
-      assert metadata.count == 0
-    end
-
-    test "returns only the subject's versions of a slug shared across accounts" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      mine = create_runbook(subject, slug: "cross")
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      _other = create_runbook(other_subject, slug: "cross")
-
-      assert {:ok, versions, _metadata} = Runbooks.list_runbook_versions("cross", subject)
-      assert Enum.map(versions, & &1.id) == [mine.id]
-    end
-
-    test "denies a principal without view permission" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      assert Runbooks.list_runbook_versions("any", Subject.for_runner(runner, account)) ==
-               {:error, :unauthorized}
-    end
-  end
-
-  describe "fetch_runbook_family_head/2" do
-    test "returns the newest version whatever its status" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      published = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
-      assert {:ok, pending} = Runbooks.save_new_version(published, %{}, subject)
-
-      assert {:ok, %Runbooks.Runbook{} = head} =
-               Runbooks.fetch_runbook_family_head("alpha", subject)
-
-      assert head.id == pending.id
-      assert head.status == :draft
-    end
-
-    test "hides another account's family" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      _theirs = create_runbook(other_subject, slug: "cross")
-
-      assert Runbooks.fetch_runbook_family_head("cross", subject) == {:error, :not_found}
-    end
-
-    test "denies a principal without view permission" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      assert Runbooks.fetch_runbook_family_head("any", Subject.for_runner(runner, account)) ==
-               {:error, :unauthorized}
-    end
-  end
-
-  describe "fetch_previous_version/2" do
-    test "walks down one version at a time and stops at the family's first" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
-      assert {:ok, second} = Runbooks.save_new_version(first, %{}, subject)
-      assert {:ok, third} = Runbooks.save_new_version(second, %{}, subject)
-
-      assert {:ok, %Runbooks.Runbook{} = below_third} =
-               Runbooks.fetch_previous_version(third, subject)
-
-      assert below_third.id == second.id
-
-      assert {:ok, %Runbooks.Runbook{} = below_second} =
-               Runbooks.fetch_previous_version(second, subject)
-
-      assert below_second.id == first.id
-      assert Runbooks.fetch_previous_version(first, subject) == {:error, :not_found}
-    end
-
-    test "never crosses into another account's family sharing the slug" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      mine = create_runbook(subject, slug: "cross")
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      theirs = create_runbook(other_subject, slug: "cross")
-      assert {:ok, theirs_second} = Runbooks.save_new_version(theirs, %{}, other_subject)
-
-      # Their v2 has a predecessor, but not for a subject outside their account —
-      # and my own same-slug v1 must never be offered as it.
-      assert Runbooks.fetch_previous_version(theirs_second, subject) == {:error, :not_found}
-      assert Runbooks.fetch_previous_version(mine, other_subject) == {:error, :not_found}
-    end
-
-    test "denies a principal without view permission" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-      runbook = create_runbook(subject, slug: "alpha")
-
-      assert Runbooks.fetch_previous_version(runbook, Subject.for_runner(runner, account)) ==
                {:error, :unauthorized}
     end
   end
@@ -355,79 +235,6 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "latest_published_by_slugs/2" do
-    test "maps each slug to its newest published version, skipping never-published families" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
-
-      assert {:ok, second_draft} =
-               Runbooks.save_new_version(first, %{}, subject)
-
-      second = Fixtures.Runbooks.publish_runbook(second_draft)
-      assert {:ok, _third} = Runbooks.save_new_version(second, %{}, subject)
-      _draft_only = create_runbook(subject, slug: "beta")
-
-      assert {:ok, published_by_slug} =
-               Runbooks.latest_published_by_slugs(["alpha", "beta"], subject)
-
-      assert Map.keys(published_by_slug) == ["alpha"]
-      assert published_by_slug["alpha"].id == second.id
-    end
-
-    test "hides another account's published family, even behind the subject's own draft slug" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      _mine_draft = create_runbook(subject, slug: "cross")
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      _other = create_runbook(other_subject, slug: "cross") |> Fixtures.Runbooks.publish_runbook()
-
-      assert Runbooks.latest_published_by_slugs(["cross"], subject) == {:ok, %{}}
-    end
-
-    test "denies a principal without view permission" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      assert Runbooks.latest_published_by_slugs(["any"], Subject.for_runner(runner, account)) ==
-               {:error, :unauthorized}
-    end
-  end
-
-  describe "draft_heads_by_slugs/2" do
-    test "maps each slug to its head only while that head is an unpublished draft" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      published = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
-      assert {:ok, pending} = Runbooks.save_new_version(published, %{}, subject)
-      create_runbook(subject, slug: "beta") |> Fixtures.Runbooks.publish_runbook()
-
-      assert {:ok, draft_by_slug} =
-               Runbooks.draft_heads_by_slugs(["alpha", "beta"], subject)
-
-      assert Map.keys(draft_by_slug) == ["alpha"]
-      assert draft_by_slug["alpha"].id == pending.id
-
-      Fixtures.Runbooks.publish_runbook(pending)
-
-      assert Runbooks.draft_heads_by_slugs(["alpha", "beta"], subject) == {:ok, %{}}
-    end
-
-    test "hides another account's draft head under the same slug" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      _mine = create_runbook(subject, slug: "cross") |> Fixtures.Runbooks.publish_runbook()
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      _theirs = create_runbook(other_subject, slug: "cross")
-
-      assert Runbooks.draft_heads_by_slugs(["cross"], subject) == {:ok, %{}}
-    end
-
-    test "denies a principal without view permission" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      assert Runbooks.draft_heads_by_slugs(["any"], Subject.for_runner(runner, account)) ==
-               {:error, :unauthorized}
-    end
-  end
-
   describe "risk_by_runbooks/2" do
     test "maps each runbook to the worst risk across its steps" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -442,6 +249,30 @@ defmodule Emisar.RunbooksTest do
 
       assert Runbooks.risk_by_runbooks([mixed, calm], subject) ==
                {:ok, %{mixed.id => :critical, calm.id => :low}}
+    end
+
+    test "reads the live release, falling back to the draft while nothing is live" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "critical")
+
+      never_published = create_runbook(subject, definition: risk_definition(["linux.reboot"]))
+
+      live =
+        subject
+        |> create_runbook(definition: risk_definition(["linux.uptime"]))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, edited} =
+               save_draft(
+                 live,
+                 %{"draft_definition" => risk_definition(["linux.reboot"])},
+                 subject
+               )
+
+      assert Runbooks.risk_by_runbooks([never_published, edited], subject) ==
+               {:ok, %{never_published.id => :critical, edited.id => :low}}
     end
 
     test "an unobserved step leaves the whole runbook unresolved" do
@@ -491,32 +322,46 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "list_model_visible_runbooks/1" do
-    test "returns each family's newest published version and skips never-published families" do
+    test "returns every live runbook and skips the never-published" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
-      first =
-        create_runbook(subject, slug: "alpha", definition: definition(runner.group))
+      live =
+        subject
+        |> create_runbook(slug: "alpha", definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
-      assert {:ok, second_draft} = Runbooks.save_new_version(first, %{}, subject)
-      second = Fixtures.Runbooks.publish_runbook(second_draft)
-
-      # The family head is a draft, so the published version it sits on is
-      # still what a model may execute.
-      assert {:ok, _third_draft} = Runbooks.save_new_version(second, %{}, subject)
-      _draft_only = create_runbook(subject, slug: "beta", definition: definition(runner.group))
+      _never_published =
+        create_runbook(subject, slug: "beta", definition: definition(runner.group))
 
       assert {:ok, runbooks} = Runbooks.list_model_visible_runbooks(subject)
-      assert Enum.map(runbooks, & &1.id) == [second.id]
+      assert Enum.map(runbooks, & &1.id) == [live.id]
     end
 
-    test "drops a published family once its pack trust is revoked" do
+    test "an unpublished change never suppresses the release running behind it" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = trusted_runner(account, subject)
+
+      live =
+        subject
+        |> create_runbook(slug: "alpha", definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      revised = put_in(definition(runner.group), ["context_markdown"], "Inspect twice.")
+      assert {:ok, edited} = save_draft(live, %{"draft_definition" => revised}, subject)
+
+      assert {:ok, [visible]} = Runbooks.list_model_visible_runbooks(subject)
+      assert visible.id == edited.id
+      assert visible.live_version == 1
+    end
+
+    test "drops a live runbook once its pack trust is revoked" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       runbook =
-        create_runbook(subject, definition: definition(runner.group))
+        subject
+        |> create_runbook(definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
       assert {:ok, [visible]} = Runbooks.list_model_visible_runbooks(subject)
@@ -538,30 +383,31 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "list_model_draft_runbooks/1" do
-    test "returns only each family's current draft head even when its target is unavailable" do
+    test "returns every runbook carrying an unpublished change, available or not" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
-      published =
-        create_runbook(subject, slug: "working", definition: definition(runner.group))
+      live =
+        subject
+        |> create_runbook(slug: "working", definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
-      assert {:ok, second} = Runbooks.save_new_version(published, %{}, subject)
-      assert {:ok, third} = Runbooks.save_new_version(second, %{}, subject)
+      revised = put_in(definition(runner.group), ["context_markdown"], "Inspect twice.")
+      assert {:ok, edited} = save_draft(live, %{"draft_definition" => revised}, subject)
 
       assert {:ok, [draft]} = Runbooks.list_model_draft_runbooks(subject)
-      assert draft.id == third.id
+      assert draft.id == edited.id
 
       assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
       assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
 
       assert {:ok, [still_visible]} = Runbooks.list_model_draft_runbooks(subject)
-      assert still_visible.id == third.id
+      assert still_visible.id == edited.id
     end
 
-    test "excludes a family whose head is published and another account's drafts" do
+    test "excludes a runbook with nothing unpublished and another account's drafts" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      _shipped = create_runbook(subject, slug: "shipped") |> Fixtures.Runbooks.publish_runbook()
+      _shipped = subject |> create_runbook(slug: "shipped") |> Fixtures.Runbooks.publish_runbook()
       working = create_runbook(subject, slug: "working")
 
       {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
@@ -580,48 +426,43 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "fetch_model_visible_runbook_version/3" do
-    test "returns the exact published version until its contract stops resolving" do
+  describe "fetch_model_visible_runbook/2" do
+    test "returns the live runbook until its contract stops resolving" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
-      published =
-        create_runbook(subject, slug: "versioned", definition: definition(runner.group))
+      live =
+        subject
+        |> create_runbook(slug: "versioned", definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
-      assert {:ok, fetched} =
-               Runbooks.fetch_model_visible_runbook_version("versioned", 1, subject)
-
-      assert fetched.id == published.id
+      assert {:ok, fetched} = Runbooks.fetch_model_visible_runbook("versioned", subject)
+      assert fetched.id == live.id
 
       assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
       assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
 
-      assert Runbooks.fetch_model_visible_runbook_version("versioned", 1, subject) ==
-               {:error, :not_found}
+      assert Runbooks.fetch_model_visible_runbook("versioned", subject) == {:error, :not_found}
     end
 
-    test "hides drafts, unknown versions, and another account's family" do
+    test "hides never-published runbooks, unknown slugs, and another account's" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
-      _draft = create_runbook(subject, slug: "draft-only", definition: definition(runner.group))
 
-      _published =
-        create_runbook(subject, slug: "versioned", definition: definition(runner.group))
+      _never_published =
+        create_runbook(subject, slug: "draft-only", definition: definition(runner.group))
+
+      _live =
+        subject
+        |> create_runbook(slug: "versioned", definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
-      assert Runbooks.fetch_model_visible_runbook_version("draft-only", 1, subject) ==
-               {:error, :not_found}
-
-      assert Runbooks.fetch_model_visible_runbook_version("versioned", 2, subject) ==
-               {:error, :not_found}
-
-      assert Runbooks.fetch_model_visible_runbook_version("missing", 1, subject) ==
-               {:error, :not_found}
+      assert Runbooks.fetch_model_visible_runbook("draft-only", subject) == {:error, :not_found}
+      assert Runbooks.fetch_model_visible_runbook("missing", subject) == {:error, :not_found}
 
       {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
-      assert Runbooks.fetch_model_visible_runbook_version("versioned", 1, other_subject) ==
+      assert Runbooks.fetch_model_visible_runbook("versioned", other_subject) ==
                {:error, :not_found}
     end
 
@@ -629,52 +470,45 @@ defmodule Emisar.RunbooksTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.fetch_model_visible_runbook_version(
-               "any",
-               1,
-               Subject.for_runner(runner, account)
-             ) == {:error, :unauthorized}
+      assert Runbooks.fetch_model_visible_runbook("any", Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
     end
   end
 
-  describe "fetch_model_draft_runbook_version/3" do
-    test "returns only the exact current draft head and hides other accounts" do
+  describe "fetch_model_runbook_draft/2" do
+    test "returns the unpublished change even when its target is unavailable" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
-      first = create_runbook(subject, slug: "working", definition: definition(runner.group))
-      assert {:ok, second} = Runbooks.save_new_version(first, %{}, subject)
+      working = create_runbook(subject, slug: "working", definition: definition(runner.group))
 
-      assert {:ok, fetched} =
-               Runbooks.fetch_model_draft_runbook_version("working", 2, subject)
+      assert {:ok, fetched} = Runbooks.fetch_model_runbook_draft("working", subject)
+      assert fetched.id == working.id
 
-      assert fetched.id == second.id
+      assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
 
-      assert Runbooks.fetch_model_draft_runbook_version("working", 1, subject) ==
-               {:error, :not_found}
+      assert {:ok, still_readable} = Runbooks.fetch_model_runbook_draft("working", subject)
+      assert still_readable.id == working.id
+    end
+
+    test "hides a runbook with nothing unpublished and another account's" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      _shipped = subject |> create_runbook(slug: "shipped") |> Fixtures.Runbooks.publish_runbook()
+      _working = create_runbook(subject, slug: "working")
+
+      assert Runbooks.fetch_model_runbook_draft("shipped", subject) == {:error, :not_found}
 
       {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
-      assert Runbooks.fetch_model_draft_runbook_version("working", 2, other_subject) ==
-               {:error, :not_found}
-    end
-
-    test "hides a published version behind its exact ref" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      _shipped = create_runbook(subject, slug: "shipped") |> Fixtures.Runbooks.publish_runbook()
-
-      assert Runbooks.fetch_model_draft_runbook_version("shipped", 1, subject) ==
-               {:error, :not_found}
+      assert Runbooks.fetch_model_runbook_draft("working", other_subject) == {:error, :not_found}
     end
 
     test "denies a principal without view permission" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.fetch_model_draft_runbook_version(
-               "any",
-               1,
-               Subject.for_runner(runner, account)
-             ) == {:error, :unauthorized}
+      assert Runbooks.fetch_model_runbook_draft("any", Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -691,32 +525,6 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.fetch_runbook_by_id("not-a-uuid", subject) == {:error, :not_found}
       assert Runbooks.fetch_runbook_by_id(deleted.id, subject) == {:error, :not_found}
       assert Runbooks.fetch_runbook_by_id(other.id, subject) == {:error, :not_found}
-    end
-  end
-
-  describe "fetch_published_runbook_version/3" do
-    test "returns only the exact visible published version" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "versioned") |> Fixtures.Runbooks.publish_runbook()
-
-      assert {:ok, second_draft} =
-               Runbooks.save_new_version(first, %{"description" => "new"}, subject)
-
-      second = Fixtures.Runbooks.publish_runbook(second_draft)
-
-      assert {:ok, fetched} =
-               Runbooks.fetch_published_runbook_version("versioned", 1, subject)
-
-      assert fetched.id == first.id
-      assert second.version == 2
-
-      assert Runbooks.fetch_published_runbook_version("versioned", 3, subject) ==
-               {:error, :not_found}
-
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-
-      assert Runbooks.fetch_published_runbook_version("versioned", 1, other_subject) ==
-               {:error, :not_found}
     end
   end
 
@@ -1297,15 +1105,16 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "create_runbook/2" do
-    test "creates a bounded draft, derives its slug, audits it, and ignores status" do
+    test "creates a never-published runbook holding its first draft, derives its slug, audits it" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       Runbooks.subscribe_account_runbooks(account.id)
-      attrs = runbook_attrs(title: "Database Health", slug: "", status: "published")
+      attrs = runbook_attrs(title: "Database Health", slug: "")
 
       assert {:ok, runbook} = Runbooks.create_runbook(attrs, subject)
-      assert runbook.status == :draft
+      assert runbook.live_version == nil
+      assert runbook.definition == nil
       assert runbook.slug == "database-health"
-      assert runbook.definition == definition()
+      assert runbook.draft_definition == definition()
       assert_receive {:list_changed, :runbook, "runbook.created", runbook_id}
       assert runbook_id == runbook.id
 
@@ -1317,7 +1126,7 @@ defmodule Emisar.RunbooksTest do
       assert created_event.target_id == runbook.id
     end
 
-    test "persists incomplete drafts but keeps publication on the strict contract" do
+    test "persists an incomplete draft but keeps publication on the strict contract" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
       incomplete =
@@ -1325,24 +1134,21 @@ defmodule Emisar.RunbooksTest do
         |> put_in(["stages", Access.at(0), "steps", Access.at(0), "action"], "")
 
       attrs = runbook_attrs(title: "Work in progress", definition: incomplete)
-      assert {:ok, draft} = Runbooks.create_runbook(attrs, subject)
-      assert draft.status == :draft
-      assert draft.definition == incomplete
-
-      # A statically invalid definition fails the strict changeset before the
-      # transaction starts; publish's in-transaction readiness reports the
-      # same contract as ordered issues.
-      assert {:error, published_changeset} =
-               Runbooks.create_published_runbook(attrs, subject)
-
-      assert "Definition value has an invalid format. at /stages/0/steps/0/action" in errors_on(
-               published_changeset
-             ).definition
+      assert {:ok, runbook} = Runbooks.create_runbook(attrs, subject)
+      assert runbook.draft_definition == incomplete
 
       assert {:error, [%{path: "/stages/0/steps/0/action"} | _rest]} =
-               Runbooks.publish(draft, subject)
+               Runbooks.publish_draft(runbook, subject)
 
-      assert Repo.reload!(draft).status == :draft
+      assert Repo.reload!(runbook).live_version == nil
+    end
+
+    test "refuses a second runbook on a slug the account already uses" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      assert {:ok, _first} = Runbooks.create_runbook(runbook_attrs(slug: "taken"), subject)
+
+      assert {:error, changeset} = Runbooks.create_runbook(runbook_attrs(slug: "taken"), subject)
+      assert "has already been taken" in errors_on(changeset).account_id
     end
 
     test "denies a principal without draft permission" do
@@ -1357,7 +1163,7 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "import_runbook/3" do
-    test "strictly imports canonical JSON as an account-scoped draft" do
+    test "strictly imports canonical JSON as an account-scoped first draft" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       definition = definition()
 
@@ -1367,8 +1173,8 @@ defmodule Emisar.RunbooksTest do
       assert runbook.account_id == account.id
       assert runbook.title == "Imported maintenance"
       assert runbook.slug == "imported-maintenance"
-      assert runbook.status == :draft
-      assert runbook.definition == definition
+      assert runbook.live_version == nil
+      assert runbook.draft_definition == definition
 
       {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       assert Runbooks.fetch_runbook_by_id(runbook.id, other_subject) == {:error, :not_found}
@@ -1398,42 +1204,6 @@ defmodule Emisar.RunbooksTest do
                Jason.encode!(definition()),
                Subject.for_runner(runner, account)
              ) == {:error, :unauthorized}
-    end
-  end
-
-  describe "create_published_runbook/2" do
-    test "creates a published row only through the named transition, once readiness passes" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      runner = trusted_runner(account, subject)
-
-      assert {:ok, runbook} =
-               Runbooks.create_published_runbook(
-                 runbook_attrs(definition: definition(runner.group)),
-                 subject
-               )
-
-      assert runbook.status == :published
-    end
-
-    test "commits nothing when current-state readiness refuses publication" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-
-      # No runner serves the target group, so the compile refuses.
-      assert {:error, issues} =
-               Runbooks.create_published_runbook(runbook_attrs(), subject)
-
-      assert is_list(issues)
-      refute Repo.exists?(Runbooks.Runbook)
-    end
-
-    test "denies an API client that may only draft" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      subject = api_client_subject(account, owner, "draft only")
-
-      assert Runbooks.create_published_runbook(runbook_attrs(), subject) ==
-               {:error, :unauthorized}
     end
   end
 
@@ -1543,81 +1313,77 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "create_or_replay_mcp_draft_revision/2" do
-    test "creates the next same-family draft once and rejects a stale source" do
+  describe "create_or_replay_mcp_draft_update/2" do
+    test "updates the runbook's one draft once and rejects a stale base digest" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      subject = api_client_subject(account, owner, "draft revision")
+      subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
-      facts = mcp_draft_revision_facts(source, title: "Health review revised")
+      revision = put_in(definition(), ["context_markdown"], "Inspect twice.")
 
-      assert {:ok, :created, revised} =
-               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+      facts =
+        mcp_draft_update_facts(source, title: "Health review revised", definition: revision)
 
+      assert {:ok, :created, revised} = Runbooks.create_or_replay_mcp_draft_update(facts, subject)
+
+      assert revised.id == source.id
       assert revised.slug == source.slug
-      assert revised.version == 2
-      assert revised.status == :draft
       assert revised.title == "Health review revised"
+      assert revised.draft_definition == revision
+      assert revised.live_version == nil
 
-      assert {:ok, :replay, replayed} =
-               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
-
+      assert {:ok, :replay, replayed} = Runbooks.create_or_replay_mcp_draft_update(facts, subject)
       assert replayed.id == revised.id
 
       stale = %{facts | operation_id: "op_244NN9NMDZ1T76NARWCKM5A0D6"}
 
-      assert Runbooks.create_or_replay_mcp_draft_revision(stale, subject) ==
+      assert Runbooks.create_or_replay_mcp_draft_update(stale, subject) ==
                {:error, :draft_changed}
 
-      assert Repo.aggregate(Runbooks.Runbook, :count) == 2
+      assert Repo.aggregate(Runbooks.Runbook, :count) == 1
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
     end
 
-    test "revises a published head while that published version keeps running" do
+    test "writes a draft over a live release while that release keeps running" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      subject = api_client_subject(account, owner, "draft revision")
+      subject = api_client_subject(account, owner, "draft update")
       runner = trusted_runner(account, owner)
 
-      published =
-        create_runbook(owner, slug: "health-review", definition: definition(runner.group))
+      live =
+        owner
+        |> create_runbook(slug: "health-review", definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
-      facts = mcp_draft_revision_facts(published, title: "Health review revised")
+      facts = mcp_draft_update_facts(live, title: "Health review revised")
 
-      assert {:ok, :created, revised} =
-               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+      assert {:ok, :created, revised} = Runbooks.create_or_replay_mcp_draft_update(facts, subject)
 
-      assert revised.slug == published.slug
-      assert revised.version == 2
-      assert revised.status == :draft
-      assert Repo.reload!(published) == published
+      assert revised.id == live.id
+      assert revised.live_version == 1
+      assert revised.definition == live.definition
+      assert revised.draft_definition == facts.definition
 
-      assert {:ok, live} =
-               Runbooks.fetch_model_visible_runbook_version("health-review", 1, subject)
-
-      assert live.id == published.id
-
-      assert Runbooks.fetch_model_visible_runbook_version("health-review", 2, subject) ==
-               {:error, :not_found}
+      assert {:ok, still_live} = Runbooks.fetch_model_visible_runbook("health-review", subject)
+      assert still_live.definition == live.definition
     end
 
-    test "rolls back stale hashes and hides cross-account sources" do
+    test "rolls back stale digests and hides cross-account runbooks" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      subject = api_client_subject(account, owner, "draft revision")
+      subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
 
-      stale_hash =
+      stale_digest =
         source
-        |> mcp_draft_revision_facts()
+        |> mcp_draft_update_facts()
         |> Map.put(:definition_sha256, String.duplicate("0", 64))
 
-      assert Runbooks.create_or_replay_mcp_draft_revision(stale_hash, subject) ==
+      assert Runbooks.create_or_replay_mcp_draft_update(stale_digest, subject) ==
                {:error, :draft_changed}
 
       {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
-      other_subject = api_client_subject(other_account, other_owner, "foreign revision")
+      other_subject = api_client_subject(other_account, other_owner, "foreign update")
 
-      assert Runbooks.create_or_replay_mcp_draft_revision(
-               mcp_draft_revision_facts(source),
+      assert Runbooks.create_or_replay_mcp_draft_update(
+               mcp_draft_update_facts(source),
                other_subject
              ) == {:error, :not_found}
 
@@ -1626,35 +1392,35 @@ defmodule Emisar.RunbooksTest do
 
     test "conflicts when changed facts reuse the operation identity" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      subject = api_client_subject(account, owner, "draft revision")
+      subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
-      facts = mcp_draft_revision_facts(source)
+      facts = mcp_draft_update_facts(source)
 
       assert {:ok, :created, _revised} =
-               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+               Runbooks.create_or_replay_mcp_draft_update(facts, subject)
 
-      assert Runbooks.create_or_replay_mcp_draft_revision(%{facts | title: "Renamed"}, subject) ==
+      assert Runbooks.create_or_replay_mcp_draft_update(%{facts | title: "Renamed"}, subject) ==
                {:error, :operation_conflict}
 
-      assert Repo.aggregate(Runbooks.Runbook, :count) == 2
+      assert Repo.aggregate(Runbooks.Runbook, :count) == 1
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
     end
 
     test "denies a caller holding neither draft nor manage authority" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      subject = api_client_subject(account, owner, "draft revision")
+      subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
-      facts = mcp_draft_revision_facts(source)
+      facts = mcp_draft_update_facts(source)
 
       narrowed =
         subject
         |> without_permission(Runbooks.Authorizer.draft_runbooks_permission())
         |> without_permission(Runbooks.Authorizer.manage_runbooks_permission())
 
-      assert Runbooks.create_or_replay_mcp_draft_revision(facts, narrowed) ==
+      assert Runbooks.create_or_replay_mcp_draft_update(facts, narrowed) ==
                {:error, :unauthorized}
 
-      assert Runbooks.create_or_replay_mcp_draft_revision(
+      assert Runbooks.create_or_replay_mcp_draft_update(
                facts,
                membership_subject(account, :operator)
              ) == {:error, :unauthorized}
@@ -1662,9 +1428,9 @@ defmodule Emisar.RunbooksTest do
       refute Repo.exists?(MCPOperations.Operation)
     end
 
-    test "accepts a canonical revision that is not yet publishable" do
+    test "accepts a canonical draft that is not yet publishable" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      subject = api_client_subject(account, owner, "draft revision")
+      subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
 
       incomplete =
@@ -1674,18 +1440,315 @@ defmodule Emisar.RunbooksTest do
           &Map.delete(&1, "action")
         )
 
-      facts = mcp_draft_revision_facts(source, definition: incomplete)
+      facts = mcp_draft_update_facts(source, definition: incomplete)
 
-      assert {:ok, :created, revised} =
-               Runbooks.create_or_replay_mcp_draft_revision(facts, subject)
+      assert {:ok, :created, revised} = Runbooks.create_or_replay_mcp_draft_update(facts, subject)
+      assert revised.draft_definition == incomplete
 
-      assert revised.status == :draft
-      assert revised.definition == incomplete
+      # The draft passes the envelope precisely because publication validation
+      # is a separate, human-only transition.
+      assert {:ok, _draft} = Runbooks.Definition.validate_draft(revised.draft_definition)
+      assert {:error, _issues} = Runbooks.Definition.validate(revised.draft_definition)
+    end
+  end
 
-      # The revision passes the draft envelope precisely because publication
-      # validation is a separate, human-only transition.
-      assert {:ok, _draft} = Runbooks.Definition.validate_draft(revised.definition)
-      assert {:error, _issues} = Runbooks.Definition.validate(revised.definition)
+  describe "save_draft/4" do
+    # The authorizer states in writing that :api_client gets draft but NOT
+    # manage, so the console's save stays closed to it at the DOMAIN layer, not
+    # merely by which tools the MCP wiring happens to expose today.
+    test "denies an MCP key, which holds draft but not manage" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(owner, slug: "manage-gate")
+
+      assert Runbooks.save_draft(
+               runbook,
+               %{"description" => "escalated"},
+               base_sha(runbook),
+               api_client_subject(account, owner, "save-draft gate")
+             ) == {:error, :unauthorized}
+    end
+
+    test "writes the draft in place, audits it, and isolates cross-account callers" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(subject, slug: "immutable")
+      Runbooks.subscribe_account_runbooks(account.id)
+
+      attrs = %{"title" => "Second", "slug" => "second", "description" => "updated"}
+      assert {:ok, saved} = Runbooks.save_draft(runbook, attrs, base_sha(runbook), subject)
+
+      assert saved.id == runbook.id
+      assert saved.slug == "second"
+      assert saved.title == "Second"
+      assert saved.draft_definition == definition()
+      assert_receive {:list_changed, :runbook, "runbook.updated", runbook_id}
+      assert runbook_id == runbook.id
+
+      updated_event =
+        Emisar.Audit.Event
+        |> Repo.all()
+        |> Enum.find(&(&1.event_type == "runbook.updated"))
+
+      assert updated_event.target_id == runbook.id
+
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runbooks.save_draft(runbook, attrs, base_sha(saved), other_subject) ==
+               {:error, :not_found}
+    end
+
+    test "refuses a save written on top of someone else's" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(subject, slug: "sha-locked")
+      stale_sha = base_sha(runbook)
+
+      revised = put_in(definition(), ["context_markdown"], "Inspect twice.")
+      attrs = %{"draft_definition" => revised}
+      assert {:ok, _saved} = Runbooks.save_draft(runbook, attrs, stale_sha, subject)
+
+      assert Runbooks.save_draft(runbook, %{"description" => "forked"}, stale_sha, subject) ==
+               {:error, :draft_changed}
+
+      assert Repo.one(Runbooks.Runbook).draft_definition == revised
+    end
+
+    test "locks the base digest to the live release once the draft is gone" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook(slug: "published") |> Fixtures.Runbooks.publish_runbook()
+
+      assert live.draft_definition == nil
+      revised = put_in(definition(), ["context_markdown"], "Inspect twice.")
+      attrs = %{"draft_definition" => revised}
+
+      assert Runbooks.save_draft(live, attrs, String.duplicate("0", 64), subject) ==
+               {:error, :draft_changed}
+
+      assert {:ok, saved} = Runbooks.save_draft(live, attrs, base_sha(live), subject)
+      assert saved.draft_definition == revised
+      assert saved.definition == live.definition
+    end
+
+    test "a metadata-only save lands in place and creates no unpublished change" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook(slug: "published") |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:ok, saved} =
+               Runbooks.save_draft(live, %{"description" => "clearer"}, base_sha(live), subject)
+
+      assert saved.description == "clearer"
+      assert saved.draft_definition == nil
+      assert saved.live_version == 1
+    end
+
+    test "freezes the slug once a release exists" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook(slug: "frozen") |> Fixtures.Runbooks.publish_runbook()
+
+      assert {:error, changeset} =
+               Runbooks.save_draft(live, %{"slug" => "renamed"}, base_sha(live), subject)
+
+      assert "cannot change once the runbook has been published" in errors_on(changeset).slug
+      assert Repo.reload!(live).slug == "frozen"
+    end
+
+    test "denies a principal without manage permission" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(subject)
+      operator = membership_subject(account, "operator")
+
+      assert Runbooks.save_draft(runbook, %{}, base_sha(runbook), operator) ==
+               {:error, :unauthorized}
+    end
+  end
+
+  describe "publish_draft/2" do
+    test "mints the next release, promotes the draft, and clears it" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      runbook = create_runbook(subject, definition: definition(runner.group))
+      Runbooks.subscribe_account_runbooks(account.id)
+
+      assert {:ok, published} = Runbooks.publish_draft(runbook, subject)
+
+      assert published.live_version == 1
+      assert published.definition == definition(runner.group)
+      assert published.draft_definition == nil
+      assert_receive {:list_changed, :runbook, "runbook.published", runbook_id}
+      assert runbook_id == published.id
+
+      assert release = Repo.one(Runbooks.Release)
+      assert release.runbook_id == published.id
+      assert release.version == 1
+      assert release.definition == published.definition
+      assert release.definition_sha256 == Runbooks.definition_digest(published.definition)
+
+      published_event =
+        Emisar.Audit.Event
+        |> Repo.all()
+        |> Enum.find(&(&1.event_type == "runbook.published"))
+
+      assert published_event.target_id == published.id
+      assert published_event.payload["version"] == 1
+      assert published_event.payload["definition_sha256"] == release.definition_sha256
+    end
+
+    test "counts publishes, not saves" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      runbook = create_runbook(subject, definition: definition(runner.group))
+
+      assert {:ok, first} = Runbooks.publish_draft(runbook, subject)
+
+      revised = put_in(definition(runner.group), ["context_markdown"], "Inspect twice.")
+      attrs = %{"draft_definition" => revised}
+      assert {:ok, saved} = Runbooks.save_draft(first, attrs, base_sha(first), subject)
+      assert {:ok, second} = Runbooks.publish_draft(saved, subject)
+
+      assert second.live_version == 2
+      assert second.definition == revised
+      assert Enum.map(Repo.all(Runbooks.Release), & &1.version) == [1, 2]
+    end
+
+    test "refuses a runbook with nothing unpublished" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+
+      live =
+        subject
+        |> create_runbook(definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      assert Runbooks.publish_draft(live, subject) == {:error, :no_draft}
+    end
+
+    test "rechecks readiness from fresh domain state, not the caller's snapshot" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      runbook = create_runbook(subject, definition: definition(runner.group))
+
+      # The catalog the caller saw is gone by the time publish runs.
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+
+      assert {:error, issues} = Runbooks.publish_draft(runbook, subject)
+      assert is_list(issues)
+
+      reloaded = Repo.reload!(runbook)
+      assert reloaded.live_version == nil
+      assert reloaded.draft_definition == runbook.draft_definition
+      refute Repo.exists?(Runbooks.Release)
+    end
+
+    test "denies a principal without manage permission" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(subject)
+      operator = membership_subject(account, "operator")
+
+      assert Runbooks.publish_draft(runbook, operator) == {:error, :unauthorized}
+    end
+
+    test "denies cross-account mutation" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      runbook = create_runbook(subject, definition: definition(runner.group))
+
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      assert Runbooks.publish_draft(runbook, other_subject) == {:error, :not_found}
+    end
+  end
+
+  describe "discard_draft/2" do
+    test "drops the unpublished change and leaves the live release running" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook(slug: "keeper") |> Fixtures.Runbooks.publish_runbook()
+      revised = put_in(definition(), ["context_markdown"], "Inspect twice.")
+
+      assert {:ok, edited} =
+               Runbooks.save_draft(
+                 live,
+                 %{"draft_definition" => revised},
+                 base_sha(live),
+                 subject
+               )
+
+      Runbooks.subscribe_account_runbooks(account.id)
+
+      assert {:ok, discarded} = Runbooks.discard_draft(edited, subject)
+      assert discarded.draft_definition == nil
+      assert discarded.definition == live.definition
+      assert discarded.live_version == 1
+      assert_receive {:list_changed, :runbook, "runbook.updated", runbook_id}
+      assert runbook_id == live.id
+    end
+
+    test "refuses a never-published runbook, whose draft is all there is" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(subject)
+
+      assert Runbooks.discard_draft(runbook, subject) == {:error, :never_published}
+      assert Repo.reload!(runbook).draft_definition == runbook.draft_definition
+    end
+
+    test "refuses a live runbook with nothing unpublished" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
+
+      assert Runbooks.discard_draft(live, subject) == {:error, :no_draft}
+    end
+
+    test "denies a principal without manage permission" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
+      operator = membership_subject(account, "operator")
+
+      assert Runbooks.discard_draft(live, operator) == {:error, :unauthorized}
+    end
+
+    test "denies cross-account mutation" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runbooks.discard_draft(live, other_subject) == {:error, :not_found}
+    end
+  end
+
+  describe "delete_runbook/2" do
+    # Same domain-layer invariant as save_draft/4: delete is the manage verb an
+    # MCP key must never reach.
+    test "denies an MCP key, which holds draft but not manage" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(owner, slug: "delete-gate")
+
+      assert Runbooks.delete_runbook(
+               runbook,
+               api_client_subject(account, owner, "delete gate")
+             ) == {:error, :unauthorized}
+    end
+
+    test "soft-deletes the row and retains its releases" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook(slug: "family") |> Fixtures.Runbooks.publish_runbook()
+      Runbooks.subscribe_account_runbooks(account.id)
+
+      assert {:ok, deleted} = Runbooks.delete_runbook(live, subject)
+      assert deleted.deleted_at
+      assert Runbooks.fetch_runbook_by_id(live.id, subject) == {:error, :not_found}
+      assert Repo.one(Runbooks.Release).runbook_id == live.id
+      assert_receive {:list_changed, :runbook, "runbook.deleted", runbook_id}
+      assert runbook_id == live.id
+    end
+
+    test "does not delete another account's runbook" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(subject)
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert Runbooks.delete_runbook(runbook, other_subject) == {:error, :not_found}
+      assert {:ok, _fetched} = Runbooks.fetch_runbook_by_id(runbook.id, subject)
     end
   end
 
@@ -1736,246 +1799,8 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "save_new_version/3" do
-    # The authorizer states in writing that :api_client gets draft but NOT manage,
-    # so save-version stays closed to it "at the DOMAIN layer, not merely by which
-    # tools the MCP wiring happens to expose today". publish/2 and
-    # save_published_version/3 each pin that; these two did not, and
-    # create_runbook/2 already accepts {:one_of, [manage, draft]} — so the next
-    # "let the LLM revise its draft" change copies that here and an MCP key mints
-    # versions of any runbook family, with the suite green.
-    test "denies an MCP key, which holds draft but not manage" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      runbook = create_runbook(owner, slug: "manage-gate")
-
-      assert Runbooks.save_new_version(
-               runbook,
-               %{"description" => "escalated"},
-               api_client_subject(account, owner, "save-version gate")
-             ) == {:error, :unauthorized}
-    end
-
-    test "creates an immutable next version and isolates cross-account callers" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "immutable")
-
-      assert {:ok, second} =
-               Runbooks.save_new_version(
-                 first,
-                 %{"title" => "Second", "slug" => "", "description" => "updated"},
-                 subject
-               )
-
-      assert first.version == 1
-      assert second.version == 2
-      assert second.slug == "second"
-      assert Repo.reload!(first).title != second.title
-
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-
-      assert Runbooks.save_new_version(first, %{"title" => "Stolen"}, other_subject) ==
-               {:error, :not_found}
-    end
-
-    test "refuses a superseded source instead of forking history" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "head-only")
-      assert {:ok, _second} = Runbooks.save_new_version(first, %{}, subject)
-
-      assert Runbooks.save_new_version(first, %{"title" => "Forked"}, subject) ==
-               {:error, :draft_changed}
-
-      assert Repo.aggregate(Runbooks.Runbook, :count) == 2
-    end
-
-    test "a new version of a published family is born a draft, ignoring client status" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "pinned") |> Fixtures.Runbooks.publish_runbook()
-
-      assert {:ok, second} =
-               Runbooks.save_new_version(first, %{"status" => "published"}, subject)
-
-      assert second.status == :draft
-    end
-  end
-
-  describe "save_published_version/3" do
-    test "commits the next version already published, auditing update and publication" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      runner = trusted_runner(account, subject)
-      first = create_runbook(subject, definition: definition(runner.group))
-      Runbooks.subscribe_account_runbooks(account.id)
-
-      assert {:ok, second} =
-               Runbooks.save_published_version(
-                 first,
-                 %{"description" => "ready", "definition" => definition(runner.group)},
-                 subject
-               )
-
-      assert second.version == 2
-      assert second.status == :published
-      assert_receive {:list_changed, :runbook, "runbook.published", runbook_id}
-      assert runbook_id == second.id
-
-      audited_types =
-        Emisar.Audit.Event
-        |> Repo.all()
-        |> Enum.filter(&(&1.target_id == second.id))
-        |> Enum.map(& &1.event_type)
-        |> Enum.sort()
-
-      assert audited_types == ["runbook.published", "runbook.updated"]
-    end
-
-    test "commits nothing when current-state readiness refuses publication" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      first = create_runbook(subject, slug: "atomic")
-
-      # No runner serves the target group — the whole transaction rolls back.
-      assert {:error, issues} =
-               Runbooks.save_published_version(first, %{"description" => "v2"}, subject)
-
-      assert is_list(issues)
-      assert first_row = Repo.one(Runbooks.Runbook)
-      assert first_row.id == first.id
-      assert first_row.version == 1
-    end
-
-    test "refuses a superseded source before judging readiness" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "head-only")
-      assert {:ok, _second} = Runbooks.save_new_version(first, %{}, subject)
-
-      assert Runbooks.save_published_version(first, %{"description" => "old"}, subject) ==
-               {:error, :draft_changed}
-
-      assert Repo.aggregate(Runbooks.Runbook, :count) == 2
-    end
-
-    test "denies a principal without manage permission" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject)
-      operator = membership_subject(account, "operator")
-
-      assert Runbooks.save_published_version(first, %{}, operator) ==
-               {:error, :unauthorized}
-    end
-
-    test "rejects another account's runbook" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject)
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-
-      assert Runbooks.save_published_version(first, %{}, other_subject) ==
-               {:error, :not_found}
-    end
-  end
-
-  describe "publish/2" do
-    test "publishes a visible draft once current-state readiness passes" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      runner = trusted_runner(account, subject)
-      draft = create_runbook(subject, definition: definition(runner.group))
-
-      assert {:ok, published} = Runbooks.publish(draft, subject)
-      assert published.status == :published
-
-      published_event =
-        Emisar.Audit.Event
-        |> Repo.all()
-        |> Enum.find(&(&1.event_type == "runbook.published"))
-
-      assert published_event.target_id == published.id
-      assert published_event.payload["version"] == published.version
-    end
-
-    test "rechecks readiness from fresh domain state, not the caller's snapshot" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      runner = trusted_runner(account, subject)
-      draft = create_runbook(subject, definition: definition(runner.group))
-
-      # The catalog the caller saw is gone by the time publish runs.
-      Fixtures.Catalog.delete_actions_for_runner(runner.id)
-
-      assert {:error, issues} = Runbooks.publish(draft, subject)
-      assert is_list(issues)
-      assert Repo.reload!(draft).status == :draft
-    end
-
-    test "refuses to publish a superseded draft in place" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      runner = trusted_runner(account, subject)
-      old_draft = create_runbook(subject, definition: definition(runner.group))
-      assert {:ok, _head_draft} = Runbooks.save_new_version(old_draft, %{}, subject)
-
-      # Publishing v1 under a v2 head would make v1 the newest PUBLISHED
-      # version — silently flipping what a default Run dispatches to old
-      # content while the head sits above it.
-      assert Runbooks.publish(old_draft, subject) == {:error, :draft_changed}
-      assert Repo.reload!(old_draft).status == :draft
-      assert Runbooks.latest_published_by_slugs([old_draft.slug], subject) == {:ok, %{}}
-    end
-
-    test "denies a principal without manage permission" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      draft = create_runbook(subject)
-      operator = membership_subject(account, "operator")
-
-      assert Runbooks.publish(draft, operator) == {:error, :unauthorized}
-    end
-
-    test "denies cross-account mutation" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      runner = trusted_runner(account, subject)
-      draft = create_runbook(subject, definition: definition(runner.group))
-
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      assert Runbooks.publish(draft, other_subject) == {:error, :not_found}
-    end
-  end
-
-  describe "delete_runbook/2" do
-    # Same domain-layer invariant as save_new_version/3, and a bigger blast
-    # radius: delete tombstones the whole slug family in one update_all.
-    test "denies an MCP key, which holds draft but not manage" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      runbook = create_runbook(owner, slug: "delete-gate")
-
-      assert Runbooks.delete_runbook(
-               runbook,
-               api_client_subject(account, owner, "delete gate")
-             ) == {:error, :unauthorized}
-    end
-
-    test "soft-deletes the entire visible version family" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      first = create_runbook(subject, slug: "family")
-      assert {:ok, second} = Runbooks.save_new_version(first, %{"description" => "v2"}, subject)
-      assert {:ok, _deleted} = Runbooks.delete_runbook(first, subject)
-
-      assert Runbooks.fetch_runbook_by_id(first.id, subject) == {:error, :not_found}
-      assert Runbooks.fetch_runbook_by_id(second.id, subject) == {:error, :not_found}
-    end
-
-    test "does not delete another account's family" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      runbook = create_runbook(subject)
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-
-      assert Runbooks.delete_runbook(runbook, other_subject) == {:error, :not_found}
-      assert {:ok, _fetched} = Runbooks.fetch_runbook_by_id(runbook.id, subject)
-    end
-  end
-
   describe "expand/1" do
-    test "flattens stage steps in declared order and rejects malformed shapes" do
+    test "flattens the live release's steps in declared order and rejects malformed shapes" do
       first = step("first", "one")
       second = step("second", "two")
 
@@ -1985,6 +1810,18 @@ defmodule Emisar.RunbooksTest do
 
       assert Runbooks.expand(runbook) == [first, second]
       assert Runbooks.expand(%Runbooks.Runbook{definition: %{}}) == []
+    end
+
+    test "falls back to the draft while nothing is live" do
+      step = step("first", "one")
+
+      runbook = %Runbooks.Runbook{
+        definition: nil,
+        draft_definition: definition([stage("one", [step])])
+      }
+
+      assert Runbooks.expand(runbook) == [step]
+      assert Runbooks.expand(%Runbooks.Runbook{definition: nil, draft_definition: nil}) == []
     end
   end
 
@@ -2000,7 +1837,8 @@ defmodule Emisar.RunbooksTest do
       runner = trusted_runner(account, subject)
 
       runbook =
-        create_runbook(subject, definition: definition(runner.group))
+        subject
+        |> create_runbook(definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
       assert Runbooks.dispatch_runbook(
@@ -2019,7 +1857,8 @@ defmodule Emisar.RunbooksTest do
       Runners.subscribe_runner_transport(runner)
 
       runbook =
-        create_runbook(subject, definition: definition(runner.group))
+        subject
+        |> create_runbook(definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
       assert {:ok, result} =
@@ -2037,7 +1876,8 @@ defmodule Emisar.RunbooksTest do
       runner = trusted_runner(account, subject)
 
       runbook =
-        create_runbook(subject, definition: definition(runner.group))
+        subject
+        |> create_runbook(definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
       assert Runbooks.dispatch_runbook(runbook, "  ", subject) == {:error, :reason_required}
@@ -2048,14 +1888,37 @@ defmodule Emisar.RunbooksTest do
                {:error, :not_found}
     end
 
-    test "refuses to run a draft" do
+    test "refuses a runbook that has never been published" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
-      draft = create_runbook(subject, definition: definition(runner.group))
+      runbook = create_runbook(subject, definition: definition(runner.group))
 
-      assert Runbooks.dispatch_runbook(draft, "inspect the database", subject) ==
-               {:error, :not_published}
+      assert Runbooks.dispatch_runbook(runbook, "inspect the database", subject) ==
+               {:error, :not_live}
+    end
+
+    test "snapshots the live definition and its release number onto the execution" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      Runners.subscribe_runner_transport(runner)
+
+      live =
+        subject
+        |> create_runbook(definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
+
+      revised = put_in(definition(runner.group), ["context_markdown"], "Inspect twice.")
+      attrs = %{"draft_definition" => revised}
+      assert {:ok, edited} = Runbooks.save_draft(live, attrs, base_sha(live), subject)
+
+      assert {:ok, result} = Runbooks.dispatch_runbook(edited, "inspect the database", subject)
+
+      execution = fetch_execution(result.execution_id)
+      assert execution.definition == live.definition
+      assert execution.runbook_version == 1
+      assert execution.definition_sha256 == Runbooks.definition_digest(live.definition)
     end
 
     test "refuses a runbook soft-deleted after it was read" do
@@ -2064,7 +1927,8 @@ defmodule Emisar.RunbooksTest do
       runner = trusted_runner(account, subject)
 
       runbook =
-        create_runbook(subject, definition: definition(runner.group))
+        subject
+        |> create_runbook(definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
       Fixtures.Runbooks.mark_runbook_as_deleted(runbook)
@@ -2092,7 +1956,7 @@ defmodule Emisar.RunbooksTest do
       assert Repo.aggregate(MCPOperations.Operation, :count) == 1
     end
 
-    test "replays without resolving the current published runbook" do
+    test "replays without resolving the current live runbook" do
       fixture = mcp_execution_fixture()
       facts = mcp_execution_facts(fixture.runbook, operation_id: fixture.operation_id)
       Fixtures.Runbooks.mark_runbook_as_deleted(fixture.runbook)
@@ -2145,7 +2009,8 @@ defmodule Emisar.RunbooksTest do
       runner = trusted_runner(account, owner)
 
       runbook =
-        create_runbook(owner, definition: definition(runner.group))
+        owner
+        |> create_runbook(definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
       facts = mcp_execution_facts(runbook)
@@ -2172,18 +2037,20 @@ defmodule Emisar.RunbooksTest do
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = api_client_subject(account, owner, "failed preflight")
       runner = trusted_runner(account, owner)
-      draft = create_runbook(owner, definition: definition(runner.group))
+      never_published = create_runbook(owner, definition: definition(runner.group))
 
-      published =
-        Fixtures.Runbooks.publish_runbook(
-          create_runbook(owner, definition: definition(runner.group))
-        )
+      live =
+        owner
+        |> create_runbook(definition: definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
 
       rejected = [
-        {mcp_execution_facts(draft), :not_found},
-        {mcp_execution_facts(published, runbook_ref: "missing-runbook@1"), :not_found},
-        {mcp_execution_facts(published, runbook_ref: "not a ref"), :invalid_runbook_ref},
-        {mcp_execution_facts(published, reason: "  "), :reason_required}
+        {mcp_execution_facts(never_published, runbook_ref: "#{never_published.slug}@1"),
+         :not_found},
+        {mcp_execution_facts(live, runbook_ref: "#{live.slug}@2"), :not_live},
+        {mcp_execution_facts(live, runbook_ref: "missing-runbook@1"), :not_found},
+        {mcp_execution_facts(live, runbook_ref: "not a ref"), :invalid_runbook_ref},
+        {mcp_execution_facts(live, reason: "  "), :reason_required}
       ]
 
       Enum.each(rejected, fn {facts, reason} ->
@@ -2216,27 +2083,26 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "create_or_replay_mcp_execution/2 with allow_draft" do
-    test "executes the exact current draft through the scheduler and replays it" do
+    test "executes the exact consented draft through the scheduler and replays it" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = api_client_subject(account, owner, "draft test")
       runner = trusted_runner(account, owner)
       Runners.subscribe_runner_transport(runner)
-      draft = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
+      runbook = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
 
       facts =
-        mcp_execution_facts(draft,
-          allow_draft: true,
-          reason: "test draft on the selected fleet"
-        )
+        mcp_draft_execution_facts(runbook, reason: "test draft on the selected fleet")
 
-      definition_sha256 = Runbooks.Definition.digest(draft.definition)
+      definition_sha256 = Runbooks.Definition.digest(runbook.draft_definition)
 
       assert {:ok, :created, execution} =
                Runbooks.create_or_replay_mcp_execution(facts, subject)
 
       assert execution.kind == :draft_test
       assert execution.definition_sha256 == definition_sha256
+      assert execution.definition == runbook.draft_definition
+      assert execution.runbook_version == nil
 
       assert execution.id ==
                MCPOperations.resource_id(facts.operation_id, :execute_runbook, subject)
@@ -2247,7 +2113,7 @@ defmodule Emisar.RunbooksTest do
       assert %{payload: payload} =
                Repo.get_by!(Emisar.Audit.Event,
                  event_type: "runbook.dispatched",
-                 target_id: draft.id
+                 target_id: runbook.id
                )
 
       assert payload["execution_kind"] == "draft_test"
@@ -2264,14 +2130,14 @@ defmodule Emisar.RunbooksTest do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, owner)
-      draft = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
+      runbook = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
 
       {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
       _other_policy = Fixtures.Policies.create_policy(account_id: other_account.id)
       other_subject = api_client_subject(other_account, other_owner, "foreign draft test")
 
       assert Runbooks.create_or_replay_mcp_execution(
-               mcp_execution_facts(draft, allow_draft: true),
+               mcp_draft_execution_facts(runbook),
                other_subject
              ) == {:error, :draft_not_found}
 
@@ -2279,36 +2145,38 @@ defmodule Emisar.RunbooksTest do
       refute Repo.exists?(MCPOperations.Operation)
     end
 
-    test "rejects a superseded draft and each missing authority" do
+    test "rejects a stale content digest and each missing authority" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = api_client_subject(account, owner, "draft test")
       runner = trusted_runner(account, owner)
-      first = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
-      assert {:ok, second} = Runbooks.save_new_version(first, %{}, owner)
+      runbook = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
 
       assert Runbooks.create_or_replay_mcp_execution(
-               mcp_execution_facts(first, allow_draft: true),
+               mcp_draft_execution_facts(runbook,
+                 definition_sha256: String.duplicate("0", 64)
+               ),
                subject
-             ) ==
-               {:error, :draft_changed}
+             ) == {:error, :draft_changed}
 
-      head_facts = mcp_execution_facts(second, allow_draft: true)
+      facts = mcp_draft_execution_facts(runbook)
 
       assert Runbooks.create_or_replay_mcp_execution(
-               head_facts,
+               facts,
                without_permission(subject, Runbooks.Authorizer.draft_runbooks_permission())
              ) == {:error, :unauthorized}
 
       assert Runbooks.create_or_replay_mcp_execution(
-               head_facts,
+               facts,
                without_permission(subject, Runs.Authorizer.dispatch_run_permission())
              ) == {:error, :unauthorized}
 
-      # A draft head is reachable only with explicit consent: default execution
-      # still resolves published versions only.
-      assert Runbooks.create_or_replay_mcp_execution(mcp_execution_facts(second), subject) ==
-               {:error, :not_found}
+      # A draft is reachable only with explicit consent: default execution still
+      # resolves live releases only.
+      assert Runbooks.create_or_replay_mcp_execution(
+               mcp_execution_facts(runbook, runbook_ref: "#{runbook.slug}@1"),
+               subject
+             ) == {:error, :not_found}
 
       refute Repo.exists?(RunbookExecution)
     end
@@ -2334,11 +2202,13 @@ defmodule Emisar.RunbooksTest do
 
       subject = api_client_subject(account, owner, "draft approval")
       runner = trusted_runner(account, owner)
-      draft = create_runbook(owner, slug: "draft-approval", definition: definition(runner.group))
+
+      runbook =
+        create_runbook(owner, slug: "draft-approval", definition: definition(runner.group))
 
       assert {:ok, :created, execution} =
                Runbooks.create_or_replay_mcp_execution(
-                 mcp_execution_facts(draft, allow_draft: true),
+                 mcp_draft_execution_facts(runbook),
                  subject
                )
 
@@ -2350,6 +2220,7 @@ defmodule Emisar.RunbooksTest do
                Approvals.fetch_request_for_visible_runbook_execution(execution, subject)
 
       assert request.context["execution_kind"] == "draft_test"
+      assert get_in(request.context, ["runbook", "version"]) == nil
 
       assert get_in(request.context, ["runbook", "definition_sha256"]) ==
                execution.definition_sha256
@@ -2363,7 +2234,8 @@ defmodule Emisar.RunbooksTest do
       runner = trusted_runner(account, subject)
 
       runbook =
-        create_runbook(subject, definition: definition(runner.group))
+        subject
+        |> create_runbook(definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
       assert {:ok, result} = Runbooks.resolve_plan(runbook, subject)
@@ -2381,7 +2253,11 @@ defmodule Emisar.RunbooksTest do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject, args: [arg("seconds", "integer")])
-      runbook = create_runbook(subject, definition: input_definition(runner.group))
+
+      runbook =
+        subject
+        |> create_runbook(definition: input_definition(runner.group))
+        |> Fixtures.Runbooks.publish_runbook()
 
       assert {:ok, result} = Runbooks.resolve_plan(runbook, %{"seconds" => 30}, subject)
 
@@ -3106,34 +2982,54 @@ defmodule Emisar.RunbooksTest do
   defp mcp_execution_facts(runbook, opts \\ []) do
     %{
       operation_id: Keyword.get(opts, :operation_id, operation_id()),
-      runbook_ref: Keyword.get(opts, :runbook_ref, "#{runbook.slug}@#{runbook.version}"),
-      allow_draft: Keyword.get(opts, :allow_draft, false),
+      runbook_ref: Keyword.get(opts, :runbook_ref, "#{runbook.slug}@#{runbook.live_version}"),
+      allow_draft: false,
       reason: Keyword.get(opts, :reason, "inspect fleet"),
       input_values: Keyword.get(opts, :input_values, %{})
     }
   end
 
-  defp mcp_draft_revision_facts(runbook, opts \\ []) do
+  defp mcp_draft_execution_facts(runbook, opts \\ []) do
     %{
       operation_id: Keyword.get(opts, :operation_id, operation_id()),
-      runbook_ref: "#{runbook.slug}@#{runbook.version}",
-      definition_sha256: Runbooks.Definition.digest(runbook.definition),
+      slug: Keyword.get(opts, :slug, runbook.slug),
+      definition_sha256:
+        Keyword.get_lazy(opts, :definition_sha256, fn ->
+          Runbooks.Definition.digest(runbook.draft_definition)
+        end),
+      allow_draft: true,
+      reason: Keyword.get(opts, :reason, "inspect fleet"),
+      input_values: Keyword.get(opts, :input_values, %{})
+    }
+  end
+
+  defp mcp_draft_update_facts(runbook, opts \\ []) do
+    %{
+      operation_id: Keyword.get(opts, :operation_id, operation_id()),
+      slug: runbook.slug,
+      definition_sha256: base_sha(runbook),
       title: Keyword.get(opts, :title, runbook.title),
       description: Keyword.get(opts, :description, runbook.description),
-      definition: Keyword.get(opts, :definition, runbook.definition)
+      definition: Keyword.get(opts, :definition, runbook.draft_definition || runbook.definition)
     }
   end
 
   defp runbook_attrs(opts \\ []) do
-    title = Keyword.get(opts, :title, "Runbook #{System.unique_integer([:positive])}")
-
     %{
-      "title" => title,
+      "title" => Keyword.get(opts, :title, "Runbook #{System.unique_integer([:positive])}"),
       "slug" => Keyword.get(opts, :slug, "runbook-#{System.unique_integer([:positive])}"),
       "description" => Keyword.get(opts, :description),
-      "definition" => Keyword.get(opts, :definition, definition()),
-      "status" => Keyword.get(opts, :status)
+      "draft_definition" => Keyword.get(opts, :definition, definition())
     }
+  end
+
+  # The digest a save must carry back: the unpublished change when there is one,
+  # else the live release.
+  defp base_sha(runbook),
+    do: Runbooks.definition_digest(runbook.draft_definition || runbook.definition)
+
+  defp save_draft(runbook, attrs, subject) do
+    Runbooks.save_draft(runbook, attrs, base_sha(runbook), subject)
   end
 
   defp definition(group \\ "database")
@@ -3311,7 +3207,8 @@ defmodule Emisar.RunbooksTest do
     Runners.subscribe_runner_transport(runner)
 
     runbook =
-      create_runbook(owner, definition: definition(runner.group))
+      owner
+      |> create_runbook(definition: definition(runner.group))
       |> Fixtures.Runbooks.publish_runbook()
 
     facts = mcp_execution_facts(runbook)

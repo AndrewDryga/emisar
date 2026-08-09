@@ -98,7 +98,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         "Fix the #{issue_count} definition #{if issue_count == 1, do: "issue", else: "issues"} before publishing."
 
       not changed_or_draft?(assigns) ->
-        "Make a change before publishing a new version."
+        "Make a change before publishing a new release."
 
       assigns.preview.state == :loading ->
         "Wait for the publish check to finish."
@@ -129,8 +129,15 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
   defp changed_or_draft?(assigns) do
     assigns.dirty? or
-      (not is_nil(assigns.runbook) and assigns.runbook.status == :draft)
+      (not is_nil(assigns.runbook) and not is_nil(assigns.runbook.draft_definition))
   end
+
+  # Discarding falls back to the live release, so a runbook that has never
+  # published one has nothing to fall back to.
+  defp discardable?(%Runbooks.Runbook{live_version: nil}), do: false
+  defp discardable?(%Runbooks.Runbook{draft_definition: nil}), do: false
+  defp discardable?(%Runbooks.Runbook{}), do: true
+  defp discardable?(_runbook), do: false
 
   def render(assigns) do
     ~H"""
@@ -150,22 +157,12 @@ defmodule EmisarWeb.RunbookEditorComponents do
       width={:table}
     >
       <:title>
-        <%!-- Back climbs the hierarchy: a superseded version belongs to the
-              family's history, so it returns there — never to the list two
-              levels up, which strands the operator mid-review. --%>
+        <%!-- One runbook, one editor: its direct parent is always the list. --%>
         <.detail_header
-          back={if(@superseded?, do: "Versions", else: "Runbooks")}
-          navigate={
-            if @superseded?,
-              do: ~p"/app/#{@current_account}/runbooks/#{@runbook.slug}/versions",
-              else: ~p"/app/#{@current_account}/runbooks"
-          }
+          back="Runbooks"
+          navigate={~p"/app/#{@current_account}/runbooks"}
           title={if(@runbook, do: @runbook.title, else: "New runbook")}
-        >
-          <%!-- Superseded inverts every affordance on the page, so it rides
-                the identity line — a notice alone drowns on a page this tall. --%>
-          <.chip :if={@superseded?} tone={:amber} upcase>Superseded</.chip>
-        </.detail_header>
+        />
       </:title>
 
       <div :if={not @loaded?} class="mt-8">
@@ -176,32 +173,15 @@ defmodule EmisarWeb.RunbookEditorComponents do
       </div>
 
       <div :if={@loaded?} class="mt-4 space-y-8">
-        <%!-- Amber, not neutral: this is event_block's documented
-              pending/attention case — acting on this page is the mistake the
-              notice exists to prevent. --%>
         <.event_block
-          :if={@superseded?}
-          icon="hero-archive-box"
-          tone={:amber}
-          title={"Superseded — version #{@family_head.version} is current"}
-        >
-          <:body>
-            You're viewing version {@runbook.version}, kept as immutable history. <.link
-              navigate={~p"/app/#{@current_account}/runbooks/#{@family_head.id}/edit"}
-              class="underline decoration-zinc-600 underline-offset-4 hover:text-brand-300 hover:decoration-brand-400"
-            >Open version {@family_head.version}</.link>{" "}to make changes.
-          </:body>
-        </.event_block>
-
-        <.event_block
-          :if={@read_only? and not @superseded?}
+          :if={@read_only?}
           icon="hero-lock-closed"
           tone={:neutral}
           title="Read-only runbook"
         >
           <:body>
             You can inspect the definition and its current validation state. Owners and admins can
-            create a new version.
+            edit it and publish the next release.
           </:body>
         </.event_block>
 
@@ -221,11 +201,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           :if={@runbook}
           id="runbook-lifecycle-mobile"
           class="xl:hidden"
-          current_account={@current_account}
           runbook={@runbook}
-          live_version={@live_version}
-          dirty?={@dirty?}
-          read_only?={@read_only?}
         />
 
         <.editor_actions
@@ -234,6 +210,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           class="xl:hidden"
           publish_blocker={publish_blocker(assigns)}
           save_blocker={draft_save_blocker(assigns)}
+          publish_review={@publish_review}
         />
 
         <form
@@ -283,11 +260,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               :if={@runbook}
               id="runbook-lifecycle-desktop"
               class="hidden xl:block"
-              current_account={@current_account}
               runbook={@runbook}
-              live_version={@live_version}
-              dirty?={@dirty?}
-              read_only?={@read_only?}
             />
             <.details_panel draft={@draft} form={@form} read_only?={@read_only?} />
             <.editor_actions
@@ -296,6 +269,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               class="hidden xl:block"
               publish_blocker={publish_blocker(assigns)}
               save_blocker={draft_save_blocker(assigns)}
+              publish_review={@publish_review}
             />
             <.publish_panel
               preview={@preview}
@@ -303,6 +277,23 @@ defmodule EmisarWeb.RunbookEditorComponents do
               pristine?={is_nil(@runbook) and not @dirty?}
             />
             <.canonical_panel draft={@draft} />
+            <.confirm_button
+              :if={not @read_only? and discardable?(@runbook)}
+              id="discard-runbook-draft"
+              title="Discard the unpublished changes?"
+              confirm_label="Discard changes"
+              icon="hero-arrow-uturn-left"
+              variant={:secondary}
+              tone={:neutral}
+              class="w-full justify-center"
+              on_confirm={JS.push("discard_draft")}
+            >
+              <:body>
+                The editor goes back to live v{@runbook.live_version}, which keeps running either
+                way. Unpublished work cannot be recovered.
+              </:body>
+              Discard changes
+            </.confirm_button>
             <.confirm_button
               :if={not @read_only? and @runbook}
               id="delete-runbook"
@@ -315,7 +306,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
               on_confirm={JS.push("delete")}
             >
               <:body>
-                Removes every version in this runbook family. Existing execution history remains.
+                Removes the runbook and its unpublished changes. Its releases and execution history
+                remain in the audit trail.
               </:body>
               Delete runbook
             </.confirm_button>
@@ -330,16 +322,17 @@ defmodule EmisarWeb.RunbookEditorComponents do
   attr :class, :string, default: nil
   attr :publish_blocker, :string, default: nil
   attr :save_blocker, :string, default: nil
+  attr :publish_review, :map, default: nil
 
   defp editor_actions(assigns) do
     ~H"""
     <div id={@id} class={@class}>
-      <div class="grid grid-cols-2 gap-3">
+      <div :if={is_nil(@publish_review)} class="grid grid-cols-2 gap-3">
         <.editor_action_button
           id={"#{@id}-publish"}
           label="Publish"
-          event="publish"
-          pending_label="Publishing…"
+          event="review_publish"
+          pending_label="Opening…"
           variant={if is_nil(@publish_blocker), do: :primary, else: :secondary}
           blocked_reason={@publish_blocker}
           align={:left}
@@ -354,40 +347,108 @@ defmodule EmisarWeb.RunbookEditorComponents do
           align={:right}
         />
       </div>
+      <.publish_review :if={@publish_review} id={"#{@id}-review"} review={@publish_review} />
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :review, :map, required: true
+
+  # The confirm step: what publishing changes about the live release sits beside
+  # the button that does it, so the decision is made against the artifact rather
+  # than a remembered one.
+  defp publish_review(assigns) do
+    ~H"""
+    <div id={@id} class="space-y-4 rounded-xl bg-zinc-950/40 p-5 ring-1 ring-white/10">
+      <p :if={is_nil(@review.diff)} class="text-xs leading-relaxed text-zinc-400">
+        First release — publishing creates v{@review.next_version} and makes it what Run dispatches.
+      </p>
+      <div :if={@review.diff} class="space-y-3">
+        <p class="text-xs leading-relaxed text-zinc-400">
+          These lines replace what runs today. Executions already under way keep the plan they
+          started with.
+        </p>
+        <.publish_diff diff={@review.diff} />
+      </div>
+      <div class="flex items-center justify-end gap-3">
+        <.button type="button" variant={:secondary} size={:md} phx-click="cancel_publish">
+          Cancel
+        </.button>
+        <.button
+          id={"#{@id}-confirm"}
+          type="button"
+          size={:md}
+          phx-click="publish"
+          phx-disable-with="Publishing…"
+        >
+          Publish v{@review.next_version}
+        </.button>
+      </div>
     </div>
     """
   end
 
   attr :id, :string, required: true
   attr :class, :string, default: nil
-  attr :current_account, :any, required: true
   attr :runbook, :any, required: true
-  attr :live_version, :any, default: nil
-  attr :dirty?, :boolean, required: true
-  attr :read_only?, :boolean, required: true
 
   defp lifecycle_facts(assigns) do
     ~H"""
     <dl id={@id} class={["space-y-2 text-xs text-zinc-400", @class]}>
-      <.kv label="Current">v{@runbook.version}</.kv>
-      <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
-      <%!-- Editing a draft or a superseded version says nothing about what a Run
-            dispatches right now, so name the published head separately. When the
-            version in the editor IS that head, the row would repeat "Current".
-            The version links out because the next question is always what the
-            two versions differ by, and history is where that is answered. --%>
-      <.kv :if={@live_version && @live_version.id != @runbook.id} label="Runs today">
-        <%!-- The underline is the affordance: a hover-only colour change leaves
-              a touch operator with no way to discover this row links out. --%>
-        <.link
-          navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.slug}/versions"}
-          class="underline decoration-zinc-600 underline-offset-4 hover:text-brand-300 hover:decoration-brand-400"
-        >v{@live_version.version}</.link>
+      <.kv label="Live">
+        {if(@runbook.live_version, do: "v#{@runbook.live_version}", else: "Never published")}
       </.kv>
-      <.kv :if={@dirty? and not @read_only?} label="Next">v{@runbook.version + 1}</.kv>
+      <%!-- Nothing live means the whole runbook is unpublished, which "Never
+           published" already said. --%>
+      <.kv :if={@runbook.live_version && @runbook.draft_definition} label="Draft">
+        Unpublished changes
+      </.kv>
     </dl>
     """
   end
+
+  attr :diff, :any, required: true
+
+  defp publish_diff(%{diff: %{hunks: []}} = assigns) do
+    ~H"""
+    <p class="text-xs text-zinc-400">
+      The definition is identical. Only the title or description changed.
+    </p>
+    """
+  end
+
+  defp publish_diff(assigns) do
+    ~H"""
+    <div class="overflow-x-auto">
+      <div :for={{hunk, index} <- Enum.with_index(@diff.hunks)}>
+        <div :if={index > 0} class="my-2 border-t border-dashed border-zinc-800"></div>
+        <%!-- The JSON indentation is content, so it rides a glued one-line
+              `whitespace-pre` span: putting the class on the block would turn
+              this template's own newlines into rendered leading whitespace. --%>
+        <div :for={line <- hunk} class={["font-mono text-[11px] leading-5", diff_line_class(line)]}>
+          <span class="whitespace-pre">{diff_line(line)}</span>
+        </div>
+      </div>
+      <p :if={@diff.truncated?} class="mt-2 text-xs text-zinc-500">
+        Diff truncated. Open the definition to read the rest.
+      </p>
+    </div>
+    """
+  end
+
+  # Unified-diff prefixes, so the change survives being copied out of the
+  # browser and reads without relying on colour alone.
+  defp diff_line({:ins, text}), do: "+ " <> text
+  defp diff_line({:del, text}), do: "- " <> text
+  defp diff_line({:eq, text}), do: "  " <> text
+
+  # Deliberate exception to "informative content stays neutral": +/- red-green
+  # is the one diff convention every operator already reads, and this IS the
+  # decision surface for publishing. Muted tier, and the glyph leads.
+  defp diff_line_class({:ins, _text}), do: "bg-brand-500/[0.07] text-brand-300"
+  defp diff_line_class({:del, _text}), do: "bg-rose-500/[0.07] text-rose-300"
+  defp diff_line_class({:eq, _text}), do: "text-zinc-500"
 
   attr :id, :string, required: true
   attr :label, :string, required: true

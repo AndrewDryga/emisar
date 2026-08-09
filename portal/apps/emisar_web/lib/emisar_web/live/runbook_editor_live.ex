@@ -36,9 +36,8 @@ defmodule EmisarWeb.RunbookEditorLive do
      |> assign(:loaded?, false)
      |> assign(:page_title, "Runbook")
      |> assign(:runbook, nil)
-     |> assign(:live_version, nil)
-     |> assign(:family_head, nil)
-     |> assign(:superseded?, false)
+     |> assign(:base_sha, nil)
+     |> assign(:publish_review, nil)
      |> assign(:read_only?, true)
      |> assign(:draft, draft)
      |> assign(:baseline, RunbookDraft.fingerprint(draft))
@@ -59,9 +58,8 @@ defmodule EmisarWeb.RunbookEditorLive do
       |> assign(:loaded?, true)
       |> assign(:page_title, "New runbook")
       |> assign(:runbook, nil)
-      |> assign(:live_version, nil)
-      |> assign(:family_head, nil)
-      |> assign(:superseded?, false)
+      |> assign(:base_sha, nil)
+      |> assign(:publish_review, nil)
       |> assign(
         :read_only?,
         not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
@@ -82,38 +80,19 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp apply_action(socket, :edit, %{"id" => id}) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
       {:ok, runbook} ->
-        draft = RunbookDraft.from_runbook(runbook)
-        family_head = family_head(runbook, socket.assigns.current_subject)
-        superseded? = family_head != nil and family_head.id != runbook.id
-
         socket =
           socket
           |> assign(:loaded?, true)
-          |> assign(:page_title, "Edit #{runbook.title}")
-          |> assign(:runbook, runbook)
-          |> assign(:live_version, live_version(runbook, socket.assigns.current_subject))
-          |> assign(:family_head, family_head)
-          |> assign(:superseded?, superseded?)
           |> assign(
             :read_only?,
-            superseded? or
-              not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
+            not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
           )
-          |> assign(:draft, draft)
-          |> assign(:baseline, RunbookDraft.fingerprint(draft))
-          |> assign(:dirty?, false)
           |> assign(:definition_issues, [])
           |> assign(:open_panels, MapSet.new())
           |> assign(:preview_generation, 0)
           |> assign(:preview, %{state: :idle, plan: nil, issues: [], checked_at: nil})
-          |> assign_form(
-            Runbooks.change_runbook(%{
-              "title" => runbook.title,
-              "slug" => runbook.slug,
-              "description" => runbook.description
-            })
-          )
           |> assign_empty_catalog()
+          |> assign_editing_runbook(runbook)
 
         {:ok, load_catalog_and_validate(socket)}
 
@@ -125,23 +104,26 @@ defmodule EmisarWeb.RunbookEditorLive do
     end
   end
 
-  # History is immutable: a version below the family head renders read-only, so
-  # editing always starts from the head. The domain refuses a stale source too —
-  # this assign is the honest UI over that refusal, not the enforcement.
-  defp family_head(runbook, subject) do
-    case Runbooks.fetch_runbook_family_head(runbook.slug, subject) do
-      {:ok, head} -> head
-      {:error, _reason} -> nil
-    end
-  end
+  # Everything the editor takes from the row: what it edits, the digest its next
+  # save is locked to, and the metadata form.
+  defp assign_editing_runbook(socket, runbook) do
+    draft = RunbookDraft.from_runbook(runbook)
 
-  # The family's newest published version — what Run and execute_runbook
-  # dispatch while this editor holds a draft or a superseded version.
-  defp live_version(runbook, subject) do
-    case Runbooks.latest_published_by_slugs([runbook.slug], subject) do
-      {:ok, published} -> published[runbook.slug]
-      {:error, _reason} -> nil
-    end
+    socket
+    |> assign(:page_title, "Edit #{runbook.title}")
+    |> assign(:runbook, runbook)
+    |> assign(:base_sha, RunbookDraft.base_sha(runbook))
+    |> assign(:publish_review, nil)
+    |> assign(:draft, draft)
+    |> assign(:baseline, RunbookDraft.fingerprint(draft))
+    |> assign(:dirty?, false)
+    |> assign_form(
+      Runbooks.change_runbook(%{
+        "title" => runbook.title,
+        "slug" => runbook.slug,
+        "description" => runbook.description
+      })
+    )
   end
 
   defp assign_empty_catalog(socket) do
@@ -394,11 +376,31 @@ defmodule EmisarWeb.RunbookEditorLive do
     )
   end
 
+  def handle_event("review_publish", _params, socket) do
+    Permissions.gated(
+      socket,
+      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      &open_publish_review/1
+    )
+  end
+
+  def handle_event("cancel_publish", _params, socket) do
+    {:noreply, assign(socket, :publish_review, nil)}
+  end
+
   def handle_event("publish", _params, socket) do
     Permissions.gated(
       socket,
       Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
-      &save(&1, true)
+      &publish/1
+    )
+  end
+
+  def handle_event("discard_draft", _params, socket) do
+    Permissions.gated(
+      socket,
+      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      &discard_draft/1
     )
   end
 
@@ -502,7 +504,10 @@ defmodule EmisarWeb.RunbookEditorLive do
   defp toggle_collapsed(%{"collapsed" => "true"} = step), do: %{step | "collapsed" => "false"}
   defp toggle_collapsed(step), do: Map.put(step, "collapsed", "true")
 
+  # Every definition change runs through here, so it is also where a publish
+  # review the operator opened stops describing what they would publish.
   defp validate_and_preview(socket) do
+    socket = assign(socket, :publish_review, nil)
     definition = canonical_definition(socket.assigns.draft)
 
     case Runbooks.validate_definition(definition, socket.assigns.current_subject) do
@@ -582,6 +587,52 @@ defmodule EmisarWeb.RunbookEditorLive do
     )
   end
 
+  defp open_publish_review(socket) do
+    {:noreply, assign(socket, :publish_review, publish_review(socket))}
+  end
+
+  # The release this publish would mint, and what it changes about the live
+  # definition. Nothing live yet means there is no previous definition to diff
+  # against — the first release IS what the editor holds.
+  defp publish_review(
+         %{assigns: %{runbook: %Runbooks.Runbook{live_version: live_version}}} = socket
+       )
+       when is_integer(live_version) do
+    candidate = canonical_definition(socket.assigns.draft)
+
+    %{
+      next_version: live_version + 1,
+      diff: Runbooks.definition_diff(socket.assigns.runbook.definition, candidate)
+    }
+  end
+
+  defp publish_review(_socket), do: %{next_version: 1, diff: nil}
+
+  # The confirm is one-shot: the panel closes with the attempt, so a refused
+  # publication shows its issues instead of a diff the operator already approved.
+  defp publish(socket) do
+    socket
+    |> assign(:publish_review, nil)
+    |> save(true)
+  end
+
+  defp discard_draft(%{assigns: %{runbook: nil}} = socket), do: {:noreply, socket}
+
+  defp discard_draft(socket) do
+    case Runbooks.discard_draft(socket.assigns.runbook, socket.assigns.current_subject) do
+      {:ok, runbook} ->
+        socket =
+          socket
+          |> put_flash(:info, "Unpublished changes discarded.")
+          |> assign_editing_runbook(runbook)
+
+        {:noreply, load_catalog_and_validate(socket)}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not discard these changes.")}
+    end
+  end
+
   defp save(socket, publish?) do
     definition = canonical_definition(socket.assigns.draft)
 
@@ -598,7 +649,7 @@ defmodule EmisarWeb.RunbookEditorLive do
           "name" => socket.assigns.draft["title"],
           "slug" => socket.assigns.draft["slug"],
           "description" => socket.assigns.draft["description"],
-          "definition" => definition
+          "draft_definition" => definition
         }
 
         case persist(socket, attrs, publish?) do
@@ -607,7 +658,10 @@ defmodule EmisarWeb.RunbookEditorLive do
              socket
              |> put_flash(
                :info,
-               if(publish?, do: "Runbook published.", else: draft_message(runbook))
+               if(publish?,
+                 do: "Published v#{runbook.live_version}.",
+                 else: draft_message(runbook)
+               )
              )
              |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
 
@@ -633,7 +687,7 @@ defmodule EmisarWeb.RunbookEditorLive do
              put_flash(
                socket,
                :error,
-               "A newer version of this runbook exists. Open the current version to make changes."
+               "Changed elsewhere since you opened it — reload to pick up the latest draft."
              )}
 
           {:error, _reason} ->
@@ -642,27 +696,24 @@ defmodule EmisarWeb.RunbookEditorLive do
     end
   end
 
-  defp persist(%{assigns: %{runbook: nil}} = socket, attrs, true),
-    do: Runbooks.create_published_runbook(attrs, socket.assigns.current_subject)
+  defp persist(%{assigns: %{runbook: nil}} = socket, attrs, publish?) do
+    with {:ok, runbook} <- Runbooks.create_runbook(attrs, socket.assigns.current_subject) do
+      if publish?,
+        do: Runbooks.publish_draft(runbook, socket.assigns.current_subject),
+        else: {:ok, runbook}
+    end
+  end
 
-  defp persist(%{assigns: %{runbook: nil}} = socket, attrs, false),
-    do: Runbooks.create_runbook(attrs, socket.assigns.current_subject)
+  defp persist(%{assigns: %{runbook: runbook}} = socket, attrs, publish?) do
+    subject = socket.assigns.current_subject
 
-  defp persist(
-         %{assigns: %{runbook: %{status: :draft} = runbook, dirty?: false}} = socket,
-         _attrs,
-         true
-       ),
-       do: Runbooks.publish(runbook, socket.assigns.current_subject)
+    with {:ok, saved} <- Runbooks.save_draft(runbook, attrs, socket.assigns.base_sha, subject) do
+      if publish?, do: Runbooks.publish_draft(saved, subject), else: {:ok, saved}
+    end
+  end
 
-  defp persist(%{assigns: %{runbook: runbook}} = socket, attrs, true),
-    do: Runbooks.save_published_version(runbook, attrs, socket.assigns.current_subject)
-
-  defp persist(%{assigns: %{runbook: runbook}} = socket, attrs, false),
-    do: Runbooks.save_new_version(runbook, attrs, socket.assigns.current_subject)
-
-  defp draft_message(%{version: version}) when version > 1, do: "Draft v#{version} saved."
-  defp draft_message(_runbook), do: "Draft saved."
+  defp draft_message(%{live_version: nil}), do: "Draft saved."
+  defp draft_message(_runbook), do: "Unpublished changes saved."
 
   defp delete_runbook(%{assigns: %{runbook: nil}} = socket), do: {:noreply, socket}
 
@@ -834,7 +885,14 @@ defmodule EmisarWeb.RunbookEditorLive do
 
   defp indexed(_values), do: []
 
-  defp publishable_saved_draft?(%{assigns: %{runbook: %{status: :draft}}}, true), do: true
+  # An unchanged editor can still publish, as long as there IS an unpublished
+  # change to publish.
+  defp publishable_saved_draft?(%{assigns: %{runbook: %{draft_definition: nil}}}, _publish?),
+    do: false
+
+  defp publishable_saved_draft?(%{assigns: %{runbook: %Runbooks.Runbook{}}}, publish?),
+    do: publish?
+
   defp publishable_saved_draft?(_socket, _publish?), do: false
 
   def render(assigns), do: EmisarWeb.RunbookEditorComponents.render(assigns)

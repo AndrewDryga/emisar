@@ -108,11 +108,11 @@ rather than this specification.
 | `get_operation` | Recover one exact bridge mutation after an ambiguous response. |
 | `wait_for_run` | Wait for one run or runbook execution to change or finish, and stream its output forward. |
 | `recent_runs` | Inspect and paginate scoped run activity. |
-| `list_runbooks` | List published runbooks, or explicitly list current working drafts. |
-| `get_runbook` | Inspect one immutable published revision, or one exact current draft. |
-| `execute_runbook` | Execute one exact published runbook, or an explicitly allowed current draft. |
-| `create_runbook_draft` | Save an agent-proposed draft for human review. |
-| `update_runbook_draft` | Save the next immutable working revision in an existing runbook family. |
+| `list_runbooks` | List every visible runbook with its live release and its unpublished change. |
+| `get_runbook` | Inspect one runbook's live release, or its single unpublished change. |
+| `execute_runbook` | Execute one runbook's live release, or an explicitly allowed unpublished change. |
+| `create_runbook_draft` | Create a new runbook as an agent-proposed unpublished change for human review. |
+| `update_runbook_draft` | Replace one existing runbook's single unpublished change in place. |
 
 The server advertises `tools.listChanged: false`. Runner and pack changes appear
 in tool results, never by growing the MCP tool catalog.
@@ -1416,12 +1416,47 @@ side effect.
 Runbooks remain in the fixed catalog, but they do not pretend to inherit the
 action signature.
 
+One slug is one runbook. Its live release is what executes today; beside it sits
+at most one unpublished change awaiting a human. At least one of the two always
+exists: a runbook is born as an unpublished change, and publishing promotes that
+change into a release.
+
+### Runbook identity
+
+```text
+<slug>            the runbook itself, and the only identity its unpublished change has
+<slug>@<release>  one immutable published release
+```
+
+A release number counts publications and nothing else: the first publish mints
+release 1 and each later publish increments it, so an unpublished change never
+has one. Releases are immutable append-only records. Only the newest release is
+live, and **only the live release executes** — naming an older number is refused
+by name, never redirected to current content.
+
+The unpublished change is a single mutable document. Editing it rewrites it in
+place, so it carries no number and no ref; callers name it by slug plus the exact
+`definition_sha256` they read. That digest is both the optimistic authoring lock
+and the exact-content consent required to run it. There is no per-edit history a
+model can address: only releases accumulate.
+
+Runbook reads apply the atomic visibility rule above to the live release: its
+complete definition must currently resolve to in-scope runners and trusted
+compatible pack/action contracts, or that release is absent from discovery and
+exact reads and refuses execution. The unpublished change is deliberately exempt,
+because a change whose targets no longer resolve must stay readable and editable
+so its author can repair it; a runbook carrying one therefore stays listed even
+while its live release does not resolve, with both sides stated honestly.
+Definitions are never redacted because that would no longer be the object named
+by the ref. Group target strings are account-authored runbook data, not runner
+advertisements, and are returned verbatim once the runbook is visible.
+
 ### `list_runbooks`
 
-Input accepts `query` (case-insensitive slug/title words), `status`
-(`published` by default or explicit `draft`), `limit` (1 through 50, default
-15), and cursor. The cursor is bound to the status filter. Results order by
-slug and immutable ref.
+Input accepts `query` (case-insensitive words matched against slug, title, and
+summary), `limit` (1 through 50, default 15), and cursor. The cursor is bound to
+`query` and `limit`. Results order by slug, one entry per runbook — there is no
+status filter, because one entry states both sides.
 
 ```json
 {
@@ -1429,14 +1464,32 @@ slug and immutable ref.
   "observed_at": "2026-07-13T14:42:10Z",
   "runbooks": [
     {
-      "runbook_ref": "restart-postgres@3",
-      "status": "published",
-      "definition_sha256": "d564bf1dafd0ca0e93dcf022bc5626ad9c53c3d93afd23874c6d9cfe9d9c72b1",
+      "slug": "restart-postgres",
       "title": "Restart PostgreSQL safely",
       "summary": "Checks replication, restarts the primary, then verifies recovery.",
+      "live": {
+        "runbook_ref": "restart-postgres@3",
+        "definition_sha256": "d564bf1dafd0ca0e93dcf022bc5626ad9c53c3d93afd23874c6d9cfe9d9c72b1"
+      },
+      "draft": {
+        "definition_sha256": "9f2c0f3b1e7a4d5c8b6a2e9d0c4f7b3a15d8e6c29b04f7a3d5e18c6b2f0a9d47"
+      },
       "input_count": 1,
       "stage_count": 3,
       "step_count": 3,
+      "available": true
+    },
+    {
+      "slug": "rotate-standby",
+      "title": "Rotate standby nodes",
+      "summary": "Drains each standby in turn and waits for it to rejoin.",
+      "live": null,
+      "draft": {
+        "definition_sha256": "d503ab046ac168afaa23f0ab242259ae230046f945ee8eeb193c511ffad86c48"
+      },
+      "input_count": 0,
+      "stage_count": 1,
+      "step_count": 2,
       "available": true
     }
   ],
@@ -1444,39 +1497,26 @@ slug and immutable ref.
 }
 ```
 
+`live` is `{runbook_ref, definition_sha256}`, or `null` when nothing has been
+published yet. `draft` is `{definition_sha256}`, or `null` when there is no
+unpublished change. Both keys are always present. The counts and `available`
+describe the live release, or the unpublished change while nothing is live —
+never a mixture.
+
 Every entry carries `available`. It is false only when the runbook cannot be
 returned in one MCP response; `unavailable_reason` then states the size and
 directs the operator to the console, and `get_runbook` answers
 `runbook_too_large`. A runbook is never dropped from this list for its size:
 size is a mechanical limit the caller may be told, unlike the resource
-resolution failures below, which must stay indistinguishable from absence.
-
-The readable immutable ref is:
-
-```text
-<slug>@<version>
-```
-
-Published and draft runbook versions are immutable portal records. A newly
-saved revision receives the next version and therefore a new ref. Published
-discovery is the default and never includes drafts. An explicit
-`status: "draft"` read returns only a family's current head when that head is a
-draft; each result also carries `draft_id`. Older drafts are not model-visible.
-The response does not repeat version beside the ref.
-
-Runbook reads apply the atomic visibility rule above. The complete definition
-must currently resolve to in-scope runners and trusted compatible pack/action
-contracts or the whole runbook is absent from list and exact reads.
-Definitions are never redacted because that would no longer be the object
-named by `runbook_ref`. Group target strings are account-authored runbook data,
-not runner advertisements, and are returned verbatim once the runbook is
-visible.
+resolution failures above, which must stay indistinguishable from absence.
 
 ### `get_runbook`
 
-Input requires exact `runbook_ref` and accepts the same explicit `status`, which
-defaults to `published`. The bounded result returns the frozen definition or a
-status-specific not-found error:
+Input requires `slug` and accepts explicit `status`, which defaults to
+`published`. `published` reads the live release; `draft` reads the unpublished
+change. The bounded result returns that definition or a status-specific
+not-found error — `runbook_not_found` when no live release answers the slug,
+`draft_not_found` when the runbook carries no unpublished change:
 
 ```json
 {
@@ -1540,9 +1580,32 @@ status-specific not-found error:
 }
 ```
 
-An explicit draft read also returns `draft_id`. The `definition_sha256` is the
-server-issued digest required by draft revision; callers copy it exactly and
-never recompute identity from a modified document. Execution records their
+A published read names the live release in `runbook_ref` and always carries
+`draft_definition_sha256` — the digest of the unpublished change waiting behind
+it, or `null` when there is none. Reading it here saves a second call before
+`update_runbook_draft`.
+
+A draft read keeps `title`, `description`, `definition`, and `summary` unchanged
+and swaps the two identity keys for `slug`, `draft_id`, and `live_ref` — the
+release still executing while the change waits, or `null` when the runbook has
+never been published:
+
+```json
+{
+  "slug": "restart-postgres",
+  "draft_id": "0198f3c2-5b41-7a06-9d3e-4c81b7a2f095",
+  "status": "draft",
+  "definition_sha256": "9f2c0f3b1e7a4d5c8b6a2e9d0c4f7b3a15d8e6c29b04f7a3d5e18c6b2f0a9d47",
+  "live_ref": "restart-postgres@3"
+}
+```
+
+`draft_id` is the runbook's own durable ID, stable across every edit and across
+publication; it addresses the runbook in the console review URL and identifies
+no separate document. Either read's `definition_sha256` is the server-issued
+digest that
+`update_runbook_draft` and draft execution require; callers copy it exactly and
+never recompute identity from a modified document. Executions record their
 definition digest server-side.
 
 For a published read, `definition` is the same strict JSON-compatible v1
@@ -1574,14 +1637,37 @@ overflows is reported as `runbook_too_large` with its size.
 
 ### `execute_runbook`
 
-Input requires exact `runbook_ref` and nonblank `reason` (the same bound as
-`run_action`, including rejection of whitespace-only values). Optional
-`input_values` is an object whose values must satisfy the definition's typed
-input declarations. `allow_draft` defaults to false, so the ref resolves only
-an immutable published version. Setting it to true is explicit consent to run
-the exact current draft and additionally requires draft-authoring permission.
-The bridge injects an operation ID using the common mutation-idempotency
-contract; the authenticated request does not carry a generic signature.
+Input requires a nonblank `reason` (the same bound as `run_action`, including
+rejection of whitespace-only values) and exactly one of two mutually exclusive
+shapes the input schema enforces:
+
+| Shape | Required | Rejected |
+| --- | --- | --- |
+| Live release | `runbook_ref`, `reason` | `slug`, `definition_sha256` |
+| Unpublished change | `slug`, `allow_draft: true`, `definition_sha256`, `reason` | `runbook_ref` |
+
+`allow_draft` defaults to false and may be stated as false alongside
+`runbook_ref`; setting it true is explicit consent to run one exact unpublished
+document and additionally requires draft-authoring permission. Optional
+`input_values` is accepted by both shapes; its values must satisfy the
+definition's typed input declarations. The bridge injects an operation ID using
+the common mutation-idempotency contract; the authenticated request does not
+carry a generic signature.
+
+`runbook_ref` must name the live release. An older release number returns
+`not_live` before any operation or execution is committed — the caller asked for
+`slug@2` and is told which release is live rather than silently handed release
+3's content. A ref whose runbook is absent, out of scope, or no longer resolvable
+returns `runbook_not_found`, the same closed answer every resource-resolution
+failure gives.
+
+For a draft run, `definition_sha256` must equal the digest of the runbook's
+current unpublished change. A stale digest and an absent change are the same
+`draft_changed` answer, so a caller cannot use execution to learn whether a
+runbook it cannot read carries one. Reading a change whose targets no longer
+resolve stays allowed so it can be repaired, but running it does not: dispatch
+applies the full preflight below and collapses every resolution failure to
+`draft_not_found`.
 
 Before creation, the portal validates the strict definition and typed inputs;
 expands every target to exact current runner refs; validates complete caller
@@ -1593,7 +1679,10 @@ the whole online group before choosing and freezing one exact runner. Any failur
 creates no execution.
 
 The operation, immutable expanded plan, execution, stages, and logical
-step/runner items commit atomically. If any frozen item requires approval, the
+step/runner items commit atomically. The execution also snapshots the exact
+definition it dispatched and, for a live run, the release number it ran — the
+runbook row itself mutates on publish, so the snapshot is what makes an old
+execution still describable. If any frozen item requires approval, the
 same transaction creates one request for the entire execution and no action-run
 rows. Otherwise the scheduler advances the initial stage after commit. Runner
 delivery starts only after its corresponding action-run row commits. Approval
@@ -1706,13 +1795,17 @@ stable code and message plus the applicable stage, step, and runner identity.
 It describes whole-execution approval, a scheduled wait, or the terminal cause.
 Both `pending_approval` and `active` executions include `next`.
 
-An explicitly allowed draft enters this identical path and may cause the
-actions' real effects. Its durable execution carries `kind: "draft_test"` and
-the server-derived definition hash in execution, approval, dispatch evidence,
-and recovery. A superseded or non-draft ref returns `draft_changed` before an
-operation or execution is committed. Testing never changes draft status or
-publishes it. `get_operation` recovers the same execution as
-`kind: "runbook_draft_test"` with its exact draft ref and definition hash.
+`execution.runbook_ref` names what actually ran: `slug@release` for a live run,
+and the bare slug for a draft test, because the content it ran never became a
+release. A live execution keeps naming the release it ran even after a later
+publish makes a higher number live.
+
+An explicitly allowed unpublished change enters this identical path and may cause
+the actions' real effects. Its durable execution carries `kind: "draft_test"`,
+no release number, and the server-derived definition hash in execution,
+approval, dispatch evidence, and recovery. Testing neither publishes the change
+nor alters it. `get_operation` recovers the same execution as
+`kind: "runbook_draft_test"` with that bare slug and definition hash.
 
 A `pending_approval` execution also carries the same bounded `approval` object
 a pending action run gets — the request ID, the console approval URL the model
@@ -1752,6 +1845,11 @@ longer in current scope, it returns `not_allowed` without a partial graph or
 hidden counts. Cancellation stops observation, never the runbook.
 
 ### `create_runbook_draft`
+
+Use this tool when the slug does not exist yet; the whole new runbook is its
+first unpublished change, and nothing is live until a human publishes it. A slug
+already taken in the account returns `invalid_draft`; edit that runbook with
+`update_runbook_draft` instead.
 
 Input requires a nonblank `title` (1 through 80 characters), nullable `slug` and
 `description`, and one complete DefinitionV1 object under `definition`. A blank
@@ -1793,11 +1891,30 @@ limits. Unknown fields are rejected at every level.
 }
 ```
 
-The bridge injects an operation ID. The result is `ok: true` with
-`operation_id`, `draft_id`, immutable `runbook_ref`, `slug`, `status: "draft"`,
-`definition_sha256`, and `review_url`. It
-creates neither a published ref nor a run. The bounded canonical draft envelope
-is validated before reserving the operation or writing the draft; it may remain
+The bridge injects an operation ID. Both authoring tools return the same result
+object:
+
+```json
+{
+  "ok": true,
+  "operation_id": "op_01J0E11D8Q1W7SM4R5T3Y6V9PA",
+  "draft_id": "0198f3c2-5b41-7a06-9d3e-4c81b7a2f095",
+  "slug": "restart-postgres",
+  "status": "draft",
+  "definition_sha256": "9f2c0f3b1e7a4d5c8b6a2e9d0c4f7b3a15d8e6c29b04f7a3d5e18c6b2f0a9d47",
+  "live_ref": null,
+  "review_url": "https://emisar.dev/app/example/runbooks/0198f3c2-5b41-7a06-9d3e-4c81b7a2f095/edit"
+}
+```
+
+`slug` is the runbook's only wire identity — an unpublished change has no ref of
+its own — and `definition_sha256` is the digest of what was just written, to be
+passed back to edit or test the same content. `live_ref` names the release still
+executing while the change waits, and is `null` here because a newly created
+runbook has none.
+
+Creation writes no release and no run. The bounded canonical draft envelope is
+validated before reserving the operation or writing the change; it may remain
 incomplete until human review. An invalid definition returns `invalid_runbook`
 with the total issue count and up to 64
 ordered `{code, path, message}` issues using exact JSON Pointer paths. The
@@ -1805,26 +1922,29 @@ ordered `{code, path, message}` issues using exact JSON Pointer paths. The
 21-issue definition returns all 21. No runbook, operation, audit event, or other
 side effect is written on this path. Current target/pack preflight happens in
 the console before publication and again at execution. Human review and
-publication remain mandatory. Retry returns the same draft through the common
-operation contract. `get_operation` recovers the draft ID, ref, hash, slug, and
-review URL after an ambiguous response; no synthetic run is created for
-recovery.
+publication remain mandatory. Retry returns the same runbook through the common
+operation contract. `get_operation` recovers the same object as
+`kind: "runbook_draft"` — draft ID, slug, hash, live ref, and review URL — after
+an ambiguous response; no synthetic run is created for recovery.
 
 ### `update_runbook_draft`
 
-Use this tool when a runbook family already exists. Input requires the exact
-current `runbook_ref`, its server-issued `definition_sha256`, a nonblank title,
-nullable description, and the complete replacement definition. The slug is not
-an input: the new immutable version stays in the source family.
+Use this tool when the runbook already exists. Input requires its `slug`, the
+server-issued `definition_sha256` it read, a nonblank title, nullable
+description, and the complete replacement definition. The slug identifies the
+runbook and is never renamed by this tool; releases depend on it.
 
-The source may be the current published version or the current draft. The
-portal locks that row, confirms it is still the family head, compares the hash,
-then writes the next version as `draft`. A stale ref or hash returns
-`draft_changed` and writes no operation or revision. The success and recovery
-objects use the same complete draft shape as `create_runbook_draft`.
+The base digest is whichever document the caller read: the unpublished change's
+when the runbook has one, otherwise the live release's. The portal locks the
+runbook row, compares that digest inside the transaction, then rewrites the
+single unpublished change in place — no new row, no new number, and the live
+release untouched. A mismatched digest, or a slug this credential cannot resolve,
+returns `draft_changed` and writes no operation and no change. The result and
+recovery objects are the shape above, with `live_ref` naming the release that
+keeps running.
 
-Saving a revision does not publish it. Human review and publication remain the
-only way to replace the family's published version.
+Writing an unpublished change never publishes it. Human review and publication
+remain the only way to mint the next release and change what executes.
 
 ## Error taxonomy
 
@@ -1856,8 +1976,8 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | --- | --- | --- |
 | `action_unavailable` | Exact visible contract is not executable. | Follow returned diagnostics. |
 | `dispatch_failed` | The atomic action operation did not commit. | Safe to retry with the same operation ID. |
-| `draft_changed` | The requested draft is no longer the current head. | List drafts, inspect the current head, and decide whether to execute or revise it. |
-| `draft_not_found` | Exact current draft is absent or no longer visible. | List drafts; do not substitute a published ref. |
+| `draft_changed` | The supplied `definition_sha256` is not what this runbook holds now. | Re-read it with `get_runbook status=draft`, then retry carrying the returned digest. |
+| `draft_not_found` | The runbook carries no unpublished change, or none this caller may see. | `list_runbooks` shows which runbooks carry one; do not substitute the live release. |
 | `execution_failed` | The atomic runbook operation did not commit. | Safe to retry with the same operation ID. |
 | `ambiguous_pack_version` | The selected pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
 | `fan_out_too_large` | Target expansion exceeds the 256-item execution cap. | Narrow targets or split the reviewed runbook. |
@@ -1873,11 +1993,12 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `incompatible_action_contracts` | Selected trusted packs disagree on the action contract. | Align target deployments or edit the target selection. |
 | `pack_unavailable` | A target has no current trusted pack exposing the declared action. | Deploy or trust the pack, or edit the runbook; do not substitute one silently. |
 | `not_allowed` | Current scope does not permit the request. | Do not probe. |
+| `not_live` | The named release is not the runbook's live release. | `list_runbooks` names the live release; execute that ref, never an older number. |
 | `operation_conflict` | Reused operation ID has different facts. | Security error; do not retry. |
 | `operation_incomplete` | A durable operation lacks its expected resource. | Reconcile; do not repeat the mutation. |
 | `operation_not_found` | Exact operation is absent or belongs to another credential lineage. | Keep ambiguous mutations unresolved. |
 | `run_not_found` | Exact visible run or execution is absent. | Check the ID; do not probe other scopes. |
-| `runbook_not_found` | Exact visible published ref is absent. | List runbooks; do not substitute a slug. |
+| `runbook_not_found` | No live release answers that slug or ref in current scope. | `list_runbooks` names every visible runbook; do not probe other slugs. |
 | `runbook_too_large` | The runbook exists but does not fit one MCP response. | Open it in the console; do not retry or substitute another runbook. |
 | `signature_required` | A selected runner requires a customer-CA action attestation; `details.runner_refs` names the enforcing runners. | Use a signing-enabled bridge or select only non-enforcing runners. |
 | `signed_runbook_unsupported` | Runbook includes enforcing runners. | Use signed actions or await plan signing. |

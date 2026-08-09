@@ -1,7 +1,7 @@
 defmodule EmisarWeb.RunbookRunLive do
   @moduledoc """
-  Preflight and durable staged execution detail for one published runbook or
-  one explicitly marked draft test.
+  Preflight and durable staged execution detail for one runbook's live release
+  or one explicitly marked draft test.
 
   The LiveView never reconstructs scheduler state from ActionRuns. It renders
   the bounded Runbooks result projection and re-reads it after exact execution
@@ -55,7 +55,9 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp mount_runbook(id, execution_detail?, socket) do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
-      {:ok, %{status: :draft} = runbook} when not execution_detail? ->
+      # Only the live release is dispatchable, so a runbook that has never
+      # published one is sent back to the editor rather than a dead form.
+      {:ok, %Runbooks.Runbook{live_version: nil} = runbook} when not execution_detail? ->
         {:ok,
          socket
          |> put_flash(:info, "Publish this runbook before running it.")
@@ -240,7 +242,7 @@ defmodule EmisarWeb.RunbookRunLive do
            checked_at: DateTime.utc_now()
          })}
 
-      {:error, :not_published} ->
+      {:error, :not_live} ->
         {:noreply,
          socket
          |> put_flash(:info, "Publish this runbook before running it.")
@@ -672,9 +674,16 @@ defmodule EmisarWeb.RunbookRunLive do
       width={if @result, do: :detail, else: :table}
     >
       <:title>
+        <%!-- A dispatch form or execution detail belongs to ONE runbook, so
+              back climbs to it — never two levels up to the list. Before the
+              connected mount resolves the runbook, degrade to the list. --%>
         <.detail_header
-          back="Runbooks"
-          navigate={~p"/app/#{@current_account}/runbooks"}
+          back={if(@runbook, do: @runbook.title, else: "Runbooks")}
+          navigate={
+            if @runbook,
+              do: ~p"/app/#{@current_account}/runbooks/#{@runbook.id}/edit",
+              else: ~p"/app/#{@current_account}/runbooks"
+          }
           title={header_title(assigns)}
         />
       </:title>
@@ -721,7 +730,7 @@ defmodule EmisarWeb.RunbookRunLive do
         />
 
         <.run_form
-          :if={@loaded? && is_nil(@result) && @runbook.status == :published}
+          :if={@loaded? && is_nil(@result) && @runbook.live_version}
           runbook={@runbook}
           reason={@reason}
           input_raw={@input_raw}

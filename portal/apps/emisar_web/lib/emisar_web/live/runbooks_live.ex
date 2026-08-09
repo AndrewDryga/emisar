@@ -1,9 +1,9 @@
 defmodule EmisarWeb.RunbooksLive do
   @moduledoc """
-  Paginated list of the account's runbook families — one row per slug, led by
-  its newest version. Each row links to the editor and, past v1, to the
-  family's immutable version history; a family with a published version gets
-  a Run button that opens the parameterized dispatch form for it.
+  Paginated list of the account's runbooks — one row each, chipped with the
+  release that is live and whether unpublished changes are waiting. Every row
+  links to the editor; a runbook with a live release also gets a Run button
+  that opens the parameterized dispatch form for it.
   """
   use EmisarWeb, :live_view
   alias Emisar.{Runbooks, Runs}
@@ -31,7 +31,6 @@ defmodule EmisarWeb.RunbooksLive do
     socket
     |> assign(:runbooks, [])
     |> assign(:runbook_risk, %{})
-    |> assign(:run_targets, %{})
     |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
     |> assign(:filter_params, params)
     |> assign(:filters, Runbooks.runbook_filters())
@@ -59,7 +58,6 @@ defmodule EmisarWeb.RunbooksLive do
           socket
           |> assign(:runbooks, list)
           |> assign(:runbook_risk, resolve_max_risks(list, socket.assigns.current_subject))
-          |> assign(:run_targets, resolve_run_targets(list, socket.assigns.current_subject))
           |> assign(:metadata, meta)
           |> assign(:filter_params, params)
           |> assign(:filters, filters)
@@ -71,7 +69,6 @@ defmodule EmisarWeb.RunbooksLive do
           socket
           |> assign(:runbooks, [])
           |> assign(:runbook_risk, %{})
-          |> assign(:run_targets, %{})
           |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
           |> assign(:filter_params, params)
           |> assign(:filters, filters)
@@ -101,22 +98,6 @@ defmodule EmisarWeb.RunbooksLive do
       {:error, _reason} -> %{}
     end
   end
-
-  # `%{slug => latest published version}` for the page's families in ONE read —
-  # a family whose head is a draft still runs its newest published version.
-  defp resolve_run_targets(runbooks, subject) do
-    slugs = runbooks |> Enum.map(& &1.slug) |> Enum.uniq()
-
-    case Runbooks.latest_published_by_slugs(slugs, subject) do
-      {:ok, published_by_slug} -> published_by_slug
-      {:error, _} -> %{}
-    end
-  end
-
-  # When the run target isn't the row's own version (a draft head over an
-  # older published version), the label says which version dispatches.
-  defp run_label(%{version: version}, %{version: version}), do: "Run"
-  defp run_label(_runbook, target), do: "Run v#{target.version}"
 
   def render(assigns) do
     ~H"""
@@ -153,7 +134,7 @@ defmodule EmisarWeb.RunbooksLive do
       <div class="grid min-w-0 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <main id="runbooks-primary" class="min-w-0">
           <%!-- Account-empty (create CTA) only when there's genuinely nothing AND no
-               filter is narrowing — otherwise a 0-match filter (e.g. ?status=draft)
+               filter is narrowing — otherwise a 0-match filter (e.g. ?state=draft)
                would hide the filter bar and trap the operator. With a filter active,
                the live_table renders its own "no matches" + the bar to clear it. --%>
           <%= cond do %>
@@ -200,51 +181,44 @@ defmodule EmisarWeb.RunbooksLive do
                       >
                         {runbook.title}
                       </.link>
-                      <.status_badge status={runbook.status} />
-                      <span class="font-mono text-[11px] text-zinc-400">v{runbook.version}</span>
+                      <.chip :if={runbook.live_version} tone={:brand}>
+                        Live v{runbook.live_version}
+                      </.chip>
+                      <%!-- A runbook with nothing live is ALL unpublished, so the
+                       amber chip would say nothing there; it is reserved for a
+                       live release someone has already edited past. --%>
+                      <.chip :if={is_nil(runbook.live_version)} tone={:neutral}>
+                        Never published
+                      </.chip>
+                      <.chip :if={runbook.live_version && runbook.draft_definition} tone={:amber}>
+                        Unpublished changes
+                      </.chip>
                       <%!-- Headline risk — the most-severe step's risk, so the
                        operator sees how dangerous a runbook is before opening
                        it. Hidden when no step's action is in the catalog. --%>
                       <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
                     </:title>
                     <:meta>
-                      <%!-- Row 2: description preview + slug + version history --%>
+                      <%!-- Row 2: description preview + slug --%>
                       <.meta_line>
                         <:seg :if={runbook.description && runbook.description != ""}>
                           {preview(runbook.description)}
                         </:seg>
                         <:seg><span class="font-mono">{runbook.slug}</span></:seg>
-                        <%!-- Versions are dense, so the head's version number IS
-                         the family's version count; a single-version family has
-                         no history beyond this row. --%>
-                        <:seg :if={runbook.version > 1}>
-                          <.link
-                            navigate={~p"/app/#{@current_account}/runbooks/#{runbook.slug}/versions"}
-                            class="text-zinc-300 hover:text-brand-300"
-                          >
-                            {runbook.version} versions
-                          </.link>
-                        </:seg>
                       </.meta_line>
                     </:meta>
                     <:actions>
                       <%!-- Secondary: the page's ONE brand fill is "New runbook" —
-                       a green per row turns the fill into wallpaper. Run targets
-                       the family's newest PUBLISHED version, which the head row
-                       may not be while a draft iteration sits on top of it — the
-                       label then names the exact version it dispatches. --%>
+                       a green per row turns the fill into wallpaper. Only the
+                       live release runs, so a runbook with nothing published
+                       offers no Run. --%>
                       <.button
-                        :if={
-                          @run_targets[runbook.slug] &&
-                            Runs.subject_can_dispatch_run?(@current_subject)
-                        }
-                        navigate={
-                          ~p"/app/#{@current_account}/runbooks/#{@run_targets[runbook.slug].id}/run"
-                        }
+                        :if={runbook.live_version && Runs.subject_can_dispatch_run?(@current_subject)}
+                        navigate={~p"/app/#{@current_account}/runbooks/#{runbook.id}/run"}
                         variant={:secondary}
                         size={:sm}
                       >
-                        {run_label(runbook, @run_targets[runbook.slug])}
+                        Run
                       </.button>
                     </:actions>
                   </.list_row>

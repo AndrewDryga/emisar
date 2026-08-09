@@ -3,9 +3,9 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
   alias Emisar.Runbooks.RunbookExecution
 
   @fields ~w[
-    id account_id runbook_id initiating_membership_id requested_by_id api_key_id
+    id account_id runbook_id runbook_version initiating_membership_id requested_by_id api_key_id
     operation_id mcp_operation_record_id reason frozen_plan inputs_raw inputs_sha256
-    definition_sha256 sensitive_input_names kind status
+    definition definition_sha256 sensitive_input_names kind status
   ]a
 
   def create(attrs) do
@@ -24,6 +24,7 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
       :frozen_plan,
       :inputs_raw,
       :inputs_sha256,
+      :definition,
       :definition_sha256,
       :kind
     ])

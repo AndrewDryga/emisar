@@ -119,23 +119,23 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
     title = "Fleet recovery #{System.unique_integer([:positive])}"
 
-    assert {:ok, runbook} =
-             Runbooks.create_runbook(
-               %{
-                 "title" => title,
-                 "slug" => Emisar.Slug.slugify(title),
-                 "definition" => %{
-                   "schema_version" => 1,
-                   "context_markdown" =>
-                     "## Before you run\n\n- Confirm the incident.\n- Stop if scope changed.",
-                   "inputs" => inputs,
-                   "stages" => stages
-                 }
-               },
-               subject
-             )
+    definition = %{
+      "schema_version" => 1,
+      "context_markdown" =>
+        "## Before you run\n\n- Confirm the incident.\n- Stop if scope changed.",
+      "inputs" => inputs,
+      "stages" => stages
+    }
 
-    Fixtures.Runbooks.publish_runbook(runbook)
+    [
+      account_id: subject.account.id,
+      created_by_id: subject.actor.id,
+      title: title,
+      slug: Emisar.Slug.slugify(title),
+      definition: definition
+    ]
+    |> Fixtures.Runbooks.create_runbook()
+    |> Fixtures.Runbooks.publish_runbook()
   end
 
   defp stage(id, title, mode, max_parallel, steps) do
@@ -242,26 +242,28 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert user.id != viewer.id
     end
 
-    test "a draft sends the operator to the editor instead of the run page", %{
+    test "a never-published runbook sends the operator to the editor, not the run page", %{
       conn: conn,
-      account: account,
-      subject: subject
+      user: user,
+      account: account
     } do
-      attrs = %{
-        "title" => "Half baked",
-        "slug" => "half-baked",
-        "definition" => Fixtures.Runbooks.default_definition()
-      }
+      runbook =
+        Fixtures.Runbooks.create_runbook(
+          account_id: account.id,
+          created_by_id: user.id,
+          title: "Half baked",
+          slug: "half-baked"
+        )
 
-      assert {:ok, draft} = Runbooks.create_runbook(attrs, subject)
-      assert draft.status == :draft
+      assert runbook.live_version == nil
 
-      destination = ~p"/app/#{account}/runbooks/#{draft.id}/edit"
-      result = live(conn, ~p"/app/#{account}/runbooks/#{draft.id}/run")
+      destination = ~p"/app/#{account}/runbooks/#{runbook.id}/edit"
+      result = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       assert {:error, {:live_redirect, %{to: ^destination}}} = result
       assert {:ok, _lv, html} = follow_redirect(result, conn)
       assert html =~ "Publish this runbook before running it."
+      refute Repo.exists?(RunbookExecution)
     end
 
     # The redirect above returns from mount before any execution assign exists,
@@ -287,11 +289,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     } do
       runner = trusted_runner(account, subject)
       published = published_runbook(subject, runner)
-      assert {:ok, draft} = Runbooks.save_new_version(published, %{}, subject)
+      base_sha = Runbooks.definition_digest(published.definition)
+      attrs = %{"title" => published.title, "draft_definition" => published.definition}
+
+      assert {:ok, runbook} = Runbooks.save_draft(published, attrs, base_sha, subject)
 
       assert {:ok, compiled} =
                Runbooks.Compiler.compile(
-                 draft.definition,
+                 runbook.draft_definition,
                  %{},
                  Runbooks.new_target_selection_seed(),
                  subject
@@ -299,9 +304,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert {:ok, result} =
                Runbooks.Scheduler.Creation.create_execution(
-                 draft,
+                 runbook,
                  compiled,
-                 "Validate the working revision",
+                 "Validate the unpublished change",
                  subject,
                  kind: :draft_test
                )
@@ -310,10 +315,10 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert_receive {:cloud_to_runner, _generation, _payload}, 500
 
       {:ok, lv, html} =
-        live(conn, ~p"/app/#{account}/runbooks/#{draft.id}/runs/#{execution_id}")
+        live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
 
-      assert html =~ "Draft test · #{draft.title}"
-      assert html =~ "Validate the working revision"
+      assert html =~ "Draft test · #{runbook.title}"
+      assert html =~ "Validate the unpublished change"
       refute has_element?(lv, "a", "Run again")
       refute has_element?(lv, "button", "Start execution")
     end
@@ -591,6 +596,39 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert fresh_html =~ "Start execution"
       assert fresh_html =~ "Investigate incident INC-42"
       refute fresh_html =~ "Started by"
+    end
+
+    test "an execution keeps the definition it ran after the runbook moves on", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
+
+      start(lv)
+      execution_id = execution().id
+
+      # The runbook row itself mutates on publish, so what ran has to come from
+      # the execution's own snapshot.
+      renamed = put_in(runbook.definition, ["stages", Access.at(0), "title"], "Inspect again")
+      base_sha = Runbooks.definition_digest(runbook.definition)
+      attrs = %{"title" => runbook.title, "draft_definition" => renamed}
+
+      assert {:ok, edited} = Runbooks.save_draft(runbook, attrs, base_sha, subject)
+      published = Fixtures.Runbooks.publish_runbook(edited)
+
+      assert published.live_version == 2
+      assert Repo.reload!(execution()).definition == runbook.definition
+
+      {:ok, _reloaded, html} =
+        live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
+
+      assert html =~ "Inspect"
+      refute html =~ "Inspect again"
+      # The runbook row still owns identity and navigation.
+      assert html =~ runbook.title
     end
 
     test "shows extracted outputs and success evidence after completion", %{

@@ -9,7 +9,7 @@
         {"shortest-path", "The shortest path"},
         {"create", "1. Create or import a draft"},
         {"author", "2. Define the workflow"},
-        {"publish", "3. Publish a resolvable version"},
+        {"publish", "3. Publish a resolvable release"},
         {"start", "4. Review and start the run"},
         {"approve", "5. Approve the execution"},
         {"results", "6. Read the result"},
@@ -265,21 +265,22 @@
         result, and audit trail. Titles are the human-readable text you can revise.
       </.docs_callout>
 
-      <.docs_h2 id="publish">3. Publish a resolvable version</.docs_h2>
+      <.docs_h2 id="publish">3. Publish a resolvable release</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
-        Save whenever you need to keep incomplete work. Drafts are not runnable. Publishing has a
-        higher bar: the strict definition must be valid, every target must resolve in your scope,
-        each selected runner must expose one compatible action contract, and the current trusted
-        pack and policy plan must resolve. The editor lists every issue beside
+        Save whenever you need to keep incomplete work. Unpublished changes are not runnable.
+        Publishing has a higher bar: the strict definition must be valid, every target must resolve
+        in your scope, each selected runner must expose one compatible action contract, and the
+        current trusted pack and policy plan must resolve. The editor lists every issue beside
         <strong class="text-zinc-200">Publish check</strong>
         and disables Publish until the check
         passes.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Publishing freezes that definition as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@version</code>.
-        Editing a published runbook creates the next draft; existing executions keep the exact
-        version and plan they started with. If runners, actions, or packs later drift, a new
-        execution is blocked until you publish a working version.
+        Publish shows exactly what changes from the live definition, then mints the next release — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@1</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@2</code>, and so on.
+        Only the live release runs. Editing afterwards changes nothing until you publish again:
+        the edit is held as the runbook's one unpublished change, and every execution keeps the
+        exact definition and plan it started with. If runners, actions, or packs later drift, a new
+        execution is blocked until you publish a working release.
       </p>
 
       <.docs_h2 id="start">4. Review and start the run</.docs_h2>
@@ -290,7 +291,7 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runbooks</a>
         and choose <strong class="text-zinc-200">Run</strong>
-        on a published runbook. Supply its
+        on a runbook with a live release. Supply its
         run-time inputs and a reason that explains why the procedure should run now. Before
         <strong class="text-zinc-200">Start runbook</strong>
         becomes available, emisar resolves the
@@ -463,22 +464,23 @@
         Connected agents use
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
         and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
-        to inspect published revisions.
+        to inspect the live release.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
-        starts a new family;
+        starts a new runbook;
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update_runbook_draft</code>
-        creates the next draft version in an existing family without changing its slug.
+        replaces an existing runbook's one unpublished change, keeping its slug. The agent passes
+        the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">definition_sha256</code>
+        it read, so an edit written meanwhile is refused rather than overwritten.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Draft reads require <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "draft"</code>.
-        An agent can run the exact current draft with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_draft: true</code>.
-        Without that explicit flag, execution accepts published revisions only. Draft testing uses
-        the normal policy and approval path and never publishes the draft; an operator still
-        reviews and publishes it in the console. While work or approval remains, the response names
-        the blocking reason and returns an exact
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+        Reading the unpublished change requires <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "draft"</code>.
+        An agent can run exactly that content with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_draft: true</code>, and its hash. Without that
+        explicit consent, execution runs the live release only — naming an older one answers
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">not_live</code>
+        instead of quietly running current content. A draft test uses the normal policy and
+        approval path and publishes nothing; an operator still reviews and publishes in the
+        console. While work or approval remains, the response names the blocking reason and returns
+        an exact <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
         continuation.
       </p>
       <p class="mt-5 text-base text-zinc-400">

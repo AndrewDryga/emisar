@@ -122,8 +122,8 @@ supply.
 3. Use `recent_runs` with the narrowest useful filters. Start with the current
    credential's runs; use account history only when available and relevant.
 4. Use `list_runbooks` with the incident task language, then `get_runbook` for
-   a plausible exact ref. A published runbook may already encode the intended
-   checks and mitigation, but reading it does not authorize execution.
+   a plausible slug. Its live release may already encode the intended checks and
+   mitigation, but reading it does not authorize execution.
 5. Use connected metrics, logs, traces, alerts, deployment history, and change
    history when available. Query a narrow time range around onset and compare a
    healthy peer or prior baseline when that comparison is valid.
@@ -204,8 +204,10 @@ When evidence supports containment and **Contain** mode is active:
    unless the current request already did so explicitly.
 3. Refresh with `get_action`, then call `run_action` once with exact refs and a
    specific `reason`, `evidence`, and `expected`. Use `execute_runbook` only
-   after `get_runbook` confirms the exact immutable plan and every step fits the
-   response mode.
+   after `get_runbook` confirms every step of the live release fits the response
+   mode, and name that release as `slug@N` — an older one is refused rather than
+   run. The execution snapshots the definition it dispatched, so what ran stays
+   readable after the runbook moves on.
 4. When a response is ambiguous and supplies an operation ID, use
    `get_operation`. Never repeat the mutation with a new operation. Do not
    invent operation IDs.

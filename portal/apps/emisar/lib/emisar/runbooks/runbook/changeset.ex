@@ -2,10 +2,10 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   use Emisar, :changeset
   alias Emisar.Runbooks.{Definition, Naming, Runbook}
 
-  # Status is never cast: every status is decided by a named transition
-  # (`create`, `create_published`, `new_version`, `new_published_version`,
-  # `publish`), so a client-supplied status is ignored everywhere.
-  @fields ~w[id slug title description definition]a
+  # `definition` and `live_version` are never cast: both are decided by
+  # `publish/3`, so a client-supplied live definition or version is ignored
+  # everywhere. Metadata is not versioned; the DEFINITION is the gated artifact.
+  @detail_fields ~w[id slug title description]a
 
   # Character counts are the operator's promise; byte ceilings are what the MCP
   # projection budget is derived from. Both are needed: `validate_length/3`
@@ -35,102 +35,80 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
   end
 
-  @doc "Create a bounded, potentially incomplete v1 draft. Client status is never cast."
+  @doc "Creates a runbook whose whole content is its first, never-published draft."
   def create(account_id, user_id, attrs) do
-    attrs
-    |> new_runbook(account_id, user_id)
-    |> put_change(:status, :draft)
-    |> changeset()
-  end
-
-  @doc "Create a strict v1 runbook already published through the named transition."
-  def create_published(account_id, user_id, attrs) do
-    attrs
-    |> new_runbook(account_id, user_id)
-    |> put_change(:status, :published)
-    |> changeset()
-  end
-
-  defp new_runbook(attrs, account_id, user_id) do
     %Runbook{}
-    |> cast(attrs, @fields)
+    |> cast_details(attrs)
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
-    |> put_change(:version, 1)
-    |> put_name_from_title()
-    |> put_slug_from_title()
-  end
-
-  @doc "Build the next immutable version, always born a draft."
-  def new_version(%Runbook{} = previous, user_id, attrs) do
-    previous
-    |> version_seed(user_id, attrs)
-    |> put_change(:status, :draft)
+    |> cast(attrs, [:draft_definition])
+    |> validate_required([:draft_definition])
+    |> validate_draft_definition()
     |> changeset()
   end
 
-  @doc "Build the next immutable version born published through the named transition."
-  def new_published_version(%Runbook{} = previous, user_id, attrs) do
-    previous
-    |> version_seed(user_id, attrs)
-    |> put_change(:status, :published)
-    |> changeset()
-  end
+  @doc """
+  Saves the runbook's metadata and, when one is supplied, its single mutable
+  draft.
 
-  @doc "Publish an existing immutable version in place through the named transition."
-  def publish(%Runbook{} = runbook) do
+  Metadata is not versioned, so a title or description edit lands in place and
+  leaves the draft alone. The slug is frozen once a release exists — published
+  refs depend on it — so a slug change after the first publish is a changeset
+  error, not a silent rename.
+  """
+  def draft(%Runbook{} = runbook, attrs) do
     runbook
-    |> change(status: :published)
+    |> cast_details(attrs)
+    |> validate_slug_unchanged_after_release()
+    |> cast(attrs, [:draft_definition])
+    |> validate_draft_definition()
     |> changeset()
   end
 
-  defp version_seed(%Runbook{} = previous, user_id, attrs) do
-    %Runbook{
-      name: previous.name,
-      slug: previous.slug,
-      title: previous.title,
-      description: previous.description,
-      definition: previous.definition
-    }
-    |> cast(attrs, @fields)
-    |> put_change(:account_id, previous.account_id)
-    |> put_change(:created_by_id, user_id)
-    |> put_change(:version, previous.version + 1)
-    |> put_name_from_title()
-    |> put_slug_from_title()
-  end
-
-  def update(%Runbook{} = runbook, attrs) do
+  @doc "Promotes the draft to release `version` — the one transition that writes what is live."
+  def publish(%Runbook{} = runbook, definition, version) do
     runbook
-    |> cast(attrs, @fields)
-    |> put_name_from_title()
-    |> put_slug_from_title()
+    |> change(definition: definition, live_version: version, draft_definition: nil)
     |> changeset()
   end
+
+  @doc "Drops the unpublished change, leaving the live release untouched."
+  def discard_draft(%Runbook{} = runbook),
+    do: runbook |> change(draft_definition: nil) |> changeset()
 
   def delete(%Runbook{} = runbook),
     do: change(runbook, deleted_at: DateTime.utc_now())
 
+  defp cast_details(runbook_or_changeset, attrs) do
+    runbook_or_changeset
+    |> cast(attrs, @detail_fields)
+    |> put_name_from_title()
+    |> put_slug_from_title()
+  end
+
   defp changeset(changeset) do
     changeset
-    |> validate_required([:account_id, :name, :slug, :title, :definition])
+    |> validate_required([:account_id, :name, :slug, :title])
     |> validate_length(:name, min: 1, max: 80)
     |> validate_length(:title, min: 1, max: 80)
     |> validate_length(:title, max: @max_title_bytes, count: :bytes)
     |> validate_length(:description, max: 4_096)
     |> validate_length(:description, max: @max_description_bytes, count: :bytes)
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
-    |> validate_definition()
-    |> unique_constraint([:account_id, :slug, :version])
+    |> unique_constraint([:account_id, :slug])
   end
 
-  defp validate_definition(changeset) do
-    validator =
-      if get_field(changeset, :status) == :published,
-        do: &Definition.validate/1,
-        else: &Definition.validate_draft/1
+  defp validate_slug_unchanged_after_release(changeset) do
+    if is_nil(changeset.data.live_version) or is_nil(get_change(changeset, :slug)),
+      do: changeset,
+      else: add_error(changeset, :slug, "cannot change once the runbook has been published")
+  end
 
-    case validator.(get_field(changeset, :definition)) do
+  defp validate_draft_definition(changeset) do
+    case draft_definition_issues(changeset) do
+      :unchanged ->
+        changeset
+
       {:ok, _definition} ->
         changeset
 
@@ -139,12 +117,21 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
 
         add_error(
           changeset,
-          :definition,
+          :draft_definition,
           "#{first.message} at #{first.path}#{suffix}",
           code: first.code,
           path: first.path,
           issues: [first | rest]
         )
+    end
+  end
+
+  # A save that carries no definition is a metadata edit; the draft it leaves
+  # untouched was already validated when it was written.
+  defp draft_definition_issues(changeset) do
+    case get_change(changeset, :draft_definition) do
+      nil -> :unchanged
+      definition -> Definition.validate_draft(definition)
     end
   end
 

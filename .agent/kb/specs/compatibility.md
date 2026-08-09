@@ -145,14 +145,23 @@ retirement rules.
 
 ### Runbook definition schema
 
-**What it is.** A published or draft runbook carries one strict JSON-compatible
-DefinitionV1 object. It declares Markdown context, typed inputs, ordered stages,
+**What it is.** A runbook's live release and its one unpublished change each
+carry a strict JSON-compatible DefinitionV1 object. It declares Markdown context, typed inputs, ordered stages,
 stage mode and concurrency, action steps, one `pack: {id}` per step, an explicit
 `all` or `random_one` selection over tagged runner and group refs, whole-value
 bindings, named output extractors, success conditions, and optional bounded waits. Approval is execution state
 derived from account policy, not part of the runbook definition. The console,
 persistence layer, compiler, and MCP tools consume and return this same object;
 there is no alternate YAML or legacy flat-step contract.
+
+**How a runbook is referenced.** `runbook_ref` is `slug@release`. The slug is
+the runbook's stable public identity — editable only until the first release,
+frozen afterwards because refs depend on it — and the number is a release
+number counting publishes of that runbook, 1..N. It is not a save counter and
+not a definition schema version. Execution accepts only the LIVE release; an
+older number answers `not_live` rather than silently running current content.
+An unpublished change has no number: it is named by slug plus the
+`definition_sha256` of the exact content the caller consents to run.
 
 **How it is versioned today.** The definition requires exact
 `schema_version: 1`. Its machine schema is
@@ -163,9 +172,9 @@ rejected. Execution resolves each pack ID and action against the current trusted
 catalog, then freezes the exact selected runner, pack ref, and hash per item.
 `random_one` accepts exactly one group, validates its complete online pool, and
 records both the chosen runner and source group. An already-frozen
-execution cannot be reinterpreted by a later pack update. A saved runbook whose
+execution cannot be reinterpreted by a later pack update. A runbook whose
 current pack or action contract no longer resolves fails preflight until an
-operator publishes a working revision.
+operator publishes a working release.
 
 **What happens on skew.** A consumer or stored definition using an unsupported
 schema version fails closed with `unsupported_schema_version`. It is never

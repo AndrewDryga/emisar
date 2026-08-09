@@ -3,21 +3,19 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
   alias Emisar.Runbooks
   alias EmisarWeb.MCP.RunbookContract
 
-  @family %{published_ref: "inspect-fleet@3", draft_ref: "inspect-fleet@4"}
-
-  describe "project/2" do
+  describe "project/1" do
     test "keeps metadata separate and projects the canonical definition losslessly" do
       definition = valid_definition()
 
       runbook = %Runbooks.Runbook{
         slug: "inspect-fleet",
-        version: 3,
+        live_version: 3,
         title: "Inspect fleet",
         description: "Confirm the fleet is ready.",
         definition: definition
       }
 
-      assert {:ok, projection} = RunbookContract.project(runbook, @family)
+      assert {:ok, projection} = RunbookContract.project(runbook)
 
       assert projection == %{
                runbook_ref: "inspect-fleet@3",
@@ -27,57 +25,73 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
                description: "Confirm the fleet is ready.",
                definition: definition,
                summary: %{input_count: 1, stage_count: 1, step_count: 1},
-               family: @family
+               draft_definition_sha256: nil
              }
+    end
+
+    test "names the unpublished change waiting behind the live release" do
+      draft = valid_definition() |> Map.put("context_markdown", "Revised.")
+
+      runbook = %Runbooks.Runbook{
+        slug: "inspect-fleet",
+        live_version: 3,
+        title: "Inspect fleet",
+        description: nil,
+        definition: valid_definition(),
+        draft_definition: draft
+      }
+
+      assert {:ok, projection} = RunbookContract.project(runbook)
+      assert projection.draft_definition_sha256 == Runbooks.definition_digest(draft)
     end
 
     test "preserves nullable description" do
       runbook = %Runbooks.Runbook{
         slug: "inspect-fleet",
-        version: 1,
+        live_version: 1,
         title: "Inspect fleet",
         description: nil,
         definition: valid_definition()
       }
 
-      assert {:ok, %{description: nil}} = RunbookContract.project(runbook, @family)
+      assert {:ok, %{description: nil}} = RunbookContract.project(runbook)
     end
 
     test "fails closed when the stored definition is not canonical" do
       runbook = %Runbooks.Runbook{
         slug: "legacy",
-        version: 1,
+        live_version: 1,
         title: "Legacy",
         definition: %{"steps" => []}
       }
 
-      assert RunbookContract.project(runbook, @family) == {:error, :incomplete_contract}
+      assert RunbookContract.project(runbook) == {:error, :incomplete_contract}
     end
 
     test "reports an oversized runbook as oversized, not as a missing one" do
       runbook = oversized_runbook()
 
-      assert {:error, {:runbook_too_large, bytes}} = RunbookContract.project(runbook, @family)
+      assert {:error, {:runbook_too_large, bytes}} = RunbookContract.project(runbook)
       assert bytes > RunbookContract.max_projection_bytes()
     end
 
     test "the declared envelope covers every wrapper around the bounded values" do
       # The budget is definition + title + description + envelope, so the
       # envelope is the only term not pinned by an authoring limit. Measure it
-      # at its worst case — longest refs, both family sides present — so the
+      # at its worst case — longest ref, both digests present — so the
       # derivation cannot quietly drift under a growing projection.
       slug = String.duplicate("a", 79)
-      family = %{published_ref: "#{slug}@999999999", draft_ref: "#{slug}@999999999"}
 
       runbook = %Runbooks.Runbook{
         slug: slug,
-        version: 999_999_999,
+        live_version: 999_999_999,
         title: "",
         description: "",
-        definition: valid_definition()
+        definition: valid_definition(),
+        draft_definition: valid_definition()
       }
 
-      assert {:ok, projection} = RunbookContract.project(runbook, family)
+      assert {:ok, projection} = RunbookContract.project(runbook)
 
       definition_bytes = byte_size(Jason.encode!(projection.definition))
       envelope_bytes = byte_size(Jason.encode!(projection)) - definition_bytes
@@ -92,29 +106,58 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
     end
   end
 
-  describe "summarize/3" do
-    test "marks a projectable runbook available" do
+  describe "summarize/1" do
+    test "names both sides of a live runbook carrying an unpublished change" do
+      draft = valid_definition() |> Map.put("context_markdown", "Revised.")
+
       runbook = %Runbooks.Runbook{
         slug: "inspect-fleet",
-        version: 3,
+        live_version: 3,
         title: "Inspect fleet",
         description: "Confirm the fleet is ready.",
-        definition: valid_definition()
+        definition: valid_definition(),
+        draft_definition: draft
       }
 
-      assert {:ok, summary} = RunbookContract.summarize(runbook, @family, "published")
-      assert summary.available == true
-      refute Map.has_key?(summary, :unavailable_reason)
-      assert summary.runbook_ref == "inspect-fleet@3"
+      assert {:ok, summary} = RunbookContract.summarize(runbook)
+
+      assert summary == %{
+               slug: "inspect-fleet",
+               title: "Inspect fleet",
+               summary: "Confirm the fleet is ready.",
+               live: %{
+                 runbook_ref: "inspect-fleet@3",
+                 definition_sha256: Runbooks.definition_digest(valid_definition())
+               },
+               draft: %{definition_sha256: Runbooks.definition_digest(draft)},
+               input_count: 1,
+               stage_count: 1,
+               step_count: 1,
+               available: true
+             }
+    end
+
+    test "counts a never-published runbook from its unpublished change" do
+      runbook = %Runbooks.Runbook{
+        slug: "inspect-fleet",
+        title: "Inspect fleet",
+        description: nil,
+        draft_definition: valid_definition()
+      }
+
+      assert {:ok, summary} = RunbookContract.summarize(runbook)
+      assert summary.live == nil
+      assert summary.draft == %{definition_sha256: Runbooks.definition_digest(valid_definition())}
       assert summary.step_count == 1
+      assert summary.available == true
     end
 
     test "keeps an oversized runbook listed and says where to open it" do
       runbook = oversized_runbook()
 
-      assert {:ok, summary} = RunbookContract.summarize(runbook, @family, "published")
+      assert {:ok, summary} = RunbookContract.summarize(runbook)
       assert summary.available == false
-      assert summary.runbook_ref == "inspect-fleet@3"
+      assert summary.slug == "inspect-fleet"
       assert summary.step_count == 1
       assert summary.unavailable_reason =~ "over the #{RunbookContract.max_projection_bytes()}"
       assert summary.unavailable_reason =~ "console"
@@ -123,13 +166,12 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
     test "drops a runbook whose stored definition is not canonical" do
       runbook = %Runbooks.Runbook{
         slug: "legacy",
-        version: 1,
+        live_version: 1,
         title: "Legacy",
         definition: %{"steps" => []}
       }
 
-      assert RunbookContract.summarize(runbook, @family, "published") ==
-               {:error, :incomplete_contract}
+      assert RunbookContract.summarize(runbook) == {:error, :incomplete_contract}
     end
 
     test "bounds the text summary in code points, the unit the wire schema counts" do
@@ -140,37 +182,65 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
 
       runbook = %Runbooks.Runbook{
         slug: "inspect-fleet",
-        version: 3,
+        live_version: 3,
         title: "Inspect fleet",
         description: String.duplicate(combining, 600),
         definition: valid_definition()
       }
 
-      assert {:ok, summary} = RunbookContract.summarize(runbook, @family, "published")
+      assert {:ok, summary} = RunbookContract.summarize(runbook)
       assert length(String.codepoints(summary.summary)) <= 512
     end
   end
 
-  describe "project_draft/2" do
-    test "adds the exact immutable draft and definition identities" do
+  describe "project_draft/1" do
+    test "adds the draft's own identity and the release it does not replace yet" do
       definition = valid_definition()
+      id = Ecto.UUID.generate()
 
+      runbook = %Runbooks.Runbook{
+        id: id,
+        slug: "inspect-fleet",
+        live_version: 4,
+        title: "Inspect fleet",
+        description: nil,
+        definition: valid_definition(),
+        draft_definition: definition
+      }
+
+      assert {:ok, projection} = RunbookContract.project_draft(runbook)
+
+      assert projection == %{
+               slug: "inspect-fleet",
+               draft_id: id,
+               status: "draft",
+               definition_sha256: Runbooks.definition_digest(definition),
+               title: "Inspect fleet",
+               description: nil,
+               definition: definition,
+               summary: %{input_count: 1, stage_count: 1, step_count: 1},
+               live_ref: "inspect-fleet@4"
+             }
+    end
+
+    test "reports a null live ref while nothing has been published" do
       runbook = %Runbooks.Runbook{
         id: Ecto.UUID.generate(),
         slug: "inspect-fleet",
-        version: 4,
         title: "Inspect fleet",
-        description: nil,
-        definition: definition
+        draft_definition: valid_definition()
       }
 
-      assert {:ok, projection} = RunbookContract.project_draft(runbook, @family)
-      assert projection.draft_id == runbook.id
-      assert projection.family == @family
-      assert projection.runbook_ref == "inspect-fleet@4"
-      assert projection.status == "draft"
-      assert projection.definition_sha256 == Runbooks.definition_digest(definition)
-      assert projection.definition == definition
+      assert {:ok, %{live_ref: nil}} = RunbookContract.project_draft(runbook)
+    end
+  end
+
+  describe "live_ref/1" do
+    test "names the live release and answers nil before the first publish" do
+      assert RunbookContract.live_ref(%Runbooks.Runbook{slug: "inspect-fleet", live_version: 2}) ==
+               "inspect-fleet@2"
+
+      assert RunbookContract.live_ref(%Runbooks.Runbook{slug: "inspect-fleet"}) == nil
     end
   end
 
@@ -180,7 +250,7 @@ defmodule EmisarWeb.MCP.RunbookContractTest do
   defp oversized_runbook do
     %Runbooks.Runbook{
       slug: "inspect-fleet",
-      version: 3,
+      live_version: 3,
       title: "Inspect fleet",
       description: String.duplicate("a", RunbookContract.max_projection_bytes() + 1),
       definition: valid_definition()

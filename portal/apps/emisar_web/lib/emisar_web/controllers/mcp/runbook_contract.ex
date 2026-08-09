@@ -7,7 +7,6 @@ defmodule EmisarWeb.MCP.RunbookContract do
   persistence and the console editor.
   """
 
-  alias Emisar.Auth.Subject
   alias Emisar.Runbooks
 
   # The projection budget is DERIVED from the byte bounds the authoring path
@@ -18,9 +17,9 @@ defmodule EmisarWeb.MCP.RunbookContract do
   #
   # Derived is not guaranteed: JSON escaping expands a control character to six
   # bytes, so a hostile title or description can still overflow. That is why
-  # `fit/1` measures the encoded projection and `project/2` reports the overflow
+  # `fit/1` measures the encoded projection and `project/1` reports the overflow
   # as its own outcome instead of collapsing it into a resolution failure.
-  # The envelope covers the refs, digest, status, counts, family, and JSON keys
+  # The envelope covers the refs, both digests, status, counts, and JSON keys
   # that wrap the three bounded values; measured at ~600 bytes worst case.
   @max_envelope_bytes 1_024
   @max_projection_bytes Runbooks.definition_limit!(:max_definition_bytes) +
@@ -36,23 +35,7 @@ defmodule EmisarWeb.MCP.RunbookContract do
   def max_projection_bytes, do: @max_projection_bytes
 
   @doc """
-  Maps each slug to its family lifecycle pair — the version that runs today and
-  the pending draft above it.
-
-  Every runbook projection carries this pair because either side alone is
-  ambiguous to a model: a published version never mentions the revision waiting
-  behind it, and a draft never mentions what production is still running.
-  Returns `{:ok, %{slug => family}}` or `{:error, :unauthorized}`.
-  """
-  def families(slugs, %Subject{} = subject) when is_list(slugs) do
-    with {:ok, published} <- Runbooks.latest_published_by_slugs(slugs, subject),
-         {:ok, drafts} <- Runbooks.draft_heads_by_slugs(slugs, subject) do
-      {:ok, Map.new(slugs, &{&1, family(published[&1], drafts[&1])})}
-    end
-  end
-
-  @doc """
-  Returns one complete immutable runbook projection.
+  Returns one complete live runbook projection.
 
   Fails `:incomplete_contract` when the stored definition is not canonical, and
   `{:runbook_too_large, bytes}` when a valid runbook simply exceeds the budget.
@@ -60,26 +43,28 @@ defmodule EmisarWeb.MCP.RunbookContract do
   indistinguishable from a runbook that does not exist, but a size limit is a
   mechanical fact the operator is entitled to be told.
   """
-  def project(runbook, family), do: projected(runbook, family, "published")
+  def project(runbook), do: projected(runbook, "published")
 
-  @doc "Returns one canonical immutable draft projection with its test identity."
-  def project_draft(runbook, family), do: projected(runbook, family, "draft")
+  @doc "Returns one canonical draft projection with its test identity."
+  def project_draft(runbook), do: projected(runbook, "draft")
 
   @doc """
   Returns the bounded list summary for one runbook.
 
   The summary carries no definition, so it is emitted whether or not the full
   projection fits: an oversized runbook stays discoverable and says why it can
-  only be opened in the console.
+  only be opened in the console. Counts and availability describe the live
+  release, or the unpublished change while nothing is live yet.
   """
-  def summarize(runbook, family, status) do
-    with {:ok, projection} <- build(runbook, family, status) do
+  def summarize(runbook) do
+    with {:ok, projection} <- build(runbook, listed_status(runbook)) do
       {:ok, summary_entry(runbook, projection, fit(projection))}
     end
   end
 
-  @doc "The immutable `slug@version` wire identity of one runbook row."
-  def runbook_ref(runbook), do: "#{runbook.slug}@#{runbook.version}"
+  @doc "The `slug@release` wire identity of one runbook's live release, or nil when it has none."
+  def live_ref(%{live_version: nil}), do: nil
+  def live_ref(runbook), do: "#{runbook.slug}@#{runbook.live_version}"
 
   @doc "Returns bounded counts used by list results and human summaries."
   def summary(%{"inputs" => inputs, "stages" => stages}) do
@@ -90,8 +75,8 @@ defmodule EmisarWeb.MCP.RunbookContract do
     }
   end
 
-  defp projected(runbook, family, status) do
-    with {:ok, projection} <- build(runbook, family, status),
+  defp projected(runbook, status) do
+    with {:ok, projection} <- build(runbook, status),
          :ok <- fit(projection) do
       {:ok, projection}
     else
@@ -100,19 +85,24 @@ defmodule EmisarWeb.MCP.RunbookContract do
     end
   end
 
-  defp build(runbook, family, "published") do
+  # Nothing live yet means the unpublished change IS the runbook, so it is what
+  # the list describes; once a release exists, the list describes what runs.
+  defp listed_status(%{live_version: nil}), do: "draft"
+  defp listed_status(_runbook), do: "published"
+
+  defp build(runbook, "published") do
     case Runbooks.validate_definition(runbook.definition) do
       {:ok, definition} ->
         {:ok,
          %{
-           runbook_ref: runbook_ref(runbook),
+           runbook_ref: live_ref(runbook),
            status: "published",
            definition_sha256: Runbooks.definition_digest(definition),
            title: runbook.title,
            description: runbook.description,
            definition: definition,
            summary: summary(definition),
-           family: family
+           draft_definition_sha256: draft_digest(runbook)
          }}
 
       {:error, _issues} ->
@@ -120,12 +110,12 @@ defmodule EmisarWeb.MCP.RunbookContract do
     end
   end
 
-  defp build(runbook, family, "draft") do
-    case Runbooks.validate_draft_definition(runbook.definition) do
+  defp build(runbook, "draft") do
+    case Runbooks.validate_draft_definition(runbook.draft_definition) do
       {:ok, definition} ->
         {:ok,
          %{
-           runbook_ref: runbook_ref(runbook),
+           slug: runbook.slug,
            draft_id: runbook.id,
            status: "draft",
            definition_sha256: Runbooks.definition_digest(definition),
@@ -133,7 +123,7 @@ defmodule EmisarWeb.MCP.RunbookContract do
            description: runbook.description,
            definition: definition,
            summary: summary(definition),
-           family: family
+           live_ref: live_ref(runbook)
          }}
 
       {:error, _issues} ->
@@ -151,22 +141,17 @@ defmodule EmisarWeb.MCP.RunbookContract do
 
   defp summary_entry(runbook, projection, fitted) do
     %{
-      runbook_ref: projection.runbook_ref,
-      status: projection.status,
-      definition_sha256: projection.definition_sha256,
+      slug: runbook.slug,
       title: runbook.title,
       summary: text_summary(runbook.description),
-      family: projection.family,
+      live: live_side(runbook),
+      draft: draft_side(runbook),
       input_count: projection.summary.input_count,
       stage_count: projection.summary.stage_count,
       step_count: projection.summary.step_count
     }
-    |> put_draft_id(projection)
     |> put_availability(fitted)
   end
-
-  defp put_draft_id(entry, %{draft_id: draft_id}), do: Map.put(entry, :draft_id, draft_id)
-  defp put_draft_id(entry, _projection), do: entry
 
   defp put_availability(entry, :ok), do: Map.put(entry, :available, true)
 
@@ -183,11 +168,23 @@ defmodule EmisarWeb.MCP.RunbookContract do
   defp put_availability(entry, {:error, :incomplete_contract}),
     do: Map.put(entry, :available, false)
 
-  defp family(published, draft),
-    do: %{published_ref: family_ref(published), draft_ref: family_ref(draft)}
+  # Either side alone is ambiguous to a model: what runs today never mentions
+  # the change waiting behind it, and a change never mentions what production is
+  # still running. One row answers both, so every projection states both.
+  defp live_side(%{live_version: nil}), do: nil
 
-  defp family_ref(nil), do: nil
-  defp family_ref(runbook), do: runbook_ref(runbook)
+  defp live_side(runbook) do
+    %{
+      runbook_ref: live_ref(runbook),
+      definition_sha256: Runbooks.definition_digest(runbook.definition)
+    }
+  end
+
+  defp draft_side(%{draft_definition: nil}), do: nil
+  defp draft_side(runbook), do: %{definition_sha256: draft_digest(runbook)}
+
+  defp draft_digest(%{draft_definition: nil}), do: nil
+  defp draft_digest(runbook), do: Runbooks.definition_digest(runbook.draft_definition)
 
   defp text_summary(value) when is_binary(value) do
     value

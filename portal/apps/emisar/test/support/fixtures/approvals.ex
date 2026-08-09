@@ -96,7 +96,8 @@ defmodule Emisar.Fixtures.Approvals do
         frozen_plan: %{"schema_version" => 1, "stages" => [stage_plan]},
         inputs_raw: "{}",
         inputs_sha256: String.duplicate("0", 64),
-        definition_sha256: Runbooks.Definition.digest(runbook.definition),
+        definition: runbook.draft_definition,
+        definition_sha256: Runbooks.Definition.digest(runbook.draft_definition),
         kind: attrs[:execution_kind] || :published,
         status: :pending_approval
       })
@@ -132,7 +133,7 @@ defmodule Emisar.Fixtures.Approvals do
         "runbook" => %{
           "id" => runbook.id,
           "title" => runbook.title,
-          "version" => runbook.version
+          "version" => runbook.live_version
         },
         "plan" => execution.frozen_plan
       }

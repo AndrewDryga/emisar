@@ -608,8 +608,7 @@ defmodule Emisar.Audit.Events do
   def runbook_created(%Subject{} = subject, %Runbooks.Runbook{} = runbook) do
     runbook_event(subject, runbook, "runbook.created", %{
       name: runbook.name,
-      title: runbook.title,
-      version: runbook.version
+      title: runbook.title
     })
   end
 
@@ -617,7 +616,7 @@ defmodule Emisar.Audit.Events do
     runbook_event(subject, runbook, "runbook.deleted", %{
       name: runbook.name,
       title: runbook.title,
-      version: runbook.version
+      version: runbook.live_version
     })
   end
 
@@ -629,15 +628,20 @@ defmodule Emisar.Audit.Events do
     runbook_event(subject, runbook, "runbook.updated", %{
       name: runbook.name,
       title: runbook.title,
-      from_version: old.version,
-      to_version: runbook.version
+      from_title: old.title,
+      version: runbook.live_version
     })
   end
 
-  def runbook_published(%Subject{} = subject, %Runbooks.Runbook{} = runbook) do
+  def runbook_published(
+        %Subject{} = subject,
+        %Runbooks.Runbook{} = runbook,
+        %Runbooks.Release{} = release
+      ) do
     runbook_event(subject, runbook, "runbook.published", %{
       name: runbook.name,
-      version: runbook.version
+      version: release.version,
+      definition_sha256: release.definition_sha256
     })
   end
 
@@ -651,7 +655,7 @@ defmodule Emisar.Audit.Events do
     runbook_event(subject, runbook, "runbook.dispatched", %{
       name: runbook.name,
       title: runbook.title,
-      version: runbook.version,
+      version: execution.runbook_version,
       runbook_id: runbook.id,
       runbook_execution_id: execution.id,
       execution_kind: execution.kind,
@@ -671,7 +675,7 @@ defmodule Emisar.Audit.Events do
     runbook_event(subject, runbook, "runbook.execution_cancelled", %{
       name: runbook.name,
       title: runbook.title,
-      version: runbook.version,
+      version: execution.runbook_version,
       runbook_id: runbook.id,
       runbook_execution_id: execution.id
     })

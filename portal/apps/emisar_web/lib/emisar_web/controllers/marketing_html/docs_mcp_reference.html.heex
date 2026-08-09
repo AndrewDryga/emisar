@@ -106,11 +106,11 @@
                 {"get_operation", "Recover one exact mutation after an ambiguous response."},
                 {"wait_for_run", "Wait for one run to change or reach a terminal state."},
                 {"recent_runs", "Inspect scoped run history with exact identity filters."},
-                {"list_runbooks", "List published runbooks, or explicitly list current drafts."},
-                {"get_runbook", "Read one exact published revision or current draft."},
-                {"execute_runbook", "Execute one published runbook or an explicitly allowed current draft."},
-                {"create_runbook_draft", "Start a new runbook family as a draft."},
-                {"update_runbook_draft", "Save the next draft revision without changing the family slug."}
+                {"list_runbooks", "List every runbook with its live release and any unpublished change."},
+                {"get_runbook", "Read one runbook's live release, or its unpublished change."},
+                {"execute_runbook", "Execute the live release, or an explicitly allowed unpublished change."},
+                {"create_runbook_draft", "Start a new runbook as an unpublished change."},
+                {"update_runbook_draft", "Replace a runbook's unpublished change without changing its slug."}
               ] do %>
                 <tr>
                   <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{tool}</td>
@@ -231,18 +231,25 @@
 
         <h2 id="runbooks-signing">Runbooks and signing</h2>
         <p>
-          Runbooks are immutable <code>slug@version</code>
-          records. Published discovery is the default. To revise an existing runbook, inspect its
-          exact ref and definition hash, then call <code>update_runbook_draft</code>. The next
-          version keeps the family slug and remains a draft.
+          A runbook is one slug carrying a live release, <code>slug@N</code>, and at most one
+          unpublished change. Discovery returns the live release by default. To edit an existing
+          runbook, read it, then call <code>update_runbook_draft</code>
+          with the <code>definition_sha256</code>
+          you read: the slug never changes, the edit lands as the runbook's one unpublished
+          change, and a concurrent write answers <code>draft_changed</code>
+          instead of being overwritten.
         </p>
         <p>
-          Drafts never enter ordinary discovery or default execution. List or read them with <code>status: "draft"</code>, then pass the exact ref to
-          <code>execute_runbook</code>
-          with <code>allow_draft: true</code>. A draft test uses the same target, trust, policy,
-          approval, scheduler, runner, and audit path as published execution. It can cause the
-          actions' real effects, but it does not publish the draft; publication remains a human
-          action in <a
+          Execution runs the live release — an older <code>slug@N</code>
+          answers <code>not_live</code>
+          rather than silently running current content. An unpublished change never enters ordinary
+          discovery or default execution. Read it with <code>status: "draft"</code>, then pass the
+          slug to <code>execute_runbook</code>
+          with <code>allow_draft: true</code>
+          and the exact <code>definition_sha256</code>
+          you consent to run. A draft test uses the same target, trust, policy, approval,
+          scheduler, runner, and audit path as a live execution. It can cause the actions' real
+          effects, but it publishes nothing; publication remains a human action in <a
             href={~p"/app/runbooks"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
           >Runbooks</a>.
