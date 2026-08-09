@@ -596,16 +596,6 @@ defmodule Emisar.RunnerAccessTest do
     end
   end
 
-  describe "empty_runner_access/0" do
-    test "is explicit none, which covers nothing but itself" do
-      assert Accounts.empty_runner_access() ==
-               %RunnerAccess{mode: :none, groups: [], runner_ids: []}
-
-      assert RunnerAccess.covers?(RunnerAccess.all(), Accounts.empty_runner_access())
-      refute RunnerAccess.covers?(Accounts.empty_runner_access(), RunnerAccess.all())
-    end
-  end
-
   describe "runner_access_for_subject/1" do
     test "re-reads the current active membership instead of trusting subject state" do
       {account, owner, subject} = account_with_owner()

@@ -73,14 +73,9 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:synced_members, [])
       |> assign(:synced_members_load_error?, false)
       |> assign(:edit_form, nil)
-      # Pending manual-link requests across the account — loaded on :index, where
-      # the overview triages them (the detail page is config-only).
-      |> assign(:pending_requests, [])
       # Connection(s) in scope: ALL on :index (a list), the one on :show (detail).
       # Set per-action in handle_params.
       |> assign(:providers, [])
-      # Per-connection {users, groups} tallies for the :index health line.
-      |> assign(:sync_stats, %{})
       # Role-mapping state: the per-provider lists + create forms, and the
       # single open inline edit (id + form). Keyed by provider id so each
       # provider's directory-sync panel owns its own mappings + form.
@@ -162,9 +157,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp load_for_action(socket, params) do
     if connected?(socket) do
       case socket.assigns.live_action do
-        :index ->
-          load_index(socket)
-
         :show ->
           load_show(socket, params["id"])
 
@@ -181,25 +173,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       # A blank form names no runners, so SSO resolves it without a read (IL-18)
       # and /new still renders on the dead pass.
       assign_form(socket, SSO.change_provider(socket.assigns.current_subject))
-    end
-  end
-
-  # Overview: ALL connections + the account-wide pending requests (the
-  # needs-attention block). No per-connection scim/mapping load — that's :show.
-  defp load_index(socket) do
-    socket
-    |> assign(:loaded?, true)
-    |> assign(:providers, list_providers(socket))
-    |> assign(:sync_stats, sync_stats(socket))
-    |> assign(:pending_requests, list_pending_requests(socket))
-  end
-
-  # Per-connection {users, groups} tallies for the overview health line; an
-  # unauthorized read (shouldn't happen on this page) degrades to empty counts.
-  defp sync_stats(socket) do
-    case SSO.provider_sync_stats(socket.assigns.current_subject) do
-      {:ok, stats} -> stats
-      {:error, _} -> %{}
     end
   end
 
@@ -279,13 +252,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  defp list_pending_requests(socket) do
-    case SSO.list_pending_link_requests_for_account(socket.assigns.current_subject) do
-      {:ok, requests, _meta} -> requests
-      {:error, _} -> []
-    end
-  end
-
   defp load_runners(socket) do
     socket = assign(socket, :pack_advertisements, account_pack_advertisements(socket))
 
@@ -308,13 +274,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     case Catalog.list_pack_advertisements(socket.assigns.current_subject) do
       {:ok, advertisements} -> advertisements
       {:error, _reason} -> %{}
-    end
-  end
-
-  defp list_providers(socket) do
-    case SSO.list_providers_for_account(socket.assigns.current_subject) do
-      {:ok, providers, _meta} -> providers
-      {:error, _} -> []
     end
   end
 
@@ -648,16 +607,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       socket.assigns.can_configure_directory_sync?,
       &do_delete_runner_access_mapping(&1, id)
     )
-  end
-
-  # -- Manual link requests -------------------------------------------
-
-  def handle_event("approve_request", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_approve_request(&1, id))
-  end
-
-  def handle_event("dismiss_request", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.has_sso_permission?, &do_dismiss_request(&1, id))
   end
 
   # Typed-confirm state for the "Delete connection" dialog (UX friction only —
@@ -1011,53 +960,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  defp do_approve_request(socket, id) do
-    with_request(socket, id, fn request ->
-      case SSO.approve_link_request(
-             request,
-             Accounts.empty_runner_access(),
-             socket.assigns.current_subject
-           ) do
-        {:ok, _result} ->
-          {:noreply,
-           socket
-           |> put_flash(:info, "#{request_label(request)} approved — they can sign in now.")
-           |> reload()}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, error_message(reason))}
-      end
-    end)
-  end
-
-  defp do_dismiss_request(socket, id) do
-    with_request(socket, id, fn request ->
-      case SSO.dismiss_link_request(request, socket.assigns.current_subject) do
-        {:ok, _request} ->
-          {:noreply, socket |> put_flash(:info, "Access request dismissed.") |> reload()}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, error_message(reason))}
-      end
-    end)
-  end
-
-  defp with_request(socket, id, fun) do
-    case find_request(socket, id) do
-      nil -> {:noreply, socket}
-      request -> fun.(request)
-    end
-  end
-
   # A full reload after a provider mutation: refresh the connection list, the
   # group→role mappings, AND the pending manual-link requests — so enabling
   # directory sync (re)seeds a provider's panels, and approving/dismissing a
   # request drops it from the list.
   defp reload(socket) do
-    case socket.assigns.live_action do
-      :index -> load_index(socket)
-      :show -> reload_show(socket)
-    end
+    reload_show(socket)
   end
 
   # Re-fetch the one connection :show is on (its row may have changed — SCIM
@@ -1154,8 +1062,6 @@ defmodule EmisarWeb.SSOSettingsLive do
     |> List.flatten()
     |> Enum.find(&(&1.id == id))
   end
-
-  defp find_request(socket, id), do: Enum.find(socket.assigns.pending_requests, &(&1.id == id))
 
   # The create-form changeset for a provider's mapping. Built over
   # The context's form builder — phx-change validation (required fields + the
@@ -1395,12 +1301,6 @@ defmodule EmisarWeb.SSOSettingsLive do
             Single sign-on
         <% end %>
       </:title>
-      <:actions :if={@can_configure? and @live_action == :index}>
-        <.button navigate={~p"/app/#{@current_account}/settings/sso/new"} size={:md} icon="hero-plus">
-          Add connection
-        </.button>
-      </:actions>
-
       <div :if={not @can_configure?}>
         <%!-- Two different locks, two different messages (§4): a role gate is
              not an upsell, and pitching plans to an admin-less operator on an
@@ -1423,12 +1323,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       </div>
 
       <div :if={@can_configure?} class="space-y-6">
-        <.page_intro :if={@live_action == :index}>
-          Connect your organization's identity provider so members sign in through it. New
-          members are provisioned on first sign-in; you choose the role they land with.
-          <.doc_link href="/docs/sso">Single sign-on docs</.doc_link>
-        </.page_intro>
-
         <%!-- Adding a connection is its own view (/settings/sso/new): a bare
              sub-header over sibling field islands (Provider · OIDC · …), never
              one giant card. --%>
@@ -1553,123 +1447,13 @@ defmodule EmisarWeb.SSOSettingsLive do
         <%!-- ── Pending access requests (needs attention) ──────────────────
              People blocked waiting for an admin, across ALL connections. The
              time-sensitive job, so it leads the overview. --%>
-        <section :if={@live_action == :index and @pending_requests != []}>
-          <.section_header
-            title="Pending access requests"
-            count={length(@pending_requests)}
-            count_tone={:amber}
-          />
-          <ul class="divide-y divide-zinc-800/70">
-            <li
-              :for={request <- @pending_requests}
-              class="flex flex-wrap items-center justify-between gap-3 py-3.5"
-            >
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="truncate text-sm text-zinc-200">
-                    {Accounts.user_display_name(request) || "Unknown user"}
-                  </span>
-                  <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
-                </div>
-                <div class="mt-0.5 truncate text-xs text-zinc-400">
-                  <span :if={email = Accounts.secondary_user_email(request)}>{email}</span>
-                  <span :if={Accounts.secondary_user_email(request)} class="text-zinc-500">·</span>
-                  <span class="font-mono">{request.provider_identifier}</span>
-                </div>
-                <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
-                  Approving lets this connection sign in as the existing {request.email} account.
-                </p>
-              </div>
-              <div class="flex shrink-0 items-center gap-2">
-                <.button
-                  variant={:secondary}
-                  size={:sm}
-                  phx-click="approve_request"
-                  phx-value-id={request.id}
-                  data-confirm={approve_confirm(request)}
-                >
-                  Approve
-                </.button>
-                <.confirm_button
-                  id={"dismiss-request-#{request.id}"}
-                  title="Dismiss this request?"
-                  confirm_label="Dismiss"
-                  variant={:ghost}
-                  tone={:rose}
-                  size={:sm}
-                  on_confirm={JS.push("dismiss_request", value: %{id: request.id})}
-                >
-                  <:body>They'll need to sign in again to re-request.</:body>
-                  Dismiss
-                </.confirm_button>
-              </div>
-            </li>
-          </ul>
-        </section>
-
         <%!-- ── Connections (overview) ──────────────────────────────────────
              A bounded set; each row is a SUMMARY that opens its own detail page.
              Config (edit, SCIM, group→role) lives on the detail, not here. --%>
-        <section :if={@live_action == :index}>
-          <.section_header title="Connections" count={length(@providers)} count_tone={:neutral} />
-
-          <%!-- NAKED hairline rows on the canvas — the row-hover wash is the
-               click affordance (the runners/audit row grammar), never a card
-               around the list. --%>
-          <ul :if={@providers != []} class="divide-y divide-zinc-800/70">
-            <li :for={provider <- @providers}>
-              <.link
-                navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                class="group -mx-2 flex items-center gap-4 rounded-md px-2 py-4 transition hover:bg-white/[0.04]"
-              >
-                <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400">
-                  <.icon name="hero-identification" class="h-4 w-4" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="truncate font-medium text-zinc-100">{provider.name}</span>
-                    <.chip>{kind_label(provider.kind)}</.chip>
-                    <.status_badge :if={provider.enabled} status="enabled" />
-                    <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
-                    <.chip :if={provider.scim_enabled}>Directory sync</.chip>
-                  </div>
-                  <div class="mt-1 truncate text-xs text-zinc-400">
-                    {provider.issuer} · {provisioner_label(provider.provisioner)}
-                  </div>
-                  <.sync_meta
-                    provider={provider}
-                    stats={Map.get(@sync_stats, provider.id, %{users: 0, groups: 0})}
-                  />
-                </div>
-                <.icon name="hero-chevron-right" class="h-4 w-4 shrink-0 text-zinc-500" />
-              </.link>
-            </li>
-          </ul>
-
-          <.empty_state
-            :if={@loaded? and @providers == []}
-            icon="hero-identification"
-            title="No connections yet"
-          >
-            Connect your identity provider to let your team sign in through it. You'll need an
-            OAuth/OIDC app at your provider with its client ID and secret.
-            <:cta navigate={~p"/app/#{@current_account}/settings/sso/new"}>Add connection</:cta>
-          </.empty_state>
-        </section>
-
         <%!-- The branded sign-in link to hand to the team — a quiet utility, so it
              sits at the bottom and lets the needs-attention block lead. Always
              useful (email sign-in works without SSO), so it's not gated on
              providers. NAKED — the code_line is the artifact. --%>
-        <section :if={@live_action == :index}>
-          <p class="text-sm font-medium text-zinc-200">Your team's sign-in link</p>
-          <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-            Share this with your members — it opens this team's sign-in page with your SSO
-            connections (and email sign-in as a fallback).
-          </p>
-          <.code_line id="sso-sign-in-link" value={@sign_in_url} class="mt-3 max-w-2xl" />
-        </section>
-
         <%!-- ── Connection detail (/settings/sso/:id) ───────────────────────
              One connection: identity + status + config (edit, directory sync,
              group→role). @providers holds exactly the one handle_params loaded. --%>
@@ -3445,14 +3229,6 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp provisioned_via_label(:manual), do: "Linked"
   defp provisioned_via_label(_), do: "Synced"
 
-  defp approve_confirm(%{matched_user_id: nil}) do
-    "Approve access for this user? They'll be able to sign in at the connection's default role."
-  end
-
-  defp approve_confirm(%{email: email}) do
-    "Link this connection to the existing #{email} account? That IdP identity will then sign in as this existing user."
-  end
-
   defp role_label(role), do: Emisar.Auth.role_label(role)
 
   defp runner_access_mode_label(:none), do: "No runners"
@@ -3466,40 +3242,4 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp provisioner_label(:jit), do: "Auto-provision"
   defp provisioner_label(:manual), do: "Manual approval"
-
-  attr :provider, :map, required: true
-  attr :stats, :map, required: true
-
-  # The overview health line for one connection: how many members + distinct groups
-  # the directory has actually synced through it, and — for a SCIM connection — how
-  # fresh the last sync is (green when synced, amber "never synced" while it waits
-  # on the IdP).
-  defp sync_meta(assigns) do
-    ~H"""
-    <div class="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-zinc-400">
-      <span class="tabular-nums">{count_label(@stats.users, "member")}</span>
-      <span class="tabular-nums">· {count_label(@stats.groups, "group")}</span>
-      <span :if={@provider.scim_enabled and @provider.scim_last_seen_at} class="text-brand-300/90">
-        · synced
-        <.local_time
-          id={"provider-sync-#{@provider.id}"}
-          value={@provider.scim_last_seen_at}
-          mode={:relative}
-        />
-      </span>
-      <span
-        :if={@provider.scim_enabled and is_nil(@provider.scim_last_seen_at)}
-        class="text-amber-300/90"
-      >
-        · never synced
-      </span>
-    </div>
-    """
-  end
-
-  defp count_label(count, singular),
-    do: "#{count} #{singular}#{if count == 1, do: "", else: "s"}"
-
-  defp request_label(request),
-    do: Accounts.user_display_name(request) || request.provider_identifier
 end

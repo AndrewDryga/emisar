@@ -1445,9 +1445,6 @@ defmodule Emisar.Accounts do
   def runner_access_allowlist(runners, packs \\ []),
     do: RunnerAccess.allowlist(runners, packs)
 
-  @doc "Explicit no-runner access — the fail-closed value a caller grants when it grants nothing."
-  def empty_runner_access, do: RunnerAccess.none()
-
   @doc """
   Internal - current runner access for an authenticated subject. The membership
   is re-read on every call and must still be active in the subject's account.
