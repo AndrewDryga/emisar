@@ -67,6 +67,29 @@
         don't run at all until you explicitly open them up.
       </.docs_callout>
 
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        An override is also how you widen what an agent may do without waiting. Some reads are
+        rated <code class="text-amber-300">high</code>
+        because of what they can print, not because of what they change — a full config dump
+        can carry a credential in a directive nobody can enumerate ahead of time, so the shipped
+        tier holds it for a human. If your fleet's config genuinely holds no secrets, or you accept
+        that exposure for the sake of an investigation that never pauses, say so in your own policy
+        rather than waiting for the tier to change:
+      </p>
+      <.docs_code phx-no-format label="Policy → overrides">overrides:
+  - name: <span class="text-brand-300">allow-journal-reads</span>
+    action: <span class="text-brand-300">linux.journalctl*</span>
+    decision: <span class="text-brand-300">allow</span>
+  - name: <span class="text-brand-300">allow-nginx-config-dump</span>
+    action: <span class="text-brand-300">nginx.config_dump</span>
+    decision: <span class="text-brand-300">allow</span></.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        That decision is yours, recorded in your policy, and every run it permits still lands in
+        the audit trail with the actor that asked for it. Redaction keeps running underneath — it
+        masks the credential shapes it recognises — but it is pattern-based, so treat it as a
+        backstop rather than a guarantee when you open a dump up.
+      </p>
+
       <.docs_h2 id="editing">Editing the policy</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Open
