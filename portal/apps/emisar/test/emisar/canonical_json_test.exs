@@ -43,6 +43,25 @@ defmodule Emisar.CanonicalJSONTest do
     end
   end
 
+  describe "encode_pretty!/1" do
+    test "orders keys exactly as encode!/1 does, one token per line" do
+      value = %{"z" => %{"b" => 1, "a" => 2}, "l" => [3, 1, 2]}
+      pretty = CanonicalJSON.encode_pretty!(value)
+
+      assert pretty |> String.replace(~r/\s+/, "") == CanonicalJSON.encode!(value)
+      assert String.contains?(pretty, "\n")
+
+      assert [~s("l"), ~s("z"), ~s("a"), ~s("b")] ==
+               ~w("l" "z" "a" "b") |> Enum.sort_by(&:binary.match(pretty, &1))
+    end
+
+    test "indentation never reaches the identity" do
+      value = %{"a" => 1}
+      assert CanonicalJSON.digest(value) == Emisar.Crypto.hash_hex(CanonicalJSON.encode!(value))
+      refute CanonicalJSON.encode_pretty!(value) == CanonicalJSON.encode!(value)
+    end
+  end
+
   describe "digest/1" do
     test "is the hex SHA-256 of the canonical text" do
       value = %{"a" => 1}

@@ -28,6 +28,16 @@ defmodule Emisar.CanonicalJSON do
   @spec encode!(term()) :: String.t()
   def encode!(value), do: value |> canonical() |> Jason.encode!()
 
+  @doc """
+  The same canonical value, one JSON token per line.
+
+  Indentation is presentation, so this never feeds `digest/1` — identity stays
+  the compact form. It exists so two versions of one document can be compared
+  line by line against the very text whose hash is their identity.
+  """
+  @spec encode_pretty!(term()) :: String.t()
+  def encode_pretty!(value), do: value |> canonical() |> Jason.encode!(pretty: true)
+
   defp canonical(%{} = value) do
     value
     |> Enum.sort_by(&elem(&1, 0))

@@ -3221,36 +3221,45 @@ defmodule EmisarWeb.CoreComponents do
   slot :meta
   slot :actions
 
+  slot :body,
+    doc:
+      "full-width content under the row — an expanded detail or disclosure, " <>
+        "which must clear the actions column rather than share the title's measure"
+
   def list_row(assigns) do
     ~H"""
-    <li id={@id} class={["flex flex-wrap items-start gap-4 sm:flex-nowrap", @padding, @class]}>
-      <div :if={@leading != []} class="shrink-0">{render_slot(@leading)}</div>
-      <span
-        :if={@leading == [] && @icon}
-        class={["grid h-9 w-9 shrink-0 place-items-center rounded-lg", row_icon_class(@icon_tone)]}
-      >
-        <.icon name={@icon} class="h-4 w-4" />
-      </span>
+    <li id={@id} class={[@padding, @class]}>
+      <div class="flex flex-wrap items-start gap-4 sm:flex-nowrap">
+        <div :if={@leading != []} class="shrink-0">{render_slot(@leading)}</div>
+        <span
+          :if={@leading == [] && @icon}
+          class={["grid h-9 w-9 shrink-0 place-items-center rounded-lg", row_icon_class(@icon_tone)]}
+        >
+          <.icon name={@icon} class="h-4 w-4" />
+        </span>
 
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-2">
-          {render_slot(@title)}
-          {render_slot(@chips)}
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2">
+            {render_slot(@title)}
+            {render_slot(@chips)}
+          </div>
+          <%!-- Two lines on mobile (a credential row's "last used" is its
+               security signal — never silently truncated away), single-line
+               truncate from sm up. --%>
+          <div :if={@meta != []} class="mt-1 line-clamp-2 text-xs text-zinc-400 sm:line-clamp-none">
+            {render_slot(@meta)}
+          </div>
         </div>
-        <%!-- Two lines on mobile (a credential row's "last used" is its
-             security signal — never silently truncated away), single-line
-             truncate from sm up. --%>
-        <div :if={@meta != []} class="mt-1 line-clamp-2 text-xs text-zinc-400 sm:line-clamp-none">
-          {render_slot(@meta)}
+
+        <%!-- Below sm the actions take their own full-width row under the
+             content, so the title — the row's identity — owns the width
+             instead of being crushed to a clipped glyph by three buttons. --%>
+        <div :if={@actions != []} class="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+          {render_slot(@actions)}
         </div>
       </div>
 
-      <%!-- Below sm the actions take their own full-width row under the
-           content, so the title — the row's identity — owns the width
-           instead of being crushed to a clipped glyph by three buttons. --%>
-      <div :if={@actions != []} class="flex w-full shrink-0 items-center gap-2 sm:w-auto">
-        {render_slot(@actions)}
-      </div>
+      <div :if={@body != []} class="mt-3">{render_slot(@body)}</div>
     </li>
     """
   end

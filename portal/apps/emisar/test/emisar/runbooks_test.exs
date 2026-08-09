@@ -266,6 +266,65 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "fetch_previous_version/2" do
+    test "walks down one version at a time and stops at the family's first" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      first = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
+      assert {:ok, second} = Runbooks.save_new_version(first, %{}, subject)
+      assert {:ok, third} = Runbooks.save_new_version(second, %{}, subject)
+
+      assert {:ok, %Runbooks.Runbook{} = below_third} =
+               Runbooks.fetch_previous_version(third, subject)
+
+      assert below_third.id == second.id
+
+      assert {:ok, %Runbooks.Runbook{} = below_second} =
+               Runbooks.fetch_previous_version(second, subject)
+
+      assert below_second.id == first.id
+      assert Runbooks.fetch_previous_version(first, subject) == {:error, :not_found}
+    end
+
+    test "never crosses into another account's family sharing the slug" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      mine = create_runbook(subject, slug: "cross")
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      theirs = create_runbook(other_subject, slug: "cross")
+      assert {:ok, theirs_second} = Runbooks.save_new_version(theirs, %{}, other_subject)
+
+      # Their v2 has a predecessor, but not for a subject outside their account —
+      # and my own same-slug v1 must never be offered as it.
+      assert Runbooks.fetch_previous_version(theirs_second, subject) == {:error, :not_found}
+      assert Runbooks.fetch_previous_version(mine, other_subject) == {:error, :not_found}
+    end
+
+    test "denies a principal without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      runbook = create_runbook(subject, slug: "alpha")
+
+      assert Runbooks.fetch_previous_version(runbook, Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
+    end
+  end
+
+  describe "definition_diff/2" do
+    test "reports the changed lines between two definitions and nothing for a metadata-only save" do
+      definition = definition()
+      changed = put_in(definition, ["context_markdown"], "Inspect twice.")
+
+      assert Runbooks.definition_diff(definition, definition) ==
+               %Runbooks.DefinitionDiff{hunks: [], truncated?: false}
+
+      assert %Runbooks.DefinitionDiff{hunks: [hunk]} =
+               Runbooks.definition_diff(definition, changed)
+
+      assert Enum.any?(hunk, &match?({:ins, _line}, &1))
+      assert Enum.any?(hunk, &match?({:del, _line}, &1))
+    end
+  end
+
   describe "latest_published_by_slugs/2" do
     test "maps each slug to its newest published version, skipping never-published families" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()

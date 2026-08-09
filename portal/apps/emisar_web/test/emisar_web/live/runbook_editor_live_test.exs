@@ -1807,6 +1807,14 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "Runs today")
       assert has_element?(editing_draft, "#runbook-lifecycle-desktop", "v1")
 
+      # Naming the live version raises "what changed?", so it links to the one
+      # surface that answers it.
+      assert has_element?(
+               editing_draft,
+               "#runbook-lifecycle-desktop a[href='#{~p"/app/#{account}/runbooks/fleet-health/versions"}']",
+               "v1"
+             )
+
       # The published head IS what runs, so naming it again would render the
       # same fact twice.
       {:ok, editing_published, _html} =

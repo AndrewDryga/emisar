@@ -60,6 +60,69 @@ defmodule EmisarWeb.RunbookVersionsLiveTest do
     refute html =~ ~p"/app/#{account}/runbooks/#{second.id}/run"
   end
 
+  test "only the newest published version is marked Live", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = owner_subject(user, account)
+    first = create_runbook!(user, account, "Deploy check", published?: true)
+    {:ok, second} = Runbooks.save_new_version(first, %{}, subject)
+    live_version = Fixtures.Runbooks.publish_runbook(second)
+    {:ok, _third} = Runbooks.save_new_version(live_version, %{}, subject)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/deploy-check/versions")
+
+    assert html =~ "Live"
+    assert has_element?(lv, "#runbook-version-#{live_version.id}-changes")
+
+    # One row carries it: the older published v1 can still be dispatched from
+    # here, but it is not what a default Run resolves to.
+    assert html |> String.split("Live") |> length() == 2
+  end
+
+  test "a row opens the change against the version below it, and v1 offers none", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = owner_subject(user, account)
+    first = create_runbook!(user, account, "Deploy check", published?: true)
+
+    revised =
+      put_in(
+        first.definition,
+        ["context_markdown"],
+        "Confirm the incident scope before running anything."
+      )
+
+    {:ok, second} = Runbooks.save_new_version(first, %{"definition" => revised}, subject)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/deploy-check/versions")
+
+    refute has_element?(lv, "#runbook-version-#{first.id}-changes")
+    assert has_element?(lv, "#runbook-version-#{second.id}-changes", "Changes from v1")
+
+    refute has_element?(lv, "#runbook-version-#{second.id}-changes[open]")
+
+    diff = render_click(lv, "toggle_diff", %{"id" => second.id})
+    assert diff =~ "Confirm the incident scope before running anything."
+    assert diff =~ "+ "
+    assert diff =~ "- "
+    assert has_element?(lv, "#runbook-version-#{second.id}-changes[open]")
+
+    # A collapsed `details` keeps its body in the DOM, so the server-owned
+    # `open` is what proves the toggle round-tripped.
+    render_click(lv, "toggle_diff", %{"id" => second.id})
+    refute has_element?(lv, "#runbook-version-#{second.id}-changes[open]")
+  end
+
+  test "a version whose definition did not change says so instead of an empty diff", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = owner_subject(user, account)
+    first = create_runbook!(user, account, "Deploy check", published?: true)
+    {:ok, second} = Runbooks.save_new_version(first, %{"title" => "Deploy check v2"}, subject)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/deploy-check/versions")
+    diff = render_click(lv, "toggle_diff", %{"id" => second.id})
+
+    assert diff =~ "The definition is identical. Only the title or description changed."
+  end
+
   test "an unknown slug bounces back to the list", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 

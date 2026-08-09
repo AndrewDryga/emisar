@@ -33,6 +33,9 @@ defmodule Emisar.Runbooks.Runbook.Query do
   def by_version(queryable, version),
     do: where(queryable, [runbooks: r], r.version == ^version)
 
+  def before_version(queryable, version),
+    do: where(queryable, [runbooks: r], r.version < ^version)
+
   def published(queryable \\ all()),
     do: where(queryable, [runbooks: r], r.status == :published)
 

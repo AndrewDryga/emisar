@@ -13,8 +13,8 @@ defmodule Emisar.Runbooks do
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Crypto, MCPOperations, Repo, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.{Catalog, Runners}
-  alias Emisar.Runbooks.{Authoring, Authorizer, Compiler, Definition, EditorProjection}
-  alias Emisar.Runbooks.{ExecutionItem, ExecutionProjection, Naming, Runbook}
+  alias Emisar.Runbooks.{Authoring, Authorizer, Compiler, Definition, DefinitionDiff}
+  alias Emisar.Runbooks.{EditorProjection, ExecutionItem, ExecutionProjection, Naming, Runbook}
   alias Emisar.Runbooks.{RunbookExecution, Scheduler}
   alias Emisar.Users
 
@@ -155,6 +155,38 @@ defmodule Emisar.Runbooks do
       |> Repo.list(Runbook.Query, opts)
     end
   end
+
+  @doc """
+  Fetches the version immediately below `runbook` in its own family.
+
+  Requires `view_runbooks`. A family's first version has no predecessor, and a
+  runbook outside the subject's account is refused before the read — both answer
+  `{:error, :not_found}`, so a foreign family stays indistinguishable from one
+  that never existed and can never resolve to the caller's own same-slug row.
+  Returns `{:ok, runbook}`, `{:error, :not_found | :unauthorized}`.
+  """
+  def fetch_previous_version(%Runbook{} = runbook, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
+         :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_slug(runbook.slug)
+      |> Runbook.Query.before_version(runbook.version)
+      |> Runbook.Query.latest_version()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runbook.Query)
+    end
+  end
+
+  @doc """
+  Line diff carrying one definition forward to another.
+
+  Pure — the caller already holds both rows, and the context owns the boundary
+  because `DefinitionDiff` is an internal module the web may not reach.
+  """
+  def definition_diff(previous_definition, definition)
+      when is_map(previous_definition) and is_map(definition),
+      do: DefinitionDiff.build(previous_definition, definition)
 
   @doc """
   Maps each slug to its newest non-deleted PUBLISHED version, for the listed

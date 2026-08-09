@@ -193,6 +193,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           :if={@runbook}
           id="runbook-lifecycle-mobile"
           class="xl:hidden"
+          current_account={@current_account}
           runbook={@runbook}
           live_version={@live_version}
           dirty?={@dirty?}
@@ -254,6 +255,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               :if={@runbook}
               id="runbook-lifecycle-desktop"
               class="hidden xl:block"
+              current_account={@current_account}
               runbook={@runbook}
               live_version={@live_version}
               dirty?={@dirty?}
@@ -330,6 +332,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
   attr :id, :string, required: true
   attr :class, :string, default: nil
+  attr :current_account, :any, required: true
   attr :runbook, :any, required: true
   attr :live_version, :any, default: nil
   attr :dirty?, :boolean, required: true
@@ -342,9 +345,16 @@ defmodule EmisarWeb.RunbookEditorComponents do
       <.kv label="Status"><.status_badge status={@runbook.status} /></.kv>
       <%!-- Editing a draft or a superseded version says nothing about what a Run
             dispatches right now, so name the published head separately. When the
-            version in the editor IS that head, the row would repeat "Current". --%>
+            version in the editor IS that head, the row would repeat "Current".
+            The version links out because the next question is always what the
+            two versions differ by, and history is where that is answered. --%>
       <.kv :if={@live_version && @live_version.id != @runbook.id} label="Runs today">
-        v{@live_version.version}
+        <%!-- The underline is the affordance: a hover-only colour change leaves
+              a touch operator with no way to discover this row links out. --%>
+        <.link
+          navigate={~p"/app/#{@current_account}/runbooks/#{@runbook.slug}/versions"}
+          class="underline decoration-zinc-600 underline-offset-4 hover:text-brand-300 hover:decoration-brand-400"
+        >v{@live_version.version}</.link>
       </.kv>
       <.kv :if={@dirty? and not @read_only?} label="Next">v{@runbook.version + 1}</.kv>
     </dl>
