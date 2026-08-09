@@ -2,7 +2,7 @@ schema_version: 1
 
 id: pfsense
 name: pfSense firewall
-version: 0.4.4
+version: 0.5.0
 description: >
   Operate a pfSense firewall over its REST API: read firewall rules, NAT,
   aliases, virtual IPs, interface / gateway (config + status) / service / VPN
@@ -88,6 +88,9 @@ actions:
   - actions/dhcp_log.yaml
   - actions/openvpn_log.yaml
   - actions/config_history.yaml
+  - actions/dns_resolver_settings.yaml
+  - actions/ntp_settings.yaml
+  - actions/wireguard_peers.yaml
   - actions/certificates.yaml
   - actions/certificate_authorities.yaml
   - actions/crls.yaml

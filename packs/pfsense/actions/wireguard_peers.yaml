@@ -1,0 +1,31 @@
+schema_version: 1
+id: pfsense.wireguard_peers
+title: GET /api/v2/vpn/wireguard/peers
+kind: script
+risk: low
+description: >
+  List the configured WireGuard peers — each peer's description, whether it is
+  enabled, the tunnel it belongs to, its endpoint host and port, keepalive
+  interval, public key, and allowed IPs, for answering "is this peer configured
+  and pointed where I think it is". The peer's optional pre-shared key is never
+  returned: the action selects only the fields above, so `presharedkey` is
+  dropped at the source.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfproject.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v2/vpn/wireguard/peers"
+    - ".data = [(.data // [])[] | {descr, enabled, tun, endpoint, port, persistentkeepalive, publickey, allowedips}]"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Configured peers
+    args: {}

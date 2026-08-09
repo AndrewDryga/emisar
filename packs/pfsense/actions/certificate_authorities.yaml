@@ -15,7 +15,7 @@ side_effects:
 args: []
 execution:
   script:
-    path: scripts/pfcerts.sh
+    path: scripts/pfproject.sh
     interpreter: /bin/sh
   argv:
     - "/api/v2/system/certificate_authorities"

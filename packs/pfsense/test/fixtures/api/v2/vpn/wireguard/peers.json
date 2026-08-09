@@ -1,0 +1,17 @@
+{
+  "code": 200,
+  "status": "ok",
+  "data": [
+    {
+      "descr": "packtest-peer",
+      "enabled": true,
+      "tun": "tun_wg0",
+      "endpoint": "203.0.113.10",
+      "port": 51820,
+      "persistentkeepalive": 25,
+      "publickey": "cGFja3Rlc3QtcHVibGljLWtleS1ub3Qtc2VjcmV0Cg=",
+      "allowedips": [{"address": "10.6.0.2", "mask": 32, "descr": "packtest-allowed"}],
+      "presharedkey": "packtest-canary-pfsense-wgpsk-8a47"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+schema_version: 1
+id: pfsense.dns_resolver_settings
+title: GET /api/v2/services/dns_resolver/settings
+kind: script
+risk: low
+description: >
+  Show the DNS Resolver (Unbound) configuration — whether it is enabled, the
+  listen and TLS ports, the interfaces it binds and forwards out of, DNSSEC and
+  forwarding mode, and the DHCP/OpenVPN registration flags. The operator's
+  free-text `custom_options` block is never returned: it is raw Unbound config
+  an operator can put anything in, including forwarding credentials, so the
+  action selects only the settings above and drops it at the source.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfproject.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v2/services/dns_resolver/settings"
+    - ".data = ((.data // {}) | {enable, port, enablessl, tlsport, active_interface, outgoing_interface, strictout, system_domain_local_zone_type, dnssec, forwarding, regdhcp, regdhcpstatic, regovpnclients})"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: Resolver configuration
+    args: {}

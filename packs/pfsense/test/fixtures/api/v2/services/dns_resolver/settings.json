@@ -1,0 +1,23 @@
+{
+  "code": 200,
+  "status": "ok",
+  "data": {
+    "enable": true,
+    "port": 53,
+    "enablessl": true,
+    "tlsport": 853,
+    "active_interface": ["lan"],
+    "outgoing_interface": ["wan"],
+    "strictout": false,
+    "system_domain_local_zone_type": "transparent",
+    "dnssec": true,
+    "python": false,
+    "python_order": "pre",
+    "python_script": "",
+    "forwarding": true,
+    "regdhcp": true,
+    "regdhcpstatic": true,
+    "regovpnclients": false,
+    "custom_options": "forward-zone:\n  name: \".\"\n  forward-tls-upstream: yes\n  forward-addr: packtest-canary-pfsense-resolveropts-6c19"
+  }
+}

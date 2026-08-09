@@ -1,0 +1,23 @@
+{
+  "code": 200,
+  "status": "ok",
+  "data": {
+    "enable": true,
+    "interface": ["lan"],
+    "ntpmaxpeers": 5,
+    "orphan": 12,
+    "ntpminpoll": "6",
+    "ntpmaxpoll": "10",
+    "dnsresolv": "auto",
+    "logpeer": false,
+    "logsys": false,
+    "clockstats": false,
+    "loopstats": false,
+    "peerstats": false,
+    "statsgraph": true,
+    "leapsec": "",
+    "serverauth": true,
+    "serverauthalgo": "sha256",
+    "serverauthkey": "packtest-canary-pfsense-ntpauthkey-3e82"
+  }
+}

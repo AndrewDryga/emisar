@@ -1,0 +1,31 @@
+schema_version: 1
+id: pfsense.ntp_settings
+title: GET /api/v2/services/ntp/settings
+kind: script
+risk: low
+description: >
+  Show the NTP service configuration — whether it is enabled, the interfaces it
+  binds, the poll interval bounds, orphan-mode stratum, peer limit, logging and
+  statistics flags, leap-second handling, and whether server authentication is
+  on with which algorithm. The shared authentication key itself is never
+  returned: the action selects only the settings above, so `serverauthkey` is
+  dropped at the source.
+side_effects:
+  - One read-only HTTP GET to the pfSense REST API.
+  - Read-only.
+args: []
+execution:
+  script:
+    path: scripts/pfproject.sh
+    interpreter: /bin/sh
+  argv:
+    - "/api/v2/services/ntp/settings"
+    - ".data = ((.data // {}) | {enable, interface, ntpmaxpeers, orphan, ntpminpoll, ntpmaxpoll, dnsresolv, logpeer, logsys, clockstats, loopstats, peerstats, statsgraph, leapsec, serverauth, serverauthalgo})"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+examples:
+  - title: NTP configuration
+    args: {}
