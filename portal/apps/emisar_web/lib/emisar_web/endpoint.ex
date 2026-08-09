@@ -24,8 +24,20 @@ defmodule EmisarWeb.Endpoint do
   # carries `x-forwarded-for` so the real client IP (not the GCP proxy peer) reaches
   # audit + analytics. Without these, mounts behind LV land with no
   # conn-equivalent metadata.
+  # `compress: true` turns on permessage-deflate. LiveView payloads are JSON
+  # diffs of repetitive markup, which is close to the best case for deflate: the
+  # audit page's initial connected mount is ~114 KB uncompressed, runs ~32 KB,
+  # and every console navigation pays that again. The CPU cost is per-frame
+  # deflate on payloads this shape, which is cheap next to the render that
+  # produced them.
+  #
+  # Longpoll is deliberately left alone — it rides ordinary HTTP responses, which
+  # the endpoint already gzips.
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [:peer_data, :user_agent, :x_headers, session: @session_options]],
+    websocket: [
+      compress: true,
+      connect_info: [:peer_data, :user_agent, :x_headers, session: @session_options]
+    ],
     longpoll: [connect_info: [:peer_data, :user_agent, :x_headers, session: @session_options]]
 
   # Serve at "/" the static files from "priv/static" directory.
