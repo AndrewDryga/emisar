@@ -1,0 +1,98 @@
+schema_version: 1
+id: tfc.workspace_details
+title: GET /organizations/<name>/workspaces/<workspace>
+kind: script
+risk: low
+description: >
+  Show one workspace by name — its execution mode, Terraform version,
+  auto-apply setting, VCS repository and working directory, resource count, and
+  its lock state including who holds the lock and why. This is the read that
+  answers "why is this workspace locked, and whose lock is it" before anyone
+  reaches for force-unlock, and the id it returns is what the run and lock
+  actions take.
+side_effects:
+  - One read-only HTTP GET to the HCP Terraform API.
+  - Read-only.
+search_terms:
+  - who locked this workspace
+  - workspace lock holder
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization name.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"
+      max_length: 63
+  - name: workspace
+    type: string
+    required: true
+    description: Workspace name, as shown in HCP Terraform.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,89}$"
+      max_length: 90
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [workspace_details, "{{ args.organization }}", "{{ args.workspace }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [workspace]
+    properties:
+      workspace:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+          - name
+          - execution_mode
+          - terraform_version
+          - auto_apply
+          - locked
+          - locked_reason
+          - locked_by
+          - current_run_id
+          - vcs_repo
+          - working_directory
+          - resource_count
+          - updated_at
+        properties:
+          id: {type: string}
+          name: {type: string, maxLength: 90}
+          execution_mode: {type: string}
+          terraform_version: {type: string, maxLength: 64}
+          auto_apply: {type: boolean}
+          locked: {type: boolean}
+          locked_reason: {type: string, maxLength: 160}
+          locked_by:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [type, id]
+            properties:
+              type: {type: string, maxLength: 24}
+              id: {type: string, maxLength: 48}
+          current_run_id: {type: [string, "null"]}
+          vcs_repo:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [identifier, branch]
+            properties:
+              identifier: {type: string, maxLength: 120}
+              branch: {type: string, maxLength: 80}
+          working_directory: {type: string, maxLength: 120}
+          resource_count: {type: integer}
+          updated_at: {type: string}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Why is production-network locked
+    args:
+      organization: example-corp
+      workspace: production-network

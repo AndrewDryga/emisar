@@ -2,7 +2,7 @@ schema_version: 1
 
 id: hcp-terraform
 name: HCP Terraform run review and gating
-version: 0.6.5
+version: 0.7.0
 description: >
   Review HCP Terraform (formerly Terraform Cloud) and Terraform Enterprise runs
   and gate what happens next: list workspaces and runs, project a run's plan
@@ -51,6 +51,7 @@ setup:
 actions:
   - actions/list_organizations.yaml
   - actions/list_workspaces.yaml
+  - actions/workspace_details.yaml
   - actions/list_runs.yaml
   - actions/run_details.yaml
   - actions/plan_summary.yaml
@@ -60,3 +61,6 @@ actions:
   - actions/apply_run.yaml
   - actions/discard_run.yaml
   - actions/cancel_run.yaml
+  - actions/lock_workspace.yaml
+  - actions/unlock_workspace.yaml
+  - actions/force_unlock_workspace.yaml

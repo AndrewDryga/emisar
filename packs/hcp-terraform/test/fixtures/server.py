@@ -572,6 +572,37 @@ LOG_BLOBS = {
 }
 
 
+WORKSPACE_LOCK = {"locked": True, "locked-reason": "release freeze", "holder": "user"}
+
+
+def workspace_document():
+    """The one workspace the lock actions act on, reflecting its current lock."""
+    return {
+        "id": WORKSPACE_ID,
+        "type": "workspaces",
+        "attributes": {
+            "name": "production-network",
+            "execution-mode": "remote",
+            "terraform-version": "1.13.1",
+            "auto-apply": False,
+            "locked": WORKSPACE_LOCK["locked"],
+            "locked-reason": WORKSPACE_LOCK["locked-reason"],
+            "vcs-repo": {"identifier": "example-corp/network", "branch": "main"},
+            "working-directory": "envs/production",
+            "resource-count": 47,
+            "updated-at": "2026-07-28T11:58:00.000Z",
+        },
+        "relationships": {
+            "locked-by": (
+                {"data": {"type": WORKSPACE_LOCK["holder"], "id": "user-Jq4RtYuIoPa1S2d3"}}
+                if WORKSPACE_LOCK["locked"]
+                else {"data": None}
+            ),
+            "current-run": {"data": {"id": RUN_ID, "type": "runs"}},
+        },
+    }
+
+
 def get_response(path, query):
     page_size = int(query.get("page[size]", ["20"])[0])
     page = int(query.get("page[number]", ["1"])[0])
@@ -633,6 +664,8 @@ def get_response(path, query):
             }],
             "meta": pagination(next_page=2),
         }
+    if path == f"/api/v2/organizations/{ORGANIZATION}/workspaces/production-network":
+        return {"data": workspace_document()}
     if path == f"/api/v2/workspaces/{WORKSPACE_ID}/runs":
         return {"data": [run_document(RUN_ID)], "meta": pagination()}
     return None
@@ -662,6 +695,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         # Unauthenticated on purpose: this is what packtest probes read to see
         # whether a mutation actually landed and what it pinned.
+        if path == "/probe/workspace-lock":
+            self.write_json(200, dict(WORKSPACE_LOCK))
+            return
+        # Arranges the one state only force-unlock can clear: a lock held by a
+        # run rather than by the caller, which plain unlock answers 409 for.
+        if path == "/probe/hold-lock-by-run":
+            WORKSPACE_LOCK.update(locked=True, holder="run", **{"locked-reason": "run in progress"})
+            self.write_json(200, dict(WORKSPACE_LOCK))
+            return
         if path.startswith("/probe/runs/"):
             run_id = path.rsplit("/", 1)[-1]
             if run_id not in RUNS:
@@ -783,6 +825,24 @@ class Handler(BaseHTTPRequestHandler):
                 "configuration-version": CONFIGURATION_VERSION_ID,
             }
             self.write_json(201, {"data": run_document(RETRY_RUN_ID)})
+            return
+
+        # The lock verbs answer 200 with the resulting workspace document, not
+        # the run verbs' bodyless 202, and force-unlock is the only one that
+        # may take a lock held by someone else.
+        for verb in ("lock", "unlock", "force-unlock"):
+            if path != f"/api/v2/workspaces/{WORKSPACE_ID}/actions/{verb}":
+                continue
+            if verb == "lock" and WORKSPACE_LOCK["locked"]:
+                self.write_json(409, {"errors": [{"title": "workspace already locked"}]})
+                return
+            if verb == "unlock" and WORKSPACE_LOCK["holder"] != "user":
+                self.write_json(409, {"errors": [{"title": "locked by a run"}]})
+                return
+            WORKSPACE_LOCK["locked"] = verb == "lock"
+            WORKSPACE_LOCK["holder"] = "user"
+            WORKSPACE_LOCK["locked-reason"] = body.get("reason", "") if verb == "lock" else ""
+            self.write_json(200, {"data": workspace_document()})
             return
 
         transitions = {"apply": "applying", "discard": "discarded", "cancel": "canceled"}

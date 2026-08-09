@@ -61,13 +61,18 @@ api_get_following_redirect() {
 }
 
 # The unlock and force-unlock endpoints take no request body — their documented
-# calls POST with an empty body — so the data argument is optional.
+# calls POST with an empty body — so the data argument is optional. It rides
+# "$@" rather than a flag array, because every fail-closed flag has to stay
+# literal at the curl invocation: that is where a reviewer reads it, and where
+# the authoring check that no action swallows an HTTP error looks for it.
 api_post() {
-  local args=(--globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
-    -H 'Content-Type: application/vnd.api+json')
-  (($# < 2)) || args+=(--data "$2")
+  local path=$1
+  shift
+  (($# == 0)) || set -- --data "$1"
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl "${args[@]}" "$(api_base)$1"
+    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
+      -H 'Content-Type: application/vnd.api+json' \
+      "$@" "$(api_base)$path"
 }
 
 request() {
@@ -451,7 +456,6 @@ retry_run() {
     jq -ce --arg source "$source_run_id" --arg configuration_version "$configuration_version_id" \
       "$pagination"'{run: run_of(.data), source_run_id: $source, configuration_version_id: $configuration_version}'
 }
-
 
 list_organizations() {
   request api_get "/organizations?page%5Bsize%5D=$1&page%5Bnumber%5D=$2" |

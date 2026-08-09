@@ -458,3 +458,65 @@ cases:
     expect:
       status: failure
       reason_contains: [must match pattern]
+
+  - action: tfc.workspace_details
+    args: {organization: example-corp, workspace: production-network}
+    expect:
+      json:
+        /workspace/id: ws-8Rp2nKcQvWxYzA1b
+        /workspace/locked: true
+        /workspace/locked_reason: release freeze
+        /workspace/locked_by/type: user
+        /workspace/vcs_repo/identifier: example-corp/network
+
+  # The fixture workspace starts locked, so lock has to release it first — and
+  # that arrange step is also what proves the action is not simply reporting a
+  # state it found.
+  - action: tfc.lock_workspace
+    args: {workspace_id: ws-8Rp2nKcQvWxYzA1b, reason: Incident 4821 investigation}
+    arrange:
+      - argv: [/bin/sh, -c, "curl -fsS -X POST -H 'Content-Type: application/vnd.api+json' -H 'Authorization: Bearer packtest-canary-tfe-token-6d2a' http://tfc-api:8080/api/v2/workspaces/ws-8Rp2nKcQvWxYzA1b/actions/unlock"]
+    expect:
+      json:
+        /workspace/locked: true
+        /workspace/locked_reason: Incident 4821 investigation
+    probes:
+      - name: the workspace really holds the lock
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/workspace-lock"]
+        expect:
+          stdout_contains: ['"locked": true']
+
+  - action: tfc.unlock_workspace
+    args: {workspace_id: ws-8Rp2nKcQvWxYzA1b}
+    expect:
+      json:
+        /workspace/locked: false
+        /workspace/locked_by: null
+    probes:
+      - name: the lock was really released
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/workspace-lock"]
+        expect:
+          stdout_contains: ['"locked": false']
+
+  # Force-unlock is the high-risk verb, so its accounting is a successful case
+  # rather than an exception: it takes a lock the caller does not hold, which
+  # the fixture models by having a run hold it.
+  - action: tfc.force_unlock_workspace
+    args: {workspace_id: ws-8Rp2nKcQvWxYzA1b}
+    arrange:
+      - argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/hold-lock-by-run"]
+    expect:
+      json:
+        /workspace/locked: false
+    probes:
+      - name: a lock held by a run was released
+        argv: [/bin/sh, -c, "curl -fsS http://tfc-api:8080/probe/workspace-lock"]
+        expect:
+          stdout_contains: ['"locked": false']
+
+  - name: tfc.lock_workspace-rejects-foreign-id
+    action: tfc.lock_workspace
+    args: {workspace_id: run-4Qm7TvLpXsRbNc2d, reason: ""}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
