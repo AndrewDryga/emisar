@@ -15,6 +15,10 @@ args: []
 execution:
   command:
     binary: cloud-init
+    # `cloud-init init` is the RECOMMENDED form, not a deprecated one. Upstream
+    # deprecated `modules --mode=init` in 24.1 and its own message says "Use
+    # `cloud-init init` instead" (verified against cloud-init 26.1's
+    # cloudinit/cmd/main.py). Do not "migrate" this away.
     argv: ["init"]
   timeout: 300s
   cancel_grace: 30s

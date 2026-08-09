@@ -15,6 +15,8 @@ args: []
 execution:
   command:
     binary: cloud-init
+    # See init.yaml: `cloud-init init` is the form upstream recommends, and
+    # `--local` is a live flag on it in 26.1.
     argv: ["init", "--local"]
   timeout: 300s
   cancel_grace: 30s
