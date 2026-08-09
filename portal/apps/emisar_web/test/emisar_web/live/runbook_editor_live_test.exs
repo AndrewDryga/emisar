@@ -213,10 +213,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert has_element?(
                lv,
                "#runbook-inputs",
-               "Yes - masked in plans, approvals, and results."
+               "Sensitive values are masked in plans, approvals, and results."
              )
 
-      refute html =~ "Sensitive values are never shown"
+      # An answer-shaped fragment ("Yes - …") is leaked review dialogue, not
+      # copy — this pinned the defect once, so pin its absence now.
+      refute html =~ "Yes - masked"
 
       assert has_element?(
                lv,

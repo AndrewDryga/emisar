@@ -474,7 +474,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
     <section id="runbook-inputs">
       <.section_header title="Run-time inputs">
         <:subtitle>
-          Yes - masked in plans, approvals, and results.
+          Typed values supplied when the run starts. Sensitive values are masked in plans,
+          approvals, and results.
         </:subtitle>
       </.section_header>
 
