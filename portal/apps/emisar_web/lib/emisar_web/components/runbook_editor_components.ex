@@ -161,7 +161,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
               else: ~p"/app/#{@current_account}/runbooks"
           }
           title={if(@runbook, do: @runbook.title, else: "New runbook")}
-        />
+        >
+          <%!-- Superseded inverts every affordance on the page, so it rides
+                the identity line — a notice alone drowns on a page this tall. --%>
+          <.chip :if={@superseded?} tone={:amber} upcase>Superseded</.chip>
+        </.detail_header>
       </:title>
 
       <div :if={not @loaded?} class="mt-8">
@@ -172,10 +176,13 @@ defmodule EmisarWeb.RunbookEditorComponents do
       </div>
 
       <div :if={@loaded?} class="mt-4 space-y-8">
+        <%!-- Amber, not neutral: this is event_block's documented
+              pending/attention case — acting on this page is the mistake the
+              notice exists to prevent. --%>
         <.event_block
           :if={@superseded?}
           icon="hero-archive-box"
-          tone={:neutral}
+          tone={:amber}
           title={"Superseded — version #{@family_head.version} is current"}
         >
           <:body>

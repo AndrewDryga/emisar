@@ -1846,6 +1846,10 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert html =~ "Superseded — version 2 is current"
       refute html =~ "Read-only runbook"
+
+      # The state rides the identity line as an amber chip, not only a notice
+      # that drowns on a tall page.
+      assert has_element?(lv, "span.uppercase", "Superseded")
       assert has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks/#{head.id}/edit"}']")
 
       assert has_element?(
