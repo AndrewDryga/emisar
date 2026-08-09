@@ -1,9 +1,9 @@
 defmodule EmisarWeb.RunbooksLive do
   @moduledoc """
-  Paginated list of the account's runbooks — one row each, chipped with the
-  release that is live and whether unpublished changes are waiting. Every row
-  links to the editor; a runbook with a live release also gets a Run button
-  that opens the parameterized dispatch form for it.
+  Paginated list of the account's runbooks — one row each. The live release
+  rides the Run button's label, and waiting unpublished changes are a quiet
+  amber dot with a tooltip. Every row links to the editor; a runbook with a
+  live release also gets the Run button that opens its dispatch form.
   """
   use EmisarWeb, :live_view
   alias Emisar.{Runbooks, Runs}
@@ -181,18 +181,23 @@ defmodule EmisarWeb.RunbooksLive do
                       >
                         {runbook.title}
                       </.link>
-                      <.chip :if={runbook.live_version} tone={:brand}>
-                        Live v{runbook.live_version}
-                      </.chip>
-                      <%!-- A runbook with nothing live is ALL unpublished, so the
-                       amber chip would say nothing there; it is reserved for a
+                      <%!-- The live version rides the Run button that uses it, so
+                       the title line carries no Live chip. A runbook with nothing
+                       live is ALL unpublished — the amber signal is reserved for a
                        live release someone has already edited past. --%>
                       <.chip :if={is_nil(runbook.live_version)} tone={:neutral}>
                         Never published
                       </.chip>
-                      <.chip :if={runbook.live_version && runbook.draft_definition} tone={:amber}>
-                        Unpublished changes
-                      </.chip>
+                      <.tooltip
+                        :if={runbook.live_version && runbook.draft_definition}
+                        id={"runbook-#{runbook.id}-draft-tip"}
+                        text="Unpublished changes — open the runbook to review and publish them."
+                        aria_label="Unpublished changes"
+                        align={:left}
+                        class="shrink-0"
+                      >
+                        <.status_dot tone={:amber} size={:md} />
+                      </.tooltip>
                       <%!-- Headline risk — the most-severe step's risk, so the
                        operator sees how dangerous a runbook is before opening
                        it. Hidden when no step's action is in the catalog. --%>
@@ -218,7 +223,7 @@ defmodule EmisarWeb.RunbooksLive do
                         variant={:secondary}
                         size={:sm}
                       >
-                        Run
+                        Run v{runbook.live_version}
                       </.button>
                     </:actions>
                   </.list_row>

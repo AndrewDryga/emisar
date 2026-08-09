@@ -64,7 +64,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     assert html =~ "Unpublished changes"
   end
 
-  test "each row is chipped with what is live and what is waiting", %{conn: conn} do
+  test "the live release rides the Run label; only never-published earns a chip", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     published = create_runbook!(user, account, "Deploy check", published?: true)
     never_published = create_runbook!(user, account, "Half baked")
@@ -73,14 +73,19 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     assert html =~ "Deploy check"
     assert html =~ "Half baked"
-    assert has_element?(lv, "span", "Live v1")
+    refute has_element?(lv, "span", "Live v1")
     assert has_element?(lv, "span", "Never published")
-    # "Unpublished changes" is still a filter option; no ROW claims one.
-    refute has_element?(lv, "span", "Unpublished changes")
 
-    # Only the live release runs, so a runbook without one offers no Run.
-    assert html =~ ~p"/app/#{account}/runbooks/#{published.id}/run"
+    # Only the live release runs, and the button names it — a runbook without
+    # one offers no Run and no draft dot (it is ALL unpublished).
+    assert has_element?(
+             lv,
+             "a[href='#{~p"/app/#{account}/runbooks/#{published.id}/run"}']",
+             "Run v1"
+           )
+
     refute html =~ ~p"/app/#{account}/runbooks/#{never_published.id}/run"
+    refute has_element?(lv, "[id^='runbook-'][id$='-draft-tip']")
 
     # One row per runbook — the editor is reached by id, never by version.
     assert html =~ ~p"/app/#{account}/runbooks/#{published.id}/edit"
@@ -96,19 +101,20 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     assert {:ok, _runbook} = Runbooks.save_draft(runbook, attrs, base_sha, subject)
 
-    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks")
 
-    assert has_element?(lv, "span", "Live v1")
-    assert has_element?(lv, "span", "Unpublished changes")
-    assert html =~ ~p"/app/#{account}/runbooks/#{runbook.id}/run"
+    # Waiting changes are a quiet amber dot whose tooltip explains itself on
+    # keyboard and touch, never a labeled chip shouting beside the title.
+    assert has_element?(lv, "#runbook-#{runbook.id}-draft-tip[role='tooltip']")
+    assert render(lv) =~ "Unpublished changes — open the runbook to review and publish them."
+    refute has_element?(lv, "span", "Live v1")
 
-    # The Run button dispatches the live release, so it names no version.
-    assert has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks/#{runbook.id}/run"}']", "Run")
-
-    refute has_element?(
+    # The Run button dispatches — and names — the live release, unchanged by
+    # the waiting draft.
+    assert has_element?(
              lv,
              "a[href='#{~p"/app/#{account}/runbooks/#{runbook.id}/run"}']",
-             "Run v"
+             "Run v1"
            )
   end
 
@@ -186,8 +192,6 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     # No Fixtures.Catalog.create_action for linux.uptime — the catalog hasn't observed it, so the
     # row renders without a risk pill (never a false-low) rather than guessing.
-    # Never published, so the brand "Live vN" chip — which shares the low-risk
-    # pill's ring color — can't be mistaken for a pill.
     create_runbook!(user, account, "Unobserved")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
