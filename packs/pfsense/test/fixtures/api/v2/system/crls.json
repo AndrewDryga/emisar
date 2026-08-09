@@ -1,0 +1,16 @@
+{
+  "code": 200,
+  "status": "ok",
+  "data": [
+    {
+      "refid": "6650aa11bb22e",
+      "descr": "packtest-crl",
+      "caref": "6650aa11bb22d",
+      "method": "internal",
+      "lifetime": 9999,
+      "serial": 1,
+      "cert": [{"refid": "6650aa11bb22c", "reason": 0}],
+      "text": "packtest-canary-pfsense-crlblob-71cd"
+    }
+  ]
+}

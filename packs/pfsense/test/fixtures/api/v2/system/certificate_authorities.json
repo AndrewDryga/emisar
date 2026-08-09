@@ -1,0 +1,16 @@
+{
+  "code": 200,
+  "status": "ok",
+  "data": [
+    {
+      "descr": "packtest-ca",
+      "refid": "6650aa11bb22d",
+      "caref": "",
+      "trust": "enabled",
+      "randomserial": "disabled",
+      "serial": 3,
+      "crt": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t",
+      "prv": "packtest-canary-pfsense-cakey-9b3e"
+    }
+  ]
+}

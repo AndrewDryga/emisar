@@ -1,0 +1,17 @@
+{
+  "code": 200,
+  "status": "ok",
+  "data": [
+    {
+      "descr": "packtest-leaf",
+      "refid": "6650aa11bb22c",
+      "caref": "6650aa11bb22d",
+      "type": "server",
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_until": "2027-01-01T00:00:00Z",
+      "valid_days_left": 146,
+      "crt": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t",
+      "prv": "packtest-canary-pfsense-privatekey-4f7a"
+    }
+  ]
+}

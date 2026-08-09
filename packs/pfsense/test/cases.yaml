@@ -1,10 +1,45 @@
-# Rebooting the firewall, restarting a service, and flushing the state table
-# act on a pfSense appliance over its API.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+services: [pfsense-api]
+versions:
+  - version: "1.29-alpine"
+    digest: "@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de"
+    default: true
+env:
+  PFSENSE_URL: "http://pfsense-api"
+  # The fixture server does not check the key; it is declared so the harness
+  # treats it as a secret and would catch it being echoed into output.
+  PFSENSE_API_KEY: packtest-canary-pfsense-apikey-2d84
+secret_env: [PFSENSE_API_KEY]
+# A pfSense appliance is FreeBSD and does not containerise, so the mutators
+# cannot be proven here and stay declared exceptions — the gap is a decision in
+# the plan rather than an absence nobody sees.
+#
+# What CAN be proven is the thing that matters most about the certificate
+# reads: that their jq allowlist projection never emits the private-key
+# material the endpoint returns. The SUT is an nginx serving real-shaped API
+# bodies with a planted canary secret, which tests the projection completely
+# without needing the appliance's behaviour at all.
 risk_accountability:
   mode: complete
   exceptions:
     pfsense.flush_states: requires_privileged_host
     pfsense.reboot: requires_privileged_host
     pfsense.restart_service: requires_privileged_host
+
+# The certificate endpoints return private-key material. Each action pipes one
+# GET through a jq allowlist projection that never NAMES the secret field, so it
+# cannot be emitted; these cases prove that against a body which actually
+# carries one. The canary is what must not appear — asserting the safe fields
+# alone would pass even if the key leaked alongside them.
+cases:
+  - action: pfsense.certificates
+    expect:
+      stdout_contains: [packtest-leaf, valid_days_left]
+      stdout_not_contains: [packtest-canary-pfsense-privatekey-4f7a]
+  - action: pfsense.certificate_authorities
+    expect:
+      stdout_contains: [packtest-ca, trust]
+      stdout_not_contains: [packtest-canary-pfsense-cakey-9b3e]
+  - action: pfsense.crls
+    expect:
+      stdout_contains: [packtest-crl, revoked]
+      stdout_not_contains: [packtest-canary-pfsense-crlblob-71cd]

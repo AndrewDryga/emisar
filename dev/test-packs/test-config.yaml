@@ -85,6 +85,9 @@ execution:
     - MYSQL_PWD
     - NOMAD_ADDR
     - OIDC_CA_CERT
+    - PFSENSE_API_KEY
+    - PFSENSE_INSECURE
+    - PFSENSE_URL
     - PGDATABASE
     - PGHOST
     - PGPASSWORD

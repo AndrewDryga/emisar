@@ -1,0 +1,22 @@
+# A pfSense appliance is FreeBSD and does not containerise, which is why the
+# mutating actions carry `requires_privileged_host` exceptions below.
+#
+# What DOES need proving, and can be, is that the sensitive reads never emit the
+# secrets their endpoints return. Those actions pipe one GET through a jq
+# allowlist projection, so a server returning a real-shaped body with a planted
+# secret is a complete test of that projection — the appliance's behaviour is
+# irrelevant to it.
+#
+# nginx serves the fixture bodies at the same paths the API uses. The action's
+# own script, auth header and jq filter run unchanged.
+services:
+  pfsense-api:
+    image: nginx:${PACKTEST_VERSION:-1.29-alpine}${PACKTEST_DIGEST-}
+    volumes:
+      - ${EMISAR_ROOT}/packs/pfsense/test/fixtures/api:/usr/share/nginx/html/api:ro
+      - ${EMISAR_ROOT}/packs/pfsense/test/fixtures/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/api/v2/system/certificates >/dev/null || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
