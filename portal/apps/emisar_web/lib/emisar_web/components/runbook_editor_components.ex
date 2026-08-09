@@ -150,9 +150,16 @@ defmodule EmisarWeb.RunbookEditorComponents do
       width={:table}
     >
       <:title>
+        <%!-- Back climbs the hierarchy: a superseded version belongs to the
+              family's history, so it returns there — never to the list two
+              levels up, which strands the operator mid-review. --%>
         <.detail_header
-          back="Runbooks"
-          navigate={~p"/app/#{@current_account}/runbooks"}
+          back={if(@superseded?, do: "Versions", else: "Runbooks")}
+          navigate={
+            if @superseded?,
+              do: ~p"/app/#{@current_account}/runbooks/#{@runbook.slug}/versions",
+              else: ~p"/app/#{@current_account}/runbooks"
+          }
           title={if(@runbook, do: @runbook.title, else: "New runbook")}
         />
       </:title>
@@ -166,7 +173,21 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
       <div :if={@loaded?} class="mt-4 space-y-8">
         <.event_block
-          :if={@read_only?}
+          :if={@superseded?}
+          icon="hero-archive-box"
+          tone={:neutral}
+          title={"Superseded — version #{@family_head.version} is current"}
+        >
+          <:body>
+            You're viewing version {@runbook.version}, kept as immutable history. <.link
+              navigate={~p"/app/#{@current_account}/runbooks/#{@family_head.id}/edit"}
+              class="underline decoration-zinc-600 underline-offset-4 hover:text-brand-300 hover:decoration-brand-400"
+            >Open version {@family_head.version}</.link>{" "}to make changes.
+          </:body>
+        </.event_block>
+
+        <.event_block
+          :if={@read_only? and not @superseded?}
           icon="hero-lock-closed"
           tone={:neutral}
           title="Read-only runbook"

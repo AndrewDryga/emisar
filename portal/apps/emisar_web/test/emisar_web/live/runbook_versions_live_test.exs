@@ -60,6 +60,21 @@ defmodule EmisarWeb.RunbookVersionsLiveTest do
     refute html =~ ~p"/app/#{account}/runbooks/#{second.id}/run"
   end
 
+  test "the back-link climbs to the runbook, not over it to the list", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = owner_subject(user, account)
+    first = create_runbook!(user, account, "Deploy check", published?: true)
+    {:ok, head} = Runbooks.save_new_version(first, %{}, subject)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks/deploy-check/versions")
+
+    # The back-link renders in the header, before the version rows — the same
+    # href also appears as the head's row link, so position tells them apart.
+    {back_pos, _} = :binary.match(html, ~p"/app/#{account}/runbooks/#{head.id}/edit")
+    {list_pos, _} = :binary.match(html, ~s(id="runbook-versions"))
+    assert back_pos < list_pos
+  end
+
   test "only the newest published version is marked Live", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = owner_subject(user, account)

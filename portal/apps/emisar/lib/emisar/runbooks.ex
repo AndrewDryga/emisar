@@ -157,6 +157,22 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
+  Fetches the newest version of one slug family, draft or published — the only
+  row a lifecycle mutation may start from. Requires `view_runbooks`; scoped to
+  the subject's account. Returns `{:ok, runbook} | {:error, :not_found | :unauthorized}`.
+  """
+  def fetch_runbook_family_head(slug, %Subject{} = subject) when is_binary(slug) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
+      Runbook.Query.not_deleted()
+      |> Runbook.Query.by_slug(slug)
+      |> Runbook.Query.latest_version()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(Runbook.Query)
+    end
+  end
+
+  @doc """
   Fetches the version immediately below `runbook` in its own family.
 
   Requires `view_runbooks`. A family's first version has no predecessor, and a
@@ -425,6 +441,17 @@ defmodule Emisar.Runbooks do
       {:ok, %{id: id}} when id == runbook.id -> :ok
       {:ok, %Runbook{}} -> {:error, :draft_changed}
       other -> other
+    end
+  end
+
+  # `Multi.run` needs a tagged tuple; both version-save transactions refuse a
+  # superseded source through this same step.
+  defp ensure_family_head_step(%Runbook{} = runbook, %Subject{} = subject) do
+    fn repo, _changes ->
+      case ensure_family_head(runbook, subject, repo: repo) do
+        :ok -> {:ok, runbook}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -926,8 +953,10 @@ defmodule Emisar.Runbooks do
   @doc """
   Saves the next immutable version of a runbook family, always born a draft —
   publication only happens through `publish/2` or `save_published_version/3`.
-  Requires `manage_runbooks` and that the subject owns the runbook's account.
-  Returns `{:ok, runbook} | {:error, changeset | :unauthorized | :not_found}`.
+  Only the family head may be extended — a superseded `old` is refused inside
+  the transaction as `{:error, :draft_changed}`. Requires `manage_runbooks` and
+  that the subject owns the runbook's account. Returns
+  `{:ok, runbook} | {:error, changeset | :draft_changed | :unauthorized | :not_found}`.
   """
   def save_new_version(%Runbook{} = old, attrs, %Subject{} = subject) do
     with :ok <-
@@ -939,6 +968,7 @@ defmodule Emisar.Runbooks do
       user_id = Subject.user_id(subject)
 
       Multi.new()
+      |> Multi.run(:family_head, ensure_family_head_step(old, subject))
       |> Multi.insert(:runbook, Runbook.Changeset.new_version(old, user_id, attrs))
       |> Multi.insert(:audit, fn %{runbook: runbook} ->
         Audit.Events.runbook_updated(subject, old, runbook)
@@ -955,10 +985,11 @@ defmodule Emisar.Runbooks do
   Saves the next immutable version born `:published` — the editor's
   save-and-publish, as one transaction: publication readiness is rechecked
   against current domain state and the new version commits published or not at
-  all, auditing both the content update and the publication. Requires
-  `manage_runbooks` and that the subject owns the runbook's account. Returns
-  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :unauthorized |
-  :not_found}`.
+  all, auditing both the content update and the publication. Only the family
+  head may be extended — a superseded `old` is refused inside the transaction
+  as `{:error, :draft_changed}`. Requires `manage_runbooks` and that the
+  subject owns the runbook's account. Returns
+  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :draft_changed | :unauthorized | :not_found}`.
   """
   def save_published_version(%Runbook{} = old, attrs, %Subject{} = subject) do
     with :ok <-
@@ -972,6 +1003,7 @@ defmodule Emisar.Runbooks do
       definition = Ecto.Changeset.get_field(changeset, :definition)
 
       Multi.new()
+      |> Multi.run(:family_head, ensure_family_head_step(old, subject))
       |> Multi.run(:publication_readiness, fn _repo, _changes ->
         publication_readiness(definition, subject)
       end)
@@ -991,12 +1023,12 @@ defmodule Emisar.Runbooks do
   end
 
   @doc """
-  Publishes an existing draft version in place. Readiness is rechecked inside
-  the transaction on the locked, freshly-read row — never on a caller-held
-  snapshot — so a stale editor preview or a direct context caller cannot
-  publish what the current-state preflight refuses. Requires `manage_runbooks`;
-  scoped to the subject's account. Returns `{:ok, runbook} | {:error,
-  changeset | [Definition.issue()] | :unauthorized | :not_found}`.
+  Publishes an existing draft version in place. Readiness and family-head-ness
+  are rechecked inside the transaction on the locked, freshly-read row — never
+  on a caller-held snapshot — so a stale editor preview, a superseded draft, or
+  a direct context caller cannot publish what current state refuses. Requires
+  `manage_runbooks`; scoped to the subject's account. Returns
+  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :draft_changed | :unauthorized | :not_found}`.
   """
   def publish(%Runbook{} = runbook, %Subject{} = subject) do
     with :ok <-
@@ -1015,9 +1047,14 @@ defmodule Emisar.Runbooks do
     end
   end
 
+  # Publishing in place from a superseded draft would silently flip the LIVE
+  # version to old content, so head-ness is judged here, on the locked row,
+  # inside the same transaction.
   defp publish_when_ready(%Runbook{} = loaded_runbook, %Subject{} = subject) do
-    case publication_readiness(loaded_runbook.definition, subject) do
-      {:ok, _definition} -> Runbook.Changeset.publish(loaded_runbook)
+    with :ok <- ensure_family_head(loaded_runbook, subject),
+         {:ok, _definition} <- publication_readiness(loaded_runbook.definition, subject) do
+      Runbook.Changeset.publish(loaded_runbook)
+    else
       {:error, reason} -> reason
     end
   end

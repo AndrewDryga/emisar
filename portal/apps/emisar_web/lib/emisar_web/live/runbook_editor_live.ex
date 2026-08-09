@@ -37,6 +37,8 @@ defmodule EmisarWeb.RunbookEditorLive do
      |> assign(:page_title, "Runbook")
      |> assign(:runbook, nil)
      |> assign(:live_version, nil)
+     |> assign(:family_head, nil)
+     |> assign(:superseded?, false)
      |> assign(:read_only?, true)
      |> assign(:draft, draft)
      |> assign(:baseline, RunbookDraft.fingerprint(draft))
@@ -58,6 +60,8 @@ defmodule EmisarWeb.RunbookEditorLive do
       |> assign(:page_title, "New runbook")
       |> assign(:runbook, nil)
       |> assign(:live_version, nil)
+      |> assign(:family_head, nil)
+      |> assign(:superseded?, false)
       |> assign(
         :read_only?,
         not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
@@ -79,6 +83,8 @@ defmodule EmisarWeb.RunbookEditorLive do
     case Runbooks.fetch_runbook_by_id(id, socket.assigns.current_subject) do
       {:ok, runbook} ->
         draft = RunbookDraft.from_runbook(runbook)
+        family_head = family_head(runbook, socket.assigns.current_subject)
+        superseded? = family_head != nil and family_head.id != runbook.id
 
         socket =
           socket
@@ -86,9 +92,12 @@ defmodule EmisarWeb.RunbookEditorLive do
           |> assign(:page_title, "Edit #{runbook.title}")
           |> assign(:runbook, runbook)
           |> assign(:live_version, live_version(runbook, socket.assigns.current_subject))
+          |> assign(:family_head, family_head)
+          |> assign(:superseded?, superseded?)
           |> assign(
             :read_only?,
-            not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
+            superseded? or
+              not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
           )
           |> assign(:draft, draft)
           |> assign(:baseline, RunbookDraft.fingerprint(draft))
@@ -113,6 +122,16 @@ defmodule EmisarWeb.RunbookEditorLive do
          socket
          |> put_flash(:error, "Runbook not found.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
+    end
+  end
+
+  # History is immutable: a version below the family head renders read-only, so
+  # editing always starts from the head. The domain refuses a stale source too —
+  # this assign is the honest UI over that refusal, not the enforcement.
+  defp family_head(runbook, subject) do
+    case Runbooks.fetch_runbook_family_head(runbook.slug, subject) do
+      {:ok, head} -> head
+      {:error, _reason} -> nil
     end
   end
 
@@ -608,6 +627,14 @@ defmodule EmisarWeb.RunbookEditorLive do
                checked_at: DateTime.utc_now()
              })
              |> put_flash(:error, "Current preflight must pass before publishing.")}
+
+          {:error, :draft_changed} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "A newer version of this runbook exists. Open the current version to make changes."
+             )}
 
           {:error, _reason} ->
             {:noreply, put_flash(socket, :error, "Could not save this runbook.")}

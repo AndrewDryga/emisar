@@ -58,6 +58,7 @@ defmodule EmisarWeb.RunbookVersionsLive do
         |> assign(:metadata, metadata)
         |> assign(:page_params, params)
         |> assign_live_version()
+        |> assign_family_head()
 
       # Bad cursor params from a hand-edited URL — retry once, clean.
       {:error, _} when map_size(params) > 0 ->
@@ -67,6 +68,16 @@ defmodule EmisarWeb.RunbookVersionsLive do
         socket
         |> put_flash(:error, "Runbook not found.")
         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")
+    end
+  end
+
+  # The back-link climbs to the runbook this history belongs to — its head
+  # editor — never over it to the list. Nil only on a load race; the header
+  # then degrades to the list rather than a dead link.
+  defp assign_family_head(socket) do
+    case Runbooks.fetch_runbook_family_head(socket.assigns.slug, socket.assigns.current_subject) do
+      {:ok, family_head} -> assign(socket, :family_head, family_head)
+      {:error, _reason} -> assign(socket, :family_head, nil)
     end
   end
 
@@ -137,8 +148,12 @@ defmodule EmisarWeb.RunbookVersionsLive do
     >
       <:title>
         <.detail_header
-          back="Runbooks"
-          navigate={~p"/app/#{@current_account}/runbooks"}
+          back={if(@family_head, do: @family_head.title, else: "Runbooks")}
+          navigate={
+            if @family_head,
+              do: ~p"/app/#{@current_account}/runbooks/#{@family_head.id}/edit",
+              else: ~p"/app/#{@current_account}/runbooks"
+          }
           title={@slug}
           mono
         />

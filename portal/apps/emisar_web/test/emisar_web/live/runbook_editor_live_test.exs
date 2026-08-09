@@ -1822,6 +1822,47 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       refute has_element?(editing_published, "#runbook-lifecycle-desktop", "Runs today")
     end
+
+    test "a superseded version is read-only history, and a crafted publish is refused", %{
+      conn: conn,
+      user: owner,
+      account: account
+    } do
+      subject = owner_subject(owner, account)
+
+      {:ok, old_draft} =
+        Runbooks.create_runbook(
+          %{
+            "title" => "Fleet health",
+            "slug" => "fleet-health",
+            "definition" => canonical_definition(valid_draft())
+          },
+          subject
+        )
+
+      {:ok, head} = Runbooks.save_new_version(old_draft, %{}, subject)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{old_draft.id}/edit")
+
+      assert html =~ "Superseded — version 2 is current"
+      refute html =~ "Read-only runbook"
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks/#{head.id}/edit"}']")
+
+      assert has_element?(
+               lv,
+               "a[href='#{~p"/app/#{account}/runbooks/fleet-health/versions"}']",
+               "Versions"
+             )
+
+      refute has_element?(lv, "button", "Save draft")
+      refute has_element?(lv, "button", "Publish")
+
+      # An owner's crafted publish event bypasses the hidden buttons; the
+      # DOMAIN refuses it, so v1 can never flip the live version from history.
+      render_click(lv, "publish", %{})
+      assert render(lv) =~ "A newer version of this runbook exists."
+      assert Repo.reload!(old_draft).status == :draft
+    end
   end
 
   describe "resource isolation" do

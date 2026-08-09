@@ -266,6 +266,36 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
+  describe "fetch_runbook_family_head/2" do
+    test "returns the newest version whatever its status" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      published = create_runbook(subject, slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
+      assert {:ok, pending} = Runbooks.save_new_version(published, %{}, subject)
+
+      assert {:ok, %Runbooks.Runbook{} = head} =
+               Runbooks.fetch_runbook_family_head("alpha", subject)
+
+      assert head.id == pending.id
+      assert head.status == :draft
+    end
+
+    test "hides another account's family" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      _theirs = create_runbook(other_subject, slug: "cross")
+
+      assert Runbooks.fetch_runbook_family_head("cross", subject) == {:error, :not_found}
+    end
+
+    test "denies a principal without view permission" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Runbooks.fetch_runbook_family_head("any", Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
+    end
+  end
+
   describe "fetch_previous_version/2" do
     test "walks down one version at a time and stops at the family's first" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
@@ -1747,6 +1777,17 @@ defmodule Emisar.RunbooksTest do
                {:error, :not_found}
     end
 
+    test "refuses a superseded source instead of forking history" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      first = create_runbook(subject, slug: "head-only")
+      assert {:ok, _second} = Runbooks.save_new_version(first, %{}, subject)
+
+      assert Runbooks.save_new_version(first, %{"title" => "Forked"}, subject) ==
+               {:error, :draft_changed}
+
+      assert Repo.aggregate(Runbooks.Runbook, :count) == 2
+    end
+
     test "a new version of a published family is born a draft, ignoring client status" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       first = create_runbook(subject, slug: "pinned") |> Fixtures.Runbooks.publish_runbook()
@@ -1803,6 +1844,17 @@ defmodule Emisar.RunbooksTest do
       assert first_row.version == 1
     end
 
+    test "refuses a superseded source before judging readiness" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      first = create_runbook(subject, slug: "head-only")
+      assert {:ok, _second} = Runbooks.save_new_version(first, %{}, subject)
+
+      assert Runbooks.save_published_version(first, %{"description" => "old"}, subject) ==
+               {:error, :draft_changed}
+
+      assert Repo.aggregate(Runbooks.Runbook, :count) == 2
+    end
+
     test "denies a principal without manage permission" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       first = create_runbook(subject)
@@ -1853,6 +1905,21 @@ defmodule Emisar.RunbooksTest do
       assert {:error, issues} = Runbooks.publish(draft, subject)
       assert is_list(issues)
       assert Repo.reload!(draft).status == :draft
+    end
+
+    test "refuses to publish a superseded draft in place" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      old_draft = create_runbook(subject, definition: definition(runner.group))
+      assert {:ok, _head_draft} = Runbooks.save_new_version(old_draft, %{}, subject)
+
+      # Publishing v1 under a v2 head would make v1 the newest PUBLISHED
+      # version — silently flipping what a default Run dispatches to old
+      # content while the head sits above it.
+      assert Runbooks.publish(old_draft, subject) == {:error, :draft_changed}
+      assert Repo.reload!(old_draft).status == :draft
+      assert Runbooks.latest_published_by_slugs([old_draft.slug], subject) == {:ok, %{}}
     end
 
     test "denies a principal without manage permission" do
