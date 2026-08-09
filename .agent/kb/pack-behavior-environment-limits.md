@@ -18,10 +18,18 @@ What each reason costs to close, largest first (counts as of 2026-08-08):
 
 - **`requires_privileged_host` — 82 actions, 22 packs.** Systemd as PID 1,
   package installs, sysctl, kernel modules, block devices, another process's
-  `/proc`. The reusable unit is an OS family, not a pack: one Debian-family and
-  one RPM-family disposable root environment would cover all 22. A few of them
-  (`docker`, `podman`, `beam`, `jvm`, `pm2`) may only need a privileged
-  container rather than a VM — worth checking before building anything heavier.
+  `/proc`. **Measured 2026-08-08: 73 of the 82 are reachable from a privileged
+  disposable CONTAINER, not a VM.** systemd runs as PID 1 under
+  `--privileged --cgroupns=host` with `/sys/fs/cgroup` rw, and `systemctl
+  start/restart/enable/mask`, `journalctl --vacuum-time`, `apt-get
+  install/remove`, `sysctl -w`, `/proc/sys/vm/drop_caches`, `iptables -I` and
+  `strace -p` all work inside it. The docker and podman exceptions are a
+  category error rather than a limit — a `docker:dind` sibling in the case's own
+  Compose project is not the host's socket, and `docker.inspect` passes against
+  one once `DOCKER_HOST` is added to `inherit_env` in
+  `dev/test-packs/test-config.yaml`. What genuinely does not work is a kernel
+  module the host lacks (`zfs`, and `wireguard`/`nfsd` on a workstation) plus
+  pfSense, which is FreeBSD. Do not build a VM lane for this bucket.
 - **`requires_cluster` — 35 actions, 8 packs.** A second live node of the same
   service, for rebalance, decommission, and peer-removal verbs. Not a new kind
   of environment: it is the existing Compose harness with a multi-node topology
@@ -43,11 +51,16 @@ What each reason costs to close, largest first (counts as of 2026-08-08):
 
 Two consequences worth carrying: an exception written before the harness grew
 `arrange`/`resolve_args`/`probes` can be stale, so re-check the reason before
-treating it as a limit; and 58% of the inventory sits behind one environment
-capability, so an OS-family root environment is the only build that changes the
-coverage picture materially.
+treating it as a limit; and the same goes for the reason TEXT — most of the
+`requires_privileged_host` rationales assert an impossibility that measurement
+disproved. What is actually being traded is whether we accept privileged
+disposable containers in CI, which is safe on a per-job hosted VM and not on a
+self-hosted runner.
 
 ## Changelog
+- 2026-08-08 — measured the privileged-host bucket: systemd as PID 1 and a dind
+  sibling both work in containers here, so 73 of the 82 need no VM; recorded the
+  kernel-module and FreeBSD residue that does
 - 2026-08-08 — created; counts derived from `packs/*/test/cases.yaml`, reason
   vocabulary verified against `packtest.go`, and the `requires_dynamic_fixture`
   claim verified by closing `consul.destroy_session` as a passing case
