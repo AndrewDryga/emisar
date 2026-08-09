@@ -3,21 +3,28 @@ schema_version: 1
 id: redis.config_get
 title: CONFIG GET
 kind: exec
-risk: high
+risk: medium
 
 description: >
   Read runtime config by glob pattern. Useful before any tuning
   conversation: confirm `maxmemory`, `maxmemory-policy`, `appendonly`,
   `save`, etc. Read-only. Pattern is restricted to safe globs against
-  Redis config keys. Secret values (requirepass, masterauth) are masked
-  in the output — the key stays visible so you can see it is set.
+  Redis config keys. Credential values are masked in the output — the key
+  stays visible so you can see it is set.
 
 side_effects:
   - Issues one CONFIG GET command.
   - No keys read or written.
-  - Read-only, but the default `*` pattern returns the whole server config,
-    including auth directives. Approval-gated for that reason; the redaction
-    rule is a pattern-bound backstop, not a guarantee.
+  - Read-only, but the default `*` pattern returns the whole server config.
+  - Redis owns this key space, so its credential keys are enumerable rather
+    than guessed at. On 7.4.10 they are requirepass, masterauth,
+    tls-key-file-pass and tls-client-key-file-pass.
+  - Every one of those ends in a suffix the redaction rule matches. The near
+    misses (masteruser, tls-key-file, tls-auth-clients) are a username, a path
+    and a mode, not secrets.
+  - That established coverage is why this is medium. A config that operators
+    author as free text, like an nginx or Caddy dump, cannot claim it and
+    stays high.
 
 args:
   - name: pattern
