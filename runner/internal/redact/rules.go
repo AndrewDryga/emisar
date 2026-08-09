@@ -100,7 +100,16 @@ func CompileRule(r actionspec.RedactionRule) (Rule, error) {
 // safety net. They are conservative regexes for common secrets so that even
 // an action that forgets to declare redactions cannot easily leak them.
 func DefaultRules() []actionspec.RedactionRule {
-	const secretName = `(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|session[_-]?token|account[_-]?key|aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token)`
+	// Key names that mean "the value beside me is a credential". Widening this
+	// list is defence-in-depth ONLY: it never justifies lowering an action's risk
+	// tier, because a name we have not thought of still leaks
+	// (.agent/kb/rules/packs-redaction-completeness-follows-a-closed-key-space.md).
+	//
+	// The additions past the original set are the names that showed up in real
+	// config and connection strings and matched nothing: DSNs and connection
+	// URLs, the key-derivation inputs (salt/pepper), cookie/session signing keys,
+	// and the passphrase spellings.
+	const secretName = `(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|session[_-]?token|account[_-]?key|aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|dsn|connection[_-]?string|conn[_-]?str|database[_-]?url|db[_-]?url|redis[_-]?url|amqp[_-]?url|smtp[_-]?url|credentials?|signing[_-]?key|encryption[_-]?key|secret[_-]?key[_-]?base|cookie[_-]?key|session[_-]?key|salt|pepper)`
 	const secretField = `(?:[A-Za-z0-9]+[._-])*` + secretName + `(?:[._-][A-Za-z0-9]+)*`
 
 	return []actionspec.RedactionRule{

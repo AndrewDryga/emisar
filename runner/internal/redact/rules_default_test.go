@@ -390,3 +390,71 @@ func TestLiteralSet_EmptySetIsANoOp(t *testing.T) {
 		t.Fatalf("Apply() hits = %+v, want none", hits)
 	}
 }
+
+// The secret-name list behind `json-secret-field` and `secret-assignment` is
+// defence-in-depth: it catches a credential whose KEY names it. This pins the
+// names added because they showed up in real config and matched nothing —
+// connection URLs, key-derivation inputs, and signing keys — and, just as
+// importantly, pins near-misses that must NOT be masked, because a rule that
+// eats ordinary output teaches operators to distrust the redaction.
+//
+// Widening this list never justifies lowering an action's risk tier: a name
+// nobody thought of still leaks. See
+// .agent/kb/rules/packs-redaction-completeness-follows-a-closed-key-space.md.
+func TestDefaultRules_WidenedSecretFieldNames(t *testing.T) {
+	masked := []struct {
+		name  string
+		line  string
+		leaks string
+	}{
+		{"dsn", `DSN=postgres-secret-value`, "postgres-secret-value"},
+		{"connection_string", `connection_string: "Server=db;Pwd=s3cret"`, "s3cret"},
+		{"database_url", `DATABASE_URL=mysql-conn-secret`, "mysql-conn-secret"},
+		{"redis_url", `REDIS_URL=redis-conn-secret`, "redis-conn-secret"},
+		{"smtp_url", `SMTP_URL=smtp-conn-secret`, "smtp-conn-secret"},
+		{"passphrase", `passphrase = "unlock-me-please"`, "unlock-me-please"},
+		{"secret_key_base", `secret_key_base: aVeryLongPhoenixSecret`, "aVeryLongPhoenixSecret"},
+		{"signing_key", `signing_key=sign-this-value`, "sign-this-value"},
+		{"encryption_key", `encryption_key: enc-this-value`, "enc-this-value"},
+		{"cookie_key", `cookie_key=cookie-secret-value`, "cookie-secret-value"},
+		{"salt", `salt: "per-user-salt-value"`, "per-user-salt-value"},
+		{"pepper", `pepper=global-pepper-value`, "global-pepper-value"},
+		{"credentials", `credentials: base64blobvalue`, "base64blobvalue"},
+		{"json dsn field", `{"dsn": "postgres://u:p@h/db"}`, "postgres://u:p@h/db"},
+		{"prefixed", `app.database_url=prefixed-secret`, "prefixed-secret"},
+	}
+
+	for _, tc := range masked {
+		t.Run(tc.name, func(t *testing.T) {
+			out, hits := defaultApply(t, tc.line)
+			if strings.Contains(out, tc.leaks) {
+				t.Fatalf("secret leaked through %s: %q", tc.name, out)
+			}
+			if len(hits) == 0 {
+				t.Fatalf("expected a redaction hit for %s, got none", tc.name)
+			}
+		})
+	}
+
+	// Ordinary operational output that merely resembles a secret name. Masking
+	// any of these would hide the diagnostic an operator asked for.
+	untouched := []struct {
+		name string
+		line string
+	}{
+		{"saltstack minion id", `minion: salted-web-01 responded in 12ms`},
+		{"desalination hostname", `host=desalination-plant-01 status=ok`},
+		{"credential count metric", `credentials_total 42`},
+		{"url without userinfo", `redis://cache.internal:6379/0 connected`},
+		{"prose mentioning salt", `Rotated the salt for every user last Tuesday.`},
+	}
+
+	for _, tc := range untouched {
+		t.Run("untouched/"+tc.name, func(t *testing.T) {
+			out, _ := defaultApply(t, tc.line)
+			if out != tc.line {
+				t.Fatalf("ordinary output was redacted:\n  in:  %q\n  out: %q", tc.line, out)
+			}
+		})
+	}
+}
