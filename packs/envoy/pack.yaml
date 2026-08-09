@@ -2,7 +2,7 @@ schema_version: 1
 
 id: envoy
 name: Envoy proxy / service mesh
-version: 0.1.14
+version: 0.1.15
 description: >
   Envoy admin-API ops: cluster + listener + runtime + config + cert
   inventory, server info, logging level read/write, plus traffic-shifting
@@ -34,6 +34,7 @@ setup:
       description: Base URL of the Envoy admin endpoint for the read actions; set only if it is not on the default.
       default: "http://127.0.0.1:9901"
   notes:
+    - "ENVOY_ADMIN only reaches an action when the runner allowlists it in execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, it falls back to http://127.0.0.1:9901, so an admin interface on another port or host silently reads the local one instead."
     - "The admin endpoint must be enabled in the Envoy bootstrap (admin.address) for any action to work."
     - "The traffic-shifting mutators (drain_listeners, healthcheck_fail/ok, reset_counters) take their admin URL as an `admin` argument, not from ENVOY_ADMIN."
   verify: envoy.ready

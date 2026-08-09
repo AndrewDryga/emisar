@@ -2,7 +2,7 @@ schema_version: 1
 
 id: kafka
 name: Kafka cluster operations
-version: 0.1.9
+version: 0.1.10
 description: >
   Topic introspection, consumer-group lag, broker config, ACLs, and narrow
   mutators (reset_offsets, alter_topic_retention, delete_consumer_group,
@@ -37,6 +37,7 @@ setup:
       description: Comma-separated bootstrap broker list (host:port).
       example: broker1:9092,broker2:9092
   notes:
+    - "KAFKA_BOOTSTRAP only reaches an action when the runner allowlists it in execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. There is NO fallback: unset, every action fails to reach a broker, and the error names a connection problem rather than the missing allowlist entry."
     - "These actions pass only --bootstrap-server — none reference a --command-config / KAFKA_COMMAND_CONFIG properties file, so as written they assume a listener reachable without per-client SASL/TLS credentials."
     - "Mutators (reset_offsets_*, alter_topic_retention, delete_consumer_group, preferred_leader_election) need a principal with cluster/topic/group Alter rights if the cluster enforces ACLs."
   verify: kafka.cluster_info
