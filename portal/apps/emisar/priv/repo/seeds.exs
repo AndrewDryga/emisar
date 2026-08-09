@@ -2292,10 +2292,37 @@ end
 # token as the enablement above, so it runs on any dev/e2e seed (fresh or repeat)
 # and never in a prod-style one.
 if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
-  scim_provider =
+  # Deterministic on purpose. This block used to look for a SCIM-ENABLED provider
+  # and silently do nothing when it found none, so whether the seeded database
+  # had directory members depended on invisible state — and the docs captures for
+  # the team and SSO pages came out empty with a seed that reported success.
+  #
+  # `./run seed` always sets this token alongside the OIDC secret, so reaching
+  # here with no provider at all means something upstream genuinely failed. Say
+  # so. A provider that exists but has SCIM off is repaired instead, which is
+  # what makes a re-seed over an older database converge.
+  providers =
     case Emisar.SSO.list_providers_for_account(owner_subject) do
-      {:ok, providers, _meta} -> Enum.find(providers, & &1.scim_enabled)
-      _ -> nil
+      {:ok, found, _meta} -> found
+      _ -> []
+    end
+
+  scim_provider =
+    case Enum.find(providers, & &1.scim_enabled) do
+      %Emisar.SSO.IdentityProvider{} = enabled ->
+        enabled
+
+      nil ->
+        case providers do
+          [provider | _] ->
+            {:ok, enabled, _raw_token} = Emisar.SSO.enable_scim(provider, owner_subject)
+            enabled
+
+          [] ->
+            raise """
+            EMISAR_DEV_FIXED_SCIM_TOKEN is set, so this seed is meant to create             directory-sync state, but the demo account has no identity provider             to attach it to. The team and SSO docs captures need those members.             Check that Keycloak came up and that EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET             reached the seed.\
+            """
+        end
     end
 
   if scim_provider do
