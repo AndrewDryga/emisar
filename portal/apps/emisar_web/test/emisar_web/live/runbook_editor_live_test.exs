@@ -1340,7 +1340,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       assert has_element?(lv, "#runbook-lifecycle-desktop", "Live")
       assert has_element?(lv, "#runbook-lifecycle-desktop", "v1")
-      refute has_element?(lv, "#runbook-lifecycle-desktop", "Unpublished changes")
+      # Clean live runbook: no divergence, so no Next row.
+      refute has_element?(lv, "#runbook-lifecycle-desktop", "Next")
       refute html =~ "Discard changes"
 
       edited = valid_draft(title: "Fleet health", inputs: [RunbookDraft.input()])
@@ -1354,11 +1355,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       assert saved.definition == canonical_definition(valid_draft())
       assert saved.draft_definition == canonical_definition(edited)
 
-      # The unpublished change is what the editor reopens, and the release it
-      # would replace is still named beside it.
+      # The unpublished change is what the editor reopens; the rail names the
+      # release it replaces and the number Publish will mint.
       {:ok, reopened, _html} = live(conn, ~p"/app/#{account}/runbooks/#{published.id}/edit")
 
-      assert has_element?(reopened, "#runbook-lifecycle-desktop", "Unpublished changes")
+      assert has_element?(reopened, "#runbook-lifecycle-desktop", "Live")
+      assert has_element?(reopened, "#runbook-lifecycle-desktop", "Next")
+      assert has_element?(reopened, "#runbook-lifecycle-desktop", "v2")
       assert has_element?(reopened, "#discard-runbook-draft")
     end
 

@@ -202,6 +202,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           id="runbook-lifecycle-mobile"
           class="xl:hidden"
           runbook={@runbook}
+          dirty?={@dirty?}
         />
 
         <.editor_actions
@@ -261,6 +262,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               id="runbook-lifecycle-desktop"
               class="hidden xl:block"
               runbook={@runbook}
+              dirty?={@dirty?}
             />
             <.details_panel draft={@draft} form={@form} read_only?={@read_only?} />
             <.editor_actions
@@ -392,6 +394,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
   attr :id, :string, required: true
   attr :class, :string, default: nil
   attr :runbook, :any, required: true
+  attr :dirty?, :boolean, required: true
 
   defp lifecycle_facts(assigns) do
     ~H"""
@@ -399,10 +402,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
       <.kv label="Live">
         {if(@runbook.live_version, do: "v#{@runbook.live_version}", else: "Never published")}
       </.kv>
-      <%!-- Nothing live means the whole runbook is unpublished, which "Never
-           published" already said. --%>
-      <.kv :if={@runbook.live_version && @runbook.draft_definition} label="Draft">
-        Unpublished changes
+      <%!-- The number Publish will mint, present exactly while the editor's
+           content diverges from live — "Draft: Unpublished changes" was a
+           label and its synonym, saying nothing the row below could act on. --%>
+      <.kv :if={@runbook.draft_definition || @dirty?} label="Next">
+        v{(@runbook.live_version || 0) + 1}
       </.kv>
     </dl>
     """
