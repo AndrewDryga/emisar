@@ -14,6 +14,8 @@ defmodule EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient do
   @impl true
   defdelegate update_customer(attrs), to: Stub
   @impl true
+  defdelegate list_customers(attrs), to: Stub
+  @impl true
   defdelegate create_checkout_session(attrs), to: Stub
   @impl true
   defdelegate create_billing_portal_session(attrs), to: Stub

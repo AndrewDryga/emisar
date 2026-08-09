@@ -37,6 +37,11 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
+  def list_customers(%{email: email}) do
+    {:ok, [%{"id" => "ctm_stub_" <> short_id(email), "email" => email}]}
+  end
+
+  @impl true
   def create_checkout_session(attrs) do
     {:ok,
      %{

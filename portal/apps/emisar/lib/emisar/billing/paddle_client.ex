@@ -13,6 +13,7 @@ defmodule Emisar.Billing.PaddleClient do
 
   @callback create_customer(map()) :: {:ok, map()} | {:error, term()}
   @callback update_customer(map()) :: {:ok, map()} | {:error, term()}
+  @callback list_customers(map()) :: {:ok, [map()]} | {:error, term()}
   @callback create_checkout_session(map()) :: {:ok, map()} | {:error, term()}
   @callback create_billing_portal_session(map()) :: {:ok, map()} | {:error, term()}
   @callback retrieve_subscription(String.t()) :: {:ok, map()} | {:error, term()}
@@ -27,6 +28,7 @@ defmodule Emisar.Billing.PaddleClient do
 
   def create_customer(attrs), do: client().create_customer(attrs)
   def update_customer(attrs), do: client().update_customer(attrs)
+  def list_customers(attrs), do: client().list_customers(attrs)
   def create_checkout_session(attrs), do: client().create_checkout_session(attrs)
   def create_billing_portal_session(attrs), do: client().create_billing_portal_session(attrs)
   def retrieve_subscription(id), do: client().retrieve_subscription(id)

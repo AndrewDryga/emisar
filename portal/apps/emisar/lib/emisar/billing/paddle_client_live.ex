@@ -30,6 +30,20 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   @impl true
+  def list_customers(%{email: email}) do
+    # Exact-match filter, and archived customers are included deliberately: the
+    # email uniqueness Paddle enforces on create spans them, while this
+    # endpoint's default status filter would hide the very customer that
+    # conflicted.
+    query = "email=#{URI.encode_www_form(email)}&status=active,archived"
+
+    case get("/customers?#{query}") do
+      {:ok, %{"data" => customers}} -> {:ok, customers}
+      other -> other
+    end
+  end
+
+  @impl true
   def create_checkout_session(attrs) do
     # No checkout.url on the transaction: Paddle then mints data.checkout.url
     # from the account's default payment link (our /checkout page) + ?_ptxn= —

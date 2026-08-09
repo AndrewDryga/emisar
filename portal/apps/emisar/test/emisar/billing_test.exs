@@ -16,6 +16,9 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def update_customer(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
+  def list_customers(_attrs), do: {:error, :paddle_unavailable}
+
+  @impl true
   def create_checkout_session(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
@@ -39,11 +42,51 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :invalid_payload}
 end
 
+# A Paddle client that rejects customer creation with a 409 the way the live API
+# does. Both halves of the conflict — the error code and what the email lookup
+# then finds — are per-test config, so one client covers the documented email
+# conflict, a different 409, and a lookup that finds nobody.
+defmodule Emisar.BillingTest.ConflictingCustomerPaddleClient do
+  @behaviour Emisar.Billing.PaddleClient
+
+  @impl true
+  def create_customer(_attrs) do
+    code = Emisar.Config.fetch_env!(:emisar, :billing_conflict_code)
+
+    {:error, {:http, 409, ~s({"error":{"type":"request_error","code":"#{code}"}})}}
+  end
+
+  @impl true
+  def list_customers(_attrs),
+    do: {:ok, Emisar.Config.fetch_env!(:emisar, :billing_conflict_customers)}
+
+  # Not what these tests exercise; the behaviour requires them.
+  @impl true
+  def update_customer(_attrs), do: {:error, :unused}
+  @impl true
+  def cancel_subscription(_id), do: {:error, :unused}
+  @impl true
+  def create_checkout_session(_attrs), do: {:error, :unused}
+  @impl true
+  def create_billing_portal_session(_attrs), do: {:error, :unused}
+  @impl true
+  def retrieve_subscription(_id), do: {:error, :unused}
+  @impl true
+  def list_products, do: {:error, :unused}
+  @impl true
+  def list_transactions(_attrs), do: {:error, :unused}
+  @impl true
+  def get_transaction_invoice(_id), do: {:error, :unused}
+  @impl true
+  def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
+end
+
 defmodule Emisar.BillingTest do
   use Emisar.DataCase, async: true
   alias Emisar.Auth.Subject
   alias Emisar.Billing
   alias Emisar.Billing.Subscription
+  alias Emisar.BillingTest.ConflictingCustomerPaddleClient
   alias Emisar.BillingTest.ErrorPaddleClient
   alias Emisar.Fixtures
 
@@ -947,6 +990,49 @@ defmodule Emisar.BillingTest do
 
       assert Billing.sync_paddle_customer_for_account(account.id) ==
                {:error, :no_billing_contact}
+    end
+
+    test "adopts the customer Paddle already has for the owner's email" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      Emisar.Config.put_override(:emisar, :paddle_client, ConflictingCustomerPaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_conflict_code, "customer_already_exists")
+
+      Emisar.Config.put_override(:emisar, :billing_conflict_customers, [
+        %{"id" => "ctm_existing_01"}
+      ])
+
+      assert {:ok, "ctm_existing_01", synced} =
+               Billing.sync_paddle_customer_for_account(account.id)
+
+      assert synced.paddle_customer_id == "ctm_existing_01"
+      assert synced.paddle_billing_contact_user_id == owner.id
+      assert Repo.reload!(account).paddle_customer_id == "ctm_existing_01"
+    end
+
+    test "adopts nothing when the 409 is a different conflict" do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      Emisar.Config.put_override(:emisar, :paddle_client, ConflictingCustomerPaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_conflict_code, "conflict")
+
+      Emisar.Config.put_override(:emisar, :billing_conflict_customers, [
+        %{"id" => "ctm_someone_else_01"}
+      ])
+
+      assert {:error, {:http, 409, body}} = Billing.sync_paddle_customer_for_account(account.id)
+      assert body =~ ~s("code":"conflict")
+      refute Repo.reload!(account).paddle_customer_id
+    end
+
+    test "adopts nothing when the conflicting customer cannot be looked up" do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      Emisar.Config.put_override(:emisar, :paddle_client, ConflictingCustomerPaddleClient)
+      Emisar.Config.put_override(:emisar, :billing_conflict_code, "customer_already_exists")
+      Emisar.Config.put_override(:emisar, :billing_conflict_customers, [])
+
+      assert Billing.sync_paddle_customer_for_account(account.id) ==
+               {:error, :conflicting_customer_not_found}
+
+      refute Repo.reload!(account).paddle_customer_id
     end
   end
 
@@ -2483,6 +2569,12 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   def update_customer(attrs) do
     report({:update_customer, attrs})
     {:ok, %{"id" => attrs[:customer]}}
+  end
+
+  @impl true
+  def list_customers(attrs) do
+    report({:list_customers, attrs})
+    {:ok, [%{"id" => "ctm_captured_01"}]}
   end
 
   @impl true

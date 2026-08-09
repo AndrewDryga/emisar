@@ -786,14 +786,10 @@ defmodule Emisar.Billing do
   end
 
   defp sync_paddle_customer(%Accounts.Account{paddle_customer_id: nil} = account, owner) do
-    with {:ok, %{"id" => customer_id}} <-
-           PaddleClient.create_customer(customer_attrs(account, owner)),
+    with {:ok, customer_id} <- create_or_adopt_paddle_customer(account, owner),
          {:ok, linked} <-
            Accounts.put_account_paddle_customer_sync(account, customer_id, owner.id) do
       sync_linked_paddle_customer(linked, customer_id, owner)
-    else
-      {:ok, _data} -> {:error, :missing_customer_id}
-      other -> other
     end
   end
 
@@ -806,6 +802,45 @@ defmodule Emisar.Billing do
          {:ok, synced} <-
            Accounts.put_account_paddle_customer_sync(account, customer_id, owner.id) do
       {:ok, synced.paddle_customer_id, synced}
+    end
+  end
+
+  defp create_or_adopt_paddle_customer(%Accounts.Account{} = account, owner) do
+    case PaddleClient.create_customer(customer_attrs(account, owner)) do
+      {:ok, %{"id" => customer_id}} ->
+        {:ok, customer_id}
+
+      {:ok, _data} ->
+        {:error, :missing_customer_id}
+
+      {:error, {:http, 409, _body}} = conflict ->
+        adopt_conflicting_paddle_customer(conflict, owner)
+
+      other ->
+        other
+    end
+  end
+
+  # Paddle enforces one customer per email across the seller account, so an
+  # owner address it already knows — a re-created account, a customer the seller
+  # made by hand, an earlier sync that linked nothing — makes create fail. The
+  # local id stays nil, so the next sweep repeats the identical create and
+  # conflicts again, forever. Adopt the customer already holding the address.
+  defp adopt_conflicting_paddle_customer({:error, {:http, 409, body}} = conflict, owner) do
+    case paddle_error_code(body) do
+      "customer_already_exists" -> fetch_paddle_customer_id_by_email(owner.email)
+      _other_conflict -> conflict
+    end
+  end
+
+  defp fetch_paddle_customer_id_by_email(email) do
+    # The filter is an exact match on a field Paddle keeps unique, so a
+    # conflicting email resolves to exactly one customer; an empty list means
+    # Paddle contradicted its own 409 and there is nothing to adopt.
+    case PaddleClient.list_customers(%{email: email}) do
+      {:ok, [%{"id" => customer_id}]} -> {:ok, customer_id}
+      {:ok, _customers} -> {:error, :conflicting_customer_not_found}
+      other -> other
     end
   end
 

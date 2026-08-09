@@ -30,6 +30,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
   @impl true
   def update_customer(_attrs), do: {:error, :unused}
   @impl true
+  def list_customers(_attrs), do: {:error, :unused}
+  @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
@@ -278,6 +280,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPa
   @impl true
   def update_customer(_attrs), do: {:error, :unused}
   @impl true
+  def list_customers(_attrs), do: {:error, :unused}
+  @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
@@ -349,6 +353,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
   def update_customer(_attrs), do: {:error, :unused}
+  @impl true
+  def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
@@ -423,6 +429,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClie
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
   def update_customer(_attrs), do: {:error, :unused}
+  @impl true
+  def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
