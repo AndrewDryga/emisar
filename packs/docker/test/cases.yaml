@@ -47,3 +47,31 @@ cases:
         /images/0: busybox:1.36
         /truncated/services: 1
         /truncated/images: 0
+
+  # The case above proves the clip and a single dropped service. This one proves
+  # the BYTE budget at the maximum size the action advertises, which is what
+  # `.agent/kb/rules/packs-structured-output-fits-the-cap.md` asks for: every
+  # list past its cap AT ONCE, every name past its clip, so the projection is
+  # carrying its largest possible payload.
+  #
+  #     30 services (cap 24) · 15 images (12) · 10 networks (8)
+  #     10 volumes  (cap 8)  ·  8 profiles (6)
+  #
+  # Success IS the byte assertion. The runner refuses a structured result over
+  # 8 KiB, so a passing run is the proof it fits — measured at 3,743 bytes, less
+  # than half the cap, which is the headroom the sweep claimed by arithmetic.
+  - name: docker.compose_config-fits-the-structured-cap-at-its-worst-advertised-size
+    action: docker.compose_config
+    args: {file: /opt/worst-case/docker-compose.yml}
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      json:
+        /valid: true
+        # Non-zero on every list: without these the case would pass on a small
+        # file and the byte proof would mean nothing.
+        /truncated/services: 6
+        /truncated/images: 3
+        /truncated/networks: 2
+        /truncated/volumes: 2
+        /truncated/profiles: 2

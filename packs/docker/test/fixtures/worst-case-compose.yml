@@ -1,0 +1,203 @@
+services:
+  svc-00-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-00:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-00-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-00-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-00-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-01-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-01:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-01-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-01-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-01-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-02-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-02:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-02-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-02-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-02-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-03-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-03:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-03-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-03-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-03-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-04-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-04:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-04-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-04-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-04-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-05-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-05:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-05-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-05-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-05-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-06-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-06:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-06-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-06-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-06-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-07-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-07:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-07-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-07-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-07-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-08-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-08:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-00-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-08-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-08-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-09-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-09:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-01-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-09-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-09-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-10-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-10:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-02-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-00-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-00-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-11-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-11:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-03-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-01-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-01-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-12-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-12:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-04-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-02-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-02-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-13-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-13:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-05-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-03-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-03-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-14-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-14:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-06-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-04-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-04-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-15-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-00:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-07-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-05-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-05-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-16-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-01:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-00-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-06-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-06-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-17-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-02:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-01-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-07-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-07-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-18-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-03:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-02-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-08-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-08-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-19-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-04:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-03-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-09-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-09-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-20-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-05:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-04-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-00-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-00-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-21-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-06:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-05-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-01-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-01-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-22-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-07:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-06-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-02-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-02-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-23-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-08:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-07-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-03-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-03-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-24-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-09:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-00-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-04-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-04-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-25-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-10:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-01-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-05-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-05-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-26-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-11:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-02-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-06-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-06-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-27-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-12:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-03-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-07-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-07-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-28-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-13:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-04-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-08-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-08-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+  svc-29-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn:
+    image: registry.example.test/team/dddddddddddddddddddddddddddddddddddddddd/image-14:tag-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    profiles: ["profile-05-pppppppppppppppppppppppppppppppppppppppp"]
+    networks: ["net-09-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"]
+    volumes:
+      - "vol-09-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm:/data"
+networks:
+  net-00-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-01-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-02-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-03-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-04-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-05-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-06-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-07-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-08-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+  net-09-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk: {}
+volumes:
+  vol-00-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-01-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-02-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-03-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-04-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-05-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-06-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-07-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-08-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}
+  vol-09-mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm: {}

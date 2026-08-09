@@ -12,6 +12,7 @@ services:
       # docker.compose_config only accepts a path under an approved deployment
       # root, so the fixture is mounted where a real stack would live.
       - ${EMISAR_ROOT}/packs/docker/test/fixtures/docker-compose.yml:/opt/stack/docker-compose.yml:ro
+      - ${EMISAR_ROOT}/packs/docker/test/fixtures/worst-case-compose.yml:/opt/worst-case/docker-compose.yml:ro
 
   # The version matrix's product under test. `docker compose config` parses a
   # file and reaches no daemon, so this service exists to pin and prove the CLI
