@@ -791,10 +791,16 @@ defmodule EmisarWeb.LiveTable do
       id={"#{@id}-pager"}
       class="flex items-center justify-between text-xs text-zinc-400"
     >
+      <%!-- An estimated total is marked with `~` and says so on hover: the
+           number is the planner's row estimate for an append-only set too large
+           to count on every load, and a bare figure would read as exact. --%>
       <div>
         <%= if @metadata.count != nil do %>
           <span class="tabular-nums">
-            <span :if={@page_count}>{@page_count} / </span>{@metadata.count}
+            <span :if={@page_count}>{@page_count} / </span><span
+              :if={@metadata.count_kind == :estimated}
+              title="Approximate — counting every event on each load gets slower as the trail grows. Filter the list for an exact total."
+            >~</span>{@metadata.count}
           </span>
           total
         <% end %>

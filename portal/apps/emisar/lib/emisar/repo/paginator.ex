@@ -22,17 +22,29 @@ defmodule Emisar.Repo.Paginator do
   @max_encoded_cursor_bytes 10_924
 
   defmodule Metadata do
+    @moduledoc """
+    Page cursors plus the total.
+
+    `count_kind` says how `count` was produced, because the caller has to render
+    the two differently: `:exact` is a real aggregate, `:estimated` is the query
+    planner's row estimate and must be shown as approximate. `nil` count carries
+    `count_kind: nil`.
+    """
+    @type count_kind :: :exact | :estimated | nil
+
     @type t :: %__MODULE__{
             previous_page_cursor: binary() | nil,
             next_page_cursor: binary() | nil,
             limit: non_neg_integer(),
-            count: non_neg_integer() | nil
+            count: non_neg_integer() | nil,
+            count_kind: count_kind()
           }
 
     defstruct previous_page_cursor: nil,
               next_page_cursor: nil,
               limit: nil,
-              count: nil
+              count: nil,
+              count_kind: nil
   end
 
   def init(query_module, order_by, opts) do

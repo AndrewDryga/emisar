@@ -348,6 +348,7 @@ defmodule Emisar.Audit do
       # through :filter. Everything else is a LiveTable filter, applied via :filter.
       {actor_id, opts} = Keyword.pop(opts, :actor_id)
       {target_id, opts} = Keyword.pop(opts, :target_id)
+      opts = Keyword.put_new(opts, :count, event_count_mode(actor_id, target_id, opts))
 
       Event.Query.all()
       |> filter_by_actor_id(actor_id)
@@ -357,6 +358,17 @@ defmodule Emisar.Audit do
       |> Repo.list(Event.Query, opts)
     end
   end
+
+  # Events are append-only, so the unnarrowed total only grows and an exact
+  # aggregate over it is a scan that gets slower forever. Narrowed views are
+  # small and their number is read closely — count those exactly. `put_new`
+  # above leaves an explicit `count:` alone, so the CSV export's cursor walk
+  # keeps its `count: false`.
+  defp event_count_mode(nil, nil, opts) do
+    if Keyword.get(opts, :filter, []) == [], do: :auto, else: true
+  end
+
+  defp event_count_mode(_actor_id, _target_id, _opts), do: true
 
   @doc """
   Distinct actors of `actor_kind` that appear in the account's audit log — the

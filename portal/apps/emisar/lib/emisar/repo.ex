@@ -351,19 +351,66 @@ defmodule Emisar.Repo do
     # `count: false` skips the total-count aggregate (metadata.count = nil) —
     # a cursor WALK (the audit CSV export) re-listing page after page must not
     # re-count the whole filtered set on every page.
-    {count?, opts} = Keyword.pop(opts, :count, true)
+    #
+    # `count: :auto` is for an append-only table whose unfiltered set only grows:
+    # count exactly while a filter narrows it (those sets stay small and the
+    # number is read closely), and take the planner's estimate for the unnarrowed
+    # set, where an exact aggregate is a sequential scan that gets slower forever
+    # and nobody reads the last three digits.
+    {count_mode, opts} = Keyword.pop(opts, :count, true)
 
     with {:ok, paginator_opts} <- Paginator.init(query_module, order_by, paginator_opts),
          {:ok, queryable} <- Filter.filter(queryable, query_module, filter),
          keyset_query = Paginator.query(queryable, paginator_opts),
          {:ok, rows} <- run_keyset_query(keyset_query, opts) do
-      count = if count?, do: __MODULE__.aggregate(queryable, :count, :id)
+      {count, count_kind} = count_for(count_mode, queryable, filter)
       {results, metadata} = Paginator.metadata(rows, paginator_opts)
 
       {results, ecto_preloads} = Preloader.preload(results, preload, query_module)
       results = __MODULE__.preload(results, ecto_preloads)
-      {:ok, results, %{metadata | count: count}}
+      {:ok, results, %{metadata | count: count, count_kind: count_kind}}
     end
+  end
+
+  # Above this many estimated rows an exact aggregate is a scan worth avoiding;
+  # at or below it counting is cheap (~7ms at 11.6k rows) and worth being exact
+  # about. Nearly every account lives below it and sees a real number.
+  @exact_count_ceiling 50_000
+
+  defp count_for(false, _queryable, _filter), do: {nil, nil}
+
+  defp count_for(:auto, queryable, filter) when filter != [],
+    do: count_for(true, queryable, filter)
+
+  # Ask the planner first — that costs no scan — and use its answer only to
+  # decide whether the real count is affordable. A plan estimate is untrustworthy
+  # in the small: on a table that has just taken a burst of inserts and has not
+  # been ANALYZEd it can be off by orders of magnitude, which is exactly when a
+  # displayed total looks broken. So it routes the decision; it is not the number
+  # until the set is genuinely too big to count.
+  defp count_for(:auto, queryable, _filter) do
+    case plan_rows(queryable) do
+      {:ok, rows} when rows > @exact_count_ceiling -> {rows, :estimated}
+      _otherwise -> count_for(true, queryable, [])
+    end
+  end
+
+  defp count_for(true, queryable, _filter),
+    do: {__MODULE__.aggregate(queryable, :count, :id), :exact}
+
+  # The planner's row estimate for THIS query — account scope and all. A
+  # table-wide `pg_class.reltuples` would be wrong here: every list is scoped to
+  # one account, so the whole-table number is not the number being shown.
+  #
+  # `:error` on anything unreadable; the caller then counts exactly. Being unable
+  # to plan must never fail the page.
+  defp plan_rows(queryable) do
+    case Ecto.Adapters.SQL.explain(__MODULE__, :all, queryable, format: :map) do
+      [%{"Plan" => %{"Plan Rows" => rows}} | _] when is_integer(rows) and rows >= 0 -> {:ok, rows}
+      _other -> :error
+    end
+  rescue
+    _error -> :error
   end
 
   # A structurally-valid `:safe`-decoded cursor can still carry a value whose
