@@ -27,6 +27,11 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
+      # The suppressed stderr is dmesg's "Operation not permitted" on a host with
+      # restricted dmesg (kernel.dmesg_restrict=1). That is the PROBE failing, and
+      # the `||` is what handles it — journalctl runs instead and reports its own
+      # errors normally. Nothing is hidden: if both sources fail, journalctl's
+      # stderr surfaces and the pipeline reports it.
       - "{ dmesg -T 2>/dev/null || journalctl -k --no-pager; } | grep -i -E 'oom|killed process|out of memory' | tail -30"
   timeout: 15s
 

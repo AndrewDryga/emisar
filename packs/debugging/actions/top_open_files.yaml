@@ -25,7 +25,13 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "lsof -F p 2>/dev/null | sort | uniq -c | sort -rn | head -20"
+      # lsof prints one permission line PER process it cannot inspect, which on
+      # a busy host buries the answer. That is per-item noise, not the reason the
+      # command failed: lsof still exits non-zero when it cannot run at all, and
+      # the pipeline is guarded by that below.
+      - |
+        lsof -F p 2>/dev/null | sort | uniq -c | sort -rn | head -20
+        exit ${PIPESTATUS:-0}
   timeout: 30s
 
 output:

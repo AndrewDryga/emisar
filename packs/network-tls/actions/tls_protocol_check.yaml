@@ -30,6 +30,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
+      # Each iteration is a deliberate probe of ONE protocol version, and a
+      # version the server refuses is the expected result — its handshake error
+      # is the noise. The verdict is not lost: the explicit OK/FAIL per version
+      # IS the evidence, printed for every version either way.
       - "for v in tls1 tls1_1 tls1_2 tls1_3; do printf '%s: ' \"$v\"; openssl s_client -connect \"$1\":{{ args.port }} -servername \"$1\" -$v </dev/null 2>/dev/null | grep -q 'BEGIN CERT' && echo OK || echo FAIL; done"
       - "emisar"
       - "{{ args.host }}"

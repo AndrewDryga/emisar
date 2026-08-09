@@ -19,6 +19,10 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
+      # Debian puts the mail log at mail.log, RHEL at maillog. The suppressed
+      # stderr is the "No such file" for whichever this host does not use — a
+      # path probe, not a failure. If NEITHER exists the second tail's error is
+      # not suppressed and the action fails with it.
       - "tail -n {{ args.lines }} /var/log/mail.log 2>/dev/null || tail -n {{ args.lines }} /var/log/maillog"
   timeout: 30s
 output:

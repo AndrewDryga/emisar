@@ -27,7 +27,17 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "openssl s_client -connect 127.0.0.1:{{ args.port }} -servername \"$1\" </dev/null 2>/dev/null | openssl x509 -noout -dates -subject -issuer"
+      # s_client's stderr carries BOTH its handshake chatter and the reason a
+      # connection failed. Discarding it left `openssl x509` to fail on empty
+      # input, so a refused port reported "unable to load certificate" — a
+      # parsing error for what was actually a connectivity problem. Capture the
+      # handshake, and on failure surface s_client's own words.
+      - |
+        chain=$(openssl s_client -connect 127.0.0.1:{{ args.port }} -servername "$1" </dev/null 2>&1) || {
+          printf '%s\n' "$chain" >&2
+          exit 1
+        }
+        printf '%s\n' "$chain" | openssl x509 -noout -dates -subject -issuer
       - "emisar"
       - "{{ args.sni }}"
   timeout: 15s
