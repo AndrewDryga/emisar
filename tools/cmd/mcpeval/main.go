@@ -43,6 +43,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	output := flags.String("out", "", "write the JSON report to this path (otherwise printed)")
 	validateOnly := flags.Bool("validate-corpus", false, "validate the corpus and exit without running an agent")
 	requireHeldOut := flags.Bool("require-held-out", false, "require a held_out corpus suitable for release qualification")
+	mintIntents := flags.String("mint-partition", "",
+		"mint a held-out partition from this intent file (prompts + actions) and exit; "+
+			"pack and runner refs are derived, so re-running it is how a partition is "+
+			"refreshed after a pack republish")
+	mintCatalog := flags.String("mint-catalog", "", "catalog.json the mint resolves pack refs from")
 	redactAgentOutput := flags.Bool(
 		"redact-agent-output",
 		false,
@@ -54,6 +59,16 @@ func run(args []string, stdout, stderr io.Writer) error {
 			"sandboxed environments like the CI job")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *mintIntents != "" {
+		if *mintCatalog == "" || *output == "" {
+			return fmt.Errorf("-mint-partition needs -mint-catalog and -out")
+		}
+		if err := mintPartition(*mintIntents, *mintCatalog, *output); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "minted held-out partition -> %s\n", *output)
+		return nil
 	}
 	repoRoot, err := repo.Root()
 	if err != nil {

@@ -137,6 +137,31 @@ Never title a product release with a bare `vX.Y.Z`.
 10. **Commit** the changelog, version, license date, test, and reconciled catalog — one focused commit
    (e.g. `release: v0.25.0 — <title>`).
 11. **Push the commit** (`git push origin main`). *Outward-facing — confirm first.*
+11b. **Refresh the held-out partition if any pack it pins was republished.**
+    A `held_out` positive scenario is REQUIRED to carry exact
+    `id@version/sha256:…` pack refs (`tools/cmd/mcpeval/config.go`), so a pack
+    release inside the window invalidates the partition and certification fails
+    with `pack_not_allowed`. The partition lives only as the
+    `MCP_EVAL_HELD_OUT_B64` secret and cannot be read back, so it is REBUILT
+    rather than edited — from an intent file whose prompts and actions stay the
+    author's:
+
+    ```sh
+    curl -fsS https://registry.emisar.dev/v1/catalog.json -o /tmp/live.json
+    packctl catalog build --packs ./packs --out /tmp/dist --previous /tmp/live.json
+    (cd tools && go run ./cmd/mcpeval \
+       -mint-partition /path/to/intents.json \
+       -mint-catalog /tmp/dist/v1/catalog.json \
+       -out /tmp/held-out.json)
+    (cd tools && go run ./cmd/mcpeval -scenarios /tmp/held-out.json -validate-corpus -require-held-out)
+    base64 < /tmp/held-out.json | gh secret set MCP_EVAL_HELD_OUT_B64 --env mcp-certification
+    ```
+
+    Keep the intent file OUT of this repository and off the machine that tunes
+    search, descriptions, or the catalog — that separation is the only thing the
+    held-out property rests on, and an agent that touched those surfaces must
+    not author it.
+
 12. **Certify MCP clients against that exact commit before tagging.** Record
     `anchor=$(git rev-parse HEAD)`, then dispatch `mcp-eval.yml` on `main` with
     `qualification=true` and explicit `claude_model` and `codex_model` inputs. Select the resulting
