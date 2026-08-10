@@ -16,7 +16,7 @@ the tree rather than from a list here:
 
 What each reason costs to close, largest first (counts as of 2026-08-10):
 
-- **`requires_privileged_host` — 54 actions, 18 packs.** Systemd as PID 1,
+- **`requires_privileged_host` — 48 actions, 16 packs.** Systemd as PID 1,
   package installs, sysctl, kernel modules, block devices, another process's
   `/proc`. **Measured 2026-08-08: all but nine of the original 82
   are reachable from a privileged disposable CONTAINER, not a VM.** systemd runs as PID 1 under
@@ -31,7 +31,11 @@ What each reason costs to close, largest first (counts as of 2026-08-10):
   cases on that pattern. The systemd half is built too: `systemd-deep`,
   `linux-core` and `debian` run against a service manager booted as PID 1 in
   their own privileged container, which the runner drives by joining that
-  container's PID namespace and `/run` (see any of their `test/compose.yaml`). What genuinely does not work is a kernel
+  container's PID namespace and `/run` (see any of their `test/compose.yaml`).
+  Two more shapes cover the rest of what is done: a capability granted on its
+  own where that is all an action needs — `cap_add: [NET_ADMIN]` for `firewall`,
+  `[SYS_PTRACE]` for `process-forensics` — and no SUT at all where the action
+  mutates the machine it runs on, as `debian`'s apt cases do. What genuinely does not work is a kernel
   module the host lacks (`zfs`, and `wireguard`/`nfsd` on a workstation), kernel
   state a container SHARES with its host (`drop_caches`, `sysctl_set`, the clock
   verbs — covering those would mutate the CI machine), and pfSense, which is
@@ -66,6 +70,8 @@ disposable containers in CI, which is safe on a per-job hosted VM and not on a
 self-hosted runner.
 
 ## Changelog
+- 2026-08-10 — firewall and process-forensics covered by capability rather than
+  privilege, taking the bucket to 48 across 16 packs
 - 2026-08-10 — systemd lane built: systemd-deep, linux-core and debian covered,
   taking the privileged-host bucket to 54 across 18 packs. Three traps live in
   those images — one shared machine-id, volatile journal storage, and the client
