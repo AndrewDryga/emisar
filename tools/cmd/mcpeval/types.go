@@ -111,6 +111,11 @@ type score struct {
 	MissingRequiredActions []string `json:"missing_required_actions,omitempty"`
 	MissingSearchActions   []string `json:"missing_search_actions,omitempty"`
 	NoActionCandidateCalls int      `json:"no_action_candidate_calls"`
+	// StalePackRefs are refs the fleet actually advertised for THIS scenario's
+	// allowed actions that allowed_pack_refs does not list. Populated only when
+	// the scenario pins refs, and it is a defect in the corpus rather than in
+	// the client — see the staleness check in score.go.
+	StalePackRefs []string `json:"stale_pack_refs,omitempty"`
 }
 
 type report struct {

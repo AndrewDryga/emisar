@@ -41,6 +41,8 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	searchActions := map[string]bool{}
 	failedCalls := map[string]int{}
 	failedTools := map[string]string{}
+	allowedActionIDs := stringSet(item.AllowedActions)
+	staleRefs := map[string]bool{}
 	runStatus := map[string]string{}
 	startedRuns := map[string]bool{}
 
@@ -49,6 +51,12 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		if call.BlockedByPolicy {
 			result.PolicyBlockedCalls++
 			result.fail(fmt.Sprintf("the evaluator blocked %s outside the scenario allowlist (%s)", call.Tool, call.ResponseCode))
+			// pack_not_allowed on an action the scenario DOES allow means the
+			// pinned ref no longer exists, not that the client reached outside
+			// its brief.
+			if call.ResponseCode == "pack_not_allowed" && allowedActionIDs[call.ActionID] && call.PackRef != "" {
+				staleRefs[call.ActionID+" dispatched at "+call.PackRef] = true
+			}
 		}
 		if call.ResponseError {
 			result.ErrorCalls++
@@ -75,6 +83,14 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 			for _, candidate := range call.SearchCandidates {
 				if len(allowedPackRefs) == 0 || allowedPackRefs[candidate.PackRef] {
 					searchActions[candidate.ActionID] = true
+					continue
+				}
+				// The pin filtered a candidate the client legitimately found. If
+				// the ACTION is one this scenario allows, the pin — not the
+				// client — is what is wrong: the pack was republished under a new
+				// version or content hash after the corpus was authored.
+				if allowedActionIDs[candidate.ActionID] {
+					staleRefs[candidate.ActionID+" advertised at "+candidate.PackRef] = true
 				}
 			}
 		}
@@ -179,6 +195,18 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		result.fail("required actions missed recall@5: " + strings.Join(result.MissingSearchActions, ", "))
 	}
 
+	// Reported last so it reads last — and worded so nobody re-diagnoses this
+	// from scratch. A stale pin cascades: it blocks run_action, so the required
+	// tool and action never succeed, AND it filters the client's own search
+	// candidates out of recall@5. Four failures, one cause, none of them the
+	// client's fault.
+	if len(staleRefs) > 0 {
+		result.StalePackRefs = sortedKeys(staleRefs)
+		result.fail("scenario allowed_pack_refs is STALE, which is a corpus defect rather than a client failure — the fleet advertises " +
+			strings.Join(result.StalePackRefs, "; ") +
+			". Refresh this scenario's pack refs to the republished ones; every failure above follows from this.")
+	}
+
 	if agent.TimedOut {
 		result.fail("the agent process hit the evaluation timeout")
 	} else if agent.ExitCode != 0 {
@@ -199,5 +227,14 @@ func stringSet(values []string) map[string]bool {
 	for _, value := range values {
 		out[value] = true
 	}
+	return out
+}
+
+func sortedKeys(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for key := range set {
+		out = append(out, key)
+	}
+	sort.Strings(out)
 	return out
 }

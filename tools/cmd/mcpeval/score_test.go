@@ -230,3 +230,43 @@ func TestScoreCountsJustificationChainWithoutFailing(t *testing.T) {
 		t.Fatalf("chain counts = %#v", got)
 	}
 }
+
+// A held-out partition pins exact `id@version/sha256:…` refs, so republishing a
+// pack it names invalidates it. That cascades into four client-shaped failures —
+// blocked run_action, two never-succeeded requirements, and a recall@5 miss —
+// none of which are the client's doing. The report has to name the real cause,
+// or the next reader re-derives it from the packs tree the way this one did.
+func TestScoreNamesAStalePackPinRatherThanBlamingTheClient(t *testing.T) {
+	item := conformingScenario()
+	item.AllowedPackRefs = []string{"linux-core@0.3.23/sha256:old"}
+	item.RequiredSearchActions = [][]string{{"linux.uptime"}}
+
+	republished := "linux-core@0.4.0/sha256:new"
+	calls := []callRecord{
+		{Tool: "find_actions", SearchCandidates: []searchCandidate{
+			{ActionID: "linux.uptime", PackRef: republished},
+		}},
+		{Tool: "get_action", ActionID: "linux.uptime", PackRef: republished},
+		{Tool: "run_action", ActionID: "linux.uptime", PackRef: republished,
+			priorContractMatched: true, BlockedByPolicy: true, ResponseCode: "pack_not_allowed"},
+	}
+
+	got := scoreReport(item, calls, agentResult{})
+	if got.Passed {
+		t.Fatal("a stale pin must still fail the scenario")
+	}
+	if len(got.StalePackRefs) != 2 {
+		t.Fatalf("both the advertised and the dispatched ref should be reported: %#v", got.StalePackRefs)
+	}
+	stale := strings.Join(got.Failures, "\n")
+	if !strings.Contains(stale, "allowed_pack_refs is STALE") || !strings.Contains(stale, republished) {
+		t.Fatalf("the failure must name the stale pin and the republished ref: %v", got.Failures)
+	}
+
+	// The same transcript against a current pin is a clean pass — proving the
+	// check fires on staleness alone and not on any allowlist rejection.
+	item.AllowedPackRefs = []string{republished}
+	if fresh := scoreReport(item, calls[:2], agentResult{}); len(fresh.StalePackRefs) != 0 {
+		t.Fatalf("a current pin must report no staleness: %#v", fresh.StalePackRefs)
+	}
+}
