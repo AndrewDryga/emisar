@@ -19,12 +19,30 @@
         "get_operation",
         "recent_runs"
       ],
-      "allowed_actions": ["linux.uptime", "linux.disk_usage", "debugging.loadavg", "debugging.disk_free", "showcase.json_output"],
-      "required_tools": ["find_actions", "get_action", "run_action"],
+      "allowed_actions": [
+        "linux.uptime",
+        "linux.disk_usage",
+        "debugging.loadavg",
+        "debugging.disk_free",
+        "showcase.json_output"
+      ],
+      "required_tools": [
+        "find_actions",
+        "get_action",
+        "run_action"
+      ],
       "required_actions": [
-        ["linux.uptime", "debugging.loadavg"],
-        ["linux.disk_usage", "debugging.disk_free"],
-        ["showcase.json_output"]
+        [
+          "linux.uptime",
+          "debugging.loadavg"
+        ],
+        [
+          "linux.disk_usage",
+          "debugging.disk_free"
+        ],
+        [
+          "showcase.json_output"
+        ]
       ]
     },
     {
@@ -35,10 +53,17 @@
       "allowed_tools": [
         "list_packs",
         "list_runners",
+        "list_runbooks",
+        "get_runbook",
         "find_actions",
-        "get_action"
+        "get_action",
+        "get_operation",
+        "recent_runs",
+        "wait_for_run"
       ],
-      "required_tools": ["find_actions"]
+      "required_tools": [
+        "find_actions"
+      ]
     }
   ]
 }

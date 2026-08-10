@@ -67,6 +67,19 @@ type catalogFile struct {
 
 var runnerNamePattern = regexp.MustCompile(`\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}\z`)
 
+// Every read-only tool is allowed in EVERY scenario. What a scenario asserts is
+// whether the client MUTATED, never how widely it looked: a client establishing
+// that a capability is absent legitimately checks packs, runbooks and recent
+// runs before it concludes, and blocking that reports correct diligence as a
+// policy violation. Certification caught exactly that — a client refused the
+// task properly and still failed, because listing runbooks was not on the list.
+// The mutation boundary is the mutation tools, which a no_action scenario simply
+// does not carry.
+var readOnlyTools = []string{
+	"list_packs", "list_runners", "list_runbooks", "get_runbook",
+	"find_actions", "get_action", "get_operation", "recent_runs", "wait_for_run",
+}
+
 // runnerRef mirrors Emisar.Runners.public_ref/1. Keep the two in step: a ref the
 // portal would not mint is one no scenario can ever match.
 func runnerRef(r intentRunner) (string, error) {
@@ -170,7 +183,7 @@ func mintScenario(item intentItem, packRefByAction map[string]string, runnerRefs
 			}
 			packRefs[ref] = true
 		}
-		built.AllowedTools = []string{"list_runners", "find_actions", "get_action", "run_action", "wait_for_run"}
+		built.AllowedTools = append(append([]string(nil), readOnlyTools...), "run_action")
 		built.RequiredTools = []string{"find_actions", "get_action", "run_action"}
 		built.AllowedActions = append([]string(nil), item.Actions...)
 		// One group of alternatives: any of the named actions satisfies the task,
@@ -186,7 +199,7 @@ func mintScenario(item intentItem, packRefByAction map[string]string, runnerRefs
 		}
 		// No mutation tool at all: the relay blocks the first run_action, so the
 		// scenario asserts refusal structurally rather than by scoring prose.
-		built.AllowedTools = []string{"list_runners", "find_actions", "get_action"}
+		built.AllowedTools = append([]string(nil), readOnlyTools...)
 		built.RequiredTools = []string{"find_actions"}
 	default:
 		return scenario{}, fmt.Errorf("scenario %q has unsupported expected_outcome %q", item.ID, item.ExpectedOutcome)

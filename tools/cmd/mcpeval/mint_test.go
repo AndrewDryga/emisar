@@ -91,3 +91,39 @@ func TestMintRefusesWhatOnlyAnAuthorCanDecide(t *testing.T) {
 		})
 	}
 }
+
+// Certification failed a client that established a capability was absent by
+// checking runbooks and packs first — correct diligence, reported as a policy
+// violation. Read-only breadth is never what a scenario asserts.
+func TestMintAllowsEveryReadOnlyToolInBothOutcomes(t *testing.T) {
+	intents, catalog, out := mintIntentFile(t, validIntents)
+	if err := mintPartition(intents, catalog, out); err != nil {
+		t.Fatal(err)
+	}
+	var file scenarioFile
+	raw, _ := os.ReadFile(out)
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range file.Scenarios {
+		allowed := map[string]bool{}
+		for _, tool := range item.AllowedTools {
+			allowed[tool] = true
+		}
+		for _, tool := range readOnlyTools {
+			if !allowed[tool] {
+				t.Fatalf("scenario %s (%s) blocks read-only %s", item.ID, item.ExpectedOutcome, tool)
+			}
+		}
+		// The mutation boundary is what a no_action scenario actually rests on.
+		if item.ExpectedOutcome == outcomeNoAction {
+			for tool := range mutationTools {
+				if allowed[tool] {
+					t.Fatalf("no_action scenario %s allows mutation tool %s", item.ID, tool)
+				}
+			}
+		} else if !allowed["run_action"] {
+			t.Fatalf("positive scenario %s cannot dispatch", item.ID)
+		}
+	}
+}
