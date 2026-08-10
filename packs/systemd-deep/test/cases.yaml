@@ -1,15 +1,102 @@
-# systemctl start/restart/mask/unmask and journalctl --vacuum-time all work
-# against systemd running as PID 1 in a privileged container — measured. These
-# stay declared because that lane is not built, not because a host is required.
-# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
+# The service manager under test runs as PID 1 in its own privileged, disposable
+# container, and the runner drives it by joining that container's PID namespace
+# and /run — systemctl is a D-Bus client, so that is all it needs. The runner
+# stays unprivileged; `privileged` is on the SUT, where systemd needs it. This
+# is the lane the environment-limits card describes; see it for what else it
+# reaches.
+services: [systemd]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
 risk_accountability:
   mode: complete
-  exceptions:
-    systemd.unit_kill: requires_privileged_host
-    systemd.unit_mask: requires_privileged_host
-    systemd.unit_reload: requires_privileged_host
-    systemd.unit_restart: requires_privileged_host
-    systemd.unit_show: requires_privileged_host
-    systemd.unit_start: requires_privileged_host
-    systemd.unit_stop: requires_privileged_host
-    systemd.vacuum_journal: requires_privileged_host
+# Every unit verb here changes the service manager, which is what the actions
+# are for, so they run as root against a manager that exists only for the case.
+runner:
+  user: root
+  reason: >
+    systemctl's mutating verbs are privileged operations on the service manager;
+    a case that ran them as anyone else would only ever assert the denial.
+cases:
+  - action: systemd.unit_show
+    args: {unit: cron.service}
+    expect:
+      stdout_contains: [Id=cron.service, ActiveState=]
+
+  - action: systemd.unit_start
+    args: {unit: cron.service}
+    arrange:
+      - argv: [systemctl, stop, cron.service]
+    probes:
+      - name: the unit is running
+        argv: [systemctl, is-active, cron.service]
+        expect:
+          stdout_contains: [active]
+
+  - action: systemd.unit_stop
+    args: {unit: cron.service}
+    arrange:
+      - argv: [systemctl, start, cron.service]
+    probes:
+      - name: the unit is no longer running
+        argv: [/bin/sh, -c, "systemctl is-active cron.service; echo probed"]
+        expect:
+          stdout_contains: [inactive, probed]
+
+  # The main PID is what changes when a unit really restarts; asserting it is
+  # still active would pass whether or not anything happened.
+  - action: systemd.unit_restart
+    args: {unit: cron.service}
+    arrange:
+      - argv: [systemctl, start, cron.service]
+      - argv: [/bin/sh, -c, "systemctl show cron.service -p MainPID --value > /run/packtest-mainpid"]
+    probes:
+      - name: the service came back under a new main PID
+        argv: [/bin/sh, -c, "test \"$(systemctl show cron.service -p MainPID --value)\" != \"$(cat /run/packtest-mainpid)\" && systemctl is-active cron.service"]
+        expect:
+          stdout_contains: [active]
+
+  - action: systemd.unit_reload
+    args: {unit: dbus.service}
+    probes:
+      - name: the reloaded unit is still up
+        argv: [systemctl, is-active, dbus.service]
+        expect:
+          stdout_contains: [active]
+
+  - action: systemd.unit_kill
+    args: {unit: cron.service, signal: SIGKILL}
+    arrange:
+      - argv: [systemctl, start, cron.service]
+    probes:
+      - name: systemd recorded a signal, not a clean exit
+        argv: [systemctl, show, cron.service, -p, Result, --value]
+        expect:
+          stdout_contains: [signal]
+
+  # Masking is the one that cannot be walked back by a start, so the probe is
+  # that a start now fails rather than that the symlink exists.
+  - action: systemd.unit_mask
+    args: {unit: cron.service}
+    probes:
+      - name: the masked unit refuses to start
+        argv: [/bin/sh, -c, "systemctl start cron.service 2>&1 | grep -q masked && echo refused"]
+        expect:
+          stdout_contains: [refused]
+    cleanup:
+      - argv: [systemctl, unmask, cron.service]
+
+  # A fresh journal has nothing archived, so vacuuming it would prove nothing.
+  # Rotating first creates exactly one archived file for the vacuum to remove.
+  - action: systemd.vacuum_journal
+    args: {cutoff: 1s}
+    arrange:
+      - argv: [journalctl, --rotate]
+    expect:
+      stderr_contains: ["Vacuuming done"]
+    probes:
+      - name: the archived journal is gone
+        argv: [/bin/sh, -c, "ls /var/log/journal/*/*@*.journal 2>/dev/null | wc -l"]
+        expect:
+          stdout_contains: ["0"]

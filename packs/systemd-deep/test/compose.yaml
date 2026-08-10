@@ -1,0 +1,45 @@
+services:
+  # The runner drives the SUT's service manager rather than its own: systemctl
+  # is a D-Bus client, so it needs that container's PID namespace and its /run,
+  # and nothing more. The runner itself stays unprivileged — `privileged` is on
+  # the SUT, which is where systemd needs it.
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/systemd-deep/test
+      dockerfile: Dockerfile
+      target: tools
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-systemd-deep-tools:latest
+    pid: "service:systemd"
+    volumes:
+      - runstate:/run
+
+  systemd:
+    build:
+      context: ${EMISAR_ROOT}/packs/systemd-deep/test
+      dockerfile: Dockerfile
+      target: sut
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-systemd-deep-sut:latest
+    privileged: true
+    cgroup: host
+    command: ["/lib/systemd/systemd"]
+    stop_signal: SIGRTMIN+3
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - runstate:/run
+    healthcheck:
+      test: ["CMD-SHELL", "systemctl is-system-running | grep -Eq 'running|degraded'"]
+      interval: 2s
+      start_period: 30s
+      start_interval: 1s
+      retries: 40
+
+volumes:
+  runstate:
