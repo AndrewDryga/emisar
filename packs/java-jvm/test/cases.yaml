@@ -1,7 +1,7 @@
-# A heap dump and the VM property read attach to a running JVM as its user,
-# which the unprivileged SUT is not.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# Both attach to a JVM as its owning user, which a SUT running the JVM as the
+# case's own runner user satisfies. That is a fixture we have not built, not a
+# privilege the harness withholds.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

@@ -1,8 +1,9 @@
-# Dropping the page cache, setting a sysctl, signalling an arbitrary pid,
-# and reading another process's environ all need privileges the harness
-# deliberately withholds.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# Two different reasons, kept apart on purpose. drop_caches and sysctl_set
+# reach kernel state a container SHARES with its host, so even a privileged
+# lane would mutate the CI machine — these stay uncovered by choice. kill_pid
+# and pid_environ only need a target process in the same PID namespace, which
+# a SUT can provide; they are declared because that lane is not built.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

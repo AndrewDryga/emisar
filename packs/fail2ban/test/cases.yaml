@@ -1,7 +1,7 @@
-# Banning an IP writes the host's netfilter tables through fail2ban, which
-# needs NET_ADMIN.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# The ban lands in the netfilter namespace of whatever container fail2ban
+# runs in, not the host's, once the lane grants NET_ADMIN. Declared because
+# that lane is not built.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

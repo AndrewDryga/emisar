@@ -1,7 +1,8 @@
-# Rolling back a dataset, destroying a snapshot, clearing pool errors and
-# starting a scrub act on a real ZFS pool; there is no pool in the SUT.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# These need a real pool, and a pool needs the zfs kernel module, which no
+# container can load and which neither this workstation's kernel nor a GitHub
+# runner's carries. Unlike most of this file's exceptions, no lane we could
+# build changes this one — it wants a machine with ZFS installed.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

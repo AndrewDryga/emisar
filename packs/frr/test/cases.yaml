@@ -1,7 +1,7 @@
-# Shutting a BGP neighbour changes the host's routing session with a real
-# peer.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# Shutting a neighbour only means something against a real session, so this
+# needs a second FRR speaker to peer with — a multi-container topology, not a
+# privilege. Declared because that topology is not built.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

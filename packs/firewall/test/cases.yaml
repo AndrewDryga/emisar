@@ -1,5 +1,7 @@
-# Every mutating action here writes the host's netfilter tables, which needs
-# NET_ADMIN — and the harness runs an unprivileged, disposable SUT on purpose.
+# `iptables -I` works in a privileged container — measured — and writes THAT
+# container's netfilter namespace, not the host's, which is what makes it
+# safe to assert on. Declared because the privileged lane is not built.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   exceptions:
     fw.iptables_block_ip: requires_privileged_host

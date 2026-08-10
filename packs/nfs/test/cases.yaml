@@ -1,6 +1,7 @@
-# Re-exporting and unexporting write the host's NFS export table.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# exportfs needs the nfsd kernel module, which a container borrows from its
+# host rather than loading itself. A GitHub Linux runner carries it and this
+# workstation's kernel does not, so this class is CI's to decide.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

@@ -1,7 +1,7 @@
-# recon_trace_calls attaches a tracer to a running BEAM node's processes; it
-# needs a real node under load, not a fixture.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# The tracer needs a real node with real traffic, which a SUT running a BEAM
+# release and a load generator would be. Declared because that fixture is not
+# built, not because a container cannot host it.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

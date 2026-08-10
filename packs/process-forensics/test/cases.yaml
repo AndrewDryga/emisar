@@ -1,7 +1,7 @@
-# strace and gdb attach with ptrace to a process the harness does not own;
-# the SUT drops that capability deliberately.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# `strace -p` works in a container granted CAP_SYS_PTRACE — measured. What is
+# missing is a SUT that runs a target process worth attaching to, which is a
+# fixture rather than a privilege the harness cannot hold.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

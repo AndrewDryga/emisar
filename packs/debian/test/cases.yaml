@@ -1,8 +1,8 @@
-# apt install/remove/autoremove write the host's package database and dpkg
-# state. The SUT is unprivileged and disposable, and a package set it
-# mutated would not be the host's.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# apt-get install and remove work as root in a disposable container —
+# measured — and the package set they mutate is that container's, which is
+# exactly what a case should assert. Declared because the root lane is not
+# built, not because a host is required.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

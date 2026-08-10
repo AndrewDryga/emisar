@@ -1,8 +1,8 @@
-# Every one of these re-runs or resets cloud-init's own boot stages on the
-# host. The harness runs an unprivileged, disposable SUT that was never
-# cloud-init-provisioned, so there is no boot state to act on.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# These re-run or reset cloud-init's boot stages, so they need a SUT that was
+# cloud-init-provisioned: systemd as PID 1 plus a seed datasource. That is a
+# fixture we have not built, not a privilege a container cannot hold — systemd
+# itself runs fine in a privileged container.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

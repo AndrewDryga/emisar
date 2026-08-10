@@ -1,7 +1,7 @@
-# Masking, killing, reloading and restarting units change the host's service
-# manager.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# systemctl start/restart/mask/unmask and journalctl --vacuum-time all work
+# against systemd running as PID 1 in a privileged container — measured. These
+# stay declared because that lane is not built, not because a host is required.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

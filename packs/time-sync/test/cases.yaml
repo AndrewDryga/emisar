@@ -1,7 +1,7 @@
-# Stepping the clock and toggling NTP change the host's time, which the
-# harness shares with every other running case.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# The clock is kernel state a container shares with its host, so stepping it
+# would move time for the CI machine and every case running beside this one.
+# A privileged lane does not help; this stays uncovered by choice.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

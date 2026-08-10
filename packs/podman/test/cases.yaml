@@ -1,8 +1,9 @@
-# Every one of these drives the podman service, which means handing the
-# harness a container runtime socket — root on the host by another name, in
-# a rig whose whole point is an unprivileged SUT.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# These drive a container runtime, and the docker pack proved that need not
+# mean the HOST's socket: a disposable daemon sibling in the case's own project
+# is as isolated as any other SUT. Podman has no equally clean equivalent of
+# docker:dind, so this one is declared pending its own measurement rather than
+# on the disproven "socket means host root" reasoning.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

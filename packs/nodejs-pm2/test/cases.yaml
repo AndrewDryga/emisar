@@ -1,7 +1,7 @@
-# Restarting, reloading, scaling and stopping act on a pm2 daemon owned by
-# the application user on the host.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# pm2 acts on the daemon of whoever runs it, so a SUT that starts pm2 as the
+# case's own runner user gives these actions a real daemon and real apps to
+# act on. That is a fixture we have not built; nothing here needs a host.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:

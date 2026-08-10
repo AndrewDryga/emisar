@@ -1,7 +1,8 @@
-# Bringing a tunnel up or down and removing a peer write the host's network
-# namespace and need NET_ADMIN.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+# These need the wireguard kernel module, which a container borrows from its
+# host rather than loading itself. A GitHub Linux runner carries it and this
+# workstation's kernel does not, so this class is CI's to decide — a local
+# check proves nothing about it either way.
+# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
 risk_accountability:
   mode: complete
   exceptions:
