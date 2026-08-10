@@ -624,6 +624,38 @@ defmodule Emisar.AuditTest do
       assert Enum.all?(rows, &(&1.event_type == "user.invited"))
     end
 
+    test "a filtered count stays exact while the set is affordable", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "policy.updated", actor_kind: "user")
+
+      assert {:ok, [_event], meta} =
+               Audit.list_events(subject, filter: [event_type: ["user.invited"]])
+
+      assert meta.count == 1
+      assert meta.count_kind == :exact
+    end
+
+    test "a filtered count falls back to the planner's estimate once counting would scan", %{
+      account: account,
+      subject: subject
+    } do
+      # A ceiling below any possible estimate drives the estimated branch — the
+      # behavior under test is the fallback itself, not a fifty-thousand-row
+      # fixture.
+      Emisar.Config.put_override(:emisar, :exact_count_ceiling, -1)
+
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user")
+
+      assert {:ok, [_event], meta} =
+               Audit.list_events(subject, filter: [event_type: ["user.invited"]])
+
+      assert meta.count_kind == :estimated
+      assert is_integer(meta.count)
+    end
+
     test "the SSO / Directory event types are selectable in both filter lists" do
       flat =
         Audit.Event.Query.known_event_type_values() |> Enum.map(&elem(&1, 0)) |> MapSet.new()

@@ -116,12 +116,43 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   def select_manifest_match_columns(queryable),
     do: select(queryable, [runner_actions: a], struct(a, ^@manifest_match_columns))
 
+  # Everything the Packs console reads off an advertised action row — filter
+  # matching (action_id, risk), grouping (the pack ref), the most-severe dedupe
+  # (kind), and the rendered action list (title) — never the descriptor jsonb
+  # (`args_schema`, `output_schema`, `examples`, `description`, `search_terms`).
+  # Only a pending review's manifest diff needs those columns, and it reads its
+  # rows whole via `by_pack_refs/2`.
+  @console_columns ~w[id action_id pack_id pack_version pack_hash title kind risk]a
+
+  def select_console_columns(queryable),
+    do: select(queryable, [runner_actions: a], struct(a, ^@console_columns))
+
   def by_pack(queryable, pack_id, pack_version) do
     where(
       queryable,
       [runner_actions: a],
       a.pack_id == ^pack_id and a.pack_version == ^pack_version
     )
+  end
+
+  @doc """
+  Restrict to an exact set of `{pack_id, version}` pairs — the console reads a
+  pending review's advertised rows without loading the whole account catalog.
+  The caller bounds the list (pending reviews are few, so the OR form stays
+  cheap; a fleet-sized set belongs in `by_deployments/2`'s tuple match).
+  """
+  def by_pack_refs(queryable, []), do: none(queryable)
+
+  def by_pack_refs(queryable, pack_refs) when is_list(pack_refs) do
+    predicate =
+      Enum.reduce(pack_refs, dynamic(false), fn {pack_id, version}, predicate ->
+        dynamic(
+          [runner_actions: a],
+          ^predicate or (a.pack_id == ^pack_id and a.pack_version == ^version)
+        )
+      end)
+
+    where(queryable, ^predicate)
   end
 
   def by_pack_id(queryable, pack_id),

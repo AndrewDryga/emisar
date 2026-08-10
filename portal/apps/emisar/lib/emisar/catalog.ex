@@ -2560,9 +2560,12 @@ defmodule Emisar.Catalog do
   actually depends on who is running it.
 
   Returns `{:ok, projection}` — `pack_versions` (every account row, bounded,
-  ordered by pack id then version), `groups` (`%{id: pack_id, versions: [...],
-  update: nil | %{version, hash}}` over the visible rows, packs ascending and
-  versions newest-seen first), `actions_by_pack_ref`, `matched_action_ids` and
+  ordered by pack id then version; browse rows omit `trusted_manifest`, and only
+  rows carrying a decision — pending trust, or an overridden retirement — come
+  back whole with the overrider preloaded), `groups` (`%{id: pack_id,
+  versions: [...], update: nil | %{version, hash}}` over the visible rows,
+  packs ascending and versions newest-seen first), `actions_by_pack_ref`,
+  `matched_action_ids` and
   `version_facts` (see `list_console_packs/2`'s fact map) keyed by pack-version
   id, the visible `pack_count`/`version_count`, and the account-wide
   `pending_count`/`decision_count` — or `{:error, :unauthorized}`.
@@ -2586,11 +2589,11 @@ defmodule Emisar.Catalog do
       pack_versions =
         PackVersion.Query.all()
         |> PackVersion.Query.ordered_by_pack()
-        # The retirement-override note names who re-trusted a retired version.
-        |> PackVersion.Query.with_preloaded_retirement_overridden_by()
+        |> PackVersion.Query.select_without_manifest()
         |> PackVersion.Query.limit_to(@console_pack_version_limit)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
+        |> hydrate_decision_rows(subject)
 
       action_rows = console_action_rows(pack_versions, name, risk, subject)
 
@@ -2620,21 +2623,71 @@ defmodule Emisar.Catalog do
     end
   end
 
-  # One account-wide action read, grouped by `{pack_id, version}` — taken only
-  # when the page actually needs it: a live filter, or a pending version whose
-  # trust card must show what trusting would authorize. Kept as RAW rows so a
-  # pending review can select its exact hash BEFORE the most-severe dedupe
-  # collapses two hashes' rows for the same action id into one.
-  defp console_action_rows(pack_versions, name, risk, %Subject{} = subject) do
-    if name != "" or risk != "" or Enum.any?(pack_versions, &(&1.trust_state == :pending)) do
-      RunnerAction.Query.all()
-      |> RunnerAction.Query.ordered_by_action()
-      |> Authorizer.for_subject(subject)
-      |> Repo.all()
-      |> Enum.group_by(&{&1.pack_id, &1.pack_version})
+  # The browse read drops `trusted_manifest` (the table's heaviest column) and
+  # the override join; only the rows whose rendering turns on them are re-read
+  # whole: a pending review diffs against its manifest, and an overridden
+  # retirement names its overrider. A row that vanishes between the two reads
+  # keeps its slim struct — a nil manifest already means "nothing to diff", and
+  # the override note words an absent overrider.
+  defp hydrate_decision_rows(pack_versions, %Subject{} = subject) do
+    decision_ids =
+      for %PackVersion{} = version <- pack_versions,
+          version.trust_state == :pending or not is_nil(version.retirement_overridden_at),
+          do: version.id
+
+    if decision_ids == [] do
+      pack_versions
     else
-      %{}
+      whole_by_id =
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_ids(decision_ids)
+        |> PackVersion.Query.with_preloaded_retirement_overridden_by()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> Map.new(&{&1.id, &1})
+
+      Enum.map(pack_versions, &Map.get(whole_by_id, &1.id, &1))
     end
+  end
+
+  # Action rows grouped by `{pack_id, version}`, read only when the page needs
+  # them and only as wide as each need: a live filter matches over the whole
+  # account's rows in summary columns, while a pending version's trust card
+  # reads its own pairs WHOLE — the manifest diff compares every descriptor
+  # field, so summary rows would silently blind it. Kept as RAW rows either way
+  # (no dedupe here) so a pending review can select its exact hash BEFORE the
+  # most-severe dedupe collapses two hashes' rows for the same action id.
+  defp console_action_rows(pack_versions, name, risk, %Subject{} = subject) do
+    pending_pairs =
+      for %PackVersion{trust_state: :pending} = version <- pack_versions,
+          do: {version.pack_id, version.version}
+
+    Map.merge(
+      filter_match_action_rows(name, risk, subject),
+      pending_decision_action_rows(pending_pairs, subject)
+    )
+  end
+
+  defp filter_match_action_rows("", "", %Subject{}), do: %{}
+
+  defp filter_match_action_rows(_name, _risk, %Subject{} = subject) do
+    RunnerAction.Query.all()
+    |> RunnerAction.Query.ordered_by_action()
+    |> RunnerAction.Query.select_console_columns()
+    |> Authorizer.for_subject(subject)
+    |> Repo.all()
+    |> Enum.group_by(&{&1.pack_id, &1.pack_version})
+  end
+
+  defp pending_decision_action_rows([], %Subject{}), do: %{}
+
+  defp pending_decision_action_rows(pending_pairs, %Subject{} = subject) do
+    RunnerAction.Query.all()
+    |> RunnerAction.Query.by_pack_refs(pending_pairs)
+    |> RunnerAction.Query.ordered_by_action()
+    |> Authorizer.for_subject(subject)
+    |> Repo.all()
+    |> Enum.group_by(&{&1.pack_id, &1.pack_version})
   end
 
   # Which runners advertise each `(pack_id, version)`, from ONE bounded fleet
@@ -2935,6 +2988,7 @@ defmodule Emisar.Catalog do
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_pack(pack_id, pack_version)
         |> RunnerAction.Query.ordered_by_action()
+        |> RunnerAction.Query.select_console_columns()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> most_severe_actions_by_id()
@@ -2959,9 +3013,11 @@ defmodule Emisar.Catalog do
   not just a new hash.
 
   Pure over already-authorized data: pass the `%PackVersion{}` (loaded via a
-  Subject-gated read) and its advertised `%RunnerAction{}` rows (from
-  `list_pack_actions/3`). A nil manifest (trusted before this feature, or never
-  trusted) yields an empty diff — the UI falls back to listing the actions.
+  Subject-gated read) and its advertised `%RunnerAction{}` rows loaded WHOLE —
+  the diff compares every descriptor field, so summary-column rows (from
+  `list_pack_actions/3` or `select_console_columns/1`) would silently report no
+  changes. A nil manifest (trusted before this feature, or never trusted)
+  yields an empty diff — the UI falls back to listing the actions.
   Returns `%{added: [...], removed: [...], changed: [...]}`.
   """
   def action_set_changes(%PackVersion{} = pack_version, advertised_actions)

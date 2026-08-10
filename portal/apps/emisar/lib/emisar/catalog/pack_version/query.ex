@@ -65,6 +65,17 @@ defmodule Emisar.Catalog.PackVersion.Query do
     )
   end
 
+  @doc """
+  Load every column except `trusted_manifest` — the console's browse read. The
+  manifest is a complete per-version descriptor snapshot (the table's heaviest
+  column) that only a pending review's diff consumes; the console re-reads
+  those few rows whole by id.
+  """
+  def select_without_manifest(queryable) do
+    fields = Emisar.Catalog.PackVersion.__schema__(:fields) -- [:trusted_manifest]
+    select(queryable, [packs: p], struct(p, ^fields))
+  end
+
   def by_pack_ids(queryable \\ all(), pack_ids),
     do: where(queryable, [packs: p], p.pack_id in ^pack_ids)
 

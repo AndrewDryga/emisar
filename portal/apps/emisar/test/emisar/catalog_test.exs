@@ -4494,9 +4494,10 @@ defmodule Emisar.CatalogTest do
 
       assert large.version_count > small.version_count
       assert large_queries == small_queries
-      # One pack-version read, one batched action read, one bounded fleet read
-      # for the pending rows' blast radius.
-      assert small_queries == 3
+      # One slim pack-version read, the pending rows' whole-row re-read, the
+      # summary filter-match read, the pending pairs' whole action read, and
+      # one bounded fleet read for the pending rows' blast radius.
+      assert small_queries == 5
 
       for pack_version <- small.pack_versions do
         {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, small_subject)
@@ -4663,6 +4664,68 @@ defmodule Emisar.CatalogTest do
 
       assert [%{action_id: "acme.run", old_risk: "critical", new_risk: "low"}] =
                fact.action_changes.changed
+    end
+
+    test "a live filter never blinds a pending review's manifest diff", %{
+      account: account,
+      subject: subject,
+      runner: trusted_runner
+    } do
+      # The account-wide filter-match read carries summary columns only; the
+      # pending pair's rows must still arrive whole, or typing a search would
+      # silently report "no changes" on the very review being inspected.
+      {:ok, _trusted_runner} =
+        Catalog.observe_state(
+          trusted_runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "old-hash"}},
+            actions: [action("acme.run", pack_id: "acme", risk: "critical")]
+          )
+        )
+
+      {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      {:ok, _trusted} = Catalog.trust_pack_version(version_id(projection, "acme"), subject)
+
+      drifted_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _drifted_runner} =
+        Catalog.observe_state(
+          drifted_runner,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "new-hash"}},
+            actions: [action("acme.run", pack_id: "acme", risk: "low")]
+          )
+        )
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{name: "acme"}, subject)
+      fact = version_fact(projection, "acme", "1.0")
+
+      assert [%{action_id: "acme.run", old_risk: "critical", new_risk: "low"}] =
+               fact.action_changes.changed
+    end
+
+    test "an overridden retirement's browse row still names its overrider", %{
+      account: account,
+      subject: subject
+    } do
+      # The browse read is slim; the overridden row must be re-read whole with
+      # its overrider preloaded, or the override note would lose its name.
+      pack_id = retired_pack_id()
+
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      {:ok, _overridden} = Catalog.override_pack_retirement(pack_version.id, subject)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, pack_id, "0.0.0")
+
+      assert fact.display_state == "trusted"
+      assert %{actor_label: "Test User"} = fact.override
     end
 
     test "a pack advertising NO actions still names the runners it is installed on", %{
@@ -5112,7 +5175,10 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [pending], _} = Catalog.list_pack_versions(subject)
       assert pending.trust_state == :pending
-      {:ok, advertised} = Catalog.list_pack_actions("acme", "1.0", subject)
+      # The diff compares every descriptor field, so its input is the WHOLE
+      # advertised rows — the sandbox holds only this test's — never a
+      # summary-column read like `list_pack_actions/3`.
+      advertised = Repo.all(RunnerAction)
 
       diff = Catalog.action_set_changes(pending, advertised)
       assert [%{action_id: "acme.wipe", risk: "critical"}] = diff.added
@@ -5141,7 +5207,7 @@ defmodule Emisar.CatalogTest do
         )
 
       {:ok, [pending], _} = Catalog.list_pack_versions(subject)
-      {:ok, advertised} = Catalog.list_pack_actions("acme", "1.0", subject)
+      advertised = Repo.all(RunnerAction)
       diff = Catalog.action_set_changes(pending, advertised)
 
       assert [%{action_id: "acme.gone", risk: "medium"}] = diff.removed
@@ -5173,7 +5239,7 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [pending], _} = Catalog.list_pack_versions(subject)
       assert pending.trusted_manifest == nil
-      {:ok, advertised} = Catalog.list_pack_actions("acme", "1.0", subject)
+      advertised = Repo.all(RunnerAction)
 
       assert Catalog.action_set_changes(pending, advertised) == %{
                added: [],
