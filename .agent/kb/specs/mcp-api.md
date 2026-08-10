@@ -2104,8 +2104,12 @@ nobody gates on cost real maintenance for evidence no release ever read.
 The certification job builds the bridge from the candidate commit, pins each
 client version, gives every client only a short-lived loopback credential, and
 keeps the real fixture credential in a fail-closed relay. That relay rejects
-tools, actions, packs, and runners outside the case allowlists before the portal.
-It also requires successful action inspection before dispatch.
+tools, packs, and runners outside the case allowlists before the portal, and
+rejects a `run_action` on an allowlisted action unless the client first
+inspected it with `get_action`. The action allowlist is a mutation boundary,
+not an exploration cap: an action the portal itself advertised as risk `low`
+(read-only) earlier in the session may also run, adjacent to the task, on
+allowed runners.
 
 Record the candidate commit, corpus digest and partition, exact model, client
 and bridge versions, required-tool completion, recall at 5, terminal
