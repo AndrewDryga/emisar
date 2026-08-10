@@ -87,16 +87,21 @@ cases:
     cleanup:
       - argv: [systemctl, unmask, cron.service]
 
-  # A fresh journal has nothing archived, so vacuuming it would prove nothing.
-  # Rotating first creates exactly one archived file for the vacuum to remove.
+  # The probe checks BOTH halves — that archived journals existed and that they
+  # are gone — because either alone passes vacuously: a machine with nothing
+  # archived vacuums nothing successfully. The rotate guarantees the first half
+  # rather than trusting the SUT to have rotated on its own. Verified by widening
+  # the cutoff to 9999w, which succeeds, removes nothing, and fails the probe.
+  # The journal is volatile here, so it lives under the /run the SUT shares.
   - action: systemd.vacuum_journal
     args: {cutoff: 1s}
     arrange:
       - argv: [journalctl, --rotate]
+      - argv: [/bin/sh, -c, "ls /run/log/journal/*/*@*.journal /var/log/journal/*/*@*.journal 2>/dev/null | wc -l > /run/packtest-archived"]
     expect:
       stderr_contains: ["Vacuuming done"]
     probes:
-      - name: the archived journal is gone
-        argv: [/bin/sh, -c, "ls /var/log/journal/*/*@*.journal 2>/dev/null | wc -l"]
+      - name: archived journals existed and are now gone
+        argv: [/bin/sh, -c, "test \"$(cat /run/packtest-archived)\" -gt 0 && test \"$(ls /run/log/journal/*/*@*.journal /var/log/journal/*/*@*.journal 2>/dev/null | wc -l)\" -eq 0 && echo vacuumed"]
         expect:
-          stdout_contains: ["0"]
+          stdout_contains: [vacuumed]
