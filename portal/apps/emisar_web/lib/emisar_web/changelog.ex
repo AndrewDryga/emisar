@@ -17,6 +17,36 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-08-09],
+      slug: "one-runbook-one-unpublished-change",
+      title: "One runbook, one unpublished change, and a diff before you publish",
+      tag: "v0.39.0",
+      summary:
+        "Every save of a runbook used to mint a version, so the number counted saves rather than decisions: fifteen authoring passes were fifteen versions, and v7 could be the second thing that ever ran. Which version was live, which was a draft sitting on top of it, and which had been superseded were three facts smeared across those rows, and the editor opened whichever row you clicked — so an old version was one click from what looked like a live editor. Publishing from there made old content the newest published version and silently changed what a plain Run dispatches. A runbook is now one thing carrying one unpublished change. Publishing shows the lines that differ from what runs today, mints the next release, and clears the change; only the live release runs, an agent's edit replaces that one change under the hash it read, and every execution keeps the exact definition it started with.",
+      details: [
+        {"Security",
+         [
+           "The runner redacts more of what a config actually calls a secret: connection strings and database URLs, key-derivation inputs like salt and pepper, cookie and session signing keys, and the passphrase spellings. This is a safety net under actions that forget to declare their own redactions, never a reason to lower an action's risk tier — a key name nobody thought of still leaks.",
+           "Reading a pfSense certificate no longer emits its private key, and the fleet installer keeps a reusable enrollment key off the process command line."
+         ]},
+        {"Runbooks",
+         [
+           "Publishing is a confirmation that shows the change: the lines replacing what runs today, against the exact text whose hash is the definition's identity. A first release says so instead of showing an empty diff.",
+           "Only the live release runs. Naming an older one answers not_live rather than quietly running current content, and a draft runs only with explicit consent plus the hash of exactly what you read.",
+           "History is inspectable and no longer editable. The runbook list names the live release on the Run button itself and marks waiting changes with a quiet dot."
+         ]},
+        {"Packs",
+         [
+           "The behavior harness now proves the shapes it used to skip: a real service manager booted as PID 1, a Docker daemon each case owns, iptables inside the namespace it writes, and a real dpkg database for install, remove, and autoremove.",
+           "pfSense gains resolver, NTP, and WireGuard peer reads that never return their secrets, plus a DHCP reservation staged for the operator to apply."
+         ]},
+        {"Billing",
+         [
+           "A new subscription adopts the Paddle customer an owner's email already has instead of failing, and a repeating conflict now says which one it is."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-08-08],
       slug: "a-vanished-runbook-a-deny-that-matched-nothing",
       title: "A vanished runbook, a deny that matched nothing, and a session that would not end",
