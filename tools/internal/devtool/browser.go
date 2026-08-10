@@ -137,7 +137,10 @@ func parseShot(args []string) (shotCommand, error) {
 	flags.StringVar(&heading, "heading", "", "")
 	flags.StringVar(&classContains, "class-contains", "", "")
 	flags.StringVar(&climb, "climb", "", "")
-	flags.StringVar(&command.options.Click, "click", "", "")
+	flags.Func("click", "", func(value string) error {
+		command.options.Clicks = append(command.options.Clicks, value)
+		return nil
+	})
 	flags.Int64Var(&command.options.Width, "width", 1440, "")
 	flags.IntVar(&settle, "settle", 0, "")
 	path := ""
@@ -154,7 +157,7 @@ func parseShot(args []string) (shotCommand, error) {
 		}
 	}
 	if err := flags.Parse(flagArgs); err != nil || path == "" || command.options.Label == "" || flags.NArg() != 0 {
-		return command, usage("usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL] [--width N] [--settle MS]")
+		return command, usage("usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL]... [--width N] [--settle MS]")
 	}
 	command.options.Path = path
 	command.options.Settle = time.Duration(settle) * time.Millisecond

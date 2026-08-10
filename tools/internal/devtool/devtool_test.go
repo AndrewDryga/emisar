@@ -1166,6 +1166,21 @@ func TestParseShotAcceptsTaskOwnedGrouping(t *testing.T) {
 	}
 }
 
+func TestParseShotKeepsRepeatedClicksInOrder(t *testing.T) {
+	command, err := parseShot([]string{
+		"/app/acme/runbooks/1/edit", "--label", "open",
+		"--click", "#step-0 [data-expand]",
+		"--click", "#step-0 [data-combobox-trigger]",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"#step-0 [data-expand]", "#step-0 [data-combobox-trigger]"}
+	if !slices.Equal(command.options.Clicks, want) {
+		t.Fatalf("clicks = %#v", command.options.Clicks)
+	}
+}
+
 func TestParseShotUsesEmailOverride(t *testing.T) {
 	t.Setenv("EMAIL", "user@example.test")
 

@@ -26,7 +26,10 @@ type ShotOptions struct {
 	Email  string
 	Width  int64
 	Settle time.Duration
-	Click  string
+	// Clicks run in order after navigation, each waiting for its selector —
+	// how a shot reaches state behind a reveal (expand a step, then open its
+	// picker), mirroring the docs captures' Clicks.
+	Clicks []string
 	Anchor *Anchor
 }
 
@@ -123,10 +126,10 @@ func (s *Session) Shot(options ShotOptions) ([]string, error) {
 			return nil, err
 		}
 	}
-	if options.Click != "" {
+	for _, click := range options.Clicks {
 		if err := chromedp.Run(s.Context,
-			chromedp.WaitVisible(options.Click, chromedp.ByQuery),
-			chromedp.Click(options.Click, chromedp.ByQuery),
+			chromedp.WaitVisible(click, chromedp.ByQuery),
+			chromedp.Click(click, chromedp.ByQuery),
 		); err != nil {
 			return nil, err
 		}
