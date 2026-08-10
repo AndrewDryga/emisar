@@ -44,12 +44,17 @@ type searchCandidate struct {
 }
 
 type callRecord struct {
-	Sequence             int               `json:"sequence"`
-	Tool                 string            `json:"tool"`
-	ArgumentKeys         []string          `json:"argument_keys"`
-	ArgumentsDigest      string            `json:"arguments_digest"`
-	ActionID             string            `json:"action_id,omitempty"`
-	PackRef              string            `json:"pack_ref,omitempty"`
+	Sequence        int      `json:"sequence"`
+	Tool            string   `json:"tool"`
+	ArgumentKeys    []string `json:"argument_keys"`
+	ArgumentsDigest string   `json:"arguments_digest"`
+	ActionID        string   `json:"action_id,omitempty"`
+	PackRef         string   `json:"pack_ref,omitempty"`
+	// ActionRisk is the risk tier the portal advertised for this exact
+	// action+pack earlier in the session (a find_actions candidate or a
+	// get_action contract) — the recorded evidence that admits a run_action
+	// outside the scenario allowlist as an adjacent read.
+	ActionRisk           string            `json:"action_risk,omitempty"`
 	RunnerCount          int               `json:"runner_count,omitempty"`
 	ReasonPlaceholder    bool              `json:"reason_placeholder,omitempty"`
 	EvidencePresent      bool              `json:"evidence_present,omitempty"`

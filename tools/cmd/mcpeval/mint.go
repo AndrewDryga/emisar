@@ -46,6 +46,18 @@ type intentRunner struct {
 // intentItem is the whole of what an author writes. A positive scenario names
 // the actions its task legitimately needs; a no_action scenario names none,
 // because its assertion is that the client refuses rather than improvises.
+//
+// The prompt and the action list must agree in BOTH directions. A prompt that
+// names an action id hands over the answer (the mint refuses that shape). And
+// a prompt whose task the listed actions cannot complete strands a diligent
+// client: a side fact some read-only action answers degrades gracefully (the
+// relay admits adjacent low-risk reads — see readOnlyTools), but completion
+// and recall are measured only on the authored list, and a fact only a
+// mutation could answer still walks the client into the fail-closed block —
+// "load, memory and uptime" with no memory action certified fine or failed
+// purely on whether the client explored, until adjacent reads were admitted.
+// The task the prompt requires needs allowed actions that complete it — that
+// judgment is semantic, so it stays the author's, not a lint.
 type intentItem struct {
 	ID              string   `json:"id"`
 	ExpectedOutcome string   `json:"expected_outcome"`
@@ -75,6 +87,14 @@ var runnerNamePattern = regexp.MustCompile(`\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}\z`
 // task properly and still failed, because listing runbooks was not on the list.
 // The mutation boundary is the mutation tools, which a no_action scenario simply
 // does not carry.
+//
+// The same principle extends one level down, enforced by the relay rather than
+// minted here: run_action on an action the portal advertises as riskReadOnly
+// is admitted even when allowed_actions does not name it — an operator
+// diagnosing load legitimately grabs cpu_info alongside loadavg. So a positive
+// scenario's allowed_actions is the mutation boundary plus the pinned task
+// actions, never a cap on how widely the client may read, and the author's
+// list stays exactly the actions the task REQUIRES.
 var readOnlyTools = []string{
 	"list_packs", "list_runners", "list_runbooks", "get_runbook",
 	"find_actions", "get_action", "get_operation", "recent_runs", "wait_for_run",

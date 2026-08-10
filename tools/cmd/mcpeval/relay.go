@@ -196,6 +196,12 @@ type recorder struct {
 	// inspected is the set of action_id+pack_ref that a successful get_action
 	// has observed; run_action must follow one for the same pair.
 	inspected map[string]bool
+	// advertisedRisk maps action_id+pack_ref to the risk tier the portal
+	// itself served for that exact pair in this session — every find_actions
+	// candidate (all of them, not the five the report keeps for recall@5) and
+	// every retrieved get_action contract. A pair advertised at riskReadOnly
+	// may be dispatched outside the scenario allowlist as an adjacent read.
+	advertisedRisk map[string]string
 }
 
 type requestMetadata struct {
@@ -205,7 +211,7 @@ type requestMetadata struct {
 }
 
 func newRecorder(item scenario) *recorder {
-	return &recorder{policy: item, inspected: map[string]bool{}}
+	return &recorder{policy: item, inspected: map[string]bool{}, advertisedRisk: map[string]string{}}
 }
 
 func (r *recorder) policyBlock(record callRecord, args map[string]any, encodedArgs []byte) string {
@@ -222,14 +228,28 @@ func (r *recorder) policyBlock(record callRecord, args map[string]any, encodedAr
 	if record.Tool != "run_action" {
 		return ""
 	}
-	if !stringSet(r.policy.AllowedActions)[record.ActionID] || record.PackRef == "" {
+	if record.PackRef == "" {
 		return "action_not_allowed"
 	}
-	if len(r.policy.AllowedPackRefs) > 0 && !stringSet(r.policy.AllowedPackRefs)[record.PackRef] {
-		return "pack_not_allowed"
-	}
-	if !record.priorContractMatched {
-		return "inspection_required"
+	// allowed_actions is a MUTATION boundary plus the pinned task actions,
+	// never a cap on how widely the client may read. The named task actions
+	// keep full dispatch discipline — pinned pack refs, a prior retrieved
+	// contract. Anything else may still run as an ADJACENT READ when the
+	// portal itself advertised that exact action+pack as riskReadOnly in this
+	// session: an operator diagnosing load legitimately grabs cpu_info
+	// alongside loadavg, and blocking that certified-failed a correct client.
+	// The advertisement binds action AND pack, so a read-only action id cannot
+	// be paired with a pack the portal never served it under; runner and
+	// argument bounds below still apply either way.
+	if stringSet(r.policy.AllowedActions)[record.ActionID] {
+		if len(r.policy.AllowedPackRefs) > 0 && !stringSet(r.policy.AllowedPackRefs)[record.PackRef] {
+			return "pack_not_allowed"
+		}
+		if !record.priorContractMatched {
+			return "inspection_required"
+		}
+	} else if record.ActionRisk != riskReadOnly {
+		return "action_not_allowed"
 	}
 	refs, ok := args["runner_refs"].([]any)
 	if !ok || len(refs) == 0 || len(refs) > maxRunnerRefs || !uniqueStrings(refs) {
@@ -330,6 +350,7 @@ func (r *recorder) request(body []byte) requestMetadata {
 	r.mu.Lock()
 	if tool == "run_action" {
 		record.priorContractMatched = r.inspected[record.ActionID+"\x00"+record.PackRef]
+		record.ActionRisk = r.advertisedRisk[record.ActionID+"\x00"+record.PackRef]
 	}
 	blockCode := r.policyBlock(record, args, encodedArgs)
 	record.BlockedByPolicy = blockCode != ""
@@ -362,6 +383,11 @@ func (r *recorder) response(metadata requestMetadata, body []byte, statusCode in
 	call.ResponseCode = nestedString(structured, "error", "code")
 	if call.Tool == "find_actions" && !call.ResponseError {
 		call.SearchCandidates = collectSearchCandidates(structured)
+		for _, value := range sliceValue(structured["candidates"]) {
+			if object, ok := value.(map[string]any); ok {
+				r.recordAdvertisedRisk(stringValue(object["action_id"]), stringValue(object["pack_ref"]), stringValue(object["risk"]))
+			}
+		}
 	}
 	call.RunStates = collectRunStates(call.Tool, structured)
 	if call.Tool == "run_action" && !call.ResponseError {
@@ -373,7 +399,20 @@ func (r *recorder) response(metadata requestMetadata, body []byte, statusCode in
 	}
 	if call.Tool == "get_action" && !call.ResponseError && call.ActionID != "" && call.PackRef != "" {
 		r.inspected[call.ActionID+"\x00"+call.PackRef] = true
+		if action, ok := structured["action"].(map[string]any); ok {
+			r.recordAdvertisedRisk(call.ActionID, call.PackRef, stringValue(action["risk"]))
+		}
 	}
+}
+
+// recordAdvertisedRisk must run under r.mu, which both callers in response()
+// hold. A blank id, ref, or risk records nothing — an unclassified pair stays
+// undispatched, failing closed.
+func (r *recorder) recordAdvertisedRisk(actionID, packRef, risk string) {
+	if actionID == "" || packRef == "" || risk == "" {
+		return
+	}
+	r.advertisedRisk[actionID+"\x00"+packRef] = risk
 }
 
 func collectSearchCandidates(structured map[string]any) []searchCandidate {

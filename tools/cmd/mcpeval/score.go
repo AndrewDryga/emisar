@@ -22,6 +22,11 @@ var mutationTools = map[string]bool{
 	"update_runbook_draft": true,
 }
 
+// riskReadOnly is the pack schema's read-only risk tier — "low = read-only
+// (no approval)" (runner/internal/catalog/schemas/action.schema.json). An
+// action the portal advertises at this tier is a read, wherever it appears.
+const riskReadOnly = "low"
+
 // scoreReport applies only hard conformance rules — facts the relay recorded
 // about API behavior, robust to model drift. How the model phrases its answer
 // is reported (agent stdout), never scored.
@@ -35,6 +40,12 @@ var mutationTools = map[string]bool{
 // same failing call repeated more than twice, (e) a started run left
 // non-terminal, (f) a required tool or action that never succeeded, and an
 // agent process that timed out or exited nonzero.
+//
+// An ADJACENT READ — run_action outside the allowlist that the relay admitted
+// on the portal's own risk-"low" advertisement (see the relay's
+// mutation-boundary comment) — is treated as a read by rules (b) and (c): it
+// self-heals and composes from its advertisement rather than a retrieved
+// contract. Every other dispatch rule still applies to it, including (e).
 func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	result := score{Passed: true}
 	succeededTools := map[string]bool{}
@@ -54,6 +65,8 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 
 	for _, call := range calls {
 		result.TotalCalls++
+		adjacentRead := call.Tool == "run_action" &&
+			!allowedActionIDs[call.ActionID] && call.ActionRisk == riskReadOnly
 		if call.BlockedByPolicy {
 			result.PolicyBlockedCalls++
 			result.fail(fmt.Sprintf("the evaluator blocked %s outside the scenario allowlist (%s)", call.Tool, call.ResponseCode))
@@ -103,7 +116,7 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		}
 		if call.ResponseCode == "invalid_args" {
 			result.InvalidArgsCalls++
-			if mutationTools[call.Tool] {
+			if mutationTools[call.Tool] && !adjacentRead {
 				result.fail(call.Tool + " sent schema-invalid arguments (portal rejected them as invalid_args)")
 			}
 		}
@@ -113,7 +126,13 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		if call.Tool != "run_action" {
 			continue
 		}
-		if !call.BlockedByPolicy && !call.priorContractMatched {
+		// Belt and braces against the relay: a dispatch outside the allowlist
+		// that it let through must carry the read-only advertisement that
+		// justified admitting it.
+		if !call.BlockedByPolicy && !allowedActionIDs[call.ActionID] && !adjacentRead {
+			result.fail("run_action dispatched an action outside the scenario allowlist without the portal's read-only advertisement")
+		}
+		if !call.BlockedByPolicy && !call.priorContractMatched && !adjacentRead {
 			result.InspectionViolations++
 			result.fail("run_action was sent without a prior successful get_action for the same action and pack")
 		}

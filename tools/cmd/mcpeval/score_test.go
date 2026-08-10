@@ -119,6 +119,51 @@ func TestScoreReportsButAllowsDiscoveryInvalidArgs(t *testing.T) {
 	}
 }
 
+func TestScoreAcceptsAdjacentReadOnlyDispatch(t *testing.T) {
+	// A dispatch outside the allowlist that the relay admitted on the portal's
+	// own read-only advertisement is diligence: no inspection violation and no
+	// allowlist failure, while its runs still count toward the terminal-status
+	// requirement.
+	calls := append(conformingCalls(), callRecord{
+		Tool: "run_action", ActionID: "linux.cpu_info", PackRef: "p2", ActionRisk: riskReadOnly,
+		RunStates: []runState{{RunID: "r2", OperationID: "op_2", Status: "success"}},
+	})
+	got := scoreReport(conformingScenario(), calls, agentResult{})
+	if !got.Passed {
+		t.Fatalf("adjacent read failed: %v", got.Failures)
+	}
+	if got.InspectionViolations != 0 || got.RunsStarted != 2 || got.RunsTerminal != 2 {
+		t.Fatalf("counters = %#v", got)
+	}
+}
+
+func TestScoreRejectsOffAllowlistDispatchWithoutReadOnlyAdvertisement(t *testing.T) {
+	// Belt and braces: if the relay ever let an unclassified off-allowlist
+	// dispatch through, the scorer still fails it.
+	calls := append(conformingCalls(), callRecord{
+		Tool: "run_action", ActionID: "linux.cpu_info", PackRef: "p2",
+		RunStates: []runState{{RunID: "r2", OperationID: "op_2", Status: "success"}},
+	})
+	got := scoreReport(conformingScenario(), calls, agentResult{})
+	if got.Passed || !strings.Contains(strings.Join(got.Failures, "\n"), "read-only advertisement") {
+		t.Fatalf("unadvertised off-allowlist dispatch = %#v", got)
+	}
+}
+
+func TestScoreSoftCountsInvalidArgsOnAdjacentReads(t *testing.T) {
+	// An adjacent read composes from its advertisement rather than a retrieved
+	// contract, so a bounced probe self-heals exactly like the discovery reads
+	// — counted, reported, and still hard-failing if repeated identically.
+	calls := append(conformingCalls(), callRecord{
+		Tool: "run_action", ActionID: "linux.cpu_info", PackRef: "p2", ActionRisk: riskReadOnly,
+		ResponseError: true, ResponseCode: "invalid_args",
+	})
+	got := scoreReport(conformingScenario(), calls, agentResult{})
+	if !got.Passed || got.InvalidArgsCalls != 1 {
+		t.Fatalf("adjacent-read invalid_args = %#v", got)
+	}
+}
+
 func TestScoreRejectsRunActionWithoutPriorInspection(t *testing.T) {
 	item := conformingScenario()
 	calls := conformingCalls()

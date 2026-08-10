@@ -201,6 +201,61 @@ func TestPolicyAllowsReadOnlyInspectionOfAnyAction(t *testing.T) {
 	}
 }
 
+func TestPolicyAdmitsAdvertisedReadOnlyActionOutsideAllowlist(t *testing.T) {
+	// A client that completes the task and then widens its diagnosis with an
+	// ADJACENT low-risk read surfaced by its own search is showing diligence,
+	// not crossing the boundary. The relay admits run_action outside
+	// allowed_actions only for the exact action+pack pair the portal
+	// advertised as risk "low" in this session; a mutating advertisement
+	// stays blocked.
+	r := newRecorder(scenario{
+		AllowedTools:      []string{"find_actions", "run_action"},
+		AllowedActions:    []string{"debugging.loadavg"},
+		AllowedRunnerRefs: []string{"edge-fra-01~a"},
+	})
+	find := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"find_actions","arguments":{"query":"cpu"}}}`))
+	r.response(find, []byte(`{"id":1,"result":{"structuredContent":{"ok":true,"candidates":[
+	  {"action_id":"linux.cpu_info","pack_ref":"linux-core@1/sha256:abc","risk":"low"},
+	  {"action_id":"systemd.restart_unit","pack_ref":"systemd@1/sha256:def","risk":"medium"}
+	]}}}`), 200)
+
+	run := r.request([]byte(`{"id":2,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.cpu_info","pack_ref":"linux-core@1/sha256:abc","runner_refs":["edge-fra-01~a"],"args":{},"reason":"Check CPU topology alongside the load reading"}}}`))
+	if run.blockCode != "" {
+		t.Fatalf("advertised read-only adjacent action blocked: %q", run.blockCode)
+	}
+	if calls := r.snapshot(); calls[1].ActionRisk != riskReadOnly {
+		t.Fatalf("admitted dispatch did not record its advertisement: %#v", calls[1])
+	}
+
+	mutating := r.request([]byte(`{"id":3,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"systemd.restart_unit","pack_ref":"systemd@1/sha256:def","runner_refs":["edge-fra-01~a"],"args":{},"reason":"Restart the unit to clear the stuck state"}}}`))
+	if mutating.blockCode != "action_not_allowed" {
+		t.Fatalf("advertised mutating action outside the allowlist = %q, want action_not_allowed", mutating.blockCode)
+	}
+
+	rogue := r.request([]byte(`{"id":4,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.cpu_info","pack_ref":"rogue@1/sha256:eee","runner_refs":["edge-fra-01~a"],"args":{},"reason":"Check CPU topology alongside the load reading"}}}`))
+	if rogue.blockCode != "action_not_allowed" {
+		t.Fatalf("read-only action id at a never-advertised pack = %q, want action_not_allowed", rogue.blockCode)
+	}
+
+	wrongRunner := r.request([]byte(`{"id":5,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.cpu_info","pack_ref":"linux-core@1/sha256:abc","runner_refs":["api-iad-02~b"],"args":{},"reason":"Check CPU topology alongside the load reading"}}}`))
+	if wrongRunner.blockCode != "runner_not_allowed" {
+		t.Fatalf("adjacent read on an out-of-scope runner = %q, want runner_not_allowed", wrongRunner.blockCode)
+	}
+}
+
+func TestPolicyAdmitsReadOnlyContractRetrievedByGetAction(t *testing.T) {
+	r := newRecorder(scenario{
+		AllowedTools:   []string{"get_action", "run_action"},
+		AllowedActions: []string{"debugging.loadavg"},
+	})
+	get := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"get_action","arguments":{"action_id":"linux.cpu_info","pack_ref":"p"}}}`))
+	r.response(get, []byte(`{"id":1,"result":{"structuredContent":{"ok":true,"action":{"action_id":"linux.cpu_info","pack_ref":"p","risk":"low"}}}}`), 200)
+	run := r.request([]byte(`{"id":2,"method":"tools/call","params":{"name":"run_action","arguments":{"action_id":"linux.cpu_info","pack_ref":"p","runner_refs":["r"],"args":{},"reason":"Check CPU topology for the load diagnosis"}}}`))
+	if run.blockCode != "" {
+		t.Fatalf("read-only contract retrieved by get_action still blocked: %q", run.blockCode)
+	}
+}
+
 func TestPolicyBlocksWrongPackAndRunnerBeforeDispatch(t *testing.T) {
 	item := scenario{
 		AllowedTools:      []string{"run_action"},

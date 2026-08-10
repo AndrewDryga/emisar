@@ -8,14 +8,19 @@ The scorer reads recorded tool behavior, not the model's final prose.
 The candidate bridge connects only to a loopback relay. That relay alone holds
 the real `EMISAR_API_KEY`; the client and bridge receive a short-lived local
 credential. Before forwarding a call, the relay rejects tools, actions, packs,
-and runners outside the scenario allowlists. It also rejects `run_action`
-unless the client first completed `get_action` for the same action and pack.
+and runners outside the scenario allowlists, and rejects `run_action` on an
+allowlisted action unless the client first completed `get_action` for the same
+action and pack. The action allowlist is a mutation boundary, not an
+exploration cap: an action the portal itself advertised as risk `low`
+(read-only) earlier in the session may also run, adjacent to the task, on
+allowed runners.
 
 Positive cases require:
 
 - the expected action in the first five `find_actions` candidates;
 - the required tool calls and one action from every required outcome group;
-- no wrong action, pack, or runner;
+- no dispatch outside the allowlist other than advertised read-only adjacent
+  reads, and no wrong pack or runner;
 - every started run driven to a terminal result through returned
   continuations; and
 - a successful client process.
