@@ -412,18 +412,6 @@ morning_attrs = %{
   draft_definition: morning_definition
 }
 
-# The unpublished change the console demos: the same checks, run one at a time
-# so a failure stops the sweep. Small on purpose — the publish diff has to be
-# readable in a screenshot.
-morning_draft_definition =
-  put_in(morning_definition, ["stages", Access.at(0), "max_parallel"], 1)
-  |> Map.put(
-    "context_markdown",
-    "## Before you run\n\n- Confirm the morning readiness window.\n" <>
-      "- Escalate any failed check before shifting traffic.\n" <>
-      "- Checks run one at a time so the first failure stops the sweep."
-  )
-
 # Publication is arranged at the changeset level: the demo runners these
 # runbooks target are seeded further down, so the context's current-state
 # publication readiness cannot pass yet.
@@ -475,13 +463,6 @@ seed_live_runbook = fn slug, attrs ->
 end
 
 morning_runbook = seed_live_runbook.("morning-edge-readiness", morning_attrs)
-
-# The list's amber "Unpublished changes" chip and the editor's publish diff both
-# need a runbook mid-edit, so this one keeps a draft above its live release.
-{:ok, _morning_draft} =
-  morning_runbook
-  |> Runbook.Changeset.draft(%{draft_definition: morning_draft_definition})
-  |> Repo.update()
 
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded empty-history sample runbook" <> IO.ANSI.reset())
 
@@ -580,6 +561,20 @@ approval_attrs = %{
 }
 
 approval_runbook = seed_live_runbook.("edge-configuration-rollout", approval_attrs)
+
+# The guide follows this one procedure end to end, so the unpublished change it
+# documents lives here: reload the two edge nodes one at a time instead of
+# together. ONE scalar edit on purpose — the published diff has to be legible in
+# a docs screenshot, and a JSON line diff cannot wrap, so editing a long string
+# value (context_markdown) produces a truncated pair that shows the reader
+# nothing.
+approval_draft_definition =
+  put_in(approval_definition, ["stages", Access.at(0), "max_parallel"], 1)
+
+{:ok, _approval_draft} =
+  approval_runbook
+  |> Runbook.Changeset.draft(%{draft_definition: approval_draft_definition})
+  |> Repo.update()
 
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded edge configuration rollout runbook" <> IO.ANSI.reset())
 

@@ -95,6 +95,12 @@ func openPanel(button, content string) string {
 
 const waitForResolvedRunbookPlan = `(()=>{const el=document.querySelector('#current-runbook-plan-summary');return !!el&&el.textContent.includes('Actions')&&!el.textContent.includes('Checking current state')})()`
 
+// openPublishReview waits out the editor's delayed publish check before
+// clicking: Publish is disabled until the current-state preflight resolves, so
+// clicking the moment the row renders is a no-op against a dead control and the
+// review panel never opens. Reports success only once the panel exists.
+const openPublishReview = `(()=>{if(document.querySelector('#runbook-actions-desktop-review'))return true;const b=document.querySelector('#runbook-actions-desktop-publish');if(!b||b.disabled||b.getAttribute('aria-disabled')==='true')return false;b.click();return false})()`
+
 const openRunbookTargetPicker = `(()=>{const trigger=document.querySelector('#runbook-stage-1-step-0-target-trigger');if(!trigger)return false;const details=trigger.closest('details');if(!details)return false;if(details.open)return true;trigger.click();return false})()`
 
 // collapseAuditFilters folds the audit facet drawer (it arrives expanded when
@@ -168,6 +174,18 @@ var docsShots = []shot{
 	{Name: "runbook-outputs", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-outputs")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-outputs"}, Width: 1440, Output: "docs/runbooks/outputs.webp"},
 	{Name: "runbook-conditions", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-success")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-success"}, Width: 1440, Output: "docs/runbooks/conditions.webp"},
 	{Name: "runbook-wait", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-stage-1-step-1-wait"), openPanel(`#runbook-stage-1-step-1-wait button[phx-click="toggle_panel"]`, "#runbook-stage-1-step-1-wait-controls")}, Anchor: Anchor{Selector: "#runbook-stage-1-step-1-wait"}, Width: 1680, Output: "docs/runbooks/wait.webp"},
+	// runbook-publish needs a LIVE fleet: Publish stays disabled until the
+	// current-state preflight resolves every target, so capture it against the
+	// packaged stack, never the bare dev server (which has no connected runner
+	// and would only ever photograph a blocked button):
+	//
+	//	./run smoke
+	//	PORTAL_URL=http://localhost:4010 ./run capture docs runbook-publish
+	//
+	// Do NOT add COMPOSE_PROFILES=test — runner-runbook pins the same
+	// edge-fra-01 identity with a linux-core-only pack set, wins the connection
+	// lease, and strips the caddy catalog this procedure resolves against.
+	{Name: "runbook-publish", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-actions-desktop-publish"), openPublishReview}, Anchor: Anchor{Selector: "#runbook-actions-desktop-review"}, Width: 1440, Output: "docs/runbooks/publish.webp"},
 	{Name: "runbook-start", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1050, Output: "docs/runbooks/start.webp"},
 	{Name: "runbook-approval", Path: "/app/demo/approvals", Clicks: []string{navigateRowLink(`#pending a[href*="/approvals/"]`, "Edge configuration rollout", "#approval-decision-form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1120, Output: "docs/runbooks/approval.webp"},
 	{Name: "runbook-result", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan, navigateRowLink(`a[href*="/runs/"]`, "completed Tuesday", "#runbook-execution-result")}, Anchor: Anchor{Selector: "#runbook-execution-result"}, Width: 1280, TopCSS: 1650, Output: "docs/runbooks/result.webp"},
