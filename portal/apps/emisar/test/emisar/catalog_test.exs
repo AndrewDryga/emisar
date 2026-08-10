@@ -3525,6 +3525,31 @@ defmodule Emisar.CatalogTest do
       assert Catalog.common_actions(projection, [advertising.id, bare.id]) == []
     end
 
+    test "keeps an action when a straggler's advertised deployment is untrusted" do
+      {account, subject} = account_with_owner()
+      trusted = advertise_editor_action(account, subject, version: "1.2.0")
+      straggler = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, _observed} =
+        Catalog.observe_state(
+          straggler,
+          state_payload(
+            packs: %{"demo" => %{"version" => "0.9.0", "hash" => "demo-0.9.0"}},
+            actions: [action("demo.inspect", pack_id: "demo")]
+          )
+        )
+
+      assert {:ok, runners} =
+               Runners.list_all_runners_for_account(subject, preload: [:online?])
+
+      assert {:ok, projection} = Catalog.build_editor_projection(runners, subject)
+
+      assert [common] = Catalog.common_actions(projection, [trusted.id, straggler.id])
+      assert common.action_id == "demo.inspect"
+
+      assert Catalog.common_actions(projection, [straggler.id]) == []
+    end
+
     test "no selected runners resolve to no actions" do
       assert Catalog.common_actions(%Catalog.EditorProjection{}, []) == []
     end
@@ -3568,11 +3593,42 @@ defmodule Emisar.CatalogTest do
                {:error, [{:runner_a, :ambiguous_pack_version}]}
     end
 
-    test "reports every runner with no candidate at all" do
+    test "reports every runner that does not advertise the pack" do
       assert Catalog.select_common_action([
                {:runner_a, [editor_candidate("1.0.0")]},
-               {:runner_b, []}
+               {:runner_b, :not_advertised}
              ]) == {:error, [{:runner_b, :pack_unavailable}]}
+    end
+
+    test "narrows past a runner whose advertised deployment holds no trusted candidate" do
+      assert {:ok, %{candidates: [selected]}} =
+               Catalog.select_common_action([
+                 {:runner_a, [editor_candidate("1.0.0")]},
+                 {:runner_b, []}
+               ])
+
+      assert selected.runner == :runner_a
+    end
+
+    test "judges contract compatibility only across the runners with a candidate" do
+      typed = editor_candidate("2.0.0", args: [%{"name" => "path", "type" => "path"}])
+
+      assert {:ok, %{candidates: [selected], contract: contract}} =
+               Catalog.select_common_action([
+                 {:runner_a, []},
+                 {:runner_b, [typed]}
+               ])
+
+      assert selected.runner == :runner_b
+      assert get_in(contract, ["args_schema", "args"]) != []
+    end
+
+    test "reports every runner when no advertised deployment holds a trusted candidate" do
+      assert Catalog.select_common_action([
+               {:runner_a, []},
+               {:runner_b, []}
+             ]) ==
+               {:error, [{:runner_a, :pack_unavailable}, {:runner_b, :pack_unavailable}]}
     end
 
     test "rejects runners whose complete normalized contracts differ" do

@@ -1954,14 +1954,17 @@ defmodule Emisar.Catalog do
   end
 
   @doc """
-  Actions every one of `runner_ids` can execute from an editor projection under
-  one complete common action contract.
+  Actions the runners in `runner_ids` can execute from an editor projection
+  under one complete common action contract.
 
   Selection is the compiler's: one exact trusted candidate per runner, then
-  identical normalized `ActionContract` snapshots across them. An action whose
-  runners disagree on risk, arguments, or output shape is absent rather than
-  reconciled. Returns the ordered
-  `[%{pack_id, action_id, title, risk, args}]`.
+  identical normalized `ActionContract` snapshots across them. Every selected
+  runner must advertise the action's pack; a runner whose advertised deployment
+  currently holds no trusted candidate (retired, pending, rejected, or drifted)
+  narrows the executable set instead of hiding the action, and at least one
+  trusted candidate must remain. An action whose capable runners disagree on
+  risk, arguments, or output shape is absent rather than reconciled. Returns
+  the ordered `[%{pack_id, action_id, title, risk, args}]`.
   """
   @spec common_actions(EditorProjection.t(), [String.t()]) :: [map()]
   def common_actions(%EditorProjection{}, []), do: []
@@ -1969,7 +1972,8 @@ defmodule Emisar.Catalog do
   def common_actions(%EditorProjection{} = projection, runner_ids) when is_list(runner_ids) do
     projection.candidates
     |> Enum.flat_map(fn {{pack_id, action_id}, by_runner} ->
-      runner_candidates = Enum.map(runner_ids, &{&1, Map.get(by_runner, &1, [])})
+      runner_candidates =
+        Enum.map(runner_ids, &{&1, editor_runner_candidates(projection, by_runner, &1, pack_id)})
 
       case select_common_action(runner_candidates) do
         {:ok, selected} -> [common_action(pack_id, action_id, selected)]
@@ -1979,37 +1983,72 @@ defmodule Emisar.Catalog do
     |> Enum.sort_by(&{&1.action_id, &1.pack_id})
   end
 
+  defp editor_runner_candidates(projection, by_runner, runner_id, pack_id) do
+    case Map.fetch(by_runner, runner_id) do
+      {:ok, candidates} ->
+        candidates
+
+      :error ->
+        advertised = Map.get(projection.advertised_packs, runner_id, MapSet.new())
+        if MapSet.member?(advertised, pack_id), do: [], else: :not_advertised
+    end
+  end
+
   @doc """
   Selects one exact trusted candidate per already-scoped runner and requires one
-  complete common action contract across them.
+  complete common action contract across the runners that can supply one.
 
-  `runner_candidates` is an ordered `[{runner, candidates}]` list; each selected
-  candidate carries its `runner`. Returns
-  `{:ok, %{candidates: [candidate], contract: contract}}`,
-  `{:error, [{runner, :ambiguous_pack_version | :pack_unavailable}]}` when one or
-  more runners cannot supply an exact candidate, or
-  `{:error, :incompatible_action_contracts}` when they can but their normalized
-  contracts differ.
+  `runner_candidates` is an ordered `[{runner, candidates | :not_advertised}]`
+  list; each selected candidate carries its `runner`. A runner that advertises
+  the pack but currently holds no trusted candidate (retired, pending,
+  rejected, or drifted deployment) narrows the selection instead of failing it:
+  trust is judged per runner, so a trust gap on one runner never blocks the
+  runners that hold a trusted deployment. A runner tagged `:not_advertised`
+  fails the selection — declared structural coverage never silently shrinks.
+
+  Returns `{:ok, %{candidates: [candidate], contract: contract}}`,
+  `{:error, [{runner, :ambiguous_pack_version | :pack_unavailable}]}` when a
+  runner advertises conflicting hashes, lacks the pack entirely, or no runner
+  holds a trusted candidate, or `{:error, :incompatible_action_contracts}` when
+  the selected candidates' normalized contracts differ.
   """
-  @spec select_common_action([{term(), [map()]}]) ::
+  @spec select_common_action([{term(), [map()] | :not_advertised}]) ::
           {:ok, %{candidates: [map()], contract: map()}}
           | {:error, [{term(), atom()}] | :incompatible_action_contracts}
   def select_common_action(runner_candidates) when is_list(runner_candidates) do
-    {selected, failures} =
-      Enum.reduce(runner_candidates, {[], []}, fn {runner, candidates}, {selected, failures} ->
-        case select_exact_candidate(candidates) do
-          {:ok, candidate} -> {[Map.put(candidate, :runner, runner) | selected], failures}
-          {:error, reason} -> {selected, [{runner, reason} | failures]}
-        end
+    {selected, narrowed, failures} =
+      Enum.reduce(runner_candidates, {[], [], []}, fn
+        {runner, :not_advertised}, {selected, narrowed, failures} ->
+          {selected, narrowed, [{runner, :pack_unavailable} | failures]}
+
+        {runner, []}, {selected, narrowed, failures} ->
+          {selected, [runner | narrowed], failures}
+
+        {runner, candidates}, {selected, narrowed, failures} ->
+          case select_exact_candidate(candidates) do
+            {:ok, candidate} ->
+              {[Map.put(candidate, :runner, runner) | selected], narrowed, failures}
+
+            {:error, reason} ->
+              {selected, narrowed, [{runner, reason} | failures]}
+          end
       end)
 
     selected = Enum.reverse(selected)
     contracts = selected |> Enum.map(&ActionContract.snapshot(&1.descriptor)) |> Enum.uniq()
 
     cond do
-      failures != [] -> {:error, Enum.reverse(failures)}
-      length(contracts) == 1 -> {:ok, %{candidates: selected, contract: hd(contracts)}}
-      true -> {:error, :incompatible_action_contracts}
+      failures != [] ->
+        {:error, Enum.reverse(failures)}
+
+      selected == [] ->
+        {:error, narrowed |> Enum.reverse() |> Enum.map(&{&1, :pack_unavailable})}
+
+      length(contracts) == 1 ->
+        {:ok, %{candidates: selected, contract: hd(contracts)}}
+
+      true ->
+        {:error, :incompatible_action_contracts}
     end
   end
 
@@ -2029,16 +2068,9 @@ defmodule Emisar.Catalog do
       |> Enum.group_by(& &1.version, & &1.hash)
       |> Enum.any?(fn {_version, hashes} -> length(Enum.uniq(hashes)) > 1 end)
 
-    cond do
-      ambiguous? ->
-        {:error, :ambiguous_pack_version}
-
-      candidates == [] ->
-        {:error, :pack_unavailable}
-
-      true ->
-        {:ok, Enum.reduce(candidates, &newer_candidate/2)}
-    end
+    if ambiguous?,
+      do: {:error, :ambiguous_pack_version},
+      else: {:ok, Enum.reduce(candidates, &newer_candidate/2)}
   end
 
   defp newer_candidate(candidate, selected) do

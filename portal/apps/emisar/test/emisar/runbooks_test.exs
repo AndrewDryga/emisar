@@ -2696,8 +2696,9 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.editor_actions(projection, ["group:workers"], "all") == []
     end
 
-    test "an untrusted deployment on one selected runner makes the action unavailable" do
+    test "an untrusted deployment on one selected runner narrows the group, never blocks it" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
       trusted = trusted_runner(account, subject, group: "workers", version: "1.4.2")
 
       untrusted =
@@ -2711,7 +2712,18 @@ defmodule Emisar.RunbooksTest do
                Runbooks.editor_actions(projection, ["runner:" <> trusted_ref], "all")
 
       assert Runbooks.editor_actions(projection, ["runner:" <> untrusted_ref], "all") == []
-      assert Runbooks.editor_actions(projection, ["group:workers"], "all") == []
+
+      assert [action] = Runbooks.editor_actions(projection, ["group:workers"], "all")
+      assert action.action_id == "linux.uptime"
+
+      # The compiler agrees: the authored step dispatches to the trusted runner only.
+      assert {:ok, preview} =
+               Runbooks.preview_definition_plan(definition("workers"), subject)
+
+      assert preview.total == 1
+
+      assert [%{"runner_ref" => ^trusted_ref}] =
+               get_in(preview.plan, ["stages", Access.at(0), "items"])
     end
 
     test "unresolved targets offer no action at all" do

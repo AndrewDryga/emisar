@@ -1290,11 +1290,14 @@ defmodule Emisar.Runbooks do
     do: {:error, :unknown_target}
 
   @doc """
-  The actions every runner covered by one editor step's targets can execute
+  The actions the runners covered by one editor step's targets can execute
   under one complete common action contract.
 
-  Returns `[]` while the targets do not resolve — an unresolved scope cannot
-  narrow behavior, so the editor offers nothing rather than guessing.
+  Every covered runner must advertise the action's pack; a covered runner whose
+  deployment currently holds no trusted version narrows the executable set
+  instead of hiding the action. Returns `[]` while the targets do not resolve —
+  an unresolved scope cannot narrow behavior, so the editor offers nothing
+  rather than guessing.
   """
   @spec editor_actions(EditorProjection.t(), [String.t()], String.t()) :: [
           EditorProjection.action()

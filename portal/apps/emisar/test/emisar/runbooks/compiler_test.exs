@@ -264,6 +264,63 @@ defmodule Emisar.Runbooks.CompilerTest do
     assert issue.path == "/stages/0/steps/0/pack"
   end
 
+  test "narrows an all-runners group past a straggler on an untrusted deployment", %{
+    account: account,
+    subject: subject
+  } do
+    capable = trusted_runner(account, subject, group: "workers")
+    straggler = untrusted_straggler(account, group: "workers")
+
+    assert {:ok, compiled} =
+             "workers"
+             |> definition()
+             |> compile(%{}, subject)
+
+    assert [%{runner_id: runner_id}] = compiled.items
+    assert runner_id == capable.id
+    refute runner_id == straggler.id
+  end
+
+  test "chooses one runner only among trusted deployments", %{
+    account: account,
+    subject: subject
+  } do
+    capable = trusted_runner(account, subject, group: "workers")
+    untrusted_straggler(account, group: "workers")
+
+    definition =
+      definition("workers")
+      |> put_in(
+        ["stages", Access.at(0), "steps", Access.at(0), "targets", "selection"],
+        "random_one"
+      )
+
+    selected_ids =
+      1..10
+      |> Enum.map(fn seed ->
+        assert {:ok, compiled} = Compiler.compile(definition, %{}, to_string(seed), subject)
+        compiled.items |> hd() |> Map.fetch!(:runner_id)
+      end)
+      |> Enum.uniq()
+
+    assert selected_ids == [capable.id]
+  end
+
+  test "refuses a group whose only deployments are untrusted", %{
+    account: account,
+    subject: subject
+  } do
+    untrusted_straggler(account, group: "workers")
+
+    assert {:error, [issue]} =
+             "workers"
+             |> definition()
+             |> compile(%{}, subject)
+
+    assert issue.code == "pack_unavailable"
+    assert issue.path == "/stages/0/steps/0/pack"
+  end
+
   test "browser strings freeze the same inputs as the typed values a model supplies", %{
     account: account,
     subject: subject
@@ -341,6 +398,33 @@ defmodule Emisar.Runbooks.CompilerTest do
       end
     end)
 
+    runner
+  end
+
+  # Advertises linux-core at a version nobody trusts, so the runner counts as a
+  # deployment of the pack while holding no executable candidate.
+  defp untrusted_straggler(account, opts) do
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        group: Keyword.fetch!(opts, :group)
+      )
+
+    payload = %{
+      "hostname" => runner.hostname,
+      "version" => runner.runner_version,
+      "labels" => runner.labels,
+      "enforce_signatures" => runner.enforce_signatures,
+      "packs" => %{
+        "linux-core" => %{
+          "version" => "0.0.9",
+          "hash" => "sha256:" <> String.duplicate("b", 64)
+        }
+      },
+      "actions" => []
+    }
+
+    assert {:ok, runner} = Catalog.observe_state(runner, payload)
     runner
   end
 

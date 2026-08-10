@@ -511,10 +511,16 @@ defmodule Emisar.Runbooks.Compiler do
   end
 
   defp select_step_candidates(indexed, target_set, candidates, selection_seed) do
+    pack_id = indexed.step["pack"]["id"]
+
     runner_candidates =
       Enum.map(target_set.runners, fn runner ->
-        key = {runner.id, indexed.step["pack"]["id"], indexed.step["action"]}
-        {runner, Map.get(candidates, key, [])}
+        key = {runner.id, pack_id, indexed.step["action"]}
+
+        case Map.get(candidates, key, []) do
+          [] -> {runner, if(advertises_pack?(runner, pack_id), do: [], else: :not_advertised)}
+          runner_specific -> {runner, runner_specific}
+        end
       end)
 
     case Catalog.select_common_action(runner_candidates) do
@@ -541,6 +547,13 @@ defmodule Emisar.Runbooks.Compiler do
         {:error, Enum.map(failures, &candidate_issue(&1, indexed))}
     end
   end
+
+  # Advertisement is deployment evidence only, never authority: it decides
+  # whether an empty candidate list means "the pack is not on this runner"
+  # (structural — fails the step) or "the deployment holds no trusted version
+  # right now" (a trust gap — narrows the step to the runners that do).
+  defp advertises_pack?(%{runner: %Runners.Runner{packs: packs}}, pack_id),
+    do: is_map(packs) and Map.has_key?(packs, pack_id)
 
   defp candidate_issue({_runner, :ambiguous_pack_version}, indexed) do
     issue(

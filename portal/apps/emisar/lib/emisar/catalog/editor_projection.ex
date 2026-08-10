@@ -7,9 +7,14 @@ defmodule Emisar.Catalog.EditorProjection do
   advertisement is never authority: a candidate exists only where a connected
   deployment matches its complete trusted manifest, and it carries the exact
   pack ref, version, and hash the compiler would freeze.
+
+  `advertised_packs` keeps each runner's raw advertised pack ids — deployment
+  evidence only, never executable — so availability judgments can tell a pack
+  that is absent from a runner apart from one whose deployment currently holds
+  no trusted version.
   """
 
-  defstruct candidates: %{}
+  defstruct candidates: %{}, advertised_packs: %{}
 
   @type candidate :: %{
           runner_id: String.t(),
@@ -22,13 +27,15 @@ defmodule Emisar.Catalog.EditorProjection do
         }
 
   @type t :: %__MODULE__{
-          candidates: %{{String.t(), String.t()} => %{String.t() => [candidate()]}}
+          candidates: %{{String.t(), String.t()} => %{String.t() => [candidate()]}},
+          advertised_packs: %{String.t() => MapSet.t(String.t())}
         }
 
   @doc "Projects one trusted catalog snapshot into exact candidates by pack/action and runner."
   @spec build(map()) :: t()
   def build(%{packs: packs, runners: runners}) do
     refs_by_runner_id = Map.new(runners, &{&1.id, &1.runner_ref})
+    advertised_packs = Map.new(runners, &{&1.id, &1.packs |> Map.keys() |> MapSet.new()})
 
     candidates =
       for pack <- packs,
@@ -47,7 +54,7 @@ defmodule Emisar.Catalog.EditorProjection do
           )
       end
 
-    %__MODULE__{candidates: candidates}
+    %__MODULE__{candidates: candidates, advertised_packs: advertised_packs}
   end
 
   defp candidate(pack, descriptor, runner_id, refs_by_runner_id) do

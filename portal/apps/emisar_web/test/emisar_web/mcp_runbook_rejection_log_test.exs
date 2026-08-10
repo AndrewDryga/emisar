@@ -33,11 +33,11 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     subject: subject,
     raw: raw
   } do
-    compatible = Fixtures.Runners.create_runner(account_id: account.id, group: "fleet")
-    incompatible = Fixtures.Runners.create_runner(account_id: account.id, group: "fleet")
+    capable = Fixtures.Runners.create_runner(account_id: account.id, group: "fleet")
+    bare = Fixtures.Runners.create_runner(account_id: account.id, group: "fleet")
 
-    observe_catalog!(compatible, [action()])
-    observe_catalog!(incompatible, [])
+    observe_catalog!(capable, [action()])
+    observe_catalog!(bare, [], packs: %{})
     trust_all!(subject)
 
     _runbook =
@@ -117,14 +117,17 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     |> get_in(["result", "structuredContent"])
   end
 
-  defp observe_catalog!(runner, actions) do
+  defp observe_catalog!(runner, actions, opts \\ []) do
+    packs =
+      Keyword.get(opts, :packs, %{"operations" => %{"version" => "1.0.0", "hash" => @hash}})
+
     assert {:ok, _runner} =
              Catalog.observe_state(runner, %{
                "hostname" => runner.hostname,
                "version" => runner.runner_version,
                "labels" => runner.labels,
                "enforce_signatures" => runner.enforce_signatures,
-               "packs" => %{"operations" => %{"version" => "1.0.0", "hash" => @hash}},
+               "packs" => packs,
                "actions" => actions
              })
   end
