@@ -1,0 +1,9 @@
+# A one-service stack for docker.compose_restart, kept separate from the
+# 25-service parsing fixture: this one is brought UP inside the case's daemon,
+# so every service in it costs real start time. The entrypoint appends a line
+# per start, which is what makes the restart observable rather than assumed.
+services:
+  app:
+    image: alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["echo started >> /tmp/starts; sleep 600"]

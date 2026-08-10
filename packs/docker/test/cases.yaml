@@ -1,21 +1,15 @@
-# Every risky action here drives the daemon, and covering one means handing the
-# packtest runner a Docker socket — which is root on the host by another name,
-# in a harness whose whole point is an unprivileged, disposable SUT. The one
-# action that needs no daemon (compose_config parses a file) is the one with a
-# case. Declared rather than left silently uncovered, so the gap is a decision
-# in the plan instead of an absence nobody sees.
+# These actions drive a daemon, which used to be declared uncoverable on the
+# grounds that covering one means handing the runner a Docker socket — root on
+# the host by another name. That conflated the HOST's daemon with a daemon: the
+# docker-dind sibling is in this case's own disposable project, as isolated as
+# the database SUTs other packs run, and `privileged` lands on it rather than on
+# the runner. So every one of them is a real case now, driving a real daemon,
+# with a probe for what it actually changed.
 risk_accountability:
-  exceptions:
-    docker.compose_restart: requires_privileged_host
-    docker.image_inspect: requires_privileged_host
-    docker.image_history: requires_privileged_host
-    docker.restart: requires_privileged_host
-    docker.kill: requires_privileged_host
-    docker.system_prune: requires_privileged_host
-    docker.inspect: requires_privileged_host
-    docker.volume_prune: requires_privileged_host
-    docker.stop: requires_privileged_host
-services: [docker-cli]
+  mode: complete
+services: [docker-cli, docker-dind]
+env:
+  DOCKER_HOST: tcp://docker-dind:2375
 versions:
   - version: "29.7.1-cli"
     digest: "@sha256:27a51d5ab1cd38d9eeaba7b415b8c07bc10c31e1cf1ec8d78f6413fcfab3f44f"
@@ -75,3 +69,95 @@ cases:
         /truncated/networks: 2
         /truncated/volumes: 2
         /truncated/profiles: 2
+
+  # The fixture image is pinned by digest and pulled into the case's own empty
+  # daemon, so nothing here depends on what the host happens to have cached.
+  - action: docker.inspect
+    args: {container: packtest-probe}
+    arrange:
+      - argv: [docker, run, -d, --name, packtest-probe, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", sleep, "600"]
+    expect:
+      stdout_contains: ["packtest-probe", "Running"]
+
+  - action: docker.image_inspect
+    args: {image: "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"}
+    arrange:
+      - argv: [docker, pull, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"]
+    expect:
+      stdout_contains: ["Architecture", "RootFS"]
+
+  - action: docker.image_history
+    args: {image: "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"}
+    arrange:
+      - argv: [docker, pull, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"]
+    expect:
+      stdout_contains: ["CREATED", "SIZE"]
+
+  # The container appends a line every time its entrypoint runs, so the probe
+  # counts starts. Asserting it is merely still running would pass without the
+  # restart having happened at all.
+  - action: docker.restart
+    args: {container: packtest-probe, timeout: 2}
+    arrange:
+      - argv: [docker, run, -d, --name, packtest-probe, --entrypoint, /bin/sh, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", -c, "echo started >> /tmp/starts; sleep 600"]
+    probes:
+      - name: the entrypoint ran a second time
+        argv: [docker, exec, packtest-probe, wc, -l, /tmp/starts]
+        expect:
+          stdout_contains: ["2 /tmp/starts"]
+
+  - action: docker.kill
+    args: {container: packtest-probe, signal: KILL}
+    arrange:
+      - argv: [docker, run, -d, --name, packtest-probe, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", sleep, "600"]
+    probes:
+      - name: the container was killed, not stopped
+        argv: [/bin/sh, -c, "docker inspect -f '{{.State.Status}}/{{.State.ExitCode}}' packtest-probe"]
+        expect:
+          stdout_contains: ["exited/137"]
+
+  - action: docker.stop
+    args: {container: packtest-probe, timeout: 2}
+    arrange:
+      - argv: [docker, run, -d, --name, packtest-probe, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", sleep, "600"]
+    probes:
+      - name: the container left the running state
+        argv: [/bin/sh, -c, "docker inspect -f '{{.State.Status}}' packtest-probe"]
+        expect:
+          stdout_contains: [exited]
+
+  # A stopped container is what prune is entitled to remove; a running one is
+  # not, so the case keeps one of each and the probe checks both outcomes.
+  - action: docker.system_prune
+    arrange:
+      - argv: [docker, run, -d, --name, packtest-keep, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", sleep, "600"]
+      - argv: [docker, run, --name, packtest-spent, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", "true"]
+    probes:
+      - name: the spent container is gone and the running one is not
+        argv: [/bin/sh, -c, "docker ps -a --format '{{.Names}}'"]
+        expect:
+          stdout_contains: [packtest-keep]
+          stdout_not_contains: [packtest-spent]
+
+  - action: docker.volume_prune
+    arrange:
+      - argv: [docker, volume, create, packtest-orphan]
+    probes:
+      - name: the unused volume is gone
+        argv: [/bin/sh, -c, "docker volume ls --format '{{.Name}}'; echo listed"]
+        expect:
+          stdout_contains: [listed]
+          stdout_not_contains: [packtest-orphan]
+
+  # compose_restart drives a stack rather than parsing one, so its fixture is a
+  # single service brought up in the case's daemon — and it counts starts for
+  # the same reason docker.restart does.
+  - action: docker.compose_restart
+    args: {file: /opt/running/docker-compose.yml, service: app}
+    arrange:
+      - argv: [docker, compose, -f, /opt/running/docker-compose.yml, up, -d, --wait]
+    probes:
+      - name: the service entrypoint ran a second time
+        argv: [docker, compose, -f, /opt/running/docker-compose.yml, exec, -T, app, wc, -l, /tmp/starts]
+        expect:
+          stdout_contains: ["2 /tmp/starts"]

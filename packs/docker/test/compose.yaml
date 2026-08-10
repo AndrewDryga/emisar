@@ -13,11 +13,13 @@ services:
       # root, so the fixture is mounted where a real stack would live.
       - ${EMISAR_ROOT}/packs/docker/test/fixtures/docker-compose.yml:/opt/stack/docker-compose.yml:ro
       - ${EMISAR_ROOT}/packs/docker/test/fixtures/worst-case-compose.yml:/opt/worst-case/docker-compose.yml:ro
+      # compose_restart drives a stack rather than parsing one, so its fixture
+      # is brought up in the case's own daemon.
+      - ${EMISAR_ROOT}/packs/docker/test/fixtures/running-stack.yml:/opt/running/docker-compose.yml:ro
 
   # The version matrix's product under test. `docker compose config` parses a
   # file and reaches no daemon, so this service exists to pin and prove the CLI
-  # version rather than to serve the case — no dind, no privileged mode, and no
-  # socket is mounted anywhere.
+  # version rather than to serve a case.
   docker-cli:
     image: docker:${PACKTEST_VERSION:-29.7.1-cli}${PACKTEST_DIGEST-}
     entrypoint: ["/bin/sh", "-c"]
@@ -28,3 +30,27 @@ services:
       start_period: 20s
       start_interval: 1s
       retries: 20
+
+  # A daemon of this case's own, so the actions that drive one run for real.
+  # This is NOT the host's socket: the daemon is a sibling in the case's own
+  # disposable project, reached over the project network like every other SUT,
+  # and `privileged` applies to it rather than to the runner — which stays
+  # unprivileged and never has /var/run/docker.sock. Torn down with the case.
+  #
+  # Pinned independently of PACKTEST_VERSION: the matrix's rows name the -cli
+  # image and Compose cannot rewrite that suffix. The daemon only has to be a
+  # daemon the pinned client can talk to.
+  docker-dind:
+    image: docker:29.7.1-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c
+    privileged: true
+    environment:
+      # TLS off is safe here and only here: the daemon listens on the case's own
+      # project network, which nothing outside the case can reach.
+      DOCKER_TLS_CERTDIR: ""
+    command: ["--host=tcp://0.0.0.0:2375", "--tls=false"]
+    healthcheck:
+      test: ["CMD", "docker", "-H", "tcp://localhost:2375", "info"]
+      interval: 2s
+      start_period: 20s
+      start_interval: 1s
+      retries: 30
