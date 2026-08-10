@@ -113,7 +113,12 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
     {"recent 5xx responses from traefik", ~w(traefik.log_grep_5xx)},
     {"pending security updates", ~w(debian.apt_security_check)},
     {"reboot the host", ~w(linux.reboot_host)},
-    {"cloud-init status", ~w(cloud-init.status)}
+    {"cloud-init status", ~w(cloud-init.status)},
+    # "redacted" must reach an action whose text says "redaction" — the pair
+    # shares a stem but neither is a prefix of the other, and this query missed
+    # its action entirely in a real client certification run.
+    {"demonstration result with a parsed json object whose session token comes back redacted",
+     ~w(showcase.json_output)}
   ]
 
   # Symptom-language goldens — vocabulary an operator types under pressure,
@@ -255,6 +260,30 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
            Enum.map_join(misses, "\n", fn {query, accepted, found} ->
              "#{inspect(query)} wanted #{inspect(accepted)}, page one led with #{inspect(found)}"
            end)
+  end
+
+  # A client often sends the WHOLE task as one query. Under pure score order
+  # the actions matching the most tokens crowded out the best answer for each
+  # individual concept — this verbatim certification query returned neither
+  # disk action in its first five, and the client failed recall through no
+  # fault of its own. Each concept's group must make the five results a model
+  # actually reads.
+  test "a blended multi-concept query covers every concept in its first five", %{conn: conn} do
+    query =
+      "Measure current uptime and load averages, filesystem disk usage, and demonstrate " <>
+        "parsed JSON output with a session-token field redacted, across every currently " <>
+        "connected runner"
+
+    top_five = conn |> find_actions(query) |> Enum.take(5) |> Enum.map(& &1["action_id"])
+
+    for group <- [
+          ~w(linux.uptime debugging.loadavg),
+          ~w(linux.disk_usage debugging.disk_free),
+          ~w(showcase.json_output)
+        ] do
+      assert Enum.any?(group, &(&1 in top_five)),
+             "expected one of #{inspect(group)} in the first five, got #{inspect(top_five)}"
+    end
   end
 
   test "an exact action id outranks every lexical distractor", %{conn: conn} do

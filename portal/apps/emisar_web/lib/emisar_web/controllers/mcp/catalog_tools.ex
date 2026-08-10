@@ -138,6 +138,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
       |> Enum.map(&score_candidate(&1, args, weights))
       |> Enum.reject(&is_nil/1)
       |> Enum.sort_by(&{-&1.score, &1.action["action_id"], &1.pack_ref})
+      |> cover_query_concepts()
 
     if candidates == [] and exact_action_filter?(args) do
       case deployed_pack_ref(snapshot, args) do
@@ -456,11 +457,11 @@ defmodule EmisarWeb.MCP.CatalogTools do
   defp score_candidate(candidate, %{action_id: action_id}, _weights)
        when is_binary(action_id) do
     if candidate.action["action_id"] == action_id,
-      do: Map.merge(candidate, %{score: 10_000, matched_fields: ["action_id"]})
+      do: Map.merge(candidate, %{score: 10_000, matched_fields: ["action_id"], token_claims: %{}})
   end
 
   defp score_candidate(candidate, %{query: nil}, _weights),
-    do: Map.merge(candidate, %{score: 1, matched_fields: []})
+    do: Map.merge(candidate, %{score: 1, matched_fields: [], token_claims: %{}})
 
   defp score_candidate(candidate, %{query: query}, weights) do
     query = query |> String.downcase() |> String.trim()
@@ -469,36 +470,40 @@ defmodule EmisarWeb.MCP.CatalogTools do
     title = String.downcase(action["title"])
     terms = Enum.map(action["search_terms"], &String.downcase/1)
     tokens = Map.keys(weights)
-    {term_score, term_fields} = score_query_terms(tokens, weights, candidate.search_words)
 
-    {score, fields} =
+    {term_score, term_fields, term_claims} =
+      score_query_terms(tokens, weights, candidate.search_words)
+
+    {score, fields, token_claims} =
       cond do
         id == query ->
-          {10_000, ["action_id"]}
+          {10_000, ["action_id"], term_claims}
 
         String.starts_with?(id, query) ->
-          {8_000, ["action_id"]}
+          {8_000, ["action_id"], term_claims}
 
         title == query ->
-          {7_000, ["title"]}
+          {7_000, ["title"], term_claims}
 
         query in terms ->
-          {6_000, ["search_terms"]}
+          {6_000, ["search_terms"], term_claims}
 
         term_score > 0 ->
-          {term_score, term_fields}
+          {term_score, term_fields, term_claims}
 
         String.jaro_distance(query, id) >= 0.88 ->
-          {2_000, ["action_id"]}
+          {2_000, ["action_id"], %{}}
 
         String.jaro_distance(query, title) >= 0.9 ->
-          {1_000, ["title"]}
+          {1_000, ["title"], %{}}
 
         true ->
-          {0, []}
+          {0, [], %{}}
       end
 
-    if score > 0, do: Map.merge(candidate, %{score: score, matched_fields: fields})
+    if score > 0 do
+      Map.merge(candidate, %{score: score, matched_fields: fields, token_claims: token_claims})
+    end
   end
 
   defp score_query_terms(tokens, weights, search_words) do
@@ -508,7 +513,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
       |> Enum.reject(fn {_token, fields} -> fields == [] end)
 
     if matched == [] do
-      {0, []}
+      {0, [], %{}}
     else
       rarity = matched |> Enum.map(fn {token, _fields} -> weights[token] end) |> Enum.sum()
 
@@ -524,8 +529,66 @@ defmodule EmisarWeb.MCP.CatalogTools do
         )
 
       fields = matched |> Enum.flat_map(&elem(&1, 1)) |> Enum.uniq()
-      {score, fields}
+      {score, fields, token_claims(matched, weights)}
     end
+  end
+
+  # A candidate's CLAIM on a query token, for concept-coverage promotion: full
+  # rarity when the token matches the action's own identity or its reviewed
+  # operator vocabulary, half when it only appears in passing summary prose.
+  # The disk-usage action names disk usage in its id and title; an action whose
+  # summary merely mentions parsed disk output is describing itself, not
+  # answering that concept — the field is the evidence quality.
+  defp token_claims(matched, weights) do
+    Map.new(matched, fn {token, fields} ->
+      weight = weights[token]
+
+      if Enum.any?(fields, &(&1 in ["action_id", "title", "search_terms"])) do
+        {token, weight}
+      else
+        {token, div(weight, 2)}
+      end
+    end)
+  end
+
+  # An operator's client often sends the WHOLE task as one query — "uptime,
+  # disk usage, and a redacted JSON demo" — and under pure score order the
+  # actions matching the most tokens crowd out the best answer for each
+  # individual concept. The client reads only the top of the list, so the
+  # first slots go to concept champions: each pick is the remaining candidate
+  # with the largest yet-unanswered token claim, score breaking ties. Claims
+  # are field-aware (see token_claims/2), so the action NAMED for a concept
+  # outbids one whose prose mentions it in passing, and a stray rare word in a
+  # summary cannot buy a slot from the concept's real answer. Promotion stops
+  # the moment nothing uncovered remains claimed — from there the list is
+  # already in score order. Focused single-concept queries are unaffected:
+  # their top result covers their whole query on the first pick.
+  defp cover_query_concepts(candidates) do
+    cover_query_concepts(candidates, MapSet.new(), [])
+  end
+
+  defp cover_query_concepts([], _covered, picked), do: Enum.reverse(picked)
+
+  defp cover_query_concepts(candidates, covered, picked) do
+    {candidate, unanswered_claim} =
+      candidates
+      |> Enum.map(fn candidate -> {candidate, unanswered_claim(candidate, covered)} end)
+      |> Enum.max_by(fn {candidate, claim} -> {claim, candidate.score} end)
+
+    if unanswered_claim == 0 do
+      Enum.reverse(picked, candidates)
+    else
+      covered = candidate.token_claims |> Map.keys() |> Enum.into(covered)
+      candidates = List.delete(candidates, candidate)
+      cover_query_concepts(candidates, covered, [candidate | picked])
+    end
+  end
+
+  defp unanswered_claim(candidate, covered) do
+    candidate.token_claims
+    |> Enum.reject(fn {token, _claim} -> MapSet.member?(covered, token) end)
+    |> Enum.map(fn {_token, claim} -> claim end)
+    |> Enum.sum()
   end
 
   defp matching_fields(token, search_words) do
@@ -551,7 +614,19 @@ defmodule EmisarWeb.MCP.CatalogTools do
   # substantial word so a short token cannot re-open the substring floodgate.
   defp word_match?(word, token) do
     String.starts_with?(word, token) or
-      (byte_size(word) >= 4 and String.starts_with?(token, word))
+      (byte_size(word) >= 4 and String.starts_with?(token, word)) or
+      shared_stem?(word, token)
+  end
+
+  # "redacted" must find "redaction": inflection pairs often share a stem but
+  # diverge at the suffix, so neither is a prefix of the other and both prefix
+  # directions miss. Two words agreeing on their first six letters count as one
+  # concept (redact-ed/-ion, replicat-ed/-ion) — six is the shortest agreement
+  # that keeps unrelated pairs like content/context apart. Words are [a-z0-9]+
+  # by construction, so byte slicing is character slicing.
+  defp shared_stem?(word, token) do
+    byte_size(word) >= 6 and byte_size(token) >= 6 and
+      binary_part(word, 0, 6) == binary_part(token, 0, 6)
   end
 
   defp put_search_words(candidate) do
