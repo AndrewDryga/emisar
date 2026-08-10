@@ -105,6 +105,35 @@ defmodule EmisarWeb.MCP.InputContractTest do
     assert InputContract.known_root_fields("not_a_tool") == MapSet.new()
   end
 
+  # A mutually exclusive pair used to report `conflict` at `$` — "something
+  # conflicts" with no way to tell what. A client that sent query WITH action_id
+  # could not self-heal from that and abandoned find_actions for the rest of its
+  # run, which cost a release certification.
+  test "a mutual-exclusion conflict names the fields that actually collide" do
+    assert {:error, issues} =
+             InputContract.validate("find_actions", %{
+               "query" => "load average",
+               "action_id" => "debugging.loadavg"
+             })
+
+    paths = Enum.map(issues, & &1.path)
+    assert "$.query" in paths
+    assert "$.action_id" in paths
+    assert Enum.all?(issues, &(&1.code == "conflict"))
+
+    # Only the pair the caller actually supplied is named — the schema declares
+    # three exclusive groups, and reporting the other two would be noise.
+    refute "$.pack_id" in paths
+    refute "$.target" in paths
+
+    # Either half alone stays valid: the fix reports the collision, it does not
+    # invent one.
+    assert {:ok, _} = InputContract.validate("find_actions", %{"query" => "load average"})
+
+    assert {:ok, _} =
+             InputContract.validate("find_actions", %{"action_id" => "debugging.loadavg"})
+  end
+
   defp valid_action_args(overrides) do
     Map.merge(
       %{

@@ -44,15 +44,30 @@ defmodule EmisarWeb.MCP.InputContract do
                root_fields = root_properties |> Map.keys() |> MapSet.new()
 
                {name,
-                %{compiled: compiled, integer_fields: integer_fields, root_fields: root_fields}}
+                %{
+                  compiled: compiled,
+                  integer_fields: integer_fields,
+                  root_fields: root_fields,
+                  exclusive_groups:
+                    expanded
+                    |> Map.get("allOf", [])
+                    |> Enum.flat_map(fn
+                      %{"not" => %{"required" => fields}}
+                      when is_list(fields) and length(fields) > 1 ->
+                        [MapSet.new(fields)]
+
+                      _other ->
+                        []
+                    end)
+                }}
              end)
 
   @doc "Validate one decoded tools/call arguments value against its published contract."
   @spec validate(String.t(), term()) :: {:ok, map()} | {:error, [ValidationError.issue()]}
   def validate(tool, arguments) when is_binary(tool) do
     case Map.fetch(@contracts, tool) do
-      {:ok, %{compiled: compiled, integer_fields: integer_fields}} ->
-        with :ok <- validate_schema(compiled, arguments) do
+      {:ok, %{compiled: compiled, integer_fields: integer_fields} = contract} ->
+        with :ok <- validate_schema(compiled, arguments, contract) do
           {:ok, normalize_integers(arguments, integer_fields)}
         end
 
@@ -72,7 +87,7 @@ defmodule EmisarWeb.MCP.InputContract do
     end
   end
 
-  defp validate_schema(compiled, arguments) do
+  defp validate_schema(compiled, arguments, contract) do
     case JSONSchex.validate(compiled, arguments) do
       :ok ->
         :ok
@@ -82,13 +97,32 @@ defmodule EmisarWeb.MCP.InputContract do
           errors
           |> prefer_concrete_errors()
           |> Enum.sort_by(&error_priority(&1.rule))
-          |> Enum.flat_map(&error_issues/1)
+          |> Enum.flat_map(&error_issues(&1, contract, arguments))
           |> Enum.uniq()
           |> Enum.take(8)
 
         {:error, issues}
     end
   end
+
+  # A mutual-exclusion violation is reported by JSON Schema as `not` at the
+  # ROOT, so the generic translation emitted `conflict` at `$` — "something in
+  # your arguments conflicts", with no way to tell WHICH. A client cannot
+  # self-heal from that, and one stopped using find_actions entirely after
+  # sending `query` with `action_id`. The exclusive pairs are declared in the
+  # schema, so name the ones the arguments actually supply.
+  defp conflict_issues(contract, arguments, path) when is_map(arguments) do
+    supplied = arguments |> Map.keys() |> Enum.filter(&is_binary/1) |> MapSet.new()
+
+    contract
+    |> Map.get(:exclusive_groups, [])
+    |> Enum.map(&MapSet.intersection(&1, supplied))
+    |> Enum.filter(&(MapSet.size(&1) > 1))
+    |> Enum.flat_map(&Enum.sort/1)
+    |> Enum.map(&ValidationError.issue(path ++ [&1], :conflict))
+  end
+
+  defp conflict_issues(_contract, _arguments, _path), do: []
 
   # JSONSchex accepts integral floats for `"type": "integer"` (Draft 2020-12
   # numeric equality), so a schema-valid `50.0` still reaches the handlers.
@@ -119,13 +153,25 @@ defmodule EmisarWeb.MCP.InputContract do
     if concrete == [], do: errors, else: concrete
   end
 
-  defp error_issues(%{rule: :required, path: path, context: %{contrast: fields}})
+  defp error_issues(
+         %{rule: :required, path: path, context: %{contrast: fields}},
+         _contract,
+         _args
+       )
        when is_list(fields) do
     path = safe_path(path)
     Enum.map(fields, &ValidationError.issue(path ++ [&1], :required))
   end
 
-  defp error_issues(error),
+  defp error_issues(%{rule: rule, path: path} = error, contract, args)
+       when rule in [:not, :oneOf] do
+    case conflict_issues(contract, args, safe_path(path)) do
+      [] -> [ValidationError.issue(safe_path(error.path), issue_code(rule))]
+      named -> named
+    end
+  end
+
+  defp error_issues(error, _contract, _args),
     do: [ValidationError.issue(safe_path(error.path), issue_code(error.rule))]
 
   defp safe_path(path), do: path |> Enum.reverse() |> Enum.reject(&is_integer/1)
