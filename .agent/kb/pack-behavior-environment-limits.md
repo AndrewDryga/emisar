@@ -14,9 +14,9 @@ the tree rather than from a list here:
 
     grep -rn "requires_" packs/*/test/cases.yaml
 
-What each reason costs to close, largest first (counts as of 2026-08-09):
+What each reason costs to close, largest first (counts as of 2026-08-10):
 
-- **`requires_privileged_host` — 73 actions, 20 packs.** Systemd as PID 1,
+- **`requires_privileged_host` — 54 actions, 18 packs.** Systemd as PID 1,
   package installs, sysctl, kernel modules, block devices, another process's
   `/proc`. **Measured 2026-08-08: all but nine of the original 82
   are reachable from a privileged disposable CONTAINER, not a VM.** systemd runs as PID 1 under
@@ -28,7 +28,10 @@ What each reason costs to close, largest first (counts as of 2026-08-09):
   Compose project is not the host's socket, and `docker.inspect` passes against
   one once `DOCKER_HOST` is added to `inherit_env` in
   `dev/test-packs/test-config.yaml` — all nine docker exceptions are now real
-  cases on that pattern. What genuinely does not work is a kernel
+  cases on that pattern. The systemd half is built too: `systemd-deep`,
+  `linux-core` and `debian` run against a service manager booted as PID 1 in
+  their own privileged container, which the runner drives by joining that
+  container's PID namespace and `/run` (see any of their `test/compose.yaml`). What genuinely does not work is a kernel
   module the host lacks (`zfs`, and `wireguard`/`nfsd` on a workstation), kernel
   state a container SHARES with its host (`drop_caches`, `sysctl_set`, the clock
   verbs — covering those would mutate the CI machine), and pfSense, which is
@@ -63,6 +66,10 @@ disposable containers in CI, which is safe on a per-job hosted VM and not on a
 self-hosted runner.
 
 ## Changelog
+- 2026-08-10 — systemd lane built: systemd-deep, linux-core and debian covered,
+  taking the privileged-host bucket to 54 across 18 packs. Three traps live in
+  those images — one shared machine-id, volatile journal storage, and the client
+  user in `systemd-journal` — each of which otherwise reads as an empty journal
 - 2026-08-09 — docker's nine exceptions closed against a `docker:dind` sibling,
   and every remaining privileged-host rationale rewritten to what is actually
   true; the bucket is 73 across 20 packs
