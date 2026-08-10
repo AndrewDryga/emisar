@@ -1,11 +1,58 @@
-# apt-get install and remove work as root in a disposable container —
-# measured — and the package set they mutate is that container's, which is
-# exactly what a case should assert. Declared because the root lane is not
-# built, not because a host is required.
-# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
+# apt writes the package database of the machine the action runs on, and here
+# that machine is the runner container: disposable, recreated per case, and the
+# same Debian release the version matrix pins. So these run for real against a
+# real dpkg database — the one thing they must not do is share it with anything
+# that outlives the case, which is exactly what a container gives.
+# See .agent/kb/pack-behavior-environment-limits.md for the wider lane.
+services: [debian]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
 risk_accountability:
   mode: complete
-  exceptions:
-    debian.apt_autoremove: requires_privileged_host
-    debian.apt_install: requires_privileged_host
-    debian.apt_remove: requires_privileged_host
+runner:
+  user: root
+  reason: >
+    apt writes /var/lib/dpkg and /usr; a case that ran as anyone else would only
+    ever assert the permission denial.
+cases:
+  # sl is the subject on purpose: a leaf package nothing else depends on, so
+  # installing and removing it cannot disturb what the harness itself needs.
+  - action: debian.apt_install
+    args: {package: sl}
+    probes:
+      - name: dpkg has the package installed
+        argv: [dpkg-query, -W, -f, "${Status}", sl]
+        expect:
+          stdout_contains: ["install ok installed"]
+
+  - action: debian.apt_remove
+    args: {package: sl}
+    arrange:
+      - argv: [apt-get, install, -y, --no-install-recommends, sl]
+    probes:
+      - name: dpkg no longer reports it installed
+        argv: [/bin/sh, -c, "dpkg-query -W -f '${Status}' sl 2>&1; echo probed"]
+        expect:
+          stdout_contains: [probed]
+          stdout_not_contains: ["install ok installed"]
+
+  # autoremove only means something when an orphan exists, so the arrange makes
+  # one: moreutils pulls libipc-run-perl in as an automatic dependency, and
+  # removing moreutils leaves it with nothing depending on it. The third step
+  # asserts the orphan really is there, so the probe cannot pass against a
+  # machine that had nothing to remove.
+  - action: debian.apt_autoremove
+    arrange:
+      - argv: [apt-get, install, -y, moreutils]
+      - argv: [apt-get, remove, -y, moreutils]
+      - argv: [dpkg-query, -W, -f, "${Status}", libipc-run-perl]
+        expect:
+          stdout_contains: ["install ok installed"]
+    probes:
+      - name: the orphaned dependency is gone
+        argv: [/bin/sh, -c, "dpkg-query -W -f '${Status}' libipc-run-perl 2>&1; echo probed"]
+        expect:
+          stdout_contains: [probed]
+          stdout_not_contains: ["install ok installed"]
