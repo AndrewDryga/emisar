@@ -31,8 +31,8 @@ defmodule EmisarWeb.RunbookEditorPublishPanelTest do
     html = render(lv)
 
     assert html =~ "Run check"
-    assert html =~ "Runs on current infrastructure"
-    assert html =~ "The live definition still resolves"
+    assert html =~ "Validated"
+    assert html =~ "This definition resolves and can be executed"
     refute html =~ "Publish check"
     refute html =~ "Ready to publish"
 

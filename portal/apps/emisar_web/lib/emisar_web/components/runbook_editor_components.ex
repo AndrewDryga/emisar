@@ -865,10 +865,9 @@ defmodule EmisarWeb.RunbookEditorComponents do
   defp publish_panel(assigns) do
     {panel_title, blocked_title, ready_title, ready_body} =
       if live_in_sync?(assigns.runbook, assigns.dirty?) do
-        {"Run check", "Current infrastructure blocks new executions",
-         "Runs on current infrastructure",
-         "The live definition still resolves against current runners, trusted packs, " <>
-           "action contracts, and policy."}
+        {"Run check", "Current infrastructure blocks new executions", "Validated",
+         "This definition resolves and can be executed against current runners, " <>
+           "trusted packs, action contracts, and policy."}
       else
         {"Publish check", "Current infrastructure blocks publication", "Ready to publish",
          "The definition is valid and resolves against current runners, trusted packs, " <>
