@@ -127,3 +127,21 @@ func TestMintAllowsEveryReadOnlyToolInBothOutcomes(t *testing.T) {
 		}
 	}
 }
+
+// A positive scenario measures whether the client DISCOVERS the action and
+// whether our search ranks it. Naming the action in the prompt defeats both,
+// and it cost a release certification: the same prompt passed for one client
+// and failed for another purely on whether it reached for the exact filter.
+func TestMintRefusesAPromptThatNamesItsOwnAction(t *testing.T) {
+	body := strings.Replace(validIntents,
+		`"prompt":"is the host up"`,
+		`"prompt":"run linux.uptime on edge-fra-01"`, 1)
+	intents, catalog, out := mintIntentFile(t, body)
+	err := mintPartition(intents, catalog, out)
+	if err == nil {
+		t.Fatal("expected the mint to refuse a prompt that hands over the action id")
+	}
+	if !strings.Contains(err.Error(), "linux.uptime") {
+		t.Fatalf("the refusal must name the leaked action: %v", err)
+	}
+}
