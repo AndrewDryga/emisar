@@ -772,11 +772,13 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ~s(input[type="hidden"][name="draft[stages][0][steps][0][action_choice]"][value=""])
              )
 
-      assert has_element?(
-               lv,
-               ~s(button[data-combobox-option][data-value="linux-core|linux.uptime"]),
-               "linux.uptime"
-             )
+      # The eligible options live in the step's shared pool template, whose
+      # content a spec-conform parser keeps out of the element tree — so the
+      # markup is asserted on the page source instead of via a selector.
+      html = render(lv)
+      assert html =~ ~s(data-value="linux-core|linux.uptime")
+      assert html =~ ~s(data-combobox-source="runbook-action-pool-)
+      assert html =~ ~s(<template id="runbook-action-pool-)
     end
 
     test "choosing an action preserves targets selected through the target picker", %{

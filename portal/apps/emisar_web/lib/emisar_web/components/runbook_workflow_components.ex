@@ -617,6 +617,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               value={@action_choice}
               selected_label={@action_selected_label}
               groups={@action_groups}
+              source={@action_pool_id}
               blank_label={if @step["target_refs"] == [], do: nil, else: "Choose action…"}
               disabled={@read_only? or not @targets_resolved?}
               class="mt-2"
@@ -942,26 +943,22 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp source_phrase(%{"source" => "structured_output"}), do: "structured output"
   defp source_phrase(%{"source" => source}), do: source
 
+  # The shared pool carries the whole eligible catalog for this step's target
+  # set — one copy per DISTINCT set on the page (see `action_pools/1`), cloned
+  # into the panel client-side on first open. The picker itself ships only its
+  # per-step delta: the saved-but-unavailable choice, when there is one.
   defp assign_action_picker(assigns) do
-    groups =
-      assigns.action_options
-      |> Enum.group_by(& &1.pack_id)
-      |> Enum.sort_by(&elem(&1, 0))
-      |> Enum.map(fn {pack_id, options} ->
-        %{
-          label: pack_id,
-          options:
-            Enum.map(options, fn option ->
-              %{
-                value: option.value,
-                label: option.label,
-                description: option.description,
-                search: option.search,
-                disabled: option.disabled
-              }
-            end)
-        }
-      end)
+    refs = assigns.step["target_refs"]
+    selection = assigns.step["target_selection"]
+    pool_groups = RunbookEditorCatalog.action_option_groups(assigns.catalog, refs, selection)
+
+    extra_groups =
+      RunbookEditorCatalog.unavailable_action_groups(
+        assigns.catalog,
+        refs,
+        selection,
+        assigns.action_choice
+      )
 
     selected =
       Enum.find(assigns.action_options, &(&1.value == assigns.action_choice))
@@ -984,15 +981,47 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           elem(RunbookEditorCatalog.split_action_value(assigns.action_choice), 1)
       end
 
-    picker_key = :erlang.phash2({assigns.action_choice, assigns.action_options})
+    pool_id = RunbookEditorCatalog.action_pool_id(pool_groups)
+    picker_key = :erlang.phash2({assigns.action_choice, pool_id, extra_groups})
 
     assigns
-    |> assign(:action_groups, groups)
+    |> assign(:action_groups, extra_groups)
+    |> assign(:action_pool_id, pool_id)
     |> assign(:action_selected_label, selected_label)
     |> assign(
       :action_picker_id,
       "runbook-stage-#{assigns.stage_index}-step-#{assigns.step_index}-action-#{picker_key}"
     )
+  end
+
+  @doc """
+  The distinct shared action-option pools the current draft's steps reference.
+
+  Render once near the editor form; every step whose combobox names a pool id
+  clones its options from here on first open, so a ten-step runbook over one
+  fleet ships the eligible catalog once instead of ten times.
+  """
+  attr :draft, :map, required: true
+  attr :catalog, :map, required: true
+
+  def action_pools(assigns) do
+    pools =
+      for stage <- assigns.draft["stages"] || [],
+          step <- stage["steps"] || [],
+          uniq: true do
+        {step["target_refs"], step["target_selection"]}
+      end
+      |> Enum.map(fn {refs, selection} ->
+        RunbookEditorCatalog.action_option_groups(assigns.catalog, refs, selection)
+      end)
+      |> Enum.uniq()
+      |> Enum.map(&{RunbookEditorCatalog.action_pool_id(&1), &1})
+
+    assigns = assign(assigns, :pools, pools)
+
+    ~H"""
+    <.searchable_select_pool :for={{pool_id, groups} <- @pools} id={pool_id} groups={groups} />
+    """
   end
 
   attr :step, :map, required: true

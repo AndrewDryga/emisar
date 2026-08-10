@@ -242,6 +242,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 </:subtitle>
               </.section_header>
 
+              <RunbookWorkflowComponents.action_pools draft={@draft} catalog={@catalog} />
               <div class="space-y-6">
                 <RunbookWorkflowComponents.stage_editor
                   :for={{stage, stage_index} <- Enum.with_index(@draft["stages"])}

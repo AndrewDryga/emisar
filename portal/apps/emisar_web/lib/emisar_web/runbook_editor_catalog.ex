@@ -103,7 +103,7 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     options =
       projection
       |> Runbooks.editor_actions(refs, selection)
-      |> Enum.map(&action_option(&1, selected_value))
+      |> Enum.map(&action_option/1)
       |> Enum.sort_by(& &1.label)
 
     if selected_value in [nil, ""] or Enum.any?(options, &(&1.value == selected_value)) do
@@ -114,6 +114,63 @@ defmodule EmisarWeb.RunbookEditorCatalog do
         | options
       ]
     end
+  end
+
+  @doc """
+  The eligible action choices for one target set, grouped by pack — the shared
+  option-pool shape every step with the same targets renders once. Selection
+  state deliberately stays out: the pool is instance-agnostic, and its content
+  hash is the pool id, so two steps with identical targets share one id.
+  """
+  def action_option_groups(projection, refs, selection) do
+    projection
+    |> Runbooks.editor_actions(refs, selection)
+    |> Enum.map(&action_option/1)
+    |> Enum.sort_by(& &1.label)
+    |> group_action_options()
+  end
+
+  @doc "The stable DOM id of one action option pool, derived from its content."
+  def action_pool_id(groups), do: "runbook-action-pool-#{:erlang.phash2(groups)}"
+
+  @doc """
+  The per-step extra option group: the saved choice when the current targets no
+  longer offer it. Everything else the picker shows comes from the shared pool.
+  """
+  def unavailable_action_groups(_projection, _refs, _selection, selected_value)
+      when selected_value in [nil, ""],
+      do: []
+
+  def unavailable_action_groups(projection, refs, selection, selected_value) do
+    if action_available?(projection, refs, selection, selected_value) do
+      []
+    else
+      selected_value
+      |> unavailable_action_option(targets_resolved?(projection, refs, selection))
+      |> List.wrap()
+      |> group_action_options()
+    end
+  end
+
+  defp group_action_options(options) do
+    options
+    |> Enum.group_by(& &1.pack_id)
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.map(fn {pack_id, options} ->
+      %{
+        label: pack_id,
+        options:
+          Enum.map(options, fn option ->
+            %{
+              value: option.value,
+              label: option.label,
+              description: option.description,
+              search: option.search,
+              disabled: option.disabled
+            }
+          end)
+      }
+    end)
   end
 
   @doc "Whether the current pack/action choice is eligible on every selected target."
@@ -181,17 +238,14 @@ defmodule EmisarWeb.RunbookEditorCatalog do
     end
   end
 
-  defp action_option(action, selected_value) do
-    value = action_value(action.pack_id, action.action_id)
-
+  defp action_option(action) do
     %{
-      value: value,
+      value: action_value(action.pack_id, action.action_id),
       label: action.action_id,
       description: action_description(action),
       search: action_search(action),
       pack_id: action.pack_id,
-      disabled: false,
-      selected: value == selected_value
+      disabled: false
     }
   end
 

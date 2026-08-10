@@ -428,6 +428,13 @@ defmodule EmisarWeb.CoreComponents do
   The value-keyed `id` is part of the component contract: the picker uses
   `phx-update="ignore"` so an open search survives unrelated LiveView renders.
   Include every server fact that changes the option set in that id.
+
+  When many pickers on one page share one large option catalog, render that
+  catalog ONCE with `searchable_select_pool/1` and point each picker at it via
+  `source`: the panel then ships only the per-picker `groups` (usually none),
+  and the Combobox hook clones the pool's options in on first open. Include the
+  pool id in the picker's `id` — a changed catalog is a changed pool id, which
+  is what replaces the stale picker.
   """
   attr :id, :string, required: true
   attr :name, :string, required: true
@@ -435,6 +442,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :selected_label, :string, required: true
   attr :groups, :list, required: true
   attr :blank_label, :string, default: nil
+  attr :source, :string, default: nil
   attr :disabled, :boolean, default: false
   attr :active?, :boolean, default: false
   attr :size, :atom, default: :md, values: [:sm, :md]
@@ -447,6 +455,7 @@ defmodule EmisarWeb.CoreComponents do
       id={@id}
       phx-hook="Combobox"
       phx-update="ignore"
+      data-combobox-source={@source}
       class={["relative", @class]}
     >
       <input type="hidden" name={@name} value={@value} data-combobox-value />
@@ -489,7 +498,10 @@ defmodule EmisarWeb.CoreComponents do
             if(@size == :sm, do: "text-xs", else: "text-sm")
           ]}
         />
-        <ul class={["max-h-72 overflow-y-auto py-1", if(@size == :sm, do: "text-xs", else: "text-sm")]}>
+        <ul
+          data-combobox-options
+          class={["max-h-72 overflow-y-auto py-1", if(@size == :sm, do: "text-xs", else: "text-sm")]}
+        >
           <li :if={@blank_label}>
             <button
               type="button"
@@ -501,34 +513,7 @@ defmodule EmisarWeb.CoreComponents do
               {@blank_label}
             </button>
           </li>
-          <li :for={group <- @groups} data-combobox-section>
-            <span
-              :if={group[:label]}
-              class="block px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-            >
-              {group.label}
-            </span>
-            <ul>
-              <li :for={option <- group.options}>
-                <button
-                  type="button"
-                  data-combobox-option
-                  data-value={option.value}
-                  data-search={option.search}
-                  data-description={option[:description]}
-                  disabled={option[:disabled] || false}
-                  aria-selected={option.value == @value}
-                  class={[
-                    searchable_select_option_class(option[:variant] || :default),
-                    option.value == @value && "bg-white/[0.06] text-zinc-100",
-                    option[:disabled] && "cursor-not-allowed opacity-50"
-                  ]}
-                >
-                  {option.label}
-                </button>
-              </li>
-            </ul>
-          </li>
+          <.combobox_groups groups={@groups} value={@value} />
         </ul>
         <div
           data-combobox-description
@@ -538,6 +523,62 @@ defmodule EmisarWeb.CoreComponents do
         </div>
       </div>
     </div>
+    """
+  end
+
+  @doc """
+  One shared option catalog for many `searchable_select/1` pickers.
+
+  Renders the groups inside an inert `<template>`, so the browser neither lays
+  out nor initializes anything until a picker whose `source` names this id is
+  first opened — the Combobox hook clones the content in and applies the
+  picker's own selected state. This is what keeps an editor with N pickers over
+  one large catalog at one copy of the catalog instead of N.
+  """
+  attr :id, :string, required: true
+  attr :groups, :list, required: true
+
+  def searchable_select_pool(assigns) do
+    ~H"""
+    <template id={@id} data-combobox-pool>
+      <.combobox_groups groups={@groups} value="" />
+    </template>
+    """
+  end
+
+  attr :groups, :list, required: true
+  attr :value, :string, required: true
+
+  defp combobox_groups(assigns) do
+    ~H"""
+    <li :for={group <- @groups} data-combobox-section>
+      <span
+        :if={group[:label]}
+        class="block px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+      >
+        {group.label}
+      </span>
+      <ul>
+        <li :for={option <- group.options}>
+          <button
+            type="button"
+            data-combobox-option
+            data-value={option.value}
+            data-search={option.search}
+            data-description={option[:description]}
+            disabled={option[:disabled] || false}
+            aria-selected={option.value == @value}
+            class={[
+              searchable_select_option_class(option[:variant] || :default),
+              option.value == @value && "bg-white/[0.06] text-zinc-100",
+              option[:disabled] && "cursor-not-allowed opacity-50"
+            ]}
+          >
+            {option.label}
+          </button>
+        </li>
+      </ul>
+    </li>
     """
   end
 

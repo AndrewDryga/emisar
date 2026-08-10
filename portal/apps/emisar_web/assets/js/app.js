@@ -43,16 +43,12 @@ const Combobox = {
     this.panel = this.el.querySelector("[data-combobox-panel]")
     this.search = this.el.querySelector("[data-combobox-search]")
     this.hidden = this.el.querySelector("[data-combobox-value]")
+    this.list = this.el.querySelector("[data-combobox-options]")
     this.options = Array.from(this.el.querySelectorAll("[data-combobox-option]"))
     this.sections = Array.from(this.el.querySelectorAll("[data-combobox-section]"))
     this.descriptionPane = this.el.querySelector("[data-combobox-description]")
 
-    // The hovered option's description mirrors into the footer pane — a fixed
-    // strip instead of per-option tooltips (which would clip in the scroll).
-    this.options.forEach((o) => {
-      o.addEventListener("mouseenter", () => this.describe(o.dataset.description))
-      o.addEventListener("mouseleave", () => this.describe(null))
-    })
+    this.options.forEach((o) => this.wireOption(o))
 
     this.trigger.addEventListener("click", () => this.toggle())
     this.search.addEventListener("input", () => this.filter())
@@ -64,16 +60,47 @@ const Combobox = {
       }
       if (e.key === "Escape") this.close()
     })
-    this.options.forEach((o) => o.addEventListener("click", () => this.select(o)))
     this.onDocClick = (e) => { if (!this.el.contains(e.target)) this.close() }
     document.addEventListener("click", this.onDocClick)
   },
 
   destroyed() { document.removeEventListener("click", this.onDocClick) },
 
+  // The hovered option's description mirrors into the footer pane — a fixed
+  // strip instead of per-option tooltips (which would clip in the scroll).
+  wireOption(o) {
+    o.addEventListener("mouseenter", () => this.describe(o.dataset.description))
+    o.addEventListener("mouseleave", () => this.describe(null))
+    o.addEventListener("click", () => this.select(o))
+  },
+
+  // A picker pointing at a shared catalog pool ships an empty panel; the
+  // options clone in from the pool's <template> the first time it opens, and
+  // this instance's selected state applies here because the pool is shared.
+  hydrate() {
+    if (this.hydrated) return
+    this.hydrated = true
+    const sourceId = this.el.dataset.comboboxSource
+    if (!sourceId) return
+    const pool = document.getElementById(sourceId)
+    if (!pool || !this.list) return
+    this.list.appendChild(pool.content.cloneNode(true))
+    const known = new Set(this.options)
+    const all = Array.from(this.el.querySelectorAll("[data-combobox-option]"))
+    all.filter((o) => !known.has(o)).forEach((o) => this.wireOption(o))
+    this.options = all
+    this.sections = Array.from(this.el.querySelectorAll("[data-combobox-section]"))
+    const selected = this.options.find((o) => o.dataset.value === this.hidden.value)
+    if (selected) {
+      selected.setAttribute("aria-selected", "true")
+      selected.classList.add("bg-white/[0.06]", "text-zinc-100")
+    }
+  },
+
   toggle() { this.panel.hidden ? this.open() : this.close() },
 
   open() {
+    this.hydrate()
     this.panel.hidden = false
     // The field and its dropdown fuse into one continuous element while open:
     // the trigger's bottom corners square off against the panel.
