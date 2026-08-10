@@ -70,7 +70,15 @@ defmodule EmisarWeb.StaticImage do
          |> Path.wildcard()
          |> Enum.sort()
 
-  for path <- @paths do
+  # Every DIRECTORY is a resource too, not just the files in it. A file-only
+  # list can never notice a file that did not exist when this module was last
+  # compiled, so ADDING an image left a warm build (CI restores one) reporting
+  # the old count and failing the coverage test below with no way to pass short
+  # of `mix compile --force`. A directory's mtime moves when an entry is added
+  # or removed, so this is what makes a new capture recompile the map.
+  @directories [@images_root | Path.wildcard(Path.join(@images_root, "**/"))]
+
+  for path <- @paths ++ @directories do
     @external_resource path
   end
 
