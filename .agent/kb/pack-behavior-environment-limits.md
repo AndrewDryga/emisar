@@ -2,8 +2,8 @@
 name: pack-behavior-environment-limits
 description: what each risk_accountability exception reason means, which environment would actually close it, and why two of the six are harness gaps rather than environment limits
 subsystem: packs
-sources: [tools/internal/packtest/packtest.go, packs/*/test/cases.yaml]
-updated: 2026-08-08
+sources: [tools/internal/packtest/packtest.go, packs/docker/test/cases.yaml]
+updated: 2026-08-09
 ---
 
 A risky action that no behavior case covers is declared as an exception in its
@@ -32,8 +32,9 @@ What each reason costs to close, largest first (counts as of 2026-08-09):
   module the host lacks (`zfs`, and `wireguard`/`nfsd` on a workstation), kernel
   state a container SHARES with its host (`drop_caches`, `sysctl_set`, the clock
   verbs — covering those would mutate the CI machine), and pfSense, which is
-  FreeBSD. Do not build a VM lane for this bucket. Each pack's own
-  `test/cases.yaml` now states which of those applies to it.
+  FreeBSD. Nothing in this bucket is closed by a virtual machine — the
+  capability that matters is a privileged container. Each pack's own
+  `test/cases.yaml` states which of these applies to it.
 - **`requires_cluster` — 35 actions, 8 packs.** A second live node of the same
   service, for rebalance, decommission, and peer-removal verbs. Not a new kind
   of environment: it is the existing Compose harness with a multi-node topology
