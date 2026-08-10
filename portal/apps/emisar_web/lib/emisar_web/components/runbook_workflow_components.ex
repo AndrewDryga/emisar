@@ -435,37 +435,16 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   defp step_editor(assigns) do
     choice = RunbookEditorCatalog.action_value(assigns.step["pack_id"], assigns.step["action"])
-    refs = assigns.step["target_refs"]
-    selection = assigns.step["target_selection"]
-
-    targets_resolved? =
-      RunbookEditorCatalog.targets_resolved?(assigns.catalog, refs, selection)
-
-    action_available? =
-      RunbookEditorCatalog.action_available?(assigns.catalog, refs, selection, choice)
 
     assigns =
       assigns
       |> assign(:action_choice, choice)
       |> assign(
-        :action_options,
-        RunbookEditorCatalog.action_options(assigns.catalog, refs, selection, choice)
-      )
-      |> assign(
-        :target_options,
-        RunbookEditorCatalog.target_options(assigns.catalog, refs, selection)
-      )
-      |> assign(:targets_resolved?, targets_resolved?)
-      |> assign(
-        :action_error?,
-        targets_resolved? and choice != "" and not action_available?
-      )
-      |> assign(
         :risk,
         RunbookEditorCatalog.risk(
           assigns.catalog,
-          refs,
-          selection,
+          assigns.step["target_refs"],
+          assigns.step["target_selection"],
           assigns.step["pack_id"],
           assigns.step["action"]
         )
@@ -475,7 +454,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         :issue_count,
         step_issue_count(assigns.definition_issues, assigns.stage_index, assigns.step_index)
       )
-      |> assign_action_picker()
+      |> assign_step_pickers()
 
     ~H"""
     <%!-- Expanded, a step is a form several screens tall, and the list's hairline
@@ -943,48 +922,71 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   defp source_phrase(%{"source" => "structured_output"}), do: "structured output"
   defp source_phrase(%{"source" => source}), do: source
 
+  # A collapsed step renders a summary line plus its hidden live inputs — the
+  # values post, but no picker is reachable, so it pays for NO option catalog:
+  # not the per-step option lists, not the shared pool, not the availability
+  # sweep. A 32-step review runbook opens with every step collapsed, and
+  # computing pickers for all of them made the page's whole first render.
+  defp assign_step_pickers(%{collapsed?: true} = assigns) do
+    {_pack, action_id} = RunbookEditorCatalog.split_action_value(assigns.action_choice)
+
+    assigns
+    |> assign(:action_options, [])
+    |> assign(:target_options, [])
+    |> assign(:targets_resolved?, false)
+    |> assign(:action_error?, false)
+    |> assign(:action_groups, [])
+    |> assign(:action_pool_id, nil)
+    |> assign(:action_selected_label, action_id)
+    |> assign(
+      :action_picker_id,
+      "runbook-stage-#{assigns.stage_index}-step-#{assigns.step_index}-action-collapsed"
+    )
+  end
+
   # The shared pool carries the whole eligible catalog for this step's target
   # set — one copy per DISTINCT set on the page (see `action_pools/1`), cloned
   # into the panel client-side on first open. The picker itself ships only its
   # per-step delta: the saved-but-unavailable choice, when there is one.
-  defp assign_action_picker(assigns) do
+  defp assign_step_pickers(assigns) do
     refs = assigns.step["target_refs"]
     selection = assigns.step["target_selection"]
+    choice = assigns.action_choice
+
+    targets_resolved? =
+      RunbookEditorCatalog.targets_resolved?(assigns.catalog, refs, selection)
+
+    action_available? =
+      RunbookEditorCatalog.action_available?(assigns.catalog, refs, selection, choice)
+
+    action_options = RunbookEditorCatalog.action_options(assigns.catalog, refs, selection, choice)
     pool_groups = RunbookEditorCatalog.action_option_groups(assigns.catalog, refs, selection)
 
     extra_groups =
-      RunbookEditorCatalog.unavailable_action_groups(
-        assigns.catalog,
-        refs,
-        selection,
-        assigns.action_choice
-      )
+      RunbookEditorCatalog.unavailable_action_groups(assigns.catalog, refs, selection, choice)
 
-    selected =
-      Enum.find(assigns.action_options, &(&1.value == assigns.action_choice))
+    selected = Enum.find(action_options, &(&1.value == choice))
 
     selected_label =
       cond do
-        assigns.action_choice == "" and assigns.step["target_refs"] == [] ->
-          "Choose targets first"
-
-        assigns.action_choice == "" ->
-          "Choose action…"
-
-        selected && selected[:unavailable] ->
-          "Unavailable · #{selected.label}"
-
-        selected ->
-          selected.label
-
-        true ->
-          elem(RunbookEditorCatalog.split_action_value(assigns.action_choice), 1)
+        choice == "" and refs == [] -> "Choose targets first"
+        choice == "" -> "Choose action…"
+        selected && selected[:unavailable] -> "Unavailable · #{selected.label}"
+        selected -> selected.label
+        true -> elem(RunbookEditorCatalog.split_action_value(choice), 1)
       end
 
     pool_id = RunbookEditorCatalog.action_pool_id(pool_groups)
-    picker_key = :erlang.phash2({assigns.action_choice, pool_id, extra_groups})
+    picker_key = :erlang.phash2({choice, pool_id, extra_groups})
 
     assigns
+    |> assign(:action_options, action_options)
+    |> assign(
+      :target_options,
+      RunbookEditorCatalog.target_options(assigns.catalog, refs, selection)
+    )
+    |> assign(:targets_resolved?, targets_resolved?)
+    |> assign(:action_error?, targets_resolved? and choice != "" and not action_available?)
     |> assign(:action_groups, extra_groups)
     |> assign(:action_pool_id, pool_id)
     |> assign(:action_selected_label, selected_label)
@@ -1005,9 +1007,13 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   attr :catalog, :map, required: true
 
   def action_pools(assigns) do
+    # Only steps whose picker is actually reachable — a collapsed step ships
+    # no pool; expanding one is already a server round-trip, so its pool
+    # arrives with the expanded render.
     pools =
       for stage <- assigns.draft["stages"] || [],
           step <- stage["steps"] || [],
+          step["collapsed"] != "true",
           uniq: true do
         {step["target_refs"], step["target_selection"]}
       end
