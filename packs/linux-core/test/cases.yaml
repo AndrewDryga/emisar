@@ -1,18 +1,110 @@
-# Every unit verb here, and reading every user's crontab, works in a
-# privileged container running systemd as PID 1 — measured, not assumed. They
-# stay declared because that lane is not built, NOT because a host is required.
-# reboot_host is the exception's exception: rebooting a container is not
-# rebooting a host, so it says nothing about the action either way.
-# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
+# The service manager these unit verbs drive runs as PID 1 in its own
+# privileged, disposable container; the runner joins that container's PID
+# namespace and /run, which is all systemctl needs. The crontab reads are the
+# other half of this pack and work differently: they read the passwd file and
+# spool of the machine the ACTION runs on, which is the client container, so
+# their fixture lives there. See
+# .agent/kb/pack-behavior-environment-limits.md for the lane.
+services: [systemd]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
 risk_accountability:
   mode: complete
   exceptions:
-    linux.cron_recent: requires_privileged_host
-    linux.crontab_all: requires_privileged_host
+    # Rebooting a container is not rebooting a host: the container simply dies,
+    # which is the same outcome whether the action worked or not. No lane fixes
+    # this one.
     linux.reboot_host: requires_privileged_host
-    linux.systemctl_disable: requires_privileged_host
-    linux.systemctl_enable: requires_privileged_host
-    linux.systemctl_reload: requires_privileged_host
-    linux.systemctl_restart: requires_privileged_host
-    linux.systemctl_start: requires_privileged_host
-    linux.systemctl_stop: requires_privileged_host
+runner:
+  user: root
+  reason: >
+    Changing units and reading every user's crontab are privileged operations;
+    a case that ran them as anyone else would only ever assert the denial.
+cases:
+  - action: linux.systemctl_start
+    args: {unit: cron.service}
+    arrange:
+      - argv: [systemctl, stop, cron.service]
+    probes:
+      # --no-block returns before the job completes, so the probe waits for the
+      # state rather than reading it once and racing the manager.
+      - name: the unit reaches the running state
+        argv: [systemctl, is-active, cron.service]
+        retry_for: 10s
+        retry_every: 500ms
+        expect:
+          stdout_contains: [active]
+
+  - action: linux.systemctl_stop
+    args: {unit: cron.service}
+    arrange:
+      - argv: [systemctl, start, cron.service]
+    probes:
+      - name: the unit leaves the running state
+        argv: [/bin/sh, -c, "systemctl is-active cron.service; echo probed"]
+        retry_for: 10s
+        retry_every: 500ms
+        expect:
+          stdout_contains: [inactive, probed]
+
+  # The main PID is what changes when a unit really restarts; asserting it is
+  # still active would pass whether or not anything happened.
+  - action: linux.systemctl_restart
+    args: {unit: cron.service}
+    arrange:
+      - argv: [systemctl, start, cron.service]
+      - argv: [/bin/sh, -c, "systemctl show cron.service -p MainPID --value > /run/packtest-mainpid"]
+    probes:
+      - name: the service came back under a new main PID
+        argv: [/bin/sh, -c, "test \"$(systemctl show cron.service -p MainPID --value)\" != \"$(cat /run/packtest-mainpid)\" && systemctl is-active cron.service"]
+        expect:
+          stdout_contains: [active]
+
+  - action: linux.systemctl_reload
+    args: {unit: dbus.service}
+    probes:
+      - name: the reloaded unit is still up
+        argv: [systemctl, is-active, dbus.service]
+        expect:
+          stdout_contains: [active]
+
+  - action: linux.systemctl_enable
+    args: {unit: cron.service}
+    arrange:
+      - argv: [systemctl, disable, cron.service]
+    probes:
+      - name: the unit is wanted at boot
+        argv: [systemctl, is-enabled, cron.service]
+        expect:
+          stdout_contains: [enabled]
+
+  - action: linux.systemctl_disable
+    args: {unit: cron.service}
+    arrange:
+      - argv: [systemctl, enable, cron.service]
+    probes:
+      - name: the unit is no longer wanted at boot
+        argv: [/bin/sh, -c, "systemctl is-enabled cron.service; echo probed"]
+        expect:
+          stdout_contains: [disabled, probed]
+
+  # The image plants a crontab for a real login user, so this asserts the
+  # enumeration found it rather than that the command exited cleanly.
+  - action: linux.crontab_all
+    expect:
+      stdout_contains: ["crontab -u deploy", packtest-nightly, "/etc/crontab"]
+
+  # The image's @reboot job fires when the SUT boots, so cron has really logged
+  # a job run by the time this reads. The wait is an arrange step rather than a
+  # sleep — and do NOT restart cron to trigger it, which makes cron skip @reboot
+  # ("not system startup") and leaves nothing to find.
+  - action: linux.cron_recent
+    args: {count: 20}
+    arrange:
+      - argv: [/bin/sh, -c, "journalctl -u cron -u crond -t CRON -t CROND --no-pager -n 20 | grep -q CMD"]
+        retry_for: 30s
+        retry_every: 1s
+    expect:
+      stdout_contains: ["CMD (/bin/true)"]

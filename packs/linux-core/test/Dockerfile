@@ -7,16 +7,23 @@ ARG PACKTEST_VERSION=13-slim
 ARG PACKTEST_DIGEST
 
 # The product under test. cron is here because the cases need a real unit to
-# start, stop, restart, mask and signal; dbus is what systemctl talks over.
+# start, stop, restart, enable and disable, and because the crontab reads want
+# real crontabs to find; dbus is what systemctl talks over.
 FROM debian:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS sut
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends systemd systemd-sysv dbus cron \
     && rm -rf /var/lib/apt/lists/*
+# cron_recent reads what cron LOGGED, so a job has to actually fire. @reboot
+# runs when the daemon starts, which a restart in the case triggers on demand —
+# a minute-schedule job would make the case wait for a clock boundary.
+RUN printf '@reboot root /bin/true\n' > /etc/cron.d/packtest \
+    && chmod 0644 /etc/cron.d/packtest
+
 # Both images pin the SAME machine-id on purpose. journalctl reads
-# /run/log/journal/<machine-id>/, so a client with its own id looks in a
+# /run/log/journal/<machine-id>/, so a client carrying its own id looks in a
 # directory the service manager never wrote and reports "No entries" — the
-# runner is standing in for this machine, so it has to identify as it.
+# runner stands in for this machine, so it has to identify as it.
 RUN printf '0123456789abcdef0123456789abcdef\n' > /etc/machine-id
 
 # Volatile journal storage, so everything journald writes lands under the /run
@@ -34,7 +41,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 # runtime identity has to be restored or every case would run as root.
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends systemd \
+    && apt-get install -y --no-install-recommends systemd cron \
     && rm -rf /var/lib/apt/lists/*
 RUN printf '0123456789abcdef0123456789abcdef\n' > /etc/machine-id
+# crontab_all enumerates the passwd file of the machine the ACTION runs on,
+# which is this container rather than the service-manager SUT, so the crontab
+# it should find lives here — without it the case would pass against an empty
+# machine and prove nothing.
+RUN useradd --create-home --shell /bin/sh deploy \
+    && printf '17 3 * * * /usr/local/bin/packtest-nightly\n' | crontab -u deploy -
+# Arrange and probe steps run as the image's own user, not as the case's
+# runner_user, so the journal reads they do to set up and verify need this
+# group — the action itself already runs as root.
+RUN usermod -aG systemd-journal packtest
 USER packtest

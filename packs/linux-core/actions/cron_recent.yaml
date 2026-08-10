@@ -32,7 +32,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "journalctl -u cron -u crond _COMM=CRON --no-pager -n {{ args.count }}"
+      - "journalctl -u cron -u crond -t CRON -t CROND --no-pager -n {{ args.count }}"
   timeout: 15s
 
 output:
