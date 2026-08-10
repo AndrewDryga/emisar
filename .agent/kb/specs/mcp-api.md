@@ -1672,11 +1672,15 @@ applies the full preflight below and collapses every resolution failure to
 Before creation, the portal validates the strict definition and typed inputs;
 expands every target to exact current runner refs; validates complete caller
 scope; resolves the current trusted pack behind each declared action; requires a
-common action contract for the complete target pool; checks every binding against that
-contract; evaluates current account policy for every item; and enforces the
-signature restriction for the complete plan. For `random_one`, the portal validates
-the whole online group before choosing and freezing one exact runner. Any failure
-creates no execution.
+common action contract across the runners that hold a trusted candidate; checks
+every binding against that contract; evaluates current account policy for every
+item; and enforces the signature restriction for the complete plan. A covered
+runner that does not advertise a step's pack fails the step — declared coverage
+never silently shrinks — while one whose advertised deployment holds no trusted
+version right now (retired, pending, rejected, or drifted) narrows the
+executable set to the runners that do; zero capable runners fails the step. For
+`random_one`, the portal samples one runner from the capable set and freezes it.
+Any failure creates no execution.
 
 The operation, immutable expanded plan, execution, stages, and logical
 step/runner items commit atomically. The execution also snapshots the exact
