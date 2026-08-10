@@ -248,7 +248,8 @@ func TestScoreNamesAStalePackPinRatherThanBlamingTheClient(t *testing.T) {
 		}},
 		{Tool: "get_action", ActionID: "linux.uptime", PackRef: republished},
 		{Tool: "run_action", ActionID: "linux.uptime", PackRef: republished,
-			priorContractMatched: true, BlockedByPolicy: true, ResponseCode: "pack_not_allowed"},
+			priorContractMatched: true, BlockedByPolicy: true, ResponseError: true,
+			ResponseCode: "pack_not_allowed"},
 	}
 
 	got := scoreReport(item, calls, agentResult{})
@@ -268,5 +269,29 @@ func TestScoreNamesAStalePackPinRatherThanBlamingTheClient(t *testing.T) {
 	item.AllowedPackRefs = []string{republished}
 	if fresh := scoreReport(item, calls[:2], agentResult{}); len(fresh.StalePackRefs) != 0 {
 		t.Fatalf("a current pin must report no staleness: %#v", fresh.StalePackRefs)
+	}
+}
+
+// A fleet mid-upgrade serves the new pack on some runners and the old one on
+// others, so search legitimately returns the SAME action at two refs. Reading
+// staleness as "seen once at an unpinned ref" fails that perfectly good run and
+// blames the corpus for a healthy rollout — the pin is stale only when nothing
+// the fleet advertises matches it.
+func TestScoreDoesNotCallAMidUpgradeFleetStale(t *testing.T) {
+	item := conformingScenario()
+	item.AllowedPackRefs = []string{"p"}
+	item.RequiredSearchActions = [][]string{{"linux.uptime"}}
+
+	calls := append([]callRecord{{Tool: "find_actions", SearchCandidates: []searchCandidate{
+		{ActionID: "linux.uptime", PackRef: "p"},
+		{ActionID: "linux.uptime", PackRef: "linux-core@0.3.23/sha256:notyetupgraded"},
+	}}}, conformingCalls()...)
+
+	got := scoreReport(item, calls, agentResult{})
+	if len(got.StalePackRefs) != 0 {
+		t.Fatalf("an older sibling ref is a rollout, not a stale pin: %#v", got.StalePackRefs)
+	}
+	if !got.Passed {
+		t.Fatalf("the run must still pass: %v", got.Failures)
 	}
 }

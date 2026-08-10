@@ -43,7 +43,12 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	failedCalls := map[string]int{}
 	failedTools := map[string]string{}
 	allowedActionIDs := stringSet(item.AllowedActions)
-	staleRefs := map[string]bool{}
+	// An allowed action can legitimately be advertised at SEVERAL refs at once —
+	// a fleet mid-upgrade serves the new pack on some runners and the old one on
+	// others. Staleness is therefore "never seen at a pinned ref", not "seen once
+	// at an unpinned one"; the weaker test fails a perfectly good run.
+	unpinnedRefs := map[string][]string{}
+	pinnedSeen := map[string]bool{}
 	runStatus := map[string]string{}
 	startedRuns := map[string]bool{}
 
@@ -56,7 +61,7 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 			// pinned ref no longer exists, not that the client reached outside
 			// its brief.
 			if call.ResponseCode == "pack_not_allowed" && allowedActionIDs[call.ActionID] && call.PackRef != "" {
-				staleRefs[call.ActionID+" dispatched at "+call.PackRef] = true
+				unpinnedRefs[call.ActionID] = append(unpinnedRefs[call.ActionID], "dispatched at "+call.PackRef)
 			}
 		}
 		if call.ResponseError {
@@ -84,6 +89,7 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 			for _, candidate := range call.SearchCandidates {
 				if len(allowedPackRefs) == 0 || allowedPackRefs[candidate.PackRef] {
 					searchActions[candidate.ActionID] = true
+					pinnedSeen[candidate.ActionID] = true
 					continue
 				}
 				// The pin filtered a candidate the client legitimately found. If
@@ -91,7 +97,7 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 				// client — is what is wrong: the pack was republished under a new
 				// version or content hash after the corpus was authored.
 				if allowedActionIDs[candidate.ActionID] {
-					staleRefs[candidate.ActionID+" advertised at "+candidate.PackRef] = true
+					unpinnedRefs[candidate.ActionID] = append(unpinnedRefs[candidate.ActionID], "advertised at "+candidate.PackRef)
 				}
 			}
 		}
@@ -124,8 +130,14 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		if call.ExpectedPresent {
 			result.ExpectedGiven++
 		}
-		if !call.ResponseError {
+		// The relay already answers a blocked call as an error, so this is belt
+		// and braces — but a policy-blocked dispatch must never satisfy a
+		// required action, and the scorer should not have to trust a rule
+		// enforced three files away to keep that true.
+		if !call.BlockedByPolicy && !call.ResponseError {
 			succeededActions[call.ActionID] = true
+			// A ref the relay let through is by definition one the pin allows.
+			pinnedSeen[call.ActionID] = true
 			for _, state := range call.RunStates {
 				startedRuns[state.RunID] = true
 			}
@@ -201,8 +213,17 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	// tool and action never succeed, AND it filters the client's own search
 	// candidates out of recall@5. Four failures, one cause, none of them the
 	// client's fault.
-	if len(staleRefs) > 0 {
-		result.StalePackRefs = sortedKeys(staleRefs)
+	stale := map[string]bool{}
+	for action, refs := range unpinnedRefs {
+		if pinnedSeen[action] || succeededActions[action] {
+			continue
+		}
+		for _, ref := range refs {
+			stale[action+" "+ref] = true
+		}
+	}
+	if len(stale) > 0 {
+		result.StalePackRefs = sortedKeys(stale)
 		result.fail("scenario allowed_pack_refs is STALE, which is a corpus defect rather than a client failure — the fleet advertises " +
 			strings.Join(result.StalePackRefs, "; ") +
 			". Refresh this scenario's pack refs to the republished ones; every failure above follows from this.")
