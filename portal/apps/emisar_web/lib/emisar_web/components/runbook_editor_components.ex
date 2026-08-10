@@ -139,6 +139,15 @@ defmodule EmisarWeb.RunbookEditorComponents do
   defp discardable?(%Runbooks.Runbook{}), do: true
   defp discardable?(_runbook), do: false
 
+  # A clean editor over a published release has nothing to publish, so the same
+  # resolution check answers a different question: would Run dispatch the live
+  # release right now.
+  defp live_in_sync?(%Runbooks.Runbook{live_version: version, draft_definition: nil}, dirty?)
+       when is_integer(version),
+       do: not dirty?
+
+  defp live_in_sync?(_runbook, _dirty?), do: false
+
   def render(assigns) do
     ~H"""
     <.dashboard_shell
@@ -277,6 +286,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
               preview={@preview}
               definition_issues={@definition_issues}
               pristine?={is_nil(@runbook) and not @dirty?}
+              runbook={@runbook}
+              dirty?={@dirty?}
             />
             <.canonical_panel draft={@draft} />
             <.confirm_button
@@ -847,11 +858,32 @@ defmodule EmisarWeb.RunbookEditorComponents do
   attr :preview, :map, required: true
   attr :definition_issues, :list, required: true
   attr :pristine?, :boolean, required: true
+  attr :runbook, :any, required: true
+  attr :dirty?, :boolean, required: true
 
   defp publish_panel(assigns) do
+    {panel_title, blocked_title, ready_title, ready_body} =
+      if live_in_sync?(assigns.runbook, assigns.dirty?) do
+        {"Run check", "Current infrastructure blocks new executions",
+         "Runs on current infrastructure",
+         "The live definition still resolves against current runners, trusted packs, " <>
+           "action contracts, and policy."}
+      else
+        {"Publish check", "Current infrastructure blocks publication", "Ready to publish",
+         "The definition is valid and resolves against current runners, trusted packs, " <>
+           "action contracts, and policy."}
+      end
+
+    assigns =
+      assigns
+      |> assign(:panel_title, panel_title)
+      |> assign(:blocked_title, blocked_title)
+      |> assign(:ready_title, ready_title)
+      |> assign(:ready_body, ready_body)
+
     ~H"""
     <section>
-      <.section_header title="Publish check" />
+      <.section_header title={@panel_title} />
 
       <.event_block
         :if={@pristine? and @definition_issues != []}
@@ -898,7 +930,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         :if={@definition_issues == [] and @preview.state == :blocked}
         icon="hero-no-symbol"
         tone={:rose}
-        title="Current infrastructure blocks publication"
+        title={@blocked_title}
       >
         <:body>
           <ul class="space-y-2">
@@ -920,10 +952,9 @@ defmodule EmisarWeb.RunbookEditorComponents do
       </p>
 
       <div :if={@preview.state == :ready} class="space-y-4">
-        <.event_block icon="hero-check-circle" tone={:brand} title="Ready to publish">
+        <.event_block icon="hero-check-circle" tone={:brand} title={@ready_title}>
           <:body>
-            The definition is valid and resolves against current runners, trusted packs, action
-            contracts, and policy.
+            {@ready_body}
           </:body>
         </.event_block>
         <dl class="space-y-2 text-xs text-zinc-400">
