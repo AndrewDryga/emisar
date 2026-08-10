@@ -1,10 +1,93 @@
-# `strace -p` works in a container granted CAP_SYS_PTRACE — measured. What is
-# missing is a SUT that runs a target process worth attaching to, which is a
-# fixture rather than a privilege the harness cannot hold.
-# See .agent/kb/pack-behavior-environment-limits.md for what was measured.
+# Both tracers attach with ptrace, which is a capability rather than a host:
+# the case grants CAP_SYS_PTRACE, starts a target process of its own, and
+# resolves that process's pid into the action's argument. Nothing runs
+# privileged. See .agent/kb/pack-behavior-environment-limits.md for the lane.
+services: [forensics]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
 risk_accountability:
   mode: complete
-  exceptions:
-    forensics.gdb_backtrace: requires_privileged_host
-    forensics.strace_pid_short: requires_privileged_host
-    forensics.strace_summary: requires_privileged_host
+runner:
+  user: root
+  reason: >
+    Attaching to a process the caller does not own needs CAP_SYS_PTRACE, which
+    only root holds here; as anyone else the cases would assert the denial.
+cases:
+  # strace prints its attach line to stderr and the action merges it into
+  # stdout, so this asserts the tracer really latched onto the pid the arrange
+  # started rather than that the command exited cleanly. The target outlives the
+  # five-second window, so timeout exits 124 — which the action deliberately
+  # treats as success, and this case is what proves it does.
+  - action: forensics.strace_pid_short
+    arrange:
+      - argv: [/bin/sh, -c, "setsid packtest-busy < /dev/null > /dev/null 2>&1 &"]
+      - argv: [/bin/sh, -c, "pgrep -o -f packtest-busy > /dev/null"]
+        retry_for: 10s
+        retry_every: 200ms
+    resolve_args:
+      # -o, not -n: the loop's own short-lived children inherit its command line
+      # until they exec, so the newest match is usually already gone by the time
+      # the tracer attaches. The oldest match is the loop itself.
+      pid:
+        argv: [/bin/sh, -c, "pgrep -o -f packtest-busy"]
+    expect:
+      stdout_contains: ["attached"]
+    probes:
+      # Attaching stops the target; the tracer is supposed to leave it running
+      # again. A backtrace that forgot to detach, or a tracer killed mid-attach,
+      # leaves the process in T — an operator's real fear about these actions,
+      # and the one observable thing they change.
+      - name: the traced process is running, not left stopped
+        argv: [/bin/sh, -c, "case \"$(ps -o stat= -p $(pgrep -o -f packtest-busy))\" in T*|t*) echo stopped ;; *) echo running ;; esac"]
+        expect:
+          stdout_contains: [running]
+
+  - action: forensics.strace_summary
+    arrange:
+      - argv: [/bin/sh, -c, "setsid packtest-busy < /dev/null > /dev/null 2>&1 &"]
+      - argv: [/bin/sh, -c, "pgrep -o -f packtest-busy > /dev/null"]
+        retry_for: 10s
+        retry_every: 200ms
+    resolve_args:
+      # -o, not -n: the loop's own short-lived children inherit its command line
+      # until they exec, so the newest match is usually already gone by the time
+      # the tracer attaches. The oldest match is the loop itself.
+      pid:
+        argv: [/bin/sh, -c, "pgrep -o -f packtest-busy"]
+    expect:
+      stdout_contains: ["% time", "total"]
+    probes:
+      # Attaching stops the target; the tracer is supposed to leave it running
+      # again. A backtrace that forgot to detach, or a tracer killed mid-attach,
+      # leaves the process in T — an operator's real fear about these actions,
+      # and the one observable thing they change.
+      - name: the traced process is running, not left stopped
+        argv: [/bin/sh, -c, "case \"$(ps -o stat= -p $(pgrep -o -f packtest-busy))\" in T*|t*) echo stopped ;; *) echo running ;; esac"]
+        expect:
+          stdout_contains: [running]
+
+  - action: forensics.gdb_backtrace
+    arrange:
+      - argv: [/bin/sh, -c, "setsid packtest-busy < /dev/null > /dev/null 2>&1 &"]
+      - argv: [/bin/sh, -c, "pgrep -o -f packtest-busy > /dev/null"]
+        retry_for: 10s
+        retry_every: 200ms
+    resolve_args:
+      # -o, not -n: the loop's own short-lived children inherit its command line
+      # until they exec, so the newest match is usually already gone by the time
+      # the tracer attaches. The oldest match is the loop itself.
+      pid:
+        argv: [/bin/sh, -c, "pgrep -o -f packtest-busy"]
+    expect:
+      stdout_contains: ["Thread", "#0"]
+    probes:
+      # Attaching stops the target; the tracer is supposed to leave it running
+      # again. A backtrace that forgot to detach, or a tracer killed mid-attach,
+      # leaves the process in T — an operator's real fear about these actions,
+      # and the one observable thing they change.
+      - name: the traced process is running, not left stopped
+        argv: [/bin/sh, -c, "case \"$(ps -o stat= -p $(pgrep -o -f packtest-busy))\" in T*|t*) echo stopped ;; *) echo running ;; esac"]
+        expect:
+          stdout_contains: [running]

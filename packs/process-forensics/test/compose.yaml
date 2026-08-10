@@ -1,0 +1,26 @@
+services:
+  # ptrace is the whole capability this pack needs, and it is granted on its
+  # own — nothing here runs privileged. The process being traced is started by
+  # the case in this same container, so tracer and target share a PID namespace
+  # the way they would on a host.
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/process-forensics/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+    image: emisar-packtest-process-forensics-tools:latest
+    cap_add: [SYS_PTRACE]
+
+  # The release whose strace and gdb are under test. It serves no case — the
+  # tracer and its target both live in the runner container — but it is what
+  # pins the matrix row and proves the digest.
+  forensics:
+    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    command: [sleep, infinity]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10
