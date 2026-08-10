@@ -19,6 +19,7 @@ var terminalStatuses = map[string]bool{
 // on the first attempt; discovery reads self-heal by design.
 var mutationTools = map[string]bool{
 	"run_action": true, "execute_runbook": true, "create_runbook_draft": true,
+	"update_runbook_draft": true,
 }
 
 // scoreReport applies only hard conformance rules — facts the relay recorded
