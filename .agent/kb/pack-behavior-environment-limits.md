@@ -35,7 +35,18 @@ What each reason costs to close, largest first (counts as of 2026-08-10):
   Two more shapes cover the rest of what is done: a capability granted on its
   own where that is all an action needs — `cap_add: [NET_ADMIN]` for `firewall`,
   `[SYS_PTRACE]` for `process-forensics` — and no SUT at all where the action
-  mutates the machine it runs on, as `debian`'s apt cases do. What genuinely does not work is a kernel
+  mutates the machine it runs on, as `debian`'s apt cases do.
+
+  What the remaining 48 cost, since the shapes above make most of it mechanical:
+  `cloud-init` (10) is the largest and the least faithful — it wants a seeded
+  NoCloud datasource, and its re-run verbs partly no-op in a container, so a
+  passing case may say little. `dnf-rpm` (4) is not the systemd lane with a
+  different base: `dnf` runs where the action runs, which is the Debian client
+  container, so it wants an RPM-based client image carrying the packtest binary.
+  `podman` (5) has no equivalent of `docker:dind` and is unmeasured. `pm2` (4)
+  wants node plus a cluster-mode app; `java-jvm` (2) and `elixir-beam` (1) want
+  heavy SUTs for very few actions. `fail2ban` (1) wants a running server with a
+  configured jail. The last 9 are the permanent ones above. What genuinely does not work is a kernel
   module the host lacks (`zfs`, and `wireguard`/`nfsd` on a workstation), kernel
   state a container SHARES with its host (`drop_caches`, `sysctl_set`, the clock
   verbs — covering those would mutate the CI machine), and pfSense, which is
