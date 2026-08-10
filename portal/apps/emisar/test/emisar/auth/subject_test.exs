@@ -263,7 +263,7 @@ defmodule Emisar.Auth.SubjectTest do
     end
   end
 
-  describe "actor_kind/1 + actor_id/1 + actor_email/1" do
+  describe "actor_kind/1 + actor_id/1" do
     test "classify each actor, with system/nil fallbacks for an actor-less subject" do
       user_subject = %Subject{actor: %User{id: "u1", email: "ops@example.test"}}
       key_subject = %Subject{actor: %ApiKey{id: "k1"}}
@@ -278,12 +278,6 @@ defmodule Emisar.Auth.SubjectTest do
       assert Subject.actor_id(user_subject) == "u1"
       assert Subject.actor_id(key_subject) == "k1"
       assert Subject.actor_id(actorless) == nil
-
-      assert Subject.actor_email(user_subject) == "ops@example.test"
-      # Only a user actor has an email — keys, runners, and the actor-less
-      # subject return nil (this feeds the Paddle buyer-email attach).
-      assert Subject.actor_email(key_subject) == nil
-      assert Subject.actor_email(actorless) == nil
     end
 
     test "user_id/1 is the user actor's id, nil for a key/runner/actor-less subject" do
