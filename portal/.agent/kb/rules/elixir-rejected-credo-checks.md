@@ -104,6 +104,35 @@ repeated-inline rules it would belong in `EmisarWeb.TemplateHygieneTest`.
 **Verdict: deferred — revisit only if it recurs, and then build it on a real
 HEEx parse, not a line window.**
 
+## 5. An ETF compression guard (`<<131, 80, _::binary>>`) paired with a byte bound
+
+**The smell (CVE-2026-69659 follow-up, 2026-08-10).**
+`Emisar.Checks.NoUnsafeDeserialization` flags every ETF decode, but the escape
+hatch it documents — a `# credo:disable-for-next-line` over a decode that is
+genuinely unavoidable — carries a two-part contract the check that fired cannot
+see: refuse compressed payloads (`<<131, 80, _::binary>>`) *and* bound the raw
+byte size. The proposal was a second, standalone check asserting that contract —
+a module matching the ETF magic bytes must also bound its input's size.
+
+**Why rejected — the co-occurrence heuristic is satisfied incidentally.** The
+contract is not decidable from the call site (that is *why* it is prose in the
+first check), so the only module-local approximation is "the ETF pattern and a
+`byte_size` bound appear in the same module". Measured in portal `lib/`: **0**
+`<<131` patterns and **86** `byte_size` call sites across **36** of 429 modules —
+MCP service framing, `raw_json`, command previews, run-output truncation,
+attestation. Any module that ever needed the guard would be a parsing/transport
+module, i.e. exactly the class that already bounds sizes for unrelated reasons —
+`Emisar.Repo.Paginator`, the closest real analogue we have, carries five. So the
+check would pass whether or not a bound ever governs the decoded input. Proving
+the real property — that a bound applies to *this* value before *this* decode —
+needs dataflow, not a prewalk.
+
+A security check that can be satisfied by an unrelated line elsewhere in the file
+is worse than no check: it reads as enforcement while providing none. **Verdict:
+the contract stays prose in `NoUnsafeDeserialization`'s `explanations:` block,
+where the developer writing the disable comment reads it (`mix credo explain`),
+and the disable comment itself is the review anchor.**
+
 ---
 
 **If reopened:** re-measure first (the prototype for #1 was a path-scoped
