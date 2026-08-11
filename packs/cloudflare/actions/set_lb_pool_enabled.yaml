@@ -1,0 +1,37 @@
+schema_version: 1
+id: cf.set_lb_pool_enabled
+title: Enable or disable LB pool
+kind: script
+risk: high
+description: Enable or disable one load balancer origin pool; disabling shifts its traffic to the remaining pools, and disabling the last healthy pool sends traffic to the fallback.
+side_effects:
+  - Load balancers steer traffic away from (or back to) the pool within seconds.
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: pool_id
+    type: string
+    required: true
+    description: Pool ID (cf.list_lb_pools returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: enabled
+    type: boolean
+    required: true
+    description: Whether the pool receives traffic.
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [set-lb-pool-enabled, "{{ args.account_id }}", "{{ args.pool_id }}", "{{ args.enabled }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Drain a pool
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0", pool_id: "17b5962d775c646f3f9725cbc7a53df4", enabled: false}

@@ -1,0 +1,32 @@
+schema_version: 1
+id: cf.lb_pool_health
+title: Show pool health
+kind: script
+risk: low
+description: Show the latest per-location health-check results for one load balancer pool's origins — where an origin is failing and why.
+side_effects: [One read-only API request.]
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: pool_id
+    type: string
+    required: true
+    description: Pool ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [lb-pool-health, "{{ args.account_id }}", "{{ args.pool_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Pool health
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0", pool_id: "17b5962d775c646f3f9725cbc7a53df4"}

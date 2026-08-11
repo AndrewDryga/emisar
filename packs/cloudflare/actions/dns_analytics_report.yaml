@@ -1,13 +1,9 @@
 schema_version: 1
-id: cf.zone_analytics
-title: Show zone HTTP analytics
+id: cf.dns_analytics_report
+title: Show DNS analytics
 kind: script
 risk: low
-description: >
-  Show a zone's HTTP traffic for the last N hours via the GraphQL analytics
-  API — request, bandwidth, cached, threat, and unique-visitor totals plus
-  the hourly series. Replaces the legacy /analytics/dashboard API, which
-  Cloudflare sunset.
+description: Show a zone's DNS query analytics for the last N hours — query counts grouped by name, record type, and response code.
 side_effects: [One read-only API request.]
 args:
   - name: zone_id
@@ -22,15 +18,21 @@ args:
     default: 24
     description: How many hours back to report.
     validation: {min: 1, max: 72}
+  - name: limit
+    type: integer
+    required: false
+    default: 20
+    description: Result rows returned.
+    validation: {min: 1, max: 100}
 execution:
   script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
-  argv: [zone-analytics, "{{ args.zone_id }}", "{{ args.hours }}"]
-  timeout: 60s
+  argv: [dns-analytics-report, "{{ args.zone_id }}", "{{ args.hours }}", "{{ args.limit }}"]
+  timeout: 30s
 output:
   parser: json
   parser_required: true
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
-  - title: Last 24 hours
+  - title: Top query names
     args: {zone_id: "abc123def456abc123def456abc123de"}

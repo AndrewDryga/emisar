@@ -1,12 +1,11 @@
 schema_version: 1
-id: cf.dev_mode_on
-title: Enable development mode
+id: cf.unpause_zone
+title: Unpause zone
 kind: script
-risk: high
-description: Enable development mode for 3 hours — the zone's cache is bypassed and the origin receives every request, which can overload a busy origin.
+risk: medium
+description: Resume Cloudflare on a paused zone; proxied traffic returns to the edge and the CDN cache, WAF, and DDoS protection re-engage.
 side_effects:
-  - Cache is bypassed for 3 hours (auto-expires).
-  - The origin gets every request.
+  - Proxied traffic moves back through Cloudflare's edge.
 args:
   - name: zone_id
     type: string
@@ -16,13 +15,13 @@ args:
       pattern: "^[a-f0-9]{32}$"
 execution:
   script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
-  argv: [dev-mode, "{{ args.zone_id }}", "on"]
+  argv: [set-zone-paused, "{{ args.zone_id }}", "false"]
   timeout: 30s
 output:
   parser: json
   parser_required: true
-  max_stdout_bytes: 16384
+  max_stdout_bytes: 262144
   max_stderr_bytes: 8192
 examples:
-  - title: Dev mode on
+  - title: Unpause
     args: {zone_id: "abc123def456abc123def456abc123de"}

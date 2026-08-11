@@ -1,0 +1,33 @@
+schema_version: 1
+id: cf.delete_ip_access_rule
+title: Delete IP access rule
+kind: script
+risk: high
+description: Delete one zone IP access rule; removing a block re-admits the traffic it stopped, and removing a whitelist re-subjects that traffic to security checks.
+side_effects:
+  - The rule stops applying at the edge within seconds.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: rule_id
+    type: string
+    required: true
+    description: Access rule ID (cf.list_ip_access_rules returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [delete-ip-access-rule, "{{ args.zone_id }}", "{{ args.rule_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Remove a rule
+    args: {zone_id: "abc123def456abc123def456abc123de", rule_id: "92f17202ed8bd63d69a66b86a49a8f6b"}

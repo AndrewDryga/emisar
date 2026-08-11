@@ -1,12 +1,12 @@
 schema_version: 1
 
 id: cloudflare
-name: Cloudflare zone operations
-version: 0.1.8
+name: Cloudflare edge operations
+version: 0.2.0
 description: >
-  Read-only zone, DNS record, cache, firewall, and analytics introspection
-  plus narrow mutators (purge cache, enable/disable dev mode). Auth via
-  CF_API_TOKEN env var.
+  Governed Cloudflare zone, DNS record, cache-purge, security-posture, TLS,
+  analytics, tunnel, load-balancer, and audit-log operations. Auth via
+  CF_API_TOKEN on the runner host.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -15,30 +15,66 @@ requires:
     - linux
   binaries:
     - curl
+    - jq
+    - bash
+
+# No detect block: Cloudflare is reached remotely, so curl and jq on a runner
+# are not evidence that the host operates a Cloudflare account.
 
 setup:
   summary: >
-    Calls the Cloudflare REST API over HTTPS with curl, sending the token
-    in an Authorization: Bearer header. curl reads it from CF_API_TOKEN on
-    the runner host, so allowlist that variable in inherit_env.
+    Calls the Cloudflare REST and GraphQL APIs over HTTPS. CF_API_TOKEN is
+    sent in an Authorization Bearer header over curl stdin and is never
+    placed in argv or action output. Allowlist the variable in the runner's
+    execution.inherit_env configuration.
   env:
     - name: CF_API_TOKEN
       required: true
-      description: Cloudflare API token (Bearer auth). Scope it to the zones and permissions the actions you enable need.
+      description: Cloudflare API token. Scope it to the zones, accounts, and permissions the actions you enable need, and gate mutation actions with policy.
   notes:
-    - "Zone IDs are per-call action arguments, not environment variables — list_zones returns them for use in the other actions."
-    - "Token scopes: Zone Read for the read actions; Cache Purge for purge_all_cache / purge_url; Zone Settings Edit for dev_mode_on / dev_mode_off."
+    - "Zone and account IDs are per-call action arguments — cf.list_zones and cf.list_accounts return them for use in the other actions."
+    - "Token scopes by family: Zone Read + DNS Read for the zone/DNS reads; DNS Edit for the DNS record mutations; Cache Purge for the purge actions; Zone Settings Edit for development mode, security level, SSL mode, minimum TLS, Always Use HTTPS, and pause; Firewall Services Edit for IP access rules; Analytics Read for zone and DNS analytics; Cloudflare Tunnel Read for tunnels; Load Balancing Read/Edit for pools; Audit Logs Read for audit logs."
+    - "Purge by hostname, prefix, or cache-tag requires a Cloudflare Enterprise zone; the other actions work on every plan."
+    - "Workers KV/R2/D1, Cloudflare Access, WARP, Email Routing, origin CA certificates, and API token management are separate trust surfaces this pack does not touch."
   verify: cf.list_zones
 
 actions:
   - actions/list_zones.yaml
+  - actions/list_accounts.yaml
   - actions/zone_details.yaml
+  - actions/zone_settings.yaml
   - actions/dns_records.yaml
-  - actions/cache_settings.yaml
   - actions/firewall_rules.yaml
-  - actions/zone_analytics.yaml
+  - actions/list_rulesets.yaml
+  - actions/list_ip_access_rules.yaml
+  - actions/ssl_verification.yaml
+  - actions/list_certificate_packs.yaml
   - actions/page_rules.yaml
-  - actions/purge_all_cache.yaml
+  - actions/list_worker_routes.yaml
+  - actions/list_tunnels.yaml
+  - actions/tunnel_connections.yaml
+  - actions/list_load_balancers.yaml
+  - actions/list_lb_pools.yaml
+  - actions/lb_pool_health.yaml
+  - actions/audit_logs.yaml
+  - actions/zone_analytics.yaml
+  - actions/dns_analytics_report.yaml
+  - actions/create_dns_record.yaml
+  - actions/update_dns_record.yaml
+  - actions/delete_dns_record.yaml
   - actions/purge_url.yaml
+  - actions/purge_hostname.yaml
+  - actions/purge_prefix.yaml
+  - actions/purge_tag.yaml
+  - actions/purge_all_cache.yaml
   - actions/dev_mode_on.yaml
   - actions/dev_mode_off.yaml
+  - actions/set_security_level.yaml
+  - actions/set_ssl_mode.yaml
+  - actions/set_min_tls_version.yaml
+  - actions/set_always_use_https.yaml
+  - actions/create_ip_access_rule.yaml
+  - actions/delete_ip_access_rule.yaml
+  - actions/pause_zone.yaml
+  - actions/unpause_zone.yaml
+  - actions/set_lb_pool_enabled.yaml

@@ -1,0 +1,33 @@
+schema_version: 1
+id: cf.delete_dns_record
+title: Delete DNS record
+kind: script
+risk: high
+description: Delete one DNS record from a zone; whatever resolved through it stops resolving as caches expire, and the record cannot be restored except by recreating it.
+side_effects:
+  - The name stops resolving through this record as resolver caches expire.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: record_id
+    type: string
+    required: true
+    description: DNS record ID (cf.dns_records returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [delete-dns-record, "{{ args.zone_id }}", "{{ args.record_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Delete one record
+    args: {zone_id: "abc123def456abc123def456abc123de", record_id: "372e67954025e0ba6aaa6d586b9e0b59"}

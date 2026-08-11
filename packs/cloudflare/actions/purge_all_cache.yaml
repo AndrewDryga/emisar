@@ -1,13 +1,12 @@
 schema_version: 1
 id: cf.purge_all_cache
-title: POST /zones/<id>/purge_cache (everything)
-kind: exec
+title: Purge entire zone cache
+kind: script
 risk: critical
-description: >
-  Purge ALL cached content for one zone. Cold-cache origin spike — every URL becomes a miss until it warms again. Avoid on busy zones.
+description: Purge ALL cached content for one zone; every URL misses to the origin at once, and on a busy zone that cold-cache spike can overload the origin.
 side_effects:
-  - Origin sees a 100% miss rate until cache re-warms.
-  - Rate-limited by Cloudflare to once per minute per zone.
+  - The origin sees a 100% miss rate until the cache re-warms.
+  - Rate-limited by Cloudflare to roughly once per minute per zone.
 args:
   - name: zone_id
     type: string
@@ -16,19 +15,14 @@ args:
     validation:
       pattern: "^[a-f0-9]{32}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS --globoff --proto =http,https -XPOST \"https://api.cloudflare.com/client/v4/zones/${1}/purge_cache\" -H @- -H \"Content-Type: application/json\" -d '{\"purge_everything\":true}'"
-      - "emisar"
-      - "{{ args.zone_id }}"
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [purge-all-cache, "{{ args.zone_id }}"]
   timeout: 60s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 16384
   max_stderr_bytes: 8192
 examples:
   - title: Full purge
-    args:
-      zone_id: "abc123def456abc123def456abc123de"
+    args: {zone_id: "abc123def456abc123def456abc123de"}

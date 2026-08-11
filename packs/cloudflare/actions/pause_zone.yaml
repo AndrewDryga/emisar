@@ -1,0 +1,28 @@
+schema_version: 1
+id: cf.pause_zone
+title: Pause zone
+kind: script
+risk: high
+description: Pause Cloudflare on a zone — traffic goes DNS-only, straight to the origin, losing the CDN cache, WAF, and DDoS protection while exposing the origin's real IPs.
+side_effects:
+  - The origin serves all traffic directly and its IPs become visible.
+  - WAF rules, IP access rules, and edge caching stop applying.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [set-zone-paused, "{{ args.zone_id }}", "true"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Pause
+    args: {zone_id: "abc123def456abc123def456abc123de"}

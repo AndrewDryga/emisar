@@ -1,24 +1,49 @@
 schema_version: 1
 id: cf.list_zones
-title: GET /zones
-kind: exec
+title: List zones
+kind: script
 risk: low
-description: List all zones accessible by the API token.
-side_effects:
-  - One API request.
-  - Read-only.
-args: []
+description: List one bounded page of zones the API token can read, with each zone's ID, plan, status, and nameservers.
+side_effects: [One read-only API request.]
+args:
+  - name: name
+    type: string
+    required: false
+    default: ""
+    description: Optional exact zone name (domain) filter.
+    validation:
+      pattern: "^(|[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*)$"
+      max_length: 253
+  - name: status
+    type: string
+    required: false
+    default: ""
+    description: Optional zone status filter.
+    validation:
+      enum: ["", "active", "pending", "initializing", "moved", "deactivated"]
+  - name: page
+    type: integer
+    required: false
+    default: 1
+    description: Page number.
+    validation: {min: 1, max: 2147483647}
+  - name: per_page
+    type: integer
+    required: false
+    default: 50
+    description: Zones returned in this page.
+    validation: {min: 5, max: 50}
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS --globoff --proto =http,https \"https://api.cloudflare.com/client/v4/zones?per_page=50\" -H @-"
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [list-zones, "{{ args.name }}", "{{ args.status }}", "{{ args.page }}", "{{ args.per_page }}"]
   timeout: 30s
 output:
   parser: json
-  max_stdout_bytes: 524288
+  parser_required: true
+  max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
-  - title: Zones
+  - title: First page
     args: {}
+  - title: One zone by name
+    args: {name: example.com}

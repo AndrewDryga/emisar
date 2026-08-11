@@ -1,0 +1,35 @@
+schema_version: 1
+id: cf.purge_hostname
+title: Purge cached hostname
+kind: script
+risk: high
+description: Purge every cached object for one hostname in a zone (Enterprise only); all of that host's traffic misses to the origin until the cache re-warms.
+side_effects:
+  - The origin serves every request for the hostname until the cache re-warms.
+  - Requires a Cloudflare Enterprise zone.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: hostname
+    type: string
+    required: true
+    description: Hostname to purge.
+    validation:
+      pattern: "^[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*$"
+      max_length: 253
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [purge-hostname, "{{ args.zone_id }}", "{{ args.hostname }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Purge one host
+    args: {zone_id: "abc123def456abc123def456abc123de", hostname: assets.example.com}

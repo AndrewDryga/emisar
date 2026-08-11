@@ -1,11 +1,11 @@
 schema_version: 1
 id: cf.dev_mode_off
-title: PATCH /zones/<id>/settings/development_mode (off)
-kind: exec
+title: Disable development mode
+kind: script
 risk: medium
-description: End development mode early. Cache resumes normal behavior immediately.
+description: End development mode early; the edge cache resumes serving immediately and origin load drops back to normal.
 side_effects:
-  - Cache resumes serving from edge — origin load drops back to normal.
+  - Cache resumes serving from the edge.
 args:
   - name: zone_id
     type: string
@@ -14,19 +14,14 @@ args:
     validation:
       pattern: "^[a-f0-9]{32}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS --globoff --proto =http,https -XPATCH \"https://api.cloudflare.com/client/v4/zones/${1}/settings/development_mode\" -H @- -H \"Content-Type: application/json\" -d '{\"value\":\"off\"}'"
-      - "emisar"
-      - "{{ args.zone_id }}"
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [dev-mode, "{{ args.zone_id }}", "off"]
   timeout: 30s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 16384
   max_stderr_bytes: 8192
 examples:
   - title: Dev mode off
-    args:
-      zone_id: "abc123def456abc123def456abc123de"
+    args: {zone_id: "abc123def456abc123def456abc123de"}

@@ -1,11 +1,480 @@
-# Purging a zone's cache or flipping development mode acts on Cloudflare's
-# edge through an authenticated account. There is no local SUT for someone
-# else's CDN.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+services: [cloudflare-api]
+versions:
+  - version: "3.14.0-alpine3.22"
+    digest: "@sha256:8373231e1e906ddfb457748bfc032c4c06ada8c759b7b62d9c73ec2a3c56e710"
+    default: true
 risk_accountability:
   mode: complete
-  exceptions:
-    cf.dev_mode_on: requires_external_service
-    cf.purge_all_cache: requires_external_service
-    cf.purge_url: requires_external_service
+secret_env: [CF_API_TOKEN, CF_PURGE_URL]
+env:
+  CF_API_TOKEN: packtest-canary-cloudflare-token-9f3e2
+  CF_PURGE_URL: https://www.example.test/video/intro.mp4?token=packtest-canary-cf-purge-token-3b7d
+  CF_PACKTEST: "1"
+  CF_API_BASE: http://cloudflare-api:8080/client/v4
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+      - packtest-canary-cloudflare-token-9f3e2
+      - packtest-canary-cf-purge-token-3b7d
+cases:
+  - action: cf.list_zones
+    expect:
+      json:
+        /result/0/id: abc123def456abc123def456abc123de
+        /result/0/name: example.test
+        /result/0/status: active
+        /result_info/total_count: 1
+
+  - name: cf.list_zones-filtered-by-name
+    action: cf.list_zones
+    args: {name: example.test, status: active}
+    expect:
+      json:
+        /result/0/id: abc123def456abc123def456abc123de
+        /result_info/count: 1
+
+  - action: cf.list_accounts
+    expect:
+      json:
+        /result/0/id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0
+        /result/0/name: Fixture Org
+
+  - action: cf.zone_details
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/id: abc123def456abc123def456abc123de
+        /result/name: example.test
+        /result/paused: false
+        /result/name_servers/0: ada.ns.cloudflare.test
+
+  - action: cf.zone_settings
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/0/id: always_use_https
+        /result/0/value: "off"
+        /result/3/id: development_mode
+        /result/3/value: "off"
+        /result/6/id: ssl
+        /result/6/value: full
+
+  - action: cf.dns_records
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/0/id: 372e67954025e0ba6aaa6d586b9e0b59
+        /result/0/type: A
+        /result/0/name: www.example.test
+        /result/0/content: 203.0.113.10
+        /result_info/total_count: 3
+
+  - name: cf.dns_records-filtered-by-type-and-name
+    action: cf.dns_records
+    args: {zone_id: abc123def456abc123def456abc123de, record_type: TXT, name: example.test}
+    expect:
+      json:
+        /result/0/id: 7d2e3c4b5a69788796a5b4c3d2e1f012
+        /result/0/content: "v=spf1 include:_spf.example.test ~all"
+        /result_info/total_count: 1
+
+  - action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/phase: http_request_firewall_custom
+        /result/rules/0/action: block
+        /result/rules/0/expression: "(ip.src eq 198.51.100.99)"
+
+  - action: cf.list_rulesets
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/0/phase: http_request_firewall_custom
+        /result/1/kind: managed
+        /result/1/name: Cloudflare Managed Ruleset
+
+  - action: cf.list_ip_access_rules
+    args: {zone_id: abc123def456abc123def456abc123de, mode: block}
+    expect:
+      json:
+        /result/0/id: 92f17202ed8bd63d69a66b86a49a8f6b
+        /result/0/mode: block
+        /result/0/configuration/value: 198.51.100.99
+
+  - action: cf.ssl_verification
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/0/hostname: example.test
+        /result/0/certificate_status: active
+        /result/0/verification_status: true
+
+  - action: cf.list_certificate_packs
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/0/type: advanced
+        /result/0/status: active
+        /result/0/certificates/0/expires_on: "2026-11-08T12:00:00Z"
+
+  - action: cf.page_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/0/status: active
+        /result/0/actions/0/id: always_use_https
+
+  - action: cf.list_worker_routes
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/0/pattern: example.test/api/*
+        /result/0/script: api-worker
+
+  - action: cf.list_tunnels
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0}
+    expect:
+      json:
+        /result/0/id: f70a3b21-9c86-4dcb-8d5e-1f2a3b4c5d6e
+        /result/0/name: prod-edge
+        /result/0/status: healthy
+
+  - action: cf.tunnel_connections
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, tunnel_id: f70a3b21-9c86-4dcb-8d5e-1f2a3b4c5d6e}
+    expect:
+      json:
+        /result/0/version: "2026.7.0"
+        /result/0/conns/0/colo_name: FRA
+        /result/0/conns/1/colo_name: AMS
+
+  - action: cf.list_load_balancers
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/0/name: lb.example.test
+        /result/0/steering_policy: dynamic_latency
+
+  - action: cf.list_lb_pools
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0}
+    expect:
+      json:
+        /result/0/id: 17b5962d775c646f3f9725cbc7a53df4
+        /result/0/enabled: true
+        /result/0/origins/1/healthy: false
+
+  - action: cf.lb_pool_health
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, pool_id: 17b5962d775c646f3f9725cbc7a53df4}
+    expect:
+      json:
+        /result/pool_id: 17b5962d775c646f3f9725cbc7a53df4
+        /result/pop_health/Amsterdam, NL/healthy: true
+
+  - action: cf.audit_logs
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, hours: 48}
+    expect:
+      json:
+        /result/0/action/type: rec_add
+        /result/0/actor/email: ops@example.test
+        /result/0/resource/type: DNS_record
+
+  - action: cf.zone_analytics
+    args: {zone_id: abc123def456abc123def456abc123de, hours: 6}
+    expect:
+      json:
+        /totals/requests: 100000
+        /totals/cached_requests: 80000
+        /totals/threats: 200
+        /totals/uniques: 15600
+        /series/0/sum/requests: 52000
+        /series/1/dimensions/datetime: "2026-08-11T09:00:00Z"
+
+  - action: cf.dns_analytics_report
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/rows: 2
+        /result/data/0/dimensions/0: www.example.test
+        /result/totals/queryCount: 1500
+
+  - action: cf.create_dns_record
+    args: {zone_id: abc123def456abc123def456abc123de, record_type: A, name: staging.example.test, content: 203.0.113.20, proxied: true, comment: "created by behavior case"}
+    expect:
+      json:
+        /result/id: b1c2d3e4f5a60718293a4b5c6d7e8f90
+        /result/type: A
+        /result/name: staging.example.test
+        /result/content: 203.0.113.20
+        /result/proxied: true
+    probes:
+      - name: the record exists in provider state
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: [staging.example.test]
+
+  - name: cf.create_dns_record-mx-carries-priority
+    action: cf.create_dns_record
+    args: {zone_id: abc123def456abc123def456abc123de, record_type: MX, name: example.test, content: mail2.example.test, ttl: 3600, priority: 20}
+    expect:
+      json:
+        /result/type: MX
+        /result/priority: 20
+        /result/ttl: 3600
+    probes:
+      - name: the MX record exists in provider state
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: [mail2.example.test]
+
+  - action: cf.update_dns_record
+    args: {zone_id: abc123def456abc123def456abc123de, record_id: 372e67954025e0ba6aaa6d586b9e0b59, content: 203.0.113.30, proxied: "false"}
+    expect:
+      json:
+        /result/id: 372e67954025e0ba6aaa6d586b9e0b59
+        /result/content: 203.0.113.30
+        /result/proxied: false
+    probes:
+      - name: the provider retained the new content
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"content":"203.0.113.30"']
+
+  - action: cf.delete_dns_record
+    args: {zone_id: abc123def456abc123def456abc123de, record_id: 372e67954025e0ba6aaa6d586b9e0b59}
+    expect:
+      json:
+        /result/id: 372e67954025e0ba6aaa6d586b9e0b59
+    probes:
+      - name: the record no longer exists
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["deleted_record:372e67954025e0ba6aaa6d586b9e0b59"]
+          stdout_not_contains: ["203.0.113.10"]
+
+  - action: cf.purge_url
+    args: {zone_id: abc123def456abc123def456abc123de}
+    resolve_args:
+      url:
+        argv: [/bin/sh, -c, 'printf "%s\n" "$CF_PURGE_URL"']
+    expect:
+      json:
+        /result/id: abc123def456abc123def456abc123de
+    probes:
+      - name: Cloudflare accepted the file purge
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"scope":"files"', intro.mp4]
+
+  - action: cf.purge_hostname
+    args: {zone_id: abc123def456abc123def456abc123de, hostname: assets.example.test}
+    expect:
+      json:
+        /result/id: abc123def456abc123def456abc123de
+    probes:
+      - name: Cloudflare accepted the hostname purge
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"scope":"hosts"', assets.example.test]
+
+  - action: cf.purge_prefix
+    args: {zone_id: abc123def456abc123def456abc123de, prefix: "www.example.test/assets/"}
+    expect:
+      json:
+        /result/id: abc123def456abc123def456abc123de
+    probes:
+      - name: Cloudflare accepted the prefix purge
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"scope":"prefixes"', "www.example.test/assets/"]
+
+  - action: cf.purge_tag
+    args: {zone_id: abc123def456abc123def456abc123de, tag: release-2026-08-11}
+    expect:
+      json:
+        /result/id: abc123def456abc123def456abc123de
+    probes:
+      - name: Cloudflare accepted the tag purge
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"scope":"tags"', release-2026-08-11]
+
+  - action: cf.purge_all_cache
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/id: abc123def456abc123def456abc123de
+    probes:
+      - name: Cloudflare accepted the full purge
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"scope":"purge_everything"']
+
+  - action: cf.dev_mode_on
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/id: development_mode
+        /result/value: "on"
+        /result/time_remaining: 10800
+    probes:
+      - name: the provider retained development mode
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["setting:development_mode=on"]
+
+  - action: cf.dev_mode_off
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/id: development_mode
+        /result/value: "off"
+    probes:
+      - name: the provider retained the off state
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["setting:development_mode=off"]
+
+  - action: cf.set_security_level
+    args: {zone_id: abc123def456abc123def456abc123de, level: under_attack}
+    expect:
+      json:
+        /result/id: security_level
+        /result/value: under_attack
+    probes:
+      - name: the provider retained the security level
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["setting:security_level=under_attack"]
+
+  - action: cf.set_ssl_mode
+    args: {zone_id: abc123def456abc123def456abc123de, mode: strict}
+    expect:
+      json:
+        /result/id: ssl
+        /result/value: strict
+    probes:
+      - name: the provider retained the SSL mode
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["setting:ssl=strict"]
+
+  - action: cf.set_min_tls_version
+    args: {zone_id: abc123def456abc123def456abc123de, version: "1.3"}
+    expect:
+      json:
+        /result/id: min_tls_version
+        /result/value: "1.3"
+    probes:
+      - name: the provider retained the TLS floor
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["setting:min_tls_version=1.3"]
+
+  - action: cf.set_always_use_https
+    args: {zone_id: abc123def456abc123def456abc123de, value: "on"}
+    expect:
+      json:
+        /result/id: always_use_https
+        /result/value: "on"
+    probes:
+      - name: the provider retained the redirect
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["setting:always_use_https=on"]
+
+  - action: cf.create_ip_access_rule
+    args: {zone_id: abc123def456abc123def456abc123de, mode: block, target: ip, value: 203.0.113.99, notes: "behavior case block"}
+    expect:
+      json:
+        /result/id: 1a2b3c4d5e6f70819203a4b5c6d7e8f9
+        /result/mode: block
+        /result/configuration/target: ip
+        /result/configuration/value: 203.0.113.99
+    probes:
+      - name: the rule exists in provider state
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: [203.0.113.99]
+
+  - action: cf.delete_ip_access_rule
+    args: {zone_id: abc123def456abc123def456abc123de, rule_id: 92f17202ed8bd63d69a66b86a49a8f6b}
+    expect:
+      json:
+        /result/id: 92f17202ed8bd63d69a66b86a49a8f6b
+    probes:
+      - name: the rule no longer exists
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["deleted_access_rule:92f17202ed8bd63d69a66b86a49a8f6b"]
+          stdout_not_contains: [198.51.100.99]
+
+  - action: cf.pause_zone
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/id: abc123def456abc123def456abc123de
+        /result/paused: true
+    probes:
+      - name: the provider retained the pause
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["paused:true"]
+
+  - action: cf.unpause_zone
+    args: {zone_id: abc123def456abc123def456abc123de}
+    expect:
+      json:
+        /result/paused: false
+    probes:
+      - name: the provider retained the resume
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["paused:false"]
+
+  - action: cf.set_lb_pool_enabled
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, pool_id: 17b5962d775c646f3f9725cbc7a53df4, enabled: false}
+    expect:
+      json:
+        /result/id: 17b5962d775c646f3f9725cbc7a53df4
+        /result/enabled: false
+    probes:
+      - name: the provider retained the drain
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["pool_enabled:false"]
+
+  - name: cf.list_zones-invalid-api-token
+    action: cf.list_zones
+    env:
+      CF_API_TOKEN: packtest-canary-cloudflare-invalid-1337
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["curl: (22)", "Cloudflare API request failed"]
+
+  - name: cf.zone_analytics-fails-on-graphql-errors
+    action: cf.zone_analytics
+    args: {zone_id: ffffffffffffffffffffffffffffffff}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["Cloudflare GraphQL query failed"]
+
+  - name: cf.update_dns_record-requires-a-change
+    action: cf.update_dns_record
+    args: {zone_id: abc123def456abc123def456abc123de, record_id: 372e67954025e0ba6aaa6d586b9e0b59}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["at least one record field must change"]
+
+  - name: cf.create_dns_record-rejects-a-malformed-name
+    action: cf.create_dns_record
+    args: {zone_id: abc123def456abc123def456abc123de, record_type: A, name: "bad..name", content: 203.0.113.40}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]

@@ -1,12 +1,10 @@
 schema_version: 1
 id: cf.dns_records
-title: GET /zones/<id>/dns_records
-kind: exec
+title: List DNS records
+kind: script
 risk: low
-description: List all DNS records in one zone.
-side_effects:
-  - One API request.
-  - Read-only.
+description: List one bounded page of a zone's DNS records, optionally filtered by record type, name, or content.
+side_effects: [One read-only API request.]
 args:
   - name: zone_id
     type: string
@@ -14,20 +12,52 @@ args:
     description: Zone ID.
     validation:
       pattern: "^[a-f0-9]{32}$"
+  - name: record_type
+    type: string
+    required: false
+    default: ""
+    description: Optional record type filter.
+    validation:
+      enum: ["", "A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA", "PTR"]
+  - name: name
+    type: string
+    required: false
+    default: ""
+    description: Optional exact record name (FQDN) filter.
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 255
+  - name: content
+    type: string
+    required: false
+    default: ""
+    description: Optional exact record content filter.
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 2048
+  - name: page
+    type: integer
+    required: false
+    default: 1
+    description: Page number.
+    validation: {min: 1, max: 2147483647}
+  - name: per_page
+    type: integer
+    required: false
+    default: 100
+    description: Records returned in this page.
+    validation: {min: 5, max: 500}
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS --globoff --proto =http,https \"https://api.cloudflare.com/client/v4/zones/${1}/dns_records?per_page=200\" -H @-"
-      - "emisar"
-      - "{{ args.zone_id }}"
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [dns-records, "{{ args.zone_id }}", "{{ args.record_type }}", "{{ args.name }}", "{{ args.content }}", "{{ args.page }}", "{{ args.per_page }}"]
   timeout: 30s
 output:
   parser: json
-  max_stdout_bytes: 524288
+  parser_required: true
+  max_stdout_bytes: 4194304
   max_stderr_bytes: 8192
 examples:
-  - title: DNS for one zone
-    args:
-      zone_id: "abc123def456abc123def456abc123de"
+  - title: All records
+    args: {zone_id: "abc123def456abc123def456abc123de"}
+  - title: A records for one name
+    args: {zone_id: "abc123def456abc123def456abc123de", record_type: A, name: www.example.com}

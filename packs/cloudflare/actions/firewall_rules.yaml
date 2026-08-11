@@ -1,15 +1,13 @@
 schema_version: 1
 id: cf.firewall_rules
-title: GET /zones/<id>/rulesets/phases/http_request_firewall_custom/entrypoint
-kind: exec
+title: List WAF custom rules
+kind: script
 risk: low
 description: >
   List zone WAF custom rules — the entrypoint ruleset for the
   http_request_firewall_custom phase. Replaces the legacy /firewall/rules
   API, which Cloudflare sunset on 2025-06-15.
-side_effects:
-  - One API request.
-  - Read-only.
+side_effects: [One read-only API request.]
 args:
   - name: zone_id
     type: string
@@ -18,19 +16,14 @@ args:
     validation:
       pattern: "^[a-f0-9]{32}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS --globoff --proto =http,https \"https://api.cloudflare.com/client/v4/zones/${1}/rulesets/phases/http_request_firewall_custom/entrypoint\" -H @-"
-      - "emisar"
-      - "{{ args.zone_id }}"
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [firewall-rules, "{{ args.zone_id }}"]
   timeout: 30s
 output:
   parser: json
-  max_stdout_bytes: 524288
+  parser_required: true
+  max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
-  - title: Firewall rules
-    args:
-      zone_id: "abc123def456abc123def456abc123de"
+  - title: WAF custom rules
+    args: {zone_id: "abc123def456abc123def456abc123de"}

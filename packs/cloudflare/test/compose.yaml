@@ -1,0 +1,12 @@
+services:
+  cloudflare-api:
+    image: python:${PACKTEST_VERSION:-3.14.0-alpine3.22}${PACKTEST_DIGEST-}
+    entrypoint: [python3, /fixture/server.py]
+    volumes:
+      - ${EMISAR_ROOT}/packs/cloudflare/test/fixtures/server.py:/fixture/server.py:ro
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

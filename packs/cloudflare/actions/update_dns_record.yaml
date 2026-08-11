@@ -1,0 +1,78 @@
+schema_version: 1
+id: cf.update_dns_record
+title: Update DNS record
+kind: script
+risk: high
+description: Change fields on one existing DNS record; a wrong content or proxy flip reroutes live traffic as soon as caches expire. Empty or zero arguments leave that field unchanged, and at least one field must change.
+side_effects:
+  - Resolvers pick up the changed record as it propagates.
+  - Flipping proxied moves traffic onto or off Cloudflare's edge.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: record_id
+    type: string
+    required: true
+    description: DNS record ID (cf.dns_records returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: record_type
+    type: string
+    required: false
+    default: ""
+    description: New record type, or empty to leave unchanged.
+    validation:
+      enum: ["", "A", "AAAA", "CNAME", "TXT", "MX", "NS", "PTR"]
+  - name: name
+    type: string
+    required: false
+    default: ""
+    description: New record name (FQDN), or empty to leave unchanged.
+    validation:
+      pattern: "^(|(\\*\\.)?([A-Za-z0-9_]([A-Za-z0-9_-]{0,62}[A-Za-z0-9_])?\\.)*[A-Za-z0-9_]([A-Za-z0-9_-]{0,62}[A-Za-z0-9_])?)$"
+      max_length: 255
+  - name: content
+    type: string
+    required: false
+    default: ""
+    description: New record content, or empty to leave unchanged.
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 2048
+  - name: ttl
+    type: integer
+    required: false
+    default: 0
+    description: New TTL in seconds (1 means automatic), or 0 to leave unchanged.
+    validation: {min: 0, max: 86400}
+  - name: proxied
+    type: string
+    required: false
+    default: ""
+    description: New proxy state for A/AAAA/CNAME records, or empty to leave unchanged.
+    validation:
+      enum: ["", "true", "false"]
+  - name: comment
+    type: string
+    required: false
+    default: ""
+    description: New record comment, or empty to leave unchanged.
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 500
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [update-dns-record, "{{ args.zone_id }}", "{{ args.record_id }}", "{{ args.record_type }}", "{{ args.name }}", "{{ args.content }}", "{{ args.ttl }}", "{{ args.proxied }}", "{{ args.comment }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Repoint a record
+    args: {zone_id: "abc123def456abc123def456abc123de", record_id: "372e67954025e0ba6aaa6d586b9e0b59", content: 203.0.113.30}

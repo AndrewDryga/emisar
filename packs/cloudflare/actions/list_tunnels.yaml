@@ -1,0 +1,38 @@
+schema_version: 1
+id: cf.list_tunnels
+title: List Cloudflare Tunnels
+kind: script
+risk: low
+description: List one bounded page of an account's active cloudflared tunnels with each tunnel's health status and connection summary.
+side_effects: [One read-only API request.]
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID (cf.list_accounts returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: page
+    type: integer
+    required: false
+    default: 1
+    description: Page number.
+    validation: {min: 1, max: 2147483647}
+  - name: per_page
+    type: integer
+    required: false
+    default: 50
+    description: Tunnels returned in this page.
+    validation: {min: 5, max: 100}
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [list-tunnels, "{{ args.account_id }}", "{{ args.page }}", "{{ args.per_page }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Tunnels
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0"}

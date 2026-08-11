@@ -1,0 +1,34 @@
+schema_version: 1
+id: cf.set_ssl_mode
+title: Set SSL mode
+kind: script
+risk: high
+description: Set a zone's edge-to-origin SSL mode; a downgrade (full to flexible or off) sends visitor traffic to the origin unencrypted, and strict breaks the site if the origin certificate is invalid.
+side_effects:
+  - flexible and off carry origin traffic over plain HTTP.
+  - strict fails requests when the origin certificate is untrusted or expired.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: mode
+    type: string
+    required: true
+    description: SSL mode to apply.
+    validation:
+      enum: ["off", "flexible", "full", "strict"]
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [set-ssl-mode, "{{ args.zone_id }}", "{{ args.mode }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Full (strict)
+    args: {zone_id: "abc123def456abc123def456abc123de", mode: strict}

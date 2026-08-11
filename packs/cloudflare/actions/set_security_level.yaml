@@ -1,0 +1,36 @@
+schema_version: 1
+id: cf.set_security_level
+title: Set security level
+kind: script
+risk: high
+description: Set a zone's security level, including I'm Under Attack mode; under_attack challenges every visitor, and lowering the level exposes the origin to more hostile traffic.
+side_effects:
+  - under_attack serves an interstitial challenge to every visitor, including API clients.
+  - Lowering the level admits traffic the previous level challenged or blocked.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: level
+    type: string
+    required: true
+    description: Security level to apply.
+    validation:
+      enum: ["essentially_off", "low", "medium", "high", "under_attack"]
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [set-security-level, "{{ args.zone_id }}", "{{ args.level }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Under attack
+    args: {zone_id: "abc123def456abc123def456abc123de", level: under_attack}
+  - title: Back to medium
+    args: {zone_id: "abc123def456abc123def456abc123de", level: medium}

@@ -1,0 +1,35 @@
+schema_version: 1
+id: cf.purge_prefix
+title: Purge cached URL prefix
+kind: script
+risk: high
+description: Purge every cached URL under one hostname/path prefix (Enterprise only); everything under the prefix misses to the origin until the cache re-warms.
+side_effects:
+  - The origin serves every request under the prefix until the cache re-warms.
+  - Requires a Cloudflare Enterprise zone.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: prefix
+    type: string
+    required: true
+    description: Prefix to purge, written as hostname/path without a scheme or query string.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9.-]{0,252}/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$"
+      max_length: 2048
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [purge-prefix, "{{ args.zone_id }}", "{{ args.prefix }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Purge a path
+    args: {zone_id: "abc123def456abc123def456abc123de", prefix: "www.example.com/assets/"}

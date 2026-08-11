@@ -45,6 +45,10 @@ execution:
     - BUNNY_PACKTEST
     - CADDY_ACCESS_LOG
     - CADDY_ADMIN
+    - CF_API_BASE
+    - CF_API_TOKEN
+    - CF_PACKTEST
+    - CF_PURGE_URL
     - CH_HOST
     - CH_PASSWORD
     - CH_USER

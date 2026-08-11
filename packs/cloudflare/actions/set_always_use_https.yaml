@@ -1,0 +1,34 @@
+schema_version: 1
+id: cf.set_always_use_https
+title: Set Always Use HTTPS
+kind: script
+risk: high
+description: Turn a zone's Always Use HTTPS redirect on or off; off lets visitors stay on plain HTTP, and on breaks any resource that must be served over HTTP.
+side_effects:
+  - "on redirects every HTTP request to HTTPS at the edge."
+  - "off stops the redirect and permits plain-HTTP browsing."
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: value
+    type: string
+    required: true
+    description: Redirect state to apply.
+    validation:
+      enum: ["on", "off"]
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [set-always-use-https, "{{ args.zone_id }}", "{{ args.value }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Force HTTPS
+    args: {zone_id: "abc123def456abc123def456abc123de", value: "on"}

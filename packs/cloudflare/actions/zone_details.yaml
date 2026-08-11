@@ -1,12 +1,10 @@
 schema_version: 1
 id: cf.zone_details
-title: GET /zones/<id>
-kind: exec
+title: Show zone details
+kind: script
 risk: low
-description: Show one zone's full settings + state + nameservers.
-side_effects:
-  - One API request.
-  - Read-only.
+description: Show one zone's status, plan, nameservers, and activation state.
+side_effects: [One read-only API request.]
 args:
   - name: zone_id
     type: string
@@ -15,19 +13,14 @@ args:
     validation:
       pattern: "^[a-f0-9]{32}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS --globoff --proto =http,https \"https://api.cloudflare.com/client/v4/zones/${1}\" -H @-"
-      - "emisar"
-      - "{{ args.zone_id }}"
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [zone-details, "{{ args.zone_id }}"]
   timeout: 30s
 output:
   parser: json
-  max_stdout_bytes: 131072
+  parser_required: true
+  max_stdout_bytes: 262144
   max_stderr_bytes: 8192
 examples:
   - title: Zone details
-    args:
-      zone_id: "abc123def456abc123def456abc123de"
+    args: {zone_id: "abc123def456abc123def456abc123de"}

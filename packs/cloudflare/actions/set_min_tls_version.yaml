@@ -1,0 +1,33 @@
+schema_version: 1
+id: cf.set_min_tls_version
+title: Set minimum TLS version
+kind: script
+risk: high
+description: Set the minimum TLS version a zone accepts from visitors; raising it cuts off legacy clients, and lowering it re-admits protocol versions with known weaknesses.
+side_effects:
+  - Clients below the minimum fail their TLS handshake.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: version
+    type: string
+    required: true
+    description: Minimum TLS version to accept.
+    validation:
+      enum: ["1.0", "1.1", "1.2", "1.3"]
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [set-min-tls-version, "{{ args.zone_id }}", "{{ args.version }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Require TLS 1.2
+    args: {zone_id: "abc123def456abc123def456abc123de", version: "1.2"}

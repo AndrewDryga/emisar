@@ -1,11 +1,12 @@
 schema_version: 1
 id: cf.purge_url
-title: POST /zones/<id>/purge_cache (single URL)
-kind: exec
+title: Purge cached URL
+kind: script
 risk: high
-description: Purge cache for one URL. Safe — only affects that URL's cached variants.
+description: Purge one URL from a zone's edge cache; the next request for each purged variant reaches the origin and can increase origin load.
 side_effects:
-  - Next request for that URL is a cache miss; hits origin.
+  - Removes cached variants matching the requested URL.
+  - Causes subsequent requests to miss until the object is cached again.
 args:
   - name: zone_id
     type: string
@@ -16,25 +17,22 @@ args:
   - name: url
     type: string
     required: true
-    description: Absolute URL to purge.
+    sensitive: true
+    description: Absolute URL to purge. Query strings are sent to Cloudflare but redacted from the audit trail.
     validation:
-      pattern: "^https://[a-zA-Z0-9.\\-/]{1,512}$"
+      pattern: "^https?://[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*$"
+      max_length: 2048
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CF_API_TOKEN\" ] && printf 'Authorization: Bearer %s\\n' \"$CF_API_TOKEN\"; } | curl -fsS --globoff --proto =http,https -XPOST \"https://api.cloudflare.com/client/v4/zones/${1}/purge_cache\" -H @- -H \"Content-Type: application/json\" -d '{\"files\":[\"'\"$2\"'\"]}'"
-      - "emisar"
-      - "{{ args.zone_id }}"
-      - "{{ args.url }}"
-  timeout: 30s
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [purge-url, "{{ args.zone_id }}"]
+  env:
+    CF_PURGE_URL: "{{ args.url }}"
+  timeout: 60s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 16384
   max_stderr_bytes: 8192
 examples:
-  - title: Purge one URL
-    args:
-      zone_id: "abc123def456abc123def456abc123de"
-      url: "https://example.com/style.css"
+  - title: Purge one asset
+    args: {zone_id: "abc123def456abc123def456abc123de", url: "https://example.com/style.css"}

@@ -1,0 +1,32 @@
+schema_version: 1
+id: cf.tunnel_connections
+title: Show tunnel connections
+kind: script
+risk: low
+description: Show one tunnel's active cloudflared connectors — client version, architecture, origin IP, and the edge locations each connection is landed on.
+side_effects: [One read-only API request.]
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: tunnel_id
+    type: string
+    required: true
+    description: Tunnel ID (UUID).
+    validation:
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [tunnel-connections, "{{ args.account_id }}", "{{ args.tunnel_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Connector status
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0", tunnel_id: "f70a3b21-9c86-4dcb-8d5e-1f2a3b4c5d6e"}

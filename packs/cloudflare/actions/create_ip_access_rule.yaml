@@ -1,0 +1,55 @@
+schema_version: 1
+id: cf.create_ip_access_rule
+title: Create IP access rule
+kind: script
+risk: high
+description: Create a zone IP access rule that blocks, challenges, or allowlists an IP, CIDR range, ASN, or country; a wrong value can cut off legitimate visitors, and whitelist bypasses the zone's security checks for the match.
+side_effects:
+  - The rule applies at the edge within seconds.
+  - whitelist exempts matching traffic from security checks.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: mode
+    type: string
+    required: true
+    description: What to do with matching traffic.
+    validation:
+      enum: ["block", "challenge", "js_challenge", "managed_challenge", "whitelist"]
+  - name: target
+    type: string
+    required: true
+    description: What kind of value the rule matches.
+    validation:
+      enum: ["ip", "ip_range", "asn", "country"]
+  - name: value
+    type: string
+    required: true
+    description: The IP address, CIDR range, AS number (AS13335), or two-letter country code to match.
+    validation:
+      pattern: "^([0-9]{1,3}(\\.[0-9]{1,3}){3}(/([0-9]|[12][0-9]|3[012]))?|[0-9A-Fa-f:]{2,45}(/[0-9]{1,3})?|AS[0-9]{1,10}|[A-Z]{2})$"
+      max_length: 64
+  - name: notes
+    type: string
+    required: false
+    default: ""
+    description: Optional note stored on the rule.
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 500
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [create-ip-access-rule, "{{ args.zone_id }}", "{{ args.mode }}", "{{ args.target }}", "{{ args.value }}", "{{ args.notes }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Block an attacking IP
+    args: {zone_id: "abc123def456abc123def456abc123de", mode: block, target: ip, value: 198.51.100.99, notes: "SQLi attempts 2026-08-11"}

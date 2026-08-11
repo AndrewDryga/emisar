@@ -1,0 +1,35 @@
+schema_version: 1
+id: cf.purge_tag
+title: Purge cached tag
+kind: script
+risk: high
+description: Purge every cached object carrying one Cache-Tag in a zone (Enterprise only); all tagged objects miss to the origin until the cache re-warms.
+side_effects:
+  - The origin serves every request for tagged objects until the cache re-warms.
+  - Requires a Cloudflare Enterprise zone.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: tag
+    type: string
+    required: true
+    description: Cache-Tag value to purge.
+    validation:
+      pattern: "^[A-Za-z0-9._:/=-]{1,200}$"
+      max_length: 200
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [purge-tag, "{{ args.zone_id }}", "{{ args.tag }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Purge a release tag
+    args: {zone_id: "abc123def456abc123def456abc123de", tag: release-2026-08-11}
