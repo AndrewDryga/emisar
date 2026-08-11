@@ -1,0 +1,33 @@
+schema_version: 1
+id: cf.delete_worker_route
+title: Delete Worker route
+kind: script
+risk: high
+description: Delete one zone Worker route; matching requests stop executing the Worker and fall through to other routes or the origin.
+side_effects:
+  - Matching requests stop hitting the Worker within seconds.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: route_id
+    type: string
+    required: true
+    description: Route ID (cf.list_worker_routes returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [delete-worker-route, "{{ args.zone_id }}", "{{ args.route_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Remove a route
+    args: {zone_id: "abc123def456abc123def456abc123de", route_id: "e7a57d8746e74ae49c25994dadb421b1"}

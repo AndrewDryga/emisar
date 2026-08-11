@@ -1,0 +1,34 @@
+schema_version: 1
+id: cf.purge_pages_build_cache
+title: Purge Pages build cache
+kind: script
+risk: medium
+description: Purge one Pages project's build cache; live traffic is untouched, and the next build resolves dependencies from scratch and runs slower.
+side_effects:
+  - The next deployment builds cold.
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: project_name
+    type: string
+    required: true
+    description: Pages project name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,57}$"
+      max_length: 58
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [purge-pages-build-cache, "{{ args.account_id }}", "{{ args.project_name }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear a poisoned build cache
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0", project_name: marketing-site}

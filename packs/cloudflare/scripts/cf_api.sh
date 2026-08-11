@@ -141,6 +141,64 @@ list_worker_routes() {
   rest GET "/zones/$1/workers/routes"
 }
 
+list_workers() {
+  rest GET "/accounts/$1/workers/scripts"
+}
+
+worker_deployments() {
+  rest GET "/accounts/$1/workers/scripts/$2/deployments"
+}
+
+# An empty script detaches the pattern from every Worker: requests matching it
+# fall through to the origin. The API spells that as a route with no script
+# field, so the body only carries one when a script name was given.
+worker_route_body() {
+  local pattern=$1 script=$2
+  jq -nc --arg pattern "$pattern" --arg script "$script" \
+    '{pattern: $pattern} + (if $script == "" then {} else {script: $script} end)'
+}
+
+create_worker_route() {
+  rest_json POST "/zones/$1/workers/routes" "$(worker_route_body "$2" "$3")"
+}
+
+update_worker_route() {
+  rest_json PUT "/zones/$1/workers/routes/$2" "$(worker_route_body "$3" "$4")"
+}
+
+delete_worker_route() {
+  rest DELETE "/zones/$1/workers/routes/$2"
+}
+
+list_pages_projects() {
+  rest GET "/accounts/$1/pages/projects" -G \
+    --data-urlencode "page=$2" \
+    --data-urlencode "per_page=$3"
+}
+
+pages_deployments() {
+  local account_id=$1 project=$2 environment=$3 page=$4 per_page=$5
+  local -a query=(-G --data-urlencode "page=$page" --data-urlencode "per_page=$per_page")
+  [[ -z "$environment" ]] || query+=(--data-urlencode "env=$environment")
+  rest GET "/accounts/$account_id/pages/projects/$project/deployments" "${query[@]}"
+}
+
+pages_deployment_logs() {
+  rest GET "/accounts/$1/pages/projects/$2/deployments/$3/history/logs"
+}
+
+rollback_pages_deployment() {
+  rest POST "/accounts/$1/pages/projects/$2/deployments/$3/rollback"
+}
+
+retry_pages_deployment() {
+  rest POST "/accounts/$1/pages/projects/$2/deployments/$3/retry"
+}
+
+purge_pages_build_cache() {
+  rest POST "/accounts/$1/pages/projects/$2/purge_build_cache"
+}
+
 list_tunnels() {
   rest GET "/accounts/$1/cfd_tunnel" -G \
     --data-urlencode "is_deleted=false" \
@@ -333,6 +391,17 @@ case "$command" in
   list-certificate-packs) list_certificate_packs "$@" ;;
   page-rules) page_rules "$@" ;;
   list-worker-routes) list_worker_routes "$@" ;;
+  list-workers) list_workers "$@" ;;
+  worker-deployments) worker_deployments "$@" ;;
+  create-worker-route) create_worker_route "$@" ;;
+  update-worker-route) update_worker_route "$@" ;;
+  delete-worker-route) delete_worker_route "$@" ;;
+  list-pages-projects) list_pages_projects "$@" ;;
+  pages-deployments) pages_deployments "$@" ;;
+  pages-deployment-logs) pages_deployment_logs "$@" ;;
+  rollback-pages-deployment) rollback_pages_deployment "$@" ;;
+  retry-pages-deployment) retry_pages_deployment "$@" ;;
+  purge-pages-build-cache) purge_pages_build_cache "$@" ;;
   list-tunnels) list_tunnels "$@" ;;
   tunnel-connections) tunnel_connections "$@" ;;
   list-load-balancers) list_load_balancers "$@" ;;

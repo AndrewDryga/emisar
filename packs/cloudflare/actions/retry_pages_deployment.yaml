@@ -1,0 +1,41 @@
+schema_version: 1
+id: cf.retry_pages_deployment
+title: Retry Pages deployment
+kind: script
+risk: high
+description: Re-run one Pages deployment's build; if it succeeds and is the newest production deployment, the rebuilt content goes live — retrying an old deployment can put stale content into production.
+side_effects:
+  - A new build runs with that deployment's commit and settings.
+  - A successful production retry becomes the live deployment.
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: project_name
+    type: string
+    required: true
+    description: Pages project name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,57}$"
+      max_length: 58
+  - name: deployment_id
+    type: string
+    required: true
+    description: Deployment to retry (cf.pages_deployments returns it).
+    validation:
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [retry-pages-deployment, "{{ args.account_id }}", "{{ args.project_name }}", "{{ args.deployment_id }}"]
+  timeout: 60s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Retry the failed build
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0", project_name: marketing-site, deployment_id: "ccccdddd-eeee-4fff-8000-111122223333"}

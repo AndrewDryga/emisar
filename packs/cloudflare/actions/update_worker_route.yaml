@@ -1,0 +1,48 @@
+schema_version: 1
+id: cf.update_worker_route
+title: Update Worker route
+kind: script
+risk: high
+description: Replace one Worker route's pattern and script; a wrong pattern or script reroutes live traffic, and an empty script turns the route into a Workers bypass for matching requests.
+side_effects:
+  - Matching requests switch to the new script (or bypass Workers) within seconds.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: route_id
+    type: string
+    required: true
+    description: Route ID (cf.list_worker_routes returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: pattern
+    type: string
+    required: true
+    description: Route pattern to apply — the update replaces the whole route, so pass the full intended pattern.
+    validation:
+      pattern: "^[A-Za-z0-9*.][A-Za-z0-9.*/_-]{0,511}$"
+      max_length: 512
+  - name: script
+    type: string
+    required: false
+    default: ""
+    description: Worker script name to run, or empty to detach Workers from the pattern.
+    validation:
+      pattern: "^[A-Za-z0-9_-]{0,64}$"
+      max_length: 64
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [update-worker-route, "{{ args.zone_id }}", "{{ args.route_id }}", "{{ args.pattern }}", "{{ args.script }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Point a route at a hotfix Worker
+    args: {zone_id: "abc123def456abc123def456abc123de", route_id: "e7a57d8746e74ae49c25994dadb421b1", pattern: "example.com/api/*", script: api-worker-hotfix}

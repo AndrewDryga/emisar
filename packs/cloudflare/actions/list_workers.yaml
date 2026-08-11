@@ -1,0 +1,26 @@
+schema_version: 1
+id: cf.list_workers
+title: List Worker scripts
+kind: script
+risk: low
+description: List an account's deployed Worker scripts with creation and last-modified dates. Contains names and metadata only, never script code.
+side_effects: [One read-only API request.]
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID (cf.list_accounts returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [list-workers, "{{ args.account_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Workers
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0"}

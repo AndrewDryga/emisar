@@ -5,8 +5,8 @@ name: Cloudflare edge operations
 version: 0.2.0
 description: >
   Governed Cloudflare zone, DNS record, cache-purge, security-posture, TLS,
-  analytics, tunnel, load-balancer, and audit-log operations. Auth via
-  CF_API_TOKEN on the runner host.
+  analytics, tunnel, load-balancer, Workers, Pages, and audit-log operations.
+  Auth via CF_API_TOKEN on the runner host.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -33,9 +33,9 @@ setup:
       description: Cloudflare API token. Scope it to the zones, accounts, and permissions the actions you enable need, and gate mutation actions with policy.
   notes:
     - "Zone and account IDs are per-call action arguments — cf.list_zones and cf.list_accounts return them for use in the other actions."
-    - "Token scopes by family: Zone Read + DNS Read for the zone/DNS reads; DNS Edit for the DNS record mutations; Cache Purge for the purge actions; Zone Settings Edit for development mode, security level, SSL mode, minimum TLS, Always Use HTTPS, and pause; Firewall Services Edit for IP access rules; Analytics Read for zone and DNS analytics; Cloudflare Tunnel Read for tunnels; Load Balancing Read/Edit for pools; Audit Logs Read for audit logs."
+    - "Token scopes by family: Zone Read + DNS Read for the zone/DNS reads; DNS Edit for the DNS record mutations; Cache Purge for the purge actions; Zone Settings Edit for development mode, security level, SSL mode, minimum TLS, Always Use HTTPS, and pause; Firewall Services Edit for IP access rules; Analytics Read for zone and DNS analytics; Cloudflare Tunnel Read for tunnels; Load Balancing Read/Edit for pools; Workers Scripts Read for Worker reads and Workers Routes Edit for route changes; Pages Read for Pages reads and Pages Edit for rollback, retry, and build-cache purge; Audit Logs Read for audit logs."
     - "Purge by hostname, prefix, or cache-tag requires a Cloudflare Enterprise zone; the other actions work on every plan."
-    - "Workers KV/R2/D1, Cloudflare Access, WARP, Email Routing, origin CA certificates, and API token management are separate trust surfaces this pack does not touch."
+    - "Uploading Worker code or secrets, Workers KV/R2/D1 data planes, Cloudflare Access, WARP, Email Routing, origin CA certificates, and API token management are separate trust surfaces this pack does not touch."
   verify: cf.list_zones
 
 actions:
@@ -51,6 +51,11 @@ actions:
   - actions/list_certificate_packs.yaml
   - actions/page_rules.yaml
   - actions/list_worker_routes.yaml
+  - actions/list_workers.yaml
+  - actions/worker_deployments.yaml
+  - actions/list_pages_projects.yaml
+  - actions/pages_deployments.yaml
+  - actions/pages_deployment_logs.yaml
   - actions/list_tunnels.yaml
   - actions/tunnel_connections.yaml
   - actions/list_load_balancers.yaml
@@ -78,3 +83,9 @@ actions:
   - actions/pause_zone.yaml
   - actions/unpause_zone.yaml
   - actions/set_lb_pool_enabled.yaml
+  - actions/create_worker_route.yaml
+  - actions/update_worker_route.yaml
+  - actions/delete_worker_route.yaml
+  - actions/rollback_pages_deployment.yaml
+  - actions/retry_pages_deployment.yaml
+  - actions/purge_pages_build_cache.yaml

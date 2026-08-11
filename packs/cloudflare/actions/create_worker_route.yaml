@@ -1,0 +1,44 @@
+schema_version: 1
+id: cf.create_worker_route
+title: Create Worker route
+kind: script
+risk: high
+description: Create a zone Worker route that runs a script on matching URLs; a wrong pattern reroutes live traffic into Worker code. An empty script creates an exclusion route — matching requests bypass Workers and go to the origin.
+side_effects:
+  - Matching requests start executing the Worker (or bypassing Workers) within seconds.
+args:
+  - name: zone_id
+    type: string
+    required: true
+    description: Zone ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: pattern
+    type: string
+    required: true
+    description: Route pattern, e.g. example.com/api/* — no scheme or query string.
+    validation:
+      pattern: "^[A-Za-z0-9*.][A-Za-z0-9.*/_-]{0,511}$"
+      max_length: 512
+  - name: script
+    type: string
+    required: false
+    default: ""
+    description: Worker script name to run, or empty to create a Workers-bypass route for the pattern.
+    validation:
+      pattern: "^[A-Za-z0-9_-]{0,64}$"
+      max_length: 64
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [create-worker-route, "{{ args.zone_id }}", "{{ args.pattern }}", "{{ args.script }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Route an API path to a Worker
+    args: {zone_id: "abc123def456abc123def456abc123de", pattern: "example.com/api/*", script: api-worker}
+  - title: Exclude a path from Workers
+    args: {zone_id: "abc123def456abc123def456abc123de", pattern: "example.com/webhooks/*"}

@@ -1,0 +1,39 @@
+schema_version: 1
+id: cf.pages_deployment_logs
+title: Show Pages build log
+kind: script
+risk: medium
+description: Show one Pages deployment's build log for failed-build triage. The log is arbitrary build output the project's own commands printed, so it can carry anything a build script echoes — treat it as sensitive diagnostics.
+side_effects: [One read-only API request.]
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: project_name
+    type: string
+    required: true
+    description: Pages project name.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,57}$"
+      max_length: 58
+  - name: deployment_id
+    type: string
+    required: true
+    description: Deployment ID (cf.pages_deployments returns it).
+    validation:
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [pages-deployment-logs, "{{ args.account_id }}", "{{ args.project_name }}", "{{ args.deployment_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Why the build failed
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0", project_name: marketing-site, deployment_id: "ccccdddd-eeee-4fff-8000-111122223333"}

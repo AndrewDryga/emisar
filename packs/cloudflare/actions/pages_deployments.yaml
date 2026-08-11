@@ -1,0 +1,52 @@
+schema_version: 1
+id: cf.pages_deployments
+title: List Pages deployments
+kind: script
+risk: low
+description: List one bounded page of a Pages project's deployments — build status, environment, trigger, and commit — newest first, optionally filtered to production or preview.
+side_effects: [One read-only API request.]
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: project_name
+    type: string
+    required: true
+    description: Pages project name (cf.list_pages_projects returns it).
+    validation:
+      pattern: "^[a-z0-9][a-z0-9-]{0,57}$"
+      max_length: 58
+  - name: environment
+    type: string
+    required: false
+    default: ""
+    description: Optional environment filter.
+    validation:
+      enum: ["", "production", "preview"]
+  - name: page
+    type: integer
+    required: false
+    default: 1
+    description: Page number.
+    validation: {min: 1, max: 2147483647}
+  - name: per_page
+    type: integer
+    required: false
+    default: 25
+    description: Deployments returned in this page.
+    validation: {min: 5, max: 100}
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [pages-deployments, "{{ args.account_id }}", "{{ args.project_name }}", "{{ args.environment }}", "{{ args.page }}", "{{ args.per_page }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent production deploys
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0", project_name: marketing-site, environment: production}

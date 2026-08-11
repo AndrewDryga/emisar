@@ -18,6 +18,12 @@ TUNNEL_ID = "f70a3b21-9c86-4dcb-8d5e-1f2a3b4c5d6e"
 POOL_ID = "17b5962d775c646f3f9725cbc7a53df4"
 LB_ID = "699d98642c564d2e855e9661899b7252"
 RULESET_ID = "2f2c8545e5e5493d96b8fd7bf8c56f2a"
+ROUTE_ID = "e7a57d8746e74ae49c25994dadb421b1"
+NEW_ROUTE = "f1e2d3c4b5a6978800112233445566aa"
+PAGES_PROJECT = "marketing-site"
+DEPLOY_LIVE = "aaaabbbb-cccc-4ddd-8eee-ffff00001111"
+DEPLOY_PREV = "bbbbcccc-dddd-4eee-8fff-000011112222"
+DEPLOY_FAILED = "ccccdddd-eeee-4fff-8000-111122223333"
 
 
 def initial_state():
@@ -93,9 +99,31 @@ def initial_state():
                 {"name": "origin-2", "address": "198.51.100.11", "enabled": True, "weight": 1, "healthy": False},
             ],
         },
+        "worker_routes": [
+            {"id": ROUTE_ID, "pattern": "example.test/api/*", "script": "api-worker"}
+        ],
         "purges": [],
         "events": [],
     }
+
+
+def pages_deployment(deployment_id, environment, stage_name, stage_status, branch):
+    return {
+        "id": deployment_id,
+        "environment": environment,
+        "url": f"https://{deployment_id[:8]}.{PAGES_PROJECT}.pages.test",
+        "created_on": "2026-08-10T09:00:00Z",
+        "latest_stage": {"name": stage_name, "status": stage_status},
+        "deployment_trigger": {"type": "push", "metadata": {"branch": branch, "commit_hash": "4f2d9c1"}},
+        "source": {"type": "github"},
+    }
+
+
+PAGES_DEPLOYMENTS = [
+    pages_deployment(DEPLOY_LIVE, "production", "deploy", "success", "main"),
+    pages_deployment(DEPLOY_PREV, "production", "deploy", "success", "main"),
+    pages_deployment(DEPLOY_FAILED, "preview", "build", "failure", "fix/navigation"),
+]
 
 
 STATE = initial_state()
@@ -302,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             if rest == ["workers", "routes"]:
-                self.send_ok([{"id": "e7a57d8746e74ae49c25994dadb421b1", "pattern": "example.test/api/*", "script": "api-worker"}])
+                self.send_ok(STATE["worker_routes"])
                 return
             if rest == ["load_balancers"]:
                 self.send_ok(
@@ -398,6 +426,73 @@ class Handler(BaseHTTPRequestHandler):
                             ],
                         }
                     ]
+                )
+                return
+            if rest == ["workers", "scripts"]:
+                self.send_ok(
+                    [
+                        {
+                            "id": "api-worker",
+                            "etag": "8d3c2b1a0f9e8d7c6b5a4938271605f4",
+                            "created_on": "2026-05-01T10:00:00Z",
+                            "modified_on": "2026-08-10T09:00:00Z",
+                            "usage_model": "standard",
+                        }
+                    ]
+                )
+                return
+            if rest == ["workers", "scripts", "api-worker", "deployments"]:
+                self.send_ok(
+                    {
+                        "deployments": [
+                            {
+                                "id": "0d3c4e5f-6a7b-4c9d-8e1f-2a3b4c5d6e7f",
+                                "source": "api",
+                                "strategy": "percentage",
+                                "author_email": "ops@example.test",
+                                "created_on": "2026-08-10T09:00:00Z",
+                                "versions": [{"version_id": "11111111-2222-4333-8444-555555555555", "percentage": 100}],
+                            }
+                        ]
+                    }
+                )
+                return
+            if rest == ["pages", "projects"]:
+                window, info = paginate(
+                    [
+                        {
+                            "id": "7b9c1d2e-3f40-4a5b-8c6d-9e0f1a2b3c4d",
+                            "name": PAGES_PROJECT,
+                            "subdomain": f"{PAGES_PROJECT}.pages.test",
+                            "domains": ["www.example.test"],
+                            "production_branch": "main",
+                            "created_on": "2026-05-01T10:00:00Z",
+                            "latest_deployment": {"id": DEPLOY_LIVE, "environment": "production"},
+                        }
+                    ],
+                    query,
+                )
+                self.send_ok(window, info)
+                return
+            if rest == ["pages", "projects", PAGES_PROJECT, "deployments"]:
+                deployments = PAGES_DEPLOYMENTS
+                environment = query.get("env", [""])[0]
+                if environment:
+                    deployments = [item for item in deployments if item["environment"] == environment]
+                window, info = paginate(deployments, query)
+                self.send_ok(window, info)
+                return
+            if rest == ["pages", "projects", PAGES_PROJECT, "deployments", DEPLOY_FAILED, "history", "logs"]:
+                self.send_ok(
+                    {
+                        "total": 3,
+                        "include_container_logs": True,
+                        "data": [
+                            {"ts": "2026-08-10T09:00:01Z", "line": "Installing dependencies"},
+                            {"ts": "2026-08-10T09:00:09Z", "line": "npm ERR! missing script: build"},
+                            {"ts": "2026-08-10T09:00:10Z", "line": "Failed: build command exited with code 1"},
+                        ],
+                    }
                 )
                 return
             if rest == ["load_balancers", "pools"]:
@@ -511,6 +606,59 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["access_rules"].append(rule)
                 self.send_ok(rule)
                 return
+            if rest == ["workers", "routes"]:
+                if "pattern" not in body:
+                    self.send_err(400, 9100, "missing pattern")
+                    return
+                route = {"id": NEW_ROUTE, "pattern": body["pattern"], "script": body.get("script")}
+                STATE["worker_routes"].append(route)
+                STATE["events"].append(f'created_route:{body["pattern"]}={body.get("script") or "none"}')
+                self.send_ok(route)
+                return
+
+        if parts[0] == "accounts" and len(parts) >= 4 and parts[1] == ACCOUNT_ID and parts[2] == "pages" and parts[3] == "projects":
+            rest = parts[4:]
+            if rest[:1] == [PAGES_PROJECT]:
+                deployment_ids = {item["id"] for item in PAGES_DEPLOYMENTS}
+                if rest[1:] == ["purge_build_cache"]:
+                    STATE["events"].append(f"pages_cache_purge:{PAGES_PROJECT}")
+                    self.send_ok(None)
+                    return
+                if len(rest) == 4 and rest[1] == "deployments" and rest[2] in deployment_ids:
+                    deployment = next(item for item in PAGES_DEPLOYMENTS if item["id"] == rest[2])
+                    if rest[3] == "rollback":
+                        STATE["events"].append(f"pages_rollback:{rest[2]}")
+                        self.send_ok(deployment)
+                        return
+                    if rest[3] == "retry":
+                        STATE["events"].append(f"pages_retry:{rest[2]}")
+                        retried = dict(deployment)
+                        retried["latest_stage"] = {"name": "queued", "status": "active"}
+                        self.send_ok(retried)
+                        return
+
+        self.send_err(404, 7000, "No route for that URI")
+
+    def do_PUT(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if not self.authorized():
+            return
+
+        parts = path.removeprefix("/client/v4/").split("/")
+        if parts[0] == "zones" and len(parts) == 5 and parts[2] == "workers" and parts[3] == "routes":
+            if not self.zone_guard(parts[1]):
+                return
+            body = self.read_json()
+            for route in STATE["worker_routes"]:
+                if route["id"] == parts[4]:
+                    route["pattern"] = body.get("pattern", route["pattern"])
+                    route["script"] = body.get("script")
+                    STATE["events"].append(f'updated_route:{parts[4]}={route["script"] or "none"}')
+                    self.send_ok(route)
+                    return
+            self.send_err(404, 10009, "Route not found")
+            return
 
         self.send_err(404, 7000, "No route for that URI")
 
@@ -604,6 +752,15 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_ok({"id": rest[3]})
                         return
                 self.send_err(404, 10001, "Access rule not found")
+                return
+            if len(rest) == 3 and rest[:2] == ["workers", "routes"]:
+                for route in STATE["worker_routes"]:
+                    if route["id"] == rest[2]:
+                        STATE["worker_routes"].remove(route)
+                        STATE["events"].append(f"deleted_route:{rest[2]}")
+                        self.send_ok({"id": rest[2]})
+                        return
+                self.send_err(404, 10009, "Route not found")
                 return
 
         self.send_err(404, 7000, "No route for that URI")

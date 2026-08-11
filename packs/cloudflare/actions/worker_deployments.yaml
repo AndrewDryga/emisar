@@ -1,0 +1,33 @@
+schema_version: 1
+id: cf.worker_deployments
+title: Show Worker deployments
+kind: script
+risk: low
+description: Show one Worker script's deployment history — who deployed which version when, and the live gradual-rollout percentage split.
+side_effects: [One read-only API request.]
+args:
+  - name: account_id
+    type: string
+    required: true
+    description: Account ID.
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+  - name: script_name
+    type: string
+    required: true
+    description: Worker script name (cf.list_workers returns it).
+    validation:
+      pattern: "^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$"
+      max_length: 64
+execution:
+  script: {path: scripts/cf_api.sh, interpreter: /bin/bash}
+  argv: [worker-deployments, "{{ args.account_id }}", "{{ args.script_name }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Deployment history
+    args: {account_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0", script_name: api-worker}

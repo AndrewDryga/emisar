@@ -133,6 +133,44 @@ cases:
         /result/0/pattern: example.test/api/*
         /result/0/script: api-worker
 
+  - action: cf.list_workers
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0}
+    expect:
+      json:
+        /result/0/id: api-worker
+        /result/0/usage_model: standard
+
+  - action: cf.worker_deployments
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, script_name: api-worker}
+    expect:
+      json:
+        /result/deployments/0/author_email: ops@example.test
+        /result/deployments/0/strategy: percentage
+        /result/deployments/0/versions/0/percentage: 100
+
+  - action: cf.list_pages_projects
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0}
+    expect:
+      json:
+        /result/0/name: marketing-site
+        /result/0/production_branch: main
+        /result/0/latest_deployment/environment: production
+
+  - action: cf.pages_deployments
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site, environment: production}
+    expect:
+      json:
+        /result/0/id: aaaabbbb-cccc-4ddd-8eee-ffff00001111
+        /result/0/latest_stage/status: success
+        /result_info/count: 2
+
+  - action: cf.pages_deployment_logs
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site, deployment_id: ccccdddd-eeee-4fff-8000-111122223333}
+    expect:
+      json:
+        /result/total: 3
+        /result/data/1/line: "npm ERR! missing script: build"
+
   - action: cf.list_tunnels
     args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0}
     expect:
@@ -443,6 +481,91 @@ cases:
         argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
         expect:
           stdout_contains: ["pool_enabled:false"]
+
+  - action: cf.create_worker_route
+    args: {zone_id: abc123def456abc123def456abc123de, pattern: "example.test/checkout/*", script: api-worker}
+    expect:
+      json:
+        /result/id: f1e2d3c4b5a6978800112233445566aa
+        /result/pattern: example.test/checkout/*
+        /result/script: api-worker
+    probes:
+      - name: the route exists in provider state
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["created_route:example.test/checkout/*=api-worker"]
+
+  - name: cf.create_worker_route-without-a-script-bypasses-workers
+    action: cf.create_worker_route
+    args: {zone_id: abc123def456abc123def456abc123de, pattern: "example.test/webhooks/*"}
+    expect:
+      json:
+        /result/pattern: example.test/webhooks/*
+        /result/script: null
+    probes:
+      - name: the bypass route exists in provider state
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["created_route:example.test/webhooks/*=none"]
+
+  - action: cf.update_worker_route
+    args: {zone_id: abc123def456abc123def456abc123de, route_id: e7a57d8746e74ae49c25994dadb421b1, pattern: "example.test/api/*", script: api-worker-hotfix}
+    expect:
+      json:
+        /result/id: e7a57d8746e74ae49c25994dadb421b1
+        /result/script: api-worker-hotfix
+    probes:
+      - name: the provider retained the new script
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["updated_route:e7a57d8746e74ae49c25994dadb421b1=api-worker-hotfix"]
+
+  - action: cf.delete_worker_route
+    args: {zone_id: abc123def456abc123def456abc123de, route_id: e7a57d8746e74ae49c25994dadb421b1}
+    expect:
+      json:
+        /result/id: e7a57d8746e74ae49c25994dadb421b1
+    probes:
+      - name: the route no longer exists
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["deleted_route:e7a57d8746e74ae49c25994dadb421b1"]
+          stdout_not_contains: ["example.test/api/*"]
+
+  - action: cf.rollback_pages_deployment
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site, deployment_id: bbbbcccc-dddd-4eee-8fff-000011112222}
+    expect:
+      json:
+        /result/id: bbbbcccc-dddd-4eee-8fff-000011112222
+        /result/environment: production
+    probes:
+      - name: Cloudflare accepted the rollback
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["pages_rollback:bbbbcccc-dddd-4eee-8fff-000011112222"]
+
+  - action: cf.retry_pages_deployment
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site, deployment_id: ccccdddd-eeee-4fff-8000-111122223333}
+    expect:
+      json:
+        /result/id: ccccdddd-eeee-4fff-8000-111122223333
+        /result/latest_stage/name: queued
+    probes:
+      - name: Cloudflare accepted the retry
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["pages_retry:ccccdddd-eeee-4fff-8000-111122223333"]
+
+  - action: cf.purge_pages_build_cache
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site}
+    expect:
+      json:
+        /success: true
+    probes:
+      - name: Cloudflare accepted the cache purge
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ["pages_cache_purge:marketing-site"]
 
   - name: cf.list_zones-invalid-api-token
     action: cf.list_zones
