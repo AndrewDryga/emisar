@@ -1,0 +1,129 @@
+schema_version: 1
+id: databricks.sql_query
+title: POST /sql/statements
+kind: script
+risk: medium
+description: >
+  Run one read-only SQL statement on a Databricks SQL warehouse and return a
+  bounded slice of the result: column names and types, rows as strings, and
+  honest counts of everything clipped away. The statement must start with
+  SELECT, VALUES, SHOW, DESCRIBE, or EXPLAIN — put a CTE inside a subquery
+  (SELECT ... FROM (WITH ... SELECT ...) q) — and runs with exactly the
+  grants the runner's token holds. If the warehouse is still starting when
+  the wait elapses, the statement keeps running and the returned state is
+  PENDING or RUNNING: poll it with databricks.sql_statement.
+side_effects:
+  - Executes the statement on the warehouse — consumes warehouse compute.
+  - Starts the warehouse if it is auto-stopped.
+  - Result content is arbitrary table data, returned to the model.
+search_terms:
+  - query databricks table
+  - run sql on warehouse
+  - select from delta table
+args:
+  - name: sql
+    type: string
+    required: true
+    description: >
+      A single read statement (SELECT, VALUES, SHOW, DESCRIBE, or EXPLAIN).
+      Use catalog.schema.table names, or set the catalog/schema args.
+    validation:
+      max_length: 8192
+  - name: warehouse_id
+    type: string
+    required: true
+    description: SQL warehouse ID, from databricks.warehouses_list.
+    validation:
+      pattern: "^[A-Za-z0-9]{8,40}$"
+      max_length: 40
+  - name: catalog
+    type: string
+    required: false
+    default: ""
+    description: Default catalog for unqualified names, like USE CATALOG.
+    validation:
+      max_length: 255
+      pattern: "^[A-Za-z0-9_]*$"
+  - name: schema
+    type: string
+    required: false
+    default: ""
+    description: Default schema for unqualified names, like USE SCHEMA.
+    validation:
+      max_length: 255
+      pattern: "^[A-Za-z0-9_]*$"
+  - name: wait_seconds
+    type: integer
+    required: false
+    default: 30
+    description: How long the API call waits for the statement to finish.
+    validation:
+      min: 5
+      max: 50
+  - name: row_limit
+    type: integer
+    required: false
+    default: 100
+    description: Rows the statement may return before the API truncates it.
+    validation:
+      min: 1
+      max: 1000
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv:
+    - sql_query
+    - "{{ args.sql }}"
+    - "{{ args.warehouse_id }}"
+    - "{{ args.catalog }}"
+    - "{{ args.schema }}"
+    - "{{ args.wait_seconds }}"
+    - "{{ args.row_limit }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [statement_id, state]
+    properties:
+      statement_id: {type: string, maxLength: 64}
+      state: {type: string, enum: [PENDING, RUNNING, SUCCEEDED]}
+      columns:
+        type: array
+        maxItems: 16
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, type]
+          properties:
+            name: {type: string, maxLength: 40}
+            type: {type: string, maxLength: 24}
+      columns_omitted: {type: integer}
+      rows:
+        type: array
+        maxItems: 1000
+        items:
+          type: array
+          maxItems: 16
+          items: {type: [string, "null"], maxLength: 60}
+      rows_omitted: {type: integer}
+      total_rows: {type: [integer, "null"]}
+      api_truncated: {type: boolean}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Look up yesterday's active users
+    args:
+      sql: "SELECT event_date, count(DISTINCT user_id) AS dau FROM analytics.product.events WHERE event_date >= current_date() - 1 GROUP BY 1 ORDER BY 1"
+      warehouse_id: 1234567890abcdef
+  - title: Re-run a dashboard dataset's SQL in its own catalog and schema
+    args:
+      sql: "SELECT game, count(*) AS matches FROM matches_daily GROUP BY 1 ORDER BY 2 DESC"
+      warehouse_id: 1234567890abcdef
+      catalog: analytics
+      schema: gaming
+      row_limit: 50

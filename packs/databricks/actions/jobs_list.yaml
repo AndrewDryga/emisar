@@ -1,0 +1,72 @@
+schema_version: 1
+id: databricks.jobs_list
+title: GET /jobs/list
+kind: script
+risk: low
+description: >
+  List the workspace's jobs (workflows) with their creator. Use the name
+  filter to find one job by its exact, case-insensitive name; the job_id here
+  is what the run actions take.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - list databricks jobs
+  - find workflow by name
+args:
+  - name: name
+    type: string
+    required: false
+    default: ""
+    description: Filter on the exact (case-insensitive) job name.
+    validation:
+      max_length: 100
+  - name: page_size
+    type: integer
+    required: false
+    default: 10
+    description: Jobs per page.
+    validation:
+      min: 1
+      max: 10
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation token from the previous page.
+    validation:
+      max_length: 2048
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [jobs_list, "{{ args.name }}", "{{ args.page_size }}", "{{ args.page_cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [jobs, next_page_cursor]
+    properties:
+      jobs:
+        type: array
+        maxItems: 10
+        items:
+          type: object
+          additionalProperties: false
+          required: [job_id, name, creator, created_time]
+          properties:
+            job_id: {type: integer}
+            name: {type: string, maxLength: 60}
+            creator: {type: string, maxLength: 60}
+            created_time: {type: [integer, "null"]}
+      next_page_cursor: {type: [string, "null"], maxLength: 2048}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Find the nightly ETL job
+    args:
+      name: nightly-etl

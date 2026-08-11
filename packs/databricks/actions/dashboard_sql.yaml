@@ -1,0 +1,75 @@
+schema_version: 1
+id: databricks.dashboard_sql
+title: GET /lakeview/dashboards/<id> dataset SQL
+kind: script
+risk: low
+description: >
+  Show the SQL behind one dataset of an AI/BI (Lakeview) dashboard, with the
+  dataset's parameters. The query may contain :parameter markers — replace
+  each with a literal value before re-running it through
+  databricks.sql_query on the dashboard's warehouse. Get dataset names from
+  databricks.dashboard_get; the name and the display name both match.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - sql behind dashboard
+  - dashboard query text
+  - dataset query
+args:
+  - name: dashboard_id
+    type: string
+    required: true
+    description: Dashboard ID, from databricks.dashboards_list or the dashboard's /dashboardsv3/<id> URL.
+    validation:
+      pattern: "^[A-Za-z0-9-]{16,40}$"
+      max_length: 40
+  - name: dataset
+    type: string
+    required: true
+    description: Dataset name or display name, from databricks.dashboard_get.
+    validation:
+      max_length: 120
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [dashboard_sql, "{{ args.dashboard_id }}", "{{ args.dataset }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [dashboard_id, dataset, sql, sql_bytes_total, sql_truncated, parameters]
+    properties:
+      dashboard_id: {type: string, maxLength: 40}
+      dataset:
+        type: object
+        additionalProperties: false
+        required: [name, display_name]
+        properties:
+          name: {type: string, maxLength: 24}
+          display_name: {type: string, maxLength: 40}
+      sql: {type: string, maxLength: 2800}
+      sql_bytes_total: {type: integer}
+      sql_truncated: {type: boolean}
+      parameters:
+        type: array
+        maxItems: 6
+        items:
+          type: object
+          additionalProperties: false
+          required: [keyword, display_name]
+          properties:
+            keyword: {type: string, maxLength: 24}
+            display_name: {type: string, maxLength: 40}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: The SQL feeding a dashboard's main dataset
+    args:
+      dashboard_id: 01f0138fd0d11a23822c3f6384e6c484
+      dataset: Daily matches

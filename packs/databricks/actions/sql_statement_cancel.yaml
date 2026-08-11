@@ -1,0 +1,47 @@
+schema_version: 1
+id: databricks.sql_statement_cancel
+title: POST /sql/statements/<id>/cancel
+kind: script
+risk: medium
+description: >
+  Cancel a running SQL statement so it stops consuming the warehouse, then
+  report the state the statement actually reached. Cancellation is
+  best-effort: a statement that finished first reports its terminal state
+  instead.
+side_effects:
+  - Stops the statement's execution on the warehouse.
+  - A statement that already finished is left as it ended.
+search_terms:
+  - cancel sql statement
+  - stop runaway query
+args:
+  - name: statement_id
+    type: string
+    required: true
+    description: Statement ID returned by databricks.sql_query.
+    validation:
+      pattern: "^[A-Za-z0-9-]{8,64}$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [sql_statement_cancel, "{{ args.statement_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [statement_id, state]
+    properties:
+      statement_id: {type: string, maxLength: 64}
+      state: {type: string, enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELED, CLOSED]}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Cancel a statement stuck on a cold warehouse
+    args:
+      statement_id: 01f01390-a2b3-1c4d-9e8f-7a6b5c4d3e2f

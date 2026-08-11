@@ -1,0 +1,57 @@
+schema_version: 1
+id: databricks.cluster_restart
+title: POST /clusters/restart
+kind: script
+risk: high
+description: >
+  Restart a running cluster — the fix for a wedged driver or a leaking
+  Spark context. Everything attached dies with it: running notebooks lose
+  their state and jobs executing on the cluster fail. The API returns before
+  the restart completes; poll databricks.cluster_get until RUNNING again. A
+  cluster that is not RUNNING is left untouched (the API treats that as a
+  no-op).
+side_effects:
+  - Kills every notebook session and job running on the cluster.
+  - Asynchronous — returns before the cluster is back to RUNNING.
+  - No-op when the cluster is not RUNNING.
+search_terms:
+  - restart cluster
+  - driver unresponsive fix
+args:
+  - name: cluster_id
+    type: string
+    required: true
+    description: Cluster ID, from databricks.clusters_list.
+    validation:
+      pattern: "^[A-Za-z0-9-]{8,64}$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [cluster_restart, "{{ args.cluster_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [cluster]
+    properties:
+      cluster:
+        type: object
+        additionalProperties: false
+        required: [cluster_id, name, state, state_message]
+        properties:
+          cluster_id: {type: string, maxLength: 60}
+          name: {type: string, maxLength: 60}
+          state: {type: string, maxLength: 24}
+          state_message: {type: string, maxLength: 100}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Restart the cluster whose driver stopped responding
+    args:
+      cluster_id: 0811-104501-ab3cde45

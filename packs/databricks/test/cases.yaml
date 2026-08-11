@@ -1,0 +1,920 @@
+services: [databricks-api]
+versions:
+  - version: "3.14.0-alpine3.22"
+    digest: "@sha256:8373231e1e906ddfb457748bfc032c4c06ada8c759b7b62d9c73ec2a3c56e710"
+    default: true
+risk_accountability:
+  mode: complete
+secret_env: [DATABRICKS_TOKEN]
+env:
+  DATABRICKS_HOST: http://databricks-api:8080
+  DATABRICKS_TOKEN: packtest-canary-databricks-token-83f2
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+      - packtest-canary-databricks-token-83f2
+      # The JDBC URL on every warehouse document embeds a credential; no
+      # action projects it.
+      - packtest-canary-databricks-jdbc-4c7d
+      # The running cluster's spark_env_vars carry a secret; cluster reads
+      # must never dump the environment.
+      - packtest-canary-databricks-envsecret-1b9e
+cases:
+  - action: databricks.whoami
+    expect:
+      json:
+        /id: "8355995270157029"
+        /user_name: svc-emisar@example.test
+        /display_name: Emisar Service Principal
+        /active: true
+
+  - name: databricks.whoami-fails-on-a-bad-token
+    action: databricks.whoami
+    env:
+      DATABRICKS_TOKEN: packtest-canary-databricks-badtoken-0000
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [UNAUTHENTICATED]
+
+  # The probe pins the exact submission contract: bounded row_limit and
+  # byte_limit, INLINE disposition, and CONTINUE so a slow warehouse keeps
+  # the statement alive past the wait.
+  - action: databricks.sql_query
+    args:
+      sql: "SELECT game, count(*) AS matches FROM matches_daily GROUP BY 1"
+      warehouse_id: 1234567890abcdef
+    expect:
+      json:
+        /statement_id: 01f01390-0000-1111-9aaa-000000000001
+        /state: SUCCEEDED
+        /columns/0/name: game
+        /columns/1/type: LONG
+        /columns_omitted: 0
+        /rows/0/0: counter_strike_2
+        /rows/1/1: "30122"
+        /rows/2/1: null
+        /rows_omitted: 0
+        /total_rows: 3
+        /api_truncated: false
+    probes:
+      - name: the submission was bounded and INLINE
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/last"]
+        expect:
+          stdout_contains:
+            - '"on_wait_timeout": "CONTINUE"'
+            - '"disposition": "INLINE"'
+            - '"format": "JSON_ARRAY"'
+            - '"row_limit": 100'
+            - '"byte_limit": 262144'
+            - '"wait_timeout": "30s"'
+
+  - name: databricks.sql_query-sets-catalog-and-schema
+    action: databricks.sql_query
+    args:
+      sql: "SELECT game, count(*) AS matches FROM matches_daily GROUP BY 1"
+      warehouse_id: 1234567890abcdef
+      catalog: analytics
+      schema: gaming
+      row_limit: 50
+    expect:
+      json:
+        /state: SUCCEEDED
+    probes:
+      - name: the session defaults reached the API
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/last"]
+        expect:
+          stdout_contains:
+            - '"catalog": "analytics"'
+            - '"schema": "gaming"'
+            - '"row_limit": 50'
+
+  # 20 columns of 40-character names and 40 rows whose every cell is a
+  # U+2028 flood — the six-byte-escape codepoint. The runner rejects a
+  # structured result over 8 KiB, so this case's success IS the byte-cap
+  # proof: the projection keeps 16 columns, admits one row against the byte
+  # budget, and counts everything else — including the API's own trim to
+  # 500 — in rows_omitted.
+  - name: databricks.sql_query-fits-the-cap-on-a-worst-case-result
+    action: databricks.sql_query
+    args:
+      sql: SELECT worst
+      warehouse_id: 1234567890abcdef
+    expect:
+      json:
+        /state: SUCCEEDED
+        /columns_omitted: 4
+        /rows_omitted: 499
+        /total_rows: 500
+        /api_truncated: true
+    probes:
+      - name: the worst statement really reached the warehouse
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/last"]
+        expect:
+          stdout_contains: ['"statement": "SELECT worst"']
+
+  # Ten small rows then thirty flooded ones: the budget admits the small rows
+  # and the first seven monsters, then stops in order — no cherry-picking —
+  # and reports the 23 dropped.
+  - name: databricks.sql_query-keeps-rows-within-budget-on-a-mixed-result
+    action: databricks.sql_query
+    args:
+      sql: SELECT mixed
+      warehouse_id: 1234567890abcdef
+    expect:
+      json:
+        /state: SUCCEEDED
+        /rows/0/0: short
+        /rows/9/1: "9"
+        /rows_omitted: 23
+        /total_rows: 40
+    probes:
+      - name: the mixed statement really reached the warehouse
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/last"]
+        expect:
+          stdout_contains: ['"statement": "SELECT mixed"']
+
+  - name: databricks.sql_query-rejects-a-write-statement
+    action: databricks.sql_query
+    args:
+      sql: "DELETE FROM analytics.gaming.matches_daily WHERE day < '2020-01-01'"
+      warehouse_id: 1234567890abcdef
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["must be a single read statement"]
+
+  # Spark SQL allows INSERT/UPDATE/DELETE/MERGE after a CTE list, so a
+  # WITH-leading statement is refused with the rewrite that stays read-only.
+  - name: databricks.sql_query-rejects-a-cte-with-guidance
+    action: databricks.sql_query
+    args:
+      sql: "WITH t AS (SELECT 1) SELECT * FROM t"
+      warehouse_id: 1234567890abcdef
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["put the WITH inside a subquery"]
+
+  - name: databricks.sql_query-rejects-a-leading-comment
+    action: databricks.sql_query
+    args:
+      sql: "-- innocent\nSELECT 1"
+      warehouse_id: 1234567890abcdef
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["leading comment"]
+
+  - name: databricks.sql_query-rejects-a-malformed-warehouse-id
+    action: databricks.sql_query
+    args:
+      sql: SELECT 1
+      warehouse_id: "not-a-warehouse!"
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
+
+  # A statement-level failure arrives as HTTP 200 with status.state FAILED;
+  # the action fails with the API's error code and message instead of
+  # reporting an empty success.
+  - name: databricks.sql_query-reports-a-failed-statement
+    action: databricks.sql_query
+    args:
+      sql: SELECT boom
+      warehouse_id: 1234567890abcdef
+    expect:
+      status: failure
+      stderr_contains: [BAD_REQUEST, PARSE_SYNTAX_ERROR]
+
+  # The wait elapsed with the statement still running: the answer is a poll
+  # handle, not a result — and not a failure.
+  - name: databricks.sql_query-returns-a-poll-handle-when-still-running
+    action: databricks.sql_query
+    args:
+      sql: SELECT pending
+      warehouse_id: 1234567890abcdef
+    expect:
+      stdout_not_contains:
+        - '"rows"'
+      json:
+        /statement_id: 01f01390-0000-1111-9aaa-000000000002
+        /state: RUNNING
+    probes:
+      - name: the statement was submitted and left running for the poll
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/last"]
+        expect:
+          stdout_contains: ['"statement": "SELECT pending"']
+
+  - action: databricks.sql_statement
+    args:
+      statement_id: 01f01390-0000-1111-9aaa-000000000001
+    expect:
+      json:
+        /state: SUCCEEDED
+        /rows/0/0: counter_strike_2
+        /total_rows: 3
+    probes:
+      - name: the fixture still holds the statement as succeeded
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/01f01390-0000-1111-9aaa-000000000001"]
+        expect:
+          stdout_contains: ['"state": "SUCCEEDED"']
+
+  - name: databricks.sql_statement-still-running
+    action: databricks.sql_statement
+    args:
+      statement_id: 01f01390-0000-1111-9aaa-000000000002
+    expect:
+      json:
+        /state: RUNNING
+    probes:
+      - name: the poll left the running statement running
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/01f01390-0000-1111-9aaa-000000000002"]
+        expect:
+          stdout_contains: ['"state": "RUNNING"']
+
+  - name: databricks.sql_statement-refuses-a-closed-statement
+    action: databricks.sql_statement
+    args:
+      statement_id: 01f01390-0000-1111-9aaa-000000000004
+    expect:
+      status: failure
+      stderr_contains: ["no longer fetchable"]
+
+  - action: databricks.sql_statement_cancel
+    args:
+      statement_id: 01f01390-0000-1111-9aaa-000000000002
+    expect:
+      json:
+        /statement_id: 01f01390-0000-1111-9aaa-000000000002
+        /state: CANCELED
+    probes:
+      - name: the statement really stopped
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/01f01390-0000-1111-9aaa-000000000002"]
+        expect:
+          stdout_contains: ['"state": "CANCELED"']
+
+  # Cancel arriving after the statement finished reports the terminal state
+  # it found instead of pretending the cancel won.
+  - name: databricks.sql_statement_cancel-reports-a-finished-statement
+    action: databricks.sql_statement_cancel
+    args:
+      statement_id: 01f01390-0000-1111-9aaa-000000000001
+    expect:
+      json:
+        /state: SUCCEEDED
+    probes:
+      - name: the finished statement stayed as it ended
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/statements/01f01390-0000-1111-9aaa-000000000001"]
+        expect:
+          stdout_contains: ['"state": "SUCCEEDED"']
+
+  - action: databricks.catalogs_list
+    expect:
+      json:
+        /catalogs/0/name: analytics
+        /catalogs/0/catalog_type: MANAGED_CATALOG
+        /catalogs/1/name: system
+        /next_page_cursor: uc-page-2
+
+  - name: databricks.catalogs_list-follows-the-cursor
+    action: databricks.catalogs_list
+    args: {page_cursor: uc-page-2}
+    expect:
+      json:
+        /catalogs/0/name: archive
+        /next_page_cursor: null
+
+  # Ten maximal rows — U+2028 floods and raw control bytes — plus a
+  # 2000-character continuation token. Success is the byte-cap proof; no
+  # escape byte survives the collapse.
+  - name: databricks.catalogs_list-fits-the-cap-at-the-maximum-page-size
+    action: databricks.catalogs_list
+    args: {page_cursor: worst, page_size: 10}
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /catalogs/9/catalog_type: MANAGED_CATALOG
+        /catalogs/9/created_at: 1750000000000
+
+  - action: databricks.schemas_list
+    args: {catalog: analytics}
+    expect:
+      json:
+        /schemas/0/name: gaming
+        /schemas/1/name: finance
+        /next_page_cursor: null
+
+  - name: databricks.schemas_list-fits-the-cap-at-the-maximum-page-size
+    action: databricks.schemas_list
+    args: {catalog: analytics, page_cursor: worst, page_size: 10}
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /schemas/9/created_at: 1
+
+  # omit_columns is pinned by the absence of any columns key: a page that
+  # carried column lists would also blow the cap.
+  - action: databricks.tables_list
+    args: {catalog: analytics, schema: gaming}
+    expect:
+      stdout_not_contains:
+        - '"columns"'
+      json:
+        /tables/0/name: matches_daily
+        /tables/0/table_type: MANAGED
+        /tables/0/data_source_format: DELTA
+        /tables/1/table_type: VIEW
+        /next_page_cursor: null
+
+  - name: databricks.tables_list-fits-the-cap-at-the-maximum-page-size
+    action: databricks.tables_list
+    args: {catalog: analytics, schema: gaming, page_cursor: worst, page_size: 10}
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /tables/9/updated_at: 1
+
+  - action: databricks.table_get
+    args: {full_name: analytics.gaming.matches_daily}
+    expect:
+      json:
+        /table/full_name: analytics.gaming.matches_daily
+        /table/table_type: MANAGED
+        /table/data_source_format: DELTA
+        /table/columns/0/name: game
+        /table/columns/0/comment: game slug
+        /table/columns/1/comment: null
+        /table/columns/2/nullable: false
+        /table/columns_omitted: 3
+        /table/view_definition: null
+
+  - name: databricks.table_get-returns-a-view-definition
+    action: databricks.table_get
+    args: {full_name: analytics.gaming.kpi_view}
+    expect:
+      json:
+        /table/table_type: VIEW
+        /table/data_source_format: null
+        /table/view_definition: "SELECT game, day, matches FROM analytics.gaming.matches_daily WHERE day >= current_date() - 30"
+
+  # Forty flooded columns and a 9 KB flooded view definition; the clip keeps
+  # twelve columns and the cap holds.
+  - name: databricks.table_get-fits-the-cap-on-a-worst-case-table
+    action: databricks.table_get
+    args: {full_name: analytics.gaming.worst_table}
+    expect:
+      json:
+        /table/columns_omitted: 28
+
+  - name: databricks.table_get-rejects-a-partial-name
+    action: databricks.table_get
+    args: {full_name: analytics.gaming}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
+
+  - action: databricks.dashboards_list
+    expect:
+      json:
+        /dashboards/0/dashboard_id: 01f0138fd0d11a23822c3f6384e6c484
+        /dashboards/0/display_name: Game analytics
+        /dashboards/0/lifecycle_state: ACTIVE
+        /dashboards/0/warehouse_id: 1234567890abcdef
+        /next_page_cursor: null
+
+  - name: databricks.dashboards_list-fits-the-cap-at-the-maximum-page-size
+    action: databricks.dashboards_list
+    args: {page_cursor: worst, page_size: 12}
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /dashboards/11/lifecycle_state: ACTIVE
+
+  - action: databricks.dashboard_get
+    args: {dashboard_id: 01f0138fd0d11a23822c3f6384e6c484}
+    expect:
+      json:
+        /dashboard/display_name: Game analytics
+        /dashboard/warehouse_id: 1234567890abcdef
+        /dashboard/datasets/0/name: bf8f76f4
+        /dashboard/datasets/0/display_name: Daily matches
+        /dashboard/datasets/0/parameter_keywords/0: param_start
+        /dashboard/datasets/1/display_name: Legacy dataset
+        /dashboard/datasets_omitted: 0
+        /dashboard/pages/0/name: 2920d0bb
+        /dashboard/pages/0/display_name: Overview
+        /dashboard/pages_omitted: 0
+
+  # Fourteen flooded datasets and nine flooded pages: ten and six survive,
+  # the omitted counts stay honest, and the cap holds.
+  - name: databricks.dashboard_get-fits-the-cap-on-a-worst-case-dashboard
+    action: databricks.dashboard_get
+    args: {dashboard_id: ffffffffffffffffffffffffffffffff}
+    expect:
+      json:
+        /dashboard/datasets_omitted: 4
+        /dashboard/pages_omitted: 3
+
+  # The dataset resolves by display name; the projected SQL keeps its
+  # newlines (a collapsed newline would let a -- comment swallow the rest of
+  # the statement) and the :parameter marker survives verbatim.
+  - action: databricks.dashboard_sql
+    args:
+      dashboard_id: 01f0138fd0d11a23822c3f6384e6c484
+      dataset: Daily matches
+    expect:
+      stdout_contains:
+        - FROM matches_daily
+        - ":param_start"
+      json:
+        /dataset/name: bf8f76f4
+        /dataset/display_name: Daily matches
+        /sql_truncated: false
+        /parameters/0/keyword: param_start
+
+  # An old dashboard that still carries the legacy single-string query field
+  # reads the same way.
+  - name: databricks.dashboard_sql-reads-a-legacy-query-field
+    action: databricks.dashboard_sql
+    args:
+      dashboard_id: 01f0138fd0d11a23822c3f6384e6c484
+      dataset: Legacy dataset
+    expect:
+      json:
+        /sql: SELECT 1 AS one
+        /sql_truncated: false
+
+  - name: databricks.dashboard_sql-fits-the-cap-and-reports-truncation
+    action: databricks.dashboard_sql
+    args:
+      dashboard_id: ffffffffffffffffffffffffffffffff
+      dataset: huge0000
+    expect:
+      json:
+        /sql_truncated: true
+        /sql_bytes_total: 9664
+
+  - name: databricks.dashboard_sql-names-the-available-datasets-on-a-miss
+    action: databricks.dashboard_sql
+    args:
+      dashboard_id: 01f0138fd0d11a23822c3f6384e6c484
+      dataset: nope
+    expect:
+      status: failure
+      stderr_contains: ["is not in this dashboard", "Daily matches"]
+
+  - action: databricks.warehouses_list
+    expect:
+      json:
+        /warehouses/0/id: 1234567890abcdef
+        /warehouses/0/state: RUNNING
+        /warehouses/0/serverless: true
+        /warehouses/0/health_status: null
+        /warehouses/1/state: STOPPED
+        /warehouses/1/health_status: DEGRADED
+        /next_page_cursor: null
+
+  - name: databricks.warehouses_list-fits-the-cap-at-the-maximum-page-size
+    action: databricks.warehouses_list
+    args: {page_cursor: worst, page_size: 12}
+    expect:
+      json:
+        /warehouses/11/warehouse_type: PRO
+        /warehouses/11/health_status: DEGRADED
+
+  - action: databricks.warehouse_get
+    args: {warehouse_id: fedcba0987654321}
+    expect:
+      json:
+        /warehouse/name: etl-classic
+        /warehouse/state: STOPPED
+        /warehouse/warehouse_type: CLASSIC
+        /warehouse/health/status: DEGRADED
+        /warehouse/health/summary: Cluster acquisition is slow in the current zone
+        /warehouse/health/failure_code: CLOUD_PROVIDER_RESOURCE_STOCKOUT
+
+  - name: databricks.warehouse_get-reports-a-missing-warehouse
+    action: databricks.warehouse_get
+    args: {warehouse_id: "0000000000000000"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [RESOURCE_DOES_NOT_EXIST]
+
+  - action: databricks.warehouse_start
+    args: {warehouse_id: fedcba0987654321}
+    expect:
+      json:
+        /warehouse/id: fedcba0987654321
+        /warehouse/state: STARTING
+    probes:
+      - name: the warehouse really left STOPPED
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/warehouses/fedcba0987654321"]
+        expect:
+          stdout_contains: ['"state": "STARTING"']
+
+  # Starting a running warehouse is the API's documented no-op; the honest
+  # answer is the unchanged state, not an error.
+  - name: databricks.warehouse_start-is-a-no-op-on-a-running-warehouse
+    action: databricks.warehouse_start
+    args: {warehouse_id: 1234567890abcdef}
+    expect:
+      json:
+        /warehouse/state: RUNNING
+    probes:
+      - name: the running warehouse was left alone
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/warehouses/1234567890abcdef"]
+        expect:
+          stdout_contains: ['"state": "RUNNING"']
+
+  - action: databricks.warehouse_stop
+    args: {warehouse_id: 1234567890abcdef}
+    expect:
+      json:
+        /warehouse/state: STOPPING
+    probes:
+      - name: the warehouse really began stopping
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/warehouses/1234567890abcdef"]
+        expect:
+          stdout_contains: ['"state": "STOPPING"']
+
+  - action: databricks.jobs_list
+    expect:
+      json:
+        /jobs/0/job_id: 947381205673284
+        /jobs/0/name: nightly-etl
+        /jobs/0/creator: data-eng@example.test
+        /jobs/1/name: adhoc-report
+        /next_page_cursor: null
+
+  - name: databricks.jobs_list-filters-by-exact-name-case-insensitively
+    action: databricks.jobs_list
+    args: {name: NIGHTLY-ETL}
+    expect:
+      stdout_not_contains:
+        - adhoc-report
+      json:
+        /jobs/0/job_id: 947381205673284
+
+  - name: databricks.jobs_list-fits-the-cap-at-the-maximum-page-size
+    action: databricks.jobs_list
+    args: {page_cursor: worst, page_size: 10}
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /jobs/9/created_time: 1750000000000
+
+  - action: databricks.job_get
+    args: {job_id: 947381205673284}
+    expect:
+      json:
+        /job/name: nightly-etl
+        /job/run_as: svc-jobs@example.test
+        /job/max_concurrent_runs: 1
+        /job/schedule/cron: "0 0 3 * * ?"
+        /job/schedule/timezone: UTC
+        /job/schedule/paused: false
+        /job/parameters/0/name: run_date
+        /job/parameters/1/default: full
+        /job/tasks/0/kind: notebook
+        /job/tasks/1/kind: python
+        /job/tasks/1/depends_on/0: ingest
+        /job/tasks/2/kind: sql
+        /job/tasks_omitted: 0
+
+  - name: databricks.job_get-without-a-schedule
+    action: databricks.job_get
+    args: {job_id: 555777888999000}
+    expect:
+      json:
+        /job/name: adhoc-report
+        /job/schedule: null
+        /job/run_as: null
+
+  # Run 738495610284700 carries ONLY the legacy state object — the projection
+  # falls back to it, so an older workspace still reads truthfully.
+  - action: databricks.job_runs_list
+    expect:
+      json:
+        /runs/0/run_id: 738495610284800
+        /runs/0/state: RUNNING
+        /runs/0/result: null
+        /runs/1/run_id: 738495610284777
+        /runs/1/result: RUN_EXECUTION_ERROR
+        /runs/2/result: SUCCESS
+        /runs/3/run_id: 738495610284700
+        /runs/3/state: TERMINATED
+        /runs/3/result: SUCCESS
+        /runs/3/message: backfill 2026-08-01
+        /next_page_cursor: null
+
+  - name: databricks.job_runs_list-active-only
+    action: databricks.job_runs_list
+    args: {active_only: true}
+    expect:
+      stdout_not_contains:
+        - "738495610284753"
+      json:
+        /runs/0/run_id: 738495610284800
+
+  - name: databricks.job_runs_list-completed-only
+    action: databricks.job_runs_list
+    args: {completed_only: true}
+    expect:
+      stdout_not_contains:
+        - "738495610284800"
+      json:
+        /runs/0/run_id: 738495610284777
+
+  - name: databricks.job_runs_list-for-one-job
+    action: databricks.job_runs_list
+    args: {job_id: 947381205673284}
+    expect:
+      stdout_not_contains:
+        - "738495610284800"
+      json:
+        /runs/0/run_id: 738495610284777
+
+  - name: databricks.job_runs_list-rejects-conflicting-filters
+    action: databricks.job_runs_list
+    args: {active_only: true, completed_only: true}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [mutually exclusive]
+
+  # The worst page mixes U+2028 floods with raw ANSI/control bytes across
+  # every message; the collapse and clip hold the cap, and this also runs
+  # under the jq built without Oniguruma below.
+  - name: databricks.job_runs_list-fits-the-cap-at-the-maximum-page-size
+    action: databricks.job_runs_list
+    args: {page_cursor: worst, page_size: 10}
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /runs/9/run_id: 900000000000009
+        /runs/9/result: RUN_EXECUTION_ERROR
+
+  # jq's regex builtins are optional: a jq configured --with-oniguruma=no
+  # raises the moment a filter reaches one, so every projection here stays on
+  # core jq. The shared client image builds that jq at /opt/jq-without-regex;
+  # this is the same worst page asserted the same way.
+  - name: databricks.job_runs_list-projects-the-worst-page-without-jq-regex-support
+    action: databricks.job_runs_list
+    args: {page_cursor: worst, page_size: 10}
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /runs/9/run_id: 900000000000009
+
+  - action: databricks.job_run_get
+    args: {run_id: 738495610284777}
+    expect:
+      json:
+        /run/run_id: 738495610284777
+        /run/run_name: nightly-etl
+        /run/state: TERMINATED
+        /run/result: RUN_EXECUTION_ERROR
+        /run/tasks/0/task_key: ingest
+        /run/tasks/0/result: SUCCESS
+        /run/tasks/1/task_key: transform
+        /run/tasks/1/run_id: 738495610284779
+        /run/tasks/1/result: RUN_EXECUTION_ERROR
+        /run/tasks_omitted: 0
+
+  # The trace tail keeps the last ten lines with ANSI and control bytes
+  # collapsed — the error line an operator diagnoses from survives, the
+  # early lines and every escape byte do not.
+  - action: databricks.job_run_output
+    args: {run_id: 738495610284779}
+    expect:
+      stdout_contains:
+        - "Table or view not found"
+      stdout_not_contains:
+        - '\u001b'
+        - trace line 5
+      json:
+        /run_id: 738495610284779
+        /state: TERMINATED
+        /result: RUN_EXECUTION_ERROR
+        /error: "AnalysisException: Table or view not found: analytics.gaming.raw_events"
+        /logs_truncated: true
+        /notebook_result: null
+    probes:
+      - name: the output fetch reached the task run
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/output-fetches"]
+        expect:
+          stdout_contains: ["738495610284779"]
+
+  # Every field floods at once — error, 300-line trace, logs, notebook
+  # result. The tails and clips hold the cap; success is the proof.
+  - name: databricks.job_run_output-fits-the-cap-when-everything-floods
+    action: databricks.job_run_output
+    args: {run_id: 738495610284790}
+    expect:
+      json:
+        /state: TERMINATED
+        /logs_truncated: true
+        /notebook_result_truncated: true
+    probes:
+      - name: the output fetch reached the flooded task run
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/output-fetches"]
+        expect:
+          stdout_contains: ["738495610284790"]
+
+  - name: databricks.job_run_output-rejects-a-job-run-id
+    action: databricks.job_run_output
+    args: {run_id: 738495610284777}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["task run"]
+
+  # The high-risk trigger: the probe proves the exact parameters and the
+  # idempotency token reached the API, and that the run really exists.
+  - action: databricks.job_run_now
+    args:
+      job_id: 947381205673284
+      job_params: ["run_date=2026-08-10", "mode=incremental"]
+      idempotency_key: emisar-backfill-x1
+    expect:
+      json:
+        /run_id: 738495610284999
+        /job_id: 947381205673284
+        /state: PENDING
+    probes:
+      - name: the run exists with the exact overrides and idempotency token
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/runs/738495610284999"]
+        expect:
+          stdout_contains:
+            - '"state": "PENDING"'
+            - '"run_date": "2026-08-10"'
+            - '"mode": "incremental"'
+            - '"idempotency_token": "emisar-backfill-x1"'
+
+  - name: databricks.job_run_now-rejects-a-malformed-parameter
+    action: databricks.job_run_now
+    args:
+      job_id: 947381205673284
+      job_params: [oops]
+    expect:
+      status: failure
+      stderr_contains: [name=value]
+
+  - action: databricks.job_run_cancel
+    args: {run_id: 738495610284800}
+    expect:
+      json:
+        /run/run_id: 738495610284800
+        /run/state: TERMINATING
+    probes:
+      - name: the cancel really reached the run
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/runs/738495610284800"]
+        expect:
+          stdout_contains:
+            - '"canceled": true'
+            - '"state": "TERMINATING"'
+
+  # The clusters API spells "no further pages" as an empty-string token; the
+  # projection normalizes it to null so a caller pages on a non-null check.
+  - action: databricks.clusters_list
+    expect:
+      json:
+        /clusters/0/cluster_id: 0811-104501-ab3cde45
+        /clusters/0/state: RUNNING
+        /clusters/0/num_workers: null
+        /clusters/0/autoscale/min_workers: 2
+        /clusters/1/state: TERMINATED
+        /clusters/1/num_workers: 4
+        /clusters/1/autoscale: null
+        /next_page_cursor: null
+
+  - name: databricks.clusters_list-filters-by-state
+    action: databricks.clusters_list
+    args: {state: RUNNING}
+    expect:
+      stdout_not_contains:
+        - 0811-090000-de4dbeef
+      json:
+        /clusters/0/cluster_id: 0811-104501-ab3cde45
+
+  - name: databricks.clusters_list-fits-the-cap-at-the-maximum-page-size
+    action: databricks.clusters_list
+    args: {page_cursor: worst, page_size: 8}
+    expect:
+      stdout_not_contains:
+        - '\u001b'
+      json:
+        /clusters/7/source: PIPELINE_MAINTENANCE
+
+  - action: databricks.cluster_get
+    args: {cluster_id: 0811-090000-de4dbeef}
+    expect:
+      json:
+        /cluster/name: nightly-etl-cluster
+        /cluster/state: TERMINATED
+        /cluster/state_message: "Compute terminated: spot instance reclaimed"
+        /cluster/num_workers: 4
+        /cluster/autoscale: null
+        /cluster/terminated_time: 1754812000000
+        /cluster/termination_reason/code: SPOT_INSTANCE_TERMINATION
+        /cluster/termination_reason/type: CLOUD_FAILURE
+
+  - name: databricks.cluster_get-on-a-running-cluster
+    action: databricks.cluster_get
+    args: {cluster_id: 0811-104501-ab3cde45}
+    expect:
+      json:
+        /cluster/state: RUNNING
+        /cluster/num_workers: null
+        /cluster/autoscale/max_workers: 8
+        /cluster/terminated_time: null
+        /cluster/termination_reason: null
+
+  - action: databricks.cluster_events
+    args: {cluster_id: 0811-090000-de4dbeef}
+    expect:
+      json:
+        /events/0/type: TERMINATING
+        /events/0/reason_code: SPOT_INSTANCE_TERMINATION
+        /events/1/type: DRIVER_NOT_RESPONDING
+        /events/2/type: RESIZING
+        /events/2/user: data-eng@example.test
+        /events/2/target_workers: 6
+        /next_page_cursor: ev2
+
+  - name: databricks.cluster_events-follows-the-cursor
+    action: databricks.cluster_events
+    args: {cluster_id: 0811-090000-de4dbeef, page_cursor: ev2}
+    expect:
+      json:
+        /events/0/type: CREATING
+        /next_page_cursor: null
+
+  - name: databricks.cluster_events-fits-the-cap-at-the-maximum-page-size
+    action: databricks.cluster_events
+    args: {cluster_id: 0811-999999-worst000, page_size: 12}
+    expect:
+      json:
+        /events/11/type: AUTOSCALING_STATS_REPORT
+
+  - action: databricks.cluster_start
+    args: {cluster_id: 0811-090000-de4dbeef}
+    expect:
+      json:
+        /cluster/cluster_id: 0811-090000-de4dbeef
+        /cluster/state: PENDING
+    probes:
+      - name: the terminated cluster really began starting
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/clusters/0811-090000-de4dbeef"]
+        expect:
+          stdout_contains: ['"state": "PENDING"']
+
+  - name: databricks.cluster_start-is-a-no-op-on-a-running-cluster
+    action: databricks.cluster_start
+    args: {cluster_id: 0811-104501-ab3cde45}
+    expect:
+      json:
+        /cluster/state: RUNNING
+    probes:
+      - name: the running cluster was left alone
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/clusters/0811-104501-ab3cde45"]
+        expect:
+          stdout_contains: ['"state": "RUNNING"']
+
+  # The high-risk restart: the probe proves the running cluster really
+  # entered RESTARTING — everything attached to it dies with the driver.
+  - action: databricks.cluster_restart
+    args: {cluster_id: 0811-104501-ab3cde45}
+    expect:
+      json:
+        /cluster/cluster_id: 0811-104501-ab3cde45
+        /cluster/state: RESTARTING
+    probes:
+      - name: the cluster really began restarting
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/clusters/0811-104501-ab3cde45"]
+        expect:
+          stdout_contains: ['"state": "RESTARTING"']
+
+  - name: databricks.cluster_restart-is-a-no-op-on-a-terminated-cluster
+    action: databricks.cluster_restart
+    args: {cluster_id: 0811-090000-de4dbeef}
+    expect:
+      json:
+        /cluster/state: TERMINATED
+    probes:
+      - name: the terminated cluster was left alone
+        argv: [/bin/sh, -c, "curl -fsS http://databricks-api:8080/probe/clusters/0811-090000-de4dbeef"]
+        expect:
+          stdout_contains: ['"state": "TERMINATED"']

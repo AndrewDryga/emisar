@@ -1,0 +1,72 @@
+schema_version: 1
+id: databricks.schemas_list
+title: GET /unity-catalog/schemas
+kind: script
+risk: low
+description: >
+  List the schemas inside one Unity Catalog catalog. The middle level of the
+  catalog.schema.table hierarchy, between databricks.catalogs_list and
+  databricks.tables_list.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - list schemas in catalog
+  - databricks databases
+args:
+  - name: catalog
+    type: string
+    required: true
+    description: Catalog name, from databricks.catalogs_list.
+    validation:
+      pattern: "^[A-Za-z0-9_]{1,255}$"
+      max_length: 255
+  - name: page_size
+    type: integer
+    required: false
+    default: 10
+    description: Schemas per page.
+    validation:
+      min: 1
+      max: 10
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation token from the previous page.
+    validation:
+      max_length: 2048
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [schemas_list, "{{ args.catalog }}", "{{ args.page_size }}", "{{ args.page_cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [schemas, next_page_cursor]
+    properties:
+      schemas:
+        type: array
+        maxItems: 10
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, owner, comment, created_at]
+          properties:
+            name: {type: string, maxLength: 60}
+            owner: {type: string, maxLength: 40}
+            comment: {type: string, maxLength: 40}
+            created_at: {type: [integer, "null"]}
+      next_page_cursor: {type: [string, "null"], maxLength: 2048}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Schemas in the analytics catalog
+    args:
+      catalog: analytics

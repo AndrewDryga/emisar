@@ -1,0 +1,53 @@
+schema_version: 1
+id: databricks.job_run_cancel
+title: POST /jobs/runs/cancel
+kind: script
+risk: medium
+description: >
+  Cancel a running job run — or a single task run — and report the state it
+  reached. Cancellation is asynchronous: the reported state is often still
+  TERMINATING; poll databricks.job_run_get until it settles. The job itself
+  stays defined and can be run again.
+side_effects:
+  - Interrupts the run's tasks; a task stopped mid-write leaves whatever its own code leaves.
+  - Asynchronous — the run may still be terminating when this returns.
+search_terms:
+  - cancel job run
+  - stop stuck workflow
+args:
+  - name: run_id
+    type: integer
+    required: true
+    description: Run ID, from databricks.job_runs_list.
+    validation:
+      min: 1
+      max: 9007199254740991
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [job_run_cancel, "{{ args.run_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [run]
+    properties:
+      run:
+        type: object
+        additionalProperties: false
+        required: [run_id, state, result]
+        properties:
+          run_id: {type: integer}
+          state: {type: string, maxLength: 24}
+          result: {type: [string, "null"], maxLength: 40}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop a run stuck on a dead cluster
+    args:
+      run_id: 738495610284753

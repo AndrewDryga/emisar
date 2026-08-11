@@ -1,0 +1,67 @@
+schema_version: 1
+id: databricks.sql_statement
+title: GET /sql/statements/<id>
+kind: script
+risk: medium
+description: >
+  Check a submitted SQL statement's state and fetch its result once it
+  finished — the poll half of databricks.sql_query for statements that
+  outlived the request's wait. Returns the same bounded result shape.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Result content is arbitrary table data, returned to the model.
+search_terms:
+  - poll sql statement
+  - fetch query result
+args:
+  - name: statement_id
+    type: string
+    required: true
+    description: Statement ID returned by databricks.sql_query.
+    validation:
+      pattern: "^[A-Za-z0-9-]{8,64}$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [sql_statement, "{{ args.statement_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [statement_id, state]
+    properties:
+      statement_id: {type: string, maxLength: 64}
+      state: {type: string, enum: [PENDING, RUNNING, SUCCEEDED]}
+      columns:
+        type: array
+        maxItems: 16
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, type]
+          properties:
+            name: {type: string, maxLength: 40}
+            type: {type: string, maxLength: 24}
+      columns_omitted: {type: integer}
+      rows:
+        type: array
+        maxItems: 1000
+        items:
+          type: array
+          maxItems: 16
+          items: {type: [string, "null"], maxLength: 60}
+      rows_omitted: {type: integer}
+      total_rows: {type: [integer, "null"]}
+      api_truncated: {type: boolean}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Poll a statement that was still running
+    args:
+      statement_id: 01f01390-a2b3-1c4d-9e8f-7a6b5c4d3e2f

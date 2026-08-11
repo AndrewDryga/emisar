@@ -1,0 +1,91 @@
+schema_version: 1
+id: databricks.cluster_get
+title: GET /clusters/get
+kind: script
+risk: low
+description: >
+  Show one cluster's state in detail — including the termination reason when
+  it is down, which is the first thing to read when a cluster died. Follow a
+  suspicious termination with databricks.cluster_events for the timeline.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - why did the cluster terminate
+  - cluster state detail
+args:
+  - name: cluster_id
+    type: string
+    required: true
+    description: Cluster ID, from databricks.clusters_list.
+    validation:
+      pattern: "^[A-Za-z0-9-]{8,64}$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [cluster_get, "{{ args.cluster_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [cluster]
+    properties:
+      cluster:
+        type: object
+        additionalProperties: false
+        required:
+          - cluster_id
+          - name
+          - state
+          - state_message
+          - spark_version
+          - node_type
+          - driver_node_type
+          - num_workers
+          - autoscale
+          - autotermination_minutes
+          - creator
+          - source
+          - start_time
+          - terminated_time
+          - termination_reason
+        properties:
+          cluster_id: {type: string, maxLength: 60}
+          name: {type: string, maxLength: 60}
+          state: {type: string, maxLength: 24}
+          state_message: {type: string, maxLength: 100}
+          spark_version: {type: string, maxLength: 30}
+          node_type: {type: string, maxLength: 30}
+          driver_node_type: {type: [string, "null"], maxLength: 30}
+          num_workers: {type: [integer, "null"]}
+          autoscale:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [min_workers, max_workers]
+            properties:
+              min_workers: {type: integer}
+              max_workers: {type: integer}
+          autotermination_minutes: {type: [integer, "null"]}
+          creator: {type: [string, "null"], maxLength: 40}
+          source: {type: string, maxLength: 24}
+          start_time: {type: [integer, "null"]}
+          terminated_time: {type: [integer, "null"]}
+          termination_reason:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [code, type]
+            properties:
+              code: {type: string, maxLength: 60}
+              type: {type: [string, "null"], maxLength: 24}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Why the shared cluster went down
+    args:
+      cluster_id: 0811-104501-ab3cde45

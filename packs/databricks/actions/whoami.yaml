@@ -1,0 +1,40 @@
+schema_version: 1
+id: databricks.whoami
+title: GET /preview/scim/v2/Me
+kind: script
+risk: low
+description: >
+  Check which Databricks identity the runner's token authenticates as, and
+  that the workspace is reachable at all. Use it first when any other action
+  fails auth, or as the setup verification.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - check databricks token
+  - which databricks user
+args: []
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [whoami]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [id, user_name, display_name, active]
+    properties:
+      id: {type: string, maxLength: 48}
+      user_name: {type: string, maxLength: 100}
+      display_name: {type: string, maxLength: 80}
+      active: {type: boolean}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Verify the workspace connection
+    args: {}

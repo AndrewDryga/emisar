@@ -1,0 +1,70 @@
+schema_version: 1
+id: databricks.catalogs_list
+title: GET /unity-catalog/catalogs
+kind: script
+risk: low
+description: >
+  List the Unity Catalog catalogs this token can see, with owner and type.
+  The top of the catalog.schema.table hierarchy — start here when you need to
+  find where a dataset lives.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - list databricks catalogs
+  - browse unity catalog
+args:
+  # A catalog entry costs up to ~560 wire bytes at the clips below once JSON
+  # escaping doubles every byte-bound string, a continuation token can carry
+  # ~2 KiB more, and the runner rejects a structured result over 8192 bytes —
+  # so 10 is the most a page can promise. The same arithmetic sets every list
+  # action's cap; each worst-case behavior case is its proof.
+  - name: page_size
+    type: integer
+    required: false
+    default: 10
+    description: Catalogs per page.
+    validation:
+      min: 1
+      max: 10
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation token from the previous page.
+    validation:
+      max_length: 2048
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [catalogs_list, "{{ args.page_size }}", "{{ args.page_cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [catalogs, next_page_cursor]
+    properties:
+      catalogs:
+        type: array
+        maxItems: 10
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, catalog_type, owner, comment, created_at]
+          properties:
+            name: {type: string, maxLength: 60}
+            catalog_type: {type: string, maxLength: 40}
+            owner: {type: string, maxLength: 40}
+            comment: {type: string, maxLength: 40}
+            created_at: {type: [integer, "null"]}
+      next_page_cursor: {type: [string, "null"], maxLength: 2048}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: First page of catalogs
+    args: {}

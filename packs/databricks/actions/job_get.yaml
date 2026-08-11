@@ -1,0 +1,97 @@
+schema_version: 1
+id: databricks.job_get
+title: GET /jobs/get
+kind: script
+risk: low
+description: >
+  Show one job's definition: its schedule, task graph with each task's kind
+  and dependencies, and the job-level parameters with their defaults — what
+  you review before triggering databricks.job_run_now.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - job schedule and tasks
+  - show workflow definition
+  - job parameters
+args:
+  - name: job_id
+    type: integer
+    required: true
+    description: Job ID, from databricks.jobs_list.
+    validation:
+      min: 1
+      max: 9007199254740991
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [job_get, "{{ args.job_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [job]
+    properties:
+      job:
+        type: object
+        additionalProperties: false
+        required:
+          - job_id
+          - name
+          - creator
+          - run_as
+          - max_concurrent_runs
+          - schedule
+          - parameters
+          - tasks
+          - tasks_omitted
+        properties:
+          job_id: {type: integer}
+          name: {type: string, maxLength: 60}
+          creator: {type: [string, "null"], maxLength: 60}
+          run_as: {type: [string, "null"], maxLength: 60}
+          max_concurrent_runs: {type: [integer, "null"]}
+          schedule:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [cron, timezone, paused]
+            properties:
+              cron: {type: string, maxLength: 60}
+              timezone: {type: string, maxLength: 30}
+              paused: {type: boolean}
+          parameters:
+            type: array
+            maxItems: 8
+            items:
+              type: object
+              additionalProperties: false
+              required: [name, default]
+              properties:
+                name: {type: string, maxLength: 30}
+                default: {type: string, maxLength: 40}
+          tasks:
+            type: array
+            maxItems: 12
+            items:
+              type: object
+              additionalProperties: false
+              required: [task_key, kind, depends_on]
+              properties:
+                task_key: {type: string, maxLength: 40}
+                kind: {type: string, maxLength: 24}
+                depends_on:
+                  type: array
+                  maxItems: 2
+                  items: {type: string, maxLength: 40}
+          tasks_omitted: {type: integer}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Review the nightly ETL job before running it
+    args:
+      job_id: 947381205673284

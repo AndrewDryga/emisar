@@ -1,0 +1,55 @@
+schema_version: 1
+id: databricks.warehouse_stop
+title: POST /sql/warehouses/<id>/stop
+kind: script
+risk: medium
+description: >
+  Stop a running SQL warehouse to cut its compute spend. Queries running on
+  it are interrupted, and the next statement that arrives auto-starts it
+  again at cold-start latency. The API returns before the warehouse is down —
+  poll databricks.warehouse_get until STOPPED.
+side_effects:
+  - Interrupts queries currently running on the warehouse.
+  - Stops billable compute; the next query pays the cold start.
+  - Asynchronous — returns before the warehouse reaches STOPPED.
+search_terms:
+  - stop sql warehouse
+  - cut warehouse cost
+args:
+  - name: warehouse_id
+    type: string
+    required: true
+    description: SQL warehouse ID, from databricks.warehouses_list.
+    validation:
+      pattern: "^[A-Za-z0-9]{8,40}$"
+      max_length: 40
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [warehouse_stop, "{{ args.warehouse_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [warehouse]
+    properties:
+      warehouse:
+        type: object
+        additionalProperties: false
+        required: [id, name, state, num_clusters]
+        properties:
+          id: {type: string, maxLength: 40}
+          name: {type: string, maxLength: 60}
+          state: {type: string, maxLength: 24}
+          num_clusters: {type: integer}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop an idle warehouse over the weekend
+    args:
+      warehouse_id: 1234567890abcdef

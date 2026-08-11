@@ -1,0 +1,66 @@
+schema_version: 1
+id: databricks.dashboards_list
+title: GET /lakeview/dashboards
+kind: script
+risk: low
+description: >
+  List the workspace's AI/BI (Lakeview) dashboards with their lifecycle state
+  and default warehouse. Use it to find the dashboard ID that
+  databricks.dashboard_get and databricks.dashboard_sql take — the same ID
+  that appears in a dashboard's /dashboardsv3/<id> URL.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - list databricks dashboards
+  - find dashboard id
+args:
+  - name: page_size
+    type: integer
+    required: false
+    default: 12
+    description: Dashboards per page.
+    validation:
+      min: 1
+      max: 12
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation token from the previous page.
+    validation:
+      max_length: 2048
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [dashboards_list, "{{ args.page_size }}", "{{ args.page_cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [dashboards, next_page_cursor]
+    properties:
+      dashboards:
+        type: array
+        maxItems: 12
+        items:
+          type: object
+          additionalProperties: false
+          required: [dashboard_id, display_name, lifecycle_state, create_time, warehouse_id]
+          properties:
+            dashboard_id: {type: string, maxLength: 40}
+            display_name: {type: string, maxLength: 60}
+            lifecycle_state: {type: string, maxLength: 24}
+            create_time: {type: string, maxLength: 40}
+            warehouse_id: {type: [string, "null"], maxLength: 40}
+      next_page_cursor: {type: [string, "null"], maxLength: 2048}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: First page of dashboards
+    args: {}

@@ -1,0 +1,82 @@
+schema_version: 1
+id: databricks.table_get
+title: GET /unity-catalog/tables/<full_name>
+kind: script
+risk: low
+description: >
+  Show one Unity Catalog table's shape: columns with their SQL types and
+  nullability, the table type and storage format, and — for a view — the
+  defining SQL. What you read before writing a databricks.sql_query against
+  an unfamiliar table.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - table columns and types
+  - describe databricks table
+  - view definition sql
+args:
+  - name: full_name
+    type: string
+    required: true
+    description: Three-level name, catalog.schema.table.
+    validation:
+      pattern: "^[A-Za-z0-9_]{1,100}\\.[A-Za-z0-9_]{1,100}\\.[A-Za-z0-9_]{1,100}$"
+      max_length: 255
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [table_get, "{{ args.full_name }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [table]
+    properties:
+      table:
+        type: object
+        additionalProperties: false
+        required:
+          - full_name
+          - table_type
+          - data_source_format
+          - owner
+          - comment
+          - created_at
+          - updated_at
+          - view_definition
+          - columns
+          - columns_omitted
+        properties:
+          full_name: {type: string, maxLength: 255}
+          table_type: {type: string, maxLength: 40}
+          data_source_format: {type: [string, "null"], maxLength: 40}
+          owner: {type: string, maxLength: 40}
+          comment: {type: string, maxLength: 60}
+          created_at: {type: [integer, "null"]}
+          updated_at: {type: [integer, "null"]}
+          view_definition: {type: [string, "null"], maxLength: 1200}
+          columns:
+            type: array
+            maxItems: 12
+            items:
+              type: object
+              additionalProperties: false
+              required: [name, type, nullable, comment]
+              properties:
+                name: {type: string, maxLength: 40}
+                type: {type: string, maxLength: 40}
+                nullable: {type: boolean}
+                comment: {type: [string, "null"], maxLength: 24}
+          columns_omitted: {type: integer}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Shape of the matches table
+    args:
+      full_name: analytics.gaming.matches_daily

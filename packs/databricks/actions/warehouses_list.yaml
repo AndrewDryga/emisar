@@ -1,0 +1,79 @@
+schema_version: 1
+id: databricks.warehouses_list
+title: GET /sql/warehouses
+kind: script
+risk: low
+description: >
+  List the workspace's SQL warehouses with state, size, and health at a
+  glance. The warehouse ID here is what databricks.sql_query runs on; a
+  STOPPED warehouse auto-starts when a statement arrives, at cold-start
+  latency.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - list sql warehouses
+  - which warehouse is running
+args:
+  - name: page_size
+    type: integer
+    required: false
+    default: 12
+    description: Warehouses per page.
+    validation:
+      min: 1
+      max: 12
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation token from the previous page.
+    validation:
+      max_length: 2048
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [warehouses_list, "{{ args.page_size }}", "{{ args.page_cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [warehouses, next_page_cursor]
+    properties:
+      warehouses:
+        type: array
+        maxItems: 12
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - id
+            - name
+            - state
+            - cluster_size
+            - num_clusters
+            - auto_stop_mins
+            - serverless
+            - warehouse_type
+            - health_status
+          properties:
+            id: {type: string, maxLength: 40}
+            name: {type: string, maxLength: 60}
+            state: {type: string, maxLength: 24}
+            cluster_size: {type: string, maxLength: 24}
+            num_clusters: {type: integer}
+            auto_stop_mins: {type: integer}
+            serverless: {type: boolean}
+            warehouse_type: {type: string, maxLength: 24}
+            health_status: {type: [string, "null"], maxLength: 24}
+      next_page_cursor: {type: [string, "null"], maxLength: 2048}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: All warehouses and their states
+    args: {}

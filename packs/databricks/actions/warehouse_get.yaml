@@ -1,0 +1,81 @@
+schema_version: 1
+id: databricks.warehouse_get
+title: GET /sql/warehouses/<id>
+kind: script
+risk: low
+description: >
+  Show one SQL warehouse's state, sizing, and health detail — including the
+  failure summary when the platform reports it degraded. The state to poll
+  after databricks.warehouse_start or databricks.warehouse_stop.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - warehouse health
+  - why is warehouse degraded
+  - warehouse state
+args:
+  - name: warehouse_id
+    type: string
+    required: true
+    description: SQL warehouse ID, from databricks.warehouses_list.
+    validation:
+      pattern: "^[A-Za-z0-9]{8,40}$"
+      max_length: 40
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [warehouse_get, "{{ args.warehouse_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [warehouse]
+    properties:
+      warehouse:
+        type: object
+        additionalProperties: false
+        required:
+          - id
+          - name
+          - state
+          - cluster_size
+          - min_num_clusters
+          - max_num_clusters
+          - num_clusters
+          - auto_stop_mins
+          - serverless
+          - warehouse_type
+          - creator
+          - health
+        properties:
+          id: {type: string, maxLength: 40}
+          name: {type: string, maxLength: 60}
+          state: {type: string, maxLength: 24}
+          cluster_size: {type: string, maxLength: 24}
+          min_num_clusters: {type: integer}
+          max_num_clusters: {type: integer}
+          num_clusters: {type: integer}
+          auto_stop_mins: {type: integer}
+          serverless: {type: boolean}
+          warehouse_type: {type: string, maxLength: 24}
+          creator: {type: string, maxLength: 60}
+          health:
+            type: [object, "null"]
+            additionalProperties: false
+            required: [status, summary, failure_code]
+            properties:
+              status: {type: string, maxLength: 24}
+              summary: {type: [string, "null"], maxLength: 160}
+              failure_code: {type: [string, "null"], maxLength: 60}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Health of the BI warehouse
+    args:
+      warehouse_id: 1234567890abcdef

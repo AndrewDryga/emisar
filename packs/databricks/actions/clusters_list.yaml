@@ -1,0 +1,83 @@
+schema_version: 1
+id: databricks.clusters_list
+title: GET /clusters/list
+kind: script
+risk: low
+description: >
+  List the workspace's all-purpose and job clusters with state, Spark
+  version, and sizing. Filter by state to see only what is RUNNING — or what
+  died in ERROR.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - list databricks clusters
+  - running clusters
+args:
+  - name: state
+    type: string
+    required: false
+    default: ""
+    description: Only clusters in this state; empty means all.
+    validation:
+      pattern: "^(|PENDING|RUNNING|RESTARTING|RESIZING|TERMINATING|TERMINATED|ERROR|UNKNOWN)$"
+      max_length: 24
+  - name: page_size
+    type: integer
+    required: false
+    default: 8
+    description: Clusters per page.
+    validation:
+      min: 1
+      max: 8
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Opaque continuation token from the previous page.
+    validation:
+      max_length: 2048
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [clusters_list, "{{ args.state }}", "{{ args.page_size }}", "{{ args.page_cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [clusters, next_page_cursor]
+    properties:
+      clusters:
+        type: array
+        maxItems: 8
+        items:
+          type: object
+          additionalProperties: false
+          required: [cluster_id, name, state, spark_version, node_type, num_workers, autoscale, source]
+          properties:
+            cluster_id: {type: string, maxLength: 60}
+            name: {type: string, maxLength: 60}
+            state: {type: string, maxLength: 24}
+            spark_version: {type: string, maxLength: 24}
+            node_type: {type: string, maxLength: 24}
+            num_workers: {type: [integer, "null"]}
+            autoscale:
+              type: [object, "null"]
+              additionalProperties: false
+              required: [min_workers, max_workers]
+              properties:
+                min_workers: {type: integer}
+                max_workers: {type: integer}
+            source: {type: string, maxLength: 24}
+      next_page_cursor: {type: [string, "null"], maxLength: 2048}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Only what is currently running
+    args:
+      state: RUNNING

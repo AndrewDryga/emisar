@@ -1,0 +1,78 @@
+schema_version: 1
+
+id: databricks
+name: Databricks
+version: 0.1.0
+description: >
+  Look up data and run day-2 operations in a Databricks workspace over its REST
+  API: run a bounded read-only SQL statement on a SQL warehouse, browse Unity
+  Catalog down to a table's columns, read the datasets behind an AI/BI
+  dashboard, watch job runs and fetch a failed run's error output, and
+  start, stop, or restart the compute — warehouses, jobs, and clusters —
+  through emisar's policy and approval path instead of the workspace UI.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+    - jq
+    - bash
+
+setup:
+  summary: >
+    Calls the Databricks workspace REST API over HTTPS with curl, sending the
+    token in an Authorization: Bearer header read from DATABRICKS_TOKEN and the
+    workspace URL from DATABRICKS_HOST, so allowlist both variables in
+    inherit_env.
+  env:
+    - name: DATABRICKS_HOST
+      required: true
+      description: >
+        Workspace URL, scheme included — the host you open the workspace UI on.
+      example: https://1234567890123456.7.gcp.databricks.com
+    - name: DATABRICKS_TOKEN
+      required: true
+      description: >
+        API token sent as the Bearer credential: a service principal's OAuth
+        token or personal access token. Scope it to what you want reachable —
+        the read actions need CAN USE on the warehouse plus USE CATALOG, USE
+        SCHEMA, and SELECT on the data; the compute and job actions need the
+        matching CAN MANAGE RUN / CAN RESTART permission on each resource.
+  notes:
+    - "Any Databricks env var you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and every action fails auth."
+    - "databricks.sql_query only accepts a single statement whose first keyword is SELECT, VALUES, SHOW, DESCRIBE, or EXPLAIN. That guard is a guardrail against accidental writes, not a security boundary — the warehouse enforces exactly what the token's grants allow, so scope the token read-only if reads are all you mean to allow."
+    - "The token can do everything these actions expose, so let emisar policy decide who may reach the mutating actions: job_run_now and cluster_restart are high risk and need approval under the default policy."
+    - "Needs curl 7.76 or newer: the actions use --fail-with-body so a rejected request reports the API's error document instead of failing with empty output."
+  verify: databricks.whoami
+
+actions:
+  - actions/whoami.yaml
+  - actions/sql_query.yaml
+  - actions/sql_statement.yaml
+  - actions/sql_statement_cancel.yaml
+  - actions/catalogs_list.yaml
+  - actions/schemas_list.yaml
+  - actions/tables_list.yaml
+  - actions/table_get.yaml
+  - actions/dashboards_list.yaml
+  - actions/dashboard_get.yaml
+  - actions/dashboard_sql.yaml
+  - actions/warehouses_list.yaml
+  - actions/warehouse_get.yaml
+  - actions/warehouse_start.yaml
+  - actions/warehouse_stop.yaml
+  - actions/jobs_list.yaml
+  - actions/job_get.yaml
+  - actions/job_runs_list.yaml
+  - actions/job_run_get.yaml
+  - actions/job_run_output.yaml
+  - actions/job_run_now.yaml
+  - actions/job_run_cancel.yaml
+  - actions/clusters_list.yaml
+  - actions/cluster_get.yaml
+  - actions/cluster_events.yaml
+  - actions/cluster_start.yaml
+  - actions/cluster_restart.yaml

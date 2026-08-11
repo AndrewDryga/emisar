@@ -1,0 +1,54 @@
+schema_version: 1
+id: databricks.warehouse_start
+title: POST /sql/warehouses/<id>/start
+kind: script
+risk: medium
+description: >
+  Start a stopped SQL warehouse ahead of the queries that need it, so they
+  skip the cold start. The API returns before the warehouse is up — the
+  reported state is usually STARTING; poll databricks.warehouse_get until
+  RUNNING. Starting a warehouse that is already running is a no-op.
+side_effects:
+  - Starts billable warehouse compute.
+  - Asynchronous — returns before the warehouse reaches RUNNING.
+search_terms:
+  - start sql warehouse
+  - warm up warehouse
+args:
+  - name: warehouse_id
+    type: string
+    required: true
+    description: SQL warehouse ID, from databricks.warehouses_list.
+    validation:
+      pattern: "^[A-Za-z0-9]{8,40}$"
+      max_length: 40
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [warehouse_start, "{{ args.warehouse_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [warehouse]
+    properties:
+      warehouse:
+        type: object
+        additionalProperties: false
+        required: [id, name, state, num_clusters]
+        properties:
+          id: {type: string, maxLength: 40}
+          name: {type: string, maxLength: 60}
+          state: {type: string, maxLength: 24}
+          num_clusters: {type: integer}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Warm the BI warehouse before a batch of lookups
+    args:
+      warehouse_id: 1234567890abcdef

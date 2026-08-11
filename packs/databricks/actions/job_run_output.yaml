@@ -1,0 +1,70 @@
+schema_version: 1
+id: databricks.job_run_output
+title: GET /jobs/runs/get-output
+kind: script
+risk: medium
+description: >
+  Show why one task run failed: the error, a bounded tail of its error trace
+  and logs, and the notebook's exit value if it set one. Takes a TASK run's
+  ID — get it from the tasks list in databricks.job_run_get, not the job
+  run's own ID.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Log and error content is arbitrary task output, returned to the model.
+search_terms:
+  - why did the task fail
+  - job run error trace
+  - notebook output
+args:
+  - name: run_id
+    type: integer
+    required: true
+    description: Task run ID, from the tasks list of databricks.job_run_get.
+    validation:
+      min: 1
+      max: 9007199254740991
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [job_run_output, "{{ args.run_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required:
+      - run_id
+      - state
+      - result
+      - error
+      - error_trace_tail
+      - logs_tail
+      - logs_truncated
+      - notebook_result
+      - notebook_result_truncated
+    properties:
+      run_id: {type: integer}
+      state: {type: string, maxLength: 24}
+      result: {type: [string, "null"], maxLength: 40}
+      error: {type: [string, "null"], maxLength: 150}
+      error_trace_tail:
+        type: array
+        maxItems: 10
+        items: {type: string, maxLength: 80}
+      logs_tail:
+        type: array
+        maxItems: 6
+        items: {type: string, maxLength: 80}
+      logs_truncated: {type: boolean}
+      notebook_result: {type: [string, "null"], maxLength: 200}
+      notebook_result_truncated: {type: boolean}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Error detail for the failed ingest task
+    args:
+      run_id: 738495610284754

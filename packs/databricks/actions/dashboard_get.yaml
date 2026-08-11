@@ -1,0 +1,95 @@
+schema_version: 1
+id: databricks.dashboard_get
+title: GET /lakeview/dashboards/<id>
+kind: script
+risk: low
+description: >
+  Show what one AI/BI (Lakeview) dashboard is made of: its pages, and each
+  dataset behind it with the dataset's parameter keywords. The dataset names
+  here are what databricks.dashboard_sql takes to fetch the actual SQL, and
+  the warehouse_id is where that SQL runs.
+side_effects:
+  - One read-only HTTP GET to the Databricks workspace API.
+  - Read-only.
+search_terms:
+  - what feeds this dashboard
+  - dashboard datasets
+  - dashboard pages
+args:
+  - name: dashboard_id
+    type: string
+    required: true
+    description: Dashboard ID, from databricks.dashboards_list or the dashboard's /dashboardsv3/<id> URL.
+    validation:
+      pattern: "^[A-Za-z0-9-]{16,40}$"
+      max_length: 40
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [dashboard_get, "{{ args.dashboard_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [dashboard]
+    properties:
+      dashboard:
+        type: object
+        additionalProperties: false
+        required:
+          - dashboard_id
+          - display_name
+          - lifecycle_state
+          - create_time
+          - update_time
+          - warehouse_id
+          - path
+          - datasets
+          - datasets_omitted
+          - pages
+          - pages_omitted
+        properties:
+          dashboard_id: {type: string, maxLength: 40}
+          display_name: {type: string, maxLength: 60}
+          lifecycle_state: {type: string, maxLength: 24}
+          create_time: {type: string, maxLength: 40}
+          update_time: {type: string, maxLength: 40}
+          warehouse_id: {type: [string, "null"], maxLength: 40}
+          path: {type: [string, "null"], maxLength: 80}
+          datasets:
+            type: array
+            maxItems: 10
+            items:
+              type: object
+              additionalProperties: false
+              required: [name, display_name, parameter_keywords]
+              properties:
+                name: {type: string, maxLength: 24}
+                display_name: {type: string, maxLength: 40}
+                parameter_keywords:
+                  type: array
+                  maxItems: 4
+                  items: {type: string, maxLength: 24}
+          datasets_omitted: {type: integer}
+          pages:
+            type: array
+            maxItems: 6
+            items:
+              type: object
+              additionalProperties: false
+              required: [name, display_name]
+              properties:
+                name: {type: string, maxLength: 24}
+                display_name: {type: string, maxLength: 40}
+          pages_omitted: {type: integer}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Datasets behind a dashboard from its URL
+    args:
+      dashboard_id: 01f0138fd0d11a23822c3f6384e6c484

@@ -1,0 +1,56 @@
+schema_version: 1
+id: databricks.cluster_start
+title: POST /clusters/start
+kind: script
+risk: medium
+description: >
+  Start a terminated all-purpose cluster with its previous configuration.
+  The API returns before the cluster is up — the reported state is usually
+  PENDING; poll databricks.cluster_get until RUNNING. A cluster that is not
+  TERMINATED is left untouched (the API treats that as a no-op), and
+  job-launched clusters cannot be started.
+side_effects:
+  - Starts billable cluster compute.
+  - Asynchronous — returns before the cluster reaches RUNNING.
+  - No-op when the cluster is not TERMINATED.
+search_terms:
+  - start cluster
+  - bring cluster back up
+args:
+  - name: cluster_id
+    type: string
+    required: true
+    description: Cluster ID, from databricks.clusters_list.
+    validation:
+      pattern: "^[A-Za-z0-9-]{8,64}$"
+      max_length: 64
+execution:
+  script:
+    path: scripts/databricks.sh
+    interpreter: /bin/bash
+  argv: [cluster_start, "{{ args.cluster_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [cluster]
+    properties:
+      cluster:
+        type: object
+        additionalProperties: false
+        required: [cluster_id, name, state, state_message]
+        properties:
+          cluster_id: {type: string, maxLength: 60}
+          name: {type: string, maxLength: 60}
+          state: {type: string, maxLength: 24}
+          state_message: {type: string, maxLength: 100}
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Start the analytics cluster before working hours
+    args:
+      cluster_id: 0811-104501-ab3cde45
