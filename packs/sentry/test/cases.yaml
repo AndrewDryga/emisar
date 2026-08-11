@@ -1,0 +1,199 @@
+services: [sentry-api]
+versions:
+  - version: "3.14.0-alpine3.22"
+    digest: "@sha256:8373231e1e906ddfb457748bfc032c4c06ada8c759b7b62d9c73ec2a3c56e710"
+    default: true
+risk_accountability:
+  mode: complete
+secret_env: [SENTRY_AUTH_TOKEN]
+env:
+  SENTRY_AUTH_TOKEN: packtest-canary-sentry-token-51c2
+  SENTRY_URL: http://sentry-api:8080
+defaults:
+  expect:
+    stdout_not_empty: true
+    stdout_not_contains:
+      - packtest-canary-sentry-token-51c2
+      - packtest-canary-sentry-key-secret-77aa
+cases:
+  - action: sentry.list_organizations
+    expect:
+      json:
+        /results/0/slug: acme
+        /pagination/has_more: false
+        /pagination/next_cursor: null
+
+  - action: sentry.list_projects
+    args: {organization: acme}
+    expect:
+      json:
+        /results/0/slug: backend
+        /results/0/platform: python
+
+  - action: sentry.list_issues
+    args: {organization: acme, project: backend, sort: freq}
+    expect:
+      json:
+        /results/0/id: "1234567890"
+        /results/0/title: "TypeError: cannot read frames of undefined"
+        /results/1/id: "1234567891"
+        /pagination/has_more: false
+
+  - name: sentry.list_issues-pages-with-a-cursor
+    action: sentry.list_issues
+    args: {organization: acme, project: backend, limit: 1}
+    expect:
+      json:
+        /results/0/id: "1234567890"
+        /pagination/has_more: true
+        /pagination/next_cursor: "1700000000000:1:0"
+
+  - name: sentry.list_issues-follows-the-cursor
+    action: sentry.list_issues
+    args: {organization: acme, project: backend, limit: 1, cursor: "1700000000000:1:0"}
+    expect:
+      json:
+        /results/0/id: "1234567891"
+        /pagination/has_more: false
+
+  - action: sentry.issue_details
+    args: {organization: acme, issue_id: "1234567890"}
+    expect:
+      json:
+        /id: "1234567890"
+        /status: unresolved
+        /count: "4821"
+        /culprit: app/checkout.py in confirm
+
+  - action: sentry.issue_latest_event
+    args: {organization: acme, issue_id: "1234567890"}
+    expect:
+      json:
+        /eventID: f00dfeedf00dfeedf00dfeedf00dfeed
+        /entries/0/data/values/0/stacktrace/frames/0/function: confirm
+        /entries/1/data/values/0/message: "SELECT * FROM carts WHERE id = %s"
+
+  - action: sentry.issue_tags
+    args: {organization: acme, issue_id: "1234567890"}
+    expect:
+      json:
+        /0/key: release
+        /0/topValues/0/value: "2.1.0"
+        /1/topValues/0/count: 4821
+
+  - action: sentry.list_releases
+    args: {organization: acme}
+    expect:
+      json:
+        /results/0/version: "2.1.0"
+        /results/0/newGroups: 12
+
+  - action: sentry.list_project_keys
+    args: {organization: acme, project: backend}
+    expect:
+      stdout_not_contains: [packtest-canary-sentry-key-secret-77aa]
+      json:
+        /0/id: cec9dfceb0b74c1c9a5e3c135585f364
+        /0/isActive: true
+        /0/dsn/public: "http://8f4b2a1c9d0e8f7a6b5c4d3e2f1a0b9c@sentry.example.test/11"
+
+  - action: sentry.org_stats
+    args: {organization: acme}
+    expect:
+      json:
+        /groups/0/by/outcome: accepted
+        /groups/0/totals/sum(quantity): 90000
+        /groups/1/by/outcome: rate_limited
+
+  - action: sentry.list_alert_rules
+    args: {organization: acme, project: backend}
+    expect:
+      json:
+        /0/name: High volume
+        /0/frequency: 30
+
+  - action: sentry.set_issue_status
+    args: {organization: acme, issue_id: "1234567890", status: resolved}
+    expect:
+      json:
+        /id: "1234567890"
+        /status: resolved
+    probes:
+      - name: the provider retained the status
+        argv: [curl, -fsS, http://sentry-api:8080/probe/state]
+        expect:
+          stdout_contains: ["issue_status:1234567890=resolved"]
+
+  - name: sentry.set_issue_status-ignores-with-a-duration
+    action: sentry.set_issue_status
+    args: {organization: acme, issue_id: "1234567890", status: ignored, ignore_minutes: 60}
+    expect:
+      json:
+        /status: ignored
+    probes:
+      - name: the provider received the bounded snooze
+        argv: [curl, -fsS, http://sentry-api:8080/probe/state]
+        expect:
+          stdout_contains: ["issue_status:1234567890=ignored", "ignore_duration:1234567890=60"]
+
+  - action: sentry.assign_issue
+    args: {organization: acme, issue_id: "1234567890", assignee: "team:backend"}
+    expect:
+      json:
+        /assignedTo: "team:backend"
+    probes:
+      - name: the provider retained the assignment
+        argv: [curl, -fsS, http://sentry-api:8080/probe/state]
+        expect:
+          stdout_contains: ["issue_assigned:1234567890=team:backend"]
+
+  - action: sentry.disable_project_key
+    args: {organization: acme, project: backend, key_id: cec9dfceb0b74c1c9a5e3c135585f364}
+    expect:
+      stdout_not_contains: [packtest-canary-sentry-key-secret-77aa]
+      json:
+        /id: cec9dfceb0b74c1c9a5e3c135585f364
+        /isActive: false
+    probes:
+      - name: the provider retained the disabled key
+        argv: [curl, -fsS, http://sentry-api:8080/probe/state]
+        expect:
+          stdout_contains: ["key_active:false"]
+
+  - action: sentry.enable_project_key
+    args: {organization: acme, project: backend, key_id: cec9dfceb0b74c1c9a5e3c135585f364}
+    expect:
+      json:
+        /isActive: true
+    probes:
+      - name: the provider retained the enabled key
+        argv: [curl, -fsS, http://sentry-api:8080/probe/state]
+        expect:
+          stdout_contains: ["key_active:true"]
+
+  - name: sentry.list_organizations-invalid-token
+    action: sentry.list_organizations
+    env:
+      SENTRY_AUTH_TOKEN: packtest-canary-sentry-invalid-1337
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
+
+  - name: sentry.list_organizations-rejects-a-non-http-url
+    action: sentry.list_organizations
+    env:
+      SENTRY_URL: ftp://sentry.internal
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["SENTRY_URL must be an http:// or https:// URL"]
+
+  - name: sentry.list_projects-rejects-a-malformed-slug
+    action: sentry.list_projects
+    args: {organization: "Bad Slug"}
+    expect:
+      status: failure
+      reason_contains: [must match pattern]

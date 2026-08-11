@@ -1,0 +1,33 @@
+schema_version: 1
+id: sentry.issue_latest_event
+title: Show latest issue event
+kind: script
+risk: medium
+description: Show an issue's most recent event with stacktrace, breadcrumbs, and request context. The payload is arbitrary application data — whatever the app put in messages, breadcrumbs, and headers — and Sentry's server-side scrubbing is best-effort, so treat it as sensitive diagnostics.
+side_effects: [One read-only API request.]
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: issue_id
+    type: string
+    required: true
+    description: Numeric issue ID.
+    validation:
+      pattern: "^[0-9]{1,20}$"
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [issue-latest-event, "{{ args.organization }}", "{{ args.issue_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 8192
+examples:
+  - title: Latest stacktrace
+    args: {organization: acme, issue_id: "1234567890"}

@@ -1,0 +1,49 @@
+schema_version: 1
+id: sentry.set_issue_status
+title: Set issue status
+kind: script
+risk: medium
+description: Resolve, unresolve, or ignore one Sentry issue; ignoring silences its alerts (optionally for a bounded number of minutes), and resolving re-alerts as a regression if the error returns.
+side_effects:
+  - Alert rules stop or resume firing for the issue according to the new status.
+  - Fully reversible by setting the status back.
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: issue_id
+    type: string
+    required: true
+    description: Numeric issue ID.
+    validation:
+      pattern: "^[0-9]{1,20}$"
+  - name: status
+    type: string
+    required: true
+    description: Status to apply.
+    validation:
+      enum: ["resolved", "unresolved", "ignored"]
+  - name: ignore_minutes
+    type: integer
+    required: false
+    default: 0
+    description: When ignoring, silence for this many minutes; 0 ignores until the status changes. Ignored for other statuses.
+    validation: {min: 0, max: 43200}
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [set-issue-status, "{{ args.organization }}", "{{ args.issue_id }}", "{{ args.status }}", "{{ args.ignore_minutes }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Resolve
+    args: {organization: acme, issue_id: "1234567890", status: resolved}
+  - title: Snooze for an hour
+    args: {organization: acme, issue_id: "1234567890", status: ignored, ignore_minutes: 60}

@@ -1,0 +1,42 @@
+schema_version: 1
+id: sentry.assign_issue
+title: Assign issue
+kind: script
+risk: medium
+description: Assign one Sentry issue to a user or team; the assignee is notified per their settings, and a wrong assignment misroutes the triage.
+side_effects:
+  - The issue shows as owned by the assignee and their notifications apply.
+  - Fully reversible by reassigning.
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: issue_id
+    type: string
+    required: true
+    description: Numeric issue ID.
+    validation:
+      pattern: "^[0-9]{1,20}$"
+  - name: assignee
+    type: string
+    required: true
+    description: Actor to assign — a username, email, user ID, or team:slug.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9@._:-]{0,127}$"
+      max_length: 128
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [assign-issue, "{{ args.organization }}", "{{ args.issue_id }}", "{{ args.assignee }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Route to the backend team
+    args: {organization: acme, issue_id: "1234567890", assignee: "team:backend"}

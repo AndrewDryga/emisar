@@ -1,0 +1,70 @@
+schema_version: 1
+id: sentry.list_issues
+title: List issues
+kind: script
+risk: low
+description: List one bounded page of a project's Sentry issues — title, culprit, event and user counts, status — filtered by a search query and sorted by date, frequency, first-seen, or affected users.
+side_effects: [One read-only API request.]
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: project
+    type: string
+    required: true
+    description: Project slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: query
+    type: string
+    required: false
+    default: "is:unresolved"
+    description: Sentry issue search query, e.g. "is:unresolved release:2.1.0".
+    validation:
+      pattern: "^[ -~]*$"
+      max_length: 400
+  - name: stats_period
+    type: string
+    required: false
+    default: "24h"
+    description: Window for the event-count stats on each issue.
+    validation:
+      enum: ["24h", "14d"]
+  - name: sort
+    type: string
+    required: false
+    default: "date"
+    description: Sort order — last seen, first seen, event frequency, or affected users.
+    validation:
+      enum: ["date", "new", "freq", "user"]
+  - name: limit
+    type: integer
+    required: false
+    default: 25
+    description: Issues returned in this page.
+    validation: {min: 1, max: 100}
+  - name: cursor
+    type: string
+    required: false
+    default: ""
+    description: Continuation cursor from a previous page's pagination.next_cursor.
+    validation:
+      pattern: "^[0-9A-Za-z:_=-]{0,120}$"
+      max_length: 120
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [list-issues, "{{ args.organization }}", "{{ args.project }}", "{{ args.query }}", "{{ args.stats_period }}", "{{ args.sort }}", "{{ args.limit }}", "{{ args.cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Most frequent unresolved errors
+    args: {organization: acme, project: backend, sort: freq}

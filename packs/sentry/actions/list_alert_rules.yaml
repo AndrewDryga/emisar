@@ -1,0 +1,34 @@
+schema_version: 1
+id: sentry.list_alert_rules
+title: List issue alert rules
+kind: script
+risk: low
+description: List a project's issue alert rules — conditions, actions, and frequency — to see what pages whom and why.
+side_effects: [One read-only API request.]
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: project
+    type: string
+    required: true
+    description: Project slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [list-alert-rules, "{{ args.organization }}", "{{ args.project }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Alert rules
+    args: {organization: acme, project: backend}

@@ -1,0 +1,41 @@
+schema_version: 1
+id: sentry.enable_project_key
+title: Enable project ingest key
+kind: script
+risk: medium
+description: Re-enable one disabled project client key (DSN); clients using it resume reporting immediately.
+side_effects:
+  - Events sent with the key are accepted again.
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: project
+    type: string
+    required: true
+    description: Project slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: key_id
+    type: string
+    required: true
+    description: Client key ID (sentry.list_project_keys returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [enable-project-key, "{{ args.organization }}", "{{ args.project }}", "{{ args.key_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Restore ingest
+    args: {organization: acme, project: backend, key_id: "cec9dfceb0b74c1c9a5e3c135585f364"}

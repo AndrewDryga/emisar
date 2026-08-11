@@ -1,0 +1,33 @@
+schema_version: 1
+id: sentry.issue_tags
+title: Show issue tags
+kind: script
+risk: low
+description: Show an issue's tag distribution — which releases, environments, browsers, or servers the error hits most.
+side_effects: [One read-only API request.]
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: issue_id
+    type: string
+    required: true
+    description: Numeric issue ID.
+    validation:
+      pattern: "^[0-9]{1,20}$"
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [issue-tags, "{{ args.organization }}", "{{ args.issue_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Tag breakdown
+    args: {organization: acme, issue_id: "1234567890"}

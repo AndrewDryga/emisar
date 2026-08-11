@@ -1,0 +1,41 @@
+schema_version: 1
+id: sentry.org_stats
+title: Show organization event stats
+kind: script
+risk: low
+description: Show an organization's ingested event volume grouped by category and outcome (accepted, rate limited, filtered, dropped) — for quota debugging and spotting ingest floods.
+side_effects: [One read-only API request.]
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: stats_period
+    type: string
+    required: false
+    default: "24h"
+    description: How far back to report.
+    validation:
+      enum: ["1h", "24h", "7d", "14d", "30d", "90d"]
+  - name: interval
+    type: string
+    required: false
+    default: "1h"
+    description: Bucket size for the series.
+    validation:
+      enum: ["5m", "1h", "1d"]
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [org-stats, "{{ args.organization }}", "{{ args.stats_period }}", "{{ args.interval }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Last 24h by outcome
+    args: {organization: acme}

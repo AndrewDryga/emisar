@@ -1,0 +1,35 @@
+schema_version: 1
+id: sentry.list_projects
+title: List projects
+kind: script
+risk: low
+description: List one bounded page of an organization's Sentry projects with slugs, platforms, and status.
+side_effects: [One read-only API request.]
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: cursor
+    type: string
+    required: false
+    default: ""
+    description: Continuation cursor from a previous page's pagination.next_cursor.
+    validation:
+      pattern: "^[0-9A-Za-z:_=-]{0,120}$"
+      max_length: 120
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [list-projects, "{{ args.organization }}", "{{ args.cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 2097152
+  max_stderr_bytes: 8192
+examples:
+  - title: Projects
+    args: {organization: acme}

@@ -1,0 +1,28 @@
+schema_version: 1
+id: sentry.list_organizations
+title: List organizations
+kind: script
+risk: low
+description: List one bounded page of Sentry organizations the token can read — the org slugs the other actions need.
+side_effects: [One read-only API request.]
+args:
+  - name: cursor
+    type: string
+    required: false
+    default: ""
+    description: Continuation cursor from a previous page's pagination.next_cursor.
+    validation:
+      pattern: "^[0-9A-Za-z:_=-]{0,120}$"
+      max_length: 120
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [list-organizations, "{{ args.cursor }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Organizations
+    args: {}

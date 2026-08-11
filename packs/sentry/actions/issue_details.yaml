@@ -1,0 +1,33 @@
+schema_version: 1
+id: sentry.issue_details
+title: Show issue details
+kind: script
+risk: low
+description: Show one Sentry issue's status, assignee, first/last seen, event and user counts, and metadata.
+side_effects: [One read-only API request.]
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: issue_id
+    type: string
+    required: true
+    description: Numeric issue ID (sentry.list_issues returns it).
+    validation:
+      pattern: "^[0-9]{1,20}$"
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [issue-details, "{{ args.organization }}", "{{ args.issue_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 524288
+  max_stderr_bytes: 8192
+examples:
+  - title: Issue
+    args: {organization: acme, issue_id: "1234567890"}

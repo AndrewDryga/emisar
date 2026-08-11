@@ -1,0 +1,42 @@
+schema_version: 1
+id: sentry.disable_project_key
+title: Disable project ingest key
+kind: script
+risk: high
+description: Disable one project client key (DSN); every client using it stops reporting immediately and those events are lost, so the project goes dark for that key until it is re-enabled.
+side_effects:
+  - Events sent with the key are rejected and not recoverable.
+  - Alerting driven by those events goes quiet — absence of errors no longer means health.
+args:
+  - name: organization
+    type: string
+    required: true
+    description: Organization slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: project
+    type: string
+    required: true
+    description: Project slug.
+    validation:
+      pattern: "^[a-z0-9][a-z0-9._-]{0,63}$"
+      max_length: 64
+  - name: key_id
+    type: string
+    required: true
+    description: Client key ID (sentry.list_project_keys returns it).
+    validation:
+      pattern: "^[a-f0-9]{32}$"
+execution:
+  script: {path: scripts/sentry_api.sh, interpreter: /bin/bash}
+  argv: [disable-project-key, "{{ args.organization }}", "{{ args.project }}", "{{ args.key_id }}"]
+  timeout: 30s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop a runaway client
+    args: {organization: acme, project: backend, key_id: "cec9dfceb0b74c1c9a5e3c135585f364"}

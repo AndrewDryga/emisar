@@ -1,0 +1,64 @@
+schema_version: 1
+
+id: sentry
+name: Sentry error monitoring
+version: 0.1.0
+description: >
+  Governed Sentry issue triage, release, ingest-key, volume-stats, and
+  alert-rule operations against sentry.io or a self-hosted instance. Auth via
+  SENTRY_AUTH_TOKEN on the runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+    - jq
+    - bash
+
+# No detect block: cloud Sentry is reached remotely, and a self-hosted
+# instance runs inside containers, so nothing on a runner host is deliberate
+# evidence that it operates a Sentry deployment.
+
+setup:
+  summary: >
+    Calls the Sentry Web API under $SENTRY_URL/api/0 with curl. The token is
+    sent as an Authorization Bearer header over curl stdin and is never
+    placed in argv or action output. Allowlist both variables in the
+    runner's execution.inherit_env configuration.
+  env:
+    - name: SENTRY_URL
+      default: https://sentry.io
+      description: >
+        Base URL of the Sentry instance (scheme + host, no trailing path).
+        Defaults to cloud sentry.io; set your region URL or the self-hosted
+        base instead.
+      example: https://sentry.example.com
+    - name: SENTRY_AUTH_TOKEN
+      required: true
+      description: Organization auth token or internal integration token. Scope it to the org/projects and permissions the actions you enable need.
+  notes:
+    - "Organization and project arguments are slugs — sentry.list_organizations and sentry.list_projects return them for use in the other actions."
+    - "Token scopes by family: org:read + project:read for the listings; event:read for issues, events, and tags; event:write for resolve/ignore/assign; project:write for ingest-key enable/disable; org:read for stats; alerts:read for alert rules."
+    - "List actions return one bounded page plus pagination.next_cursor parsed from Sentry's Link header; pass it back as the cursor argument for the next page."
+    - "Works against cloud sentry.io (including region URLs) and self-hosted Sentry; the API paths used here have been stable across both for years."
+    - "Sending events, project/team administration, member management, and API token management are separate trust surfaces this pack does not touch."
+  verify: sentry.list_organizations
+
+actions:
+  - actions/list_organizations.yaml
+  - actions/list_projects.yaml
+  - actions/list_issues.yaml
+  - actions/issue_details.yaml
+  - actions/issue_latest_event.yaml
+  - actions/issue_tags.yaml
+  - actions/list_releases.yaml
+  - actions/list_project_keys.yaml
+  - actions/org_stats.yaml
+  - actions/list_alert_rules.yaml
+  - actions/set_issue_status.yaml
+  - actions/assign_issue.yaml
+  - actions/disable_project_key.yaml
+  - actions/enable_project_key.yaml
