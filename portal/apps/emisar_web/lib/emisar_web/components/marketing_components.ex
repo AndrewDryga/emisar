@@ -17,7 +17,6 @@ defmodule EmisarWeb.MarketingComponents do
     statics: EmisarWeb.static_paths()
 
   import EmisarWeb.CoreComponents
-  alias EmisarWeb.TimeHelpers
 
   # -- emisar-specific layout helpers -----------------------------------
 
@@ -638,15 +637,7 @@ defmodule EmisarWeb.MarketingComponents do
   Footer for marketing pages. Same on every page.
   """
   def marketing_footer(assigns) do
-    # Render timestamp is stamped per request (server-rendered marketing has no
-    # LiveView caching) — behind a CDN/edge it freezes at cache time, so if it
-    # trails the real clock the footer is being served from a stale cache. Pairs
-    # with the build version as a two-part freshness signal (which build · when
-    # rendered).
-    assigns =
-      assigns
-      |> assign(:app_version, EmisarWeb.AppVersion.version())
-      |> assign(:rendered_at, TimeHelpers.forensic_time(DateTime.utc_now()))
+    assigns = assign(assigns, :app_version, EmisarWeb.AppVersion.version())
 
     ~H"""
     <footer class="border-t border-zinc-800/70 bg-zinc-950">
@@ -905,14 +896,7 @@ defmodule EmisarWeb.MarketingComponents do
             >Andrii Dryga</a>. All rights reserved.
           </span>
           <span>
-            v{@app_version}
-            <span
-              class="text-zinc-400"
-              title="Server-render time (UTC). If it trails the real clock, a CDN/edge is serving this page from cache."
-            >
-              · {@rendered_at}
-            </span>
-            — built with
+            v{@app_version} — built with
             <a
               href="https://coop.dryga.com/"
               target="_blank"

@@ -168,7 +168,7 @@ defmodule EmisarWeb.MarketingController do
     {"Can the LLM run anything it wants?",
      "No. The runner accepts only actions declared in a trusted pack and allowed by its local admission rules. Undeclared commands are not part of the agent's catalog and are rejected before execution."},
     {"What can it actually do?",
-     "Read and tail logs, query metrics, inspect processes, memory, disk, and containers, check your databases, and trace DNS, TLS, and connectivity — across your whole fleet. And, behind approval, act: restart a unit, stop a runaway job, fail over, scale. It's a finite catalog of declared actions, never a raw shell."},
+     "Read and tail logs, query metrics, inspect processes, memory, disk, and containers, check your databases, and trace DNS, TLS, and connectivity — across your whole fleet. And, behind approval, act: restart a unit, stop a runaway job, fail over, scale. It's a finite catalog of declared actions, and you can add your own."},
     {"Where do approvals happen?",
      "In the web UI and your email inbox. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
     {"Do I have to approve every action?",
@@ -180,7 +180,7 @@ defmodule EmisarWeb.MarketingController do
     {"Can I self-host the control plane?",
      "The current product uses the hosted emisar control plane. The repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Contact us if that boundary is a requirement."},
     {"What about secrets?",
-     "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log. Patterns are declared per-action; sane defaults catch AWS keys, JWTs, and bearer tokens."}
+     "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log. Patterns are declared per-action; sane defaults catch ~20 built-in patterns — AWS keys, common provider tokens (GitHub, Slack, Stripe, OpenAI, …)."}
   ]
 
   # The home page has bespoke JSON-LD; keep it as its own def. Every

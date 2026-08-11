@@ -227,7 +227,7 @@ defmodule EmisarWeb.MarketingHTML do
 
       <div class="flex items-center justify-between border-t border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
         <p class="text-[11px] text-zinc-500">
-          Real catalog actions. Reads run on policy; risky steps always stop for approval.
+          The agent used fs, debugging, docker, and nomad packs from the catalog. Only the high-risk action was paused for human approval.
         </p>
         <button
           type="button"

@@ -817,7 +817,7 @@ defmodule EmisarWeb.DocsComponents do
       </div>
       <figcaption class="flex items-center justify-between gap-3 border-t border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
         <p class="text-[11px] text-zinc-500">
-          The demo workspace, captured as-is — a real request, decision, run, and audit trail.
+          Demo uses real screenshots of the product.
         </p>
         <button
           type="button"
