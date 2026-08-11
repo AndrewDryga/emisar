@@ -2,7 +2,7 @@ schema_version: 1
 
 id: linux-core
 name: Linux core operations pack
-version: 0.4.0
+version: 0.4.1
 retired_below: 0.3.22
 description: >
   Read-only Linux diagnostics plus narrow service control. Disk, mem,
@@ -21,6 +21,7 @@ setup:
     Operates on the local runner host — no credentials needed.
   notes:
     - "Read-only diagnostics (disk, memory, logs, network, users) need no privilege."
+    - "linux.last_logins requires the `last` command. On Debian 13 install `wtmpdb`; install `libpam-wtmpdb` as well so PAM records login history in wtmpdb."
     - "systemctl start/stop/restart/reload/enable/disable and reboot_host need root — run the runner as root, via sudo, or grant the matching polkit rule."
     - "Some reads (sudoers_dump, certain journalctl/auth paths) only return full output when run as root."
   verify: linux.uptime

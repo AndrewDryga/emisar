@@ -7,7 +7,9 @@
 # One read-only GET against the Traefik HTTP API. The OSS API is GET-only —
 # it never mutates config — so this helper only ever reads. Arguments:
 #
-#   $1     path appended to $TRAEFIK_URL, e.g. /api/http/routers.
+#   $1     path appended to $TRAEFIK_URL, e.g. /api/http/routers. /ping
+#          uses $TRAEFIK_PING_URL when set because production deployments often
+#          keep liveness on a separate entrypoint from the API.
 #   $2...  extra curl flags from the action (rarely needed; e.g.
 #          --get --data-urlencode for paged endpoints). Values are rendered
 #          into argv by the cloud-validated template engine and never enter
@@ -26,9 +28,12 @@ K=""
 path=$1
 shift
 
+base_url=$TRAEFIK_URL
+[ "$path" = "/ping" ] && base_url=${TRAEFIK_PING_URL:-$TRAEFIK_URL}
+
 if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
 	printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |
-		curl --globoff --proto '=http,https' -fsS $K -H @- "$@" "$TRAEFIK_URL$path"
+		curl --globoff --proto '=http,https' -fsS $K -H @- "$@" "$base_url$path"
 else
-	curl --globoff --proto '=http,https' -fsS $K "$@" "$TRAEFIK_URL$path"
+	curl --globoff --proto '=http,https' -fsS $K "$@" "$base_url$path"
 fi

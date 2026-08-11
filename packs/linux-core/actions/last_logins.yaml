@@ -6,12 +6,13 @@ kind: exec
 risk: low
 
 description: >
-  Show last N successful logins from /var/log/wtmp via `last`. Shows user,
-  terminal, source IP, duration. Read-only.
+  Show the last N successful logins via `last`. Depending on the distribution,
+  `last` reads the legacy wtmp file or the wtmpdb login-history database. Shows
+  user, terminal, source IP, and duration. Read-only.
 
 side_effects:
   - One last invocation.
-  - Reads /var/log/wtmp.
+  - Reads the host's login-history database (legacy wtmp or wtmpdb).
 
 args:
   - name: count

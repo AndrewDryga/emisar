@@ -7,7 +7,7 @@ description: >
   Check liveness. Returns 200 with body "OK" when healthy, or the configured
   terminating status (default 503) during graceful shutdown. Requires
   --ping=true; served on the ping entrypoint (the traefik entrypoint / :8080
-  by default, unless moved to a dedicated one — point TRAEFIK_URL at it then).
+  by default). Set TRAEFIK_PING_URL when that entrypoint differs from the API.
 side_effects:
   - One read-only HTTP GET to the Traefik ping endpoint.
   - Read-only.

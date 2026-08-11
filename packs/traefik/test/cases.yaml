@@ -1,0 +1,24 @@
+services: [traefik]
+versions:
+  - version: v3.7.10
+    digest: "@sha256:9c3b91d5fb7770853ca5c1124a23c34bf2d9b47ffaebeab2614cbaf410dcb2ac"
+    default: true
+env:
+  TRAEFIK_URL: http://127.0.0.1:8080
+  TRAEFIK_PING_URL: http://127.0.0.1:8082
+cases:
+  - action: traefik.version
+    expect:
+      stdout_contains: ['"Version":"3.7.10"']
+  - action: traefik.ping
+    expect:
+      stdout_contains: [OK]
+  - name: traefik.ping-http-error
+    action: traefik.ping
+    env:
+      TRAEFIK_PING_URL: http://127.0.0.1:8080/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]

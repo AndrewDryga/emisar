@@ -3,7 +3,7 @@ id: time.ntpq_peers
 title: ntpq -pn
 kind: exec
 risk: low
-description: List the NTP peer table (for systems still using ntpd rather than chrony).
+description: List the NTPsec peer table with numeric addresses.
 side_effects:
   - One ntpq query.
   - Read-only.
@@ -18,5 +18,5 @@ output:
   max_stdout_bytes: 8192
   max_stderr_bytes: 8192
 examples:
-  - title: ntpd peers
+  - title: NTPsec peers
     args: {}

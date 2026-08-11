@@ -1,0 +1,24 @@
+services:
+  runner-tools:
+    network_mode: service:traefik
+
+  traefik:
+    image: traefik:${PACKTEST_VERSION:-v3.7.10}${PACKTEST_DIGEST-}
+    command:
+      - --api.insecure=true
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --ping=true
+      - --ping.entrypoint=ping
+      - --entrypoints.ping.address=:8082
+    healthcheck:
+      test:
+        - CMD
+        - traefik
+        - healthcheck
+        - --ping.entrypoint=ping
+        - --entrypoints.ping.address=:8082
+      interval: 2s
+      start_period: 20s
+      start_interval: 1s
+      retries: 20

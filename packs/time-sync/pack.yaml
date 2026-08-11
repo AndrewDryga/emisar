@@ -1,13 +1,13 @@
 schema_version: 1
 
 id: time-sync
-name: Time sync diagnostics
-version: 0.1.8
+name: Chrony time sync diagnostics
+version: 0.1.9
 description: >
-  Clock-sync state: chrony tracking + sources, NTP peer status, current
-  time, drift estimate, timezone, plus fix actions (chronyc makestep,
-  enable/disable NTP). Use when a host's clock is drifting (a common
-  cause of TLS / auth / log-correlation bugs).
+  Clock-sync state for Chrony hosts: tracking, sources, current time, drift
+  estimate, timezone, plus fix actions (chronyc makestep, enable/disable NTP).
+  Use when a host's clock is drifting (a common cause of TLS / auth /
+  log-correlation bugs).
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -19,14 +19,14 @@ requires:
 detect:
   processes:
     - chronyd
-    - ntpd
 
 setup:
   summary: >
-    Queries and adjusts the local runner host's time daemon (chrony /
-    systemd-timesyncd / ntpd) — no credentials needed.
+    Queries and adjusts Chrony and systemd time state on the local runner host
+    — no credentials needed.
   notes:
-    - "Read actions (timedatectl, chronyc tracking/sources, ntpq, date) need no privileges."
+    - "Read actions (timedatectl, chronyc tracking/sources, date) need no privileges."
+    - "For ntpd hosts, install the separate time-sync-ntpsec pack."
     - "Fix actions (chronyc makestep, enabling/disabling NTP via timedatectl) need root/local admin."
   verify: time.timedatectl
 
@@ -34,7 +34,6 @@ actions:
   - actions/timedatectl.yaml
   - actions/chrony_tracking.yaml
   - actions/chrony_sources.yaml
-  - actions/ntpq_peers.yaml
   - actions/date_now.yaml
   - actions/chronyc_makestep.yaml
   - actions/timedatectl_set_ntp.yaml
