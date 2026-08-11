@@ -214,6 +214,82 @@ defmodule EmisarWeb.PacksLiveTest do
       refute has_element?(lv, ~s(button[aria-expanded="true"]))
     end
 
+    test "toggling contents re-reads only the opened action list", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      {:ok, _} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "acme.audit",
+              "pack_id" => "acme-tools",
+              "title" => "Audit thing",
+              "kind" => "exec",
+              "risk" => "medium",
+              "description" => "a",
+              "args" => []
+            }
+          ],
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("abc123")
+            }
+          }
+        })
+
+      {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+
+      # A disclosure toggle changes nothing durable, so it must never re-read
+      # the projection (on a real fleet that re-read was a visible per-click
+      # delay) — the stream re-insert comes from the last load's group cache.
+      # `render_click` is synchronous and the queries run in the view process,
+      # so draining after it returns counts them deterministically.
+      test_pid = self()
+      view_pid = lv.pid
+      handler = make_ref()
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        fn _event, _measurements, _metadata, _config ->
+          if self() == view_pid, do: send(test_pid, :repo_query)
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      toggle = fn ->
+        render_click(lv, "inspect_pack", %{
+          "id" => pack_version.id,
+          "pack-id" => pack_version.pack_id,
+          "version" => pack_version.version
+        })
+
+        drain_repo_query_count()
+      end
+
+      # First open lazily loads the action list — exactly that one read.
+      assert toggle.() == 1
+
+      # Closing, and re-opening the already-cached list, read nothing.
+      assert toggle.() == 0
+      assert toggle.() == 0
+      assert render(lv) =~ "acme.audit"
+    end
+
     test "a PUBLISHED pack's header links to its registry page; a custom pack's doesn't", %{
       conn: conn,
       account: account
@@ -1745,6 +1821,14 @@ defmodule EmisarWeb.PacksLiveTest do
       html = filter(lv, "", "critical")
       assert html =~ "No packs advertise a critical-risk action."
       refute html =~ "No packs reported yet."
+    end
+  end
+
+  defp drain_repo_query_count(count \\ 0) do
+    receive do
+      :repo_query -> drain_repo_query_count(count + 1)
+    after
+      0 -> count
     end
   end
 end

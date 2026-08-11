@@ -68,6 +68,7 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:version_count, 0)
        |> assign(:pending_count, 0)
        |> assign(:version_facts, %{})
+       |> assign(:group_cache, %{})
        |> stream(:packs, [])}
     end
   end
@@ -104,6 +105,7 @@ defmodule EmisarWeb.PacksLive do
         # next filter change re-seeds it.
         |> assign(:open_versions, MapSet.new(Map.keys(projection.matched_action_ids)))
         |> update(:inspected_actions, &seed_action_lists(&1, projection))
+        |> assign(:group_cache, group_cache(projection.groups))
         |> stream(:packs, projection.groups, reset: true)
 
       # A failed read must read as an error, not an empty inventory — "No packs
@@ -116,8 +118,24 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:pending_count, 0)
         |> assign(:version_facts, %{})
         |> assign(:matched_actions, %{})
+        |> assign(:group_cache, %{})
         |> stream(:packs, [], reset: true)
     end
+  end
+
+  # The last load's streamed groups, keyed by pack id — what a disclosure
+  # toggle re-inserts (a stream child is static once pushed, so it must be
+  # re-pushed to render newly-opened contents), WITHOUT re-reading the whole
+  # projection: a toggle changes which assigns render, never the durable data,
+  # and the re-read was a visible per-click delay on a real fleet. Decision
+  # rows carry their trusted_manifest only for the load-time fact build; the
+  # cache drops it so an open trust review doesn't pin megabytes to the
+  # socket (IL-18).
+  defp group_cache(groups) do
+    Map.new(groups, fn group ->
+      versions = Enum.map(group.versions, &%{&1 | trusted_manifest: nil})
+      {group.id, %{group | versions: versions}}
+    end)
   end
 
   @risk_tiers ~w(low medium high critical)
@@ -490,17 +508,13 @@ defmodule EmisarWeb.PacksLive do
 
   # Re-render one pack group's stream item against the current assigns (a
   # stream child is static once pushed, so the just-loaded `inspected_actions`
-  # only appears after a re-insert). Unlike `restream_pack` this leaves the
-  # counts alone — inspecting a trusted version changes nothing about what's
-  # pending — but the facts must travel with the rows they render.
+  # only appears after a re-insert). The group comes from the last load's
+  # cache: a toggle changes nothing durable, so the group and the
+  # `version_facts` already in assigns are one consistent snapshot — no read.
   defp reinsert_pack_group(socket, pack_id) do
-    with {:ok, projection} <- console_projection(socket),
-         group when not is_nil(group) <- find_group(projection, pack_id) do
-      socket
-      |> assign(:version_facts, projection.version_facts)
-      |> stream_insert(:packs, group)
-    else
-      _ -> socket
+    case Map.fetch(socket.assigns.group_cache, pack_id) do
+      {:ok, group} -> stream_insert(socket, :packs, group)
+      :error -> socket
     end
   end
 
@@ -520,6 +534,7 @@ defmodule EmisarWeb.PacksLive do
           |> assign(:pending_packs_count, projection.decision_count)
           |> assign(:version_facts, projection.version_facts)
           |> assign(:matched_actions, projection.matched_action_ids)
+          |> assign(:group_cache, group_cache(projection.groups))
           |> update(:inspected_actions, &seed_action_lists(&1, projection))
 
         case find_group(projection, pack_id) do
