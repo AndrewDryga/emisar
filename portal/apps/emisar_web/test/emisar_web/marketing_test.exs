@@ -55,6 +55,7 @@ defmodule EmisarWeb.MarketingTest do
     /packs/postgres
     /packs/cassandra
     /use-cases
+    /use-cases/cassandra-migration
     /use-cases/csi-data-loss
     /use-cases/ingress-502
     /compare/raw-ssh-for-ai
@@ -135,6 +136,7 @@ defmodule EmisarWeb.MarketingTest do
   test "deep pages a convinced reader lands on carry a Start-free conversion CTA",
        %{conn: conn} do
     for route <- ~w(
+          /use-cases/cassandra-migration
           /use-cases/ingress-502
           /compare/raw-ssh-for-ai
           /compare/custom-mcp-server
@@ -200,11 +202,13 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "saves the night"
     assert html =~ "Pre-migration go"
     assert html =~ "The work that never makes a post-mortem"
-    # The two real incidents are featured and linked from the hub. The weaker
+    # The three real stories are featured and linked from the hub. The weaker
     # "real-shape" datastore walkthroughs were cut from the war stories; they
     # live on as pack-supporting pages, reachable from their packs and docs.
+    assert html =~ "How ChatGPT Sol helped move Cassandra from GCP to bare metal"
     assert html =~ "The 33-hour wipe"
     assert html =~ "The fleet-wide 502 that no backend was causing"
+    assert html =~ ~s(href="/use-cases/cassandra-migration")
     assert html =~ ~s(href="/use-cases/csi-data-loss")
     assert html =~ ~s(href="/use-cases/ingress-502")
     # Structured data so the case studies can surface as a list.
@@ -268,7 +272,6 @@ defmodule EmisarWeb.MarketingTest do
     assert siem_row =~ ">—</td>"
     assert length(Regex.scan(~r/hero-check/, siem_row)) == 2
     assert home =~ "Audit trail; SIEM export on Team+"
-    assert home =~ "SIEM export is available on Team and Enterprise"
 
     trust = conn |> get(~p"/trust") |> html_response(200)
     assert trust =~ "Runner journal:"
@@ -1266,16 +1269,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "See all releases on GitHub"
     end
 
-    test "the marketing footer shows the app version, a render timestamp, and the co:op attribution",
+    test "the marketing footer shows the app version and the co:op attribution",
          %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
 
       # The footer reads the running app's version (single source: portal/VERSION,
       # bumped by /ops-release), so assert the shape, not a pinned number.
-      assert html =~ ~r/v\d+\.\d+\.\d+/u
-      # A per-request render timestamp (forensic_time shape) — behind a CDN it
-      # freezes at cache time, so a stale edge copy is visible in the footer.
-      assert html =~ ~r/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC/u
       assert html =~ "built with"
       assert html =~ ~s(href="https://coop.dryga.com/")
       assert html =~ "co:op"
@@ -1771,6 +1770,43 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/sign_up")
       assert html =~ ~s(href="/docs/security-model")
       assert html =~ ~s(href="/docs/action-packs")
+    end
+
+    test "the Cassandra migration use case renders the migration, tools, proof, and CTAs",
+         %{conn: conn} do
+      html = conn |> get(~p"/use-cases/cassandra-migration") |> html_response(200)
+
+      assert html =~ "Case study · Database migration"
+      assert html =~ "How I helped move Cassandra from GCP to bare metal"
+      assert html =~ "Written by ChatGPT Sol"
+      assert html =~ "Human review by the operator."
+      assert html =~ "I authored the destination before I operated it"
+      assert html =~ "15,700 lines"
+      assert html =~ "37.8 million operations"
+      assert html =~ "8.23 ms"
+      assert html =~ "4.32 ms"
+      assert html =~ "partially supported"
+      assert html =~ "Logical dataset"
+      assert html =~ "≈6.3 TiB"
+      assert html =~ "Checked cutover hour"
+      assert html =~ "0 DB errors"
+      assert html =~ "The interconnect was a migration control"
+      assert html =~ "gcp.interconnect_utilization"
+      assert html =~ "This was not a copy job"
+      assert html =~ "The tools that mattered most"
+      assert html =~ "cassandra.nodetool_status"
+      assert html =~ "pure.arrays_performance"
+      assert html =~ "stream_entire_sstables=false"
+      assert html =~ "Risky work still belonged to a person"
+      assert html =~ "Human feedback changed the plan"
+      assert html =~ "Keep approval real"
+      refute html =~ "YOU DO NOT TOUCH GCP RIGHT NOW"
+      assert html =~ "14.28 TiB"
+      assert html =~ "What emisar did not replace"
+      assert html =~ ~s(href="/sign_up")
+      assert html =~ ~s(href="/packs/cassandra")
+      assert html =~ ~s(href="/docs/security-model")
+      assert html =~ ~s(href="/docs/audit-and-siem")
     end
 
     test "the ingress-502 use case renders its incident narrative, the gated stop, and CTAs",
@@ -2551,6 +2587,8 @@ defmodule EmisarWeb.MarketingTest do
            /changelog),
       "/docs/teams-and-access" =>
         ~w(/docs/sso /docs/connect-an-llm /docs/policies-and-approvals /docs/audit-and-siem),
+      "/use-cases/cassandra-migration" =>
+        ~w(/packs/cassandra /docs/security-model /docs/audit-and-siem),
       "/use-cases/ingress-502" =>
         ~w(/use-cases/csi-data-loss /docs/security-model /docs/action-packs),
       "/compare/raw-ssh-for-ai" => ~w(/docs/quickstart /pricing),

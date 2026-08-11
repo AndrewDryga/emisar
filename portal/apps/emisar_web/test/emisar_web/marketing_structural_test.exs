@@ -71,6 +71,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /packs/postgres
     /packs/cassandra
     /use-cases
+    /use-cases/cassandra-migration
     /use-cases/csi-data-loss
     /use-cases/ingress-502
     /compare/raw-ssh-for-ai
