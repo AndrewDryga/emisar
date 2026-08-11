@@ -50,9 +50,9 @@ the full page would have shown.
 **Scope + edges.**
 
 - Responsive-sensitive fix → repeat both shots with `--width 390`.
-- State that needs one click can use `--click <selector>`; more involved states
-  use `./run capture console` or extend the browser driver under
-  `tools/internal/browser/`.
+- State behind a click can use `--click <selector>` (repeat for a multi-step
+  reveal, each clicked in order); states beyond that use `./run capture console`
+  or extend the browser driver under `tools/internal/browser/`.
 - Console paths log in as the seeded `demo` account; use `EMAIL=` to shoot the
   staged `acme`/`globex` data volumes.
 - This rule is for *user-reported fixes on rendered surfaces*. Building a new
