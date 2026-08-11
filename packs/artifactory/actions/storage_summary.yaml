@@ -1,0 +1,27 @@
+schema_version: 1
+id: artifactory.storage_summary
+title: GET /artifactory/api/storageinfo
+kind: script
+risk: low
+description: >
+  Show filestore usage totals and the per-repository storage breakdown
+  (size, file and folder counts).
+side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - artifactory disk full
+  - artifactory storage usage
+args: []
+execution:
+  script:
+    path: scripts/artifactory_api.sh
+    interpreter: /bin/sh
+  argv:
+    - storage-summary
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Storage summary
+    args: {}

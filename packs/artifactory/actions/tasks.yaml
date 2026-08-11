@@ -1,0 +1,26 @@
+schema_version: 1
+id: artifactory.tasks
+title: GET /artifactory/api/tasks
+kind: script
+risk: low
+description: >
+  List background tasks (indexing, garbage collection, replication) with
+  their type, state, and schedule.
+side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - artifactory indexing stuck
+args: []
+execution:
+  script:
+    path: scripts/artifactory_api.sh
+    interpreter: /bin/sh
+  argv:
+    - tasks
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Background tasks
+    args: {}

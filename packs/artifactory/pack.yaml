@@ -1,0 +1,65 @@
+schema_version: 1
+
+id: artifactory
+name: JFrog Artifactory
+version: 0.1.0
+description: >
+  JFrog Artifactory ops reads — health, version, license, storage usage,
+  repository listings, artifact info and download stats, background
+  tasks. Read-only. Auth via an access token or Basic credentials on the
+  runner host.
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# Suggestion signal for `emisar pack suggest`: a self-hosted Artifactory's
+# JVM shows up only as `java`, so the identity signal is the platform
+# router binary that fronts every 7.x install; the ports corroborate.
+detect:
+  processes:
+    - jf-router
+  ports:
+    - 8081
+    - 8082
+
+setup:
+  summary: >
+    Every action calls the Artifactory REST API under $ARTIFACTORY_URL via
+    curl. Set $ARTIFACTORY_TOKEN for bearer authentication with an access
+    token, or $ARTIFACTORY_USER and $ARTIFACTORY_PASSWORD for Basic
+    authentication.
+  env:
+    - name: ARTIFACTORY_URL
+      default: http://127.0.0.1:8082
+      description: >
+        JFrog platform base URL (scheme + host + port, no trailing path) —
+        actions append /artifactory/api/... themselves. Defaults to the
+        local platform router.
+      example: https://mycompany.jfrog.io
+    - name: ARTIFACTORY_TOKEN
+      description: Access token sent as the Bearer credential.
+    - name: ARTIFACTORY_USER
+      description: User for Basic authentication. Takes precedence over ARTIFACTORY_TOKEN.
+      example: admin
+    - name: ARTIFACTORY_PASSWORD
+      description: Password paired with ARTIFACTORY_USER.
+  notes:
+    - "Any Artifactory env var you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "System, storage, and task reads need an admin-scoped identity; repository and artifact reads work with read permission on the target repository."
+    - "Every action here works on every edition, OSS included. Repository administration and user listing are Artifactory Pro APIs, so this pack does not ship them."
+  verify: artifactory.ping
+
+actions:
+  - actions/ping.yaml
+  - actions/version.yaml
+  - actions/license.yaml
+  - actions/storage_summary.yaml
+  - actions/repositories.yaml
+  - actions/file_info.yaml
+  - actions/file_stats.yaml
+  - actions/tasks.yaml

@@ -1,0 +1,24 @@
+schema_version: 1
+id: artifactory.ping
+title: GET /artifactory/api/system/ping
+kind: script
+risk: low
+description: Check Artifactory liveness (returns OK when healthy).
+side_effects: ["One API call.", "Read-only."]
+search_terms:
+  - artifactory down
+args: []
+execution:
+  script:
+    path: scripts/artifactory_api.sh
+    interpreter: /bin/sh
+  argv:
+    - ping
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Ping
+    args: {}

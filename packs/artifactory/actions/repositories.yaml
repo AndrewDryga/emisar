@@ -1,0 +1,44 @@
+schema_version: 1
+id: artifactory.repositories
+title: GET /artifactory/api/repositories
+kind: script
+risk: low
+description: >
+  List repositories (key, type, package type, URL), optionally filtered by
+  repository class or package type.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: type
+    type: string
+    required: false
+    default: ""
+    description: Repository class filter.
+    validation:
+      enum: ["", local, remote, virtual, federated, distribution]
+  - name: package_type
+    type: string
+    required: false
+    default: ""
+    description: Package type filter (e.g. maven, docker, npm, generic).
+    validation:
+      pattern: "^[a-z]{0,24}$"
+execution:
+  script:
+    path: scripts/artifactory_api.sh
+    interpreter: /bin/sh
+  argv:
+    - repositories
+    - "{{ args.type }}"
+    - "{{ args.package_type }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: All repositories
+    args: {}
+  - title: Local docker repositories
+    args:
+      type: local
+      package_type: docker

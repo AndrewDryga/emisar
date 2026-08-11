@@ -1,0 +1,40 @@
+schema_version: 1
+id: artifactory.file_info
+title: GET /artifactory/api/storage/<repo>/<path>
+kind: script
+risk: low
+description: >
+  Show one artifact or folder — size, checksums, created/modified times, and
+  for folders the direct children.
+side_effects: ["One API call.", "Read-only."]
+args:
+  - name: repo
+    type: string
+    required: true
+    description: Repository key.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+  - name: path
+    type: string
+    required: true
+    description: Artifact or folder path within the repository.
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._+/-]{0,254}$"
+execution:
+  script:
+    path: scripts/artifactory_api.sh
+    interpreter: /bin/sh
+  argv:
+    - file-info
+    - "{{ args.repo }}"
+    - "{{ args.path }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Artifact info
+    args:
+      repo: libs-release-local
+      path: com/example/app/1.0.0/app-1.0.0.jar

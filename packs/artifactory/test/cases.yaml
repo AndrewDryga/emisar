@@ -1,0 +1,70 @@
+services: [artifactory]
+versions:
+  - version: "7.146.34"
+    digest: "@sha256:1414de23e962f326a49c7e18f2d333ea0168e47a3143c7abd59977505081ee89"
+    default: true
+risk_accountability:
+  mode: complete
+secret_env: [ARTIFACTORY_PASSWORD]
+env:
+  ARTIFACTORY_URL: "http://artifactory:8082"
+  ARTIFACTORY_USER: admin
+  ARTIFACTORY_PASSWORD: packtest-canary-artifactory-9d4e
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: artifactory.ping
+    expect:
+      stdout_contains: [OK]
+  - action: artifactory.version
+    expect:
+      stdout_contains: [version, revision]
+  - action: artifactory.license
+    expect:
+      json:
+        /type: OSS
+  - action: artifactory.storage_summary
+    expect:
+      stdout_contains: [repositoriesSummaryList, example-repo-local]
+  - action: artifactory.repositories
+    expect:
+      stdout_contains: [example-repo-local]
+  - name: artifactory.repositories-filtered
+    action: artifactory.repositories
+    args: {type: local, package_type: generic}
+    expect:
+      stdout_contains: [example-repo-local]
+  - name: artifactory.repositories-filter-excludes
+    action: artifactory.repositories
+    args: {type: remote}
+    expect:
+      stdout_contains: ["[ ]"]
+      stdout_not_contains: [example-repo-local]
+  - action: artifactory.file_info
+    args: {repo: example-repo-local, path: smoke/hello.txt}
+    expect:
+      stdout_contains: [downloadUri, sha256]
+  - action: artifactory.file_stats
+    args: {repo: example-repo-local, path: smoke/hello.txt}
+    expect:
+      stdout_contains: [downloadCount, lastDownloadedBy]
+  - action: artifactory.tasks
+    expect:
+      stdout_contains: [tasks]
+  - name: artifactory.file_info-path-traversal-denied
+    action: artifactory.file_info
+    args: {repo: example-repo-local, path: smoke/../../api/security/users}
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: ["must not contain"]
+  - name: artifactory.repositories-invalid-credentials
+    action: artifactory.repositories
+    env:
+      ARTIFACTORY_PASSWORD: packtest-canary-artifactory-invalid-5e19
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["401"]
