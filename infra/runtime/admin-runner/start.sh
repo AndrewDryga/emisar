@@ -72,6 +72,20 @@ TFE_TOKEN=$(fetch_secret \
 }
 export TFE_TOKEN
 
+SENTRY_AUTH_TOKEN=$(fetch_secret \
+  emisar-admin-runner-sentry-token \
+  "${sentry_secret_version}" \
+  Sentry-token)
+[ "$${#SENTRY_AUTH_TOKEN}" -ge 32 ] || {
+  echo "Secret Manager returned an invalid Sentry token" >&2
+  exit 1
+}
+export SENTRY_AUTH_TOKEN
+# The organization's own URL, which serves the same /api/0 the pack's default
+# sentry.io host does. Naming it explicitly keeps the reads on this org's
+# region rather than depending on a redirect.
+export SENTRY_URL=https://emisar.sentry.io
+
 runner=/run/emisar-admin-runner/bin/emisar
 expected_version="emisar version ${runner_version}"
 # Seed from the checksum-verified release so first boot does not depend on the

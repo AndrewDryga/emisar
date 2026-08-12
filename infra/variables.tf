@@ -293,6 +293,17 @@ variable "emisar_tfe_token" {
   }
 }
 
+variable "emisar_sentry_auth_token" {
+  type        = string
+  description = "Sentry auth token for the private admin runners — the internal integration's token, which carries the org scopes the sentry pack's reads and issue mutations need. Set as a sensitive HCP Terraform workspace variable; changing it automatically creates and deploys a new managed secret version."
+  sensitive   = true
+
+  validation {
+    condition     = length(var.emisar_sentry_auth_token) >= 32
+    error_message = "emisar_sentry_auth_token must be a non-empty Sentry auth token of at least 32 characters."
+  }
+}
+
 variable "paddle_api_key" {
   type        = string
   description = "Paddle API key (billing). Empty + disable_billing=false fails the plan."

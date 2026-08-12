@@ -35,6 +35,7 @@ locals {
     hcp-terraform      = { version = "0.7.0", hash = "sha256:3f34cba5aaaaf61b36480ec3c77f55f7dae0da90a851455ddf9beeda1a3e0baa" }
     linux-core         = { version = "0.4.1", hash = "sha256:a5852885bec7b265c98bc897b6c45448d88c3cc92b098cd3d221b4c98e20edd4" }
     nic                = { version = "0.1.1", hash = "sha256:fe4e1d8a7e8633d57d95197103c8260d7b1273106595bae24c70efcacf65956d" }
+    sentry             = { version = "0.1.0", hash = "sha256:8a33af4a63e08318ed0aad6afefbd3f5a1c84f9636e7a0de1f6a1ad902ef18ee" }
     systemd-deep       = { version = "0.1.15", hash = "sha256:a39bcb7a8172275a5870bf1e69ee4c13b7289f36312a66778d231368e9afdfcd" }
     time-sync          = { version = "0.1.9", hash = "sha256:717e790d5496ff76f9f5dad8fdb05aa08b476147d8e52a9a18579e14cf27f9b3" }
   }
@@ -93,6 +94,7 @@ locals {
     runner_version            = local.admin_runner_version
     enrollment_secret_version = google_secret_manager_secret_version.admin_runner_enrollment_key.version
     tfe_secret_version        = google_secret_manager_secret_version.admin_runner_tfe_token.version
+    sentry_secret_version     = google_secret_manager_secret_version.admin_runner_sentry_token.version
     pinned_packs              = local.admin_runner_pack_pins
   })
   admin_runner_gcloud_script = templatefile("${path.module}/runtime/admin-runner/gcloud.sh", {

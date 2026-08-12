@@ -41,6 +41,7 @@ locals {
     runner_version            = "0.17.2"
     enrollment_secret_version = "1"
     tfe_secret_version        = "2"
+    sentry_secret_version     = "3"
     pinned_packs = join("\n", [
       "cloud-init=0.1.11|sha256:b6fe92b1196b132b6abf815d2e6ddbe0e082738a1b69cd837355990b339943b6",
       "debugging=0.2.15|sha256:a36c3bbd405db33b805afbd0c03cc418e3716ae2218873d3569b2c3339bc513f",
