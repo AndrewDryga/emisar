@@ -85,6 +85,27 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	t.Run("CI selector changes validate every gate without release", func(t *testing.T) {
+		for _, file := range []string{"tools/internal/ci/select.go", "tools/cmd/ci/main.go"} {
+			writeFixture(t, root, file, "package ci\n")
+			commitAll(t, root, "CI selector")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.Workflows || !selection.Portal || !selection.Runner || !selection.MCP || !selection.Tools || !selection.Packs || !selection.Infra || !selection.Deps || !selection.MCPListing || !selection.RunnerImage {
+				t.Fatalf("%s selection is incomplete: %+v", file, selection)
+			}
+			if selection.PortalRelease || selection.PacksRelease {
+				t.Fatalf("%s selected release for a pull request: %+v", file, selection)
+			}
+			if len(selection.PackBehavior) != 3 || !selection.SigningE2E || !selection.SSOE2E {
+				t.Fatalf("%s omitted integration gates: %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
 	t.Run("pack change selects only its behavior plan", func(t *testing.T) {
 		writeFixture(t, root, "packs/postgres/actions/uptime.yaml", "id: postgres.uptime\n")
 		commitAll(t, root, "postgres")

@@ -173,7 +173,9 @@ func (selection *Selection) include(file string) {
 	if member(file, "portal/mix.lock", "runner/go.mod", "runner/go.sum", "mcp/go.mod", "mcp/go.sum", "tools/go.mod", "tools/go.sum", ".dep-age-allow") || strings.HasPrefix(file, "tools/cmd/depgate/") {
 		selection.Deps = true
 	}
-	if strings.HasPrefix(file, ".github/workflows/") || file == ".github/dependabot.yml" {
+	// The selector is workflow control code: validate every branch it can route
+	// whenever its implementation or command entrypoint changes.
+	if hasAnyPrefix(file, ".github/workflows/", "tools/cmd/ci/", "tools/internal/ci/") || file == ".github/dependabot.yml" {
 		selection.Workflows = true
 	}
 	// Both halves of the signer↔verifier contract, because the e2e drives the
