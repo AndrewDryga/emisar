@@ -14,7 +14,7 @@ locals {
   # (the owner casing is the certificate's, not the lowercase repo spelling).
   # That is what makes the pin a reviewed decision rather than a checksum
   # chasing whatever the release currently holds.
-  admin_runner_version = "0.17.2"
+  admin_runner_version = "0.19.0"
   # The verified runner bundle is the offline bootstrap; these immutable
   # registry refs are the authoritative set reconciled on every service start.
   admin_runner_public_packs = {
