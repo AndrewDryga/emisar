@@ -1,0 +1,58 @@
+services: [symbolicator]
+versions:
+  - version: "25.9.0"
+    digest: "@sha256:ff16ec0110c73c0ce644f2a56f8e5ff6ed31adc9a3cf731788d425e1dc5f8ecb"
+    default: true
+risk_accountability:
+  mode: complete
+env:
+  SYMBOLICATOR_URL: http://127.0.0.1:3021
+  SYMBOLICATOR_CONFIG: /etc/symbolicator/config.yml
+cases:
+  - action: symbolicator.health
+    expect:
+      stdout_contains: ["ok"]
+  - action: symbolicator.version
+    expect:
+      stdout_contains: ["symbolicator version", "git commit"]
+  # An id the service never issued is the shape an operator hits when they
+  # paste a stale one: Symbolicator answers 404, and --fail turns that into a
+  # failed run rather than empty output that reads as "no result yet".
+  - action: symbolicator.request_status
+    args: {request_id: packtest-unknown-request, timeout_seconds: 0}
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["404"]
+  - action: symbolicator.cache_usage
+    expect:
+      stdout_contains: ["cache root: /data", "objects", "filesystem:"]
+  # The seeded object is inside its retention window, so the preview reports it
+  # retained and removes nothing — proving it reads the real caches and that a
+  # preview never deletes.
+  - action: symbolicator.cleanup_preview
+    expect:
+      stdout_contains: ["dry_run=true", "cache=objects", "retained.bytes=4096"]
+    probes:
+      - name: the preview left the cached object in place
+        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && echo retained"]
+        expect:
+          stdout_contains: ["retained"]
+  - action: symbolicator.cleanup
+    expect:
+      stdout_contains: ["cache=objects", "retained.bytes=4096"]
+      stdout_not_contains: ["dry_run=true"]
+    probes:
+      - name: an object inside its retention window survives the cleanup
+        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && echo retained"]
+        expect:
+          stdout_contains: ["retained"]
+  # The configuration is the one secret-bearing read in this pack. Its S3
+  # credentials are declared canaries: the shape must come back, the values
+  # must not.
+  - action: symbolicator.config_show
+    expect:
+      stdout_contains: ["cache_dir: /data", "packtest-symbols", "[REDACTED]"]
+      stdout_not_contains:
+        - "packtest-canary-symbolicator-access-7c31"
+        - "packtest-canary-symbolicator-secret-4de9"

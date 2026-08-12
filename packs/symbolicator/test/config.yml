@@ -1,0 +1,23 @@
+# Symbolicator configuration for the behavior harness. The source credentials
+# are declared canaries: config_show must mask them, and the case asserts the
+# literal never leaves the runner.
+cache_dir: /data
+bind: 0.0.0.0:3021
+
+caches:
+  downloaded:
+    max_unused_for: 24h
+  derived:
+    max_unused_for: 24h
+  diagnostics:
+    retention: 24h
+
+sources:
+  - id: packtest-bucket
+    type: s3
+    bucket: packtest-symbols
+    region: us-east-1
+    access_key: packtest-canary-symbolicator-access-7c31
+    secret_key: packtest-canary-symbolicator-secret-4de9
+    layout:
+      type: native

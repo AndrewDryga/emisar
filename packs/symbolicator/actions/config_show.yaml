@@ -1,0 +1,44 @@
+schema_version: 1
+id: symbolicator.config_show
+title: Show symbolicator config.yml
+kind: exec
+risk: high
+description: >
+  Dump the Symbolicator configuration this host runs — cache root, retention
+  windows, bind address, and the symbol sources. Reading it is how you explain
+  why a cleanup reclaimed nothing or why a symbol never resolves. High risk on
+  purpose: the sources block is operator-authored and routinely holds S3, GCS,
+  or HTTP credentials, so the whole file is treated as secret-bearing rather
+  than trusted to a pattern.
+side_effects:
+  - Reads the configuration file and returns its contents.
+  - Credential-shaped keys are masked on the way out, but the key space is the operator's, so a credential under a name we do not model would reach the caller.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - >-
+        config="${SYMBOLICATOR_CONFIG:-/etc/symbolicator/config.yml}";
+        if [ ! -f "$config" ]; then
+        printf 'no configuration at %s — the service is running on built-in defaults\n' "$config" >&2;
+        exit 1; fi;
+        exec cat "$config"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+  # Defense in depth over the runner's own default rules, naming the keys
+  # Symbolicator's own source types define. It cannot be complete — the file is
+  # operator-authored — which is why this action is high rather than medium.
+  redact:
+    - name: symbolicator-source-credentials
+      type: regex
+      pattern: '(?im)^(\s*(?:secret_key|access_key|access_key_id|secret_access_key|private_key|client_email|password|token|api_key|authorization)\s*:\s*).+$'
+      replacement: "${1}[REDACTED]"
+examples:
+  - title: What configuration is this host running?
+    args: {}

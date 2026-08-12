@@ -1,0 +1,35 @@
+schema_version: 1
+id: symbolicator.cleanup
+title: symbolicator cleanup
+kind: exec
+risk: medium
+description: >
+  Delete the cache entries that have gone unused past their configured
+  retention, reclaiming disk. This is Symbolicator's own routine maintenance,
+  bounded by the retention windows in its configuration — not a wipe. Preview
+  it with symbolicator.cleanup_preview first.
+side_effects:
+  - Removes cached debug files and derived caches whose retention has expired; a later symbolication that needs one re-downloads it from the configured symbol sources.
+  - Symbolication is slower until the working set is cached again, and the re-download costs bandwidth against those sources.
+  - Runs while the service serves; it does not restart or interrupt Symbolicator.
+  - Reclaims nothing when the caches are within retention, which is what the preview reports.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    # Same configuration resolution as the preview, so what an operator
+    # previewed is what this deletes.
+    argv:
+      - "-c"
+      - >-
+        config="${SYMBOLICATOR_CONFIG:-/etc/symbolicator/config.yml}";
+        if [ -f "$config" ]; then exec symbolicator cleanup -c "$config";
+        else exec symbolicator cleanup; fi
+  timeout: 1h
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 262144
+examples:
+  - title: Reclaim expired cache entries
+    args: {}

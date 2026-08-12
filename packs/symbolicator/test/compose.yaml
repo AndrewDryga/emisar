@@ -1,0 +1,29 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/symbolicator/test
+      dockerfile: Dockerfile
+      target: client
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-getsentry/symbolicator:${PACKTEST_VERSION:-25.9.0}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-symbolicator-tools:latest
+    # Shares the SUT's network namespace, so the HTTP actions reach it on the
+    # loopback address a real host would use.
+    network_mode: service:symbolicator
+
+  symbolicator:
+    build:
+      context: ${EMISAR_ROOT}/packs/symbolicator/test
+      dockerfile: Dockerfile
+      target: sut
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-getsentry/symbolicator:${PACKTEST_VERSION:-25.9.0}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-symbolicator-sut:latest
+    command: ["run"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3021/healthcheck | grep -q ok"]
+      interval: 5s
+      start_period: 30s
+      start_interval: 1s
+      timeout: 5s
+      retries: 10

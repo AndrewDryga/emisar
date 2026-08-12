@@ -1,0 +1,52 @@
+schema_version: 1
+id: symbolicator.request_status
+title: GET /requests/<id>
+kind: exec
+risk: low
+description: >
+  Show the status of one symbolication request by its id — whether it is still
+  pending or has completed, and its result when it has. Use it when Sentry
+  reports a symbolication that never came back. An unknown or expired id
+  answers 404.
+side_effects:
+  - One HTTP GET to the local service.
+  - Waits up to the requested timeout for a pending request to finish.
+  - Read-only.
+args:
+  - name: request_id
+    type: string
+    required: true
+    description: Request id Symbolicator returned when the symbolication was accepted.
+    validation:
+      max_length: 128
+      pattern: "^[A-Za-z0-9_-]{1,128}$"
+  - name: timeout_seconds
+    type: integer
+    required: false
+    default: 0
+    description: 'Seconds to wait for a pending request before answering; 0 returns its current state.'
+    validation:
+      min: 0
+      max: 60
+execution:
+  command:
+    binary: /bin/sh
+    # The id and timeout are validated arguments and reach curl as positional
+    # data, never as part of the program text.
+    argv:
+      - "-c"
+      - >-
+        exec curl -fsS --globoff --proto "=http,https" --max-time 90
+        "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/requests/$1?timeout=$2"
+      - "emisar"
+      - "{{ args.request_id }}"
+      - "{{ args.timeout_seconds }}"
+  timeout: 2m
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Where did this symbolication get to?
+    args:
+      request_id: "e5f2b7a1c0d34e1fa9b8c7d6e5f4a3b2"

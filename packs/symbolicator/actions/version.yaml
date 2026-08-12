@@ -1,0 +1,20 @@
+schema_version: 1
+id: symbolicator.version
+title: symbolicator --version
+kind: exec
+risk: low
+description: >
+  Show the Symbolicator build installed on this host — release version and git
+  commit. Reports the binary on disk, which is what a restart would start.
+side_effects: ["Reads the binary's build information.", "Read-only."]
+args: []
+execution:
+  command: {binary: symbolicator, argv: ["--version"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Installed build
+    args: {}

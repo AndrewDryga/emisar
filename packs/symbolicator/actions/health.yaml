@@ -1,0 +1,29 @@
+schema_version: 1
+id: symbolicator.health
+title: GET /healthcheck
+kind: exec
+risk: low
+description: >
+  Check whether Symbolicator is serving on this host. Answers "ok" while the
+  HTTP server is up; a connection error means the service is down or bound
+  somewhere other than SYMBOLICATOR_URL.
+side_effects: ["One HTTP GET to the local service.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    # The base URL is operator configuration, so it reaches curl through the
+    # shell's own default rather than an argument a caller could redirect.
+    argv:
+      - "-c"
+      - >-
+        exec curl -fsS --globoff --proto "=http,https" --max-time 10
+        "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/healthcheck"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Is Symbolicator serving?
+    args: {}

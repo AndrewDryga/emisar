@@ -1,0 +1,67 @@
+schema_version: 1
+
+id: symbolicator
+name: Symbolicator native symbolication
+version: 0.1.0
+description: >
+  Operate a Symbolicator host: liveness, build version, the symbol cache
+  footprint that fills its disk, one symbolication request's status, and the
+  cache cleanup — previewed before it runs. Symbolicator is Sentry's native
+  symbolication service; this pack drives the host it runs on, not the Sentry
+  API (see the sentry pack for that).
+vendor: emisar
+homepage: https://github.com/andrewdryga/emisar
+
+requires:
+  os:
+    - linux
+  binaries:
+    - symbolicator
+    - curl
+
+# `emisar pack suggest` detection — the binary plus its default HTTP port.
+# A host that only runs Symbolicator in a container has no binary on PATH, so
+# it is deliberately not suggested this pack: the CLI half could not work
+# there, and the docker pack already reaches into the container.
+detect:
+  binaries:
+    - symbolicator
+  processes:
+    - symbolicator
+  ports:
+    - 3021
+
+setup:
+  summary: >
+    The HTTP reads call Symbolicator's own unauthenticated API on the host
+    (127.0.0.1:3021 by default); the CLI actions run the symbolicator binary
+    against the configuration the service uses. Neither takes credentials —
+    Symbolicator has no auth of its own, so restrict reachability at the host.
+  env:
+    - name: SYMBOLICATOR_URL
+      description: Base URL of the local Symbolicator HTTP API.
+      default: http://127.0.0.1:3021
+    - name: SYMBOLICATOR_CONFIG
+      description: Configuration file the CLI actions read.
+      default: /etc/symbolicator/config.yml
+    - name: SYMBOLICATOR_CACHE_DIR
+      description: >
+        Cache root, when it should not be read from the configuration's
+        cache_dir. Falls back to /data, the image and self-hosted default.
+  notes:
+    - "Any of these you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and the action falls back to its default."
+    - The CLI actions read and write the caches as the runner's own identity, so that identity needs read access to the cache root — and write access for symbolicator.cleanup.
+    - Symbolicator's API is unauthenticated by design; it expects to be reachable only from Sentry's own network. These actions do not add authentication, they inherit whatever the host allows.
+  verify: symbolicator.health
+
+actions:
+  # Is it up, and what is running
+  - actions/health.yaml
+  - actions/version.yaml
+  - actions/request_status.yaml
+  # What it is doing to the disk
+  - actions/cache_usage.yaml
+  - actions/cleanup_preview.yaml
+  - actions/cleanup.yaml
+  # Configuration
+  - actions/config_show.yaml

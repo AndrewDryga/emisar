@@ -1,0 +1,35 @@
+schema_version: 1
+id: symbolicator.cleanup_preview
+title: symbolicator cleanup --dry-run
+kind: exec
+risk: low
+description: >
+  Show what a cache cleanup would remove and what it would keep, per cache,
+  without deleting anything. Symbolicator prints retained and removed byte
+  counts for each cache, so this is the read that decides whether
+  symbolicator.cleanup is worth running.
+side_effects:
+  - Walks the caches to evaluate their retention, which is disk-read heavy on a large cache.
+  - Deletes nothing.
+  - Read-only.
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    # The configuration decides the cache root and every retention window, so
+    # the flag is passed only when that file is actually there; without it the
+    # binary's own defaults apply, which is what an unconfigured host runs.
+    argv:
+      - "-c"
+      - >-
+        config="${SYMBOLICATOR_CONFIG:-/etc/symbolicator/config.yml}";
+        if [ -f "$config" ]; then exec symbolicator cleanup --dry-run -c "$config";
+        else exec symbolicator cleanup --dry-run; fi
+  timeout: 30m
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 262144
+examples:
+  - title: What would a cleanup reclaim?
+    args: {}

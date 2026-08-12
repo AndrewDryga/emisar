@@ -1,0 +1,32 @@
+schema_version: 1
+id: symbolicator.cache_usage
+title: Symbolicator cache footprint
+kind: script
+risk: low
+description: >
+  Show how much disk each Symbolicator cache holds, largest first, with the
+  filesystem underneath it. The caches — objects, symcaches, cficaches and the
+  rest — are what fills a symbolication host, and they grow at very different
+  rates, so this is the read to take before deciding whether a cleanup is the
+  answer.
+side_effects:
+  - Walks the cache directories to size them, which is disk-read heavy on a large cache.
+  - Reads filesystem metadata only.
+  - Read-only.
+search_terms:
+  - disk full
+  - symbol cache size
+args: []
+execution:
+  script:
+    path: scripts/cache_usage.sh
+    interpreter: /bin/sh
+  timeout: 5m
+  cwd: /
+output:
+  parser: text
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Which cache is eating the disk?
+    args: {}
