@@ -768,6 +768,13 @@ defmodule EmisarWeb.RunbookRunLive do
 
     assigns =
       assigns
+      # The live definition is whatever was stored, not what the contract
+      # requires today: a row published under an earlier shape carries no
+      # "inputs" key. Normalize once — `definition["inputs"] != []` reads TRUE
+      # for that nil, so the guard alone would still hand nil to the
+      # comprehension below (`pending_input_ids/3` already has its own clause
+      # for the same shape).
+      |> assign(:inputs, assigns.runbook.definition["inputs"] || [])
       |> assign(:preflight_view, preflight_view(assigns.preflight, pending_inputs))
       |> assign(:visible_input_errors, Map.drop(assigns.input_errors, pending_inputs))
 
@@ -797,11 +804,8 @@ defmodule EmisarWeb.RunbookRunLive do
             class="space-y-8"
           >
             <div class="space-y-5">
-              <div
-                :if={@runbook.definition["inputs"] != []}
-                class="grid gap-4 sm:grid-cols-2"
-              >
-                <div :for={input <- @runbook.definition["inputs"]}>
+              <div :if={@inputs != []} class="grid gap-4 sm:grid-cols-2">
+                <div :for={input <- @inputs}>
                   <.input
                     type={input_type(input)}
                     name={"inputs[#{input["id"]}]"}

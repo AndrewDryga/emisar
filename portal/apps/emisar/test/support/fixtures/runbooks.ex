@@ -110,6 +110,22 @@ defmodule Emisar.Fixtures.Runbooks do
     oversized
   end
 
+  @doc """
+  Drops one key from a published runbook's LIVE definition — arrangement state
+  the authoring contract refuses today (`validate_draft_shape/1` requires the
+  key), so the column is written directly. Rows published under an earlier
+  shape still carry it, and every reader of a stored definition has to survive
+  them.
+  """
+  def drop_runbook_definition_key(%Runbook{} = runbook, key) do
+    {:ok, legacy} =
+      runbook
+      |> Ecto.Changeset.change(definition: Map.delete(runbook.definition, key))
+      |> Repo.update()
+
+    legacy
+  end
+
   @doc "Soft-deletes a persisted runbook so a test can arrange a vanished family."
   def mark_runbook_as_deleted(%Runbook{} = runbook) do
     {:ok, deleted} = runbook |> Runbook.Changeset.delete() |> Repo.update()

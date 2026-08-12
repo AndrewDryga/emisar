@@ -404,6 +404,21 @@ defmodule EmisarWeb.RunbookRunLiveTest do
              )
     end
 
+    test "a live definition with no inputs key still renders its run form", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = trusted_runner(account, subject)
+      runbook = published_runbook(subject, runner)
+      legacy = Fixtures.Runbooks.drop_runbook_definition_key(runbook, "inputs")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{legacy.id}/run")
+
+      assert html =~ "Start execution"
+      assert has_element?(lv, "#runbook-run-form")
+    end
+
     test "browser strings freeze as typed values and a bad one names its own field", %{
       conn: conn,
       account: account,
