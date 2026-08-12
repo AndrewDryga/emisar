@@ -1062,11 +1062,18 @@ defmodule EmisarWeb.PoliciesLive do
     <%!-- Each policy — the default and every targeted ruleset — is a dashed
          card (the runbook-editor section grammar). A dashed frame with no wash
          is the sanctioned placeholder shape, not a solid island (§8.1). --%>
+    <%!-- `@container`: this card sits beside a rail, so its own width — not the
+         viewport's — decides how many tier tracks fit. Keyed to the viewport, a
+         1024px window put four selects in a 509px card and clipped "Require
+         approval" against its chevron. --%>
     <form
       id={"policy-form-" <> @editor_id}
       phx-change="form_change"
       phx-submit="save"
-      class={[@top_margin, "space-y-8 rounded-xl border border-dashed border-zinc-800 p-5 sm:p-6"]}
+      class={[
+        @top_margin,
+        "@container space-y-8 rounded-xl border border-dashed border-zinc-800 p-5 sm:p-6"
+      ]}
     >
       <input type="hidden" name="editor" value={@editor_id} />
 
@@ -1081,7 +1088,7 @@ defmodule EmisarWeb.PoliciesLive do
            policy". The tier grid is the card's primary content; the panel subtitle
            labels it ("by risk tier") and the tier cards are self-evident. --%>
       <div>
-        <div class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-x-4 gap-y-4 @md:grid-cols-2 @2xl:grid-cols-4">
           <.tier_field
             :for={tier <- ["low", "medium", "high", "critical"]}
             editor_id={@editor_id}
@@ -1343,8 +1350,17 @@ defmodule EmisarWeb.PoliciesLive do
   # a hairline between rows; the wash box around each row was an island.
   defp override_row(assigns) do
     ~H"""
-    <div class="space-y-2 sm:grid sm:grid-cols-12 sm:items-start sm:gap-2 sm:space-y-0">
-      <div class="sm:col-span-2">
+    <%!-- Name and action share the flexible width; Decision takes a `max-content`
+         track, so the select is always exactly as wide as its longest option
+         needs and a new decision label can never clip it. The trailing track is
+         a FIXED trash width, not `auto` — a view-only row renders no trash, and
+         a content-sized track would collapse there, sliding every field sideways
+         between the editable and blocked states. --%>
+    <div class={[
+      "space-y-2 @md:grid @md:items-start @md:gap-2 @md:space-y-0",
+      "@md:grid-cols-[minmax(0,3fr)_minmax(0,5fr)_max-content_2rem]"
+    ]}>
+      <div>
         <.input
           id={"policy-#{@editor_id}-override-#{@index}-name"}
           name={"policy[overrides][#{@index}][name]"}
@@ -1356,7 +1372,7 @@ defmodule EmisarWeb.PoliciesLive do
           disabled={!@can_manage}
         />
       </div>
-      <div class="sm:col-span-4">
+      <div>
         <.input
           id={"policy-#{@editor_id}-override-#{@index}-action"}
           name={"policy[overrides][#{@index}][action]"}
@@ -1370,7 +1386,7 @@ defmodule EmisarWeb.PoliciesLive do
           disabled={!@can_manage}
         />
       </div>
-      <div class="sm:col-span-2">
+      <div>
         <.input
           id={"policy-#{@editor_id}-override-#{@index}-decision"}
           name={"policy[overrides][#{@index}][decision]"}
@@ -1385,9 +1401,9 @@ defmodule EmisarWeb.PoliciesLive do
         />
       </div>
       <%!-- Trash sits right after Decision (justify-start), not floated to the
-           far edge of its cell. pt-5 clears the eyebrow; h-7 then aligns with
-           the compact text-xs input without an Action error shifting its row. --%>
-      <div class="sm:col-span-1 sm:flex sm:items-start sm:justify-start sm:pt-5">
+           far edge of its cell. pt-5 clears the eyebrow; h-8 then matches the
+           compact field box without an Action error shifting its row. --%>
+      <div class="@md:flex @md:items-start @md:justify-start @md:pt-5">
         <.icon_button
           :if={@can_manage}
           icon="hero-trash"
@@ -1396,7 +1412,7 @@ defmodule EmisarWeb.PoliciesLive do
           phx-click="remove_override"
           phx-value-editor={@editor_id}
           phx-value-index={@index}
-          class="grid h-7 w-7 place-items-center"
+          class="grid h-8 w-8 place-items-center"
         />
       </div>
     </div>

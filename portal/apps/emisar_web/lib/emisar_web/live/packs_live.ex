@@ -1231,23 +1231,23 @@ defmodule EmisarWeb.PacksLive do
               (@risk_filter != "" && "text-brand-300") || "text-zinc-400"
             ]}>
               <span class="mb-1">Risk</span>
-              <select
+              <.select
                 name="risk"
-                class={[
-                  "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 pr-8 text-xs text-zinc-200",
-                  (@risk_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
-                    "border-zinc-700"
-                ]}
-              >
-                <option value="" selected={@risk_filter == ""}>All risk</option>
-                <option
-                  :for={tier <- ~w(low medium high critical)}
-                  value={tier}
-                  selected={@risk_filter == tier}
-                >
-                  {String.capitalize(tier)}
-                </option>
-              </select>
+                size={:filter}
+                active?={@risk_filter != ""}
+                prompt="All risk"
+                prompt_selected={@risk_filter == ""}
+                options={
+                  Enum.map(~w(low medium high critical), fn tier ->
+                    %{
+                      value: tier,
+                      label: String.capitalize(tier),
+                      disabled: false,
+                      selected: @risk_filter == tier
+                    }
+                  end)
+                }
+              />
             </label>
           </form>
 

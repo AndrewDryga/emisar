@@ -9,6 +9,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   connection id reads as not found (→ Team).
   """
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.Accounts
   alias Emisar.Repo
   alias Emisar.SSO
   alias Emisar.SSO.IdentityProvider
@@ -1615,6 +1616,68 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert Repo.reload!(membership).role == membership.role
     end
+  end
+
+  describe "synced members — a provider without directory sync keeps an editable role" do
+    setup %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      provider = insert_provider(account, %{})
+
+      {:ok, %{identity: identity}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "kc|frankie",
+          email: "frankie@northstar.example",
+          full_name: "Frankie Link"
+        })
+
+      membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
+
+      %{conn: conn, account: account, provider: provider, membership: membership}
+    end
+
+    test "the role picker is the shared select, wired per member", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      membership: membership
+    } do
+      # No directory sync on this provider, so the row offers the editable picker —
+      # through the shared select, not a hand-rolled box: an id per row (one derived
+      # id would collide across members), every role offered, the compact
+      # form-field metrics, and the chevron room every console select reserves.
+      # Whether the change lands is the domain's call, guarded above.
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, ~s(select#synced-role-select-#{membership.id}[name="role"]))
+
+      assert has_element?(
+               lv,
+               ~s(form#synced-role-#{membership.id}[phx-change="change_member_role"])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(form#synced-role-#{membership.id} input[name="membership_id"][value="#{membership.id}"])
+             )
+
+      for role <- Emisar.Auth.roles() do
+        assert has_element?(lv, ~s(select[name="role"] option[value="#{role}"]))
+      end
+
+      class = select_class(html, "role")
+      assert class =~ "pr-8"
+      assert class =~ "leading-5"
+      assert class =~ "bg-zinc-900"
+    end
+  end
+
+  # The box classes of a named select — attribute order varies, so anchor on the
+  # name with a lookahead.
+  defp select_class(html, name) do
+    pattern = ~r/<select(?=[^>]*\bname="#{Regex.escape(name)}")[^>]*\bclass="([^"]*)"/
+
+    [_tag, class] = Regex.run(pattern, html)
+    class
   end
 
   describe "the 'point your IdP at this connection' setup steps hide once synced" do

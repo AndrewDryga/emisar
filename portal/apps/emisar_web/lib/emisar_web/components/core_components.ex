@@ -766,6 +766,7 @@ defmodule EmisarWeb.CoreComponents do
         class={[
           "block w-full rounded-lg border-0 bg-zinc-900 text-zinc-100",
           input_size(@size),
+          select_chevron_room(@size),
           "ring-1 ring-inset placeholder:text-zinc-600",
           "focus:ring-2 focus:ring-inset",
           input_ring(@errors, @tone),
@@ -840,8 +841,21 @@ defmodule EmisarWeb.CoreComponents do
   # Box metrics for an input/select/textarea. `:compact` tightens the padding
   # and label gap for a dense grid (the runbook editor's arg rows); `:default`
   # is the standard comfortable field every other caller renders.
-  defp input_size(:compact), do: "mt-1 px-2 py-1.5 text-sm"
-  defp input_size(_default), do: "mt-2 px-3 py-2.5 text-sm"
+  #
+  # The line box is PINNED (`leading-5`), so a caller's `class="text-xs"` or
+  # `font-mono` restyles the text without resizing the box: every control in a
+  # row keeps one height, whatever face it wears. Tailwind emits `leading-*`
+  # after `text-*`, so the pin wins over the size utility's own line-height.
+  defp input_size(:compact), do: "mt-1 px-2 py-1.5 text-sm leading-5"
+  defp input_size(_default), do: "mt-2 px-3 py-2.5 text-sm leading-5"
+
+  # A native select paints its chevron as a background image (the Tailwind forms
+  # plugin: 1.5em wide, 0.5rem in from the right edge) and our own `px-*`
+  # overrides the plugin's `padding-right: 2.5rem` — so the room has to come
+  # back here, or the longest option runs under the arrow and clips against the
+  # box edge ("Require approval" printed over its own chevron).
+  defp select_chevron_room(size) when size in [:compact, :filter], do: "pr-8"
+  defp select_chevron_room(_default), do: "pr-9"
 
   defp input_id(name), do: "input-" <> String.replace(name, ~r/[^a-zA-Z0-9_-]+/, "-")
 
@@ -854,9 +868,16 @@ defmodule EmisarWeb.CoreComponents do
   for per-option control (a disabled "already taken" target, a tier floor) and
   multi-selects with computed per-option selection.
 
-  Styling mirrors `input/1`'s select branch so the two read identically; the
-  optional rose ring renders when `errors` is non-empty. Labels and values
-  render escaped through HEEx (IL-16) — option text includes account data.
+  An entry carrying its own `:options` renders as an `<optgroup>` labelled by its
+  `:label` — the grouped catalogs a filter bar offers.
+
+  `size` picks the box: `:default` and `:compact` mirror `input/1`'s form-field
+  metrics, `:filter` is the filter-bar control (dark ground, hairline border,
+  compact text) that `searchable_select/1`'s trigger also wears — so a bar mixing
+  the two pickers reads as one family, with `active?` carrying the brand tint that
+  says this filter is narrowing the list. The optional rose ring renders when
+  `errors` is non-empty. Labels and values render escaped through HEEx (IL-16) —
+  option text includes account data.
   """
   attr :id, :any, default: nil
   attr :name, :any, required: true
@@ -866,12 +887,20 @@ defmodule EmisarWeb.CoreComponents do
   attr :prompt_selected, :boolean, default: false, doc: "marks the prompt option selected"
   attr :multiple, :boolean, default: false
   attr :errors, :list, default: []
+  attr :size, :atom, default: :default, values: [:default, :compact, :filter]
+  attr :class, :string, default: nil
+
+  attr :active?, :boolean,
+    default: false,
+    doc: "`size={:filter}` only — this filter holds a value, so it wears the brand tint"
 
   attr :options, :list,
     required: true,
-    doc: "option maps: %{value:, label:, disabled:, selected:}"
+    doc:
+      "option maps `%{value:, label:, disabled:, selected:}`, " <>
+        "or group maps `%{label:, options: [option]}`"
 
-  attr :rest, :global, include: ~w(disabled size form)
+  attr :rest, :global, include: ~w(disabled form)
 
   def select(assigns) do
     ~H"""
@@ -885,30 +914,65 @@ defmodule EmisarWeb.CoreComponents do
             # The top margin is the label gap — a label-less select (aria-label
             # callers) must sit flush, or it reads vertically misaligned beside
             # sibling controls in the same row.
-            @label && "mt-2",
-            "block w-full rounded-lg border-0 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100",
-            "ring-1 ring-inset placeholder:text-zinc-600",
-            "focus:ring-2 focus:ring-inset",
-            @errors == [] && "ring-zinc-800 focus:ring-brand-500",
-            @errors != [] && "ring-rose-500/50 focus:ring-rose-500"
+            @label && select_label_gap(@size),
+            select_box_class(@size, @active?, @errors),
+            select_chevron_room(@size),
+            @class
           ]
         }
         multiple={@multiple}
         {@rest}
       >
         <option :if={@prompt} value="" selected={@prompt_selected}>{@prompt}</option>
-        <option
-          :for={option <- @options}
-          value={option.value}
-          disabled={option.disabled}
-          selected={option.selected}
-        >
-          {option.label}
-        </option>
+        <%= for entry <- @options do %>
+          <optgroup :if={entry[:options]} label={entry.label}>
+            <.select_option :for={option <- entry.options} option={option} />
+          </optgroup>
+          <.select_option :if={is_nil(entry[:options])} option={entry} />
+        <% end %>
       </select>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
+  end
+
+  attr :option, :map, required: true
+
+  defp select_option(assigns) do
+    ~H"""
+    <option value={@option.value} disabled={@option.disabled} selected={@option.selected}>
+      {@option.label}
+    </option>
+    """
+  end
+
+  defp select_label_gap(:default), do: "mt-2"
+  defp select_label_gap(_tighter), do: "mt-1"
+
+  # The form-field box, mirroring `input/1` so a `<.select>` and an `<.input>` in
+  # one row are the same control.
+  defp select_box_class(size, _active?, errors) when size in [:default, :compact] do
+    [
+      "block w-full rounded-lg border-0 bg-zinc-900 text-zinc-100",
+      if(size == :compact, do: "px-2 py-1.5", else: "px-3 py-2.5"),
+      "text-sm leading-5 ring-1 ring-inset",
+      "focus:ring-2 focus:ring-inset",
+      input_ring(errors, :neutral)
+    ]
+  end
+
+  # The filter-bar box: a darker ground than the page's cards and a hairline
+  # border that turns brand while the filter is narrowing the list. A filter at
+  # its default value is not an active filter, so it stays muted like the
+  # searchable picker's blank face.
+  defp select_box_class(:filter, active?, _errors) do
+    [
+      "w-full rounded-lg border bg-zinc-950 py-1.5 pl-2.5 text-xs disabled:cursor-not-allowed",
+      if(active?,
+        do: "border-brand-500/60 ring-1 ring-brand-500/25 text-zinc-200",
+        else: "border-zinc-700 text-zinc-500"
+      )
+    ]
   end
 
   @doc """

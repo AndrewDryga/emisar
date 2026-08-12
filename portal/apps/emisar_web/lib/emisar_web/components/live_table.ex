@@ -464,29 +464,14 @@ defmodule EmisarWeb.LiveTable do
     ~H"""
     <label class={filter_label_class(@active?)}>
       <span class="mb-1">{@filter.title}</span>
-      <select
-        name={"#{@filter.name}"}
+      <CoreComponents.select
+        name={to_string(@filter.name)}
         disabled={@disabled}
-        class={[
-          "w-full rounded-lg border bg-zinc-950 py-1.5 pl-2.5 pr-8 text-xs text-zinc-200 disabled:cursor-not-allowed",
-          filter_control_class(@active?)
-        ]}
-      >
-        <option value="">All</option>
-        <%= for {group_label, options} <- @groups do %>
-          <%= if group_label do %>
-            <optgroup label={group_label}>
-              <option :for={{val, label} <- options} value={val} selected={val in @selected}>
-                {label}
-              </option>
-            </optgroup>
-          <% else %>
-            <option :for={{val, label} <- options} value={val} selected={val in @selected}>
-              {label}
-            </option>
-          <% end %>
-        <% end %>
-      </select>
+        size={:filter}
+        active?={@active?}
+        prompt="All"
+        options={filter_select_options(@groups, @selected)}
+      />
     </label>
     """
   end
@@ -594,6 +579,21 @@ defmodule EmisarWeb.LiveTable do
   # can take one path.
   defp normalize_groups([{_label, list} | _] = values) when is_list(list), do: values
   defp normalize_groups(flat), do: [{nil, flat}]
+
+  # Normalized groups as the shared select's option/group maps — a nil group label
+  # means ungrouped options, which stay at the top level.
+  defp filter_select_options(groups, selected) do
+    Enum.flat_map(groups, fn
+      {nil, options} ->
+        Enum.map(options, &filter_select_option(&1, selected))
+
+      {label, options} ->
+        [%{label: label, options: Enum.map(options, &filter_select_option(&1, selected))}]
+    end)
+  end
+
+  defp filter_select_option({value, label}, selected),
+    do: %{value: value, label: label, disabled: false, selected: value in selected}
 
   defp filter_combobox_groups(values) do
     values

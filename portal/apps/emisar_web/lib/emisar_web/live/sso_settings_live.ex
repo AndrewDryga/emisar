@@ -3152,17 +3152,16 @@ defmodule EmisarWeb.SSOSettingsLive do
                 :if={not @scim_enabled}
                 id={"synced-role-#{member.membership.id}"}
                 phx-change="change_member_role"
+                class="w-36"
               >
                 <input type="hidden" name="membership_id" value={member.membership.id} />
-                <select
+                <.select
+                  id={"synced-role-select-#{member.membership.id}"}
                   name="role"
-                  class="rounded-lg border-0 bg-zinc-900 py-1 pl-2 pr-7 text-xs text-zinc-200 ring-1 ring-inset ring-zinc-800 focus:ring-2 focus:ring-inset focus:ring-brand-500"
-                >
-                  {Phoenix.HTML.Form.options_for_select(
-                    @member_role_options,
-                    to_string(member.membership.role)
-                  )}
-                </select>
+                  size={:compact}
+                  class="text-xs"
+                  options={role_select_options(@member_role_options, member.membership.role)}
+                />
               </form>
               <%!-- Suspend is reversible (Reactivate undoes it), so it stays a
                    neutral ghost — rose is reserved for the irreversible Delete. --%>
@@ -3229,6 +3228,13 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp role_lock_tip(false),
     do: "Role is managed by directory sync — change this member's groups in your IdP"
+
+  # `{label, value}` role pairs as the shared select's option maps.
+  defp role_select_options(role_options, current_role) do
+    Enum.map(role_options, fn {label, value} ->
+      %{value: value, label: label, disabled: false, selected: to_string(current_role) == value}
+    end)
+  end
 
   # The identity's directory id — the SCIM externalId if synced, else the OIDC sub.
   defp synced_external_id(identity),

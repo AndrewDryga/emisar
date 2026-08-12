@@ -574,6 +574,30 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     or other state that still asks the operator to intervene. Sweep: successful dedicated flows
     rendered as alerts, success pages that echo submitted params instead of persisted values,
     and confirmations that omit the granted role or access.
+54. **A control's geometry belongs to its component — a caller's FACE never resizes its BOX.**
+    `input_size/1` pins the line box (`leading-5`) so `class="text-xs"`/`font-mono` restyles the
+    text and nothing else; a caller that changes font size otherwise silently shortens that one
+    control and breaks the row's shared edges (the policy override row shipped a 32px Name
+    beside a 28px Action and Decision). Sweep: `size={:compact}` (or any shared control) call
+    sites passing a `text-*` class, and rows mixing a mono identifier field with a prose one.
+55. **A state change never moves the layout.** View-only, plan-gated, and disabled states
+    restyle controls in place: same height, same width, same track positions as the state that
+    can act. A per-row action rendered only for a manager takes a FIXED track (`2rem`), never
+    `auto`/`max-content` — a content-sized track collapses when the button is absent and slides
+    every field sideways between the editable and blocked views. Sweep: `:if={@can_manage}`
+    controls inside `auto` grid tracks or flex rows that own their own width.
+56. **A native select reserves room for its chevron.** The Tailwind forms plugin paints the arrow
+    as a background image (1.5em wide, 0.5rem from the right edge) and sets `padding-right:
+    2.5rem` — which our own `px-*` overrides, so the longest option prints over the arrow and
+    clips at the box edge ("Require approval" across its own chevron). Shared controls carry
+    `select_chevron_room/1` (`pr-8` compact, `pr-9` default); a hand-rolled select spells the
+    same padding out. Sweep: any `<select>` whose class list has `px-*`/`pl-*` and no `pr-*`.
+57. **A grid inside a rail-narrowed column keys its columns to the CONTAINER, not the viewport.**
+    `@container` on the card plus `@md:`/`@2xl:` column counts, because the viewport says 1024px
+    while the card beside a rail is 509px — that mismatch is what put four decision selects in a
+    509px card and clipped every long label. Verify a card that sits beside a rail at the width
+    where the rail first appears, not just at your own screen. Sweep: `sm:`/`lg:`-keyed
+    `grid-cols-*` inside a `col-span-*` column that shares its row with an `<aside>`.
 
 
 ## 8. The kit is the contract

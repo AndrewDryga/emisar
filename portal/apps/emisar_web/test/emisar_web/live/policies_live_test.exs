@@ -825,6 +825,97 @@ defmodule EmisarWeb.PoliciesLiveTest do
                ~r/<input(?=[^>]*\btype="radio")(?=[^>]*\bname="policy\[approval\]\[allow_self_approval\]")(?=[^>]*\bdisabled)[^>]*>/
     end
 
+    test "a blocked override row keeps the manager's geometry", %{conn: conn} do
+      # A view-only row restyles IN PLACE — same box heights, same tracks. The
+      # classes ARE that geometry: the row shipped a 32px Name beside a 28px
+      # Action/Decision (a caller's `text-xs` shrank the box), and a hidden trash
+      # in an `auto` track slid every field sideways for a viewer.
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+      owner_subject = Fixtures.Subjects.subject_for(owner, account)
+
+      rules = %{
+        "schema_version" => 2,
+        "defaults" => %{
+          "low" => "allow",
+          "medium" => "allow",
+          "high" => "require_approval",
+          "critical" => "deny"
+        },
+        "overrides" => [
+          %{"name" => "block-drops", "action" => "*.drop_*", "decision" => "require_approval"}
+        ],
+        "approval" => %{"min_approvals" => 2, "allow_self_approval" => false}
+      }
+
+      {:ok, _} = Policies.save_rules(rules, owner_subject)
+
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      {:ok, _lv, owner_html} =
+        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/policies")
+
+      {:ok, _lv, viewer_html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/policies")
+
+      fields = [
+        ~s(policy[overrides][0][name]),
+        ~s(policy[overrides][0][action]),
+        ~s(policy[overrides][0][decision])
+      ]
+
+      for field <- fields do
+        assert control_class(owner_html, field) == control_class(viewer_html, field)
+      end
+
+      # The trash track is a fixed width in both, so the row cannot shift when the
+      # button is absent.
+      assert owner_html =~ "max-content_2rem"
+      assert viewer_html =~ "max-content_2rem"
+
+      # One height across the row: the pinned line box survives the mono and
+      # text-xs faces, and the decision select reserves its chevron room.
+      action_class = control_class(owner_html, ~s(policy[overrides][0][action]))
+      decision_class = control_class(owner_html, ~s(policy[overrides][0][decision]))
+
+      assert action_class =~ "leading-5"
+      assert decision_class =~ "leading-5"
+      assert decision_class =~ "pr-8"
+    end
+
+    test "a locked tier keeps the unlocked tiers' box", %{conn: conn} do
+      # Monotonic enforcement leaves a deny floor exactly one legal choice, so
+      # those tiers lock and pick up a tooltip carrying the why. The wrapper is
+      # what threatens the geometry: without `w-full flex-col` its inline-flex row
+      # shrinks the select to its content, and a locked tier renders narrower than
+      # its neighbours.
+      {conn, owner, account} = register_and_log_in(conn)
+      {:ok, _} = Policies.save_rules(deny_all(), Fixtures.Subjects.subject_for(owner, account))
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      low = control_class(html, ~s(policy[defaults][low]))
+
+      for tier <- ["medium", "high", "critical"] do
+        assert html =~
+                 ~r/<select(?=[^>]*\bname="policy\[defaults\]\[#{tier}\]")(?=[^>]*\bdisabled)[^>]*>/
+
+        assert control_class(html, ~s(policy[defaults][#{tier}])) == low
+
+        wrapper = tooltip_class(html, "tier-lock-account-#{tier}")
+        assert wrapper =~ "w-full"
+        assert wrapper =~ "flex-col"
+      end
+
+      refute html =~
+               ~r/<select(?=[^>]*\bname="policy\[defaults\]\[low\]")(?=[^>]*\bdisabled)[^>]*>/
+    end
+
     test "another account's default policy + rulesets never appear on this page", %{conn: conn} do
       # `fetch_policy` / `list_scoped_policies` scope to the
       # subject's account via `for_subject`, so a foreign account's saved default
@@ -1625,5 +1716,24 @@ defmodule EmisarWeb.PoliciesLiveTest do
       "overrides" => [],
       "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
     }
+  end
+
+  # The box classes of one named control — the geometry a blocked row must keep.
+  # Attribute order varies, so anchor on the name with a lookahead.
+  defp control_class(html, name) do
+    pattern =
+      ~r/<(?:input|select)(?=[^>]*\bname="#{Regex.escape(name)}")[^>]*\bclass="([^"]*)"/
+
+    [_tag, class] = Regex.run(pattern, html)
+    class
+  end
+
+  # The tooltip wrapper around a locked control — `<.tooltip>` suffixes its
+  # trigger id with `-tt`.
+  defp tooltip_class(html, tooltip_id) do
+    pattern = ~r/<span(?=[^>]*\bid="#{Regex.escape(tooltip_id)}-tt")[^>]*\bclass="([^"]*)"/
+
+    [_tag, class] = Regex.run(pattern, html)
+    class
   end
 end
